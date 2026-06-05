@@ -17,7 +17,7 @@ from .fol import (
 )
 from .atp import formulas_are_equivalent, check_logical_entailment
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "MSFLParser",
