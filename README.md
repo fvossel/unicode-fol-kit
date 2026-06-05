@@ -1,10 +1,10 @@
 # unicode-fol-kit
 
-A Python toolkit for parsing and working with first-order logic (FOL) formulas written with Unicode operators. The single parser class `MSFLParser` supports three modes — classical FOL, many-sorted FOL (MSFOL), and many-sorted fuzzy logic (MSFL, Łukasiewicz) — selected by constructor flags.
+A Python toolkit for parsing and working with first-order logic (FOL) formulas written with Unicode operators. The single parser class `MSFLParser` supports four modes — classical FOL, many-sorted FOL (MSFOL), many-sorted fuzzy logic (MSFL), and single-sorted fuzzy logic (FL, Łukasiewicz) — selected by constructor flags.
 
 ## Features
 
-- **Three parser modes** — FOL, many-sorted FOL (MSFOL), and many-sorted fuzzy/Łukasiewicz logic (MSFL), all from one class
+- **Four parser modes** — FOL, many-sorted FOL (MSFOL), many-sorted fuzzy/Łukasiewicz logic (MSFL), and single-sorted fuzzy/Łukasiewicz logic (FL), all from one class
 - **Unicode surface syntax** — natural symbols (∀ ∃ ∧ ∨ ¬ → ↔ ⊕ ⊗ = ≠ ≤ ≥) with no ASCII fallbacks needed
 - **Sorted quantifiers and constants** — `∀x:Human P(x)`, `P(alice:Human)` in MSFOL and MSFL modes
 - **Łukasiewicz operators** — weak ∧ / ∨ (min/max), strong ⊗ / ⊕ (t-norm/t-conorm), and Łukasiewicz ¬ → ↔ in MSFL mode
@@ -45,7 +45,7 @@ pip install .
 MSFLParser(many_sorted=False, fuzzy=False)   # FOL   (default)
 MSFLParser(many_sorted=True,  fuzzy=False)   # MSFOL
 MSFLParser(many_sorted=True,  fuzzy=True)    # MSFL
-MSFLParser(many_sorted=False, fuzzy=True)    # → raises ValueError
+MSFLParser(many_sorted=False, fuzzy=True)    # FL
 ```
 
 | `many_sorted` | `fuzzy` | Mode | Quantifiers | Constants | Connectives |
@@ -53,6 +53,7 @@ MSFLParser(many_sorted=False, fuzzy=True)    # → raises ValueError
 | `False` | `False` | **FOL** | unsorted `∀x` | unsorted | classical ∧ ∨ ⊕ ¬ → ↔ |
 | `True` | `False` | **MSFOL** | sorted `∀x:Sort` | sorted `alice:Sort` | classical ∧ ∨ ¬ → ↔ (no ⊕) |
 | `True` | `True` | **MSFL** | sorted `∀x:Sort` | sorted `alice:Sort` | weak ∧ ∨, strong ⊗ ⊕, Łuk ¬ → ↔ |
+| `False` | `True` | **FL** | unsorted `∀x` | unsorted | weak ∧ ∨, strong ⊗ ⊕, Łuk ¬ → ↔ |
 
 ## Usage
 
@@ -94,6 +95,26 @@ parser.parse("P(x) ⊕ Q(x)")    # StrongDisjunction (t-conorm: min{1, x+y})
 parser.parse("¬P(x)")           # LukNegation (1−x)
 parser.parse("P(x) → Q(x)")    # LukImplication (min{1, 1−x+y})
 parser.parse("∀x:Human P(x)")  # SortedQuantifier
+```
+
+### FL mode
+
+Łukasiewicz operators with **unsorted** quantifiers and plain constants — same connectives as MSFL, same quantifier/constant syntax as FOL:
+
+```python
+parser = MSFLParser(many_sorted=False, fuzzy=True)
+
+parser.parse("P(x) ∧ Q(x)")          # WeakConjunction (min)
+parser.parse("P(x) ⊗ Q(x)")          # StrongConjunction (t-norm: max{0, x+y−1})
+parser.parse("P(x) ⊕ Q(x)")          # StrongDisjunction (t-conorm: min{1, x+y})
+parser.parse("¬P(x)")                 # LukNegation (1−x)
+parser.parse("P(x) → Q(x)")          # LukImplication (min{1, 1−x+y})
+parser.parse("∀x P(x)")              # unsorted Quantifier (no sort annotation)
+parser.parse("P(alice)")             # plain Constant (no sort annotation)
+
+# Lambda works in FL mode too
+parser.parse("λx. P(x) ⊗ Q(x)")
+# Lambda(LambdaVar("x"), StrongConjunction(Atom("P",[LambdaVar("x")]), Atom("Q",[LambdaVar("x")])))
 ```
 
 ### ASCII tree view
@@ -341,6 +362,21 @@ Connectives are reinterpreted as Łukasiewicz operators:
 | `φ ↔ ψ` | Łuk. equivalence | 1 − \|φ − ψ\| |
 | `∀x:Sort φ`, `∃x:Sort φ` | sorted quantifiers | |
 
+#### FL mode
+
+Same Łukasiewicz connectives as MSFL, but with **unsorted** quantifiers and plain constants (no `:Sort` required):
+
+| Syntax | Operator | Semantics |
+|---|---|---|
+| `¬φ` | Łuk. negation | 1 − φ |
+| `φ ∧ ψ` | weak conjunction | min(φ, ψ) |
+| `φ ∨ ψ` | weak disjunction | max(φ, ψ) |
+| `φ ⊗ ψ` | strong conjunction | max(0, φ + ψ − 1) |
+| `φ ⊕ ψ` | strong disjunction | min(1, φ + ψ) |
+| `φ → ψ` | Łuk. implication | min(1, 1 − φ + ψ) |
+| `φ ↔ ψ` | Łuk. equivalence | 1 − \|φ − ψ\| |
+| `∀x φ`, `∃x φ` | unsorted quantifiers | |
+
 A formula may be wrapped in parentheses `( … )` or square brackets `[ … ]`; the two are interchangeable for grouping.
 
 ### Operator precedence
@@ -350,7 +386,7 @@ The precedence levels are the same across all three modes (MSFL uses the same sy
 | Precedence | Operators | Associativity |
 |---|---|---|
 | 1 (highest) | `¬`, quantifiers `∀` / `∃` | prefix |
-| 2 | `∧` `∨` `⊕` (FOL) / `∧` `∨` (MSFOL) / `∧` `∨` `⊗` `⊕` (MSFL) | left |
+| 2 | `∧` `∨` `⊕` (FOL) / `∧` `∨` (MSFOL) / `∧` `∨` `⊗` `⊕` (MSFL / FL) | left |
 | 3 | `→` | right |
 | 4 (lowest) | `↔` | right |
 
@@ -380,7 +416,7 @@ P(x) ∧ Q(x) ∨ R(x)      # rejected
 (P(x) ∧ Q(x)) ∨ R(x)    # accepted
 ```
 
-**MSFL mode** — `∧`, `∨`, `⊗`, `⊕` cannot be mixed:
+**MSFL / FL mode** — `∧`, `∨`, `⊗`, `⊕` cannot be mixed:
 
 ```text
 P(x) ∧ Q(x) ⊗ R(x)        # rejected
@@ -409,16 +445,16 @@ Quantifiers can be stacked directly: `∀x:H ∀y:H ∃z:A φ`.
 
 ### Supported symbols
 
-| Category | FOL | MSFOL | MSFL |
-|---|---|---|---|
-| Quantifiers | `∀` `∃` (unsorted) | `∀` `∃` (sorted `:Sort`) | `∀` `∃` (sorted `:Sort`) |
-| Connectives | `∧` `∨` `⊕` `¬` `→` `↔` | `∧` `∨` `¬` `→` `↔` | `∧` `∨` `⊗` `⊕` `¬` `→` `↔` |
-| Lambda | `λ` | `λ` | `λ` |
-| Sort annotations | — | `:Sort` | `:Sort` |
-| Equality / comparison | `=` `≠` `<` `>` `≤` `≥` | same | same |
-| Arithmetic | `+` `-` `*` `/` | same | same |
-| Grouping | `(` `)` `[` `]` | same | same |
-| Argument separator | `,` | same | same |
+| Category | FOL | MSFOL | MSFL | FL |
+|---|---|---|---|---|
+| Quantifiers | `∀` `∃` (unsorted) | `∀` `∃` (sorted `:Sort`) | `∀` `∃` (sorted `:Sort`) | `∀` `∃` (unsorted) |
+| Connectives | `∧` `∨` `⊕` `¬` `→` `↔` | `∧` `∨` `¬` `→` `↔` | `∧` `∨` `⊗` `⊕` `¬` `→` `↔` | `∧` `∨` `⊗` `⊕` `¬` `→` `↔` |
+| Lambda | `λ` | `λ` | `λ` | `λ` |
+| Sort annotations | — | `:Sort` | `:Sort` | — |
+| Equality / comparison | `=` `≠` `<` `>` `≤` `≥` | same | same | same |
+| Arithmetic | `+` `-` `*` `/` | same | same | same |
+| Grouping | `(` `)` `[` `]` | same | same | same |
+| Argument separator | `,` | same | same | same |
 
 Whitespace is insignificant and may be used freely between tokens — including before sort annotation colons.
 
@@ -511,6 +547,14 @@ parser.parse("(λP. P(x))(Q)")
     → Recommended(x:Patient, y:Treatment)
 ```
 
+### A complete FL example
+
+```text
+∀x ∀y
+    (Effective(y) ⊗ Tolerable(x, y))
+    → Recommended(x, y)
+```
+
 ## AST nodes
 
 All nodes are Python dataclasses and can be imported from `unicode_fol_kit`.
@@ -592,6 +636,11 @@ MSFLParser(many_sorted=True).parse("P(x) ∧ Q(x) ∨ R(x)")
 
 # MSFL mode — hint names all four Łukasiewicz connectives
 MSFLParser(many_sorted=True, fuzzy=True).parse("P(x) ∧ Q(x) ⊗ R(x)")
+# SYNTAX_ERROR: … Hint: Cannot mix weak conjunction (∧), weak disjunction (∨),
+#                        strong conjunction (⊗), and strong disjunction (⊕) without parentheses
+
+# FL mode — same hint as MSFL (Łukasiewicz connectives, unsorted)
+MSFLParser(many_sorted=False, fuzzy=True).parse("P(x) ∧ Q(x) ⊗ R(x)")
 # SYNTAX_ERROR: … Hint: Cannot mix weak conjunction (∧), weak disjunction (∨),
 #                        strong conjunction (⊗), and strong disjunction (⊕) without parentheses
 ```
