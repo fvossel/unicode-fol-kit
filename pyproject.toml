@@ -9,10 +9,36 @@ description = "Parser and toolkit for first-order logic formulas using Unicode o
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
+authors = [
+    { name = "Felix Vossel", email = "felixvossel@gmail.com" },
+]
+keywords = ["logic", "fol", "first-order-logic", "parser", "lukasiewicz", "lambda-calculus"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+]
 dependencies = [
     "lark>=1.1",
     "z3-solver>=4.12",
 ]
 
+[project.urls]
+Repository = "https://github.com/fvossel/unicode-fol-kit"
+Issues = "https://github.com/fvossel/unicode-fol-kit/issues"
+
 [tool.hatch.build.targets.wheel]
 packages = ["unicode_fol_kit"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/unicode_fol_kit",
+    "/README.md",
+    "/LICENSE",
+]
