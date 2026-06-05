@@ -1,0 +1,17 @@
+PREDICATE: /[A-Z][a-zA-Z0-9]*/
+
+CONSTANT.3: /c_[a-zA-Z0-9]+/
+
+NAME.2: /[a-z][a-zA-Z0-9]*[a-zA-Z][a-zA-Z0-9]*/
+
+VARIABLE.1: /[a-z][0-9]*/
+
+NUMBER.1: /[0-9]+(\.[0-9]+)?/
+
+SORT: /:[A-Z][a-zA-Z0-9]*/
+
+FORALL: "∀"
+
+EXISTS: "∃"
+
+LAMBDA: "λ"

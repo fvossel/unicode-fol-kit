@@ -8,6 +8,7 @@ _SYMBOL_NAMES = {
     "∧": "conjunction",
     "∨": "disjunction",
     "⊕": "exclusive or",
+    "⊗": "strong conjunction",
     "¬": "negation",
     "∀": "universal quantifier",
     "∃": "existential quantifier",
@@ -34,9 +35,29 @@ _NAMED_TOKENS = {
     "VARIABLE": "variable",
     "CONSTANT": "constant",
     "NUMBER": "number",
+    "SORT": "sort annotation",
 }
 
-_MIXING_SYMBOLS = {"∧", "∨", "⊕"}
+_MIXING_INFO = {
+    "fol":   (
+        {"∧", "∨", "⊕"},
+        "Cannot mix conjunction (∧), disjunction (∨), and exclusive or (⊕) without parentheses",
+    ),
+    "msfol": (
+        {"∧", "∨"},
+        "Cannot mix conjunction (∧) and disjunction (∨) without parentheses",
+    ),
+    "msfl":  (
+        {"∧", "∨", "⊗", "⊕"},
+        "Cannot mix weak conjunction (∧), weak disjunction (∨), "
+        "strong conjunction (⊗), and strong disjunction (⊕) without parentheses",
+    ),
+    "fl": (
+        {"∧", "∨", "⊗", "⊕"},
+        "Cannot mix weak conjunction (∧), weak disjunction (∨), "
+        "strong conjunction (⊗), and strong disjunction (⊕) without parentheses",
+    ),
+}
 
 
 def _build_pattern_index(parser: Lark) -> dict:
@@ -87,8 +108,9 @@ class NamingError(UnexpectedCharacters):
     grammar changes.
     """
 
-    def __init__(self, parser: Lark, original_exception: UnexpectedCharacters, formula: str):
+    def __init__(self, parser: Lark, original_exception: UnexpectedCharacters, formula: str, mode: str = "fol"):
         self._patterns = _build_pattern_index(parser)
+        self._mode = mode
 
         pos = original_exception.pos_in_stream
         prefix = formula[:pos] if pos is not None and pos >= 0 else formula
@@ -115,11 +137,9 @@ class NamingError(UnexpectedCharacters):
                 f"SYNTAX_ERROR: Unexpected character '{exc.char}' at position "
                 f"{exc.column} after {display} '{last_token.value}'"
             )
-            if exc.char in _MIXING_SYMBOLS:
-                message += (
-                    ". Hint: Cannot mix conjunction (∧), disjunction (∨), and "
-                    "exclusive or (⊕) without parentheses"
-                )
+            mixing_symbols, mixing_hint = _MIXING_INFO.get(self._mode, _MIXING_INFO["fol"])
+            if exc.char in mixing_symbols:
+                message += f". Hint: {mixing_hint}"
             return message
 
         message = (
@@ -143,7 +163,7 @@ class ParsingError(ParseError):
     set is rendered through the same pattern-based resolution as NamingError.
     """
 
-    def __init__(self, parser: Lark, original_exception, formula: str):
+    def __init__(self, parser: Lark, original_exception, formula: str, mode: str = "fol"):
         self._patterns = _build_pattern_index(parser)
         expected_str = _format_expected(getattr(original_exception, "expected", None), self._patterns)
 
@@ -161,11 +181,9 @@ class ParsingError(ParseError):
                 f"SYNTAX_ERROR: Unexpected {display} '{token.value}'{where}. "
                 f"Expected: {expected_str}"
             )
-            if str(token.value) in _MIXING_SYMBOLS:
-                message += (
-                    ". Hint: Cannot mix conjunction (∧), disjunction (∨), and "
-                    "exclusive or (⊕) without parentheses"
-                )
+            mixing_symbols, mixing_hint = _MIXING_INFO.get(mode, _MIXING_INFO["fol"])
+            if str(token.value) in mixing_symbols:
+                message += f". Hint: {mixing_hint}"
 
         self.__dict__.update(original_exception.__dict__)
         self.args = (message,)
