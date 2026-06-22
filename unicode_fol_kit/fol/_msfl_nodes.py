@@ -1070,6 +1070,120 @@ def _uni(node) -> str:
 
 
 # =========================
+# LaTeX rendering
+# =========================
+#
+# Mirrors the Unicode renderer above but emits LaTeX math-mode markup. It reuses
+# the same precedence tables (_UNI_FORMULA_PREC, _UNI_LEVEL2, _uni_prec) so the
+# parenthesisation is identical; only the operator glyphs and term formatting
+# differ. Output is not parseable by MSFLParser (so no round-trip), hence tests
+# assert on exact strings.
+
+_LATEX_BINSYM = {
+    "And": "\\land", "Or": "\\lor", "Xor": "\\oplus",
+    "Implies": "\\rightarrow", "Iff": "\\leftrightarrow",
+    "WeakConjunction": "\\land", "WeakDisjunction": "\\lor",
+    "StrongConjunction": "\\otimes", "StrongDisjunction": "\\oplus",
+    "LukImplication": "\\rightarrow", "LukEquivalence": "\\leftrightarrow",
+}
+
+_LATEX_COMPARE = {
+    "=": "=", "≠": "\\neq", "<": "<", ">": ">", "≤": "\\leq", "≥": "\\geq",
+}
+
+_LATEX_ARITH = {"+": "+", "-": "-", "*": "\\cdot", "/": "/"}
+
+_LATEX_QUANT = {"∀": "\\forall", "forall": "\\forall", "∃": "\\exists", "exists": "\\exists"}
+
+
+def _latex_wrap(node, min_prec: int) -> str:
+    s = _latex(node)
+    return f"({s})" if _uni_prec(node) < min_prec else s
+
+
+def _latex_level2_child(node, parent_cls: str, side: str) -> str:
+    s = _latex(node)
+    p = _uni_prec(node)
+    if side == "left":
+        need = p < 3 or (p == 3 and type(node).__name__ != parent_cls)
+    else:
+        need = p < 4
+    return f"({s})" if need else s
+
+
+def _latex_term(node) -> str:
+    cls = type(node).__name__
+    if cls in ("Variable", "LambdaVar", "Constant"):
+        return node.name
+    if cls == "Number":
+        return str(node.value)
+    if cls == "SortedConstant":
+        return f"{node.name}{{:}}\\mathrm{{{node.sort}}}"
+    if cls == "Function":
+        if node.name in _UNI_ARITH_OPS and len(node.args) == 2:
+            p = _uni_term_prec(node)
+            left = node.args[0]
+            right = node.args[1]
+            ls = _latex_term(left)
+            rs = _latex_term(right)
+            if _uni_term_prec(left) < p:
+                ls = f"({ls})"
+            if _uni_term_prec(right) < p or (_uni_term_prec(right) == p):
+                rs = f"({rs})"
+            return f"{ls} {_LATEX_ARITH[node.name]} {rs}"
+        return f"{node.name}(" + ", ".join(_latex_term(a) for a in node.args) + ")"
+    if cls == "Application":
+        head, args = _uni_spine(node)
+        if isinstance(head, (LambdaVar, Variable, Constant)) and args:
+            return f"{head.name}(" + ", ".join(_latex_term(a) for a in args) + ")"
+        return f"({_latex(node.func)})({_latex(node.arg)})"
+    return _latex(node)
+
+
+def _latex_atom(node) -> str:
+    if node.predicate in _UNI_INFIX_COMPARE and len(node.args) == 2:
+        return f"{_latex_term(node.args[0])} {_LATEX_COMPARE[node.predicate]} {_latex_term(node.args[1])}"
+    if not node.args:
+        return node.predicate
+    return f"{node.predicate}(" + ", ".join(_latex_term(a) for a in node.args) + ")"
+
+
+def _latex(node) -> str:
+    """Render node as a LaTeX math-mode string (no surrounding parens)."""
+    cls = type(node).__name__
+
+    if cls in ("Variable", "LambdaVar", "Constant", "Number", "SortedConstant", "Function"):
+        return _latex_term(node)
+    if cls == "Atom":
+        return _latex_atom(node)
+
+    if cls in ("Not", "LukNegation"):
+        return "\\lnot " + _latex_wrap(node.formula, 4)
+
+    if cls == "Quantifier":
+        return f"{_LATEX_QUANT[node.type]} {node.variable.name}\\, " + _latex_wrap(node.formula, 4)
+    if cls == "SortedQuantifier":
+        return (f"{_LATEX_QUANT[node.type]} {node.variable.name}{{:}}\\mathrm{{{node.sort}}}\\, "
+                + _latex_wrap(node.formula, 4))
+
+    if cls in ("Iff", "LukEquivalence"):
+        return f"{_latex_wrap(node.left, 2)} {_LATEX_BINSYM[cls]} {_latex_wrap(node.right, 1)}"
+    if cls in ("Implies", "LukImplication"):
+        return f"{_latex_wrap(node.left, 3)} {_LATEX_BINSYM[cls]} {_latex_wrap(node.right, 2)}"
+    if cls in _UNI_LEVEL2:
+        left = _latex_level2_child(node.left, cls, "left")
+        right = _latex_level2_child(node.right, cls, "right")
+        return f"{left} {_LATEX_BINSYM[cls]} {right}"
+
+    if cls == "Lambda":
+        return f"\\lambda {node.param.name}.\\, " + _latex(node.body)
+    if cls == "Application":
+        return f"({_latex(node.func)})({_latex(node.arg)})"
+
+    raise TypeError(f"to_latex: unknown node type {cls}")
+
+
+# =========================
 # Registry extension
 # =========================
 

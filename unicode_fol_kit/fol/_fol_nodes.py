@@ -119,6 +119,17 @@ class Node:
         from ._msfl_nodes import _uni
         return _uni(self)
 
+    def to_latex(self) -> str:
+        """Render this node as a LaTeX math-mode string (no surrounding $…$).
+
+        Uses the same precedence-driven parenthesisation as to_unicode_str.
+        Symbol/function/predicate names are emitted verbatim (no \\mathrm
+        wrapping). The renderer lives in _msfl_nodes.py (imported lazily) so it
+        can dispatch over both FOL and MSFL/lambda nodes.
+        """
+        from ._msfl_nodes import _latex
+        return _latex(self)
+
     def tree_str(self) -> str:
         """Render the AST as a multi-line ASCII tree using ├──/└── connectors."""
         label, children = self._tree_parts()
@@ -168,6 +179,88 @@ class Node:
             else:
                 new_kwargs[f.name] = val
         return type(self)(**new_kwargs)
+
+    # ---------------------------------------------------------------
+    # Traversal / inspection API
+    # ---------------------------------------------------------------
+
+    def _child_nodes(self) -> List["Node"]:
+        """Return the immediate Node-valued children, in declaration order.
+
+        Covers both single Node fields and lists of Nodes. Quantifier exposes
+        its bound variable here (it is a Node); for a rendering-oriented child
+        view see _tree_parts.
+        """
+        result: List["Node"] = []
+        for f in fields(self):
+            val = getattr(self, f.name)
+            if isinstance(val, Node):
+                result.append(val)
+            elif isinstance(val, list):
+                result.extend(c for c in val if isinstance(c, Node))
+        return result
+
+    def walk(self):
+        """Yield this node and every descendant in pre-order (depth-first)."""
+        yield self
+        for child in self._child_nodes():
+            yield from child.walk()
+
+    def subformulas(self):
+        """Yield every sub-node that is a formula (i.e. not an atomic term).
+
+        Terms (Variable, Constant, Number, Function, SortedConstant, LambdaVar)
+        are excluded; everything else reachable is returned in pre-order.
+        """
+        return [n for n in self.walk() if type(n).__name__ not in _TERM_NAMES]
+
+    def atoms(self):
+        """Return all Atom nodes in pre-order (duplicates kept; comparisons included)."""
+        return [n for n in self.walk() if isinstance(n, Atom)]
+
+    def variables(self):
+        """Return the set of logical Variable nodes occurring anywhere (free and bound)."""
+        return {n for n in self.walk() if isinstance(n, Variable)}
+
+    def count(self, cls=None) -> int:
+        """Count nodes in the tree; if cls is given, only nodes of that type."""
+        return sum(1 for n in self.walk() if cls is None or isinstance(n, cls))
+
+    def depth(self) -> int:
+        """Return the height of the tree; a leaf node has depth 1."""
+        children = self._child_nodes()
+        return 1 + max((c.depth() for c in children), default=0)
+
+    def to_dot(self) -> str:
+        """Render the AST as a Graphviz DOT digraph string.
+
+        Uses the same label/child view as tree_str (the bound variable of a
+        quantifier is folded into its node label, not shown as a child), so the
+        graph mirrors the ASCII tree. No external dependency: returns the source.
+        """
+        lines = ["digraph AST {", "  node [shape=box];"]
+        counter = [0]
+
+        def emit(node: "Node") -> int:
+            my_id = counter[0]
+            counter[0] += 1
+            label, children = node._tree_parts()
+            safe = label.replace("\\", "\\\\").replace('"', '\\"')
+            lines.append(f'  n{my_id} [label="{safe}"];')
+            for child in children:
+                child_id = emit(child)
+                lines.append(f"  n{my_id} -> n{child_id};")
+            return my_id
+
+        emit(self)
+        lines.append("}")
+        return "\n".join(lines)
+
+
+# Term node class names — used by Node.subformulas to exclude atomic terms.
+_TERM_NAMES = frozenset({
+    "Variable", "Constant", "Number", "Function", "SortedConstant", "LambdaVar",
+})
 
 
 # =========================

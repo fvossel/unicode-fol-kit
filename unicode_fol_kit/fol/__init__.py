@@ -14,6 +14,7 @@ from .nodes import (
     resolve_lambda_scope,
     to_fol,
 )
+from .normalforms import to_nnf, to_pnf, to_cnf, skolemize, is_horn
 from .naming import NamingError, ParsingError
 
 __all__ = [
@@ -32,4 +33,5 @@ __all__ = [
     "eta_reduce", "beta_eta_normalize",
     "resolve_lambda_scope",
     "to_fol",
+    "to_nnf", "to_pnf", "to_cnf", "skolemize", "is_horn",
 ]

@@ -13,7 +13,13 @@ A Python toolkit for parsing and working with first-order logic (FOL) formulas w
 - **Serialisation** — convert formulas to/from JSON dictionaries; round-trip safe
 - **Tree view** — render any formula as a readable ASCII tree
 - **Unicode round-trip** — `to_unicode_str()` renders any node back to a parseable Unicode formula; re-parsing in the matching mode yields a structurally equal AST
+- **LaTeX export** — `to_latex()` renders any node as LaTeX math-mode markup, with the same precedence-aware parenthesisation as the Unicode renderer
+- **Normal forms** — `to_nnf()`, `to_pnf()`, `to_cnf()` (equivalence-preserving), and `skolemize()` (satisfiability-preserving) for classical FOL
+- **Horn check** — `is_horn()` reports whether a formula's clausal form consists of Horn clauses
+- **Traversal API** — `walk()`, `subformulas()`, `atoms()`, `variables()`, `count()`, `depth()` on every node
+- **Graphviz export** — `to_dot()` renders the AST as a Graphviz DOT digraph
 - **Z3 export** — translate formulas to Z3 expressions for SMT solving
+- **Satisfiability / validity / models** — `is_satisfiable()`, `is_valid()`, and `get_model()` (counterexample extraction) via Z3
 - **Prover9 export** — translate formulas to Prover9 syntax for automated theorem proving
 - **TPTP export** — translate formulas to TPTP syntax
 - **Equivalence checking** — check if two formulas are logically equivalent via Z3
@@ -156,8 +162,41 @@ valid surface tokens and will not round-trip.
 ```python
 formula.to_prover9()   # '(all x (Human(x) -> Mortal(x)))'
 formula.to_tptp()      # '(![X]: (human(X) => mortal(X)))'
+formula.to_latex()     # '\\forall x\\, (Human(x) \\rightarrow Mortal(x))'
 formula.to_dict()      # JSON-serialisable dict
 ```
+
+`to_latex()` uses the same precedence-aware parenthesisation as `to_unicode_str()`. Sorts render as `\forall x{:}\mathrm{Human}\,`; strong Łukasiewicz operators as `\otimes` / `\oplus`. Symbol and predicate names are emitted verbatim (no `\mathrm` wrapping).
+
+### Traversal and inspection
+
+Every node exposes a small traversal API:
+
+```python
+f = MSFLParser().parse("∀x (Human(x) → Mortal(x))")
+
+list(f.walk())        # pre-order: every node and descendant
+f.subformulas()       # every sub-node that is a formula (terms excluded)
+f.atoms()             # [Atom("Human", …), Atom("Mortal", …)]
+f.variables()         # {Variable("x")}  — set of logical variables (free + bound)
+f.count()             # total node count
+f.count(Atom)         # nodes of a given type
+f.depth()             # tree height (a leaf has depth 1)
+```
+
+### Graphviz export
+
+```python
+print(f.to_dot())
+# digraph AST {
+#   node [shape=box];
+#   n0 [label="∀ x"];
+#   n1 [label="→"];
+#   ...
+# }
+```
+
+`to_dot()` mirrors the `tree_str()` view (the quantifier's bound variable is folded into its node label). Pipe the output to `dot -Tpng` to render an image.
 
 ### Serialisation
 
@@ -268,6 +307,38 @@ classical = to_fol(formula)
 classical_with_facts = to_fol(formula, include_sort_facts=True)
 ```
 
+### Normal forms
+
+`to_nnf()`, `to_pnf()`, `to_cnf()`, and `skolemize()` operate on classical FOL. They accept FOL, MSFOL, MSFL, and FL inputs — sorts and Łukasiewicz operators are reduced via `to_fol()` first. (Lambda terms must be beta-reduced and lambda-eliminated beforehand.)
+
+```python
+from unicode_fol_kit import MSFLParser, to_nnf, to_pnf, to_cnf, skolemize
+
+parser = MSFLParser()
+
+to_nnf(parser.parse("P → Q"))        # eliminates → ↔ ⊕, pushes ¬ down to atoms
+to_pnf(parser.parse("∀x P(x) ∧ ∃y Q(y)"))   # quantifier prefix + quantifier-free matrix
+to_cnf(parser.parse("P ∨ (Q ∧ R)"))  # matrix as a conjunction of clauses
+skolemize(parser.parse("∀x ∃y Loves(x, y)"))
+# ∀v0 Loves(v0, sk0(v0)) — the existential becomes a Skolem function of x
+```
+
+- `to_nnf` / `to_pnf` / `to_cnf` are **equivalence-preserving**: the result is logically equivalent to the (classical) input.
+- `skolemize` is **satisfiability-preserving** (not equivalence-preserving): existentials are replaced by Skolem terms over the universals in scope, and the universal prefix is retained. Bound variables are standardised apart (renamed to fresh `v0, v1, …`); Skolem symbols are named `sk0, sk1, …`.
+
+### Horn check
+
+`is_horn()` reports whether a formula's clausal form consists of Horn clauses — each clause has at most one positive literal. The formula is skolemised, its universal prefix dropped, and the matrix put into CNF before the clauses are checked.
+
+```python
+from unicode_fol_kit import MSFLParser, is_horn
+
+parser = MSFLParser()
+is_horn(parser.parse("∀x (Body(x) → Head(x))"))     # True  (definite clause)
+is_horn(parser.parse("P → (Q ∧ R)"))                # True  (splits into two Horn clauses)
+is_horn(parser.parse("P → (Q ∨ R)"))                # False (clause has two positive literals)
+```
+
 ### Equivalence checking (Z3)
 
 ```python
@@ -279,6 +350,26 @@ f2 = parser.parse("¬P(x) ∨ ¬Q(x)")
 
 formulas_are_equivalent(f1, f2)  # True
 ```
+
+### Satisfiability, validity, and counterexamples (Z3)
+
+```python
+from unicode_fol_kit import MSFLParser, is_satisfiable, is_valid, get_model, Not
+
+parser = MSFLParser()
+
+is_satisfiable(parser.parse("P ∧ Q"))     # True
+is_satisfiable(parser.parse("P ∧ ¬P"))    # False
+is_valid(parser.parse("P ∨ ¬P"))          # True
+
+get_model(parser.parse("P ∧ Q"))          # {'P': 'True', 'Q': 'True'}
+get_model(parser.parse("P ∧ ¬P"))         # None  (unsatisfiable)
+
+# Counterexample to a claimed equivalence: a model of its negation.
+get_model(Not(parser.parse("P ↔ Q")))     # e.g. {'P': 'True', 'Q': 'False'}
+```
+
+`get_model` returns a dict mapping each Z3 declaration (constants, uninterpreted predicates/functions) to its interpretation, or `None` when the formula is unsatisfiable or Z3 returns `unknown` within the timeout.
 
 ### Entailment checking (Prover9)
 
