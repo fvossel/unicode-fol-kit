@@ -21,7 +21,7 @@ from .atp import (
     is_satisfiable, is_valid, get_model,
 )
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 __all__ = [
     "MSFLParser",
