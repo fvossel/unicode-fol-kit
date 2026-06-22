@@ -894,6 +894,182 @@ def resolve_lambda_scope(node: Node) -> Node:
 
 
 # =========================
+# Unicode rendering (parser round-trip)
+# =========================
+#
+# These functions render any node back to a Unicode formula string that, when
+# re-parsed in the matching MSFLParser mode, yields a structurally equal AST.
+# Dispatch is by class name so this single block covers both the FOL nodes
+# (from _fol_nodes.py) and the MSFL/lambda nodes defined above.
+#
+# Formula precedence — higher binds tighter — mirrors the grammar layering
+# (biimplication < implication < same-level binary < prefix < atomic):
+_UNI_FORMULA_PREC = {
+    "Lambda": 0, "Application": 0,
+    "Iff": 1, "LukEquivalence": 1,
+    "Implies": 2, "LukImplication": 2,
+    "And": 3, "Or": 3, "Xor": 3,
+    "WeakConjunction": 3, "WeakDisjunction": 3,
+    "StrongConjunction": 3, "StrongDisjunction": 3,
+    "Not": 4, "LukNegation": 4,
+    "Quantifier": 4, "SortedQuantifier": 4,
+}
+
+# Binary connective glyphs. Xor and StrongDisjunction share ⊕ (disjoint modes);
+# the weak/strong and classical operators reuse ∧ ∨ → ↔ by class identity.
+_UNI_BINSYM = {
+    "And": "∧", "Or": "∨", "Xor": "⊕",
+    "Implies": "→", "Iff": "↔",
+    "WeakConjunction": "∧", "WeakDisjunction": "∨",
+    "StrongConjunction": "⊗", "StrongDisjunction": "⊕",
+    "LukImplication": "→", "LukEquivalence": "↔",
+}
+
+# The same-level binary group (grammar precedence 2): cannot be mixed without
+# parentheses, and chains are left-folded.
+_UNI_LEVEL2 = frozenset({
+    "And", "Or", "Xor",
+    "WeakConjunction", "WeakDisjunction",
+    "StrongConjunction", "StrongDisjunction",
+})
+
+_UNI_INFIX_COMPARE = frozenset({"=", "≠", "<", ">", "≤", "≥"})
+_UNI_ARITH_OPS = frozenset({"+", "-", "*", "/"})
+
+
+def _uni_prec(node) -> int:
+    """Formula precedence of a node; atomic nodes (atoms, terms) default to 5."""
+    return _UNI_FORMULA_PREC.get(type(node).__name__, 5)
+
+
+def _uni_wrap(node, min_prec: int) -> str:
+    """Render node, parenthesising it when it binds looser than the slot allows."""
+    s = _uni(node)
+    return f"({s})" if _uni_prec(node) < min_prec else s
+
+
+def _uni_level2_child(node, parent_cls: str, side: str) -> str:
+    """Render a same-level (∧ ∨ ⊗ ⊕) operand with no-mixing / left-assoc parens.
+
+    Left operand: a same-class chain stays flat (a ∧ b ∧ c); a different
+    same-level operator is parenthesised (no silent mixing). Right operand:
+    any same-level node is parenthesised, since the parser left-folds chains.
+    """
+    s = _uni(node)
+    p = _uni_prec(node)
+    if side == "left":
+        need = p < 3 or (p == 3 and type(node).__name__ != parent_cls)
+    else:
+        need = p < 4
+    return f"({s})" if need else s
+
+
+def _uni_atom(node) -> str:
+    """Render an Atom: infix comparison, nullary predicate, or applied predicate."""
+    if node.predicate in _UNI_INFIX_COMPARE and len(node.args) == 2:
+        return f"{_uni_term(node.args[0])} {node.predicate} {_uni_term(node.args[1])}"
+    if not node.args:
+        return node.predicate
+    return f"{node.predicate}(" + ", ".join(_uni_term(a) for a in node.args) + ")"
+
+
+def _uni_term_prec(node) -> int:
+    """Arithmetic term precedence: + - → 1, * / → 2, everything atomic → 3."""
+    if (type(node).__name__ == "Function"
+            and node.name in _UNI_ARITH_OPS and len(node.args) == 2):
+        return 2 if node.name in ("*", "/") else 1
+    return 3
+
+
+def _uni_term_wrap(node, parent_prec: int, is_right: bool) -> str:
+    """Render an arithmetic operand, parenthesising per left-associative precedence."""
+    s = _uni_term(node)
+    p = _uni_term_prec(node)
+    need = p < parent_prec or (p == parent_prec and is_right)
+    return f"({s})" if need else s
+
+
+def _uni_spine(node):
+    """Uncurry a left-nested Application into (head, [arg0, arg1, …])."""
+    args = []
+    n = node
+    while isinstance(n, Application):
+        args.append(n.arg)
+        n = n.func
+    args.reverse()
+    return n, args
+
+
+def _uni_term(node) -> str:
+    """Render a node occurring in term (argument) position.
+
+    Higher-order applications produced by scope resolution (e.g. foo(x) under
+    λfoo, parsed as a Function then rewritten to Application(LambdaVar, …)) are
+    rendered back as function-call syntax so they re-parse and re-resolve to the
+    same node.
+    """
+    cls = type(node).__name__
+    if cls in ("Variable", "LambdaVar", "Constant"):
+        return node.name
+    if cls == "Number":
+        return str(node.value)
+    if cls == "SortedConstant":
+        return f"{node.name}:{node.sort}"
+    if cls == "Function":
+        if node.name in _UNI_ARITH_OPS and len(node.args) == 2:
+            p = _uni_term_prec(node)
+            left = _uni_term_wrap(node.args[0], p, is_right=False)
+            right = _uni_term_wrap(node.args[1], p, is_right=True)
+            return f"{left} {node.name} {right}"
+        return f"{node.name}(" + ", ".join(_uni_term(a) for a in node.args) + ")"
+    if cls == "Application":
+        head, args = _uni_spine(node)
+        if isinstance(head, (LambdaVar, Variable, Constant)) and args:
+            return f"{head.name}(" + ", ".join(_uni_term(a) for a in args) + ")"
+        return f"({_uni(node.func)})({_uni(node.arg)})"
+    # Atoms / other formula nodes are not valid terms; best-effort fall-through.
+    return _uni(node)
+
+
+def _uni(node) -> str:
+    """Render node as a formula-level Unicode string (no surrounding parens)."""
+    cls = type(node).__name__
+
+    if cls in ("Variable", "LambdaVar", "Constant", "Number", "SortedConstant", "Function"):
+        return _uni_term(node)
+    if cls == "Atom":
+        return _uni_atom(node)
+
+    if cls in ("Not", "LukNegation"):
+        return "¬" + _uni_wrap(node.formula, 4)
+
+    if cls == "Quantifier":
+        return f"{node.type}{node.variable.name} " + _uni_wrap(node.formula, 4)
+    if cls == "SortedQuantifier":
+        return f"{node.type}{node.variable.name}:{node.sort} " + _uni_wrap(node.formula, 4)
+
+    if cls in ("Iff", "LukEquivalence"):
+        # ↔ right-assoc: left slot is implication (≥2), right slot biimplication (≥1)
+        return f"{_uni_wrap(node.left, 2)} {_UNI_BINSYM[cls]} {_uni_wrap(node.right, 1)}"
+    if cls in ("Implies", "LukImplication"):
+        # → right-assoc: left slot same_level_ops (≥3), right slot implication (≥2)
+        return f"{_uni_wrap(node.left, 3)} {_UNI_BINSYM[cls]} {_uni_wrap(node.right, 2)}"
+    if cls in _UNI_LEVEL2:
+        left = _uni_level2_child(node.left, cls, "left")
+        right = _uni_level2_child(node.right, cls, "right")
+        return f"{left} {_UNI_BINSYM[cls]} {right}"
+
+    if cls == "Lambda":
+        # Body extends rightward through the whole formula; never wrapped here.
+        return f"λ{node.param.name}. " + _uni(node.body)
+    if cls == "Application":
+        # (func)(arg): both sides are delimited by parens in the grammar.
+        return f"({_uni(node.func)})({_uni(node.arg)})"
+
+    raise TypeError(f"to_unicode_str: unknown node type {cls}")
+
+
+# =========================
 # Registry extension
 # =========================
 

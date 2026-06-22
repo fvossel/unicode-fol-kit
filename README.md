@@ -12,6 +12,7 @@ A Python toolkit for parsing and working with first-order logic (FOL) formulas w
 - **Reductions** — `to_msfol()` lowers Łukasiewicz operators to classical nodes; `to_fol()` further eliminates sorts via relativisation
 - **Serialisation** — convert formulas to/from JSON dictionaries; round-trip safe
 - **Tree view** — render any formula as a readable ASCII tree
+- **Unicode round-trip** — `to_unicode_str()` renders any node back to a parseable Unicode formula; re-parsing in the matching mode yields a structurally equal AST
 - **Z3 export** — translate formulas to Z3 expressions for SMT solving
 - **Prover9 export** — translate formulas to Prover9 syntax for automated theorem proving
 - **TPTP export** — translate formulas to TPTP syntax
@@ -129,6 +130,26 @@ print(formula.tree_str())
 #     └── Atom: Mortal
 #         └── Variable: x
 ```
+
+### Round-trip to Unicode
+
+`to_unicode_str()` is the inverse of parsing: it renders any node back to a Unicode formula string. Re-parsing that string in the same mode reproduces a structurally equal AST. The renderer is precedence-aware and only inserts the parentheses the grammar requires — including the no-mixing rule for same-level connectives and the tight-binding rule for quantifiers.
+
+```python
+parser = MSFLParser()
+
+ast = parser.parse("∀x P(x) ∧ Q(x)")
+ast.to_unicode_str()              # '∀x P(x) ∧ Q(x)'
+parser.parse(ast.to_unicode_str()) == ast   # True
+
+# Precedence-driven parentheses are reconstructed, not the original spelling:
+parser.parse("((P(x) ∧ Q(x)))").to_unicode_str()   # 'P(x) ∧ Q(x)'
+parser.parse("P(x) ∧ (Q(x) ∨ R(x))").to_unicode_str()  # 'P(x) ∧ (Q(x) ∨ R(x))'
+```
+
+Available on every node, so subformulas render too. The output targets parseable
+ASTs; alpha-renamed variables introduced by `beta_reduce` (e.g. `x_0`) are not
+valid surface tokens and will not round-trip.
 
 ### Exporting to other formats
 
@@ -536,15 +557,15 @@ parser.parse("(λP. P(x))(Q)")
 ### A complete MSFOL example
 
 ```text
-∀x:Person ∀y:Person (Knows(x, y) ∧ Trusted(y:Person)) → Shares(x, y)
+∀x:Person ∀y:Person (Knows(x, y) ∧ Trusted(y)) → Shares(x, y)
 ```
 
 ### A complete MSFL example
 
 ```text
 ∀x:Patient ∀y:Treatment
-    (Effective(y:Treatment) ⊗ Tolerable(x:Patient, y:Treatment))
-    → Recommended(x:Patient, y:Treatment)
+    (Effective(y) ⊗ Tolerable(x, y))
+    → Recommended(x, y)
 ```
 
 ### A complete FL example

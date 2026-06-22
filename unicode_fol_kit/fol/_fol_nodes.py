@@ -108,6 +108,17 @@ class Node:
                 children.extend(c for c in value if isinstance(c, Node))
         return label, children
 
+    def to_unicode_str(self) -> str:
+        """Render this node back to a parseable Unicode formula string.
+
+        The result, re-parsed in the matching MSFLParser mode, yields a
+        structurally equal AST (parser round-trip). The renderer lives in
+        _msfl_nodes.py (imported lazily to avoid a circular import) because it
+        dispatches over both the FOL nodes here and the MSFL/lambda nodes there.
+        """
+        from ._msfl_nodes import _uni
+        return _uni(self)
+
     def tree_str(self) -> str:
         """Render the AST as a multi-line ASCII tree using ├──/└── connectors."""
         label, children = self._tree_parts()
