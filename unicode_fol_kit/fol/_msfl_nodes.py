@@ -1,7 +1,7 @@
 """MSFL node classes (sorted quantifiers/constants, Łukasiewicz operators) and to_fol reduction."""
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, is_dataclass
 
 from ._fol_nodes import (
     Node, Z3Env, Variable, Constant, Number, Function,
@@ -16,7 +16,7 @@ _logger = logging.getLogger(__name__)
 # MSFL Nodes
 # =========================
 
-@dataclass
+@dataclass(frozen=True)
 class SortedQuantifier(Node):
     """A sort-restricted quantifier binding a variable to a named sort.
 
@@ -77,7 +77,7 @@ class SortedQuantifier(Node):
         return to_fol(self).to_tptp()
 
 
-@dataclass
+@dataclass(frozen=True)
 class SortedConstant(Node):
     """A constant symbol annotated with a sort name, e.g. alice:Human.
 
@@ -118,7 +118,7 @@ class SortedConstant(Node):
         return to_fol(self).to_tptp()
 
 
-@dataclass
+@dataclass(frozen=True)
 class WeakConjunction(Node):
     """Łukasiewicz weak conjunction (fuzzy min): min{x, y}.
 
@@ -157,7 +157,7 @@ class WeakConjunction(Node):
         return to_fol(self).to_tptp()
 
 
-@dataclass
+@dataclass(frozen=True)
 class WeakDisjunction(Node):
     """Łukasiewicz weak disjunction (fuzzy max): max{x, y}.
 
@@ -196,7 +196,7 @@ class WeakDisjunction(Node):
         return to_fol(self).to_tptp()
 
 
-@dataclass
+@dataclass(frozen=True)
 class StrongConjunction(Node):
     """Łukasiewicz strong conjunction (t-norm): max{0, x+y−1}."""
 
@@ -232,7 +232,7 @@ class StrongConjunction(Node):
         return to_fol(self).to_tptp()
 
 
-@dataclass
+@dataclass(frozen=True)
 class StrongDisjunction(Node):
     """Łukasiewicz strong disjunction (t-conorm): min{1, x+y}."""
 
@@ -268,7 +268,7 @@ class StrongDisjunction(Node):
         return to_fol(self).to_tptp()
 
 
-@dataclass
+@dataclass(frozen=True)
 class LukNegation(Node):
     """Łukasiewicz negation: 1−x.
 
@@ -306,7 +306,7 @@ class LukNegation(Node):
         return to_fol(self).to_tptp()
 
 
-@dataclass
+@dataclass(frozen=True)
 class LukImplication(Node):
     """Łukasiewicz implication: min{1, 1−x+y}.
 
@@ -345,7 +345,7 @@ class LukImplication(Node):
         return to_fol(self).to_tptp()
 
 
-@dataclass
+@dataclass(frozen=True)
 class LukEquivalence(Node):
     """Łukasiewicz equivalence: 1−|x−y|.
 
@@ -423,7 +423,7 @@ class LambdaVar(Node):
         raise NotImplementedError("Lambda terms must be beta-reduced and lambda-eliminated before export.")
 
 
-@dataclass
+@dataclass(frozen=True)
 class Lambda(Node):
     """A lambda abstraction λparam. body.
 
@@ -459,7 +459,7 @@ class Lambda(Node):
         raise NotImplementedError("Lambda terms must be beta-reduced and lambda-eliminated before export.")
 
 
-@dataclass
+@dataclass(frozen=True)
 class Application(Node):
     """A lambda application func(arg)."""
 
@@ -508,25 +508,19 @@ def free_variables(node: Node) -> set:
         return {node}
     if isinstance(node, (Constant, Number, SortedConstant)):
         return set()
-    if isinstance(node, (Atom, Function)):
-        result: set = set()
-        for a in node.args:
-            result |= free_variables(a)
-        return result
-    if isinstance(node, (Not, LukNegation)):
-        return free_variables(node.formula)
-    if isinstance(node, (And, Or, Xor, Implies, Iff,
-                          WeakConjunction, WeakDisjunction,
-                          StrongConjunction, StrongDisjunction,
-                          LukImplication, LukEquivalence)):
-        return free_variables(node.left) | free_variables(node.right)
-    if isinstance(node, Application):
-        return free_variables(node.func) | free_variables(node.arg)
     if isinstance(node, Lambda):
         return free_variables(node.body) - {node.param}
     if isinstance(node, (Quantifier, SortedQuantifier)):
         return free_variables(node.formula) - {node.variable}
-    raise TypeError(f"free_variables: unknown node type {type(node).__name__}")
+    if not is_dataclass(node):
+        raise TypeError(f"free_variables: unknown node type {type(node).__name__}")
+    # Structural: for any non-binder, non-leaf node the free variables are the
+    # union of its children's. Covers Atom, Function, Application, Not, and every
+    # binary connective uniformly — and any future structural node type.
+    result: set = set()
+    for child in node._child_nodes():
+        result |= free_variables(child)
+    return result
 
 
 # =========================
@@ -537,6 +531,12 @@ BETA_REDUCTION_LIMIT = 10_000
 
 
 class ReductionLimitError(Exception):
+    """Raised when a lambda reduction exceeds its limit.
+
+    ``beta_reduce`` raises it after ``BETA_REDUCTION_LIMIT`` (10 000) steps, and
+    ``beta_eta_normalize`` after ``BETA_ETA_ROUND_LIMIT`` (100) alternation
+    rounds — both signalling a term that is (likely) not strongly normalizing.
+    """
     pass
 
 
@@ -546,27 +546,13 @@ def _names_in(node: Node) -> set:
         return {node}
     if isinstance(node, (Constant, Number, SortedConstant)):
         return set()
-    if isinstance(node, (Atom, Function)):
-        result: set = set()
-        for a in node.args:
-            result |= _names_in(a)
-        return result
-    if isinstance(node, (Not, LukNegation)):
-        return _names_in(node.formula)
-    if isinstance(node, (And, Or, Xor, Implies, Iff,
-                          WeakConjunction, WeakDisjunction,
-                          StrongConjunction, StrongDisjunction,
-                          LukImplication, LukEquivalence)):
-        return _names_in(node.left) | _names_in(node.right)
-    if isinstance(node, Application):
-        return _names_in(node.func) | _names_in(node.arg)
-    if isinstance(node, Lambda):
-        return {node.param} | _names_in(node.body)
-    if isinstance(node, Quantifier):
-        return {node.variable} | _names_in(node.formula)
-    if isinstance(node, SortedQuantifier):
-        return {node.variable} | _names_in(node.formula)
-    return set()
+    # Structural union over children. A binder's bound variable is itself a Node
+    # child (Lambda.param, Quantifier.variable), so it is included here — exactly
+    # what "names in, free and bound" requires.
+    result: set = set()
+    for child in node._child_nodes():
+        result |= _names_in(child)
+    return result
 
 
 def _fresh_name(base: str, avoid: set) -> str:
@@ -588,8 +574,8 @@ def _rename(term: Node, old_var, new_var) -> Node:
     """
     if term == old_var:
         return new_var
-    if isinstance(term, (Constant, Number, SortedConstant)):
-        return term
+    if isinstance(term, (Variable, LambdaVar, Constant, Number, SortedConstant)):
+        return term  # leaf that does not match old_var
     if isinstance(term, Lambda):
         if term.param == old_var:
             return term  # shadowed
@@ -603,22 +589,9 @@ def _rename(term: Node, old_var, new_var) -> Node:
             return term  # shadowed
         return SortedQuantifier(term.type, term.variable, term.sort,
                                 _rename(term.formula, old_var, new_var))
-    if isinstance(term, Atom):
-        return Atom(term.predicate, [_rename(a, old_var, new_var) for a in term.args])
-    if isinstance(term, Function):
-        return Function(term.name, [_rename(a, old_var, new_var) for a in term.args])
-    if isinstance(term, Application):
-        return Application(_rename(term.func, old_var, new_var),
-                           _rename(term.arg, old_var, new_var))
-    if isinstance(term, (Not, LukNegation)):
-        return type(term)(_rename(term.formula, old_var, new_var))
-    if isinstance(term, (And, Or, Xor, Implies, Iff,
-                          WeakConjunction, WeakDisjunction,
-                          StrongConjunction, StrongDisjunction,
-                          LukImplication, LukEquivalence)):
-        return type(term)(_rename(term.left, old_var, new_var),
-                          _rename(term.right, old_var, new_var))
-    return term  # Variable/LambdaVar that don't match old_var; unknown types
+    # Structural: Atom, Function, Application, Not, and the binary connectives —
+    # none are binders, so recurse uniformly into every child.
+    return term.map_children(lambda c: _rename(c, old_var, new_var))
 
 
 def _subst(term: Node, target: LambdaVar, replacement: Node, fv_repl: set) -> Node:
@@ -661,24 +634,10 @@ def _subst(term: Node, target: LambdaVar, replacement: Node, fv_repl: set) -> No
                                     _subst(new_formula, target, replacement, fv_repl))
         return SortedQuantifier(term.type, term.variable, term.sort,
                                 _subst(term.formula, target, replacement, fv_repl))
-    if isinstance(term, Atom):
-        return Atom(term.predicate,
-                    [_subst(a, target, replacement, fv_repl) for a in term.args])
-    if isinstance(term, Function):
-        return Function(term.name,
-                        [_subst(a, target, replacement, fv_repl) for a in term.args])
-    if isinstance(term, Application):
-        return Application(_subst(term.func, target, replacement, fv_repl),
-                           _subst(term.arg, target, replacement, fv_repl))
-    if isinstance(term, (Not, LukNegation)):
-        return type(term)(_subst(term.formula, target, replacement, fv_repl))
-    if isinstance(term, (And, Or, Xor, Implies, Iff,
-                          WeakConjunction, WeakDisjunction,
-                          StrongConjunction, StrongDisjunction,
-                          LukImplication, LukEquivalence)):
-        return type(term)(_subst(term.left, target, replacement, fv_repl),
-                          _subst(term.right, target, replacement, fv_repl))
-    return term  # unknown types: pass through
+    # Structural: Atom, Function, Application, Not, and the binary connectives.
+    # The binders above handle capture avoidance; these are not binders, so just
+    # substitute into every child.
+    return term.map_children(lambda c: _subst(c, target, replacement, fv_repl))
 
 
 def substitute(term: Node, target: LambdaVar, replacement: Node) -> Node:
@@ -705,25 +664,12 @@ def _beta_reduce(node: Node, steps: list) -> Node:
                 node = substitute(func.body, func.param, node.arg)
                 continue  # reduce the substituted result in the same frame
             return Application(func, _beta_reduce(node.arg, steps))
-        if isinstance(node, Lambda):
-            return Lambda(node.param, _beta_reduce(node.body, steps))
-        if isinstance(node, Quantifier):
-            return Quantifier(node.type, node.variable, _beta_reduce(node.formula, steps))
-        if isinstance(node, SortedQuantifier):
-            return SortedQuantifier(node.type, node.variable, node.sort,
-                                    _beta_reduce(node.formula, steps))
-        if isinstance(node, Atom):
-            return Atom(node.predicate, [_beta_reduce(a, steps) for a in node.args])
-        if isinstance(node, Function):
-            return Function(node.name, [_beta_reduce(a, steps) for a in node.args])
-        if isinstance(node, (Not, LukNegation)):
-            return type(node)(_beta_reduce(node.formula, steps))
-        if isinstance(node, (And, Or, Xor, Implies, Iff,
-                              WeakConjunction, WeakDisjunction,
-                              StrongConjunction, StrongDisjunction,
-                              LukImplication, LukEquivalence)):
-            return type(node)(_beta_reduce(node.left, steps), _beta_reduce(node.right, steps))
-        return node  # leaves and unknown types
+        if isinstance(node, (Variable, LambdaVar, Constant, Number, SortedConstant)):
+            return node  # leaves
+        # Structural (Lambda, Quantifier, SortedQuantifier, Atom, Function, Not,
+        # and the binary connectives): reduce inside every child. Bound-variable
+        # fields are leaves, so they pass through unchanged.
+        return node.map_children(lambda c: _beta_reduce(c, steps))
 
 
 def beta_reduce(node: Node) -> Node:
@@ -759,26 +705,10 @@ def _eta_reduce(node: Node) -> Node:
                 and node.param not in free_variables(reduced_body.func)):
             return reduced_body.func  # eta-contract: λp. f(p) → f
         return Lambda(node.param, reduced_body)
-    if isinstance(node, Application):
-        return Application(_eta_reduce(node.func), _eta_reduce(node.arg))
-    if isinstance(node, Quantifier):
-        # Recurse into the formula; Quantifier is NEVER an eta-redex.
-        return Quantifier(node.type, node.variable, _eta_reduce(node.formula))
-    if isinstance(node, SortedQuantifier):
-        return SortedQuantifier(node.type, node.variable, node.sort,
-                                _eta_reduce(node.formula))
-    if isinstance(node, Atom):
-        return Atom(node.predicate, [_eta_reduce(a) for a in node.args])
-    if isinstance(node, Function):
-        return Function(node.name, [_eta_reduce(a) for a in node.args])
-    if isinstance(node, (Not, LukNegation)):
-        return type(node)(_eta_reduce(node.formula))
-    if isinstance(node, (And, Or, Xor, Implies, Iff,
-                          WeakConjunction, WeakDisjunction,
-                          StrongConjunction, StrongDisjunction,
-                          LukImplication, LukEquivalence)):
-        return type(node)(_eta_reduce(node.left), _eta_reduce(node.right))
-    return node
+    # Structural (Application, Quantifier, SortedQuantifier, Atom, Function, Not,
+    # and the binary connectives): recurse into every child. A Quantifier is
+    # never an eta-redex; it is only recursed into.
+    return node.map_children(_eta_reduce)
 
 
 def eta_reduce(node: Node) -> Node:
@@ -857,16 +787,11 @@ def _resolve(node: Node, bound: frozenset) -> Node:
                 result = Application(result, arg)
             return result
         return Function(node.name, resolved_args)
-    if isinstance(node, Application):
-        return Application(_resolve(node.func, bound), _resolve(node.arg, bound))
-    if isinstance(node, (Not, LukNegation)):
-        return type(node)(_resolve(node.formula, bound))
-    if isinstance(node, (And, Or, Xor, Implies, Iff,
-                          WeakConjunction, WeakDisjunction,
-                          StrongConjunction, StrongDisjunction,
-                          LukImplication, LukEquivalence)):
-        return type(node)(_resolve(node.left, bound), _resolve(node.right, bound))
-    raise TypeError(f"resolve_lambda_scope: unknown node type {type(node).__name__}")
+    if not is_dataclass(node):
+        raise TypeError(f"resolve_lambda_scope: unknown node type {type(node).__name__}")
+    # Structural: Not, the binary connectives, and Application introduce no
+    # binders — recurse into every child with the same bound set.
+    return node.map_children(lambda c: _resolve(c, bound))
 
 
 def resolve_lambda_scope(node: Node) -> Node:
@@ -1096,6 +1021,17 @@ _LATEX_ARITH = {"+": "+", "-": "-", "*": "\\cdot", "/": "/"}
 _LATEX_QUANT = {"∀": "\\forall", "forall": "\\forall", "∃": "\\exists", "exists": "\\exists"}
 
 
+def _latex_escape(name: str) -> str:
+    """Escape LaTeX math-mode specials in a verbatim symbol name.
+
+    Only the underscore can occur in a grammar-produced name (a c_-prefixed
+    constant such as ``c_zero``); left bare it would be read as the subscript
+    operator, so it is backslash-escaped. Other name classes (variables,
+    predicates, functions, sorts) cannot contain LaTeX specials.
+    """
+    return name.replace("_", "\\_")
+
+
 def _latex_wrap(node, min_prec: int) -> str:
     s = _latex(node)
     return f"({s})" if _uni_prec(node) < min_prec else s
@@ -1114,11 +1050,11 @@ def _latex_level2_child(node, parent_cls: str, side: str) -> str:
 def _latex_term(node) -> str:
     cls = type(node).__name__
     if cls in ("Variable", "LambdaVar", "Constant"):
-        return node.name
+        return _latex_escape(node.name)
     if cls == "Number":
         return str(node.value)
     if cls == "SortedConstant":
-        return f"{node.name}{{:}}\\mathrm{{{node.sort}}}"
+        return f"{_latex_escape(node.name)}{{:}}\\mathrm{{{node.sort}}}"
     if cls == "Function":
         if node.name in _UNI_ARITH_OPS and len(node.args) == 2:
             p = _uni_term_prec(node)

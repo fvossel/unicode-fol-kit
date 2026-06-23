@@ -1,6 +1,6 @@
 """Z3 environment, base Node class, classical FOL nodes, registry, and Lark transformer."""
 
-from typing import List, Union, Dict
+from typing import List, Tuple, Union, Dict
 from lark import Transformer
 from dataclasses import dataclass, fields
 
@@ -104,7 +104,7 @@ class Node:
             value = getattr(self, f.name)
             if isinstance(value, Node):
                 children.append(value)
-            elif isinstance(value, list):
+            elif isinstance(value, (list, tuple)):
                 children.extend(c for c in value if isinstance(c, Node))
         return label, children
 
@@ -150,16 +150,7 @@ class Node:
         children recursed. Fuzzy operator subclasses override this to substitute
         the corresponding classical node type.
         """
-        new_kwargs = {}
-        for f in fields(self):
-            val = getattr(self, f.name)
-            if isinstance(val, Node):
-                new_kwargs[f.name] = val.to_msfol()
-            elif isinstance(val, list):
-                new_kwargs[f.name] = [c.to_msfol() if isinstance(c, Node) else c for c in val]
-            else:
-                new_kwargs[f.name] = val
-        return type(self)(**new_kwargs)
+        return self.map_children(lambda c: c.to_msfol())
 
     def _relativize(self, facts: list) -> "Node":
         """Replace sorted nodes with plain FOL constructs; collect sort-membership atoms.
@@ -169,16 +160,7 @@ class Node:
         Fuzzy operator subclasses override to raise RuntimeError — they must be
         eliminated by to_msfol() before _relativize() is called.
         """
-        new_kwargs = {}
-        for f in fields(self):
-            val = getattr(self, f.name)
-            if isinstance(val, Node):
-                new_kwargs[f.name] = val._relativize(facts)
-            elif isinstance(val, list):
-                new_kwargs[f.name] = [c._relativize(facts) if isinstance(c, Node) else c for c in val]
-            else:
-                new_kwargs[f.name] = val
-        return type(self)(**new_kwargs)
+        return self.map_children(lambda c: c._relativize(facts))
 
     # ---------------------------------------------------------------
     # Traversal / inspection API
@@ -196,9 +178,39 @@ class Node:
             val = getattr(self, f.name)
             if isinstance(val, Node):
                 result.append(val)
-            elif isinstance(val, list):
+            elif isinstance(val, (list, tuple)):
                 result.extend(c for c in val if isinstance(c, Node))
         return result
+
+    def map_children(self, fn) -> "Node":
+        """Rebuild this node with ``fn`` applied to each immediate Node child.
+
+        The single point of structural recursion. Each dataclass field is
+        handled by kind: a Node field becomes ``fn(value)``; a list/tuple field
+        has ``fn`` mapped over its Node elements (non-Node elements pass
+        through, container kind preserved); any other field is copied verbatim.
+        The node type and field order are preserved.
+
+        Binders (Lambda, Quantifier, SortedQuantifier) carry their bound
+        variable as a plain Node field, so ``fn`` is applied to it too; callers
+        that must treat a binder's scope specially should handle that case
+        explicitly before delegating here. This is the shared engine behind the
+        purely structural recursions (to_msfol, _relativize, beta/eta reduction,
+        scope resolution, …), so a new structural node type is handled
+        automatically without touching each traversal.
+        """
+        new_kwargs = {}
+        for f in fields(self):
+            val = getattr(self, f.name)
+            if isinstance(val, Node):
+                new_kwargs[f.name] = fn(val)
+            elif isinstance(val, (list, tuple)):
+                new_kwargs[f.name] = type(val)(
+                    fn(c) if isinstance(c, Node) else c for c in val
+                )
+            else:
+                new_kwargs[f.name] = val
+        return type(self)(**new_kwargs)
 
     def walk(self):
         """Yield this node and every descendant in pre-order (depth-first)."""
@@ -287,15 +299,21 @@ class Variable(Node):
         return (env or Z3Env()).get_symbol(self.name)
 
     def to_prover9(self) -> str:
-        """Render the variable name as-is; Prover9 treats uppercase as variables."""
-        return self.name
+        """Render the variable name in uppercase.
+
+        The Prover9 driver enables ``set(prolog_style_variables)``, under which a
+        symbol is a variable only if it begins with an uppercase letter or an
+        underscore. Grammar variable names are always lowercase, so they are
+        uppercased here; constants and predicate/function names stay as-is.
+        """
+        return self.name.upper()
 
     def to_tptp(self) -> str:
         """Render variable in TPTP syntax. TPTP requires variables to be uppercase; single lowercase letters are capitalized."""
         return self.name.upper()
 
 
-@dataclass
+@dataclass(frozen=True)
 class Constant(Node):
     """A ground constant, produced by a bare NAME or by the c_-prefixed CONSTANT terminal."""
 
@@ -323,7 +341,7 @@ class Constant(Node):
         return self.name.lower()
 
 
-@dataclass
+@dataclass(frozen=True)
 class Number(Node):
     """A numeric literal node, produced by the NUMBER terminal in the grammar."""
 
@@ -351,12 +369,17 @@ class Number(Node):
         return str(self.value)
 
 
-@dataclass
+@dataclass(frozen=True)
 class Function(Node):
     """A function application node, covering both named functions and arithmetic operators."""
 
     name: str
-    args: List[Node]
+    args: Tuple[Node, ...]
+
+    def __post_init__(self):
+        """Coerce args to a tuple so this frozen node is hashable."""
+        if not isinstance(self.args, tuple):
+            object.__setattr__(self, "args", tuple(self.args))
 
     INFIX_OPS = {"+", "-", "*", "/"}
 
@@ -414,12 +437,17 @@ class Function(Node):
 # Formula Nodes
 # =========================
 
-@dataclass
+@dataclass(frozen=True)
 class Atom(Node):
     """An atomic formula: either a named predicate application or an infix comparison."""
 
     predicate: str
-    args: List[Node]
+    args: Tuple[Node, ...]
+
+    def __post_init__(self):
+        """Coerce args to a tuple so this frozen node is hashable."""
+        if not isinstance(self.args, tuple):
+            object.__setattr__(self, "args", tuple(self.args))
 
     INFIX_PREDS_P9 = {
         "=": "=", "<": "<", ">": ">",
@@ -457,19 +485,32 @@ class Atom(Node):
         return pred(*z3_args)
 
     def to_prover9(self) -> str:
-        """Render in Prover9 syntax, using infix notation for comparison predicates."""
+        """Render in Prover9 syntax, using infix notation for comparison predicates.
+
+        A nullary predicate renders as a bare propositional atom; Prover9 rejects
+        an empty argument list (``P()``).
+        """
         if self.predicate in self.INFIX_PREDS_P9 and len(self.args) == 2:
             left = self.args[0].to_prover9()
             right = self.args[1].to_prover9()
             op = self.INFIX_PREDS_P9[self.predicate]
             return f"({left} {op} {right})"
 
+        if not self.args:
+            return self.predicate
+
         args_str = ", ".join(a.to_prover9() for a in self.args)
         return f"{self.predicate}({args_str})"
 
+    # The only genuine infix predicates in TPTP are equality and disequality.
     INFIX_PREDS_TPTP = {
         "=": "=",
         "≠": "!=",
+    }
+
+    # Arithmetic comparisons are TPTP dollar-word predicates, applied in
+    # prefix/functor form ($less(a, b)) — they are NOT infix operators.
+    PREFIX_PREDS_TPTP = {
         "<": "$less",
         ">": "$greater",
         "≤": "$lesseq",
@@ -479,16 +520,24 @@ class Atom(Node):
     def to_tptp(self) -> str:
         """Render an atom in TPTP syntax.
 
-        All infix predicates (=, !=, <, >, ≤, ≥) are kept as infix expressions,
-        mirroring the Prover9 approach. Arithmetic comparison predicates use
-        their TPTP dollar-word symbols. All other predicates are emitted as
-        lowercase identifiers with a parenthesised argument list.
+        Equality (=) and disequality (!=) are emitted infix — the only genuine
+        infix predicates in TPTP. The arithmetic comparisons (<, >, ≤, ≥) are
+        TPTP dollar-word predicates and are emitted in prefix/functor form
+        ($less(a, b), $greater(a, b), $lesseq(a, b), $greatereq(a, b)). All other
+        predicates are emitted as lowercase identifiers with a parenthesised
+        argument list; a nullary predicate becomes a bare propositional atom.
         """
         if self.predicate in self.INFIX_PREDS_TPTP and len(self.args) == 2:
             left = self.args[0].to_tptp()
             right = self.args[1].to_tptp()
             op = self.INFIX_PREDS_TPTP[self.predicate]
             return f"({left} {op} {right})"
+
+        if self.predicate in self.PREFIX_PREDS_TPTP and len(self.args) == 2:
+            left = self.args[0].to_tptp()
+            right = self.args[1].to_tptp()
+            op = self.PREFIX_PREDS_TPTP[self.predicate]
+            return f"{op}({left},{right})"
 
         if not self.args:
             return f"{self.predicate.lower()}"
@@ -497,7 +546,7 @@ class Atom(Node):
         return f"{self.predicate.lower()}({args_str})"
 
 
-@dataclass
+@dataclass(frozen=True)
 class Not(Node):
     """Logical negation of a formula."""
 
@@ -525,7 +574,7 @@ class Not(Node):
         return f"~({self.formula.to_tptp()})"
 
 
-@dataclass
+@dataclass(frozen=True)
 class And(Node):
     """Conjunction of two formulas."""
 
@@ -555,7 +604,7 @@ class And(Node):
         return f"({self.left.to_tptp()} & {self.right.to_tptp()})"
 
 
-@dataclass
+@dataclass(frozen=True)
 class Or(Node):
     """Disjunction of two formulas."""
 
@@ -585,7 +634,7 @@ class Or(Node):
         return f"({self.left.to_tptp()} | {self.right.to_tptp()})"
 
 
-@dataclass
+@dataclass(frozen=True)
 class Xor(Node):
     """Exclusive disjunction of two formulas."""
 
@@ -613,11 +662,15 @@ class Xor(Node):
         return f"(({l} | {r}) & -(({l}) & ({r})))"
 
     def to_tptp(self) -> str:
-        """Render exclusive or in TPTP syntax using the XOR operator (~|)."""
-        return f"({self.left.to_tptp()} ~| {self.right.to_tptp()})"
+        """Render exclusive or in TPTP syntax using the non-equivalence operator (<~>).
+
+        In TPTP ``~|`` is NOR, not XOR; ``<~>`` (non-equivalence) is the operator
+        truth-functionally equal to exclusive or.
+        """
+        return f"({self.left.to_tptp()} <~> {self.right.to_tptp()})"
 
 
-@dataclass
+@dataclass(frozen=True)
 class Implies(Node):
     """Material implication from left to right."""
 
@@ -647,7 +700,7 @@ class Implies(Node):
         return f"({self.left.to_tptp()} => {self.right.to_tptp()})"
 
 
-@dataclass
+@dataclass(frozen=True)
 class Iff(Node):
     """Biconditional (if and only if) between two formulas."""
 
@@ -677,7 +730,7 @@ class Iff(Node):
         return f"({self.left.to_tptp()} <=> {self.right.to_tptp()})"
 
 
-@dataclass
+@dataclass(frozen=True)
 class Quantifier(Node):
     """A universally or existentially quantified formula over a single variable."""
 

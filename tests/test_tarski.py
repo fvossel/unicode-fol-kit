@@ -1,0 +1,365 @@
+"""Tests for classical Tarskian model theory (unicode_fol_kit.semantics.tarski).
+
+Each test fixes a concrete world (domain + symbol interpretations) and asserts
+hand-checked truth values, exercising both the True and False branches.
+"""
+
+import pytest
+
+from unicode_fol_kit.fol.msflparser import MSFLParser
+from unicode_fol_kit.fol.nodes import (
+    Variable, Constant, Number, Function,
+    Atom, Not, And, Or, Implies, Quantifier,
+    SortedQuantifier, SortedConstant, Lambda, LambdaVar,
+    WeakConjunction,
+)
+from unicode_fol_kit.semantics.tarski import (
+    Structure, term_value, satisfies, models,
+)
+
+FOL = MSFLParser()
+MSFOL = MSFLParser(many_sorted=True)
+
+
+# ---------------------------------------------------------------------------
+# Loves world: domain {alice, bob}, Loves = {(alice,bob), (bob,alice)}
+# ---------------------------------------------------------------------------
+
+LOVES_WORLD = Structure(
+    domain={"alice", "bob"},
+    predicates={("Loves", 2): {("alice", "bob"), ("bob", "alice")}},
+)
+
+
+class TestLovesWorld:
+    def test_everyone_loves_someone(self):
+        # ∀x∃y Loves(x,y): alice loves bob, bob loves alice → True.
+        assert models(FOL.parse("∀x ∃y Loves(x, y)"), LOVES_WORLD) is True
+
+    def test_nobody_loves_themselves(self):
+        # ∃x Loves(x,x): no reflexive pair in the relation → False.
+        assert models(FOL.parse("∃x Loves(x, x)"), LOVES_WORLD) is False
+
+    def test_loves_is_symmetric(self):
+        # ∀x∀y (Loves(x,y) → Loves(y,x)): the relation is symmetric → True.
+        f = FOL.parse("∀x ∀y (Loves(x, y) → Loves(y, x))")
+        assert models(f, LOVES_WORLD) is True
+
+    def test_not_everyone_loves_everyone(self):
+        # Clearly FALSE sentence: alice does not love alice.
+        assert models(FOL.parse("∀x ∀y Loves(x, y)"), LOVES_WORLD) is False
+
+    def test_free_variable_assignment(self):
+        # Loves(x,y) with x:=alice, y:=bob is True; with x:=alice, y:=alice False.
+        f = FOL.parse("Loves(x, y)")
+        assert satisfies(f, LOVES_WORLD, {"x": "alice", "y": "bob"}) is True
+        assert satisfies(f, LOVES_WORLD, {"x": "alice", "y": "alice"}) is False
+
+
+# ---------------------------------------------------------------------------
+# Equality world: domain {0, 1}
+# ---------------------------------------------------------------------------
+
+EQ_WORLD = Structure(domain={0, 1})
+
+
+class TestEquality:
+    def test_reflexivity(self):
+        # ∀x (x = x) → True.
+        assert models(FOL.parse("∀x (x = x)"), EQ_WORLD) is True
+
+    def test_distinct_individuals_exist(self):
+        # ∃x∃y (x ≠ y): 0 ≠ 1 → True.
+        assert models(FOL.parse("∃x ∃y (x ≠ y)"), EQ_WORLD) is True
+
+    def test_not_all_equal(self):
+        # ∀x∀y (x = y): 0 ≠ 1 makes this False.
+        assert models(FOL.parse("∀x ∀y (x = y)"), EQ_WORLD) is False
+
+    def test_singleton_domain_all_equal(self):
+        # On a one-element domain, ∀x∀y (x = y) is True (contrasts the above).
+        one = Structure(domain={42})
+        assert models(FOL.parse("∀x ∀y (x = y)"), one) is True
+
+
+# ---------------------------------------------------------------------------
+# Function world: domain {0,1}; succ: 0->1, 1->0; zero->0; P = {(1,)}
+# ---------------------------------------------------------------------------
+
+def _succ(x):
+    return 1 - x
+
+
+FUNC_WORLD = Structure(
+    domain={0, 1},
+    constants={"zero": 0},
+    functions={("succ", 1): _succ},
+    predicates={("P", 1): {(1,)}},
+)
+
+
+class TestFunctions:
+    def test_p_of_succ_zero(self):
+        # P(succ(zero)) = P(succ(0)) = P(1) → True.
+        f = Atom("P", [Function("succ", [Constant("zero")])])
+        assert models(f, FUNC_WORLD) is True
+
+    def test_p_of_zero(self):
+        # P(zero) = P(0) → 0 not in {1} → False.
+        f = Atom("P", [Constant("zero")])
+        assert models(f, FUNC_WORLD) is False
+
+    def test_term_value_succ(self):
+        # term_value of succ(zero) is the individual 1.
+        t = Function("succ", [Constant("zero")])
+        assert term_value(t, FUNC_WORLD, {}) == 1
+
+    def test_dict_function_interpretation(self):
+        # A function given as {arg_tuple: value} dict instead of a callable.
+        world = Structure(
+            domain={0, 1},
+            functions={("f", 1): {(0,): 1, (1,): 0}},
+        )
+        assert term_value(Function("f", [Number(0)]), world, {}) == 1
+        assert term_value(Function("f", [Number(1)]), world, {}) == 0
+
+
+# ---------------------------------------------------------------------------
+# Number default: Number(n) -> n unless overridden by constants[str(n)]
+# ---------------------------------------------------------------------------
+
+class TestNumbers:
+    def test_number_defaults_to_itself(self):
+        world = Structure(domain={0, 1}, predicates={("P", 1): {(1,)}})
+        assert models(Atom("P", [Number(1)]), world) is True
+        assert models(Atom("P", [Number(0)]), world) is False
+
+    def test_number_override_via_constants(self):
+        # constants["1"] = 0 redirects Number(1) to the individual 0.
+        world = Structure(
+            domain={0, 1},
+            constants={"1": 0},
+            predicates={("P", 1): {(1,)}},
+        )
+        assert models(Atom("P", [Number(1)]), world) is False
+
+
+# ---------------------------------------------------------------------------
+# Nullary predicates (propositional atoms)
+# ---------------------------------------------------------------------------
+
+class TestNullaryPredicates:
+    def test_true_proposition(self):
+        world = Structure(domain={0}, predicates={("Rains", 0): True})
+        assert models(FOL.parse("Rains"), world) is True
+
+    def test_false_or_missing_proposition(self):
+        world = Structure(domain={0}, predicates={("Rains", 0): False})
+        assert models(FOL.parse("Rains"), world) is False
+        # A predicate with no extension at all is also false.
+        empty = Structure(domain={0})
+        assert models(FOL.parse("Rains"), empty) is False
+
+    def test_connectives_on_propositions(self):
+        world = Structure(
+            domain={0},
+            predicates={("P", 0): True, ("Q", 0): False},
+        )
+        assert models(FOL.parse("P ∧ ¬Q"), world) is True
+        assert models(FOL.parse("P ∧ Q"), world) is False
+        assert models(FOL.parse("P ∨ Q"), world) is True
+        assert models(FOL.parse("Q → P"), world) is True
+        assert models(FOL.parse("P → Q"), world) is False
+        assert models(FOL.parse("P ⊕ Q"), world) is True  # Xor: True/False
+
+
+# ---------------------------------------------------------------------------
+# MSFOL sorts: domain {alice, rex}; Human={alice}, Dog={rex}; Barks={(rex,)}
+# ---------------------------------------------------------------------------
+
+SORT_WORLD = Structure(
+    domain={"alice", "rex"},
+    constants={"alice": "alice", "rex": "rex"},
+    predicates={("Barks", 1): {("rex",)}},
+    sorts={"Human": {"alice"}, "Dog": {"rex"}},
+)
+
+
+class TestSorts:
+    def test_all_dogs_bark(self):
+        # ∀x:Dog Barks(x): the only dog is rex, who barks → True.
+        f = SortedQuantifier("∀", Variable("x"), "Dog", Atom("Barks", [Variable("x")]))
+        assert models(f, SORT_WORLD) is True
+
+    def test_no_human_barks(self):
+        # ∀x:Human Barks(x): the only human is alice, who does not bark → False.
+        f = SortedQuantifier("∀", Variable("x"), "Human", Atom("Barks", [Variable("x")]))
+        assert models(f, SORT_WORLD) is False
+
+    def test_some_human_is_self_identical(self):
+        # ∃x:Human (x = x): alice exists → True.
+        f = SortedQuantifier(
+            "∃", Variable("x"), "Human",
+            Atom("=", [Variable("x"), Variable("x")]),
+        )
+        assert models(f, SORT_WORLD) is True
+
+    def test_sorted_constant_works(self):
+        # SortedConstant alice:Human evaluates via constants["alice"]; Barks false.
+        sc = SortedConstant("alice", "Human")
+        assert term_value(sc, SORT_WORLD, {}) == "alice"
+        assert models(Atom("Barks", [sc]), SORT_WORLD) is False
+        # rex:Dog does bark.
+        assert models(Atom("Barks", [SortedConstant("rex", "Dog")]), SORT_WORLD) is True
+
+    def test_exists_dog_barks(self):
+        f = SortedQuantifier("∃", Variable("x"), "Dog", Atom("Barks", [Variable("x")]))
+        assert models(f, SORT_WORLD) is True
+
+    def test_parsed_sorted_quantifier(self):
+        # Round-trip through the MSFOL parser for the same two sentences.
+        assert models(MSFOL.parse("∀x:Dog Barks(x)"), SORT_WORLD) is True
+        assert models(MSFOL.parse("∀x:Human Barks(x)"), SORT_WORLD) is False
+
+    def test_undeclared_sort_raises(self):
+        f = SortedQuantifier("∀", Variable("x"), "Alien", Atom("Barks", [Variable("x")]))
+        with pytest.raises(KeyError):
+            models(f, SORT_WORLD)
+
+
+# ---------------------------------------------------------------------------
+# Quantifier type-string variants ("forall"/"exists")
+# ---------------------------------------------------------------------------
+
+class TestQuantifierTypeSpellings:
+    def test_word_forall(self):
+        f = Quantifier("forall", Variable("x"), Atom("=", [Variable("x"), Variable("x")]))
+        assert models(f, EQ_WORLD) is True
+
+    def test_word_exists(self):
+        f = Quantifier(
+            "exists", Variable("x"),
+            Atom("≠", [Variable("x"), Constant("c")]),
+        )
+        world = Structure(domain={0, 1}, constants={"c": 0})
+        # ∃x (x ≠ c) with c=0: x=1 works → True.
+        assert models(f, world) is True
+
+
+# ---------------------------------------------------------------------------
+# Order comparisons via predicate extensions
+# ---------------------------------------------------------------------------
+
+class TestOrderComparisons:
+    def test_less_than_extension(self):
+        # Domain {0,1,2}; supply the < relation explicitly as an extension.
+        world = Structure(
+            domain={0, 1, 2},
+            predicates={("<", 2): {(0, 1), (0, 2), (1, 2)}},
+        )
+        assert satisfies(FOL.parse("x < y"), world, {"x": 0, "y": 1}) is True
+        assert satisfies(FOL.parse("x < y"), world, {"x": 1, "y": 0}) is False
+        # ∃x∃y (x < y) → True; ∀x∀y (x < y) → False (e.g. 1<1 absent).
+        assert models(FOL.parse("∃x ∃y (x < y)"), world) is True
+        assert models(FOL.parse("∀x ∀y (x < y)"), world) is False
+
+
+# ---------------------------------------------------------------------------
+# Error handling: fuzzy nodes and lambda nodes are rejected
+# ---------------------------------------------------------------------------
+
+class TestErrors:
+    def test_fuzzy_node_rejected(self):
+        f = WeakConjunction(Atom("P", []), Atom("Q", []))
+        world = Structure(domain={0}, predicates={("P", 0): True, ("Q", 0): True})
+        with pytest.raises(ValueError):
+            satisfies(f, world)
+
+    def test_lambda_node_rejected(self):
+        f = Lambda(LambdaVar("x"), Atom("P", [LambdaVar("x")]))
+        world = Structure(domain={0})
+        with pytest.raises(ValueError):
+            satisfies(f, world)
+
+    def test_empty_domain_rejected(self):
+        with pytest.raises(ValueError):
+            Structure(domain=[])
+
+    def test_unbound_variable_raises(self):
+        with pytest.raises(KeyError):
+            satisfies(FOL.parse("P(x)"),
+                      Structure(domain={0}, predicates={("P", 1): {(0,)}}))
+
+    def test_uninterpreted_constant_raises(self):
+        with pytest.raises(KeyError):
+            term_value(Constant("ghost"), Structure(domain={0}), {})
+
+    def test_uninterpreted_function_raises(self):
+        with pytest.raises(ValueError):
+            term_value(Function("f", [Number(0)]), Structure(domain={0}), {})
+
+
+# ---------------------------------------------------------------------------
+# Functional style: the assignment dict is never mutated
+# ---------------------------------------------------------------------------
+
+class TestNoMutation:
+    def test_assignment_not_mutated(self):
+        assignment = {"z": "alice"}
+        f = FOL.parse("∀x ∃y Loves(x, y)")
+        satisfies(f, LOVES_WORLD, assignment)
+        # The quantifiers bound x and y, but the caller's dict is untouched.
+        assert assignment == {"z": "alice"}
+
+
+# ---------------------------------------------------------------------------
+# Reviewer-added edge cases (vacuous truth, shadowing, native-vs-extension =)
+# ---------------------------------------------------------------------------
+
+class TestReviewerEdgeCases:
+    def test_empty_declared_sort_is_vacuous(self):
+        # A *declared but empty* sort (distinct from an undeclared one, which
+        # raises): ∀ ranges over nothing → vacuously True; ∃ → False.
+        world = Structure(domain={0, 1}, sorts={"Nothing": set()})
+        forall = SortedQuantifier(
+            "∀", Variable("x"), "Nothing", Atom("P", [Variable("x")])
+        )
+        exists = SortedQuantifier(
+            "∃", Variable("x"), "Nothing", Atom("P", [Variable("x")])
+        )
+        assert models(forall, world) is True
+        assert models(exists, world) is False
+
+    def test_inner_quantifier_shadows_outer(self):
+        # ∀x (∃x P(x)): the inner ∃ rebinds x, so the body's value is the same
+        # for every outer x. P = {(1,)} makes ∃x P(x) True → the whole is True.
+        # This also pins down that binding a fresh COPY of the assignment lets
+        # the inner binder override the outer one without corrupting it.
+        world = Structure(domain={0, 1}, predicates={("P", 1): {(1,)}})
+        f = Quantifier(
+            "∀", Variable("x"),
+            Quantifier("∃", Variable("x"), Atom("P", [Variable("x")])),
+        )
+        assert models(f, world) is True
+
+    def test_equality_is_native_not_an_extension(self):
+        # '=' is interpreted as identity even with NO ("=", 2) entry supplied,
+        # and a bogus ("=", 2) extension must NOT override that native handling.
+        world = Structure(
+            domain={0, 1},
+            predicates={("=", 2): {(0, 1)}},  # deliberately wrong extension
+        )
+        # 0 = 0 holds by identity despite (0,0) being absent from the extension.
+        assert satisfies(
+            Atom("=", [Variable("x"), Variable("y")]), world, {"x": 0, "y": 0}
+        ) is True
+        # 0 = 1 is False by identity despite (0,1) being IN the bogus extension.
+        assert satisfies(
+            Atom("=", [Variable("x"), Variable("y")]), world, {"x": 0, "y": 1}
+        ) is False
+
+    def test_float_number_matches_int_individual(self):
+        # Number(1.0) evaluates to the literal 1.0, which equals the individual
+        # 1 (1.0 == 1 in Python), so membership in P = {(1,)} holds.
+        world = Structure(domain={0, 1}, predicates={("P", 1): {(1,)}})
+        assert models(Atom("P", [Number(1.0)]), world) is True

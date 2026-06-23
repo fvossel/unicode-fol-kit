@@ -10,6 +10,11 @@ otherwise).
   matrix), with bound variables standardised apart. Equivalence-preserving.
 - ``to_cnf``  — prenex form whose matrix is a conjunction of clauses.
   Equivalence-preserving.
+- ``to_dnf``  — prenex form whose matrix is a disjunction of conjunctive
+  clauses (the dual of ``to_cnf``). Equivalence-preserving.
+- ``to_tseitin_cnf`` — EQUISATISFIABLE CNF of the matrix via the Tseitin /
+  definitional encoding (fresh 0-ary auxiliary predicates); avoids the
+  exponential blow-up of the distributive ``to_cnf``. NOT equivalence-preserving.
 - ``skolemize`` — prenex NNF with existentials replaced by Skolem terms over
   the universals in scope; universal prefix retained. Satisfiability-preserving
   (NOT equivalence-preserving).
@@ -187,6 +192,135 @@ def _distribute(left: Node, right: Node) -> Node:
 
 
 # ---------------------------------------------------------------------------
+# Disjunctive normal form
+# ---------------------------------------------------------------------------
+
+def to_dnf(node: Node) -> Node:
+    """Return prenex form whose matrix is a disjunction of conjunctive clauses.
+
+    The dual of :func:`to_cnf`: reuse the prenex prefix from ``to_pnf`` and
+    distribute ∧ over ∨ in the quantifier-free matrix (each conjunctive clause
+    is a conjunction of literals). Equivalence-preserving.
+    """
+    pnf = to_pnf(node)
+    prefix, matrix = _prenex_split(pnf)
+    dnf_matrix = _dnf(matrix)
+    for qtype, qvar in reversed(prefix):
+        dnf_matrix = Quantifier(qtype, qvar, dnf_matrix)
+    return dnf_matrix
+
+
+def _dnf(n: Node) -> Node:
+    """Distribute ∧ over ∨ in a quantifier-free NNF formula (dual of _cnf)."""
+    if isinstance(n, (Atom, Not)):
+        return n
+    if isinstance(n, Or):
+        return Or(_dnf(n.left), _dnf(n.right))
+    if isinstance(n, And):
+        return _distribute_and(_dnf(n.left), _dnf(n.right))
+    raise TypeError(f"to_dnf: unexpected node type {type(n).__name__}")
+
+
+def _distribute_and(left: Node, right: Node) -> Node:
+    """Distribute ∧ over ∨ (dual of _distribute)."""
+    if isinstance(left, Or):
+        return Or(_distribute_and(left.left, right), _distribute_and(left.right, right))
+    if isinstance(right, Or):
+        return Or(_distribute_and(left, right.left), _distribute_and(left, right.right))
+    return And(left, right)
+
+
+# ---------------------------------------------------------------------------
+# Tseitin (definitional) CNF
+# ---------------------------------------------------------------------------
+
+def to_tseitin_cnf(node: Node) -> Node:
+    """Return an EQUISATISFIABLE CNF via the Tseitin/definitional encoding.
+
+    Unlike :func:`to_cnf`, this is *not* equivalence-preserving: a fresh 0-ary
+    auxiliary predicate Atom is introduced for every compound subformula of the
+    quantifier-free NNF matrix, and the defining biconditionals (``aux ↔
+    op(children)``) are expanded into clauses and conjoined with the unit clause
+    asserting the root auxiliary. This avoids the exponential blow-up of the
+    distributive :func:`to_cnf` while preserving satisfiability.
+
+    The auxiliaries are *0-ary* (propositional) definitions, so they only
+    faithfully capture a subformula whose truth value is fixed — i.e. the
+    propositional / ground case the encoding targets. They are **not** sound
+    inside a quantifier prefix: a single global ``aux`` cannot track a
+    subformula such as ``P(x)`` whose truth value varies over the domain, which
+    breaks equisatisfiability. This function therefore requires a quantifier-free
+    (after prenexing) input and raises :class:`ValueError` otherwise.
+    """
+    pnf = to_pnf(node)
+    prefix, matrix = _prenex_split(pnf)
+    if prefix:
+        raise ValueError(
+            "to_tseitin_cnf only supports quantifier-free (propositional / "
+            "ground) formulas: the 0-ary auxiliary predicates are not sound "
+            "under a quantifier prefix. Eliminate quantifiers first (e.g. via "
+            "skolemize and grounding) or use to_cnf for an equivalence-"
+            "preserving prenex CNF."
+        )
+    used = _all_names(pnf)
+    counter = [0]
+
+    clauses = []                       # accumulated CNF clauses (each a Node)
+    root = _tseitin(matrix, counter, used, clauses)
+    clauses.append(root)               # unit clause asserting the root holds
+
+    cnf_matrix = clauses[0]
+    for clause in clauses[1:]:
+        cnf_matrix = And(cnf_matrix, clause)
+    return cnf_matrix
+
+
+def _tseitin(n: Node, counter: list, used: set, clauses: list) -> Node:
+    """Encode subformula n, appending its defining clauses; return its literal.
+
+    A literal (Atom or ¬Atom) is returned unchanged — it needs no auxiliary.
+    For each compound node a fresh 0-ary Atom ``aux`` is created and the clauses
+    expressing ``aux ↔ op(children)`` are appended to ``clauses``.
+    """
+    if isinstance(n, Atom):
+        return n
+    if isinstance(n, Not):
+        # Inputs are NNF, so this wraps an atom: it is already a literal.
+        return n
+
+    if isinstance(n, And):
+        a = _tseitin(n.left, counter, used, clauses)
+        b = _tseitin(n.right, counter, used, clauses)
+        aux = Atom(_gensym("ts", counter, used), [])
+        # aux ↔ (a ∧ b):
+        #   (¬aux ∨ a) ∧ (¬aux ∨ b) ∧ (¬a ∨ ¬b ∨ aux)
+        clauses.append(Or(Not(aux), a))
+        clauses.append(Or(Not(aux), b))
+        clauses.append(Or(Or(_neg(a), _neg(b)), aux))
+        return aux
+
+    if isinstance(n, Or):
+        a = _tseitin(n.left, counter, used, clauses)
+        b = _tseitin(n.right, counter, used, clauses)
+        aux = Atom(_gensym("ts", counter, used), [])
+        # aux ↔ (a ∨ b):
+        #   (¬aux ∨ a ∨ b) ∧ (¬a ∨ aux) ∧ (¬b ∨ aux)
+        clauses.append(Or(Not(aux), Or(a, b)))
+        clauses.append(Or(_neg(a), aux))
+        clauses.append(Or(_neg(b), aux))
+        return aux
+
+    raise TypeError(f"to_tseitin_cnf: unexpected node type {type(n).__name__}")
+
+
+def _neg(lit: Node) -> Node:
+    """Return the negation of a literal, collapsing ¬¬Atom back to Atom."""
+    if isinstance(lit, Not):
+        return lit.formula
+    return Not(lit)
+
+
+# ---------------------------------------------------------------------------
 # Skolemization
 # ---------------------------------------------------------------------------
 
@@ -229,20 +363,12 @@ def _subst_term(n: Node, varname: str, term: Node) -> Node:
         return term if n.name == varname else n
     if isinstance(n, (Constant, Number)):
         return n
-    if isinstance(n, Function):
-        return Function(n.name, [_subst_term(a, varname, term) for a in n.args])
-    if isinstance(n, Atom):
-        return Atom(n.predicate, [_subst_term(a, varname, term) for a in n.args])
-    if isinstance(n, Not):
-        return Not(_subst_term(n.formula, varname, term))
-    if isinstance(n, (And, Or)):
-        return type(n)(_subst_term(n.left, varname, term),
-                       _subst_term(n.right, varname, term))
     if isinstance(n, Quantifier):
         if n.variable.name == varname:
             return n  # shadowed (cannot happen after standardising apart, but safe)
         return Quantifier(n.type, n.variable, _subst_term(n.formula, varname, term))
-    return n
+    # Structural: Function, Atom, Not, And, Or — substitute into every child.
+    return n.map_children(lambda c: _subst_term(c, varname, term))
 
 
 # ---------------------------------------------------------------------------

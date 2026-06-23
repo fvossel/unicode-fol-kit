@@ -18,7 +18,11 @@ def is_satisfiable(formula: Node, timeout: int = 10000) -> bool:
 
 
 def is_valid(formula: Node, timeout: int = 10000) -> bool:
-    """Return True if the formula is valid, i.e. its negation is unsatisfiable."""
+    """Return True if the formula is valid, i.e. its negation is unsatisfiable.
+
+    A Z3 ``unknown`` result (e.g. on hard quantified formulas hitting the
+    timeout) is treated as not-known-valid and returns False.
+    """
     solver = Solver()
     solver.set("timeout", timeout)
     solver.set("random_seed", 42)

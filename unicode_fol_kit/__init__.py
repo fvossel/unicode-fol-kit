@@ -14,14 +14,23 @@ from .fol import (
     eta_reduce, beta_eta_normalize,
     resolve_lambda_scope,
     to_fol,
-    to_nnf, to_pnf, to_cnf, skolemize, is_horn,
+    to_nnf, to_pnf, to_cnf, to_dnf, to_tseitin_cnf, skolemize, is_horn,
+    has_lambdas, eliminate_lambdas, beta_reduce_step, reduce_trace,
+    unify, apply_subst,
 )
 from .atp import (
     formulas_are_equivalent, check_logical_entailment,
     is_satisfiable, is_valid, get_model,
+    fuzzy_is_satisfiable, fuzzy_is_valid, fuzzy_get_model,
+    to_z3_arith, is_satisfiable_arith, is_valid_arith, get_model_arith,
+    to_clauses, refute, prove, is_valid_resolution,
+)
+from .semantics import (
+    Structure, term_value, satisfies, models,
+    evaluate as fuzzy_evaluate,
 )
 
-__version__ = "0.3.1"
+__version__ = "0.4.0"
 
 __all__ = [
     "MSFLParser",
@@ -40,6 +49,12 @@ __all__ = [
     "eta_reduce", "beta_eta_normalize",
     "resolve_lambda_scope",
     "to_fol",
-    "to_nnf", "to_pnf", "to_cnf", "skolemize", "is_horn",
+    "to_nnf", "to_pnf", "to_cnf", "to_dnf", "to_tseitin_cnf", "skolemize", "is_horn",
+    "has_lambdas", "eliminate_lambdas", "beta_reduce_step", "reduce_trace",
+    "unify", "apply_subst",
     "is_satisfiable", "is_valid", "get_model",
+    "fuzzy_is_satisfiable", "fuzzy_is_valid", "fuzzy_get_model",
+    "to_z3_arith", "is_satisfiable_arith", "is_valid_arith", "get_model_arith",
+    "to_clauses", "refute", "prove", "is_valid_resolution",
+    "Structure", "term_value", "satisfies", "models", "fuzzy_evaluate",
 ]

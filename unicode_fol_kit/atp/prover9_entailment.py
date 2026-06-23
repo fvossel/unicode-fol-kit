@@ -57,8 +57,15 @@ def _run_prover9(input: str, prover9_path: str, timeout: int=30) ->bool:
         success = "THEOREM PROVED" in result.stdout
     except subprocess.TimeoutExpired:
         success = False
+    finally:
+        # Always remove the temp file, even when subprocess.run raises (e.g.
+        # FileNotFoundError for a wrong prover9_path); the exception still
+        # propagates to the caller.
+        try:
+            os.unlink(temp_filename)
+        except OSError:
+            pass
 
-    os.unlink(temp_filename)
     return success
 
 

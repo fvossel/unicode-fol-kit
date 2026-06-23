@@ -14,7 +14,7 @@ A Python toolkit for parsing and working with first-order logic (FOL) formulas w
 - **Tree view** — render any formula as a readable ASCII tree
 - **Unicode round-trip** — `to_unicode_str()` renders any node back to a parseable Unicode formula; re-parsing in the matching mode yields a structurally equal AST
 - **LaTeX export** — `to_latex()` renders any node as LaTeX math-mode markup, with the same precedence-aware parenthesisation as the Unicode renderer
-- **Normal forms** — `to_nnf()`, `to_pnf()`, `to_cnf()` (equivalence-preserving), and `skolemize()` (satisfiability-preserving) for classical FOL
+- **Normal forms** — `to_nnf()`, `to_pnf()`, `to_cnf()`, `to_dnf()` (equivalence-preserving), `to_tseitin_cnf()` (equisatisfiable, no blow-up), and `skolemize()` (satisfiability-preserving) for classical FOL
 - **Horn check** — `is_horn()` reports whether a formula's clausal form consists of Horn clauses
 - **Traversal API** — `walk()`, `subformulas()`, `atoms()`, `variables()`, `count()`, `depth()` on every node
 - **Graphviz export** — `to_dot()` renders the AST as a Graphviz DOT digraph
@@ -24,9 +24,17 @@ A Python toolkit for parsing and working with first-order logic (FOL) formulas w
 - **TPTP export** — translate formulas to TPTP syntax
 - **Equivalence checking** — check if two formulas are logically equivalent via Z3
 - **Entailment checking** — check if a conclusion follows from premises via Prover9
-- **Lambda abstraction** — `λx. φ` syntax in all three parser modes; parameters can be variables (`λx.`), named constants (`λfoo.`), or predicate symbols (`λP.`); body extends rightward through all connectives
+- **Built-in resolution prover** — `prove()` and `is_valid_resolution()` decide entailment/validity in-process (sound first-order resolution, no external solver needed)
+- **Lambda abstraction** — `λx. φ` syntax in all four parser modes; parameters can be variables (`λx.`), named constants (`λfoo.`), or predicate symbols (`λP.`); body extends rightward through all connectives
 - **Higher-order predicate application** — `(func)(arg)` explicit application; `λP. P(x)` writes the body naturally and is automatically scope-resolved to `Application(LambdaVar("P"), Variable("x"))`
 - **Lambda-calculus operations** — free-variable computation, capture-avoiding substitution, beta-reduction (normal-order, step-limited), eta-reduction, combined beta-eta normalisation to fixpoint, and lexical scope resolution
+- **Lambda elimination** — `eliminate_lambdas()` beta-eta-normalises and checks the result is lambda-free (ready for export / normal forms); `reduce_trace()` returns the step-by-step reduction sequence
+- **Tarskian semantics** — define a `Structure` (a world with a domain of individuals and interpretations of constants, functions, predicates, and sorts) and compute a formula's truth value with `satisfies()` (FOL and MSFOL)
+- **Fuzzy evaluation** — `fuzzy_evaluate()` computes the Łukasiewicz truth degree in [0, 1] of an FL/MSFL formula under a valuation (∀ = inf, ∃ = sup)
+- **Fuzzy satisfiability / validity** — `fuzzy_is_satisfiable()`, `fuzzy_is_valid()`, `fuzzy_get_model()` decide Łukasiewicz formulas via Z3 real arithmetic
+- **Arithmetic-aware solving** — `is_satisfiable_arith()`, `is_valid_arith()`, `get_model_arith()` interpret `+ - * / < > ≤ ≥` over Z3 reals/integers (unlike the default uninterpreted-sort `to_z3`)
+- **Unification** — `unify()` computes the most general unifier of two terms/atoms (Robinson, with occurs-check); `apply_subst()` applies a substitution
+- **Command-line interface** — `python -m unicode_fol_kit "∀x P(x)" --to latex` parses and renders in any export format
 
 ## Installation
 
@@ -39,7 +47,7 @@ pip install unicode-fol-kit
 ### Via git clone
 
 ```bash
-git clone https://github.com/felixvossel/unicode-fol-kit.git
+git clone https://github.com/fvossel/unicode-fol-kit.git
 cd unicode-fol-kit
 pip install .
 ```
@@ -209,7 +217,7 @@ formula2 = Node.from_dict(d)  # round-trip
 
 ### Lambda-calculus
 
-All three parser modes support lambda abstraction and application. `parse()` automatically applies scope resolution, so the returned AST is always fully resolved.
+All four parser modes support lambda abstraction and application. `parse()` automatically applies scope resolution, so the returned AST is always fully resolved.
 
 ```python
 from unicode_fol_kit import (
@@ -307,6 +315,8 @@ classical = to_fol(formula)
 classical_with_facts = to_fol(formula, include_sort_facts=True)
 ```
 
+> **Note — this is a classical (Boolean) projection, not a fuzzy-preserving translation.** `to_msfol()` maps *both* the strong (`⊗`/`⊕`) and the weak (`∧`/`∨`) Łukasiewicz connectives to the same classical `And`/`Or`. On crisp truth values {0, 1} the strong and weak operators coincide, so the reduction is sound as the two-valued projection of the formula — but the genuinely many-valued content is discarded. To compute the real-valued Łukasiewicz degree instead, use `fuzzy_evaluate()` or the fuzzy Z3 solver (see below).
+
 ### Normal forms
 
 `to_nnf()`, `to_pnf()`, `to_cnf()`, and `skolemize()` operate on classical FOL. They accept FOL, MSFOL, MSFL, and FL inputs — sorts and Łukasiewicz operators are reduced via `to_fol()` first. (Lambda terms must be beta-reduced and lambda-eliminated beforehand.)
@@ -325,6 +335,25 @@ skolemize(parser.parse("∀x ∃y Loves(x, y)"))
 
 - `to_nnf` / `to_pnf` / `to_cnf` are **equivalence-preserving**: the result is logically equivalent to the (classical) input.
 - `skolemize` is **satisfiability-preserving** (not equivalence-preserving): existentials are replaced by Skolem terms over the universals in scope, and the universal prefix is retained. Bound variables are standardised apart (renamed to fresh `v0, v1, …`); Skolem symbols are named `sk0, sk1, …`.
+
+`to_dnf()` is the dual of `to_cnf()`: a prenex form whose matrix is a **disjunction of conjunctive clauses**, and it is likewise equivalence-preserving.
+
+```python
+from unicode_fol_kit import MSFLParser, to_dnf, to_tseitin_cnf
+
+parser = MSFLParser()
+to_dnf(parser.parse("P ∧ (Q ∨ R)"))   # (P ∧ Q) ∨ (P ∧ R)
+```
+
+`to_tseitin_cnf()` produces an **equisatisfiable** CNF using the Tseitin/definitional encoding: it introduces fresh auxiliary atoms (`ts0, ts1, …`) for compound subformulas, so the result grows linearly instead of risking the exponential blow-up of the distributive `to_cnf`. It is **not** logically equivalent to the input (the auxiliaries are existentially fresh), but the input is satisfiable iff its Tseitin CNF is. It operates on quantifier-free (propositional / ground) formulas and raises `ValueError` on quantified input.
+
+```python
+from unicode_fol_kit import MSFLParser, to_tseitin_cnf, is_satisfiable
+
+parser = MSFLParser()
+phi = parser.parse("(P ∨ Q) ∧ (¬P ∨ R)")
+is_satisfiable(phi) == is_satisfiable(to_tseitin_cnf(phi))   # True (equisatisfiable)
+```
 
 ### Horn check
 
@@ -386,9 +415,174 @@ conclusion = parser.parse("Mortal(socrates)")
 check_logical_entailment(premises, conclusion, prover9_path="/usr/bin/prover9")  # True
 ```
 
+### Entailment and validity (built-in resolution prover)
+
+For entailment and validity **without** an external prover, the package ships a self-contained first-order **resolution** prover. It clausifies the input (skolemise → drop ∀ prefix → CNF → clauses), then refutes `premises ∧ ¬conclusion` by binary resolution and factoring, deriving the empty clause iff the entailment holds.
+
+```python
+from unicode_fol_kit import MSFLParser, prove, is_valid_resolution
+
+parser = MSFLParser()
+
+premises = [parser.parse("∀x (Human(x) → Mortal(x))"), parser.parse("Human(socrates)")]
+prove(premises, parser.parse("Mortal(socrates)"))   # True
+
+prove([parser.parse("Human(socrates)")], parser.parse("Mortal(socrates)"))  # False (no entailment)
+
+is_valid_resolution(parser.parse("P ∨ ¬P"))          # True
+is_valid_resolution(parser.parse("∃x ∀y L(x, y) → ∀y ∃x L(x, y)"))  # True
+```
+
+- **Sound, deliberately incomplete.** First-order resolution is only semi-decidable, so `prove`/`is_valid_resolution` take a `max_steps` bound (default 10 000). They return `True` **only** when the empty clause is actually derived, and `False` both when the clause set saturates (genuinely no entailment) and when the bound is reached ("not proved within the bound") — they never report a non-theorem as proved.
+- **Equality is uninterpreted.** `=` is treated as an ordinary predicate (no built-in reflexivity/congruence). Entailments that rely on the theory of equality (e.g. `a = b, P(a) ⊨ P(b)`) need those axioms supplied as explicit premises, or use the Z3 backend instead.
+- `to_clauses(formula)` exposes the clausal form, and `refute(clauses)` runs the saturation directly.
+
+### Tarskian semantics (FOL / MSFOL)
+
+Instead of calling an external solver, you can build a concrete **world** (a first-order `Structure`) and compute the truth value of a formula directly, following Tarski's recursive definition of satisfaction. A structure is a non-empty domain of individuals together with interpretations of the constants, functions, and predicates (and, for MSFOL, the named sorts).
+
+```python
+from unicode_fol_kit import MSFLParser, Structure, satisfies
+
+parser = MSFLParser()
+
+# A world with two individuals where everyone loves someone else.
+world = Structure(
+    domain={"alice", "bob"},
+    predicates={("Loves", 2): {("alice", "bob"), ("bob", "alice")}},
+)
+
+satisfies(parser.parse("∀x ∃y Loves(x, y)"), world)              # True
+satisfies(parser.parse("∃x Loves(x, x)"), world)                 # False
+satisfies(parser.parse("∀x ∀y (Loves(x, y) → Loves(y, x))"), world)  # True
+```
+
+- `predicates` maps `(name, arity)` to the relation's extension (a set of argument tuples); a missing predicate is the empty relation (false). A nullary predicate maps `(name, 0)` to a bool.
+- `functions` maps `(name, arity)` to a Python callable or a `{arg_tuple: value}` dict; `constants` maps a name to an individual.
+- **Equality** `=` (and `≠`) is built in as identity on the domain — you do not interpret it. The order comparisons `< > ≤ ≥` are ordinary relations whose extension you supply.
+- `satisfies(formula, structure, assignment=None)` takes an optional assignment of free variables; `models(formula, structure)` is the closed-formula convenience alias.
+
+For **MSFOL**, declare each sort's universe and quantify over it:
+
+```python
+msfol = MSFLParser(many_sorted=True)
+
+zoo = Structure(
+    domain={"alice", "rex"},
+    sorts={"Human": {"alice"}, "Dog": {"rex"}},
+    predicates={("Barks", 1): {("rex",)}},
+)
+
+satisfies(msfol.parse("∀x:Dog Barks(x)"), zoo)     # True
+satisfies(msfol.parse("∀x:Human Barks(x)"), zoo)   # False
+```
+
+Tarski semantics is two-valued: Łukasiewicz operators and lambda nodes are rejected (use the fuzzy evaluator below, and `eliminate_lambdas()` respectively).
+
+### Fuzzy evaluation (Łukasiewicz)
+
+`fuzzy_evaluate()` computes the **truth degree in [0, 1]** of an FL/MSFL formula under a *valuation* — a mapping from each ground atom (keyed by its Unicode rendering, e.g. `"P(alice)"`) to a degree. The Łukasiewicz operator semantics are applied exactly (weak ∧/∨ = min/max, strong ⊗/⊕ = t-norm/t-conorm, ¬ = 1−x, → and ↔ as usual); quantifiers are infimum (∀) and supremum (∃) over the domain.
+
+```python
+from unicode_fol_kit import MSFLParser, fuzzy_evaluate
+
+fl = MSFLParser(fuzzy=True)
+
+fuzzy_evaluate(fl.parse("P ⊗ ¬P"), {"P": 0.6})            # 0.0   (strong: max(0, 0.6+0.4−1))
+fuzzy_evaluate(fl.parse("P ⊕ ¬P"), {"P": 0.6})            # 1.0   (strong: min(1, 0.6+0.4))
+fuzzy_evaluate(fl.parse("P ↔ Q"), {"P": 0.6, "Q": 0.7})   # 0.9   (1 − |0.6 − 0.7|)
+
+# Quantifiers need a domain of constant-name strings; atoms are grounded to P(a), P(b), …
+fuzzy_evaluate(fl.parse("∀x P(x)"), {"P(a)": 0.3, "P(b)": 0.8}, domain={"a", "b"})  # 0.3 (min)
+fuzzy_evaluate(fl.parse("∃x P(x)"), {"P(a)": 0.3, "P(b)": 0.8}, domain={"a", "b"})  # 0.8 (max)
+```
+
+### Fuzzy satisfiability and validity (Z3)
+
+For Łukasiewicz formulas you can also ask the solver, rather than fixing a valuation, whether *some* (or *every*) assignment reaches a given degree. The atoms become Z3 reals in [0, 1] and the operators their real-arithmetic definitions.
+
+```python
+from unicode_fol_kit import MSFLParser, fuzzy_is_valid, fuzzy_is_satisfiable, fuzzy_get_model
+
+fl = MSFLParser(fuzzy=True)
+
+fuzzy_is_valid(fl.parse("P ⊕ ¬P"))                     # True  (degree is 1 for every P)
+fuzzy_is_satisfiable(fl.parse("P ⊗ ¬P"), threshold=0.5)  # False (max degree is 0)
+fuzzy_is_satisfiable(fl.parse("P ∧ ¬P"), threshold=0.5)  # True  (weak: max degree is 0.5)
+fuzzy_get_model(fl.parse("P → Q"), threshold=1.0)        # {'P': ..., 'Q': ..., 'degree': ...}
+```
+
+These cover quantifier-free (propositional) Łukasiewicz formulas; quantified input raises `NotImplementedError`.
+
+### Arithmetic-aware solving (Z3)
+
+The default `is_satisfiable()` / `to_z3()` treat everything as one uninterpreted sort, so arithmetic terms are opaque. The `*_arith` variants instead interpret `+ - * /` and the comparisons over a numeric sort (`"real"` by default, or `"int"`), so the solver can actually reason about numbers.
+
+```python
+from unicode_fol_kit import MSFLParser, is_satisfiable_arith, is_valid_arith, get_model_arith
+
+parser = MSFLParser()
+
+is_satisfiable_arith(parser.parse("x + 1 = 2 ∧ x > 0"))   # True   (x = 1)
+is_satisfiable_arith(parser.parse("x > 0 ∧ x < 0"))       # False
+is_valid_arith(parser.parse("∀x (x * 2 = x + x)"))        # True
+get_model_arith(parser.parse("x + 1 = 2 ∧ x > 0"))        # {'x': '1'}
+is_satisfiable_arith(parser.parse("x + x = 1"), sort="int")  # False (no integer solution)
+```
+
+### Lambda elimination and reduction trace
+
+`eliminate_lambdas()` beta-eta-normalises a term and verifies the result is lambda-free, so it can be fed to the exporters or normal-form functions (which otherwise reject lambda nodes). `reduce_trace()` returns the intermediate steps, and `beta_reduce_step()` performs a single leftmost-outermost step.
+
+```python
+from unicode_fol_kit import MSFLParser, eliminate_lambdas, reduce_trace, has_lambdas
+
+parser = MSFLParser()
+
+term = parser.parse("(λP. P(x))(Q)")
+has_lambdas(term)                 # True
+reduced = eliminate_lambdas(term) # Atom("Q", [Variable("x")])
+has_lambdas(reduced)              # False
+reduced.to_tptp()                 # now exportable: 'q(X)'
+
+steps = reduce_trace(parser.parse("(λP. λx. P(x))(Q)"))  # [original, …, normal form]
+```
+
+A term that is stuck or only partially applied (no further redex but lambdas remain) raises `ValueError` from `eliminate_lambdas`.
+
+### Unification
+
+`unify()` computes the most general unifier (Robinson's algorithm with occurs-check) of two terms or two atoms, returned as a substitution dict mapping variable names to terms; `apply_subst()` applies it. Note that single lowercase letters parse as variables, so build genuine constants with `Constant`.
+
+```python
+from unicode_fol_kit import unify, apply_subst, Variable, Constant, Function
+
+t1 = Function("f", [Variable("x"), Constant("a")])
+t2 = Function("f", [Constant("b"), Variable("y")])
+
+mgu = unify(t1, t2)        # {'x': Constant('b'), 'y': Constant('a')}
+apply_subst(t1, mgu) == apply_subst(t2, mgu)   # True
+
+unify(Variable("x"), Function("f", [Variable("x")]))   # None  (occurs-check fails)
+```
+
+### Command-line interface
+
+The package is runnable as a module for quick parsing and conversion:
+
+```bash
+python -m unicode_fol_kit "∀x (P(x) → Q(x))" --to tptp
+# (![X]: (p(X) => q(X)))
+
+python -m unicode_fol_kit "P(x) ⊗ Q(x)" --mode msfl --to latex
+# P(x) \otimes Q(x)
+```
+
+`--mode` is one of `fol` (default), `msfol`, `msfl`, `fl`; `--to` is one of `tree` (default), `unicode`, `latex`, `tptp`, `prover9`, `json`, `dot`. Parse errors print a `SYNTAX_ERROR` message to stderr and exit with status 1.
+
 ## Syntax reference
 
-This section describes the full surface syntax accepted by the parser. Because the three modes share the same term and atom layer, most of the syntax is identical across modes; differences are called out explicitly.
+This section describes the full surface syntax accepted by the parser. Because the four modes share the same term and atom layer, most of the syntax is identical across modes; differences are called out explicitly.
 
 ### Tokens
 
@@ -493,7 +687,7 @@ A formula may be wrapped in parentheses `( … )` or square brackets `[ … ]`; 
 
 ### Operator precedence
 
-The precedence levels are the same across all three modes (MSFL uses the same syntactic structure with Łukasiewicz semantics):
+The precedence levels are the same across all four modes (MSFL/FL use the same syntactic structure with Łukasiewicz semantics):
 
 | Precedence | Operators | Associativity |
 |---|---|---|
@@ -572,7 +766,7 @@ Whitespace is insignificant and may be used freely between tokens — including 
 
 ### Lambda abstraction and application (all modes)
 
-A lambda abstraction is written `λ` followed by a parameter name, a literal `.`, and a body formula. All three parser modes support identical lambda surface notation.
+A lambda abstraction is written `λ` followed by a parameter name, a literal `.`, and a body formula. All four parser modes support identical lambda surface notation.
 
 #### Parameter types
 
@@ -669,7 +863,7 @@ parser.parse("(λP. P(x))(Q)")
 
 ## AST nodes
 
-All nodes are Python dataclasses and can be imported from `unicode_fol_kit`.
+All nodes are **frozen** Python dataclasses and can be imported from `unicode_fol_kit`. Being frozen, every node is immutable and **hashable**, so nodes can be put in sets, used as dict keys, and deduplicated. `Function` and `Atom` store their `args` as a `tuple` (a list passed to the constructor is accepted and coerced), which is what makes them hashable.
 
 ### Shared term and atom nodes (all modes)
 
@@ -678,8 +872,8 @@ All nodes are Python dataclasses and can be imported from `unicode_fol_kit`.
 | `Variable` | `name: str` | bound or free variable |
 | `Constant` | `name: str` | bare constant or c_-prefixed |
 | `Number` | `value: int \| float` | numeric literal |
-| `Function` | `name: str`, `args: list` | function application and arithmetic ops |
-| `Atom` | `predicate: str`, `args: list` | predicate or infix comparison |
+| `Function` | `name: str`, `args: tuple` | function application and arithmetic ops |
+| `Atom` | `predicate: str`, `args: tuple` | predicate or infix comparison |
 
 ### Classical formula nodes (FOL / MSFOL)
 
@@ -691,7 +885,7 @@ All nodes are Python dataclasses and can be imported from `unicode_fol_kit`.
 | `Xor` | `left`, `right` *(FOL only)* |
 | `Implies` | `left`, `right` |
 | `Iff` | `left`, `right` |
-| `Quantifier` | `type: str`, `variable`, `formula` *(FOL only)* |
+| `Quantifier` | `type: str`, `variable`, `formula` *(FOL / FL — the unsorted modes)* |
 
 ### MSFOL / MSFL nodes
 
@@ -733,7 +927,7 @@ The top-level helper `to_fol(node, include_sort_facts=False)` chains both steps 
 
 ## Error handling
 
-Parse errors are reported with human-readable messages rather than raw parser internals. Lexer-level problems (an invalid character, a malformed name or number) raise `NamingError`; structural problems (an incomplete formula, a misplaced operator, or an attempt to mix same-level connectives without parentheses) raise `ParsingError`. Both report the offending position and, where useful, a hint. The hint text is mode-aware:
+Parse errors are reported with human-readable messages rather than raw parser internals. Lexer-level problems (an invalid character, a malformed name or number, or an attempt to mix same-level connectives without parentheses) raise `NamingError`; structural problems (an incomplete formula or a misplaced operator) raise `ParsingError`. Both report the offending position and, where useful, a hint. The hint text is mode-aware:
 
 ```python
 from unicode_fol_kit import MSFLParser

@@ -460,7 +460,7 @@ class TestLambdaSyntax:
         result = MSFLParser().parse("P(x)")
         assert isinstance(result, Atom)
         assert result.predicate == "P"
-        assert result.args == [Variable("x")]
+        assert result.args == (Variable("x"),)
 
     def test_existing_conjunction_unaffected(self):
         result = MSFLParser().parse("P(x) ∧ Q(y)")
@@ -533,7 +533,7 @@ class TestLambdaSyntax:
         assert isinstance(result, Application)
         assert isinstance(result.arg, Atom)
         assert result.arg.predicate == "Q"
-        assert result.arg.args == []
+        assert result.arg.args == ()
 
     def test_fol_lambda_param_is_always_lambdavar(self):
         # Confirm param is LambdaVar regardless of which terminal class the name falls into.

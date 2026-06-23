@@ -110,7 +110,7 @@ class TestResolveFunction:
         inner = result.body.args[0]
         assert isinstance(inner, Function)
         assert inner.name == "bar"
-        assert inner.args == [LambdaVar("x")]   # x IS bound → renamed inside
+        assert inner.args == (LambdaVar("x"),)   # x IS bound → renamed inside
 
 
 # ---------------------------------------------------------------------------
