@@ -5,6 +5,20 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [Unreleased]
+
+### Added
+
+- **`check_logical_entailment_vampire`** — entailment checking via the
+  [Vampire](https://vprover.github.io/) theorem prover, a TPTP-based companion to
+  the existing Prover9 backend. Premises are emitted as TPTP `axiom`s and the
+  conclusion as a `conjecture`; the path to the Vampire executable is passed as
+  the `vampire_path` argument, and a `SZS status Theorem` result means the
+  entailment holds. Classical FOL only (the same fragment `to_tptp` supports).
+  Pass `use_wsl=True` to drive a Linux Vampire installed in WSL from a Windows
+  host (Vampire is launched via `wsl.exe`, with automatic `wslpath` translation of
+  the temp-file path).
+
 ## [0.5.0] - 2026-06-24
 
 Adds an NL→FOL **evaluation** toolkit and broad **non-classical logic** coverage —

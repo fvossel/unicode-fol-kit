@@ -24,7 +24,7 @@ A Python toolkit for parsing and working with first-order logic (FOL) formulas w
 - **Prover9 export** — translate formulas to Prover9 syntax for automated theorem proving
 - **TPTP export** — translate formulas to TPTP syntax
 - **Equivalence checking** — check if two formulas are logically equivalent via Z3
-- **Entailment checking** — check if a conclusion follows from premises via Prover9
+- **Entailment checking** — check if a conclusion follows from premises via Prover9 (`check_logical_entailment`) or Vampire (`check_logical_entailment_vampire`), each taking the prover's executable path as an argument
 - **Built-in resolution prover** — `prove()` and `is_valid_resolution()` decide entailment/validity in-process (sound first-order resolution, no external solver needed)
 - **Canonical form & exact match** — `canonicalize()` normalises bound-variable renaming, commutativity/associativity, operand duplication, and double negation; `exact_match()` gives a fair NL→FOL comparison stricter than logical equivalence but more forgiving than raw equality
 - **Formula validation** — `validate()` / `is_wellformed()` / `validate_text()` report free variables, inconsistent predicate/function arity, leftover lambda nodes, and parseability of raw model output
@@ -447,6 +447,32 @@ conclusion = parser.parse("Mortal(socrates)")
 
 check_logical_entailment(premises, conclusion, prover9_path="/usr/bin/prover9")  # True
 ```
+
+### Entailment checking (Vampire)
+
+The same check backed by [Vampire](https://vprover.github.io/) instead of Prover9: the premises are emitted as TPTP `axiom`s and the conclusion as a `conjecture`, and the path to the Vampire executable is passed as an argument (Vampire reports `SZS status Theorem` when the entailment holds).
+
+```python
+from unicode_fol_kit import MSFLParser, check_logical_entailment_vampire  # doctest: +SKIP (needs an installed Vampire)
+
+parser = MSFLParser()
+premises = [
+    parser.parse("∀x (Human(x) → Mortal(x))"),
+    parser.parse("Human(socrates)"),
+]
+conclusion = parser.parse("Mortal(socrates)")
+
+check_logical_entailment_vampire(premises, conclusion, vampire_path="/usr/bin/vampire")  # True
+```
+
+On Windows you can drive a Linux Vampire installed in **WSL** with `use_wsl=True`: Vampire is launched through `wsl.exe` and the temporary problem file's path is translated to its `/mnt/...` form automatically. Here `vampire_path` is the command/path *inside* WSL (e.g. `"vampire"` if it is on the WSL `PATH`).
+
+```python
+# Windows host, Vampire installed in WSL:  # doctest: +SKIP (needs WSL + Vampire)
+check_logical_entailment_vampire(premises, conclusion, vampire_path="vampire", use_wsl=True)  # True
+```
+
+Note that every premise and the conclusion must be a closed sentence — Vampire rejects unquantified (free) variables, and recall that a single lowercase letter like `x` is a *variable*, so a constant individual needs a multi-character name (`socrates`) or the `c_`-prefix.
 
 ### Entailment and validity (built-in resolution prover)
 
