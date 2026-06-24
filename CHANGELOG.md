@@ -5,7 +5,7 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
-## [Unreleased]
+## [0.5.1] - 2026-06-24
 
 ### Added
 

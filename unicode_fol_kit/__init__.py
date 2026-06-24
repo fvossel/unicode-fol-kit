@@ -44,7 +44,7 @@ from .eval import (
     validate, is_wellformed, validate_text, ValidationReport,
 )
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"
 
 __all__ = [
     "MSFLParser",
