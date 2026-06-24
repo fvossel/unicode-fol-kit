@@ -5,6 +5,84 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [0.5.0] - 2026-06-24
+
+Adds an NL→FOL **evaluation** toolkit and broad **non-classical logic** coverage —
+modal/temporal/epistemic/deontic logic with Kripke semantics, three-valued
+(Kleene/Priest) logic, and second-order quantification with finite-model
+semantics. All additive; no breaking changes.
+
+### Added
+
+- **`unicode_fol_kit.eval`** — `canonicalize` / `exact_match` (a fair "canonical
+  exact match" that quotients out bound-variable renaming, commutativity/
+  associativity, operand duplication, and double negation while staying logically
+  equivalent), and `validate` / `is_wellformed` / `validate_text` /
+  `ValidationReport` (free variables, inconsistent predicate/function arity,
+  leftover lambda nodes, parseability of raw model output).
+- **Modal / temporal / epistemic / deontic logic** (`MSFLParser(modal=True)`):
+  node classes `Box`, `Diamond`, `Knows`, `Believes`, `Always`, `Eventually`,
+  `Next`, `Until`, `Obligatory`, `Permitted` with surface syntax `□ ◇`, `K_a` /
+  `B_a`, `Ⓖ Ⓕ Ⓝ Ⓤ`, `Ⓞ Ⓟ`. Kripke-model semantics (`KripkeModel`,
+  `satisfies_modal`, `reflexive_transitive_closure`) and a relational
+  `standard_translation()` to classical FOL so Z3/resolution can decide modal
+  validity. Propositional/ground (v1).
+- **Many-valued logic** (`unicode_fol_kit.semantics.manyvalued`): three-valued
+  strong-Kleene evaluation `kleene_value` over {0, ½, 1}, and `is_valid` /
+  `is_satisfiable` / `entails` with selectable designated values for Kleene
+  **K3** (`{1}`) and Priest **LP** (`{½, 1}`, paraconsistent). `kleene_value` /
+  `DESIGNATED` are also re-exported at the package top level.
+- **Second-order / monadic-second-order quantification** (`MSFLParser(second_order=True)`):
+  `SecondOrderQuantifier` (`∀P` / `∃P`, arity inferred from the body) with
+  finite-model semantics (`satisfies_so`) that enumerates relations over a finite
+  domain. Higher-order *terms* remain available via the existing lambda layer;
+  full HOL types are out of scope.
+- **LaTeX import** — `parse_latex()` reads a LaTeX-math formula (the inverse of
+  `to_latex()`) and `latex_to_unicode()` does the LaTeX→Unicode translation alone;
+  accepts the exact `to_latex()` output (round-trips) and common hand-written synonyms.
+
+### Internal
+
+- **Operator registry** — operators are now fully self-describing, decoupling
+  rendering *and* parsing from the central modules:
+  - *Rendering:* each operator registers its glyph, LaTeX markup, precedence, and
+    fixity via `register_operator()`; the Unicode and LaTeX renderers are driven
+    generically from the registry (no per-operator branches, no hand-maintained
+    dispatch tables).
+  - *Parsing:* each operator also registers its grammar fragment + transform via
+    `register_parser_op()`. `MSFLParser` now assembles BOTH the Lark grammar and
+    the transformer for every mode (FOL/MSFOL/MSFL/FL/modal/second-order) from the
+    registry — there is no longer a hand-written per-mode transformer or a
+    hand-loaded `.lark` grammar on the runtime path.
+  - Output and parsed ASTs are byte-identical to before (guarded by a
+    legacy-vs-registry equivalence test across a 190-formula × 6-mode corpus).
+    Adding an operator — or a whole new logic — is now a self-contained registry
+    entry in the operator's own module, with no edit to the renderers, the parser,
+    or any shared grammar file.
+- **Hardening of the new evaluators.**
+  - The three-valued enumeration (`is_valid` / `is_satisfiable` / `entails`) now
+    scores each assignment with a compiled evaluator built once from the formula
+    (no per-assignment AST walk or atom re-rendering), and refuses to start an
+    enumeration above `manyvalued.MAX_MODELS` rather than hanging.
+  - Second-order `satisfies_so` refuses a `∀P` / `∃P` whose `2 ** (n ** k)`
+    relation space exceeds `secondorder.MAX_RELATIONS`, with a clear error.
+  - Added seeded, randomized cross-checks: the compiled three-valued path against
+    the reference `kleene_value` on every assignment; strong-Kleene algebraic
+    identities and the K3-vs-LP headline facts; second-order `∀P φ ≡ ¬∃P ¬φ`
+    duality and the agreement of `satisfies_so`'s classical core with the
+    first-order Tarski evaluator; render→parse round-trips over random FOL, modal,
+    Łukasiewicz, and second-order formulas; and a whole-tree `tree_str` / `to_dot`
+    coverage check over every node type.
+  - Łukasiewicz-algebra cross-checks for the fuzzy evaluator (strong/weak
+    De Morgan, double negation, the residuum `a → b ≡ ¬a ⊕ b`, and the defining
+    adjunction `a ⊗ b ≤ c ⟺ a ≤ b → c`) over random + boundary-grid valuations.
+  - Eval cross-checks against the independent Z3 oracle: `canonicalize` is
+    equivalence-preserving, `exact_match` absorbs the rewrites it should and never
+    merges Z3-inequivalent formulas, and `validate` flags free variables, arity
+    clashes, and leftover lambdas.
+  - A README example runner executes every `python` block in the docs (cumulative
+    namespace) so the documentation stays in lock-step with the code.
+
 ## [0.4.0] - 2026-06-23
 
 A large feature release adding model-theoretic and many-valued semantics, an

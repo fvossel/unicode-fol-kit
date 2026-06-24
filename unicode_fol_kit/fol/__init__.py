@@ -8,6 +8,10 @@ from .nodes import (
     StrongConjunction, StrongDisjunction,
     LukNegation, LukImplication, LukEquivalence,
     LambdaVar, Lambda, Application,
+    Box, Diamond, Knows, Believes,
+    Always, Eventually, Next, Until,
+    Obligatory, Permitted,
+    SecondOrderQuantifier,
     free_variables,
     substitute, beta_reduce, ReductionLimitError,
     eta_reduce, beta_eta_normalize,
@@ -17,6 +21,8 @@ from .nodes import (
 from .normalforms import to_nnf, to_pnf, to_cnf, to_dnf, to_tseitin_cnf, skolemize, is_horn
 from .lambda_tools import has_lambdas, eliminate_lambdas, beta_reduce_step, reduce_trace
 from .unification import unify, apply_subst
+from .modal_translation import standard_translation
+from .latex_input import latex_to_unicode, parse_latex
 from .naming import NamingError, ParsingError
 
 __all__ = [
@@ -30,6 +36,10 @@ __all__ = [
     "StrongConjunction", "StrongDisjunction",
     "LukNegation", "LukImplication", "LukEquivalence",
     "LambdaVar", "Lambda", "Application",
+    "Box", "Diamond", "Knows", "Believes",
+    "Always", "Eventually", "Next", "Until",
+    "Obligatory", "Permitted",
+    "SecondOrderQuantifier",
     "free_variables",
     "substitute", "beta_reduce", "ReductionLimitError",
     "eta_reduce", "beta_eta_normalize",
@@ -38,4 +48,6 @@ __all__ = [
     "to_nnf", "to_pnf", "to_cnf", "to_dnf", "to_tseitin_cnf", "skolemize", "is_horn",
     "has_lambdas", "eliminate_lambdas", "beta_reduce_step", "reduce_trace",
     "unify", "apply_subst",
+    "standard_translation",
+    "latex_to_unicode", "parse_latex",
 ]

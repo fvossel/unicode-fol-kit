@@ -804,6 +804,425 @@ NODE_CLASSES = {
 
 
 # =========================
+# Operator registry (self-registration)
+# =========================
+#
+# A formula operator (a connective/modal that the precedence-driven renderers in
+# _msfl_nodes.py format) registers ONE OperatorSpec here next to its class
+# definition. The renderers then drive every regular operator from this registry,
+# so adding an operator no longer means editing the central rendering tables.
+#
+# Each spec records, byte-for-byte, what the renderer emits:
+#   - unicode: the glyph or prefix string for to_unicode_str (e.g. '¬', '□', 'K_').
+#   - latex:   the LaTeX markup for to_latex, including any trailing space that
+#              the current renderer emits (e.g. '\\lnot ', '\\Box ', 'K').
+#   - fixity:  how the renderer arranges the operand(s) and the glyph.
+#   - precedence: the formula precedence (higher binds tighter): 4 for prefix /
+#              agent_prefix, 1 for binary_iff, 2 for binary_implies, 2.5 for
+#              binary_until, 3 for level2.
+#
+# The "binders" (Quantifier, SortedQuantifier, SecondOrderQuantifier), Lambda and
+# Application keep their explicit handling in the renderers and a small static
+# precedence table — they are NOT regular operators and do NOT register here.
+
+_VALID_FIXITIES = frozenset({
+    "prefix", "agent_prefix",
+    "binary_iff", "binary_implies", "binary_until",
+    "level2",
+})
+
+
+@dataclass(frozen=True)
+class OperatorSpec:
+    """A renderer-facing description of one formula operator.
+
+    name is the node class ``__name__`` (the renderers dispatch by class name).
+    fixity is one of 'prefix', 'agent_prefix', 'binary_iff', 'binary_implies',
+    'binary_until', 'level2'. unicode/latex are the EXACT strings the
+    to_unicode_str / to_latex renderers emit for the operator's glyph or prefix
+    (latex includes any trailing space). precedence is the formula precedence
+    used for parenthesisation (a float; .5 values let an operator sit between two
+    integer levels, as Until does at 2.5).
+    """
+
+    name: str
+    fixity: str
+    unicode: str
+    latex: str
+    precedence: float
+
+
+# name -> OperatorSpec. Populated by register_operator as each node module is
+# imported. The renderers in _msfl_nodes.py read this dict directly.
+OPERATORS: Dict[str, OperatorSpec] = {}
+
+
+def register_operator(node_class, fixity: str, unicode: str, latex: str,
+                      precedence: float) -> OperatorSpec:
+    """Register ``node_class`` as a renderable formula operator.
+
+    Records an OperatorSpec under ``node_class.__name__`` in OPERATORS and adds
+    the class to NODE_CLASSES (so from_dict/serialisation see it too). Safe to
+    call more than once for the same class — the latest call overwrites the
+    previous spec (idempotent / overwrite-safe). Returns the stored OperatorSpec.
+
+    A node registered here is driven entirely by the central renderers via its
+    spec, so no edit to _msfl_nodes.py is needed to render a new operator.
+    """
+    if fixity not in _VALID_FIXITIES:
+        raise ValueError(
+            f"register_operator: unknown fixity {fixity!r}; "
+            f"expected one of {sorted(_VALID_FIXITIES)}"
+        )
+    name = node_class.__name__
+    spec = OperatorSpec(name, fixity, unicode, latex, float(precedence))
+    OPERATORS[name] = spec
+    NODE_CLASSES[name] = node_class
+    return spec
+
+
+# Register the classical operators next to their class definitions above.
+register_operator(Not, "prefix", "¬", "\\lnot ", 4)
+register_operator(And, "level2", "∧", "\\land", 3)
+register_operator(Or, "level2", "∨", "\\lor", 3)
+register_operator(Xor, "level2", "⊕", "\\oplus", 3)
+register_operator(Implies, "binary_implies", "→", "\\rightarrow", 2)
+register_operator(Iff, "binary_iff", "↔", "\\leftrightarrow", 1)
+
+
+# =========================
+# Parser registry (self-assembling grammar)
+# =========================
+#
+# A SECOND, parser-facing registry sits alongside the renderer registry above.
+# Where OperatorSpec records how a node is *rendered*, ParserOp records how an
+# operator is *parsed*: which grammar mode it belongs to, which precedence level
+# it slots into, the grammar fragment it contributes, and the transform that
+# turns the matched tokens into a Node. MSFLParser reads this registry per mode
+# to build BOTH the Lark grammar string and the Transformer — so adding an
+# operator is a registry entry in the operator's own module, with no edit to
+# msflparser.py or the grammar skeleton.
+#
+# The same glyph maps to different nodes in different modes (∧ → And in FOL but
+# WeakConjunction in MSFL), so registration is PER (mode, operator): a node may
+# register several ParserOps, one per mode it appears in.
+#
+# Levels mirror the grammar's precedence layering (loosest first):
+#   biimplication  the right-assoc ↔ rule              (one op per mode)
+#   implication    the right-assoc → rule              (one op per mode)
+#   until          the right-assoc Ⓤ rule (modal only) (one op per mode)
+#   level2         the no-mixing same-level group ∧∨⊕⊗ (one only_X rule each)
+#   prefix         ¬ and the prefix modal/temporal ops (the prefix rule's alts)
+#   quantifier     ∀/∃ over a variable or predicate    (the quantifier alts)
+#
+# The shared term/atom/lambda/application layer is NOT registry-driven; it lives
+# verbatim in the base template, identical across every mode (the only term-layer
+# variation, sorted vs. plain constants, is selected by the SORTED flag below).
+
+_VALID_PARSE_LEVELS = frozenset({
+    "prefix", "level2", "implication", "biimplication", "until", "quantifier",
+})
+
+_VALID_MODES = frozenset({"fol", "msfol", "msfl", "fl", "modal", "second_order"})
+
+
+@dataclass(frozen=True)
+class ParserOp:
+    """A parser-facing description of how one operator is parsed in one mode.
+
+    mode      : the grammar mode this binding applies to (one of _VALID_MODES).
+    level     : the precedence level it slots into (one of _VALID_PARSE_LEVELS).
+    terminal_name : name of a named terminal to declare, or "" if the operator
+                uses an inline string literal (the common case for the glyph
+                connectives — kept inline so the error-path terminal patterns
+                match the legacy grammars byte-for-byte).
+    terminal_def  : the full terminal declaration line (e.g. 'BOX: "□"' or
+                'KNOWS.5: /K_.../'), or "" when terminal_name is "".
+    grammar  : the right-hand side of the grammar alternative this op contributes,
+                already referencing the shared rule names (e.g. '"¬" prefix',
+                'BOX prefix', or '(FORALL | EXISTS) VARIABLE prefix'). For a
+                level2 op this is instead the glyph literal (e.g. '"∧"'), since
+                level2 ops are spliced into the generated only_X / same_level_ops
+                rules rather than contributing a free-standing alternative.
+    rule_alias : the Lark rule alias (-> rule_alias) that names the parse node;
+                the matching transform is attached to the assembled Transformer
+                under this same name.
+    transform  : function(items) -> Node implementing the alias's handler.
+    node_class : the Node subclass produced (recorded for introspection/tests).
+    only_name  : for level2 ops only, the generated only_X rule name (e.g.
+                "only_and"); "" for every other level.
+    """
+
+    mode: str
+    level: str
+    terminal_name: str
+    terminal_def: str
+    grammar: str
+    rule_alias: str
+    transform: object
+    node_class: object
+    only_name: str = ""
+
+
+# Append-only list of every parser binding, populated by register_parser_op as
+# each node module imports. MSFLParser filters it by mode at construction time.
+PARSER_OPS: List[ParserOp] = []
+
+
+def register_parser_op(node_class, mode: str, level: str, rule_alias: str,
+                       grammar: str, transform, *,
+                       terminal_name: str = "", terminal_def: str = "",
+                       only_name: str = "") -> ParserOp:
+    """Register one parser binding for ``node_class`` in grammar mode ``mode``.
+
+    Appends a ParserOp to PARSER_OPS. ``transform(items) -> Node`` is the handler
+    Lark calls for the ``rule_alias`` reduction; ``grammar`` is the alternative's
+    right-hand side (or, for a level2 op, the bare glyph literal). Named terminals
+    are declared via ``terminal_name``/``terminal_def``; inline string operators
+    leave both empty. Returns the stored ParserOp.
+
+    This is additive to register_operator (which handles rendering): a fully
+    self-describing operator calls both — register_operator for the renderers,
+    register_parser_op (once per mode) for the parser.
+    """
+    if mode not in _VALID_MODES:
+        raise ValueError(
+            f"register_parser_op: unknown mode {mode!r}; "
+            f"expected one of {sorted(_VALID_MODES)}"
+        )
+    if level not in _VALID_PARSE_LEVELS:
+        raise ValueError(
+            f"register_parser_op: unknown level {level!r}; "
+            f"expected one of {sorted(_VALID_PARSE_LEVELS)}"
+        )
+    op = ParserOp(mode, level, terminal_name, terminal_def, grammar,
+                  rule_alias, transform, node_class, only_name)
+    PARSER_OPS.append(op)
+    return op
+
+
+def parser_ops_for_mode(mode: str) -> List[ParserOp]:
+    """Return every registered ParserOp whose mode matches ``mode`` (in order)."""
+    return [op for op in PARSER_OPS if op.mode == mode]
+
+
+# ---------------------------------------------------------------------------
+# Base grammar template
+# ---------------------------------------------------------------------------
+#
+# ONE skeleton shared by every mode. The %%MARKERS%% are filled by
+# build_grammar() from the mode's ParserOps. The structure is byte-compatible
+# with the six hand-written .lark grammars: right-assoc ↔ and →, the optional
+# Until sub-level, the no-mixing only_X same_level_ops group, the prefix level
+# (¬ plus any prefix modal ops, then quantifier / atom / grouping), the tight
+# quantifier binding (body is the prefix level), and the verbatim
+# term/atom/lambda/application layer.
+#
+# Normalised internal rule names: the legacy grammars used negation /
+# luk_negation / modal for the prefix level and biimplication / luk_biimplication
+# (etc.) for the binary levels; because Lark inlines ?-rules and only the ->
+# aliases name tree nodes, these internal names are irrelevant to the produced
+# AST, so the template uses single uniform names (prefix, biimplication,
+# implication, until, same_level_ops). The %%...%% markers:
+#   %%TERMINAL_IMPORTS%%  the (...) list imported from .terminals
+#   %%TERMINAL_DEFS%%     extra named-terminal declarations (modal ops)
+#   %%BIIMPL_OPS%%        the ↔ alternative(s)
+#   %%IMPL_OPS%%          the → alternative(s)
+#   %%IMPL_BODY%%         rule the → level reduces to: "until" or "same_level_ops"
+#   %%UNTIL_BLOCK%%       the whole until rule (modal) or empty
+#   %%LEVEL2_ALTS%%       the same_level_ops alternation members (only_X | … )
+#   %%ONLY_RULES%%        the only_X rule definitions
+#   %%PREFIX_OPS%%        the prefix alternatives contributed by ops (¬, modal …)
+#   %%QUANT_OPS%%         the quantifier alternative(s)
+#   %%CONST_ALTS%%        the atom_term constant rules (plain vs. sorted)
+
+_BASE_GRAMMAR_TEMPLATE = '''\
+%import .terminals (%%TERMINAL_IMPORTS%%)
+%import common.WS
+%%TERMINAL_DEFS%%
+?start: formula
+
+?formula: biimplication
+    | lambda_
+    | application_
+
+?biimplication: implication
+%%BIIMPL_OPS%%
+
+?implication: %%IMPL_BODY%%
+%%IMPL_OPS%%
+%%UNTIL_BLOCK%%
+?same_level_ops: %%LEVEL2_ALTS%%
+%%ONLY_RULES%%
+?prefix: %%PREFIX_OPS%%
+    | quantifier
+    | atom
+    | "(" formula ")"
+    | "[" formula "]"
+
+?quantifier: %%QUANT_OPS%%
+
+?atom: infix_predicate
+     | PREDICATE "(" termlist ")"           -> atom_
+     | PREDICATE                            -> atom0_
+
+?infix_predicate: term "<"  term            -> lt_
+                | term ">"  term            -> gt_
+                | term "="  term            -> eq_
+                | term "≤" term            -> le_
+                | term "≥" term            -> ge_
+                | term "≠" term            -> ne_
+
+?termlist: term ("," term)*
+
+?term: sum
+
+?sum: product
+    | sum "+" product                       -> add_
+    | sum "-" product                       -> sub_
+
+?product: atom_term
+    | product "*" atom_term                 -> mul_
+    | product "/" atom_term                 -> div_
+
+?atom_term: VARIABLE
+    | NAME "(" termlist ")"                 -> function_
+%%CONST_ALTS%%
+    | NUMBER                                -> number_
+    | "(" term ")"
+
+lambda_: LAMBDA (VARIABLE | NAME | PREDICATE) "." formula
+?app_arg: formula | atom_term
+application_: "(" formula ")" "(" app_arg ")"
+
+%ignore WS
+'''
+
+
+# The two constant-handling variants for the atom_term layer. Plain (FOL / FL /
+# modal / second-order) treats a bare NAME as a Constant and c_-constants via
+# const_; sorted (MSFOL / MSFL) requires a SORT annotation on each.
+_CONST_ALTS_PLAIN = (
+    "    | NAME\n"
+    "    | CONSTANT                              -> const_"
+)
+_CONST_ALTS_SORTED = (
+    "    | NAME SORT                             -> sorted_const_\n"
+    "    | CONSTANT SORT                         -> sorted_const_"
+)
+
+
+# Per-mode grammar configuration that is NOT operator-specific: the terminal
+# import list and whether constants are sorted. (The operators themselves come
+# from the registry.)
+_MODE_TERMINAL_IMPORTS = {
+    "fol":   "PREDICATE, CONSTANT, NAME, VARIABLE, NUMBER, FORALL, EXISTS, LAMBDA",
+    "msfol": "PREDICATE, CONSTANT, NAME, VARIABLE, NUMBER, SORT, FORALL, EXISTS, LAMBDA",
+    "msfl":  "PREDICATE, CONSTANT, NAME, VARIABLE, NUMBER, SORT, FORALL, EXISTS, LAMBDA",
+    "fl":    "PREDICATE, CONSTANT, NAME, VARIABLE, NUMBER, FORALL, EXISTS, LAMBDA",
+    "modal": "PREDICATE, CONSTANT, NAME, VARIABLE, NUMBER, FORALL, EXISTS, LAMBDA",
+    "second_order": "PREDICATE, CONSTANT, NAME, VARIABLE, NUMBER, FORALL, EXISTS, LAMBDA",
+}
+
+_SORTED_MODES = frozenset({"msfol", "msfl"})
+
+
+def build_grammar(mode: str) -> str:
+    """Assemble the Lark grammar STRING for ``mode`` from the registry + template.
+
+    Splices the mode's ParserOps into the base template's markers, preserving the
+    exact precedence structure of the legacy hand-written grammar for that mode.
+    Pure string assembly: no Lark object is built here (MSFLParser does that).
+    """
+    # Handler-only ops (empty grammar, e.g. sorted_const_ whose alternative lives
+    # in the template's CONST_ALTS block) contribute a transform but no grammar
+    # alternative, so they are excluded from every grammar-fragment join below.
+    ops = [op for op in parser_ops_for_mode(mode) if op.grammar]
+
+    # --- named-terminal declarations (modal operators; dedup, preserve order) ---
+    seen_terms = set()
+    term_defs = []
+    for op in ops:
+        if op.terminal_def and op.terminal_name not in seen_terms:
+            seen_terms.add(op.terminal_name)
+            term_defs.append(op.terminal_def)
+    terminal_defs = ("\n".join(term_defs) + "\n") if term_defs else ""
+
+    # --- until sub-level (modal only) ----------------------------------------
+    # Determined first because it sets the implication body rule. ``op.grammar``
+    # for an until op is just the operator glyph (literal or named terminal).
+    until = [op for op in ops if op.level == "until"]
+    if until:
+        impl_body = "until"
+        until_alts = "\n".join(
+            f"    | same_level_ops {op.grammar} until            -> {op.rule_alias}"
+            for op in until
+        )
+        until_block = f"\n?until: same_level_ops\n{until_alts}\n"
+    else:
+        impl_body = "same_level_ops"
+        until_block = ""
+
+    # --- biimplication (↔) — right-assoc; ``op.grammar`` is just the glyph ----
+    biimpl = [op for op in ops if op.level == "biimplication"]
+    biimpl_ops = "\n".join(
+        f"    | implication {op.grammar} biimplication         -> {op.rule_alias}"
+        for op in biimpl
+    )
+
+    # --- implication (→) — right-assoc; left operand is the implication body --
+    impl = [op for op in ops if op.level == "implication"]
+    impl_ops = "\n".join(
+        f"    | {impl_body} {op.grammar} implication        -> {op.rule_alias}"
+        for op in impl
+    )
+
+    # --- level2 (the no-mixing same_level_ops group) -------------------------
+    level2 = [op for op in ops if op.level == "level2"]
+    only_members = " | ".join(op.only_name for op in level2)
+    level2_alts = f"{only_members} | prefix" if only_members else "prefix"
+    only_rules = "\n".join(
+        f"?{op.only_name}: prefix ({op.grammar} prefix)+         -> {op.rule_alias}"
+        for op in level2
+    )
+
+    # --- prefix level (¬ and any prefix modal/temporal ops) ------------------
+    prefix = [op for op in ops if op.level == "prefix"]
+    prefix_ops = "\n    | ".join(f"{op.grammar}                     -> {op.rule_alias}" for op in prefix)
+
+    # --- quantifier ----------------------------------------------------------
+    quant = [op for op in ops if op.level == "quantifier"]
+    quant_ops = "\n    | ".join(f"{op.grammar}   -> {op.rule_alias}" for op in quant)
+
+    # --- term-layer constant handling ----------------------------------------
+    const_alts = _CONST_ALTS_SORTED if mode in _SORTED_MODES else _CONST_ALTS_PLAIN
+
+    grammar = _BASE_GRAMMAR_TEMPLATE
+    grammar = grammar.replace("%%TERMINAL_IMPORTS%%", _MODE_TERMINAL_IMPORTS[mode])
+    grammar = grammar.replace("%%TERMINAL_DEFS%%\n", terminal_defs)
+    grammar = grammar.replace("%%BIIMPL_OPS%%", biimpl_ops)
+    grammar = grammar.replace("%%IMPL_BODY%%", impl_body)
+    grammar = grammar.replace("%%IMPL_OPS%%", impl_ops)
+    grammar = grammar.replace("%%UNTIL_BLOCK%%\n", until_block)
+    grammar = grammar.replace("%%LEVEL2_ALTS%%", level2_alts)
+    grammar = grammar.replace("%%ONLY_RULES%%\n", (only_rules + "\n") if only_rules else "")
+    grammar = grammar.replace("%%PREFIX_OPS%%", prefix_ops)
+    grammar = grammar.replace("%%QUANT_OPS%%", quant_ops)
+    grammar = grammar.replace("%%CONST_ALTS%%", const_alts)
+    return grammar
+
+
+def build_transform_handlers(mode: str) -> Dict[str, object]:
+    """Return ``{rule_alias: transform}`` for every ParserOp in ``mode``.
+
+    MSFLParser attaches these to the assembled Transformer so each operator's
+    parse handler lives next to its node definition, not in a hand-written
+    Transformer subclass.
+    """
+    return {op.rule_alias: op.transform for op in parser_ops_for_mode(mode)}
+
+
+# =========================
 # Transformer
 # =========================
 
@@ -967,3 +1386,74 @@ class FOLTransformer(Transformer):
         var = items[1]
         formula = items[2]
         return Quantifier(str(quant), var, formula)
+
+
+# =========================
+# Parser registration (FOL / MSFOL connectives + quantifier)
+# =========================
+#
+# Self-register the classical connectives and the unsorted quantifier with the
+# parser registry. Each transform mirrors the corresponding FOLTransformer method
+# exactly (same items[…] handling, same node), so the assembled parser produces
+# byte-identical ASTs. The connectives shared by FOL and MSFOL (∧ ∨ ¬ → ↔) and
+# the quantifier register once per mode they appear in; FOL additionally has ⊕
+# (Xor). The sorted quantifier and the Łukasiewicz/MSFL bindings live in
+# _msfl_nodes.py; the modal/second-order bindings in their own modules.
+
+def _fold_binary(items, node_cls):
+    """Left-fold a variable-length item list into nested binary nodes (registry copy)."""
+    node = items[0]
+    for item in items[1:]:
+        node = node_cls(node, item)
+    return node
+
+
+# Classical ∧ ∨ ¬ → ↔ are shared by FOL, MSFOL, modal, and second-order modes;
+# ⊕ (Xor) by FOL, modal, and second-order (NOT MSFOL). The unsorted quantifier is
+# shared by FOL, modal, and second-order. Each connective registers once per mode
+# with the SAME grammar fragment and transform, so the assembled parser produces
+# byte-identical ASTs in every mode.
+_CLASSICAL_MODES = ("fol", "msfol", "modal", "second_order")
+_XOR_MODES = ("fol", "modal", "second_order")
+_UNSORTED_QUANT_MODES = ("fol", "modal", "second_order")
+
+
+def _quantifier_transform(items):
+    """Build an unsorted Quantifier from [FORALL/EXISTS token, Variable, body]."""
+    return Quantifier(str(items[0]), items[1], items[2])
+
+
+# --- prefix: ¬ (Not) ---
+for _m in _CLASSICAL_MODES:
+    register_parser_op(Not, _m, "prefix", "not_", '"¬" prefix',
+                       lambda items: Not(items[0]))
+
+# --- level2: ∧ ∨ (And, Or) everywhere classical; ⊕ (Xor) where allowed ---
+for _m in _CLASSICAL_MODES:
+    register_parser_op(And, _m, "level2", "and_", '"∧"',
+                       lambda items: _fold_binary(items, And), only_name="only_and")
+    register_parser_op(Or, _m, "level2", "or_", '"∨"',
+                       lambda items: _fold_binary(items, Or), only_name="only_or")
+for _m in _XOR_MODES:
+    register_parser_op(Xor, _m, "level2", "xor_", '"⊕"',
+                       lambda items: _fold_binary(items, Xor), only_name="only_xor")
+
+# --- implication: → (Implies) ---
+# For binary levels (implication / biimplication / until) the ``grammar`` field
+# holds JUST the operator glyph; build_grammar assembles the full right-assoc
+# rule from it (the operand rule names are fixed by the level structure). This
+# lets the → rule's left operand follow the mode's implication body (same_level_ops
+# normally, or until in modal mode) without a mode-specific fragment.
+for _m in _CLASSICAL_MODES:
+    register_parser_op(Implies, _m, "implication", "implies_", '"→"',
+                       lambda items: Implies(items[0], items[1]))
+
+# --- biimplication: ↔ (Iff) ---
+for _m in _CLASSICAL_MODES:
+    register_parser_op(Iff, _m, "biimplication", "iff_", '"↔"',
+                       lambda items: Iff(items[0], items[1]))
+
+# --- quantifier: unsorted ∀x / ∃x (Quantifier) ---
+for _m in _UNSORTED_QUANT_MODES:
+    register_parser_op(Quantifier, _m, "quantifier", "quantifier_",
+                       "(FORALL | EXISTS) VARIABLE prefix", _quantifier_transform)

@@ -24,6 +24,12 @@ from ._msfl_nodes import (
     resolve_lambda_scope,
     to_fol,
 )
+from ._modal_nodes import (
+    Box, Diamond, Knows, Believes,
+    Always, Eventually, Next, Until,
+    Obligatory, Permitted,
+)
+from ._so_nodes import SecondOrderQuantifier
 
 __all__ = [
     "Z3Env",
@@ -37,6 +43,10 @@ __all__ = [
     "StrongConjunction", "StrongDisjunction",
     "LukNegation", "LukImplication", "LukEquivalence",
     "LambdaVar", "Lambda", "Application",
+    "Box", "Diamond", "Knows", "Believes",
+    "Always", "Eventually", "Next", "Until",
+    "Obligatory", "Permitted",
+    "SecondOrderQuantifier",
     "free_variables",
     "substitute", "beta_reduce", "ReductionLimitError",
     "eta_reduce", "beta_eta_normalize",

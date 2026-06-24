@@ -1,10 +1,10 @@
 # unicode-fol-kit
 
-A Python toolkit for parsing and working with first-order logic (FOL) formulas written with Unicode operators. The single parser class `MSFLParser` supports four modes — classical FOL, many-sorted FOL (MSFOL), many-sorted fuzzy logic (MSFL), and single-sorted fuzzy logic (FL, Łukasiewicz) — selected by constructor flags.
+A Python toolkit for parsing and working with first-order logic (FOL) formulas written with Unicode operators. The single parser class `MSFLParser` supports six modes — classical FOL, many-sorted FOL (MSFOL), many-sorted fuzzy logic (MSFL), single-sorted fuzzy logic (FL, Łukasiewicz), modal/temporal/epistemic/deontic logic, and second-order logic — selected by constructor flags.
 
 ## Features
 
-- **Four parser modes** — FOL, many-sorted FOL (MSFOL), many-sorted fuzzy/Łukasiewicz logic (MSFL), and single-sorted fuzzy/Łukasiewicz logic (FL), all from one class
+- **Six parser modes** — FOL, many-sorted FOL (MSFOL), many-sorted fuzzy/Łukasiewicz logic (MSFL), single-sorted fuzzy/Łukasiewicz logic (FL), modal/temporal/epistemic/deontic, and second-order — all from one class
 - **Unicode surface syntax** — natural symbols (∀ ∃ ∧ ∨ ¬ → ↔ ⊕ ⊗ = ≠ ≤ ≥) with no ASCII fallbacks needed
 - **Sorted quantifiers and constants** — `∀x:Human P(x)`, `P(alice:Human)` in MSFOL and MSFL modes
 - **Łukasiewicz operators** — weak ∧ / ∨ (min/max), strong ⊗ / ⊕ (t-norm/t-conorm), and Łukasiewicz ¬ → ↔ in MSFL mode
@@ -14,6 +14,7 @@ A Python toolkit for parsing and working with first-order logic (FOL) formulas w
 - **Tree view** — render any formula as a readable ASCII tree
 - **Unicode round-trip** — `to_unicode_str()` renders any node back to a parseable Unicode formula; re-parsing in the matching mode yields a structurally equal AST
 - **LaTeX export** — `to_latex()` renders any node as LaTeX math-mode markup, with the same precedence-aware parenthesisation as the Unicode renderer
+- **LaTeX import** — `parse_latex()` reads a LaTeX-math formula (the inverse of `to_latex()`); `latex_to_unicode()` does the LaTeX→Unicode translation on its own
 - **Normal forms** — `to_nnf()`, `to_pnf()`, `to_cnf()`, `to_dnf()` (equivalence-preserving), `to_tseitin_cnf()` (equisatisfiable, no blow-up), and `skolemize()` (satisfiability-preserving) for classical FOL
 - **Horn check** — `is_horn()` reports whether a formula's clausal form consists of Horn clauses
 - **Traversal API** — `walk()`, `subformulas()`, `atoms()`, `variables()`, `count()`, `depth()` on every node
@@ -25,6 +26,11 @@ A Python toolkit for parsing and working with first-order logic (FOL) formulas w
 - **Equivalence checking** — check if two formulas are logically equivalent via Z3
 - **Entailment checking** — check if a conclusion follows from premises via Prover9
 - **Built-in resolution prover** — `prove()` and `is_valid_resolution()` decide entailment/validity in-process (sound first-order resolution, no external solver needed)
+- **Canonical form & exact match** — `canonicalize()` normalises bound-variable renaming, commutativity/associativity, operand duplication, and double negation; `exact_match()` gives a fair NL→FOL comparison stricter than logical equivalence but more forgiving than raw equality
+- **Formula validation** — `validate()` / `is_wellformed()` / `validate_text()` report free variables, inconsistent predicate/function arity, leftover lambda nodes, and parseability of raw model output
+- **Modal, temporal, epistemic & deontic logic** — `MSFLParser(modal=True)` parses `□`/`◇` (alethic), `K_a`/`B_a` (epistemic/doxastic), `Ⓖ`/`Ⓕ`/`Ⓝ`/`Ⓤ` (temporal), `Ⓞ`/`Ⓟ` (obligation/permission); Kripke-model semantics via `satisfies_modal()`; `standard_translation()` to classical FOL so Z3/resolution can decide modal validity
+- **Many-valued logic** — `kleene_value()` evaluates a formula over {0, ½, 1} (strong Kleene tables); three-valued `is_valid`/`is_satisfiable`/`entails` with selectable designated values for **Kleene K3** and **Priest LP** (paraconsistent)
+- **Second-order logic** — `MSFLParser(second_order=True)` parses `∀P`/`∃P` over predicate variables (arity inferred; monadic & n-ary); `satisfies_so()` gives finite-model semantics by enumerating relations over the domain
 - **Lambda abstraction** — `λx. φ` syntax in all four parser modes; parameters can be variables (`λx.`), named constants (`λfoo.`), or predicate symbols (`λP.`); body extends rightward through all connectives
 - **Higher-order predicate application** — `(func)(arg)` explicit application; `λP. P(x)` writes the body naturally and is automatically scope-resolved to `Application(LambdaVar("P"), Variable("x"))`
 - **Lambda-calculus operations** — free-variable computation, capture-avoiding substitution, beta-reduction (normal-order, step-limited), eta-reduction, combined beta-eta normalisation to fixpoint, and lexical scope resolution
@@ -54,13 +60,15 @@ pip install .
 
 ## Parser modes
 
-`MSFLParser` is instantiated with two boolean flags:
+`MSFLParser` selects its mode from constructor flags. The four core modes form the `many_sorted` × `fuzzy` matrix; two further modes — modal and second-order — are each enabled by their own flag and are mutually exclusive with the others in v1:
 
 ```python
 MSFLParser(many_sorted=False, fuzzy=False)   # FOL   (default)
 MSFLParser(many_sorted=True,  fuzzy=False)   # MSFOL
 MSFLParser(many_sorted=True,  fuzzy=True)    # MSFL
 MSFLParser(many_sorted=False, fuzzy=True)    # FL
+MSFLParser(modal=True)                       # modal / temporal / epistemic / deontic
+MSFLParser(second_order=True)                # second-order (∀P / ∃P)
 ```
 
 | `many_sorted` | `fuzzy` | Mode | Quantifiers | Constants | Connectives |
@@ -69,6 +77,11 @@ MSFLParser(many_sorted=False, fuzzy=True)    # FL
 | `True` | `False` | **MSFOL** | sorted `∀x:Sort` | sorted `alice:Sort` | classical ∧ ∨ ¬ → ↔ (no ⊕) |
 | `True` | `True` | **MSFL** | sorted `∀x:Sort` | sorted `alice:Sort` | weak ∧ ∨, strong ⊗ ⊕, Łuk ¬ → ↔ |
 | `False` | `True` | **FL** | unsorted `∀x` | unsorted | weak ∧ ∨, strong ⊗ ⊕, Łuk ¬ → ↔ |
+
+The two extension modes are classical unsorted FOL plus their own operators (each enabled by a single flag, not combinable with `many_sorted`/`fuzzy` in v1):
+
+- **modal** (`modal=True`) — adds `□ ◇` (alethic), `K_a B_a` (epistemic/doxastic), `Ⓖ Ⓕ Ⓝ Ⓤ` (temporal), and `Ⓞ Ⓟ` (deontic).
+- **second-order** (`second_order=True`) — adds `∀P / ∃P` over predicate variables (arity inferred from use).
 
 ## Usage
 
@@ -175,6 +188,26 @@ formula.to_dict()      # JSON-serialisable dict
 ```
 
 `to_latex()` uses the same precedence-aware parenthesisation as `to_unicode_str()`. Sorts render as `\forall x{:}\mathrm{Human}\,`; strong Łukasiewicz operators as `\otimes` / `\oplus`. Symbol and predicate names are emitted verbatim (no `\mathrm` wrapping).
+
+### Reading LaTeX
+
+`parse_latex()` is the inverse of `to_latex()`: it reads a LaTeX-math formula by first translating LaTeX commands to the Unicode surface syntax (`latex_to_unicode()`), then parsing. It accepts the exact output of `to_latex()` (so `parse_latex(node.to_latex())` round-trips) as well as common hand-written synonyms (`\neg`/`\lnot`, `\wedge`/`\land`, `\vee`/`\lor`, `\to`/`\rightarrow`, `\iff`, `\le`/`\ge`, …).
+
+```python
+from unicode_fol_kit import MSFLParser, parse_latex, latex_to_unicode
+
+parse_latex(r"\forall x\, (P(x) \rightarrow Q(x))")        # ∀x (P(x) → Q(x))  → AST
+parse_latex(r"\neg (P \wedge Q)")                           # ¬(P ∧ Q)          → AST
+parse_latex(r"\Box P \rightarrow \Diamond Q", modal=True)   # □P → ◇Q           → AST (modal mode)
+
+latex_to_unicode(r"\forall x (P(x) \to Q(x))")              # '∀ x (P(x) → Q(x))'  (spacing preserved; parser ignores it)
+
+# Round-trip: render to LaTeX and read it back
+ast = MSFLParser(many_sorted=True).parse("∀x:Human P(x)")
+parse_latex(ast.to_latex(), many_sorted=True) == ast        # True
+```
+
+`parse_latex` takes the same mode flags as `MSFLParser` (`many_sorted`, `fuzzy`, `modal`, `second_order`); the LaTeX must translate to syntax valid for that mode. Hand-written `c_`-constants need an escaped underscore (`c\_zero` or `c_{zero}`), since a bare `_` is LaTeX subscript.
 
 ### Traversal and inspection
 
@@ -403,7 +436,7 @@ get_model(Not(parser.parse("P ↔ Q")))     # e.g. {'P': 'True', 'Q': 'False'}
 ### Entailment checking (Prover9)
 
 ```python
-from unicode_fol_kit import MSFLParser, check_logical_entailment
+from unicode_fol_kit import MSFLParser, check_logical_entailment  # doctest: +SKIP (needs an installed Prover9)
 
 parser = MSFLParser()
 premises = [
@@ -579,6 +612,175 @@ python -m unicode_fol_kit "P(x) ⊗ Q(x)" --mode msfl --to latex
 ```
 
 `--mode` is one of `fol` (default), `msfol`, `msfl`, `fl`; `--to` is one of `tree` (default), `unicode`, `latex`, `tptp`, `prover9`, `json`, `dot`. Parse errors print a `SYNTAX_ERROR` message to stderr and exit with status 1.
+
+### Evaluation utilities (NL→FOL)
+
+When evaluating a model that translates natural language to FOL, **exact string match is too strict** (it penalises a correct paraphrase that merely renames a bound variable or reorders a conjunction) and **logical equivalence is undecidable** in general. `canonicalize()` sits in between: it puts a formula into a normal form that quotients out the *syntactic* differences that should not count as errors — bound-variable renaming (α), commutativity and associativity of the commutative connectives, duplicate operands, and double negation — while staying **logically equivalent** to the input.
+
+```python
+from unicode_fol_kit import MSFLParser, canonicalize, exact_match
+
+parser = MSFLParser()
+pred = parser.parse("∀x (P(x) ∧ Q(x))")
+ref  = parser.parse("∀y (Q(y) ∧ P(y))")     # α-renamed + conjuncts swapped
+
+exact_match(pred, ref)                    # True  (canonical match)
+exact_match(pred, ref, canonical=False)   # False (raw structural match)
+canonicalize(parser.parse("¬¬P")) == canonicalize(parser.parse("P"))   # True
+```
+
+`canonicalize` is a normal form for exactly {α, commutativity, associativity, operand-dedup, double-negation}. It does **not** do distributivity, CNF, or full equivalence — e.g. `P → Q` and `¬P ∨ Q` are equivalent but do not canonicalize equal (use `formulas_are_equivalent` / `prove` for that).
+
+`validate()` flags the defects common in generated formulas:
+
+```python
+from unicode_fol_kit import MSFLParser, validate, is_wellformed, validate_text, And, Atom, Variable
+
+parser = MSFLParser()
+
+is_wellformed(parser.parse("∀x (Human(x) → Mortal(x))"))   # True
+
+r = validate(parser.parse("P(x)"))
+r.is_closed                # False  — x is free (a sentence should be closed)
+r.free_variable_names      # ('x',)
+
+# Same predicate used with two different arities — a common LLM error:
+bad = And(Atom("P", [Variable("x")]), Atom("P", [Variable("x"), Variable("y")]))
+validate(bad).arity_consistent     # False
+validate(bad).arity_conflicts      # {('pred', 'P'): (1, 2)}
+
+# Syntactic validity of raw model output (catches parse errors):
+validate_text("∀x (P(x)").parseable   # False  (unbalanced parenthesis)
+```
+
+The `ValidationReport` also exposes `has_lambdas`, and `predicates` / `functions` / `constants` / `sorts_used` inventories. Built-in comparison (`= ≠ < > ≤ ≥`) and arithmetic (`+ - * /`) symbols are excluded from the arity checks and inventories.
+
+## Modal, temporal, and epistemic logic
+
+Natural language is full of constructs classical FOL can't express directly — necessity/possibility, knowledge and belief, and time. `MSFLParser(modal=True)` adds a modal mode (classical unsorted FOL extended with modal operators) and the toolkit ships Kripke-model semantics plus a standard translation back to FOL.
+
+| Family | Operators | Surface syntax | Meaning |
+|---|---|---|---|
+| Alethic | `Box` / `Diamond` | `□φ` / `◇φ` | necessarily / possibly |
+| Epistemic / doxastic | `Knows` / `Believes` | `K_a φ` / `B_a φ` | agent *a* knows / believes φ |
+| Temporal | `Always` / `Eventually` / `Next` / `Until` | `Ⓖφ` / `Ⓕφ` / `Ⓝφ` / `φ Ⓤ ψ` | henceforth / eventually / next / until |
+| Deontic | `Obligatory` / `Permitted` | `Ⓞφ` / `Ⓟφ` | it is obligatory / permitted that φ |
+
+```python
+from unicode_fol_kit import MSFLParser
+
+parser = MSFLParser(modal=True)
+
+parser.parse("□(P → Q) → (□P → □Q)")    # the K axiom (Box / Implies …)
+parser.parse("K_alice (P ∧ Q)")          # Knows("alice", And(…))
+parser.parse("Ⓖ(Rain → Ⓕ Sun)")          # Always(Implies(Rain, Eventually(Sun)))
+parser.parse("P Ⓤ Q")                     # Until(P, Q)
+```
+
+The prefix operators (`□ ◇ Ⓖ Ⓕ Ⓝ K_a B_a`) bind as tightly as `¬`; `Ⓤ` is binary, binding looser than `∧/∨` but tighter than `→`, right-associative. Agent names in `K_a`/`B_a` are lowercase identifiers, so they never collide with uppercase predicate symbols. Modal mode is classical and unsorted; combining `modal=True` with `many_sorted`/`fuzzy` raises `ValueError`.
+
+### Kripke semantics
+
+A `KripkeModel` is a set of worlds, a dict of **named accessibility relations**, and a per-world propositional valuation (the set of ground atoms true at that world). `satisfies_modal(formula, model, world)` evaluates a formula at a world.
+
+```python
+from unicode_fol_kit import MSFLParser, KripkeModel, satisfies_modal
+
+parser = MSFLParser(modal=True)
+
+# Reflexive frame → knowledge/necessity is factive (□P → P holds):
+refl = KripkeModel(worlds={"w"}, relations={"alethic": {("w", "w")}}, valuation={"w": {"P"}})
+satisfies_modal(parser.parse("□P → P"), refl, "w")     # True
+
+# Non-reflexive frame → □P → P can fail:
+frame = KripkeModel(worlds={0, 1}, relations={"alethic": {(0, 1)}}, valuation={1: {"P"}})
+satisfies_modal(parser.parse("□P → P"), frame, 0)      # False  (P holds at the successor, not here)
+```
+
+Relation-name convention: `"alethic"` for `□`/`◇`, `"K:<agent>"` / `"B:<agent>"` for `Knows`/`Believes`, and `"temporal"` for `Next`/`Always`/`Eventually`/`Until`. `Always`/`Eventually` range over the reflexive-transitive closure of the temporal relation; `Until(φ, ψ)` is the finite-reachability reading (a temporal path to a ψ-world with φ holding until then). This semantics is **propositional/ground** (v1): quantifiers inside modalities are out of scope.
+
+### Standard translation to FOL
+
+`standard_translation()` rewrites a modal formula into classical FOL with explicit world variables and accessibility predicates, so the existing solvers (`is_valid`, `prove`, Z3) can decide modal validity:
+
+```python
+from unicode_fol_kit import MSFLParser, standard_translation, is_valid
+
+parser = MSFLParser(modal=True)
+
+standard_translation(parser.parse("◇P"))     # ∃w0 (R(w, w0) ∧ P(w0))
+
+# The K axiom is valid on every frame, so its translation is FOL-valid:
+is_valid(standard_translation(parser.parse("□(P → Q) → (□P → □Q)")))   # True
+
+# The T axiom □P → P is valid only on reflexive frames, so the bare translation is not valid:
+is_valid(standard_translation(parser.parse("□P → P")))                  # False
+#   (add the reflexivity axiom ∀w R(w, w) as a premise to recover it)
+```
+
+`Box`/`Diamond` translate over an accessibility predicate `R`, `Knows`/`Believes` over `Rk_a`/`Rb_a`, `Always`/`Eventually`/`Next` over temporal predicates `T`/`N`. `Until` and quantifiers are rejected (transitive closure and first-order modal domains are not first-order definable in this scheme). Modal nodes reject `to_z3`/`to_prover9`/`to_tptp` directly — translate first.
+
+### Deontic logic
+
+`Ⓞ` (obligation) and `Ⓟ` (permission) are box/diamond over a `"deontic"` accessibility relation (Standard Deontic Logic, the modal logic **KD**). On a **serial** frame the D axiom `Ⓞφ → Ⓟφ` holds ("what is obligatory is permitted"), while factivity `Ⓞφ → φ` does **not** ("ought" does not imply "is").
+
+```python
+from unicode_fol_kit import MSFLParser, KripkeModel, satisfies_modal, standard_translation
+
+parser = MSFLParser(modal=True)
+serial = KripkeModel(worlds={0, 1}, relations={"deontic": {(0, 1), (1, 1)}}, valuation={1: {"P"}})
+
+satisfies_modal(parser.parse("Ⓞ P → Ⓟ P"), serial, 0)    # True   (D axiom, serial frame)
+satisfies_modal(parser.parse("Ⓞ P → P"), serial, 0)      # False  (P is obligatory but false here)
+standard_translation(parser.parse("Ⓞ P"))                # ∀w0 (D(w, w0) → P(w0))
+```
+
+`Forbidden` is the derived `¬Ⓟφ` (≡ `Ⓞ¬φ`).
+
+## Many-valued logic (Kleene K3 / Priest LP)
+
+`kleene_value()` evaluates a classical formula over the three truth values **0 (false)**, **½ (undefined / both)**, and **1 (true)** using the strong Kleene tables (`¬x = 1−x`, `∧ = min`, `∨ = max`, `→ = max(1−x, y)`). Validity, satisfiability, and entailment are decided by enumeration under a chosen set of **designated** values — Kleene's **K3** designates `{1}`, Priest's paraconsistent **LP** designates `{½, 1}`:
+
+```python
+from unicode_fol_kit import MSFLParser, kleene_value
+from unicode_fol_kit.semantics import is_valid, is_satisfiable, entails   # three-valued versions
+
+parser = MSFLParser()
+
+kleene_value(parser.parse("P ∧ ¬P"), {"P": 0.5})    # 0.5   (min(0.5, 0.5))
+
+# Excluded middle: not valid in K3, but valid in LP (½ is designated there):
+is_valid(parser.parse("P ∨ ¬P"), "K3")    # False
+is_valid(parser.parse("P ∨ ¬P"), "LP")    # True
+
+# Explosion: holds in K3 but FAILS in LP (LP is paraconsistent):
+entails([parser.parse("P"), parser.parse("¬P")], parser.parse("Q"), "K3")   # True
+entails([parser.parse("P"), parser.parse("¬P")], parser.parse("Q"), "LP")   # False
+```
+
+`kleene_value` takes a valuation mapping each ground atom's Unicode key (e.g. `"P"`, `"R(a, b)"`) to a value in `{0, 0.5, 1}`; quantifiers range over a finite `domain` (∀ = min, ∃ = max). `is_valid` / `is_satisfiable` / `entails` (importable from `unicode_fol_kit.semantics`) default to `logic="K3"`; pass `"LP"` for the paraconsistent reading. These three-valued functions are intentionally namespaced under `semantics` so they don't shadow the Z3-based `is_valid` / `is_satisfiable` at the package top level.
+
+## Second-order logic
+
+`MSFLParser(second_order=True)` adds quantification over **predicate variables**: `∀P φ` and `∃P φ`, where `P` is an uppercase predicate symbol bound by the quantifier. The predicate variable's arity is **inferred** from how it is applied in the body (`∀P P(x)` is monadic; `∀R R(x, y)` is binary; a never-applied `P` is propositional). Object quantifiers keep using lowercase variables, so `∀x` is first-order and `∀P` is second-order.
+
+`satisfies_so()` (with `holds()` for sentences) gives **finite-model semantics**: a second-order quantifier ranges over *every* relation of its arity on the structure's finite domain (`2^(nᵏ)` relations for domain size `n` and arity `k` — enumeration is brute-force, so keep domains small).
+
+```python
+from unicode_fol_kit import MSFLParser, Structure, satisfies_so, holds
+
+parser = MSFLParser(second_order=True)
+universe = Structure(domain={0, 1})            # a bare 2-element domain
+
+holds(parser.parse("∃P ∀x P(x)"), universe)    # True   (take P = the whole domain)
+holds(parser.parse("∀P ∃x P(x)"), universe)    # False  (take P = ∅)
+
+# Leibniz's identity of indiscernibles is expressible (and holds in full
+# second-order finite models):
+holds(parser.parse("∀x ∀y (∀P (P(x) ↔ P(y)) → x = y)"), universe)   # True
+```
+
+This is second-order **predicate** quantification with full (standard) semantics over finite models. Quantification over functions, third-order and up, and a complete higher-order type system are out of scope; the lambda layer already provides higher-order *terms* (`λP. P(x)`), which you beta-reduce/eliminate before evaluation. Second-order formulas reject `to_z3`/`to_prover9`/`to_tptp` (second-order validity is not first-order / not SMT-expressible) — use `satisfies_so` on finite models instead.
 
 ## Syntax reference
 
@@ -930,7 +1132,7 @@ The top-level helper `to_fol(node, include_sort_facts=False)` chains both steps 
 Parse errors are reported with human-readable messages rather than raw parser internals. Lexer-level problems (an invalid character, a malformed name or number, or an attempt to mix same-level connectives without parentheses) raise `NamingError`; structural problems (an incomplete formula or a misplaced operator) raise `ParsingError`. Both report the offending position and, where useful, a hint. The hint text is mode-aware:
 
 ```python
-from unicode_fol_kit import MSFLParser
+from unicode_fol_kit import MSFLParser  # doctest: +SKIP (these snippets intentionally raise)
 
 # FOL mode — hint names ∧, ∨, and ⊕
 MSFLParser().parse("P(x) ∧ Q(x) ∨ R(x)")

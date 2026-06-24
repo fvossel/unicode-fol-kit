@@ -6,7 +6,8 @@ from dataclasses import dataclass, is_dataclass
 from ._fol_nodes import (
     Node, Z3Env, Variable, Constant, Number, Function,
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
-    NODE_CLASSES,
+    NODE_CLASSES, OPERATORS, register_operator,
+    register_parser_op, _fold_binary,
 )
 
 _logger = logging.getLogger(__name__)
@@ -382,6 +383,103 @@ class LukEquivalence(Node):
     def to_tptp(self) -> str:
         _logger.info("Auto-reducing %s to FOL for TPTP export.", type(self).__name__)
         return to_fol(self).to_tptp()
+
+
+# =========================
+# Operator registration
+# =========================
+#
+# Self-register the Łukasiewicz operators with the central renderers. Each uses
+# the same glyph/markup as its classical counterpart but is distinct by class
+# identity (e.g. LukNegation renders ¬ like Not but lowers differently).
+
+register_operator(LukNegation, "prefix", "¬", "\\lnot ", 4)
+register_operator(WeakConjunction, "level2", "∧", "\\land", 3)
+register_operator(WeakDisjunction, "level2", "∨", "\\lor", 3)
+register_operator(StrongConjunction, "level2", "⊗", "\\otimes", 3)
+register_operator(StrongDisjunction, "level2", "⊕", "\\oplus", 3)
+register_operator(LukImplication, "binary_implies", "→", "\\rightarrow", 2)
+register_operator(LukEquivalence, "binary_iff", "↔", "\\leftrightarrow", 1)
+
+
+# =========================
+# Parser registration (MSFL / FL Łukasiewicz + sorted quantifier/constant)
+# =========================
+#
+# The Łukasiewicz connectives appear in both MSFL (sorted) and FL (unsorted)
+# modes with identical grammar fragments; they register once per mode. The
+# transforms mirror LukConnectivesMixin exactly. The sorted quantifier registers
+# for MSFOL and MSFL (both sorted), the unsorted Łukasiewicz quantifier for FL,
+# and sorted-constant handling rides on the SORTED term-layer flag (selected by
+# build_grammar for msfol/msfl) plus the sorted_const_ transform here.
+
+
+def _sorted_quantifier_transform(items):
+    """Build a SortedQuantifier from [FORALL/EXISTS, Variable, SORT, body]."""
+    quant_tok, var, sort_tok, formula = items
+    sort = str(sort_tok)[1:]  # strip leading ':'
+    return SortedQuantifier(str(quant_tok), var, sort, formula)
+
+
+def _sorted_const_transform(items):
+    """Build a SortedConstant from [NAME/CONSTANT, SORT]; NAME pre-converts to Constant."""
+    first, sort_tok = items
+    name = first.name if isinstance(first, Constant) else str(first)
+    sort = str(sort_tok)[1:]  # strip leading ':'
+    return SortedConstant(name, sort)
+
+
+def _luk_quantifier_transform(items):
+    """Build an unsorted Quantifier (FL mode) from [FORALL/EXISTS, Variable, body]."""
+    return Quantifier(str(items[0]), items[1], items[2])
+
+
+# --- prefix: ¬ (LukNegation) in MSFL and FL ---
+for _m in ("msfl", "fl"):
+    register_parser_op(LukNegation, _m, "prefix", "luk_not_", '"¬" prefix',
+                       lambda items: LukNegation(items[0]))
+
+# --- level2: ∧ ∨ ⊗ ⊕ (weak/strong) in MSFL and FL ---
+for _m in ("msfl", "fl"):
+    register_parser_op(WeakConjunction, _m, "level2", "weak_and_", '"∧"',
+                       lambda items: _fold_binary(items, WeakConjunction),
+                       only_name="only_weak_and")
+    register_parser_op(WeakDisjunction, _m, "level2", "weak_or_", '"∨"',
+                       lambda items: _fold_binary(items, WeakDisjunction),
+                       only_name="only_weak_or")
+    register_parser_op(StrongConjunction, _m, "level2", "strong_and_", '"⊗"',
+                       lambda items: _fold_binary(items, StrongConjunction),
+                       only_name="only_strong_and")
+    register_parser_op(StrongDisjunction, _m, "level2", "strong_or_", '"⊕"',
+                       lambda items: _fold_binary(items, StrongDisjunction),
+                       only_name="only_strong_or")
+
+# --- implication: → (LukImplication) in MSFL and FL ---
+# Binary levels store just the glyph; build_grammar assembles the right-assoc rule.
+for _m in ("msfl", "fl"):
+    register_parser_op(LukImplication, _m, "implication", "luk_implies_", '"→"',
+                       lambda items: LukImplication(items[0], items[1]))
+
+# --- biimplication: ↔ (LukEquivalence) in MSFL and FL ---
+for _m in ("msfl", "fl"):
+    register_parser_op(LukEquivalence, _m, "biimplication", "luk_iff_", '"↔"',
+                       lambda items: LukEquivalence(items[0], items[1]))
+
+# --- quantifier: sorted ∀x:S / ∃x:S (MSFOL, MSFL); unsorted (FL) ---
+register_parser_op(SortedQuantifier, "msfol", "quantifier", "sorted_quantifier_",
+                   "(FORALL | EXISTS) VARIABLE SORT prefix", _sorted_quantifier_transform)
+register_parser_op(SortedQuantifier, "msfl", "quantifier", "sorted_quantifier_",
+                   "(FORALL | EXISTS) VARIABLE SORT prefix", _sorted_quantifier_transform)
+register_parser_op(Quantifier, "fl", "quantifier", "quantifier_",
+                   "(FORALL | EXISTS) VARIABLE prefix", _luk_quantifier_transform)
+
+# --- sorted constant transform (term layer, MSFOL + MSFL via the SORTED flag) ---
+# build_grammar emits the NAME SORT / CONSTANT SORT -> sorted_const_ rules for
+# sorted modes; the transform is registered as a non-grammar-contributing handler
+# so it is attached to the assembled Transformer for those modes.
+for _m in ("msfol", "msfl"):
+    register_parser_op(SortedConstant, _m, "quantifier", "sorted_const_",
+                       "", _sorted_const_transform)
 
 
 # =========================
@@ -827,44 +925,43 @@ def resolve_lambda_scope(node: Node) -> Node:
 # Dispatch is by class name so this single block covers both the FOL nodes
 # (from _fol_nodes.py) and the MSFL/lambda nodes defined above.
 #
+# The regular formula operators (every connective/modal that the precedence-driven
+# renderers below format) self-register an OperatorSpec in OPERATORS next to their
+# class definition. The renderers read OPERATORS at call time, so adding an
+# operator needs NO edit here. The fixed entries below are the NON-operator
+# nodes the renderers still special-case explicitly — Lambda/Application and the
+# three quantifier binders — together with their formula precedences.
+#
 # Formula precedence — higher binds tighter — mirrors the grammar layering
-# (biimplication < implication < same-level binary < prefix < atomic):
-_UNI_FORMULA_PREC = {
+# (biimplication < implication < same-level binary < prefix < atomic). Operators
+# carry their precedence in their spec; these are the base (non-operator) entries:
+_UNI_BASE_PREC = {
     "Lambda": 0, "Application": 0,
-    "Iff": 1, "LukEquivalence": 1,
-    "Implies": 2, "LukImplication": 2,
-    "And": 3, "Or": 3, "Xor": 3,
-    "WeakConjunction": 3, "WeakDisjunction": 3,
-    "StrongConjunction": 3, "StrongDisjunction": 3,
-    "Not": 4, "LukNegation": 4,
-    "Quantifier": 4, "SortedQuantifier": 4,
+    "Quantifier": 4, "SortedQuantifier": 4, "SecondOrderQuantifier": 4,
 }
 
-# Binary connective glyphs. Xor and StrongDisjunction share ⊕ (disjoint modes);
-# the weak/strong and classical operators reuse ∧ ∨ → ↔ by class identity.
-_UNI_BINSYM = {
-    "And": "∧", "Or": "∨", "Xor": "⊕",
-    "Implies": "→", "Iff": "↔",
-    "WeakConjunction": "∧", "WeakDisjunction": "∨",
-    "StrongConjunction": "⊗", "StrongDisjunction": "⊕",
-    "LukImplication": "→", "LukEquivalence": "↔",
-}
-
-# The same-level binary group (grammar precedence 2): cannot be mixed without
-# parentheses, and chains are left-folded.
-_UNI_LEVEL2 = frozenset({
-    "And", "Or", "Xor",
-    "WeakConjunction", "WeakDisjunction",
-    "StrongConjunction", "StrongDisjunction",
-})
+# The same-level binary group (∧ ∨ ⊗ ⊕, grammar precedence 3) is identified by
+# its registered fixity == 'level2' — see the dispatch in _uni()/_latex(), which
+# reads it straight off the operator's spec. Membership is therefore derived from
+# the registry: a new same-level operator needs no edit here. Such operators
+# cannot be mixed without parentheses, and chains are left-folded.
 
 _UNI_INFIX_COMPARE = frozenset({"=", "≠", "<", ">", "≤", "≥"})
 _UNI_ARITH_OPS = frozenset({"+", "-", "*", "/"})
 
 
-def _uni_prec(node) -> int:
-    """Formula precedence of a node; atomic nodes (atoms, terms) default to 5."""
-    return _UNI_FORMULA_PREC.get(type(node).__name__, 5)
+def _uni_prec(node) -> float:
+    """Formula precedence of a node; atomic nodes (atoms, terms) default to 5.
+
+    Regular operators read their precedence from the registry; the binders,
+    Lambda and Application fall back to the fixed base table; anything else
+    (atoms, terms) is atomic at 5.
+    """
+    cls = type(node).__name__
+    spec = OPERATORS.get(cls)
+    if spec is not None:
+        return spec.precedence
+    return _UNI_BASE_PREC.get(cls, 5)
 
 
 def _uni_wrap(node, min_prec: int) -> str:
@@ -965,24 +1062,40 @@ def _uni(node) -> str:
     if cls == "Atom":
         return _uni_atom(node)
 
-    if cls in ("Not", "LukNegation"):
-        return "¬" + _uni_wrap(node.formula, 4)
+    # Regular operators are driven entirely by the registry: the spec's fixity
+    # selects the operand arrangement and spec.unicode supplies the glyph/prefix.
+    spec = OPERATORS.get(cls)
+    if spec is not None:
+        fix = spec.fixity
+        if fix == "prefix":
+            # Prefix (¬ and the prefix modal/temporal ops) bind like ¬: operand
+            # wrapped at the prefix level.
+            return spec.unicode + _uni_wrap(node.formula, 4)
+        if fix == "agent_prefix":
+            # K_<agent> / B_<agent>: glyph, agent name, space, then wrapped operand.
+            return f"{spec.unicode}{node.agent} " + _uni_wrap(node.formula, 4)
+        if fix == "binary_until":
+            # Ⓤ right-assoc: left slot same_level_ops (≥3), right slot until (≥2.5).
+            return f"{_uni_wrap(node.left, 3)} {spec.unicode} {_uni_wrap(node.right, 2.5)}"
+        if fix == "binary_iff":
+            # ↔ right-assoc: left slot is implication (≥2), right slot biimplication (≥1)
+            return f"{_uni_wrap(node.left, 2)} {spec.unicode} {_uni_wrap(node.right, 1)}"
+        if fix == "binary_implies":
+            # → right-assoc: left slot same_level_ops (≥3), right slot implication (≥2)
+            return f"{_uni_wrap(node.left, 3)} {spec.unicode} {_uni_wrap(node.right, 2)}"
+        if fix == "level2":
+            left = _uni_level2_child(node.left, cls, "left")
+            right = _uni_level2_child(node.right, cls, "right")
+            return f"{left} {spec.unicode} {right}"
 
     if cls == "Quantifier":
         return f"{node.type}{node.variable.name} " + _uni_wrap(node.formula, 4)
     if cls == "SortedQuantifier":
         return f"{node.type}{node.variable.name}:{node.sort} " + _uni_wrap(node.formula, 4)
-
-    if cls in ("Iff", "LukEquivalence"):
-        # ↔ right-assoc: left slot is implication (≥2), right slot biimplication (≥1)
-        return f"{_uni_wrap(node.left, 2)} {_UNI_BINSYM[cls]} {_uni_wrap(node.right, 1)}"
-    if cls in ("Implies", "LukImplication"):
-        # → right-assoc: left slot same_level_ops (≥3), right slot implication (≥2)
-        return f"{_uni_wrap(node.left, 3)} {_UNI_BINSYM[cls]} {_uni_wrap(node.right, 2)}"
-    if cls in _UNI_LEVEL2:
-        left = _uni_level2_child(node.left, cls, "left")
-        right = _uni_level2_child(node.right, cls, "right")
-        return f"{left} {_UNI_BINSYM[cls]} {right}"
+    if cls == "SecondOrderQuantifier":
+        # Arity is NOT printed: it is re-inferred from the body on re-parse, so
+        # printing it would break the round-trip. e.g. ∀P P(x, y).
+        return f"{node.type}{node.predicate} " + _uni_wrap(node.formula, 4)
 
     if cls == "Lambda":
         # Body extends rightward through the whole formula; never wrapped here.
@@ -999,18 +1112,15 @@ def _uni(node) -> str:
 # =========================
 #
 # Mirrors the Unicode renderer above but emits LaTeX math-mode markup. It reuses
-# the same precedence tables (_UNI_FORMULA_PREC, _UNI_LEVEL2, _uni_prec) so the
-# parenthesisation is identical; only the operator glyphs and term formatting
-# differ. Output is not parseable by MSFLParser (so no round-trip), hence tests
-# assert on exact strings.
+# the same precedence machinery (the operator registry and _uni_prec) so the
+# parenthesisation is identical; only the operator markup (spec.latex) and term
+# formatting differ. Output is not parseable by MSFLParser (so no round-trip),
+# hence tests assert on exact strings.
 
-_LATEX_BINSYM = {
-    "And": "\\land", "Or": "\\lor", "Xor": "\\oplus",
-    "Implies": "\\rightarrow", "Iff": "\\leftrightarrow",
-    "WeakConjunction": "\\land", "WeakDisjunction": "\\lor",
-    "StrongConjunction": "\\otimes", "StrongDisjunction": "\\oplus",
-    "LukImplication": "\\rightarrow", "LukEquivalence": "\\leftrightarrow",
-}
+# The LaTeX markup for every regular operator now lives in its OperatorSpec.latex
+# (read at call time below), so the per-operator LaTeX glyph tables are gone.
+# Only the term-level / quantifier-level tables — which are NOT driven by the
+# operator registry — remain here.
 
 _LATEX_COMPARE = {
     "=": "=", "≠": "\\neq", "<": "<", ">": ">", "≤": "\\leq", "≥": "\\geq",
@@ -1093,23 +1203,35 @@ def _latex(node) -> str:
     if cls == "Atom":
         return _latex_atom(node)
 
-    if cls in ("Not", "LukNegation"):
-        return "\\lnot " + _latex_wrap(node.formula, 4)
+    # Regular operators are driven entirely by the registry: the spec's fixity
+    # selects the operand arrangement and spec.latex supplies the markup (already
+    # including any trailing space for the prefix forms).
+    spec = OPERATORS.get(cls)
+    if spec is not None:
+        fix = spec.fixity
+        if fix == "prefix":
+            return spec.latex + _latex_wrap(node.formula, 4)
+        if fix == "agent_prefix":
+            return f"{spec.latex}_{{{node.agent}}} " + _latex_wrap(node.formula, 4)
+        if fix == "binary_until":
+            return f"{_latex_wrap(node.left, 3)} {spec.latex} {_latex_wrap(node.right, 2.5)}"
+        if fix == "binary_iff":
+            return f"{_latex_wrap(node.left, 2)} {spec.latex} {_latex_wrap(node.right, 1)}"
+        if fix == "binary_implies":
+            return f"{_latex_wrap(node.left, 3)} {spec.latex} {_latex_wrap(node.right, 2)}"
+        if fix == "level2":
+            left = _latex_level2_child(node.left, cls, "left")
+            right = _latex_level2_child(node.right, cls, "right")
+            return f"{left} {spec.latex} {right}"
 
     if cls == "Quantifier":
         return f"{_LATEX_QUANT[node.type]} {node.variable.name}\\, " + _latex_wrap(node.formula, 4)
     if cls == "SortedQuantifier":
         return (f"{_LATEX_QUANT[node.type]} {node.variable.name}{{:}}\\mathrm{{{node.sort}}}\\, "
                 + _latex_wrap(node.formula, 4))
-
-    if cls in ("Iff", "LukEquivalence"):
-        return f"{_latex_wrap(node.left, 2)} {_LATEX_BINSYM[cls]} {_latex_wrap(node.right, 1)}"
-    if cls in ("Implies", "LukImplication"):
-        return f"{_latex_wrap(node.left, 3)} {_LATEX_BINSYM[cls]} {_latex_wrap(node.right, 2)}"
-    if cls in _UNI_LEVEL2:
-        left = _latex_level2_child(node.left, cls, "left")
-        right = _latex_level2_child(node.right, cls, "right")
-        return f"{left} {_LATEX_BINSYM[cls]} {right}"
+    if cls == "SecondOrderQuantifier":
+        # Arity is not rendered (mirrors the Unicode renderer). e.g. \forall P\, P(x).
+        return f"{_LATEX_QUANT[node.type]} {node.predicate}\\, " + _latex_wrap(node.formula, 4)
 
     if cls == "Lambda":
         return f"\\lambda {node.param.name}.\\, " + _latex(node.body)
