@@ -681,6 +681,30 @@ validate_text("∀x (P(x)").parseable   # False  (unbalanced parenthesis)
 
 The `ValidationReport` also exposes `has_lambdas`, and `predicates` / `functions` / `constants` / `sorts_used` inventories. Built-in comparison (`= ≠ < > ≤ ≥`) and arithmetic (`+ - * /`) symbols are excluded from the arity checks and inventories.
 
+### Predicate-aligned string match
+
+`canonicalize` / `exact_match` forgive *structural* differences (α-renaming, commutativity/associativity, …) but treat two **different predicate names** as a genuine mismatch. The complementary, lexical notion is `match_predicates`: it greedily renames each predicate/function symbol in a predicted formula to the closest symbol in the reference — by **normalised Levenshtein distance**, accepting a match at or below a threshold (`max_norm_distance`, default `0.6`) — so a structurally-correct answer that merely chose different predicate names is not penalised. `formulas_are_identical` is the plain whitespace- and case-insensitive string equality; `formulas_are_matched_identical` realigns predicates and then compares.
+
+```python
+from unicode_fol_kit import (
+    match_predicates,
+    formulas_are_identical,
+    formulas_are_matched_identical,
+)
+
+pred = "∀x (Wins(x) → Happy(x))"
+ref  = "∀x (Win(x) → Happy(x))"        # same shape; "Wins" vs "Win"
+
+formulas_are_identical(pred, ref)            # False  (raw strings differ)
+match_predicates(pred, ref)                  # '∀x (Win(x) → Happy(x))'
+formulas_are_matched_identical(pred, ref)    # True   (Wins → Win is a close match)
+
+# A symbol with no sufficiently close reference counterpart is left untouched:
+match_predicates("Red(x)", "Tall(x)")        # 'Red(x)'  (normalised distance 1.0 > 0.6)
+```
+
+Unlike the `canonicalize`/`exact_match` pair, this matcher is purely **lexical** (string-level), so it also applies to raw model output that does not yet parse, and the two notions are typically reported as separate metrics (e.g. `EXACT_MATCH` vs `PREDICATE_MATCHED_EXACT_MATCH`). The Levenshtein distance is computed in pure Python, so no extra dependency is required.
+
 ## Modal, temporal, and epistemic logic
 
 Natural language is full of constructs classical FOL can't express directly — necessity/possibility, knowledge and belief, and time. `MSFLParser(modal=True)` adds a modal mode (classical unsorted FOL extended with modal operators) and the toolkit ships Kripke-model semantics plus a standard translation back to FOL.

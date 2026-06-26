@@ -9,12 +9,22 @@
 - :func:`validate` / :func:`is_wellformed` / :func:`validate_text` report the
   common defects in a generated formula (free variables, inconsistent predicate
   or function arity, leftover lambda nodes, unparseable text).
+- :func:`match_predicates` / :func:`formulas_are_matched_identical` /
+  :func:`formulas_are_identical` provide a lexical, predicate-aligned string
+  match (Levenshtein-based predicate renaming) — complementary to the AST-level
+  :func:`exact_match`, which instead quotients out the structural rewrites.
 """
 
 from .canonical import canonicalize, exact_match
 from .validate import validate, is_wellformed, validate_text, ValidationReport
+from .predicate_match import (
+    formulas_are_identical,
+    match_predicates,
+    formulas_are_matched_identical,
+)
 
 __all__ = [
     "canonicalize", "exact_match",
     "validate", "is_wellformed", "validate_text", "ValidationReport",
+    "formulas_are_identical", "match_predicates", "formulas_are_matched_identical",
 ]

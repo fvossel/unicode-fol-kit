@@ -5,6 +5,29 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [0.5.2] - 2026-06-26
+
+### Added
+
+- **Predicate-aligned string match** (`unicode_fol_kit.eval.predicate_match`) —
+  `match_predicates`, `formulas_are_matched_identical`, and
+  `formulas_are_identical`, re-exported at the package top level. A lexical
+  (string-level) evaluation notion for NL→FOL: `match_predicates` greedily
+  renames each predicate/function symbol in a predicted formula to the
+  lexically-closest symbol in the reference (by **normalised Levenshtein
+  distance**, accepting matches at or below a `max_norm_distance` threshold,
+  default `0.6`), so a structurally-correct answer that merely chose different
+  predicate names is not penalised. `formulas_are_identical` is the plain
+  whitespace- and case-insensitive string equality; `formulas_are_matched_identical`
+  combines the two (realign predicates, then compare). This is **complementary**
+  to the AST-level `exact_match`: the canonical match quotients out α-renaming /
+  commutativity / associativity / double negation but treats different predicate
+  names as a mismatch, whereas this matcher quotients out predicate-name (and
+  whitespace/case) differences but not the structural rewrites — the two are
+  typically reported as separate metrics. The Levenshtein distance is computed in
+  pure Python, so **no new dependency** is introduced; the matcher is
+  parser-independent and also applies to raw, not-yet-parseable model output.
+
 ## [0.5.1] - 2026-06-24
 
 ### Added

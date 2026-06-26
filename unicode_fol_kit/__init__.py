@@ -42,9 +42,10 @@ from .semantics import (
 from .eval import (
     canonicalize, exact_match,
     validate, is_wellformed, validate_text, ValidationReport,
+    formulas_are_identical, match_predicates, formulas_are_matched_identical,
 )
 
-__version__ = "0.5.1"
+__version__ = "0.5.2"
 
 __all__ = [
     "MSFLParser",
@@ -83,4 +84,5 @@ __all__ = [
     "satisfies_so", "holds",
     "canonicalize", "exact_match",
     "validate", "is_wellformed", "validate_text", "ValidationReport",
+    "formulas_are_identical", "match_predicates", "formulas_are_matched_identical",
 ]
