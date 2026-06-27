@@ -44,8 +44,9 @@ Soundness design (the non-obvious parts):
 
 Public API: :class:`Justification`, :class:`Line`, :class:`Subproof`,
 :class:`Proof`, :class:`ProofResult`, the authoring helpers :func:`premise`,
-:func:`assume`, :func:`line`, the constant :data:`FALSUM`, and the checkers
-:func:`check_proof` / :func:`verify_proof`.
+:func:`assume`, :func:`line`, :func:`flag` (the ∀I eigenvariable-box head), the
+constant :data:`FALSUM`, the checkers :func:`check_proof` / :func:`verify_proof`,
+and the renderers :func:`render_fitch` / :func:`render_latex_fitch`.
 """
 
 from dataclasses import dataclass
@@ -993,10 +994,13 @@ def _conclusion_of(proof: "Proof") -> Optional[Node]:
 def verify_proof(proof: "Proof", logic: Optional[str] = None) -> ProofResult:
     """Check ``proof`` and return a :class:`ProofResult` (sequent + first error).
 
-    ``logic`` overrides ``proof.logic`` if given. Classical logics are checked by
-    the syntactic rule table; ``"K3"``/``"LP"`` are certified semantically against
-    :func:`unicode_fol_kit.semantics.manyvalued.entails`. The returned result names
-    the certified sequent (premises ⊢ conclusion) and, on failure, the first
+    ``logic`` overrides ``proof.logic`` if given. Classical logics (``"fol"`` /
+    ``"msfol"``) are checked by the syntactic rule table; ``"K3"`` / ``"LP"`` are
+    certified semantically against
+    :func:`unicode_fol_kit.semantics.manyvalued.entails`; and the modal family
+    (``"K"`` / ``"T"`` / ``"S4"`` / ``"S5"``) is certified against the standard
+    translation to FOL plus the frame axioms, decided by Z3. The returned result
+    names the certified sequent (premises ⊢ conclusion) and, on failure, the first
     offending line and the reason.
     """
     logic = (logic or proof.logic or "fol").strip()

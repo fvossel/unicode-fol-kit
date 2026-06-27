@@ -1,6 +1,8 @@
 # unicode-fol-kit
 
-A Python toolkit for parsing and working with first-order logic (FOL) formulas written with Unicode operators. The single parser class `MSFLParser` supports six modes — classical FOL, many-sorted FOL (MSFOL), many-sorted fuzzy logic (MSFL), single-sorted fuzzy logic (FL, Łukasiewicz), modal/temporal/epistemic/deontic logic, and second-order logic — selected by constructor flags.
+A Python toolkit for first-order logic with Unicode operators: **parse, transform, and reason about** formulas. The single parser class `MSFLParser` supports six modes — classical FOL, many-sorted FOL (MSFOL), many-sorted fuzzy logic (MSFL), single-sorted fuzzy logic (FL, Łukasiewicz), modal/temporal/epistemic/deontic logic, and second-order logic — selected by constructor flags.
+
+On top of the AST sits a full reasoning layer: **four proof methods** (a built-in resolution prover, Fitch-style natural deduction with checker *and* searcher, the Gentzen sequent calculus **LK** including second-order rules plus the intuitionistic **LJ**, and analytic tableaux), a **finite model finder** with countermodel extraction, SMT (Z3) and external-prover (Prover9/Vampire) backends, truth tables, and dedicated semantics for every logic. Formulas import/export to TPTP, Prover9, SMT-LIB, LaTeX, and JSON.
 
 ## Features
 
@@ -40,7 +42,7 @@ A Python toolkit for parsing and working with first-order logic (FOL) formulas w
 - **Modal, temporal, epistemic & deontic logic** — `MSFLParser(modal=True)` parses `□`/`◇` (alethic), `K_a`/`B_a` (epistemic/doxastic), `Ⓖ`/`Ⓕ`/`Ⓝ`/`Ⓤ` (temporal), `Ⓞ`/`Ⓟ` (obligation/permission); Kripke-model semantics via `satisfies_modal()`; `standard_translation()` to classical FOL so Z3/resolution can decide modal validity
 - **Many-valued logic** — `kleene_value()` evaluates a formula over {0, ½, 1} (strong Kleene tables); three-valued `is_valid`/`is_satisfiable`/`entails` with selectable designated values for **Kleene K3** and **Priest LP** (paraconsistent)
 - **Second-order logic** — `MSFLParser(second_order=True)` parses `∀P`/`∃P` over predicate variables (arity inferred; monadic & n-ary); `satisfies_so()` gives finite-model semantics by enumerating relations over the domain
-- **Lambda abstraction** — `λx. φ` syntax in all four parser modes; parameters can be variables (`λx.`), named constants (`λfoo.`), or predicate symbols (`λP.`); body extends rightward through all connectives
+- **Lambda abstraction** — `λx. φ` syntax in every parser mode; parameters can be variables (`λx.`), named constants (`λfoo.`), or predicate symbols (`λP.`); body extends rightward through all connectives
 - **Higher-order predicate application** — `(func)(arg)` explicit application; `λP. P(x)` writes the body naturally and is automatically scope-resolved to `Application(LambdaVar("P"), Variable("x"))`
 - **Lambda-calculus operations** — free-variable computation, capture-avoiding substitution, beta-reduction (normal-order, step-limited), eta-reduction, combined beta-eta normalisation to fixpoint, and lexical scope resolution
 - **Lambda elimination** — `eliminate_lambdas()` beta-eta-normalises and checks the result is lambda-free (ready for export / normal forms); `reduce_trace()` returns the step-by-step reduction sequence
@@ -50,6 +52,42 @@ A Python toolkit for parsing and working with first-order logic (FOL) formulas w
 - **Arithmetic-aware solving** — `is_satisfiable_arith()`, `is_valid_arith()`, `get_model_arith()` interpret `+ - * / < > ≤ ≥` over Z3 reals/integers (unlike the default uninterpreted-sort `to_z3`)
 - **Unification** — `unify()` computes the most general unifier of two terms/atoms (Robinson, with occurs-check); `apply_subst()` applies a substitution
 - **Command-line interface** — `python -m unicode_fol_kit "∀x P(x)" --to latex` parses and renders in any export format
+
+## Choosing a tool
+
+The kit has grown four proof methods and a model finder across several logics. These two tables map a question (and a logic) to the entry point that answers it; each is documented in detail in its own section below.
+
+### Which tool for which question
+
+| Your question | Use | Returns | Sound / complete / decidable |
+|---|---|---|---|
+| Is this valid / does Γ entail φ? (general FOL, no external solver) | `prove`, `is_valid_resolution` | bool | sound; refutation-complete; **semidecidable** |
+| Same, with an SMT solver | `is_valid`, `is_satisfiable`, `get_model` (Z3) | bool / model | sound & complete on Z3's decidable fragment |
+| Same, via an external FO prover | `check_logical_entailment` (Prover9), `check_logical_entailment_vampire` | bool | sound; complete for FOL; needs the binary |
+| Propositional tautology? (decidably) | `is_valid_tableau`, `prove_tableau`, `tableau_closed` | bool | sound & complete; decidable propositionally |
+| Check a Fitch proof I wrote | `check_proof`, `verify_proof` | bool / `ProofResult` | sound; FOL/MSFOL by rule table, K3/LP + modal propositionally |
+| Find a Fitch proof | `find_fitch_proof`, `fitch_prove`, `is_valid_fitch` | `Proof` / bool | sound; complete propositionally, depth-bounded FO |
+| Check a sequent (LK) derivation | `check_sequent_proof`, `verify_sequent_proof` | bool / `SequentResult` | sound; reaches the second-order fragment |
+| Check an intuitionistic (LJ) derivation | `check_lj_proof`, `verify_lj_proof` | bool | sound for intuitionistic consequence |
+| Find a model / countermodel | `find_model`, `find_countermodel`, `is_satisfiable_finite`, `is_valid_finite` | `Structure` / None / bool | finite search up to size N |
+| Truth table (classical / K3 / LP) | `truth_table`, `is_tautology`, `is_contradiction`, `is_satisfiable_tt` | `TruthTable` / bool | decidable; propositional only |
+| Intuitionistic propositional validity | `int_valid`, `int_countermodel` | bool / `IntKripkeModel` | decidable; propositional |
+| Evaluate truth in a structure | `satisfies` (FOL/MSFOL), `satisfies_so`/`holds` (SO), `satisfies_modal` (modal) | bool | direct Tarskian / Kripke / finite SO semantics |
+| Fuzzy (Łukasiewicz) degree or decision | `fuzzy_evaluate`; `fuzzy_is_valid`, `fuzzy_is_satisfiable`, `fuzzy_get_model` | degree / bool | real-arithmetic decision via Z3 |
+| Read a formula back as English | `to_english` | str | readability aid, not a parse inverse |
+
+### Logics supported
+
+| Logic | Enable | Operators added | Semantics | What can decide / reason about it |
+|---|---|---|---|---|
+| Classical FOL | `MSFLParser()` | ∀ ∃ ∧ ∨ ¬ → ↔ ⊕ = ≠ | `satisfies()` | resolution, Z3, Prover9/Vampire, tableaux (prop.), Fitch, LK, finite model finder |
+| Many-sorted FOL (MSFOL) | `many_sorted=True` | sorted `∀x:S`, `c:S` | `satisfies()` | resolution / Z3 (via `to_fol()`), Fitch, finite model finder |
+| Fuzzy Łukasiewicz (FL) | `fuzzy=True` | weak ∧ ∨, strong ⊗ ⊕, Łuk ¬ → ↔ | `fuzzy_evaluate()` | `fuzzy_is_valid` / `fuzzy_is_satisfiable` (Z3 reals) |
+| Many-sorted fuzzy (MSFL) | `many_sorted=True, fuzzy=True` | sorts + Łukasiewicz | `fuzzy_evaluate()` | `fuzzy_*` (Z3 reals); `to_msfol()` lowers to classical |
+| Modal / temporal / epistemic / deontic | `modal=True` | □ ◇, K_a B_a, Ⓖ Ⓕ Ⓝ Ⓤ, Ⓞ Ⓟ | `satisfies_modal()` | `standard_translation()` → Z3/resolution; Fitch (K/T/S4/S5, prop.) |
+| Many-valued K3 / LP | `MSFLParser()` + `logic=` | classical syntax over {0, ½, 1} | `kleene_value()`; `semantics.is_valid`/`is_satisfiable`/`entails` | `truth_table`, three-valued `is_valid`; Fitch under `logic="K3"`/`"LP"` |
+| Second-order | `second_order=True` | ∀P ∃P over predicate vars | `satisfies_so()` / `holds()` | `satisfies_so` on finite models; LK (`∀²`/`∃²`). Rejects `to_z3`/`to_prover9`/`to_tptp` |
+| Intuitionistic | `MSFLParser()` + intuitionistic tools | classical syntax | `IntKripkeModel.forces()` | `int_valid` / `int_countermodel` (decidable, prop.); LJ (`check_lj_proof`) |
 
 ## Installation
 
@@ -286,7 +324,7 @@ formula2 = Node.from_dict(d)  # round-trip
 
 ### Lambda-calculus
 
-All four parser modes support lambda abstraction and application. `parse()` automatically applies scope resolution, so the returned AST is always fully resolved.
+Every parser mode supports lambda abstraction and application. `parse()` automatically applies scope resolution, so the returned AST is always fully resolved.
 
 ```python
 from unicode_fol_kit import (
@@ -574,7 +612,7 @@ print(render_fitch(proof))
 6 │ P → R   →I 3–5
 ```
 
-The classical rule set covers the connectives (`∧I`/`∧E`, `∨I`/`∨E`, `→I`/`→E`, `↔I`/`↔E`, `¬I`, `⊥I`/`⊥E`, `¬E` double-negation, `RAA`, `Reit`), the first-order quantifiers (`∀I`/`∀E`, `∃I`/`∃E`, with the eigenvariable side-conditions enforced via the kit's capture-avoiding substitution), and equality (`=I`/`=E`, certified against Z3 since `=` is otherwise uninterpreted). A subproof is cited by its line span, e.g. `(3, 5)`; the instantiation/witness term of `∀E`/`∃I` is passed as `extra=[term]`. `⊥` is the reserved logical constant `FALSUM`.
+The classical rule set covers the connectives (`∧I`/`∧E`, `∨I`/`∨E`, `→I`/`→E`, `↔I`/`↔E`, `¬I`, `⊥I`/`⊥E`, `¬E` double-negation, `RAA`, `Reit`), the first-order quantifiers (`∀I`/`∀E`, `∃I`/`∃E`, with the eigenvariable side-conditions enforced via the kit's capture-avoiding substitution), and equality (`=I`/`=E`, certified against Z3 since `=` is otherwise uninterpreted). A subproof is cited by its line span, e.g. `(3, 5)`; the instantiation/witness term of `∀E`/`∃I` is passed as `extra=[term]`. `⊥` is the reserved logical constant `FALSUM`. `∀I` discharges a *pure eigenvariable box*: head it with `flag(n, e)` (a boxed-variable line, rule `"Flag"`) and set `Subproof(..., flag=e)`, so the box `[flag e; … ; φ(e)]` introduces `∀x φ` only if `e` is fresh in every open assumption.
 
 **Non-classical logics.** Pass `logic=` to check a proof under a different consequence relation. For the three-valued **K3**/**LP** logics each step is certified against the many-valued decision procedure, so the paraconsistency facts come out correctly — in **LP** modus ponens, the disjunctive syllogism, and explosion are *not* valid, and the checker rejects a proof that uses them:
 
@@ -685,8 +723,27 @@ check_sequent_proof(so)              # True
 ```
 
 - **Rule set.** `Ax`, the structural rules `WL`/`WR` (weakening), `CL`/`CR` (contraction), `Cut`; the connective rules `¬L`/`¬R`, `∧L`/`∧R`, `∨L`/`∨R`, `→L`/`→R`, `↔L`/`↔R`; the quantifier rules `∀L`/`∀R`, `∃L`/`∃R` (with the eigenvariable condition on `∀R`/`∃L`); and the second-order rules `∀²L`/`∀²R`, `∃²L`/`∃²R`. Contexts are shared additively and compared as multisets; the instantiation term / eigenvariable / comprehension goes in `extra=[…]`.
-- **Checker, not prover.** Full second-order validity is not recursively enumerable (Gödel), so no calculus can be a *complete* prover — `check_sequent_proof` verifies a *given* derivation. It is sound by the LK metatheory, cross-checked in the test-suite against Z3 (for the first-order-expressible sequents) and `satisfies_so` over small finite models (for the genuinely second-order ones, where a randomised audit confirms every accepted derivation is valid node-by-node).
+- **Checker, not prover.** Full second-order validity is not recursively enumerable (Gödel), so no calculus can be a *complete* prover — `check_sequent_proof` verifies a *given* derivation (the diagnostic form `verify_sequent_proof` returns a `SequentResult` naming the first offending rule). It is sound by the LK metatheory, cross-checked in the test-suite against Z3 (for the first-order-expressible sequents) and `satisfies_so` over small finite models (for the genuinely second-order ones, where a randomised audit confirms every accepted derivation is valid node-by-node).
 - `derivation.to_dict()` / `Derivation.from_dict(...)` round-trips a whole derivation (including comprehension terms) to JSON.
+
+### Sequent calculus — intuitionistic LJ
+
+Gentzen's **LJ** is the same calculus restricted to **at most one formula in the succedent** — the single change that makes intuitionistic logic. `check_lj_proof` / `verify_lj_proof` reuse the LK `Sequent` / `Derivation` data model, so an LJ derivation is built and rendered exactly like an LK one.
+
+```python
+from unicode_fol_kit import sequent, derive, axiom, check_lj_proof
+from unicode_fol_kit.fol.nodes import Atom, Not, Implies
+
+P = Atom("P", ())
+# ⊢ P → ¬¬P  — double-negation *introduction* is intuitionistically valid:
+lj_proof = derive(sequent([], [Implies(P, Not(Not(P)))]), "→R",
+              derive(sequent([P], [Not(Not(P))]), "¬R",
+                  derive(sequent([P, Not(P)], []), "¬L",
+                      axiom(sequent([P], [P])))))
+check_lj_proof(lj_proof)              # True
+```
+
+The classical route to `P ∨ ¬P` needs a two-formula succedent (`⊢ P, ¬P`), which LJ rejects — so excluded middle, double-negation *elimination*, and Peirce's law have no LJ derivation, matching the Kripke countermodels from `int_countermodel` (see *Intuitionistic logic*). The `∨R` rule is split into `∨R1` / `∨R2`; otherwise the rule names match LK.
 
 ### Tarskian semantics (FOL / MSFOL)
 
@@ -977,7 +1034,7 @@ satisfies_modal(parser.parse("Ⓞ P → P"), serial, 0)      # False  (P is obli
 standard_translation(parser.parse("Ⓞ P"))                # ∀w0 (D(w, w0) → P(w0))
 ```
 
-`Forbidden` is the derived `¬Ⓟφ` (≡ `Ⓞ¬φ`).
+There is no dedicated "forbidden" operator; express it with the operators that exist — "forbidden that φ" is `¬Ⓟφ` (equivalently `Ⓞ¬φ`).
 
 ## Many-valued logic (Kleene K3 / Priest LP)
 
@@ -1248,7 +1305,7 @@ Whitespace is insignificant and may be used freely between tokens — including 
 
 ### Lambda abstraction and application (all modes)
 
-A lambda abstraction is written `λ` followed by a parameter name, a literal `.`, and a body formula. All four parser modes support identical lambda surface notation.
+A lambda abstraction is written `λ` followed by a parameter name, a literal `.`, and a body formula. Every parser mode supports identical lambda surface notation.
 
 #### Parameter types
 

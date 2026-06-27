@@ -17,6 +17,8 @@ and as an ``=`` :class:`Atom` when they are individuals; ``distinct`` becomes ``
 ``xor`` becomes :class:`Xor`; an uninterpreted application returning ``Bool`` becomes an
 :class:`Atom`, one returning ``S`` a :class:`Function`; the arithmetic operators /
 relations and numerals are recognised too (so SMT-LIB with ``Int``/``Real`` imports).
+
+Public API: :func:`from_z3`, :func:`parse_smtlib`, :func:`load_smtlib`.
 """
 
 import z3

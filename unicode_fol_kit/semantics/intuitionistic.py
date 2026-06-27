@@ -16,6 +16,8 @@ is exactly what makes ``P ∨ ¬P`` and ``¬¬P → P`` fail.
 Propositional only — each atom (by surface form) is a propositional variable; quantified
 formulas are rejected. Every intuitionistic validity is also classically valid (a
 one-world model is a classical valuation), which the test-suite cross-checks.
+
+Public API: :class:`IntKripkeModel`, :func:`int_valid`, :func:`int_countermodel`.
 """
 
 from dataclasses import dataclass

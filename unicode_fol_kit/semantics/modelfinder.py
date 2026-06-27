@@ -17,6 +17,9 @@ closed). The search is **bounded**: a domain size whose interpretation space exc
 ``max_candidates`` is skipped, so ``None`` means "no model found within the bounds",
 not "unsatisfiable" (first-order satisfiability is undecidable, and some satisfiable
 sentences have only infinite models).
+
+Public API: :func:`find_model`, :func:`find_countermodel`,
+:func:`is_satisfiable_finite`, :func:`is_valid_finite`.
 """
 
 from itertools import product
