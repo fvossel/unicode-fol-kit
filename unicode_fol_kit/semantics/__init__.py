@@ -22,6 +22,13 @@ from .kripke import (
 from .manyvalued import (
     kleene_value, is_valid, is_satisfiable, entails, DESIGNATED,
 )
+from .truthtable import (
+    truth_table, TruthTable, is_tautology, is_contradiction, is_satisfiable_tt,
+)
+from .modelfinder import (
+    find_model, find_countermodel, is_satisfiable_finite, is_valid_finite,
+)
+from .intuitionistic import IntKripkeModel, int_valid, int_countermodel
 
 __all__ = [
     "Structure", "term_value", "satisfies", "models",
@@ -32,4 +39,10 @@ __all__ = [
     # Many-valued (Kleene K3 / Priest LP). Note: is_valid/is_satisfiable/entails here are
     # the three-valued versions — distinct from the Z3-based ones at the package top level.
     "kleene_value", "is_valid", "is_satisfiable", "entails", "DESIGNATED",
+    # Truth tables (classical / K3 / LP).
+    "truth_table", "TruthTable", "is_tautology", "is_contradiction", "is_satisfiable_tt",
+    # Finite model finder + countermodels.
+    "find_model", "find_countermodel", "is_satisfiable_finite", "is_valid_finite",
+    # Intuitionistic propositional logic (Kripke semantics).
+    "IntKripkeModel", "int_valid", "int_countermodel",
 ]

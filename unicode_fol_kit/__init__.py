@@ -23,6 +23,9 @@ from .fol import (
     unify, apply_subst,
     standard_translation,
     latex_to_unicode, parse_latex,
+    parse_tptp, parse_tptp_formula, load_tptp, TptpFormula,
+    parse_prover9,
+    to_english,
 )
 from .atp import (
     formulas_are_equivalent, check_logical_entailment,
@@ -31,6 +34,17 @@ from .atp import (
     fuzzy_is_satisfiable, fuzzy_is_valid, fuzzy_get_model,
     to_z3_arith, is_satisfiable_arith, is_valid_arith, get_model_arith,
     to_clauses, refute, prove, is_valid_resolution,
+    Proof, Line, Subproof, Justification, ProofResult,
+    premise, assume, line, flag, FALSUM,
+    check_proof, verify_proof,
+    render_fitch, render_latex_fitch,
+    Sequent, Derivation, Comprehension, SequentResult,
+    sequent, derive, axiom,
+    check_sequent_proof, verify_sequent_proof, render_sequent_proof,
+    from_z3, parse_smtlib, load_smtlib,
+    find_fitch_proof, fitch_prove, is_valid_fitch,
+    tableau_closed, is_valid_tableau, prove_tableau, tableau_model,
+    check_lj_proof, verify_lj_proof,
 )
 from .semantics import (
     Structure, term_value, satisfies, models,
@@ -38,6 +52,9 @@ from .semantics import (
     KripkeModel, satisfies_modal, models_at, reflexive_transitive_closure,
     kleene_value, DESIGNATED,
     satisfies_so, holds,
+    truth_table, TruthTable, is_tautology, is_contradiction, is_satisfiable_tt,
+    find_model, find_countermodel, is_satisfiable_finite, is_valid_finite,
+    IntKripkeModel, int_valid, int_countermodel,
 )
 from .eval import (
     canonicalize, exact_match,
@@ -45,7 +62,7 @@ from .eval import (
     formulas_are_identical, match_predicates, formulas_are_matched_identical,
 )
 
-__version__ = "0.5.2"
+__version__ = "0.6.0"
 
 __all__ = [
     "MSFLParser",
@@ -74,10 +91,27 @@ __all__ = [
     "unify", "apply_subst",
     "standard_translation",
     "latex_to_unicode", "parse_latex",
+    "parse_tptp", "parse_tptp_formula", "load_tptp", "TptpFormula",
+    "parse_prover9",
+    "from_z3", "parse_smtlib", "load_smtlib",
+    "find_fitch_proof", "fitch_prove", "is_valid_fitch",
+    "tableau_closed", "is_valid_tableau", "prove_tableau", "tableau_model",
+    "check_lj_proof", "verify_lj_proof",
+    "to_english",
+    "truth_table", "TruthTable", "is_tautology", "is_contradiction", "is_satisfiable_tt",
+    "find_model", "find_countermodel", "is_satisfiable_finite", "is_valid_finite",
+    "IntKripkeModel", "int_valid", "int_countermodel",
     "is_satisfiable", "is_valid", "get_model",
     "fuzzy_is_satisfiable", "fuzzy_is_valid", "fuzzy_get_model",
     "to_z3_arith", "is_satisfiable_arith", "is_valid_arith", "get_model_arith",
     "to_clauses", "refute", "prove", "is_valid_resolution",
+    "Proof", "Line", "Subproof", "Justification", "ProofResult",
+    "premise", "assume", "line", "flag", "FALSUM",
+    "check_proof", "verify_proof",
+    "render_fitch", "render_latex_fitch",
+    "Sequent", "Derivation", "Comprehension", "SequentResult",
+    "sequent", "derive", "axiom",
+    "check_sequent_proof", "verify_sequent_proof", "render_sequent_proof",
     "Structure", "term_value", "satisfies", "models", "fuzzy_evaluate",
     "KripkeModel", "satisfies_modal", "models_at", "reflexive_transitive_closure",
     "kleene_value", "DESIGNATED",

@@ -23,6 +23,9 @@ from .lambda_tools import has_lambdas, eliminate_lambdas, beta_reduce_step, redu
 from .unification import unify, apply_subst
 from .modal_translation import standard_translation
 from .latex_input import latex_to_unicode, parse_latex
+from .tptp_input import parse_tptp, parse_tptp_formula, load_tptp, TptpFormula
+from .prover9_input import parse_prover9
+from .verbalize import to_english
 from .naming import NamingError, ParsingError
 
 __all__ = [
@@ -50,4 +53,7 @@ __all__ = [
     "unify", "apply_subst",
     "standard_translation",
     "latex_to_unicode", "parse_latex",
+    "parse_tptp", "parse_tptp_formula", "load_tptp", "TptpFormula",
+    "parse_prover9",
+    "to_english",
 ]

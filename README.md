@@ -15,6 +15,7 @@ A Python toolkit for parsing and working with first-order logic (FOL) formulas w
 - **Unicode round-trip** — `to_unicode_str()` renders any node back to a parseable Unicode formula; re-parsing in the matching mode yields a structurally equal AST
 - **LaTeX export** — `to_latex()` renders any node as LaTeX math-mode markup, with the same precedence-aware parenthesisation as the Unicode renderer
 - **LaTeX import** — `parse_latex()` reads a LaTeX-math formula (the inverse of `to_latex()`); `latex_to_unicode()` does the LaTeX→Unicode translation on its own
+- **TPTP / Prover9 / SMT-LIB import** — read formulas back from the standard tools: `parse_tptp()` / `parse_tptp_formula()` / `load_tptp()` (FOF & CNF), `parse_prover9()`, and `from_z3()` / `parse_smtlib()` — the inverses of `to_tptp()` / `to_prover9()` / `to_z3()`
 - **Normal forms** — `to_nnf()`, `to_pnf()`, `to_cnf()`, `to_dnf()` (equivalence-preserving), `to_tseitin_cnf()` (equisatisfiable, no blow-up), and `skolemize()` (satisfiability-preserving) for classical FOL
 - **Horn check** — `is_horn()` reports whether a formula's clausal form consists of Horn clauses
 - **Traversal API** — `walk()`, `subformulas()`, `atoms()`, `variables()`, `count()`, `depth()` on every node
@@ -26,6 +27,14 @@ A Python toolkit for parsing and working with first-order logic (FOL) formulas w
 - **Equivalence checking** — check if two formulas are logically equivalent via Z3
 - **Entailment checking** — check if a conclusion follows from premises via Prover9 (`check_logical_entailment`) or Vampire (`check_logical_entailment_vampire`), each taking the prover's executable path as an argument
 - **Built-in resolution prover** — `prove()` and `is_valid_resolution()` decide entailment/validity in-process (sound first-order resolution, no external solver needed)
+- **Natural-deduction proof checker** — `check_proof()` / `verify_proof()` check Fitch-style proofs with nested subproofs and discharge rules (classical FOL/MSFOL, plus K3/LP and the modal family via `logic=`); `render_fitch()` lays them out with scope bars and a justification column
+- **Sequent-calculus proof checker** — `check_sequent_proof()` checks Gentzen **LK** derivations `Γ ⊢ Δ`, including the **second-order** rules (`∀²`/`∃²` with comprehension and predicate eigenvariables) that reach the `second_order=True` fragment; `render_sequent_proof()` prints the derivation tree
+- **Fitch proof search** — `find_fitch_proof()` / `fitch_prove()` / `is_valid_fitch()` automatically *find* a Fitch natural-deduction proof (iterative-deepening backtracking, classical FOL); the result is re-validated by `check_proof`, so it is sound by construction
+- **Analytic tableaux** — `is_valid_tableau()` / `prove_tableau()` / `tableau_closed()` and `tableau_model()` (an open branch is a countermodel); a fourth proof method, decidable propositionally
+- **Finite model finder** — `find_model()` / `find_countermodel()` / `is_satisfiable_finite()` / `is_valid_finite()` search finite `Structure`s up to size N (Mace4-style: a valid entailment has no countermodel, an invalid one usually a small one)
+- **Truth tables** — `truth_table()` (and `is_tautology()` / `is_contradiction()` / `is_satisfiable_tt()`) over classical, Kleene **K3**, and Priest **LP** values, renderable to Markdown
+- **Intuitionistic logic** — `int_valid()` / `int_countermodel()` decide intuitionistic propositional validity by Kripke-model search; the **LJ sequent calculus** checker `check_lj_proof()` / `verify_lj_proof()` verifies intuitionistic derivations; LEM, DNE, and Peirce fail with explicit countermodels (`IntKripkeModel.forces()`)
+- **Verbalization** — `to_english()` paraphrases a formula as an English sentence
 - **Canonical form & exact match** — `canonicalize()` normalises bound-variable renaming, commutativity/associativity, operand duplication, and double negation; `exact_match()` gives a fair NL→FOL comparison stricter than logical equivalence but more forgiving than raw equality
 - **Formula validation** — `validate()` / `is_wellformed()` / `validate_text()` report free variables, inconsistent predicate/function arity, leftover lambda nodes, and parseability of raw model output
 - **Modal, temporal, epistemic & deontic logic** — `MSFLParser(modal=True)` parses `□`/`◇` (alethic), `K_a`/`B_a` (epistemic/doxastic), `Ⓖ`/`Ⓕ`/`Ⓝ`/`Ⓤ` (temporal), `Ⓞ`/`Ⓟ` (obligation/permission); Kripke-model semantics via `satisfies_modal()`; `standard_translation()` to classical FOL so Z3/resolution can decide modal validity
@@ -208,6 +217,33 @@ parse_latex(ast.to_latex(), many_sorted=True) == ast        # True
 ```
 
 `parse_latex` takes the same mode flags as `MSFLParser` (`many_sorted`, `fuzzy`, `modal`, `second_order`); the LaTeX must translate to syntax valid for that mode. Hand-written `c_`-constants need an escaped underscore (`c\_zero` or `c_{zero}`), since a bare `_` is LaTeX subscript.
+
+### Reading TPTP, Prover9, and SMT-LIB
+
+The exporters `to_tptp()` / `to_prover9()` / `to_z3()` have inverses, so formulas written for the standard automated-reasoning tools can be read back into the AST:
+
+```python
+from unicode_fol_kit import parse_tptp, parse_tptp_formula, parse_prover9, from_z3, parse_smtlib
+
+# TPTP: a single formula, or a whole problem file (fof/cnf statements)
+parse_tptp_formula("![X]: (man(X) => mortal(X))")        # AST for: forall x (Man(x) -> Mortal(x))
+problem = parse_tptp("""
+fof(ax,  axiom,      ![X]: (man(X) => mortal(X))).
+fof(hyp, hypothesis, man(socrates)).
+fof(g,   conjecture, mortal(socrates)).
+""")
+roles = [f.role for f in problem]                        # ['axiom', 'hypothesis', 'conjecture']
+
+# Prover9 / LADR
+parse_prover9("(all X (man(X) -> mortal(X)))")           # AST for: forall x (man(x) -> mortal(x))
+
+# Z3: a z3 expression (from_z3), or SMT-LIB2 text (via Z3's own parser)
+parse_smtlib("(declare-fun x () Int) (assert (< x (+ x 1)))")   # [x < x + 1]
+```
+
+- **TPTP** — `parse_tptp_formula(s)` reads one bare FOF/CNF formula; `parse_tptp(text)` reads a whole problem into a list of `TptpFormula(name, role, formula)` records; `load_tptp(path)` reads a `.p`/`.tptp` file. `%` and `/* */` comments are ignored. Round-trips `to_tptp()`. TPTP lowercases predicates, so a predicate is capitalised on import (`loves` → `Loves`) to match the toolkit's uppercase-predicate convention; `$true`/`$false` import as opaque atoms; the typed `tff`/`thf` dialects and `include` directives are out of scope.
+- **Prover9** — `parse_prover9(s)` reads a Prover9/LADR formula (a trailing `.` is accepted). It follows `set(prolog_style_variables)` (uppercase/underscore-initial names are variables), matching `to_prover9()`'s output, and is case-preserving. `to_prover9()` desugars exclusive-or, so an `Xor` round-trips to `(a | b) & -(a & b)`.
+- **Z3** — `from_z3(expr)` turns a `z3.ExprRef` back into the AST; `parse_smtlib(text)` / `load_smtlib(path)` parse SMT-LIB2 (via Z3's own parser) and convert every assertion. The conversion is **meaning-preserving, not structure-preserving** — Z3 maps variables/constants/numbers onto one uninterpreted sort, so a *free* variable comes back as a `Constant` (only bound variables survive as `Variable`); `A == B` reads as `Iff` on Booleans and `=` on individuals.
 
 ### Traversal and inspection
 
@@ -495,6 +531,162 @@ is_valid_resolution(parser.parse("∃x ∀y L(x, y) → ∀y ∃x L(x, y)"))  # 
 - **Sound, deliberately incomplete.** First-order resolution is only semi-decidable, so `prove`/`is_valid_resolution` take a `max_steps` bound (default 10 000). They return `True` **only** when the empty clause is actually derived, and `False` both when the clause set saturates (genuinely no entailment) and when the bound is reached ("not proved within the bound") — they never report a non-theorem as proved.
 - **Equality is uninterpreted.** `=` is treated as an ordinary predicate (no built-in reflexivity/congruence). Entailments that rely on the theory of equality (e.g. `a = b, P(a) ⊨ P(b)`) need those axioms supplied as explicit premises, or use the Z3 backend instead.
 - `to_clauses(formula)` exposes the clausal form, and `refute(clauses)` runs the saturation directly.
+
+### Natural deduction (Fitch proofs)
+
+The provers above decide *whether* an entailment holds. The package can also **check a Fitch-style natural-deduction proof** — a derivation with nested subproofs (hypothetical reasoning), per-line justifications, and discharge rules. `check_proof` is *sound*: it returns `True` only when every line genuinely follows by the cited rule and the proof's premises really do entail its conclusion. `verify_proof` additionally returns the certified sequent and the first failing line with a reason.
+
+```python
+from unicode_fol_kit import (
+    MSFLParser, Proof, Subproof, premise, assume, line,
+    check_proof, verify_proof, render_fitch,
+)
+
+parse = MSFLParser().parse
+
+# Hypothetical syllogism:  P→Q, Q→R  ⊢  P→R
+proof = Proof(
+    premises=[premise(1, parse("P → Q")), premise(2, parse("Q → R"))],
+    steps=[
+        Subproof(
+            assumption=assume(3, parse("P")),
+            body=[line(4, parse("Q"), "→E", 1, 3),
+                  line(5, parse("R"), "→E", 2, 4)],
+        ),
+        line(6, parse("P → R"), "→I", (3, 5)),
+    ],
+)
+
+check_proof(proof)                 # True
+print(render_fitch(proof))
+```
+
+`render_fitch` lays the proof out in classic Fitch notation — a line-number gutter, one vertical scope bar per open subproof, a rule under each assumption, and a justification column:
+
+```text
+1 │ P → Q   Premise
+2 │ Q → R   Premise
+  ├──────
+3 │ │ P     Assume
+  │ ├──────
+4 │ │ Q     →E 1, 3
+5 │ │ R     →E 2, 4
+6 │ P → R   →I 3–5
+```
+
+The classical rule set covers the connectives (`∧I`/`∧E`, `∨I`/`∨E`, `→I`/`→E`, `↔I`/`↔E`, `¬I`, `⊥I`/`⊥E`, `¬E` double-negation, `RAA`, `Reit`), the first-order quantifiers (`∀I`/`∀E`, `∃I`/`∃E`, with the eigenvariable side-conditions enforced via the kit's capture-avoiding substitution), and equality (`=I`/`=E`, certified against Z3 since `=` is otherwise uninterpreted). A subproof is cited by its line span, e.g. `(3, 5)`; the instantiation/witness term of `∀E`/`∃I` is passed as `extra=[term]`. `⊥` is the reserved logical constant `FALSUM`.
+
+**Non-classical logics.** Pass `logic=` to check a proof under a different consequence relation. For the three-valued **K3**/**LP** logics each step is certified against the many-valued decision procedure, so the paraconsistency facts come out correctly — in **LP** modus ponens, the disjunctive syllogism, and explosion are *not* valid, and the checker rejects a proof that uses them:
+
+```python
+# In LP (paraconsistent) modus ponens is NOT valid — the checker rejects it:
+mp = Proof(premises=[premise(1, parse("P")), premise(2, parse("P → Q"))],
+           steps=[line(3, parse("Q"), "→E", 2, 1)], logic="LP")
+check_proof(mp)                    # False
+
+# The very same proof is fine classically:
+check_proof(Proof(premises=mp.premises, steps=mp.steps, logic="fol"))   # True
+```
+
+For the **modal family** (`logic="K"`/`"T"`/`"S4"`/`"S5"`) each step is certified by the standard translation to FOL plus the frame axioms, decided by Z3. Knowledge (`Knows`) is factive, but belief (`Believes`) and obligation (`Obligatory`) are not:
+
+```python
+from unicode_fol_kit import Atom, Knows, Believes
+
+p = Atom("P", [])
+
+# Knowledge is factive (S5):  K_a P ⊢ P
+knows = Proof(premises=[premise(1, Knows("a", p))],
+              steps=[line(2, p, "T", 1)], logic="S5")
+check_proof(knows)                 # True
+
+# Belief is NOT factive:  B_a P ⊬ P  → rejected
+believes = Proof(premises=[premise(1, Believes("a", p))],
+                 steps=[line(2, p, "T", 1)], logic="S5")
+check_proof(believes)              # False
+```
+
+- **Sound by construction.** Citation accessibility is enforced (a line may not reach into a closed sibling subproof), discharge rules are checked against the proof's *open assumptions* (not merely the cited lines), and every classical rule application is cross-checked in the test-suite against Z3 and the resolution prover — randomised proofs are audited line-by-line so an accepted step is never one the oracle reports invalid.
+- **Scope.** Classical FOL/MSFOL is checked by the syntactic rule table; K3/LP and the modal family are checked over their propositional fragment. Temporal logic (`Ⓖ`/`Ⓕ`/`Ⓝ`/`Ⓤ`), quantified modal logic, second-order quantification, and the substructural Łukasiewicz connectives are out of scope (no sound finitary Fitch calculus / first-order rendering) and are rejected with a clear message.
+- **LaTeX.** `render_latex_fitch(proof)` (also `proof.to_latex_fitch()`) emits the derivation as a self-contained LaTeX `array`; `proof.to_dict()` / `Proof.from_dict(...)` round-trips a whole proof to JSON.
+
+### Finding Fitch proofs (backtracking search)
+
+The checker above *verifies* a proof; `find_fitch_proof` *finds* one. It is a goal-directed, iterative-deepening backtracking searcher over the classical propositional and first-order rules — introduction rules, ∨/∃ elimination by case split, backward chaining, and reductio (RAA), which makes it complete for the propositional fragment.
+
+```python
+from unicode_fol_kit import find_fitch_proof, fitch_prove, is_valid_fitch
+from unicode_fol_kit.fol.nodes import Atom, Or, Not, Implies
+
+P, Q = Atom("P", ()), Atom("Q", ())
+
+fitch_prove([], Or(P, Not(P)))                          # True — a proof of P ∨ ¬P was found
+is_valid_fitch(Implies(Implies(Implies(P, Q), P), P))   # True — Peirce's law
+
+proof = find_fitch_proof([P, Implies(P, Q)], Q)         # returns a Proof (or None)
+print(proof.to_fitch())
+```
+
+```text
+1 │ P       Premise
+2 │ P → Q   Premise
+  ├──────
+3 │ Q       →E 2, 1
+```
+
+- **Sound by construction.** Whatever the search assembles is re-validated by `check_proof` before it is returned, so a bug in the search can only make it *fail to find* a proof — never return an invalid one. Like the resolution prover it is sound and, under its depth bound, *incomplete*: `find_fitch_proof` returning `None` means "no proof found within `max_depth`", never "not a theorem".
+- `fitch_prove(premises, conclusion)` returns a bool; `is_valid_fitch(formula)` proves from no premises; `find_fitch_proof` returns the actual `Proof` (render it, serialise it, or re-check it). Classical FOL only (the non-classical checkers above are verification-only).
+
+### Sequent calculus (Gentzen LK, incl. second-order)
+
+A second proof system: a **two-sided Gentzen sequent calculus**. A sequent `Γ ⊢ Δ` (multisets of formulas, read as `⋀Γ → ⋁Δ`) is derived by a tree of inference rules, and `check_sequent_proof` verifies the tree. This is the classical system **LK** with the first-order quantifier rules *and* the **second-order** rules (`∀²`/`∃²` over predicate variables), so it reaches the second-order fragment (the `MSFLParser(second_order=True)` syntax) that natural deduction / resolution / Z3 cannot.
+
+```python
+from unicode_fol_kit import (
+    MSFLParser, sequent, derive, axiom, check_sequent_proof, render_sequent_proof,
+)
+from unicode_fol_kit.fol.nodes import Atom, Implies, Quantifier, Variable, Constant
+
+x, c = Variable("x"), Constant("c")
+def Px(t): return Atom("P", [t])
+
+# ∀x P(x) ⊢ P(c)   via the ∀L rule (instantiating the bound x with the term c)
+d = derive(sequent([Quantifier("∀", x, Px(x))], [Px(c)]), "∀L",
+           axiom(sequent([Px(c)], [Px(c)])),
+           extra=[c])
+
+check_sequent_proof(d)               # True
+print(render_sequent_proof(d))
+```
+
+`render_sequent_proof` prints the derivation as an indented tree (conclusion first, premises below, each annotated with its rule):
+
+```text
+∀x P(x) ⊢ P(c)   [∀L c]
+  P(c) ⊢ P(c)   [Ax]
+```
+
+The second-order rules `∀²L` / `∃²R` instantiate a bound predicate variable `X` with a **comprehension term** `λx̄.ψ` (a `Comprehension`), replacing each `X(t̄)` by `ψ[x̄ := t̄]`; `∀²R` / `∃²L` use a fresh **predicate eigenvariable**:
+
+```python
+from unicode_fol_kit import Comprehension
+from unicode_fol_kit.fol.nodes import SecondOrderQuantifier
+
+z = Variable("z")
+Xc = Atom("X", [c])                  # the bound predicate variable X applied to c
+Pc = Px(c)
+
+# ∀X X(c) ⊢ P(c)   via ∀²L, instantiating X with the comprehension  λz. P(z)
+so = derive(sequent([SecondOrderQuantifier("∀", "X", 1, Xc)], [Pc]), "∀²L",
+            axiom(sequent([Pc], [Pc])),
+            extra=[Comprehension((z,), Px(z))])
+
+check_sequent_proof(so)              # True
+```
+
+- **Rule set.** `Ax`, the structural rules `WL`/`WR` (weakening), `CL`/`CR` (contraction), `Cut`; the connective rules `¬L`/`¬R`, `∧L`/`∧R`, `∨L`/`∨R`, `→L`/`→R`, `↔L`/`↔R`; the quantifier rules `∀L`/`∀R`, `∃L`/`∃R` (with the eigenvariable condition on `∀R`/`∃L`); and the second-order rules `∀²L`/`∀²R`, `∃²L`/`∃²R`. Contexts are shared additively and compared as multisets; the instantiation term / eigenvariable / comprehension goes in `extra=[…]`.
+- **Checker, not prover.** Full second-order validity is not recursively enumerable (Gödel), so no calculus can be a *complete* prover — `check_sequent_proof` verifies a *given* derivation. It is sound by the LK metatheory, cross-checked in the test-suite against Z3 (for the first-order-expressible sequents) and `satisfies_so` over small finite models (for the genuinely second-order ones, where a randomised audit confirms every accepted derivation is valid node-by-node).
+- `derivation.to_dict()` / `Derivation.from_dict(...)` round-trips a whole derivation (including comprehension terms) to JSON.
 
 ### Tarskian semantics (FOL / MSFOL)
 
@@ -831,6 +1023,44 @@ holds(parser.parse("∀x ∀y (∀P (P(x) ↔ P(y)) → x = y)"), universe)   # 
 ```
 
 This is second-order **predicate** quantification with full (standard) semantics over finite models. Quantification over functions, third-order and up, and a complete higher-order type system are out of scope; the lambda layer already provides higher-order *terms* (`λP. P(x)`), which you beta-reduce/eliminate before evaluation. Second-order formulas reject `to_z3`/`to_prover9`/`to_tptp` (second-order validity is not first-order / not SMT-expressible) — use `satisfies_so` on finite models instead.
+
+## Truth tables, model finding, tableaux, and intuitionistic logic
+
+Five further analysis tools round out the kit. They all reuse the existing AST and evaluators.
+
+```python
+from unicode_fol_kit import (
+    MSFLParser, truth_table, is_tautology, find_countermodel, is_valid_finite,
+    is_valid_tableau, tableau_model, int_valid, int_countermodel, to_english,
+)
+p = MSFLParser().parse
+
+# Truth tables (classical / K3 / LP)
+print(truth_table(p("P → Q")).render())
+is_tautology(p("P ∨ ¬P"))                 # True (classical) …
+is_tautology(p("P ∨ ¬P"), "K3")           # … False in K3 (no three-valued tautologies)
+
+# Finite model finder — a countermodel witnesses a non-entailment
+find_countermodel([p("P(tom)")], p("∀x P(x)"), max_size=3)    # a Structure (or None)
+is_valid_finite(p("∀x P(x) → P(tom)"))                        # True (no finite countermodel)
+
+# Analytic tableaux — and an open branch is a model
+is_valid_tableau(p("((P → Q) → P) → P"))      # True (Peirce, classically)
+tableau_model([p("P → Q"), p("P")])            # {'P': True, 'Q': True}
+
+# Intuitionistic logic — LEM and Peirce fail, with a Kripke countermodel
+int_valid(p("P ∨ ¬P"))                         # False  (int_countermodel returns the model)
+int_valid(p("¬¬(P ∨ ¬P)"))                     # True
+
+# Verbalize a formula in English
+to_english(p("∀x (Human(x) → Mortal(x))"))     # 'for every x, if x is human, then x is mortal'
+```
+
+- **Truth tables** — `truth_table(formula, logic)` (`"classical"` / `"K3"` / `"LP"`) returns a `TruthTable` (`.render()` to Markdown, `.is_tautology` / `.is_contradiction` / `.is_satisfiable`); the convenience predicates `is_tautology` / `is_contradiction` / `is_satisfiable_tt` wrap it. Each distinct atom is a propositional variable; quantified formulas are rejected.
+- **Finite model finder** — `find_model(theory, max_size)` brute-force searches finite `Structure`s (domain `1..N`) satisfying a theory; `find_countermodel(premises, conclusion)` finds one refuting an entailment; `is_satisfiable_finite` / `is_valid_finite` are the booleans. The Mace4-style partner of the provers: a valid entailment has no countermodel, an invalid one usually has a small one. Bounded (a domain whose interpretation space is too large is skipped).
+- **Analytic tableaux** — `is_valid_tableau`, `prove_tableau`, `tableau_closed`, and `tableau_model` (an open branch is a satisfying assignment / countermodel). A fourth proof method beside resolution, Fitch, and the sequent calculus; decidable and complete propositionally, bounded first-order.
+- **Intuitionistic logic** — `int_valid` and `int_countermodel` decide intuitionistic *propositional* validity by Kripke-model search (the logic has the finite-model property); `IntKripkeModel.forces(world, φ)` evaluates a model directly. The **LJ sequent calculus** checker `check_lj_proof` / `verify_lj_proof` verifies intuitionistic derivations — Gentzen **LJ** is the LK calculus restricted to *at most one succedent formula*, which is exactly what blocks the classical theorems. Excluded middle, double-negation elimination, and Peirce's law fail, each with an explicit Kripke countermodel; every intuitionistic validity is also classically valid.
+- **Verbalization** — `to_english(formula)` renders a formula as an English sentence (a readability aid, not a parse inverse).
 
 ## Syntax reference
 

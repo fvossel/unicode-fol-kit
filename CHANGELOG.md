@@ -5,6 +5,129 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [0.6.0] - 2026-06-27
+
+A large reasoning-and-interoperability release: a Fitch natural-deduction checker and
+backtracking prover, a Gentzen **LK** sequent calculus (with second-order rules) and an
+intuitionistic **LJ** calculus, analytic tableaux, a finite model finder, truth tables,
+reverse importers for TPTP / Prover9 / Z3-SMT-LIB, intuitionistic Kripke semantics, and
+formula verbalization. All additive.
+
+### Added
+
+- **Fitch-style natural-deduction proof checker** (`unicode_fol_kit.atp.fitch`) —
+  `Proof` / `Subproof` / `Line` / `Justification` proof objects (frozen, hashable,
+  JSON-serialisable) plus `check_proof` / `verify_proof`, all re-exported at the
+  package top level. The checker is *sound*: it returns `True` only when every
+  line genuinely follows by the cited rule and the proof's premises entail its
+  conclusion; `verify_proof` reports the certified sequent and the first failing
+  line with a reason.
+  - **Classical FOL / MSFOL** (`logic="fol"`/`"msfol"`) is checked by a syntactic
+    rule table: the connective rules (`∧I`/`∧E`, `∨I`/`∨E`, `→I`/`→E`, `↔I`/`↔E`,
+    `¬I`, `⊥I`/`⊥E`, `¬E` double-negation, `RAA`, `Reit`), the quantifier rules
+    (`∀I`/`∀E`, `∃I`/`∃E`) with the eigenvariable side-conditions enforced via a
+    capture-avoiding substitution, and equality (`=I`/`=E`, certified against Z3).
+    Citation accessibility is enforced (no reaching into a closed sibling
+    subproof) and discharge rules are checked against the proof's *open
+    assumptions*. `⊥` is the reserved logical constant `FALSUM`.
+  - **Three-valued K3 / LP** (`logic="K3"`/`"LP"`) certify each step against the
+    many-valued decision procedure (`semantics.manyvalued.entails`), so the
+    paraconsistency facts hold: LP rejects modus ponens, the disjunctive
+    syllogism, and explosion; K3 has no zero-premise theorems. Propositional
+    fragment.
+  - **Modal family** (`logic="K"`/`"T"`/`"S4"`/`"S5"`) certifies each step by the
+    standard translation to FOL plus the frame axioms, decided by Z3. Knowledge
+    (`Knows`, S5) is factive; belief (`Believes`, KD45) and obligation
+    (`Obligatory`, KD) are not. Propositional fragment; temporal and quantified
+    modal input are rejected.
+  - **Rendering** — `render_fitch` (Unicode/ASCII scope bars, line-number gutter,
+    justification column; also `proof.to_fitch()`) and `render_latex_fitch`
+    (self-contained LaTeX `array`; also `proof.to_latex_fitch()`).
+  - Tested with hand-derived proofs per rule, soundness guards for the broken
+    cases, and a randomised audit that checks every accepted proof line-by-line
+    against the Z3 / resolution oracles.
+- **Gentzen sequent-calculus checker** (`unicode_fol_kit.atp.sequent`) — a
+  two-sided **LK** derivation checker re-exported at the package top level:
+  `Sequent` / `Derivation` / `Comprehension` / `SequentResult`, the helpers
+  `sequent` / `derive` / `axiom`, and `check_sequent_proof` / `verify_sequent_proof`
+  / `render_sequent_proof`. A sequent `Γ ⊢ Δ` (multisets, read `⋀Γ → ⋁Δ`) is
+  derived by a tree of rules; the checker verifies each step.
+  - Rules: `Ax`, structural `WL`/`WR`/`CL`/`CR`/`Cut`, the connective rules
+    (`¬`, `∧`, `∨`, `→`, `↔`, each L and R), the first-order quantifier rules
+    (`∀L`/`∀R`, `∃L`/`∃R`, with the eigenvariable condition on `∀R`/`∃L`), and the
+    **second-order** rules `∀²L`/`∀²R`, `∃²L`/`∃²R`. `∀²L`/`∃²R` instantiate a bound
+    predicate variable with a comprehension term `λx̄.ψ` (a `Comprehension`,
+    arity-checked, capture-avoiding); `∀²R`/`∃²L` use a fresh predicate
+    eigenvariable. This reaches the second-order fragment (`second_order=True`),
+    which has no first-order / SMT encoding.
+  - Sound but, for full second-order logic, necessarily **not a complete prover**
+    (second-order validity is not r.e.). Tested with hand derivations per rule,
+    soundness guards, a randomised mutation audit that re-checks every accepted
+    derivation node-by-node against Z3 (first-order fragment), and `satisfies_so`
+    spot-checks over small finite models (second-order fragment).
+- **Analytic tableaux** (`unicode_fol_kit.atp.tableau`) — `is_valid_tableau`,
+  `prove_tableau`, `tableau_closed`, and `tableau_model`, re-exported at the top
+  level. A fourth proof method (beside resolution, Fitch, and the sequent calculus):
+  the signed-free α/β/γ/δ rules, a branch closing on `φ`/`¬φ`. Decidable and complete
+  for the propositional fragment; first-order γ-instantiation is bounded (`max_terms`
+  / `max_steps`). An *open* branch is returned as a countermodel by `tableau_model`.
+- **Finite model finder** (`unicode_fol_kit.semantics.modelfinder`) — `find_model`,
+  `find_countermodel`, `is_satisfiable_finite`, and `is_valid_finite`. Brute-force
+  enumeration of finite `Structure`s (domain `1..max_size`) checked with the Tarskian
+  evaluator — the Mace4-style partner of the provers (a valid entailment has no
+  countermodel; an invalid one usually a small finite one). Bounded by
+  `max_candidates`.
+- **Truth tables** (`unicode_fol_kit.semantics.truthtable`) — `truth_table` returning
+  a `TruthTable` (Markdown `render`, `is_tautology`/`is_contradiction`/`is_satisfiable`),
+  plus `is_tautology` / `is_contradiction` / `is_satisfiable_tt`, over **classical**,
+  Kleene **K3**, and Priest **LP** value sets (cross-checked against Z3 for classical).
+- **Intuitionistic propositional logic** (`unicode_fol_kit.semantics.intuitionistic`) —
+  `IntKripkeModel` with monotone Kripke `forces`, and `int_valid` / `int_countermodel`
+  that decide intuitionistic validity by Kripke-model search (the logic has the
+  finite-model property). Excluded middle, double-negation elimination, and Peirce's
+  law are reported invalid with explicit countermodels; every intuitionistic validity
+  is also classically valid (cross-checked).
+- **Intuitionistic sequent calculus LJ** (`unicode_fol_kit.atp.lj`) — `check_lj_proof`
+  / `verify_lj_proof`, re-exported at the top level. Gentzen **LJ** is the LK calculus
+  (it reuses the same `Sequent` / `Derivation` data model) restricted to **at most one
+  succedent formula** — the change that makes excluded middle / double-negation
+  elimination / Peirce's law underivable. Rules: `Ax`, structural `WL`/`WR`/`CL`/`Cut`,
+  `¬`/`∧`/`→`/`↔` (L and R), the split disjunction-right `∨R1`/`∨R2` and `∨L`, and the
+  quantifier rules `∀L`/`∀R`, `∃L`/`∃R`. Accepted derivations are cross-checked against
+  the intuitionistic Kripke decision procedure and classical Z3 validity.
+- **Verbalization** (`unicode_fol_kit.fol.verbalize`) — `to_english`, an English
+  paraphrase of a formula (a readability aid, not a parse inverse).
+- **Fitch proof *searcher*** (`unicode_fol_kit.atp.fitch_search`) — `find_fitch_proof`,
+  `fitch_prove`, and `is_valid_fitch`, re-exported at the package top level. A
+  goal-directed, **iterative-deepening backtracking** search over the classical
+  propositional + first-order natural-deduction rules (introduction rules, ∨/∃
+  elimination by case split, backward chaining, ex falso, and reductio/RAA — which
+  makes it complete for the propositional fragment). It builds an actual `Proof`
+  that is re-validated by `check_proof` before being returned, so it is **sound by
+  construction**: a search/assembly bug can only make it fail to find a proof, never
+  return an unsound one. Like the resolution prover it is sound but, under its depth
+  bound, incomplete (`None`/`False` = "not found within `max_depth`"). Tested with
+  curated theorems/non-theorems and a randomised cross-check that every found proof
+  is Z3-valid.
+- **Reverse importers for TPTP, Prover9, and Z3/SMT-LIB** — the inverses of
+  `to_tptp` / `to_prover9` / `to_z3`, all re-exported at the package top level:
+  - **TPTP** (`unicode_fol_kit.fol.tptp_input`): `parse_tptp_formula` (one bare
+    FOF/CNF formula → `Node`), `parse_tptp` (a whole problem → a list of
+    `TptpFormula(name, role, formula)`), and `load_tptp` (a `.p`/`.tptp` file), via
+    a dedicated Lark grammar. Round-trips `to_tptp`; `%` and `/* */` comments are
+    ignored; predicates are re-capitalised (TPTP lowercases them); typed
+    `tff`/`thf` and `include` are out of scope.
+  - **Prover9/LADR** (`unicode_fol_kit.fol.prover9_input`): `parse_prover9`,
+    following `set(prolog_style_variables)` to match `to_prover9`'s output (a
+    trailing `.` is accepted). `Xor` round-trips to its `(a|b) & -(a&b)` desugaring.
+  - **Z3** (`unicode_fol_kit.atp.z3_input`): `from_z3` (a `z3.ExprRef` → `Node`)
+    and `parse_smtlib` / `load_smtlib` (SMT-LIB2 via Z3's own parser). Conversion is
+    meaning-preserving (Z3 collapses variables/constants/numbers onto one
+    uninterpreted sort, so a free variable returns as a `Constant`).
+  - Tested by round-trip over random formulas (`parse(node.to_X()) == node`) for
+    TPTP/Prover9 and by logical equivalence (`is_valid(Iff(node, from_z3(node.to_z3())))`)
+    for Z3, plus curated problem-file and SMT-LIB cases.
+
 ## [0.5.2] - 2026-06-26
 
 ### Added
