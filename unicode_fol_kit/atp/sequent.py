@@ -41,7 +41,7 @@ from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Tuple
 
 from ..fol.nodes import (
-    Node, Atom, Not, And, Or, Implies, Iff, Quantifier,
+    Node, Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
     Variable,
     SortedQuantifier, SecondOrderQuantifier,
 )
@@ -455,6 +455,38 @@ def _r_iff_r(concl, prems, extra):
     return "↔R: needs A↔B on the right; premises Γ,A⊢Δ,B and Γ,B⊢Δ,A"
 
 
+def _r_xor_l(concl, prems, extra):
+    """⊕L: from ``Γ, A ⊢ Δ, B`` and ``Γ, B ⊢ Δ, A`` infer ``Γ, A⊕B ⊢ Δ``.
+
+    ``A⊕B ≡ ¬(A↔B)``, so ⊕L mirrors ↔R (one side negated).
+    """
+    if len(prems) != 2:
+        return "⊕L has two premises"
+    for principal, rest in _candidates(concl.antecedent, lambda f: isinstance(f, Xor)):
+        a, b = principal.left, principal.right
+        w1 = (rest + (a,), concl.succedent + (b,))
+        w2 = (rest + (b,), concl.succedent + (a,))
+        if _two_match(prems, w1, w2):
+            return None
+    return "⊕L: needs A⊕B on the left; premises Γ,A⊢Δ,B and Γ,B⊢Δ,A"
+
+
+def _r_xor_r(concl, prems, extra):
+    """⊕R: from ``Γ, A, B ⊢ Δ`` and ``Γ ⊢ Δ, A, B`` infer ``Γ ⊢ Δ, A⊕B``.
+
+    ``A⊕B ≡ ¬(A↔B)``, so ⊕R mirrors ↔L.
+    """
+    if len(prems) != 2:
+        return "⊕R has two premises"
+    for principal, rest in _candidates(concl.succedent, lambda f: isinstance(f, Xor)):
+        a, b = principal.left, principal.right
+        w1 = (concl.antecedent + (a, b), rest)
+        w2 = (concl.antecedent, rest + (a, b))
+        if _two_match(prems, w1, w2):
+            return None
+    return "⊕R: needs A⊕B on the right; premises Γ,A,B⊢Δ and Γ⊢Δ,A,B"
+
+
 def _two_match(prems: List[Sequent], w1, w2) -> bool:
     """Return True iff the two premises equal sequents w1 and w2 in either order."""
     a, b = prems
@@ -472,6 +504,7 @@ _PROP_RULES: Dict[str, RuleFn] = {
     "∨L": _r_or_l, "∨R": _r_or_r,
     "→L": _r_imp_l, "→R": _r_imp_r,
     "↔L": _r_iff_l, "↔R": _r_iff_r,
+    "⊕L": _r_xor_l, "⊕R": _r_xor_r,
 }
 
 

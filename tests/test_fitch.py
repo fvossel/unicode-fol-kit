@@ -331,6 +331,31 @@ def test_socrates_universal_instantiation():
     assert _classical_valid(list(result.premises), result.conclusion)
 
 
+def test_mixed_quantifier_spelling_accepted():
+    # Regression: a ∀E step whose premise spells the quantifier 'forall' (not '∀')
+    # must still be accepted — _canon_q normalises the spelling before structural ==.
+    x, c = Variable("x"), Constant("c")
+    word_form = Quantifier("forall", x, Atom("P", [x]))
+    proof = Proof(premises=[premise(1, word_form)],
+                  steps=[line(2, Atom("P", [c]), "∀E", 1, extra=[c])])
+    assert verify_proof(proof).ok is True
+
+
+def test_non_line_premise_returns_clean_error():
+    # Regression: a non-Line in proof.premises must yield ProofResult(ok=False),
+    # not an uncaught AttributeError.
+    r = verify_proof(Proof(premises=["not a line"], steps=[line(1, P, "Reit", 1)]))
+    assert r.ok is False
+    assert "Line" in r.error
+
+
+def test_non_line_subproof_assumption_returns_clean_error():
+    # Regression: a non-Line Subproof.assumption must yield ProofResult(ok=False).
+    r = verify_proof(Proof(premises=[], steps=[Subproof(assumption="nope", body=[])]))
+    assert r.ok is False
+    assert "Line" in r.error
+
+
 def test_existential_elimination():
     x = Variable("x")
     proof = Proof(

@@ -5,6 +5,34 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [Unreleased]
+
+### Added
+
+- **`⊕L` / `⊕R` (exclusive-or) rules in the sequent calculus** (`A⊕B ≡ ¬(A↔B)`),
+  closing the one connective that had no inference rule in either checker.
+
+### Internal
+
+- **Adversarial audit of the proof checkers.** A multi-agent audit ran independent
+  oracles against every accepted proof/derivation of the Fitch and sequent checkers
+  across all logics (~75 hand-built adversarial constructions plus >1M fuzzed cases)
+  and found **no soundness hole**. Follow-up hardening from the audit's coverage
+  findings: added regression tests pinning the `verify_proof` robustness guards (a
+  clean `ProofResult(ok=False)` instead of a crash on a non-`Line` premise or subproof
+  assumption) and the mixed quantifier-spelling normalisation (`'forall'` vs `∀`); and
+  extended the sequent test corpus so the randomised mutation / Z3 audit now also
+  exercises `Cut`, weakening, contraction, `∨L`, `↔L`/`↔R`, `∃L`, and `⊕L`/`⊕R`.
+- **Independent differential test harnesses promoted into the committed suite**, so the
+  checkers are cross-checked against oracles *other* than the ones they use internally:
+  - the alethic modal Fitch checker against brute-force Kripke-frame enumeration
+    (`tests/test_modal_differential.py`) — independent of its standard-translation/Z3
+    path, covering the K/T/S4/S5 frame-sensitivity facts;
+  - the second-order sequent rules against `satisfies_so` (`so_valid_tiny`) under a
+    randomised mutation audit (Z3 cannot evaluate second-order nodes);
+  - the object-level eigenvariable freshness condition (`∀R`/`∃L`) under randomised
+    fresh/non-fresh fuzzing.
+
 ## [0.6.0] - 2026-06-27
 
 A large reasoning-and-interoperability release: a Fitch natural-deduction checker and

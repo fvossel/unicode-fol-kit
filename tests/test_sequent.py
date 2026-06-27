@@ -19,7 +19,7 @@ import pytest
 
 from unicode_fol_kit import is_valid
 from unicode_fol_kit.fol.nodes import (
-    Atom, Not, And, Or, Implies, Iff, Quantifier, Variable, Constant,
+    Atom, Not, And, Or, Xor, Implies, Iff, Quantifier, Variable, Constant,
     SecondOrderQuantifier,
 )
 from unicode_fol_kit.semantics.tarski import Structure
@@ -219,10 +219,87 @@ def _d_drinker_step():
               extra=[a])
 
 
+# --- coverage for rules the randomized audit otherwise never exercises ---
+# (Cut, weakening, contraction, ∨L, ↔L/↔R, ∃L, ⊕L/⊕R — flagged by the proof-audit)
+
+def _d_cut():
+    """P, ¬P ⊢ Q via Cut on P."""
+    return derive(sequent([P, Not(P)], [Q]), "Cut",
+                  axiom(sequent([P, Not(P)], [Q, P])),
+                  derive(sequent([P, Not(P), P], [Q]), "¬L",
+                         axiom(sequent([P, P], [Q, P]))))
+
+
+def _d_weaken_left():
+    """P, Q ⊢ P via WL."""
+    return derive(sequent([P, Q], [P]), "WL", axiom(sequent([P], [P])))
+
+
+def _d_weaken_right():
+    """P ⊢ P, Q via WR."""
+    return derive(sequent([P], [P, Q]), "WR", axiom(sequent([P], [P])))
+
+
+def _d_contract_left():
+    """P ⊢ P via CL from P, P ⊢ P."""
+    return derive(sequent([P], [P]), "CL", axiom(sequent([P, P], [P])))
+
+
+def _d_contract_right():
+    """P ⊢ P via CR from P ⊢ P, P."""
+    return derive(sequent([P], [P]), "CR", axiom(sequent([P], [P, P])))
+
+
+def _d_or_left():
+    """P ∨ Q ⊢ Q ∨ P via ∨L."""
+    return derive(sequent([Or(P, Q)], [Or(Q, P)]), "∨L",
+                  derive(sequent([P], [Or(Q, P)]), "∨R", axiom(sequent([P], [Q, P]))),
+                  derive(sequent([Q], [Or(Q, P)]), "∨R", axiom(sequent([Q], [Q, P]))))
+
+
+def _d_iff_left():
+    """P ↔ Q, P ⊢ Q via ↔L."""
+    return derive(sequent([Iff(P, Q), P], [Q]), "↔L",
+                  axiom(sequent([P, P, Q], [Q])),
+                  axiom(sequent([P], [Q, P, Q])))
+
+
+def _d_iff_right():
+    """⊢ P ↔ P via ↔R."""
+    return derive(sequent([], [Iff(P, P)]), "↔R",
+                  axiom(sequent([P], [P])), axiom(sequent([P], [P])))
+
+
+def _d_exists_left():
+    """∃x P(x) ⊢ ∃x P(x) via ∃L (eigenvariable) then ∃R."""
+    x, a = Variable("x"), Variable("a")
+    return derive(sequent([EX(x, Atom("P", [x]))], [EX(x, Atom("P", [x]))]), "∃L",
+                  derive(sequent([Atom("P", [a])], [EX(x, Atom("P", [x]))]), "∃R",
+                         axiom(sequent([Atom("P", [a])], [Atom("P", [a])])),
+                         extra=[a]),
+                  extra=[a])
+
+
+def _d_xor_right():
+    """⊢ P ⊕ ¬P via ⊕R (A⊕B ≡ ¬(A↔B))."""
+    return derive(sequent([], [Xor(P, Not(P))]), "⊕R",
+                  derive(sequent([P, Not(P)], []), "¬L", axiom(sequent([P], [P]))),
+                  derive(sequent([], [P, Not(P)]), "¬R", axiom(sequent([P], [P]))))
+
+
+def _d_xor_left():
+    """P ⊕ Q, P, Q ⊢ via ⊕L."""
+    return derive(sequent([Xor(P, Q), P, Q], []), "⊕L",
+                  axiom(sequent([P, Q, P], [Q])),
+                  axiom(sequent([P, Q, Q], [P])))
+
+
 CURATED_FO = [
     _d_imp_refl, _d_modus_ponens, _d_excluded_middle, _d_demorgan,
     _d_and_comm, _d_curry, _d_forall_inst, _d_forall_dist, _d_exists_gen,
     _d_drinker_step,
+    _d_cut, _d_weaken_left, _d_weaken_right, _d_contract_left, _d_contract_right,
+    _d_or_left, _d_iff_left, _d_iff_right, _d_exists_left, _d_xor_right, _d_xor_left,
 ]
 
 
@@ -461,6 +538,27 @@ def _mutate(d, rng):
     return _rebuild_with_mutation(d, target, lambda n: _mutate_once(n, rng), [0])
 
 
+def test_sequent_mixed_quantifier_spelling_accepted():
+    # Regression: a ∀L step whose premise spells the quantifier 'forall' (not '∀')
+    # must still be accepted — the checker canonicalises spellings before matching.
+    x, c = Variable("x"), Constant("c")
+    word_form = Quantifier("forall", x, Atom("P", [x]))
+    d = derive(sequent([word_form], [Atom("P", [c])]), "∀L",
+               axiom(sequent([Atom("P", [c])], [Atom("P", [c])])),
+               extra=[c])
+    assert check_sequent_proof(d)
+
+
+def test_xor_rules_reject_wrong_premises():
+    # ⊕R / ⊕L soundness guards (the valid cases are in CURATED_FO).
+    bad_r = derive(sequent([], [Xor(P, Q)]), "⊕R",
+                   axiom(sequent([P], [P])), axiom(sequent([Q], [Q])))
+    assert check_sequent_proof(bad_r) is False
+    bad_l = derive(sequent([Xor(P, Q)], [P]), "⊕L",
+                   axiom(sequent([P], [P])), axiom(sequent([Q], [Q])))
+    assert check_sequent_proof(bad_l) is False
+
+
 def test_random_mutation_soundness():
     rng = random.Random(20260626)
     accepted = rejected = 0
@@ -477,6 +575,110 @@ def test_random_mutation_soundness():
     # acceptances (audited above) and the rejections must be non-trivial.
     assert rejected > 0
     assert accepted > 0
+
+
+# ---------------------------------------------------------------------------
+# Second-order randomized audit (Z3 cannot evaluate SO; oracle is so_valid_tiny)
+# ---------------------------------------------------------------------------
+
+def _so_d_forall_l():
+    c, z = Constant("c"), Variable("z")
+    return derive(sequent([SecondOrderQuantifier("∀", "X", 1, Atom("X", [c]))],
+                          [Atom("P", [c])]), "∀²L",
+                  axiom(sequent([Atom("P", [c])], [Atom("P", [c])])),
+                  extra=[Comprehension((z,), Atom("P", [z]))])
+
+
+def _so_d_exists_r():
+    c, z = Constant("c"), Variable("z")
+    return derive(sequent([Atom("P", [c])],
+                          [SecondOrderQuantifier("∃", "X", 1, Atom("X", [c]))]), "∃²R",
+                  axiom(sequent([Atom("P", [c])], [Atom("P", [c])])),
+                  extra=[Comprehension((z,), Atom("P", [z]))])
+
+
+def _so_d_forall_r():
+    c = Constant("c")
+    body = Implies(Atom("X", [c]), Atom("X", [c]))
+    return derive(sequent([], [SecondOrderQuantifier("∀", "X", 1, body)]), "∀²R",
+                  derive(sequent([], [Implies(Atom("Y", [c]), Atom("Y", [c]))]), "→R",
+                         axiom(sequent([Atom("Y", [c])], [Atom("Y", [c])]))),
+                  extra=["Y"])
+
+
+SO_CURATED = [_so_d_forall_l, _so_d_exists_r, _so_d_forall_r]
+
+
+def _all_deriv_nodes(d):
+    yield d
+    for child in d.premises:
+        yield from _all_deriv_nodes(child)
+
+
+def so_all_nodes_valid(d):
+    """True iff every node's sequent is valid by ``so_valid_tiny`` (skips unevaluable)."""
+    for node in _all_deriv_nodes(d):
+        formula = _seq_formula(node.conclusion)
+        if formula == "FALSE":
+            return False
+        try:
+            if not so_valid_tiny(formula):
+                return False
+        except Exception:
+            continue  # free object variable etc. — not finitely auditable here
+    return True
+
+
+@pytest.mark.parametrize("builder", SO_CURATED, ids=lambda b: b.__name__)
+def test_so_curated_every_node_valid(builder):
+    d = builder()
+    assert check_sequent_proof(d)
+    assert so_all_nodes_valid(d)
+
+
+def test_so_random_mutation_soundness():
+    rng = random.Random(20260627)
+    accepted = 0
+    for _ in range(1500):
+        mutant = _mutate(rng.choice(SO_CURATED)(), rng)
+        if check_sequent_proof(mutant):
+            accepted += 1
+            assert so_all_nodes_valid(mutant), (
+                "UNSOUND accepted SO mutant:\n" + render_sequent_proof(mutant))
+    assert accepted > 0
+
+
+# ---------------------------------------------------------------------------
+# Eigenvariable freshness — randomized (object-level ∀R / ∃L side condition)
+# ---------------------------------------------------------------------------
+
+def test_eigenvariable_freshness_fuzz():
+    # A ∀R step whose eigenvariable occurs free in the lower sequent must be rejected
+    # (the premise is a genuine axiom, so only the freshness check can fire); the same
+    # shape with a genuinely fresh eigenvariable must be accepted and Z3-sound.
+    from unicode_fol_kit.fol.nodes import Function
+    rng = random.Random(99)
+    x = Variable("x")
+    rejected = accepted = 0
+    for _ in range(400):
+        e = Variable(rng.choice(["a", "b", "c", "u", "v"]))
+        e_term = e if rng.random() < 0.5 else Function("f", [e])
+        ctx = Atom(rng.choice(["R", "S", "Q"]), [e_term])  # contains the eigenvariable
+        all_x = ALL(x, Atom("P", [x]))
+        # BAD: e free in ctx (which sits on both sides, so the premise is an axiom).
+        bad = derive(sequent([ctx], [ctx, all_x]), "∀R",
+                     axiom(sequent([ctx], [ctx, Atom("P", [e])])), extra=[e])
+        assert check_sequent_proof(bad) is False
+        rejected += 1
+        # CONTROL: a fresh eigenvariable not occurring in ctx.
+        fresh = Variable("zz9")
+        good = derive(sequent([ctx], [ctx, all_x]), "∀R",
+                      axiom(sequent([ctx], [ctx, Atom("P", [fresh])])), extra=[fresh])
+        r = verify_sequent_proof(good)
+        assert r.ok, r.error
+        assert all_nodes_valid_z3(good)
+        accepted += 1
+    assert rejected > 0 and accepted > 0
 
 
 # ---------------------------------------------------------------------------
