@@ -14,7 +14,10 @@ Two complementary evaluators:
 """
 
 from .tarski import Structure, term_value, satisfies, models
-from .secondorder import satisfies_so, holds
+from .secondorder import (
+    satisfies_so, holds,
+    so_find_model, so_find_countermodel, so_is_satisfiable_finite, so_is_valid_finite,
+)
 from .fuzzy import evaluate, ground_quantifiers
 from .tnorm import TNorm, get_tnorm, TNORMS, LUKASIEWICZ, GODEL, PRODUCT
 from .kripke import (
@@ -39,6 +42,8 @@ __all__ = [
     "Structure", "term_value", "satisfies", "models",
     # Second-order finite-model semantics (∀P / ∃P over predicate variables).
     "satisfies_so", "holds",
+    "so_find_model", "so_find_countermodel",
+    "so_is_satisfiable_finite", "so_is_valid_finite",
     "evaluate", "ground_quantifiers",
     "TNorm", "get_tnorm", "TNORMS", "LUKASIEWICZ", "GODEL", "PRODUCT",
     "KripkeModel", "satisfies_modal", "models_at", "reflexive_transitive_closure",

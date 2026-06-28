@@ -300,3 +300,88 @@ def holds(formula: Node, structure: Structure) -> bool:
     formula has no free object or predicate variables.
     """
     return satisfies_so(formula, structure, {}, {})
+
+
+# ---------------------------------------------------------------------------
+# Bounded second-order validity / (counter)model search
+# ---------------------------------------------------------------------------
+#
+# Second-order logic has no complete proof system and SO validity is not even
+# semi-decidable, so this is a *bounded finite-model* search (the SO analogue of
+# semantics.modelfinder): it enumerates finite structures interpreting the FREE
+# symbols — the SO-quantified predicates are NOT interpreted by the structure, the
+# satisfies_so evaluator ranges them over every relation — and evaluates the SO
+# sentence in each. A found model/counter-model is genuine; "none up to size N" is
+# bounded evidence, not a proof.
+
+
+def _so_bound_predicate_names(formula: Node) -> set:
+    """Names bound by a second-order quantifier anywhere in ``formula``."""
+    return {n.predicate for n in formula.walk()
+            if isinstance(n, SecondOrderQuantifier)}
+
+
+def _so_signature(sentence: Node):
+    """The structure signature of ``sentence`` minus its SO-bound predicates."""
+    from .modelfinder import _Signature
+    bound = _so_bound_predicate_names(sentence)
+    sig = _Signature()
+    sig.scan(sentence)
+    sig.predicates = {(name, ar) for (name, ar) in sig.predicates if name not in bound}
+    return sig
+
+
+def _so_structures(sentence: Node, max_size: int, max_candidates: int):
+    """Yield every candidate :class:`Structure` over domains ``1 .. max_size``."""
+    from .modelfinder import _interpretations, _candidate_count
+    sig = _so_signature(sentence)
+    for k in range(1, max_size + 1):
+        if _candidate_count(sig, k) > max_candidates:
+            continue
+        domain = tuple(range(k))
+        for constants, functions, predicates in _interpretations(sig, domain):
+            yield Structure(domain, constants=constants,
+                            functions=functions, predicates=predicates)
+
+
+def so_find_model(formula: Node, max_size: int = 3,
+                  max_candidates: int = MAX_RELATIONS) -> Optional[Structure]:
+    """Return a finite structure in which the SO ``formula`` holds, or None (bounded)."""
+    from .modelfinder import _universal_closure
+    sentence = _universal_closure(formula)
+    for structure in _so_structures(sentence, max_size, max_candidates):
+        if holds(sentence, structure):
+            return structure
+    return None
+
+
+def so_find_countermodel(formula: Node, max_size: int = 3,
+                         max_candidates: int = MAX_RELATIONS) -> Optional[Structure]:
+    """Return a finite structure in which the SO ``formula`` FAILS, or None (bounded).
+
+    A returned structure witnesses that ``formula`` is not second-order valid (free
+    object variables are universally closed, so it refutes the closed reading).
+    """
+    from .modelfinder import _universal_closure
+    sentence = _universal_closure(formula)
+    for structure in _so_structures(sentence, max_size, max_candidates):
+        if not holds(sentence, structure):
+            return structure
+    return None
+
+
+def so_is_satisfiable_finite(formula: Node, max_size: int = 3,
+                             max_candidates: int = MAX_RELATIONS) -> bool:
+    """True iff the SO ``formula`` has a finite model of size ≤ ``max_size`` (bounded)."""
+    return so_find_model(formula, max_size, max_candidates) is not None
+
+
+def so_is_valid_finite(formula: Node, max_size: int = 3,
+                       max_candidates: int = MAX_RELATIONS) -> bool:
+    """True iff no finite counter-model of the SO ``formula`` is found up to ``max_size``.
+
+    Bounded and one-sided: ``True`` is strong evidence of second-order validity (not a
+    proof — SO validity is not semi-decidable); ``False`` is a genuine refutation, with
+    the witness available from :func:`so_find_countermodel`.
+    """
+    return so_find_countermodel(formula, max_size, max_candidates) is None
