@@ -29,7 +29,15 @@ dependencies = [
     "z3-solver>=4.12",
 ]
 
+[project.optional-dependencies]
+docs = [
+    "sphinx>=7.0",
+    "furo>=2024.1.29",
+    "myst-parser>=2.0",
+]
+
 [project.urls]
+Documentation = "https://unicode-fol-kit.readthedocs.io/"
 Repository = "https://github.com/fvossel/unicode-fol-kit"
 Issues = "https://github.com/fvossel/unicode-fol-kit/issues"
 
@@ -39,7 +47,12 @@ packages = ["unicode_fol_kit"]
 [tool.hatch.build.targets.sdist]
 include = [
     "/unicode_fol_kit",
+    "/docs",
     "/README.md",
     "/CHANGELOG.md",
     "/LICENSE",
+]
+exclude = [
+    "/docs/_build",
+    "/docs/_autosummary",
 ]
