@@ -65,6 +65,7 @@ from .nodes import (
     Quantifier, SortedQuantifier,
     Box, Diamond, Knows, Believes,
     Always, Eventually, Next, Until,
+    Historically, Once, Previous, Since,
     Obligatory, Permitted,
 )
 from ..semantics._modal_reject import (
@@ -131,6 +132,20 @@ def _diamond_like(rel_name: str, world: Variable, body: Node, fresh: _FreshWorld
     return Quantifier(_EXISTS, w2, And(access, _translate(body, w2, fresh)))
 
 
+def _box_converse(rel_name: str, world: Variable, body: Node, fresh: _FreshWorlds) -> Node:
+    """Build ``∀w' (rel(w', world) → ST(body, w'))`` — a box over the CONVERSE relation."""
+    w2 = fresh.next()
+    access = Atom(rel_name, [w2, world])
+    return Quantifier(_FORALL, w2, Implies(access, _translate(body, w2, fresh)))
+
+
+def _diamond_converse(rel_name: str, world: Variable, body: Node, fresh: _FreshWorlds) -> Node:
+    """Build ``∃w' (rel(w', world) ∧ ST(body, w'))`` — a diamond over the CONVERSE relation."""
+    w2 = fresh.next()
+    access = Atom(rel_name, [w2, world])
+    return Quantifier(_EXISTS, w2, And(access, _translate(body, w2, fresh)))
+
+
 def _translate(formula: Node, world: Variable, fresh: _FreshWorlds) -> Node:
     """Recursively translate ``formula`` relative to ``world`` (the worker)."""
     # --- atomic: append the world as the last predicate argument ---
@@ -182,13 +197,21 @@ def _translate(formula: Node, world: Variable, fresh: _FreshWorlds) -> Node:
     if isinstance(formula, Next):
         return _box_like(_R_NEXT, world, formula.formula, fresh)
 
+    # --- past tense (box/diamond over the CONVERSE temporal/next predicate) ---
+    if isinstance(formula, Historically):
+        return _box_converse(_R_TEMPORAL, world, formula.formula, fresh)
+    if isinstance(formula, Once):
+        return _diamond_converse(_R_TEMPORAL, world, formula.formula, fresh)
+    if isinstance(formula, Previous):
+        return _box_converse(_R_NEXT, world, formula.formula, fresh)
+
     # --- rejected ---
-    if isinstance(formula, Until):
+    if isinstance(formula, (Until, Since)):
         raise NotImplementedError(
-            "standard_translation: Until is not first-order definable — strong "
-            "Until needs the transitive closure of the temporal relation, which "
-            "no pure FOL formula captures. Evaluate it with the Kripke evaluator "
-            "(semantics.kripke.satisfies_modal) instead."
+            "standard_translation: Until / Since are not first-order definable — "
+            "strong Until/Since need the transitive closure of the temporal "
+            "relation, which no pure FOL formula captures. Evaluate them with the "
+            "Kripke evaluator (semantics.kripke.satisfies_modal) instead."
         )
     if isinstance(formula, (Quantifier, SortedQuantifier)):
         _reject_quantifier(formula)

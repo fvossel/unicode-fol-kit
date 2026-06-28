@@ -59,6 +59,7 @@ from ..fol.nodes import (
     SortedQuantifier, SortedConstant, LambdaVar,
     Box, Diamond, Knows, Believes,
     Always, Eventually, Next, Until,
+    Historically, Once, Previous, Since,
     Obligatory, Permitted,
     free_variables,
 )
@@ -1218,8 +1219,9 @@ def _collect_modal_frames(nodes, alethic_system):
                 frames["Rb_" + (getattr(n.agent, "name", None) or n.agent.to_unicode_str())] = "KD45"
             elif isinstance(n, (Obligatory, Permitted)):
                 frames["D"] = "KD"
-            elif isinstance(n, (Always, Eventually, Next, Until)):
-                unsupported = "temporal operators (Always/Eventually/Next/Until)"
+            elif isinstance(n, (Always, Eventually, Next, Until,
+                                Historically, Once, Previous, Since)):
+                unsupported = "temporal operators (Always/Eventually/Next/Until and past-tense H/P/Y/Since)"
             elif isinstance(n, (Quantifier, SortedQuantifier)):
                 unsupported = "quantifiers (first-order modal logic)"
     return frames, unsupported

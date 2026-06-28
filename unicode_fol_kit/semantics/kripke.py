@@ -53,6 +53,7 @@ from ..fol.nodes import (
     Quantifier, SortedQuantifier,
     Box, Diamond, Knows, Believes,
     Always, Eventually, Next, Until,
+    Historically, Once, Previous, Since,
     Obligatory, Permitted,
     Constant, substitute,
 )
@@ -237,6 +238,41 @@ def _until_holds(
     return search(world, frozenset())
 
 
+def _predecessors(model: KripkeModel, name: str, world: World) -> Set[World]:
+    """Return the set of ``w'`` with ``(w', world)`` in the named relation (its converse successors)."""
+    return {w1 for (w1, w2) in model.relation(name) if w2 == world}
+
+
+def _since_holds(
+    left: Node,
+    right: Node,
+    model: KripkeModel,
+    world: World,
+) -> bool:
+    """Decide ``Since(left, right)`` at ``world`` — the backward mirror of Until.
+
+    Searches for a finite ``"temporal"`` path into the PAST
+    ``world = w0 ← w1 ← … ← wn`` (each step ``(w(i+1), wi)`` a temporal edge, n ≥ 0)
+    with ``right`` true at ``wn`` and ``left`` true at every later ``wi`` (i < n). A
+    depth-first search guarded by a visited set, so cyclic frames terminate.
+    """
+    edges = model.relation(_TEMPORAL)
+
+    def search(w: World, visited: FrozenSet[World]) -> bool:
+        """Return whether some backward path from ``w`` witnesses the Since."""
+        if satisfies_modal(right, model, w):
+            return True
+        if not satisfies_modal(left, model, w):
+            return False
+        next_visited = visited | {w}
+        for w0 in {a for (a, b) in edges if b == w}:
+            if w0 not in next_visited and search(w0, next_visited):
+                return True
+        return False
+
+    return search(world, frozenset())
+
+
 def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
     """Return whether ``formula`` is true at ``world`` in the Kripke ``model``.
 
@@ -339,6 +375,23 @@ def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
         )
     if isinstance(formula, Until):
         return _until_holds(formula.left, formula.right, model, world)
+
+    # --- past tense (over the CONVERSE of the one-step "temporal" relation) ---
+    if isinstance(formula, Previous):
+        return all(
+            satisfies_modal(formula.formula, model, w2)
+            for w2 in _predecessors(model, _TEMPORAL, world)
+        )
+    if isinstance(formula, Historically):
+        reverse = [(b, a) for (a, b) in model.relation(_TEMPORAL)]
+        reachable = reflexive_transitive_closure(reverse, [world])
+        return all(satisfies_modal(formula.formula, model, w2) for w2 in reachable)
+    if isinstance(formula, Once):
+        reverse = [(b, a) for (a, b) in model.relation(_TEMPORAL)]
+        reachable = reflexive_transitive_closure(reverse, [world])
+        return any(satisfies_modal(formula.formula, model, w2) for w2 in reachable)
+    if isinstance(formula, Since):
+        return _since_holds(formula.left, formula.right, model, world)
 
     # --- object quantifiers (actualist: range over the CURRENT world's domain D_w) ---
     if isinstance(formula, Quantifier):

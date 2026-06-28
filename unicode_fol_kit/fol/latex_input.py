@@ -31,6 +31,12 @@ from .msflparser import MSFLParser
 # each one literally contains braces. ``\mathbin{\mathsf{U}}`` is listed before
 # the bare ``\mathsf{U}`` would ever be considered, so the Until glyph wins.
 _MULTI_TOKEN = [
+    # Past-tense overlined markers FIRST: each contains a bare \mathsf{…} that a
+    # later rule would otherwise rewrite (e.g. \overline{\mathsf{P}} ⊃ \mathsf{P}).
+    (r"\mathbin{\overline{\mathsf{S}}}", "⒮"),
+    (r"\overline{\mathsf{H}}", "⒣"),
+    (r"\overline{\mathsf{P}}", "⒫"),
+    (r"\overline{\mathsf{Y}}", "⒴"),
     (r"\mathbin{\mathsf{U}}", "Ⓤ"),
     (r"\mathsf{G}", "Ⓖ"),
     (r"\mathsf{F}", "Ⓕ"),

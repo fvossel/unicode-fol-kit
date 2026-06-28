@@ -43,7 +43,8 @@ _EXPECTED_ALIASES = {
            "luk_implies_", "luk_iff_", "quantifier_"},
     "modal": {"not_", "and_", "or_", "xor_", "implies_", "iff_", "quantifier_",
               "box_", "diamond_", "always_", "eventually_", "next_",
-              "knows_", "believes_", "obligatory_", "permitted_", "until_"},
+              "knows_", "believes_", "obligatory_", "permitted_", "until_",
+              "historically_", "once_", "previous_", "since_"},
     "second_order": {"not_", "and_", "or_", "xor_", "implies_", "iff_",
                      "quantifier_", "second_order_quantifier_"},
 }

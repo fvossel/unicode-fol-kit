@@ -47,7 +47,8 @@ from ..fol.nodes import (
     LukNegation, WeakConjunction, WeakDisjunction,
     StrongConjunction, StrongDisjunction, LukImplication, LukEquivalence,
     Lambda, LambdaVar, Application,
-    Box, Diamond, Always, Eventually, Next, Until, Knows, Believes,
+    Box, Diamond, Always, Eventually, Next, Until,
+    Historically, Once, Previous, Since, Knows, Believes,
 )
 
 # The three truth values, smallest first: false < undefined/both < true.
@@ -78,7 +79,8 @@ _FUZZY_NODES = (
 )
 _SORTED_NODES = (SortedQuantifier, SortedConstant)
 _LAMBDA_NODES = (Lambda, LambdaVar, Application)
-_MODAL_NODES = (Box, Diamond, Always, Eventually, Next, Until, Knows, Believes)
+_MODAL_NODES = (Box, Diamond, Always, Eventually, Next, Until,
+                Historically, Once, Previous, Since, Knows, Believes)
 
 
 def _snap(x: float) -> float:

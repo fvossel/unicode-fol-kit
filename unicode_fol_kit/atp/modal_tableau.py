@@ -49,6 +49,7 @@ from ..fol.nodes import (
     Node, Atom, Not, And, Or, Xor, Implies, Iff,
     Box, Diamond, Knows, Believes, Obligatory, Permitted,
     Next, Always, Eventually, Until,
+    Historically, Once, Previous, Since,
 )
 from ..semantics.kripke import KripkeModel, satisfies_modal
 from .fitch import is_falsum
@@ -77,7 +78,9 @@ _FRAMES = {
     "KD45": ("serial", "trans", "eucl"),
 }
 
-_TEMPORAL_CLOSURE = (Always, Eventually, Until)
+# Operators needing least/greatest-fixpoint (eventuality) or converse-relation
+# machinery beyond this labelled tableau — routed to satisfies_modal / Isabelle.
+_TEMPORAL_CLOSURE = (Always, Eventually, Until, Historically, Once, Previous, Since)
 
 
 def _agent_key(agent: Node) -> str:
@@ -93,7 +96,8 @@ def _neg(f: Node) -> Node:
 def has_modal(node: Node) -> bool:
     """True iff ``node`` contains any modal/temporal/epistemic/deontic operator."""
     modal = (Box, Diamond, Knows, Believes, Obligatory, Permitted,
-             Next, Always, Eventually, Until)
+             Next, Always, Eventually, Until,
+             Historically, Once, Previous, Since)
     return any(isinstance(n, modal) for n in node.walk())
 
 

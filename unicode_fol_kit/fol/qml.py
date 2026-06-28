@@ -39,6 +39,7 @@ from typing import List, Optional
 from .nodes import (
     Node, Variable, Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
     Box, Diamond, Knows, Believes, Always, Eventually, Next, Until,
+    Historically, Once, Previous, Since,
     Obligatory, Permitted, SortedQuantifier,
 )
 from ._symbol_names import SymbolNames
@@ -124,6 +125,20 @@ def _diamond(rel: str, w: Variable, body: Node, fresh: _Fresh, mode: str) -> Nod
     return Quantifier(_EXISTS, v, And(guard, _st(body, v, fresh, mode)))
 
 
+def _box_conv(rel: str, w: Variable, body: Node, fresh: _Fresh, mode: str) -> Node:
+    """``∀v (World(v) ∧ rel(v, w) → ST(body, v))`` — a box over the CONVERSE relation."""
+    v = fresh.next()
+    guard = And(Atom(_WORLD, [v]), Atom(rel, [v, w]))
+    return Quantifier(_FORALL, v, Implies(guard, _st(body, v, fresh, mode)))
+
+
+def _diamond_conv(rel: str, w: Variable, body: Node, fresh: _Fresh, mode: str) -> Node:
+    """``∃v (World(v) ∧ rel(v, w) ∧ ST(body, v))`` — a diamond over the CONVERSE relation."""
+    v = fresh.next()
+    guard = And(Atom(_WORLD, [v]), Atom(rel, [v, w]))
+    return Quantifier(_EXISTS, v, And(guard, _st(body, v, fresh, mode)))
+
+
 def _box_agent(rel: str, agent: Node, w: Variable, body: Node, fresh: _Fresh, mode: str) -> Node:
     """Agent-indexed □: ``∀v (World(v) ∧ rel(agent, w, v) → ST(body, v))``.
 
@@ -170,6 +185,12 @@ def _st(formula: Node, w: Variable, fresh: _Fresh, mode: str) -> Node:
         return _diamond(_R_TEMPORAL, w, formula.formula, fresh, mode)
     if isinstance(formula, Next):
         return _box(_R_NEXT, w, formula.formula, fresh, mode)
+    if isinstance(formula, Historically):
+        return _box_conv(_R_TEMPORAL, w, formula.formula, fresh, mode)
+    if isinstance(formula, Once):
+        return _diamond_conv(_R_TEMPORAL, w, formula.formula, fresh, mode)
+    if isinstance(formula, Previous):
+        return _box_conv(_R_NEXT, w, formula.formula, fresh, mode)
 
     if isinstance(formula, Quantifier):
         x = formula.variable

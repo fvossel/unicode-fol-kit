@@ -27,6 +27,7 @@ from ._msfl_nodes import (
 from ._modal_nodes import (
     Box, Diamond, Knows, Believes,
     Always, Eventually, Next, Until,
+    Historically, Once, Previous, Since,
     Obligatory, Permitted,
 )
 from ._so_nodes import SecondOrderQuantifier
@@ -45,6 +46,7 @@ __all__ = [
     "LambdaVar", "Lambda", "Application",
     "Box", "Diamond", "Knows", "Believes",
     "Always", "Eventually", "Next", "Until",
+    "Historically", "Once", "Previous", "Since",
     "Obligatory", "Permitted",
     "SecondOrderQuantifier",
     "free_variables",

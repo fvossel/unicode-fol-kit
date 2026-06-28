@@ -444,6 +444,157 @@ class Permitted(Node):
         raise NotImplementedError(_NO_EXPORT)
 
 
+@dataclass(frozen=True)
+class Historically(Node):
+    """Past-tense "has always been" Hφ: φ holds now and at every PAST point.
+
+    The past dual of :class:`Always` (G): a □ over the *converse* of the one-step
+    ``"temporal"`` relation, i.e. over the reflexive-transitive set of points from
+    which the current world is reachable. Rendered with the parenthesised glyph
+    ``⒣`` — the past operators are parenthesised so they read apart from the circled
+    future operators (Ⓖ Ⓕ Ⓝ Ⓤ).
+    """
+
+    formula: Node
+
+    def _tree_parts(self):
+        """Return the ⒣ label and the single subformula child."""
+        return "⒣", [self.formula]
+
+    def to_dict(self):
+        """Serialise to dict with type tag and recursively serialised subformula."""
+        return {"_type": "Historically", "formula": self.formula.to_dict()}
+
+    @staticmethod
+    def from_dict(d):
+        """Deserialise a Historically from a dict produced by to_dict."""
+        return Historically(Node.from_dict(d["formula"]))
+
+    def to_z3(self, env: Z3Env = None):
+        """Reject Z3 export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_EXPORT)
+
+    def to_prover9(self) -> str:
+        """Reject Prover9 export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_EXPORT)
+
+    def to_tptp(self) -> str:
+        """Reject TPTP export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_EXPORT)
+
+
+@dataclass(frozen=True)
+class Once(Node):
+    """Past-tense "was once the case" Pφ: φ held now or at some PAST point.
+
+    The past dual of :class:`Eventually` (F): a ◇ over the converse of the one-step
+    ``"temporal"`` relation. Rendered with the parenthesised glyph ``⒫``.
+    """
+
+    formula: Node
+
+    def _tree_parts(self):
+        """Return the ⒫ label and the single subformula child."""
+        return "⒫", [self.formula]
+
+    def to_dict(self):
+        """Serialise to dict with type tag and recursively serialised subformula."""
+        return {"_type": "Once", "formula": self.formula.to_dict()}
+
+    @staticmethod
+    def from_dict(d):
+        """Deserialise an Once from a dict produced by to_dict."""
+        return Once(Node.from_dict(d["formula"]))
+
+    def to_z3(self, env: Z3Env = None):
+        """Reject Z3 export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_EXPORT)
+
+    def to_prover9(self) -> str:
+        """Reject Prover9 export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_EXPORT)
+
+    def to_tptp(self) -> str:
+        """Reject TPTP export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_EXPORT)
+
+
+@dataclass(frozen=True)
+class Previous(Node):
+    """Past-tense "yesterday" Yφ: φ holds at every immediate PAST point.
+
+    The past dual of :class:`Next` (X): the □-style operator over the converse of
+    the one-step ``"temporal"`` relation (universal over immediate predecessors, so
+    vacuously true at a world with no past). Rendered with the parenthesised glyph
+    ``⒴``.
+    """
+
+    formula: Node
+
+    def _tree_parts(self):
+        """Return the ⒴ label and the single subformula child."""
+        return "⒴", [self.formula]
+
+    def to_dict(self):
+        """Serialise to dict with type tag and recursively serialised subformula."""
+        return {"_type": "Previous", "formula": self.formula.to_dict()}
+
+    @staticmethod
+    def from_dict(d):
+        """Deserialise a Previous from a dict produced by to_dict."""
+        return Previous(Node.from_dict(d["formula"]))
+
+    def to_z3(self, env: Z3Env = None):
+        """Reject Z3 export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_EXPORT)
+
+    def to_prover9(self) -> str:
+        """Reject Prover9 export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_EXPORT)
+
+    def to_tptp(self) -> str:
+        """Reject TPTP export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_EXPORT)
+
+
+@dataclass(frozen=True)
+class Since(Node):
+    """Past-tense "left since right" (left S right): the mirror of :class:`Until`.
+
+    Holds at the current point iff ``right`` was true at some past point and ``left``
+    has held at every point strictly since then up to now — the exact backward dual
+    of strong Until over the one-step ``"temporal"`` relation. Rendered ``⒮``.
+    """
+
+    left: Node
+    right: Node
+
+    def _tree_parts(self):
+        """Return the ⒮ label and the two subformula children."""
+        return "⒮", [self.left, self.right]
+
+    def to_dict(self):
+        """Serialise to dict with type tag and recursively serialised operands."""
+        return {"_type": "Since", "left": self.left.to_dict(), "right": self.right.to_dict()}
+
+    @staticmethod
+    def from_dict(d):
+        """Deserialise a Since from a dict produced by to_dict."""
+        return Since(Node.from_dict(d["left"]), Node.from_dict(d["right"]))
+
+    def to_z3(self, env: Z3Env = None):
+        """Reject Z3 export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_EXPORT)
+
+    def to_prover9(self) -> str:
+        """Reject Prover9 export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_EXPORT)
+
+    def to_tptp(self) -> str:
+        """Reject TPTP export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_EXPORT)
+
+
 # =========================
 # Operator registration
 # =========================
@@ -465,6 +616,12 @@ register_operator(Permitted, "prefix", "Ⓟ", "\\mathsf{P} ", 4)
 register_operator(Knows, "agent_prefix", "K_", "K", 4)
 register_operator(Believes, "agent_prefix", "B_", "B", 4)
 register_operator(Until, "binary_until", "Ⓤ", "\\mathbin{\\mathsf{U}}", 2.5)
+# Past-tense (parenthesised glyphs to read apart from the circled future
+# operators; LaTeX overlined so ⒫ never collides with the deontic \mathsf{P}=Ⓟ).
+register_operator(Historically, "prefix", "⒣", "\\overline{\\mathsf{H}} ", 4)
+register_operator(Once, "prefix", "⒫", "\\overline{\\mathsf{P}} ", 4)
+register_operator(Previous, "prefix", "⒴", "\\overline{\\mathsf{Y}} ", 4)
+register_operator(Since, "binary_until", "⒮", "\\mathbin{\\overline{\\mathsf{S}}}", 2.5)
 
 
 # =========================
@@ -525,3 +682,19 @@ register_parser_op(Permitted, "modal", "prefix", "permitted_", "PERMIT prefix",
 register_parser_op(Until, "modal", "until", "until_", "TUNTIL",
                    lambda items: Until(items[0], items[2]),
                    terminal_name="TUNTIL", terminal_def='TUNTIL: "Ⓤ"')
+
+# --- past-tense prefix operators (¬-level) ---
+register_parser_op(Historically, "modal", "prefix", "historically_", "PAST_H prefix",
+                   lambda items: Historically(items[1]),
+                   terminal_name="PAST_H", terminal_def='PAST_H: "⒣"')
+register_parser_op(Once, "modal", "prefix", "once_", "PAST_P prefix",
+                   lambda items: Once(items[1]),
+                   terminal_name="PAST_P", terminal_def='PAST_P: "⒫"')
+register_parser_op(Previous, "modal", "prefix", "previous_", "PAST_Y prefix",
+                   lambda items: Previous(items[1]),
+                   terminal_name="PAST_Y", terminal_def='PAST_Y: "⒴"')
+
+# --- past-tense binary Since (⒮): same until-level as Ⓤ ---
+register_parser_op(Since, "modal", "until", "since_", "TSINCE",
+                   lambda items: Since(items[0], items[2]),
+                   terminal_name="TSINCE", terminal_def='TSINCE: "⒮"')
