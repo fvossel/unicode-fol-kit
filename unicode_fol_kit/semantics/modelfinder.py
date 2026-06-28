@@ -18,6 +18,12 @@ closed). The search is **bounded**: a domain size whose interpretation space exc
 not "unsatisfiable" (first-order satisfiability is undecidable, and some satisfiable
 sentences have only infinite models).
 
+**Many-sorted (MSFOL)** input is handled directly: each named sort gets a non-empty
+universe (a non-empty subset of the domain) enumerated alongside the rest of the
+interpretation, sorted constants are placed inside their sort, and a
+``SortedQuantifier`` ranges over its sort — so a found :class:`Structure` carries the
+``sorts`` mapping. Sorts may overlap (the relativisation reading).
+
 Public API: :func:`find_model`, :func:`find_countermodel`,
 :func:`is_satisfiable_finite`, :func:`is_valid_finite`.
 """
@@ -26,7 +32,7 @@ from itertools import product
 from typing import List, Optional
 
 from ..fol.nodes import Node, Atom, Not, Quantifier, Variable, Constant, Number, Function
-from ..fol.nodes import SortedConstant
+from ..fol.nodes import SortedConstant, SortedQuantifier
 from .tarski import Structure, models
 
 
@@ -41,7 +47,7 @@ def _free_var_names(node: Node, bound: frozenset = frozenset()) -> set:
     """Return the names of variables occurring free in ``node``."""
     if isinstance(node, Variable):
         return set() if node.name in bound else {node.name}
-    if isinstance(node, Quantifier):
+    if isinstance(node, (Quantifier, SortedQuantifier)):
         return _free_var_names(node.formula, bound | {node.variable.name})
     names: set = set()
     for child in node._child_nodes():
@@ -58,15 +64,21 @@ def _universal_closure(node: Node) -> Node:
 
 
 class _Signature:
-    """The constants, functions, and predicates a theory's structures must interpret."""
+    """The constants, functions, predicates, and sorts a theory's structures interpret."""
 
     def __init__(self):
         self.constants: set = set()                 # names
         self.functions: set = set()                 # (name, arity)
         self.predicates: set = set()                # (name, arity)
+        self.sorts: set = set()                      # sort names (MSFOL)
+        self.sorted_constants: dict = {}             # constant name -> sort name
 
     def scan(self, node: Node) -> None:
-        if isinstance(node, (Constant, SortedConstant)):
+        if isinstance(node, SortedConstant):
+            self.constants.add(node.name)
+            self.sorts.add(node.sort)
+            self.sorted_constants[node.name] = node.sort
+        elif isinstance(node, Constant):
             self.constants.add(node.name)
         elif isinstance(node, Number):
             self.constants.add(str(node.value))
@@ -79,6 +91,9 @@ class _Signature:
                 self.predicates.add((node.predicate, len(node.args)))
             for a in node.args:
                 self.scan(a)
+        elif isinstance(node, SortedQuantifier):
+            self.sorts.add(node.sort)
+            self.scan(node.formula)
         else:
             for child in node._child_nodes():
                 self.scan(child)
@@ -95,7 +110,65 @@ def _candidate_count(sig: "_Signature", k: int) -> int:
         total *= k ** (k ** arity)
     for _, arity in sig.predicates:
         total *= 1 << (k ** arity)
+    # Each sort ranges over the non-empty subsets of the domain (its universe).
+    for _ in sig.sorts:
+        total *= (1 << k) - 1
     return total
+
+
+def _nonempty_subsets(domain: tuple):
+    """Yield every non-empty subset of ``domain`` as a tuple (a sort universe)."""
+    items = list(domain)
+    for mask in range(1, 1 << len(items)):
+        yield tuple(items[i] for i in range(len(items)) if (mask >> i) & 1)
+
+
+def _func_pred_interpretations(sig: "_Signature", domain: tuple):
+    """Yield ``(functions, predicates)`` for every interpretation of the func/pred part."""
+    func_sig = sorted(sig.functions)
+    pred_sig = sorted(sig.predicates)
+    func_options = []
+    for _, arity in func_sig:
+        arg_tuples = list(product(domain, repeat=arity))
+        func_options.append(list(product(domain, repeat=len(arg_tuples))))
+    pred_options = []
+    for _, arity in pred_sig:
+        arg_tuples = list(product(domain, repeat=arity))
+        pred_options.append(list(product((False, True), repeat=len(arg_tuples))))
+    for func_choice in (product(*func_options) if func_options else [()]):
+        functions = {}
+        for (name, arity), values in zip(func_sig, func_choice):
+            arg_tuples = list(product(domain, repeat=arity))
+            functions[(name, arity)] = dict(zip(arg_tuples, values))
+        for pred_choice in (product(*pred_options) if pred_options else [()]):
+            predicates = {}
+            for (name, arity), mask in zip(pred_sig, pred_choice):
+                arg_tuples = list(product(domain, repeat=arity))
+                predicates[(name, arity)] = {t for t, inc in zip(arg_tuples, mask) if inc}
+            yield functions, predicates
+
+
+def _sorted_interpretations(sig: "_Signature", domain: tuple):
+    """Yield ``(constants, functions, predicates, sorts)`` for an MSFOL signature.
+
+    Each sort gets a non-empty universe (a non-empty subset of the domain); a sorted
+    constant is restricted to its sort's universe; the rest is the classical
+    enumeration. Sorts may overlap (the relativisation reading).
+    """
+    sort_names = sorted(sig.sorts)
+    const_names = sorted(sig.constants)
+    sort_options = [list(_nonempty_subsets(domain)) for _ in sort_names]
+    for sort_choice in (product(*sort_options) if sort_options else [()]):
+        sorts = {name: universe for name, universe in zip(sort_names, sort_choice)}
+        const_option_lists = [
+            list(sorts[sig.sorted_constants[name]]) if name in sig.sorted_constants
+            else list(domain)
+            for name in const_names
+        ]
+        for const_choice in (product(*const_option_lists) if const_option_lists else [()]):
+            constants = dict(zip(const_names, const_choice))
+            for functions, predicates in _func_pred_interpretations(sig, domain):
+                yield constants, functions, predicates, sorts
 
 
 def _interpretations(sig: "_Signature", domain: tuple):
@@ -155,11 +228,18 @@ def find_model(formulas, max_size: int = 4,
         if _candidate_count(sig, k) > max_candidates:
             continue
         domain = tuple(range(k))
-        for constants, functions, predicates in _interpretations(sig, domain):
-            structure = Structure(domain, constants=constants,
-                                  functions=functions, predicates=predicates)
-            if all(models(s, structure) for s in sentences):
-                return structure
+        if sig.sorts:
+            for constants, functions, predicates, sorts in _sorted_interpretations(sig, domain):
+                structure = Structure(domain, constants=constants, functions=functions,
+                                      predicates=predicates, sorts=sorts)
+                if all(models(s, structure) for s in sentences):
+                    return structure
+        else:
+            for constants, functions, predicates in _interpretations(sig, domain):
+                structure = Structure(domain, constants=constants,
+                                      functions=functions, predicates=predicates)
+                if all(models(s, structure) for s in sentences):
+                    return structure
     return None
 
 
