@@ -68,6 +68,14 @@ _FRAMES = {
     "K": (), "T": ("refl",), "S4": ("refl", "trans"),
     "S5": ("refl", "trans", "sym"), "KD": ("serial",),
     "KD45": ("serial", "trans", "eucl"),
+    "B": ("refl", "sym"),                          # Brouwer
+    "S4.2": ("refl", "trans", "directed"),         # convergent (.2)
+    "S4.3": ("refl", "trans", "connected"),        # no-branching / linear (.3)
+    # GL (Gödel–Löb provability) is transitive + Löb. It is NOT first-order
+    # definable, so qml_axioms rejects it (see the GL guard there); it is listed
+    # here only so the HIGHER-ORDER THF / Isabelle exporters, which share this
+    # table, accept frame="GL" and emit the Löb schema.
+    "GL": ("trans", "loeb"),
 }
 
 
@@ -276,6 +284,15 @@ def _agent_frame_axioms(rel_name: str, conds) -> List[Node]:
     if "serial" in conds:
         out.append(fa(a, fa(w, Implies(And(O(a), W(w)),
                    Quantifier(_EXISTS, v, And(W(v), Rel(a, w, v)))))))
+    if "directed" in conds:
+        out.append(fa(a, fa(w, fa(v, fa(u, Implies(
+            And(And(O(a), W(w)), And(And(W(v), W(u)), And(Rel(a, w, v), Rel(a, w, u)))),
+            Quantifier(_EXISTS, Variable("z"), And(W(Variable("z")),
+                       And(Rel(a, v, Variable("z")), Rel(a, u, Variable("z")))))))))))
+    if "connected" in conds:
+        out.append(fa(a, fa(w, fa(v, fa(u, Implies(
+            And(And(O(a), W(w)), And(And(W(v), W(u)), And(Rel(a, w, v), Rel(a, w, u)))),
+            Or(Rel(a, v, u), Rel(a, u, v))))))))
     return out
 
 
@@ -290,6 +307,12 @@ def qml_axioms(mode: str = "constant", frame: str = "K", systems=None) -> List[N
     — so knowledge can be made factive (T/S4/S5) and belief consistent (KD45), symmetric
     to the THF exporter.
     """
+    if frame == "GL":
+        raise NotImplementedError(
+            "qml: the GL (Gödel–Löb provability) frame is transitive + converse-"
+            "well-founded, which is NOT first-order definable, so the Z3 embedding "
+            "cannot express it. Use the higher-order embeddings to_thf_modal / "
+            "to_isabelle_modal with frame='GL' (they assert the Löb schema in HOL).")
     if frame not in _FRAMES:
         raise ValueError(f"qml: unknown frame {frame!r} (use one of {sorted(_FRAMES)}).")
     if mode not in _ACTUALIST_MODES and mode not in _CONSTANT_MODES:
@@ -327,6 +350,17 @@ def qml_axioms(mode: str = "constant", frame: str = "K", systems=None) -> List[N
             And(And(W(w), W(v)), And(W(u), And(R(w, v), R(w, u)))), R(v, u))))))
     if "serial" in conds:
         axioms.append(fa(w, Implies(W(w), Quantifier(_EXISTS, v, And(W(v), R(w, v))))))
+    if "directed" in conds:
+        # .2 convergence: ∀w,v,u (Rwv ∧ Rwu → ∃z (Rvz ∧ Ruz)).
+        axioms.append(fa(w, fa(v, fa(u, Implies(
+            And(And(W(w), W(v)), And(W(u), And(R(w, v), R(w, u)))),
+            Quantifier(_EXISTS, t, And(W(t), And(R(v, t), R(u, t)))))))))
+    if "connected" in conds:
+        # .3 no-branching: ∀w,v,u (Rwv ∧ Rwu → Rvu ∨ Ruv). With reflexivity the
+        # v=u case is covered (Rvv), so no world-equality is needed.
+        axioms.append(fa(w, fa(v, fa(u, Implies(
+            And(And(W(w), W(v)), And(W(u), And(R(w, v), R(w, u)))),
+            Or(R(v, u), R(u, v)))))))
 
     # non-empty local domains (standard classical QML: every world has an existing
     # individual). The Barcan counter-models all use non-empty domains, so this does
@@ -435,6 +469,12 @@ _THF_FRAME = {
     "sym": "thf(symm, axiom, ( ! [W: mu, V: mu] : ( ( r @ W @ V ) => ( r @ V @ W ) ) )).",
     "serial": "thf(serial, axiom, ( ! [W: mu] : ? [V: mu] : ( r @ W @ V ) )).",
     "eucl": "thf(euclid, axiom, ( ! [W: mu, V: mu, U: mu] : ( ( ( r @ W @ V ) & ( r @ W @ U ) ) => ( r @ V @ U ) ) )).",
+    # .2 convergence: any two successors of a world have a common successor.
+    "directed": "thf(directed, axiom, ( ! [W: mu, V: mu, U: mu] : ( ( ( r @ W @ V ) & ( r @ W @ U ) ) => ? [Z: mu] : ( ( r @ V @ Z ) & ( r @ U @ Z ) ) ) )).",
+    # .3 no-branching: the successors of a world are linearly r-ordered.
+    "connected": "thf(connected, axiom, ( ! [W: mu, V: mu, U: mu] : ( ( ( r @ W @ V ) & ( r @ W @ U ) ) => ( ( r @ V @ U ) | ( r @ U @ V ) ) ) )).",
+    # GL: the Löb schema □(□Φ → Φ) → □Φ, quantified over propositions Φ (HOL only).
+    "loeb": "thf(loeb, axiom, ( ! [Phi: mu > $o, W: mu] : ( ( mbox @ ( mimplies @ ( mbox @ Phi ) @ Phi ) @ W ) => ( mbox @ Phi @ W ) ) )).",
 }
 
 _THF_DOMAIN = {

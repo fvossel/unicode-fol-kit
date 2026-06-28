@@ -88,6 +88,10 @@ _FRAMES = {
     "S5": ("refl", "trans", "sym"),
     "KD": ("serial",),
     "KD45": ("serial", "trans", "eucl"),
+    "B": ("refl", "sym"),                          # Brouwer
+    "S4.2": ("refl", "trans", "directed"),         # convergent (.2)
+    "S4.3": ("refl", "trans", "connected"),        # no-branching / linear (.3)
+    "GL": ("trans", "loeb"),                       # Gödel–Löb provability (Löb schema)
 }
 
 _ACTUALIST_MODES = frozenset({"varying", "increasing", "cumulative", "decreasing"})
@@ -509,6 +513,20 @@ def _frame_axioms(frame: str) -> List[str]:
         out.append('axiomatization where r_serial: "\\<exists>v. r w v"')
     if "eucl" in conds:
         out.append('axiomatization where r_eucl: "r w v \\<Longrightarrow> r w u \\<Longrightarrow> r v u"')
+    if "directed" in conds:
+        out.append('axiomatization where r_directed: '
+                   '"r w v \\<Longrightarrow> r w u \\<Longrightarrow> \\<exists>z. r v z \\<and> r u z"')
+    if "connected" in conds:
+        out.append('axiomatization where r_conn: '
+                   '"r w v \\<Longrightarrow> r w u \\<Longrightarrow> r v u \\<or> r u v"')
+    if "loeb" in conds:
+        # Gödel–Löb provability: the Löb schema □(□P → P) → □P (P, w free, i.e.
+        # universally generalised). Stated over r directly so it needs no abbreviation;
+        # transitivity (4) is derivable from it but emitted too for a faithful frame.
+        out.append('axiomatization where r_loeb: '
+                   '"(\\<forall>v. r w v \\<longrightarrow> '
+                   '(\\<forall>u. r v u \\<longrightarrow> P u) \\<longrightarrow> P v) '
+                   '\\<Longrightarrow> (\\<forall>v. r w v \\<longrightarrow> P v)"')
     return out
 
 
