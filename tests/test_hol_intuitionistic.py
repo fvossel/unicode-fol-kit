@@ -227,8 +227,12 @@ def test_isabelle_custom_theory_name():
 
 def test_isabelle_declares_all_atoms():
     out = to_isabelle_intuitionistic(And(Implies(p, q), r))
-    for a in ("p", "q", "r"):
-        assert f"consts {a} ::" in out
+    # p, q pass through; the atom `r` collides with the accessibility relation `r`,
+    # so it is de-collided to `p_r` — the theory must NOT emit a second `consts r`.
+    assert "consts p ::" in out
+    assert "consts q ::" in out
+    assert "consts p_r ::" in out
+    assert out.count("consts r ::") == 1          # only the relation, not the atom
 
 
 # ---------------------------------------------------------------------------
@@ -240,6 +244,44 @@ def test_public_api_present():
     for name in ("gmt_translate", "to_thf_intuitionistic", "to_isabelle_intuitionistic",
                  "gmt_is_s4_valid", "gmt_validity_matches_int_valid"):
         assert hasattr(m, name), name
+
+
+# ---------------------------------------------------------------------------
+# Verdict-dependent Isabelle proof: a valid formula gets a real (Isabelle-checked)
+# proof; an invalid one is left `oops`. The S4 frame facts must be `using`-d, else
+# `blast`/`auto`/`metis` cannot see the bare `axiomatization` facts. (The proof is
+# actually discharged by Isabelle in test_hol_isabelle_nonmodal_live.py.)
+# ---------------------------------------------------------------------------
+
+def test_isabelle_valid_formula_emits_real_proof():
+    f = Implies(p, p)                       # IPL-valid
+    assert int_valid(f)
+    out = to_isabelle_intuitionistic(f)
+    assert "using r_refl r_trans" in out
+    assert "by (metis r_refl r_trans" in out
+    assert "\n  oops" not in out
+
+
+def test_isabelle_invalid_formula_left_as_oops():
+    f = Or(p, Not(p))                       # IPL-invalid (excluded middle)
+    assert not int_valid(f)
+    out = to_isabelle_intuitionistic(f)
+    assert "\n  oops" in out
+    assert "by (metis" not in out
+
+
+def test_isabelle_proof_gating_uses_decidable_oracle_not_bounded_int_valid():
+    # (p→q)∨(q→r)∨(r→p) is IPL-INVALID but needs 4 worlds to refute, so int_valid's
+    # DEFAULT 3-world bound wrongly calls it valid. Proof emission must follow the
+    # DECIDABLE gmt_is_s4_valid (False) and leave `oops`, never emit a real proof for a
+    # non-theorem (which would fail to build). Regression for the audit finding.
+    f = Or(Or(Implies(p, q), Implies(q, r)), Implies(r, p))
+    assert int_valid(f) is True                      # bounded oracle is WRONG here
+    assert int_valid(f, max_worlds=4) is False       # genuine refutation at 4 worlds
+    assert gmt_is_s4_valid(f) is False               # decidable oracle is right
+    out = to_isabelle_intuitionistic(f)
+    assert "\n  oops" in out
+    assert "by (metis" not in out
 
 
 # ---------------------------------------------------------------------------
@@ -283,9 +325,23 @@ def test_isa_atom_name_never_bare_underscore():
 
 
 def test_isa_atom_name_ordinary_atoms_unchanged():
-    # Regular propositional letters pass through untouched.
-    for nm in ("p", "q", "r", "abc", "P1"):
+    # Regular (non-reserved) propositional letters pass through untouched.
+    for nm in ("p", "q", "abc", "P1"):
         assert _isa_atom_name(nm) == nm
+
+
+def test_isa_atom_name_reserves_structural_identifiers():
+    # An atom colliding with a structural identifier (the relation `r`, an axiom
+    # variable `w`/`v`/`u`, the world type `i`, a lifted operator) must be de-collided
+    # to a DISTINCT, legal id — else a duplicate `consts r` (or an ill-typed frame
+    # axiom from an atom `w`) breaks the theory. Regression for the audit finding.
+    reserved = {"i", "r", "w", "v", "u", "mnot", "mand", "mor", "mimp", "mbox", "mvalid"}
+    for nm in sorted(reserved):
+        out = _isa_atom_name(nm)
+        assert out != nm and out not in reserved, (nm, out)   # de-collided
+        assert _is_legal_isabelle_const(out) and out[-1] != "_", (nm, out)
+    # Distinct reserved atoms still map to distinct names.
+    assert len({_isa_atom_name(nm) for nm in reserved}) == len(reserved)
 
 
 def test_isabelle_falsum_no_bare_consts_underscore():

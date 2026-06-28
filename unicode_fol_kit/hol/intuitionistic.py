@@ -153,21 +153,40 @@ _ISA_BOX = "\\<^bold>\\<box>"
 # a distinct, valid lowercase identifier. (The THF path aliases these separately.)
 _ISA_ATOM_ALIASES = {"⊥": "bottom", "⊤": "top", "=": "feq", "≠": "fneq"}
 
+# Identifiers the emitted theory already uses structurally: the world type ``i``, the
+# accessibility relation ``r`` and the free variables ``w``/``v``/``u`` of its frame
+# axioms (``r_refl: "r w w"``, ``r_trans: "r w v ⟹ r v u ⟹ r w u"``), and the lifted
+# operator names. An atom predicate that sanitised to one of these would emit a SECOND
+# ``consts`` with that name (a duplicate-constant clash that Isabelle rejects — so the
+# theory would not load even for a valid formula, e.g. the atom ``r`` in ``r → r``), or
+# make the frame axioms ill-typed (an atom ``w`` shadowing the type-``i`` bound var).
+# A colliding atom is de-collided with the ``p_`` prefix (a trailing ``_`` would be a
+# *bad* Isabelle identifier).
+_ISA_RESERVED = frozenset({
+    "i", "r", "w", "v", "u",
+    "mnot", "mand", "mor", "mimp", "mbox", "mvalid",
+})
+
 
 def _isa_atom_name(name: str) -> str:
     """A safe, *distinct* Isabelle constant name for an atom predicate.
 
     Distinct source atoms must map to distinct legal identifiers. Reserved/symbolic
     atoms (⊥, ⊤, =, ≠) are aliased to dedicated lowercase ids; everything else is
-    sanitised char-by-char (alnum/underscore), and a ``p_`` prefix is prepended when
-    the result is empty, is the bare reserved ``_`` token, or starts with ``_`` (all
-    of which are illegal or reserved as a bare Isabelle constant name).
+    sanitised char-by-char (alnum/underscore), a ``p_`` prefix is prepended when the
+    result is empty, is the bare reserved ``_`` token, or starts with ``_`` (all of
+    which are illegal or reserved as a bare Isabelle constant name), and a name that
+    would collide with a structural identifier of the theory (the relation ``r``, an
+    axiom variable ``w``/``v``/``u``, the world type ``i``, a lifted operator) is
+    de-collided with the ``p_`` prefix (``r`` → ``p_r``).
     """
     if name in _ISA_ATOM_ALIASES:
         return _ISA_ATOM_ALIASES[name]
     safe = "".join(c if (c.isalnum() or c == "_") else "_" for c in name)
     if not safe or safe[0] == "_" or not safe[0].isalpha():
         safe = "p_" + safe
+    if safe in _ISA_RESERVED:
+        safe = "p_" + safe          # p_r / p_w / … (a trailing '_' is a bad Isabelle id)
     return safe
 
 
@@ -209,9 +228,19 @@ def to_isabelle_intuitionistic(formula: Node, theory_name: str = "IPL_GMT") -> s
     theory: worlds as a type ``i``; an accessibility relation ``r`` fixed to be
     reflexive + transitive (the **S4** frame); the lifted modal operators as
     abbreviations; the atoms as ``consts``; and the embedded formula as a genuine
-    ``lemma`` (``\\<lfloor> T(formula) \\<rfloor>``) to be discharged with
-    Sledgehammer / ``auto``. The lemma is provable iff ``formula`` is
-    intuitionistically valid (Gödel–McKinsey–Tarski).
+    ``lemma`` (``\\<lfloor> T(formula) \\<rfloor>``). The lemma is a theorem iff
+    ``formula`` is intuitionistically valid (Gödel–McKinsey–Tarski).
+
+    The proof is emitted **verdict-dependently** from the module's *decidable* S4
+    oracle :func:`gmt_is_s4_valid` (Z3 on the GMT→S4 translation, decisive on this
+    propositional fragment): when the formula is valid the theory carries a real,
+    Isabelle-checked proof (``using r_refl r_trans by (metis … | meson … | blast |
+    auto)`` — the S4 frame facts must be in scope, a bare ``axiomatization`` fact is
+    not in the default claset); when it is not valid the lemma is left ``oops`` (no
+    proof exists; see
+    :func:`~unicode_fol_kit.semantics.intuitionistic.int_countermodel`). The decision
+    deliberately does **not** use ``int_valid``'s default 3-world bound, which is
+    incomplete (IPL's finite-model bound grows with the formula).
 
     Unlike :func:`unicode_fol_kit.fol.qml.to_isabelle_modal` (an alethic skeleton
     that puts the lemma in a comment and defines only ``mnot``/``mbox``/``mvalid``),
@@ -219,6 +248,14 @@ def to_isabelle_intuitionistic(formula: Node, theory_name: str = "IPL_GMT") -> s
     The toolkit only *emits* the theory; it does not run Isabelle.
     """
     s4 = gmt_translate(formula)
+    # Decide validity with the module's own DECIDABLE S4 oracle (Z3 on the GMT→S4
+    # translation), NOT int_valid's bounded Kripke search: int_valid defaults to a
+    # 3-world bound, but IPL's finite-model-property bound grows with the formula, so
+    # int_valid can wrongly call a non-theorem valid — e.g. (p→q)∨(q→r)∨(r→p) is
+    # IPL-INVALID but needs 4 worlds to refute — which would emit a real proof for a
+    # NON-theorem that then fails to build. gmt_is_s4_valid is decisive on this
+    # propositional S4 fragment, so the emitted proof is sound by construction.
+    valid = gmt_is_s4_valid(formula)
     atoms = _isa_atoms(s4)
     R = "\\<Rightarrow>"
     lines = [
@@ -259,8 +296,16 @@ def to_isabelle_intuitionistic(formula: Node, theory_name: str = "IPL_GMT") -> s
         lines.append(f"consts {_isa_atom_name(a)} :: \"\\<sigma>\"")
     lines.append("")
     lines.append("lemma gmt_goal: \"\\<lfloor> " + _isa_render(s4) + " \\<rfloor>\"")
-    lines.append("  \\<comment> \\<open>discharge with: by (metis r_refl r_trans) or sledgehammer\\<close>")
-    lines.append("  oops  \\<comment> \\<open>replace 'oops' with a proof once a prover closes it\\<close>")
+    if valid:
+        # A real, Isabelle-checked proof. The S4 frame facts must be brought into
+        # scope (a bare `axiomatization` fact is not in the default claset), then a
+        # small method battery closes the GMT goal.
+        lines.append("  using r_refl r_trans")
+        lines.append("  by (metis r_refl r_trans | meson r_refl r_trans | blast | auto)")
+    else:
+        lines.append("  \\<comment> \\<open>NOT intuitionistically valid: no proof exists "
+                     "(see int_countermodel for a Kripke counter-model)\\<close>")
+        lines.append("  oops")
     lines.append("")
     lines.append("end")
     return "\n".join(lines) + "\n"

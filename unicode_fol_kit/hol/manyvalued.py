@@ -516,6 +516,58 @@ def _isa_prelude(theory_name: str, system: str, header_comments: List[str]) -> L
     return parts
 
 
+def _isa_forall_proof(isa_vars: List[str]) -> str:
+    """Discharge ``\\<forall>vars. des (...)`` by exhausting the finite ``tv`` cases.
+
+    ``simp`` cannot reduce ``kneg v`` / ``kor v ...`` while ``v`` is an abstract
+    variable, so a bare ``by (simp add: des_def)`` fails (e.g. on the LP-valid
+    ``p \\<or> \\<not>p``). Splitting every quantified variable into its three
+    constructors first makes each leaf ground, and ``simp_all`` then evaluates the
+    ``fun`` tables.
+    """
+    if not isa_vars:
+        return "  by (simp add: des_def)"
+    cases = "; ".join(f"case_tac {v}" for v in isa_vars)
+    return ("  apply (intro allI)\n"
+            f"  apply ({cases})\n"
+            "  by (simp_all add: des_def)")
+
+
+def _isa_exists_proof(witness: List[str]) -> str:
+    """Discharge ``\\<exists>vars. \\<not> des (...)`` by supplying the witness.
+
+    ``witness`` is the counter-valuation (a ``tv`` constructor per quantified
+    variable, in binder order) computed at emit time; each ``rule exI`` instantiates
+    one existential, then ``simp`` evaluates the now-ground body.
+    """
+    if not witness:
+        return "  by (simp add: des_def)"
+    exs = ", ".join(f"rule exI[where x={w}]" for w in witness)
+    return f"  by ({exs}, simp add: des_def)"
+
+
+def _falsifying_assignment(formula: Node, system: str, keys: List[str]):
+    """A ``tv``-name valuation (in ``keys`` order) making ``formula`` non-designated."""
+    from itertools import product as _product
+    designated = _designated_floats(system)
+    for combo in _product(_VALUES, repeat=len(keys)):
+        if _eval_float(formula, dict(zip(keys, combo))) not in designated:
+            return [_FLOAT_TO_TV[v] for v in combo]
+    return None
+
+
+def _entailment_countermodel(premises, conclusion, system: str, keys: List[str]):
+    """A ``tv``-name valuation designating all premises but not the conclusion."""
+    from itertools import product as _product
+    designated = _designated_floats(system)
+    for combo in _product(_VALUES, repeat=len(keys)):
+        asg = dict(zip(keys, combo))
+        if (all(_eval_float(p, asg) in designated for p in premises)
+                and _eval_float(conclusion, asg) not in designated):
+            return [_FLOAT_TO_TV[v] for v in combo]
+    return None
+
+
 def to_isabelle_k3lp(formula: Node, system: str = "K3") -> str:
     """Emit a complete, loadable Isabelle/HOL theory text for K3/LP validity.
 
@@ -529,12 +581,15 @@ def to_isabelle_k3lp(formula: Node, system: str = "K3") -> str:
       * if it is **invalid**, the lemma is the *refutation*
         ``\\<exists> valuation. \\<not> des (⟨formula⟩)`` (which then holds).
 
-    Either way the lemma encodes the validity verdict and is discharged by
-    ``by (simp add: des_def)`` (``tv`` is finite, so the connective ``fun``s
-    rewrite every case). The verdict itself is computed at emit time from the
-    embedded tables (``_is_valid_internal``), which the tests pin to
-    ``manyvalued.is_valid``. A leading comment states the verdict so the reader
-    knows which form was emitted.
+    Either way the lemma encodes the validity verdict and is **discharged by a real
+    proof** that Isabelle accepts: the ``\\<forall>`` form by exhausting each
+    quantified variable's three ``tv`` constructors (``case_tac`` + ``simp_all``,
+    since ``simp`` alone cannot reduce ``kneg v`` while ``v`` is abstract — e.g. the
+    LP-valid ``p \\<or> \\<not>p``); the ``\\<exists>`` refutation form by supplying
+    the counter-valuation as ``rule exI`` witnesses (computed at emit time) and then
+    ``simp``. The verdict itself is computed at emit time from the embedded tables
+    (``_is_valid_internal``), which the tests pin to ``manyvalued.is_valid``. A
+    leading comment states the verdict so the reader knows which form was emitted.
 
     Propositional fragment only; ``Quantifier`` / modal / Łukasiewicz / sorted /
     lambda nodes raise ``NotImplementedError``.
@@ -554,10 +609,13 @@ def to_isabelle_k3lp(formula: Node, system: str = "K3") -> str:
         binder = " ".join(isa_vars)
         if valid:
             lemma = f"  \"\\<forall>{binder}. des ({body})\""
+            proof = _isa_forall_proof(isa_vars)
         else:
             lemma = f"  \"\\<exists>{binder}. \\<not> des ({body})\""
+            proof = _isa_exists_proof(_falsifying_assignment(formula, system, keys))
     else:
         lemma = f"  \"des ({body})\"" if valid else f"  \"\\<not> des ({body})\""
+        proof = "  by (simp add: des_def)"
 
     verdict = "VALID" if valid else "INVALID (lemma is the refutation)"
     header = [
@@ -569,7 +627,7 @@ def to_isabelle_k3lp(formula: Node, system: str = "K3") -> str:
     parts = _isa_prelude("K3LP_Validity", system, header)
     parts.append("lemma k3lp_validity:")
     parts.append(lemma)
-    parts.append("  by (simp add: des_def)")
+    parts.append(proof)
     parts.append("")
     parts.append("end")
     return "\n".join(parts) + "\n"
@@ -623,8 +681,14 @@ def to_isabelle_k3lp_entailment(premises, conclusion, system: str = "K3") -> str
         binder = " ".join(isa_vars)
         q = "\\<forall>" if valid else "\\<exists>"
         lemma = f"  \"{q}{binder}. {matrix}\""
+        if valid:
+            proof = _isa_forall_proof(isa_vars)
+        else:
+            proof = _isa_exists_proof(
+                _entailment_countermodel(premises, conclusion, system, keys))
     else:
         lemma = f"  \"{matrix}\""
+        proof = "  by (simp add: des_def)"
 
     verdict = "ENTAILS" if valid else "DOES NOT ENTAIL (lemma is a countermodel)"
     header = [
@@ -637,7 +701,7 @@ def to_isabelle_k3lp_entailment(premises, conclusion, system: str = "K3") -> str
     parts = _isa_prelude("K3LP_Entailment", system, header)
     parts.append("lemma k3lp_entailment:")
     parts.append(lemma)
-    parts.append("  by (simp add: des_def)")
+    parts.append(proof)
     parts.append("")
     parts.append("end")
     return "\n".join(parts) + "\n"

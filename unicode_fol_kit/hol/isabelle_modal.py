@@ -64,7 +64,8 @@ Public API
 and the constant :data:`ISABELLE_TACTICS`.
 """
 
-from typing import List
+import re
+from typing import List, Optional
 
 from unicode_fol_kit.fol.nodes import (
     Node, Variable, Constant, Number, Function,
@@ -111,6 +112,27 @@ ISABELLE_TACTICS = {
     "oops": "  oops",
     "sorry": "  sorry",
 }
+
+# Tactics whose ``by ...`` proof needs the frame / domain axioms brought into the
+# proof context: a bare ``axiomatization where r_refl: ...`` fact is NOT in the
+# default claset/simpset, so ``by blast`` / ``by auto`` / ``by (metis ...)`` cannot
+# see it and any axiom-dependent validity (T/S4/S5/KD/KD45, temporal closure, a
+# domain regime) fails to discharge even though the formula is valid and the theory
+# sound. For these tactics we emit ``using <axioms> by <tactic>``. ``sledgehammer``
+# finds its own facts; ``oops`` / ``sorry`` prove nothing, so they are excluded.
+_BY_TACTICS = frozenset({"auto", "blast", "metis", "smt", "simp", "force"})
+
+_AXIOM_NAME_RE = re.compile(r"axiomatization where (\w+):")
+
+
+def _axiom_names(axiom_lines: List[str]) -> List[str]:
+    """Read the fact names out of emitted ``axiomatization where NAME: ...`` lines."""
+    out: List[str] = []
+    for ln in axiom_lines:
+        m = _AXIOM_NAME_RE.search(ln)
+        if m:
+            out.append(m.group(1))
+    return out
 
 # Equality / inequality are uninterpreted, world-relativized predicates here (NOT
 # primitive HOL `=`), matching satisfies_modal and the THF export. These aliases
@@ -490,6 +512,20 @@ def _next_in_temporal_axiom() -> List[str]:
     return ['axiomatization where n_in_t: "n w v \\<Longrightarrow> t w v"']
 
 
+def _temporal_next_closure_axiom() -> List[str]:
+    r"""Pin the henceforth relation ``t`` to the reflexive-transitive CLOSURE of ``n``.
+
+    ``n_in_t`` gives ``n ⊆ t`` and the temporal axioms make ``t`` reflexive+transitive,
+    so ``n** ⊆ t``. This adds the converse ``t ⊆ n**`` (``rtranclp n``), so ``t = n**``
+    EXACTLY — matching :func:`satisfies_modal`, which reads ``Always`` / ``Eventually``
+    over the reflexive-transitive *closure* of the one-step ``"temporal"`` relation.
+    Without it ``t`` may be any refl-trans superset of ``n``, and a formula valid only
+    because ``t = closure(n)`` (e.g. the temporal induction ``(p ∧ G(p→Xp)) → Gp``) is
+    spuriously refutable in the embedding — a **false INVALID** under the runner.
+    """
+    return ['axiomatization where t_in_nstar: "t w v \\<Longrightarrow> rtranclp n w v"']
+
+
 def _deontic_axioms() -> List[str]:
     """Standard Deontic Logic KD: the deontic relation is serial."""
     return ['axiomatization where d_serial: "\\<exists>v. d w v"']
@@ -509,6 +545,48 @@ def _domain_axioms(mode: str) -> List[str]:
             out.append('axiomatization where decr_dom: "existsAt x v \\<Longrightarrow> r w v \\<Longrightarrow> existsAt x w"')
         # "varying": no monotonicity axiom.
     return out
+
+
+def _collect_axioms(sig: "_Sig", frame: str, mode: str,
+                    temporal_closure: bool) -> List[str]:
+    """All ``axiomatization where ...`` lines the theory emits, in emission order.
+
+    Centralised so the proof emitter and :func:`modal_axiom_names` agree on exactly
+    which axioms are in scope (the proof must ``using`` precisely these to discharge
+    an axiom-dependent validity).
+    """
+    axioms: List[str] = []
+    if sig.uses_alethic:
+        axioms += _frame_axioms(frame)
+    if sig.uses_deontic:
+        axioms += _deontic_axioms()
+    if sig.uses_temporal and temporal_closure:
+        axioms += _temporal_axioms()
+    # When Next (n) co-occurs with Always/Eventually (t), link n into t so the
+    # oracle-valid Always(P) -> Next(P) is a theorem of the emitted theory too...
+    if sig.uses_temporal and sig.uses_next:
+        axioms += _next_in_temporal_axiom()
+        # ...and, when t is the closure relation, pin t = n** exactly (not merely a
+        # refl-trans superset of n), so satisfies_modal-valid temporal-induction
+        # formulas are not spuriously refuted (false INVALID).
+        if temporal_closure:
+            axioms += _temporal_next_closure_axiom()
+    if sig.has_quant:
+        axioms += _domain_axioms(mode)
+    return axioms
+
+
+def _proof_lines(tactic: str, axiom_ids: List[str]) -> List[str]:
+    """The proof block for ``tactic``, bringing the frame/domain axioms into scope.
+
+    For a ``by``-style tactic (:data:`_BY_TACTICS`) we prepend ``using <axioms>`` so
+    ``blast`` / ``auto`` / ``metis`` can actually use them; ``sledgehammer`` / ``oops``
+    / ``sorry`` are emitted verbatim.
+    """
+    body = ISABELLE_TACTICS[tactic]
+    if tactic in _BY_TACTICS and axiom_ids:
+        return ["  using " + " ".join(axiom_ids), body]
+    return [body]
 
 
 # --------------------------------------------------------------------------- #
@@ -558,6 +636,7 @@ def isabelle_modal_theory(
     tactic: str = "sledgehammer",
     theory_name: str = "ModalEmbedding",
     temporal_closure: bool = True,
+    proof: Optional[str] = None,
 ) -> str:
     """Emit a complete, loadable Isabelle/HOL theory shallow-embedding ``formula``.
 
@@ -588,8 +667,15 @@ def isabelle_modal_theory(
         tactic: a key of :data:`ISABELLE_TACTICS`. The default ``"sledgehammer"``
             emits a Sledgehammer hook plus ``oops`` so the theory loads without
             claiming a proof; ``"metis"`` / ``"auto"`` / ``"blast"`` / ``"smt"`` emit a
-            ``by ...`` proof; ``"sorry"`` admits the goal.
+            ``by ...`` proof. For these ``by``-style tactics the proof is prefixed
+            with ``using <frame/domain axioms>`` so an axiom-dependent validity
+            (T/S4/S5/KD/KD45, temporal closure, domain regime) can actually
+            discharge — a bare ``axiomatization`` fact is not in the default claset.
+            ``"sorry"`` admits the goal.
         theory_name: the Isabelle theory name (must match the .thy filename).
+        proof: an explicit proof block to emit verbatim in place of the ``tactic``
+            preset (used by the Isabelle runner to splice in a prove-battery or a
+            ``nitpick`` invocation). When ``None`` the ``tactic`` preset is used.
         temporal_closure: when True, constrain ``t`` to be reflexive+transitive so
             ``Always`` / ``Eventually`` denote the henceforth (refl-trans-closure)
             reading of :func:`satisfies_modal`. ``Next`` always uses the one-step
@@ -661,29 +747,41 @@ def isabelle_modal_theory(
         lines.append("")
 
     # Axioms.
-    axioms: List[str] = []
-    if sig.uses_alethic:
-        axioms += _frame_axioms(frame)
-    if sig.uses_deontic:
-        axioms += _deontic_axioms()
-    if sig.uses_temporal and temporal_closure:
-        axioms += _temporal_axioms()
-    # When Next (n) co-occurs with Always/Eventually (t), link n into t so the
-    # oracle-valid Always(P) -> Next(P) is a theorem of the emitted theory too.
-    if sig.uses_temporal and sig.uses_next:
-        axioms += _next_in_temporal_axiom()
-    if sig.has_quant:
-        axioms += _domain_axioms(mode)
+    axioms = _collect_axioms(sig, frame, mode, temporal_closure)
     if axioms:
         lines += axioms
         lines.append("")
 
-    # The real lemma.
+    # The real lemma. Its proof brings the frame/domain axioms into scope (see
+    # _proof_lines) so an axiom-dependent validity actually discharges; an explicit
+    # ``proof`` override (used by the runner's prove-battery / nitpick) wins.
     lines.append(f'lemma modal_goal: "\\<lfloor> {body} \\<rfloor>"')
-    lines.append(ISABELLE_TACTICS[tactic])
+    if proof is not None:
+        lines.append(proof.rstrip("\n"))
+    else:
+        lines += _proof_lines(tactic, _axiom_names(axioms))
     lines.append("")
     lines.append("end")
     return "\n".join(lines) + "\n"
+
+
+def modal_axiom_names(
+    formula: Node,
+    mode: str = "constant",
+    frame: str = "K",
+    temporal_closure: bool = True,
+) -> List[str]:
+    """The names of the ``axiomatization`` facts the emitted theory would declare.
+
+    These are exactly the frame / domain / temporal-link axioms in scope for the
+    proof of ``modal_goal``. The Isabelle runner needs them to build a ``using
+    <axioms> by <method>`` proof (or to know none are required), so this exposes the
+    same computation :func:`isabelle_modal_theory` uses internally.
+    """
+    _validate(mode, frame, "oops")
+    sig = _Sig()
+    _scan(formula, sig)
+    return _axiom_names(_collect_axioms(sig, frame, mode, temporal_closure))
 
 
 def to_isabelle_modal(
@@ -692,6 +790,7 @@ def to_isabelle_modal(
     frame: str = "K",
     tactic: str = "sledgehammer",
     temporal_closure: bool = True,
+    proof: Optional[str] = None,
 ) -> str:
     """Emit a complete, loadable Isabelle/HOL theory embedding ``formula`` (real lemma).
 
@@ -709,4 +808,4 @@ def to_isabelle_modal(
     """
     return isabelle_modal_theory(
         formula, mode=mode, frame=frame, tactic=tactic,
-        theory_name="ModalEmbedding", temporal_closure=temporal_closure)
+        theory_name="ModalEmbedding", temporal_closure=temporal_closure, proof=proof)

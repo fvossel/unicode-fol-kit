@@ -3,9 +3,15 @@
 This subpackage *emits* Benzmüller-style shallow embeddings of the toolkit's non-fuzzy
 logics into higher-order logic — as complete, self-contained problem files for an
 external prover (Leo-III / Satallax on TPTP **THF**, or Isabelle/HOL theories for
-Sledgehammer). The toolkit emits; it does **not** run the prover. First-order modal
-logic, FOL and SOL are undecidable / not semi-decidable, so a successful emission means
-"here is a sound problem an external prover *may* discharge", never "decided".
+Sledgehammer). The exporters only emit; a successful emission means "here is a sound
+problem an external prover *may* discharge", never "decided" — first-order modal logic,
+FOL and SOL are undecidable / not semi-decidable.
+
+The optional :mod:`~unicode_fol_kit.hol.isabelle_runner` is the other half: if a local
+Isabelle/HOL is installed, it actually *runs* it on the emitted modal theories
+(prove-battery + nitpick) and reads a VALID / INVALID / UNKNOWN verdict off the build —
+turning "emit" into "proven / refuted". It is sound (Isabelle's kernel certifies the
+proof; nitpick reports only genuine counter-models) and, necessarily, incomplete.
 
 Modules:
 
@@ -24,7 +30,13 @@ Modules:
   via the Gödel–McKinsey–Tarski translation into S4 then the alethic SSE.
 """
 
-from .isabelle_modal import to_isabelle_modal, isabelle_modal_theory, ISABELLE_TACTICS
+from .isabelle_modal import (
+    to_isabelle_modal, isabelle_modal_theory, ISABELLE_TACTICS, modal_axiom_names,
+)
+from .isabelle_runner import (
+    find_isabelle, isabelle_available, isabelle_decide_modal, check_theory,
+    IsabelleInstall, IsabelleNotAvailable, BuildResult, ModalVerdict, DEFAULT_METHODS,
+)
 from .thf_modal import to_thf_modal_full, thf_full_definitions, thf_full_frame_axioms
 from .classical import to_thf_fol, to_isabelle_fol, to_thf_msfol, to_isabelle_msfol
 from .manyvalued import (
@@ -39,6 +51,10 @@ from .intuitionistic import (
 
 __all__ = [
     "to_isabelle_modal", "isabelle_modal_theory", "ISABELLE_TACTICS",
+    "modal_axiom_names",
+    "find_isabelle", "isabelle_available", "isabelle_decide_modal", "check_theory",
+    "IsabelleInstall", "IsabelleNotAvailable", "BuildResult", "ModalVerdict",
+    "DEFAULT_METHODS",
     "to_thf_modal_full", "thf_full_definitions", "thf_full_frame_axioms",
     "to_thf_fol", "to_isabelle_fol", "to_thf_msfol", "to_isabelle_msfol",
     "to_thf_k3lp", "to_isabelle_k3lp",

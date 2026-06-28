@@ -5,6 +5,79 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [0.8.0] - 2026-06-28
+
+### Added
+
+- **Run a local Isabelle to actually *prove* the modal embeddings — `unicode_fol_kit.hol.isabelle_runner`.**
+  The `hol` exporters only *emit*; this opt-in module turns "emit" into "proven / refuted" when an
+  Isabelle/HOL install is present. `isabelle_decide_modal(φ, frame=…, mode=…)` decides validity by a
+  two-step procedure, read off the build's exit code: (1) emit the lemma with a proof battery that
+  brings the frame/domain axioms into scope (`using … by (blast | force | … | meson … | metis …)`) — a
+  successful `isabelle build` means **VALID**; (2) otherwise emit `nitpick[expect = genuine]`, whose
+  build succeeds **iff** a genuine finite counter-model exists — that means **INVALID**; (3) otherwise
+  **UNKNOWN**. Sound (Isabelle's kernel certifies the proof; nitpick reports only genuine
+  counter-models) and, necessarily, incomplete. The verdict is validated *differentially* against an
+  independent brute-force Kripke oracle (`satisfies_modal`) across K/T/S4/S5 in the test suite.
+  - `find_isabelle` / `isabelle_available` locate an install (explicit path → `UFK_ISABELLE_HOME` /
+    `ISABELLE_HOME` → `isabelle` on `PATH` → a light scan); `check_theory(text, name)` builds any
+    self-contained theory; `ModalVerdict` / `BuildResult` / `IsabelleInstall` carry the results.
+  - **Linux/macOS is the primary path** — `isabelle` is invoked directly. **Windows** is also
+    supported: the build is additionally routed through Isabelle's bundled Cygwin (Windows→`/cygdrive`
+    path translation, launcher exec-bit fixup, `bin` on `PATH`). No install path is hard-coded —
+    installations are discovered generically. Absent Isabelle raises a clear `IsabelleNotAvailable`;
+    the live tests skip.
+  - All re-exported at the package top level.
+
+### Fixed
+
+- **`to_isabelle_modal` emitted proofs could not discharge axiom-dependent validities.** A bare
+  `axiomatization where r_refl: …` fact is not in Isabelle's default claset, so `by blast` / `by auto`
+  / `by (metis …)` could not see it: every validity that *depends* on a frame/domain axiom (T, S4, S5,
+  KD, KD45, the temporal closure, a domain regime) failed to prove even though the formula is valid and
+  the theory sound (only the pure-K fragment, like the K axiom, went through). The `by`-style tactics
+  now emit `using <frame/domain axioms> by …`. New `modal_axiom_names(φ, …)` exposes the axioms in
+  scope, and `isabelle_modal_theory(…, proof=…)` accepts an explicit proof override.
+- **`to_isabelle_k3lp` / `to_isabelle_k3lp_entailment` emitted a non-discharging proof.**
+  `by (simp add: des_def)` does **not** close the validity lemma — `simp` cannot reduce `kneg v` /
+  `kor v …` while the quantified truth-value `v` is abstract (e.g. the LP-valid `p ∨ ¬p` failed). The
+  `∀` (valid) form is now discharged by exhausting each variable's three `tv` constructors
+  (`case_tac` + `simp_all`); the `∃` (refutation) form by supplying the counter-valuation as `rule exI`
+  witnesses computed at emit time. Every form is verified to build in real Isabelle.
+
+### Changed
+
+- **`to_isabelle_intuitionistic` now emits a real, Isabelle-checked proof for valid formulas.** The
+  proof is verdict-dependent: an intuitionistically valid formula gets `using r_refl r_trans by
+  (metis … | meson … | blast | auto)` that Isabelle discharges; a non-valid one is left `oops` (loads,
+  claims nothing — see `int_countermodel`). Previously the lemma was always `oops`. The verdict is
+  taken from the **decidable** S4 oracle `gmt_is_s4_valid` (Z3 on the GMT→S4 translation), *not* from
+  `int_valid`'s default 3-world bound — which is incomplete (IPL's finite-model bound grows with the
+  formula, so a non-theorem like `(p→q)∨(q→r)∨(r→p)` would otherwise be mis-emitted with a real
+  proof that cannot close).
+
+### Audit hardening
+
+A multi-agent adversarial soundness audit of the new subsystem confirmed five issues (no false
+*VALID* is possible — Isabelle's kernel rejects a proof of a false goal), all fixed and re-checked
+against a live Isabelle:
+
+- **Intuitionistic proof gated on the decidable oracle** (above) — was a real proof emitted for an
+  IPL-*invalid* formula (theory then failed to build).
+- **Atom-name collisions in the intuitionistic export.** An atom named `r` (or `w`/`v`/`u`) collided
+  with the accessibility relation / frame-axiom variables, emitting a duplicate `consts r` (or an
+  ill-typed axiom) so the theory never loaded — even for the valid `r → r`. `_isa_atom_name` now
+  reserves the structural identifiers and de-collides (`r` → `p_r`).
+- **Temporal closure now pinned faithfully.** When `Always`/`Eventually` co-occur with `Next`, the
+  emitted henceforth relation `t` is now forced to equal the reflexive-transitive closure of the
+  one-step `n` (`t ⊆ rtranclp n`, with the existing `t_refl`/`t_trans`/`n_in_t` giving the converse),
+  matching `satisfies_modal`. Previously `t` could be any refl-trans superset of `n`, so a
+  `satisfies_modal`-valid temporal induction `(p ∧ G(p→Xp)) → Gp` was spuriously refuted (a false
+  *INVALID*); it is now never refuted (UNKNOWN — the closure fragment is a documented approximation).
+- **`ModalVerdict.infra_error`.** An `UNKNOWN` whose build failed for an infrastructure reason
+  (syntax / JVM / timeout / …) now carries a short signature, so a broken theory or environment is no
+  longer indistinguishable from honest incompleteness. Never changes the verdict.
+
 ## [0.7.0] - 2026-06-28
 
 ### Added

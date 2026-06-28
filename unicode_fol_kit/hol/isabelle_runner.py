@@ -1,0 +1,538 @@
+r"""Run a **local Isabelle** to actually discharge the emitted shallow-embedding
+theories — turning the :mod:`unicode_fol_kit.hol` exporters from *emit* into
+*proven / refuted*.
+
+The rest of the toolkit only *emits* HOL/Isabelle/THF problem files (see the
+``hol`` package docstring): it is honest that first-order modal logic, FOL and
+SOL are undecidable, so an emission is "a sound problem a prover *may* discharge".
+This module is the **opt-in** other half: if a local Isabelle/HOL is installed, it
+writes the emitted theory to a scratch session, invokes ``isabelle build``, and
+reads the verdict off the build — a real proof, not a promise.
+
+Decision procedure for modal validity (:func:`isabelle_decide_modal`)
+---------------------------------------------------------------------
+The shallow embedding is *faithful* to the Kripke evaluator
+:func:`unicode_fol_kit.semantics.kripke.satisfies_modal`, so deciding the emitted
+lemma decides the modal formula (for the chosen frame / domain regime):
+
+1. **Prove** — emit ``lemma <goal>`` with a proof that brings the frame/domain
+   axioms into scope and tries a battery of methods
+   (``using <axioms> by (blast | force | fastforce | auto | meson … | metis …)``).
+   If ``isabelle build`` exits 0, the lemma is a **theorem** ⇒ the formula is
+   **VALID**.
+2. **Refute** — otherwise emit the same lemma followed by
+   ``nitpick[expect = genuine]``. Nitpick searches for a finite counter-model;
+   ``expect = genuine`` makes the build **succeed iff a genuine counter-model is
+   found**, so exit 0 here ⇒ the formula is **INVALID**. The verdict is certified by
+   the exit code; the counter-model *text* is best-effort (``isabelle build`` does
+   not echo theory output to stdout, so ``ModalVerdict.countermodel`` is usually
+   ``None`` — that does not weaken the verdict).
+3. Otherwise the result is **UNKNOWN** (neither a battery proof nor a finite
+   counter-model within the time/size budget — expected, since the logic is
+   undecidable).
+
+This is *sound* (Isabelle's kernel certifies the proof; nitpick reports only
+*genuine* counter-models), and necessarily *incomplete*.
+
+Honesty / soundness boundary
+----------------------------
+A VALID / INVALID verdict is only as meaningful as the embedding's faithfulness
+to the chosen semantics. UNKNOWN is a real outcome, not a failure. The runner
+never claims a decision it did not obtain from the prover.
+
+Platform support
+----------------
+**Linux and macOS are the primary path**: the ``isabelle`` binary is invoked
+directly (``isabelle build -D <dir>``) with nothing platform-specific. **Windows**
+is also supported — Isabelle ships its own Cygwin and its CLI is a Bash script, so
+there the runner additionally routes the build through ``contrib/cygwin/bin/bash``,
+translates the scratch path to a ``/cygdrive/...`` path, and (idempotently) sets the
+execute bit on the launcher scripts (some installs ship them without it, which makes
+the internal ``exec isabelle java`` fail with *Permission denied*). No install path
+is ever hard-coded; installations are discovered generically (see below).
+
+Locating Isabelle
+-----------------
+:func:`find_isabelle` looks, in order, at an explicit path, the env vars
+``UFK_ISABELLE_HOME`` / ``ISABELLE_HOME``, ``isabelle`` on ``PATH``, and a light
+scan of standard install locations. :func:`isabelle_available` is the cheap
+predicate tests gate on (skip when no Isabelle is present).
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import uuid
+from dataclasses import dataclass, field
+from typing import List, Optional, Sequence, Tuple
+
+from unicode_fol_kit.fol.nodes import Node
+from unicode_fol_kit.hol.isabelle_modal import (
+    isabelle_modal_theory, modal_axiom_names,
+)
+
+__all__ = [
+    "IsabelleNotAvailable", "IsabelleInstall", "BuildResult", "ModalVerdict",
+    "find_isabelle", "isabelle_available",
+    "check_theory", "isabelle_decide_modal",
+    "DEFAULT_METHODS",
+]
+
+# Ordered so cheap, fail-fast methods run before the ones that can loop; the first
+# alternative to close the goal wins. meson/metis take the axioms as explicit args.
+DEFAULT_METHODS: Tuple[str, ...] = (
+    "blast", "force", "fastforce", "auto", "meson", "metis",
+)
+
+
+class IsabelleNotAvailable(RuntimeError):
+    """Raised when an Isabelle install is required but none could be located."""
+
+
+# --------------------------------------------------------------------------- #
+# Locating an Isabelle installation.
+# --------------------------------------------------------------------------- #
+
+_VERSION_RE = re.compile(r"Isabelle\d{4}(?:-\d+)?", re.I)
+
+
+@dataclass(frozen=True)
+class IsabelleInstall:
+    """A located Isabelle/HOL installation and how to invoke its CLI."""
+
+    home: str                       # ISABELLE_HOME (the install directory)
+    is_windows: bool                # invoke via the bundled Cygwin bash?
+    isabelle_exe: str               # POSIX: path to bin/isabelle (direct)
+    cygwin_bash: Optional[str] = None   # Windows: contrib/cygwin/bin/bash.exe
+    version: Optional[str] = None
+
+    def __str__(self) -> str:
+        return f"Isabelle({self.version or '?'} at {self.home})"
+
+
+def _validate_install(home: Optional[str]) -> Optional[IsabelleInstall]:
+    """Turn a candidate ``ISABELLE_HOME`` into an :class:`IsabelleInstall` or None."""
+    if not home:
+        return None
+    home = os.path.abspath(home)
+    if not os.path.isdir(home):
+        return None
+    launcher = os.path.join(home, "bin", "isabelle")
+    if not os.path.isfile(launcher):
+        return None
+    m = _VERSION_RE.search(os.path.basename(home.rstrip("\\/")))
+    version = m.group(0) if m else None
+    if os.name == "nt":
+        bash = os.path.join(home, "contrib", "cygwin", "bin", "bash.exe")
+        if not os.path.isfile(bash):
+            return None
+        return IsabelleInstall(home=home, is_windows=True, isabelle_exe=launcher,
+                               cygwin_bash=bash, version=version)
+    return IsabelleInstall(home=home, is_windows=False, isabelle_exe=launcher,
+                           version=version)
+
+
+def _scan_standard_locations() -> List[str]:
+    """A light, best-effort scan for ``Isabelle*`` install dirs (no deep recursion)."""
+    out: List[str] = []
+    try:
+        if os.name == "nt":
+            import glob
+            roots = [r"C:\Program Files", r"C:\Program Files (x86)"]
+            drives = [f"{d}:\\" for d in "CDEFG" if os.path.isdir(f"{d}:\\")]
+            roots += drives
+            patterns: List[str] = []
+            for r in roots:
+                patterns.append(os.path.join(r, "Isabelle*"))
+                patterns.append(os.path.join(r, "*", "Isabelle*"))  # an Isabelle* dir one level down
+            for pat in patterns:
+                try:
+                    out += [p for p in glob.glob(pat) if os.path.isdir(p)]
+                except OSError:
+                    continue
+        else:
+            import glob
+            home = os.path.expanduser("~")
+            for r in ("/usr/local", "/opt", home, os.path.join(home, ".local")):
+                try:
+                    out += [p for p in glob.glob(os.path.join(r, "Isabelle*"))
+                            if os.path.isdir(p)]
+                except OSError:
+                    continue
+    except Exception:
+        return out
+    # Prefer the highest version string (lexicographic on Isabelleyyyy-n is fine).
+    out.sort(reverse=True)
+    return out
+
+
+_FIND_CACHE: dict = {}
+
+
+def find_isabelle(isabelle_home: Optional[str] = None,
+                  *, use_cache: bool = True) -> Optional[IsabelleInstall]:
+    """Locate an Isabelle installation, or return ``None`` if none is found.
+
+    Search order: ``isabelle_home`` argument → env ``UFK_ISABELLE_HOME`` → env
+    ``ISABELLE_HOME`` → ``isabelle`` on ``PATH`` → a light scan of standard install
+    locations. The result is cached (keyed by the explicit argument); pass
+    ``use_cache=False`` to force a fresh lookup.
+    """
+    key = isabelle_home or ""
+    if use_cache and key in _FIND_CACHE:
+        return _FIND_CACHE[key]
+
+    candidates: List[str] = []
+    if isabelle_home:
+        candidates.append(isabelle_home)
+    for var in ("UFK_ISABELLE_HOME", "ISABELLE_HOME"):
+        v = os.environ.get(var)
+        if v:
+            candidates.append(v)
+    exe = shutil.which("isabelle")
+    if exe:
+        candidates.append(os.path.dirname(os.path.dirname(os.path.abspath(exe))))
+    candidates += _scan_standard_locations()
+
+    found: Optional[IsabelleInstall] = None
+    seen = set()
+    for home in candidates:
+        ah = os.path.abspath(home) if home else home
+        if ah in seen:
+            continue
+        seen.add(ah)
+        inst = _validate_install(home)
+        if inst:
+            found = inst
+            break
+    if use_cache:
+        _FIND_CACHE[key] = found
+    return found
+
+
+def isabelle_available(isabelle_home: Optional[str] = None) -> bool:
+    """``True`` iff an Isabelle installation can be located (cheap; cached)."""
+    return find_isabelle(isabelle_home) is not None
+
+
+# --------------------------------------------------------------------------- #
+# Invoking ``isabelle build`` on a scratch session.
+# --------------------------------------------------------------------------- #
+
+def _cygpath(win_path: str) -> str:
+    """Translate a Windows path to a Cygwin ``/cygdrive/<d>/...`` path."""
+    p = os.path.abspath(win_path)
+    drive, rest = os.path.splitdrive(p)
+    rest = rest.replace("\\", "/")
+    if drive and len(drive) >= 2 and drive[1] == ":":
+        return "/cygdrive/" + drive[0].lower() + rest
+    return p.replace("\\", "/")
+
+
+def _run_build(install: IsabelleInstall, session_dir: str,
+               wall_timeout: float) -> Tuple[int, str]:
+    """Run ``isabelle build -D <session_dir>``; return (exit_code, combined_output)."""
+    if not install.is_windows:
+        # Linux / macOS — the primary path: invoke the isabelle binary directly.
+        argv = [install.isabelle_exe, "build", "-D", session_dir]
+        env = dict(os.environ)
+    else:
+        # Windows: route through Isabelle's bundled Cygwin bash. One bash -c puts bin
+        # on PATH, ensures the launcher scripts are executable (idempotent; some
+        # installs ship them without the bit), then builds the /cygdrive-translated dir.
+        cyg_home = _cygpath(install.home)
+        cyg_dir = _cygpath(session_dir)
+        script = (
+            f'I="{cyg_home}"\n'
+            f'export PATH="$I/bin:$PATH"\n'
+            f'chmod -R u+x "$I/bin" "$I/lib/Tools" "$I/lib/scripts" 2>/dev/null\n'
+            f'isabelle build -D "{cyg_dir}"\n'
+        )
+        argv = [install.cygwin_bash, "--login", "-c", script]
+        env = dict(os.environ, CHERE_INVOKING="true", LANG="en_US.UTF-8")
+    try:
+        proc = subprocess.run(
+            argv, capture_output=True, text=True, encoding="utf-8",
+            errors="replace", env=env, timeout=wall_timeout,
+        )
+    except subprocess.TimeoutExpired as e:
+        out = (e.stdout or "") + (e.stderr or "")
+        if isinstance(out, bytes):
+            out = out.decode("utf-8", "replace")
+        return 124, out + f"\n[runner] wall-clock timeout after {wall_timeout}s\n"
+    return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
+
+
+@dataclass
+class BuildResult:
+    """Outcome of building one scratch theory with ``isabelle build``."""
+
+    ok: bool                # exit code == 0 (every lemma in the theory discharged)
+    exit_code: int
+    output: str             # combined stdout+stderr of the build
+    theory_name: str
+    session: str
+    elapsed: float
+
+    def __bool__(self) -> bool:
+        return self.ok
+
+
+def check_theory(theory_text: str, theory_name: str, *,
+                 install: Optional[IsabelleInstall] = None,
+                 session: Optional[str] = None,
+                 session_timeout: int = 120,
+                 wall_timeout: Optional[float] = None,
+                 keep: bool = False) -> BuildResult:
+    """Build one self-contained Isabelle theory and report whether it loads/proves.
+
+    Writes ``<theory_name>.thy`` plus a ``ROOT`` (``session ... = HOL + options
+    [timeout] theories <theory_name>``) into a scratch directory and runs
+    ``isabelle build`` on it. ``ok`` is ``True`` iff the build exits 0 — i.e. every
+    proof in the theory was discharged by Isabelle's kernel.
+
+    Args:
+        theory_text: the full ``theory <theory_name> ... end`` text. Its declared
+            theory name MUST equal ``theory_name``.
+        theory_name: the theory / file name (a valid Isabelle identifier).
+        install: an :class:`IsabelleInstall`; located via :func:`find_isabelle`
+            when ``None``.
+        session: the build session name (default ``"S_" + theory_name``).
+        session_timeout: per-session Isabelle ``timeout`` option, in seconds.
+        wall_timeout: hard subprocess timeout; defaults to ``session_timeout + 180``
+            to cover JVM startup + image load.
+        keep: keep the scratch directory (for debugging) instead of deleting it.
+
+    Raises:
+        IsabelleNotAvailable: if no Isabelle installation can be located.
+    """
+    install = install or find_isabelle()
+    if install is None:
+        raise IsabelleNotAvailable(
+            "No Isabelle installation found. Set UFK_ISABELLE_HOME (or ISABELLE_HOME) "
+            "to the install directory, or put `isabelle` on PATH.")
+    session = session or ("S_" + theory_name)
+    if wall_timeout is None:
+        wall_timeout = float(session_timeout) + 180.0
+
+    work = tempfile.mkdtemp(prefix="ufk_isa_")
+    try:
+        with open(os.path.join(work, theory_name + ".thy"), "w",
+                  encoding="utf-8") as f:
+            f.write(theory_text)
+        root = (f'session "{session}" = HOL +\n'
+                f'  options [timeout = {int(session_timeout)}]\n'
+                f'  theories\n    {theory_name}\n')
+        with open(os.path.join(work, "ROOT"), "w", encoding="utf-8") as f:
+            f.write(root)
+        t0 = time.perf_counter()
+        code, output = _run_build(install, work, wall_timeout)
+        elapsed = time.perf_counter() - t0
+        return BuildResult(ok=(code == 0), exit_code=code, output=output,
+                           theory_name=theory_name, session=session,
+                           elapsed=elapsed)
+    finally:
+        if not keep:
+            shutil.rmtree(work, ignore_errors=True)
+
+
+# --------------------------------------------------------------------------- #
+# Deciding modal validity through Isabelle.
+# --------------------------------------------------------------------------- #
+
+VALID = "valid"
+INVALID = "invalid"
+UNKNOWN = "unknown"
+
+_NITPICK_CTEX_RE = re.compile(
+    r"Nitpick found a (?:genuine )?counterexample.*", re.S)
+
+# Signatures of an INFRASTRUCTURE failure (a broken theory or a broken environment),
+# as opposed to an honest "no proof / no counter-model". A non-zero build that matches
+# one of these is surfaced on ModalVerdict.infra_error so an UNKNOWN is not silently
+# mistaken for benign incompleteness. This never changes the verdict — both decisive
+# verdicts require an exit-0 build, so an infra failure can only land on UNKNOWN, the
+# conservative side; this just makes the cause visible.
+_INFRA_ERROR_RE = re.compile(
+    r"Outer syntax error|Inner syntax error|Type unification failed|Bad name|"
+    r"Malformed|Undefined command|Undefined type|Duplicate constant|"
+    r"java\.lang\.\w*(?:OutOfMemoryError|Error)|Permission denied|"
+    r"wall-clock timeout|No such file")
+
+
+def _infra_error(*outputs: str) -> Optional[str]:
+    """Return the first infrastructure-error signature found in the build outputs."""
+    for out in outputs:
+        m = _INFRA_ERROR_RE.search(out or "")
+        if m:
+            return m.group(0)
+    return None
+
+
+@dataclass
+class ModalVerdict:
+    """Result of deciding a modal formula's validity through Isabelle.
+
+    ``status`` is one of ``"valid"`` (a battery proof closed the lemma),
+    ``"invalid"`` (nitpick found a genuine counter-model), or ``"unknown"``
+    (neither, within budget). Truthiness follows validity. On an ``"unknown"`` result,
+    ``infra_error`` is set to a short signature when a build failed for an
+    infrastructure reason (syntax/JVM/timeout/…) rather than honest incompleteness —
+    it never changes the status (an infra failure can only land on UNKNOWN).
+    """
+
+    status: str
+    frame: str
+    mode: str
+    method: Optional[str] = None          # the proof family that closed it (when valid)
+    countermodel: Optional[str] = None    # nitpick counter-model text if surfaced (best-effort;
+                                          # usually None under `isabelle build` — verdict still certified)
+    prove_output: str = ""
+    refute_output: str = ""
+    prove_elapsed: float = 0.0
+    refute_elapsed: float = 0.0
+    infra_error: Optional[str] = None     # set on UNKNOWN when a build failed for an
+                                          # infrastructure reason (syntax/JVM/timeout/…),
+                                          # not honest incompleteness; never affects status
+
+    @property
+    def is_valid(self) -> bool:
+        return self.status == VALID
+
+    @property
+    def is_invalid(self) -> bool:
+        return self.status == INVALID
+
+    @property
+    def is_unknown(self) -> bool:
+        return self.status == UNKNOWN
+
+    def __bool__(self) -> bool:
+        return self.status == VALID
+
+    def __str__(self) -> str:
+        extra = ""
+        if self.status == VALID and self.method:
+            extra = f" (by {self.method})"
+        return f"ModalVerdict[{self.status}{extra}, frame={self.frame}, mode={self.mode}]"
+
+
+def _battery_proof(axiom_ids: Sequence[str], methods: Sequence[str]) -> str:
+    """Build a ``using <axioms> by (m1 | m2 | ...)`` proof block (the prove step)."""
+    alts: List[str] = []
+    facts = (" " + " ".join(axiom_ids)) if axiom_ids else ""
+    for m in methods:
+        if m in ("meson", "metis"):
+            alts.append(m + facts)          # accept the axioms as explicit facts
+        elif m == "smt":
+            alts.append("(smt (verit))")
+        else:
+            alts.append(m)
+    proof = ""
+    if axiom_ids:
+        proof += "  using " + " ".join(axiom_ids) + "\n"
+    proof += "  by (" + " | ".join(alts) + ")"
+    return proof
+
+
+def isabelle_decide_modal(
+    formula: Node, *,
+    frame: str = "K",
+    mode: str = "constant",
+    temporal_closure: bool = True,
+    methods: Sequence[str] = DEFAULT_METHODS,
+    refute: bool = True,
+    card: str = "1-4",
+    prove_timeout: int = 60,
+    refute_timeout: int = 60,
+    install: Optional[IsabelleInstall] = None,
+) -> ModalVerdict:
+    """Decide a modal formula's validity by running a local Isabelle.
+
+    Emits the Benzmüller shallow embedding of ``formula``
+    (:func:`~unicode_fol_kit.hol.isabelle_modal.isabelle_modal_theory`, faithful to
+    :func:`~unicode_fol_kit.semantics.kripke.satisfies_modal`) and:
+
+    1. tries a proof battery — exit 0 ⇒ :data:`VALID`;
+    2. otherwise (``refute``) runs ``nitpick[expect = genuine]`` — exit 0 ⇒
+       :data:`INVALID` (certified by the exit code; ``countermodel`` carries the
+       model text only if the build surfaced it, usually ``None``);
+    3. otherwise :data:`UNKNOWN`.
+
+    Args:
+        formula: the modal AST node.
+        frame: alethic frame system (K/T/S4/S5/KD/KD45) — fixes the axioms on ``r``.
+        mode: object-quantifier domain regime (constant/possibilist/varying/…).
+        temporal_closure: constrain the temporal relation to refl+trans (henceforth).
+        methods: proof methods tried, in order, as a ``by (… | …)`` battery.
+        refute: also run nitpick to certify INVALID when the proof battery fails.
+        card: nitpick cardinality range for the world type ``i`` (e.g. ``"1-4"``).
+        prove_timeout / refute_timeout: per-session Isabelle timeouts (seconds).
+        install: an :class:`IsabelleInstall`; located via :func:`find_isabelle` when
+            ``None``.
+
+    Returns:
+        A :class:`ModalVerdict`.
+
+    Raises:
+        IsabelleNotAvailable: if no Isabelle installation can be located.
+        ValueError / NotImplementedError: propagated from the emitter for an
+            unsupported frame/mode/operator (e.g. ``Until``).
+    """
+    install = install or find_isabelle()
+    if install is None:
+        raise IsabelleNotAvailable(
+            "No Isabelle installation found. Set UFK_ISABELLE_HOME (or ISABELLE_HOME) "
+            "to the install directory, or put `isabelle` on PATH.")
+
+    axiom_ids = modal_axiom_names(formula, mode=mode, frame=frame,
+                                  temporal_closure=temporal_closure)
+
+    # --- step 1: prove ---------------------------------------------------- #
+    tok = "G" + uuid.uuid4().hex[:8]
+    prove_proof = _battery_proof(axiom_ids, methods)
+    prove_thy = isabelle_modal_theory(
+        formula, mode=mode, frame=frame, tactic="oops", theory_name=tok,
+        temporal_closure=temporal_closure, proof=prove_proof)
+    r1 = check_theory(prove_thy, tok, install=install,
+                      session_timeout=prove_timeout)
+    if r1.ok:
+        return ModalVerdict(status=VALID, frame=frame, mode=mode,
+                            method="prove-battery", prove_output=r1.output,
+                            prove_elapsed=r1.elapsed)
+
+    # --- step 2: refute (nitpick) ----------------------------------------- #
+    refute_output = ""
+    refute_elapsed = 0.0
+    if refute:
+        tok2 = "G" + uuid.uuid4().hex[:8]
+        nit_proof = (f"  nitpick[card i = {card}, timeout = {int(refute_timeout)}, "
+                     f"expect = genuine]\n  oops")
+        nit_thy = isabelle_modal_theory(
+            formula, mode=mode, frame=frame, tactic="oops", theory_name=tok2,
+            temporal_closure=temporal_closure, proof=nit_proof)
+        # nitpick can use most of the session budget; give the wall clock headroom.
+        r2 = check_theory(nit_thy, tok2, install=install,
+                          session_timeout=refute_timeout + 30,
+                          wall_timeout=float(refute_timeout) + 240.0)
+        refute_output = r2.output
+        refute_elapsed = r2.elapsed
+        if r2.ok:
+            m = _NITPICK_CTEX_RE.search(r2.output)
+            ctex = m.group(0).strip() if m else None
+            return ModalVerdict(status=INVALID, frame=frame, mode=mode,
+                                countermodel=ctex, prove_output=r1.output,
+                                refute_output=refute_output,
+                                prove_elapsed=r1.elapsed,
+                                refute_elapsed=refute_elapsed)
+
+    return ModalVerdict(status=UNKNOWN, frame=frame, mode=mode,
+                        prove_output=r1.output, refute_output=refute_output,
+                        prove_elapsed=r1.elapsed, refute_elapsed=refute_elapsed,
+                        infra_error=_infra_error(r1.output, refute_output))

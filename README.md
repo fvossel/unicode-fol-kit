@@ -1071,7 +1071,7 @@ thf = to_thf_modal(BARCAN, mode="constant", frame="S5")
 
 ## Higher-order proving: Isabelle / THF exporters (the `hol` subpackage)
 
-Beyond the first-order embedding above, `unicode_fol_kit.hol` emits **Benzmüller-style shallow embeddings into higher-order logic** for *all* the non-fuzzy logics — as complete, self-contained problem files for an external prover (Leo-III / Satallax on TPTP **THF**, or Isabelle/HOL theories for Sledgehammer). As everywhere in the kit it **emits**; it does not run a prover — and it cannot decide everything: first-order modal logic, FOL, and SOL are undecidable / not even semi-decidable, so a successful emission means *"here is a sound problem a prover may discharge"*, never *"decided"*. (The propositional fragments — K3/LP, modal K/T/S4/S5 — are decidable, but these exporters target the general case.)
+Beyond the first-order embedding above, `unicode_fol_kit.hol` emits **Benzmüller-style shallow embeddings into higher-order logic** for *all* the non-fuzzy logics — as complete, self-contained problem files for an external prover (Leo-III / Satallax on TPTP **THF**, or Isabelle/HOL theories for Sledgehammer). The exporters **emit**; they do not themselves run a prover — and cannot decide everything: first-order modal logic, FOL, and SOL are undecidable / not even semi-decidable, so a successful emission means *"here is a sound problem a prover may discharge"*, never *"decided"*. (The propositional fragments — K3/LP, modal K/T/S4/S5 — are decidable, but these exporters target the general case.) If you *do* have Isabelle installed, the opt-in [`isabelle_runner`](#actually-running-it-the-isabelle-runner) runs it for you and reads back a real verdict.
 
 ```python
 from unicode_fol_kit import MSFLParser
@@ -1095,6 +1095,33 @@ print(to_thf_modal_full(f))    # a complete TPTP THF problem; rk is AGENT-indexe
 - **Intuitionistic.** `to_thf_intuitionistic` / `to_isabelle_intuitionistic` apply the **Gödel–McKinsey–Tarski** box-translation into S4 then the alethic SSE, so emitted theorem-hood matches intuitionistic validity — `p ∨ ¬p`, `¬¬p → p`, and Peirce's law come out as **non-theorems**. Cross-checked against `int_valid` (`gmt_validity_matches_int_valid` runs the differential).
 
 Each embedding is faithful to its in-toolkit ground-truth oracle (`satisfies_modal`, `kleene_value`, `satisfies_so`, `int_valid`), verified by an adversarial differential audit. Equality `=` / `≠` is an **uninterpreted, world-relativized** predicate throughout (not primitive HOL identity), consistently across every exporter.
+
+### Actually running it: the Isabelle runner
+
+If a local **Isabelle/HOL** is installed, `unicode_fol_kit.hol.isabelle_runner` turns *emit* into *proven / refuted* — the toolkit writes the embedding to a scratch session, runs `isabelle build`, and reads the verdict off the build. It is **opt-in**: with no Isabelle present everything else still works and these calls raise a clear `IsabelleNotAvailable` (the live tests skip).
+
+```python
+# doctest: +SKIP  — needs a local Isabelle install
+from unicode_fol_kit import MSFLParser, isabelle_available, isabelle_decide_modal
+
+parse = MSFLParser(modal=True).parse
+print(isabelle_available())                        # True if Isabelle was located
+
+print(isabelle_decide_modal(parse("□P → P"), frame="K"))    # ModalVerdict[invalid, frame=K, …]
+print(isabelle_decide_modal(parse("□P → P"), frame="T"))    # ModalVerdict[valid (by prove-battery), …]
+print(isabelle_decide_modal(parse("□P → □□P"), frame="S4"))  # ModalVerdict[valid …]
+```
+
+`isabelle_decide_modal` decides validity (for the chosen `frame` / `mode`) in two steps, read off the build's exit code:
+
+1. **Prove** — emit the lemma with a proof battery that brings the frame/domain axioms into scope (`using <axioms> by (blast | force | fastforce | auto | meson … | metis …)`). A successful `isabelle build` ⇒ **VALID**.
+2. **Refute** — otherwise emit `nitpick[expect = genuine]`, whose build succeeds **iff** Isabelle finds a genuine finite counter-model ⇒ **INVALID**.
+3. Otherwise ⇒ **UNKNOWN** (expected — first-order modal logic is undecidable).
+
+This is **sound** (Isabelle's kernel certifies the proof; nitpick reports only *genuine* counter-models) and necessarily **incomplete**; `UNKNOWN` is a real outcome, not a failure. The verdict is validated *differentially* against an independent brute-force Kripke oracle (`satisfies_modal`) across K/T/S4/S5 in the test suite.
+
+- **Locating Isabelle.** `find_isabelle()` looks at an explicit path, then `UFK_ISABELLE_HOME` / `ISABELLE_HOME`, then `isabelle` on `PATH`, then a light scan of standard install locations (no path is hard-coded); `isabelle_available()` is the cheap predicate. **Linux/macOS is the primary path** — `isabelle` is invoked directly; **Windows** is also supported, with the build routed through Isabelle's bundled Cygwin automatically (path translation + launcher exec-bit fixup).
+- **Any theory.** `check_theory(theory_text, theory_name)` builds an arbitrary self-contained theory and returns a `BuildResult` — used internally, and handy for the non-modal exporters (`to_isabelle_fol`, `to_isabelle_k3lp`, `to_isabelle_intuitionistic` …), whose emitted proofs are themselves built against real Isabelle in the test suite.
 
 ## Many-valued logic (Kleene K3 / Priest LP)
 

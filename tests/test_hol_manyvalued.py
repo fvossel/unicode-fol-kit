@@ -282,6 +282,22 @@ def test_isabelle_validity_branches():
     assert "\\<forall>" in lp and "Verdict: VALID" in lp
 
 
+def test_isabelle_proof_discharges_not_bare_simp():
+    # A bare `by (simp add: des_def)` does NOT close these goals (simp cannot
+    # reduce `kneg v` while v is abstract). The fixed emitter discharges the
+    # \<forall> form by exhausting the tv cases and the \<exists> form with an
+    # exI witness. (The proofs are actually run in test_hol_isabelle_*_live.py.)
+    lp = to_isabelle_k3lp(P.parse("P ∨ ¬P"), "LP")          # valid -> forall
+    assert "intro allI" in lp and "case_tac" in lp and "simp_all add: des_def" in lp
+    k3 = to_isabelle_k3lp(P.parse("P ∨ ¬P"), "K3")          # invalid -> exists
+    assert "rule exI[where x=" in k3
+    # entailment forms use the same discharge machinery.
+    val = to_isabelle_k3lp_entailment([P.parse("P"), P.parse("¬P")], P.parse("Q"), "K3")
+    assert "intro allI" in val and "case_tac" in val
+    inv = to_isabelle_k3lp_entailment([P.parse("P"), P.parse("¬P")], P.parse("Q"), "LP")
+    assert "rule exI[where x=" in inv
+
+
 def test_thf_entailment_structure():
     thf = to_thf_k3lp_entailment([P.parse("P"), P.parse("¬P")], P.parse("Q"), "K3")
     assert thf.count("conjecture") == 1

@@ -370,6 +370,30 @@ def test_n_in_t_theory_still_structurally_wellformed():
     assert thy.count("consts t ::") == 1
 
 
+def test_t_in_nstar_axiom_pins_closure_when_next_cooccurs_with_always():
+    # t must be the reflexive-transitive CLOSURE of n (t = n**), not merely a refl-trans
+    # superset — else satisfies_modal-valid temporal induction is spuriously refutable
+    # (a false INVALID under the runner). The closure-pinning axiom t ⊆ rtranclp n is
+    # emitted when Always/Eventually co-occur with Next under temporal_closure. Audit
+    # regression for the false-INVALID-from-too-weak-axioms finding.
+    thy = to_isabelle_modal(ALWAYS_IMP_NEXT)
+    assert ('axiomatization where t_in_nstar: "t w v \\<Longrightarrow> rtranclp n w v"'
+            in thy), thy
+    from unicode_fol_kit.hol.isabelle_modal import modal_axiom_names
+    assert "t_in_nstar" in modal_axiom_names(ALWAYS_IMP_NEXT)
+
+
+def test_t_in_nstar_absent_without_temporal_closure():
+    # temporal_closure=False opts out of the closure reading, so t is not pinned.
+    thy = isabelle_modal_theory(ALWAYS_IMP_NEXT, temporal_closure=False)
+    assert "t_in_nstar" not in thy
+
+
+def test_t_in_nstar_absent_when_no_next():
+    # Pure Always (no one-step n): nothing to take the closure of.
+    assert "t_in_nstar" not in to_isabelle_modal(Always(P))
+
+
 def test_distinct_predicates_not_collapsed():
     # Ab / ab sanitise to the same name; they MUST get distinct consts, else the
     # non-valid □Ab → □ab collapses to the tautology □ab → □ab (soundness) and Isabelle
