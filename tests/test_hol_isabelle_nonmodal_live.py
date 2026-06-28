@@ -15,7 +15,9 @@ from unicode_fol_kit.fol.nodes import (
 from unicode_fol_kit.hol.classical import to_isabelle_fol, to_isabelle_msfol
 from unicode_fol_kit.hol.manyvalued import to_isabelle_k3lp, to_isabelle_k3lp_entailment
 from unicode_fol_kit.hol.intuitionistic import to_isabelle_intuitionistic
-from unicode_fol_kit.hol.isabelle_runner import isabelle_available, check_theory
+from unicode_fol_kit.hol.isabelle_runner import (
+    isabelle_available, check_theory, isabelle_decide_fol,
+)
 
 pytestmark = pytest.mark.skipif(
     not isabelle_available(),
@@ -103,3 +105,19 @@ def test_intuitionistic_atom_named_r_or_w_builds():
     rr, ww = Atom("r", ()), Atom("w", ())
     _build_ok(to_isabelle_intuitionistic(Implies(rr, rr)), "IPL_GMT", session="S_atom_r")
     _build_ok(to_isabelle_intuitionistic(Implies(ww, ww)), "IPL_GMT", session="S_atom_w")
+
+
+# --- the FOL decision runner ----------------------------------------------- #
+
+def test_isabelle_decide_fol_valid():
+    v = isabelle_decide_fol(Implies(pa, pa), card="1-3",
+                            prove_timeout=40, refute_timeout=40)
+    assert v.status == "valid", v.prove_output[-800:]
+
+
+def test_isabelle_decide_fol_invalid():
+    # P(a) -> Q(a) is not valid; nitpick finds a finite countermodel.
+    qa = Atom("Q", [Constant("a")])
+    v = isabelle_decide_fol(Implies(pa, qa), card="1-3",
+                            prove_timeout=40, refute_timeout=40)
+    assert v.status == "invalid", v.refute_output[-800:]

@@ -64,9 +64,9 @@ from .eval import (
     formulas_are_identical, match_predicates, formulas_are_matched_identical,
 )
 from .hol import (
-    find_isabelle, isabelle_available, isabelle_decide_modal, check_theory,
-    IsabelleInstall, IsabelleNotAvailable, BuildResult, ModalVerdict,
-    modal_axiom_names,
+    find_isabelle, isabelle_available, isabelle_decide_modal, isabelle_decide_fol,
+    check_theory, IsabelleInstall, IsabelleNotAvailable, BuildResult,
+    ModalVerdict, FolVerdict, modal_axiom_names,
 )
 
 __version__ = "0.8.0"
@@ -102,9 +102,10 @@ __all__ = [
     "parse_prover9",
     "qml_translate", "qml_is_valid", "qml_equivalent",
     "to_thf_modal", "to_isabelle_modal", "BARCAN", "CONVERSE_BARCAN",
-    "find_isabelle", "isabelle_available", "isabelle_decide_modal", "check_theory",
-    "IsabelleInstall", "IsabelleNotAvailable", "BuildResult", "ModalVerdict",
-    "modal_axiom_names",
+    "find_isabelle", "isabelle_available", "isabelle_decide_modal",
+    "isabelle_decide_fol", "check_theory",
+    "IsabelleInstall", "IsabelleNotAvailable", "BuildResult",
+    "ModalVerdict", "FolVerdict", "modal_axiom_names",
     "from_z3", "parse_smtlib", "load_smtlib",
     "find_fitch_proof", "fitch_prove", "is_valid_fitch",
     "tableau_closed", "is_valid_tableau", "prove_tableau", "tableau_model",

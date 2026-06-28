@@ -129,7 +129,9 @@ def test_isabelle_matches_kripke_oracle(formula, frame):
         assert v.status == INVALID, (
             f"oracle: INVALID in {frame}, Isabelle: {v.status}\n"
             f"{v.refute_output[-800:]}")
-        assert v.countermodel is None or isinstance(v.countermodel, str)
+        # these CASES are all propositional alethic, so a concrete Kripke witness is
+        # reconstructed for the INVALID verdict.
+        assert v.countermodel and "Kripke counter-model" in v.countermodel
 
 
 # --------------------------------------------------------------------------- #
@@ -171,3 +173,12 @@ def test_temporal_induction_not_spuriously_invalid():
     v = isabelle_decide_modal(f, frame="K", card="1-3",
                               prove_timeout=40, refute_timeout=40)
     assert v.status != INVALID, v.refute_output[-800:]
+
+
+def test_temporal_next_implies_always_is_invalid():
+    # Next(p) → Always(p) is satisfies_modal-INVALID. The refute theory defines
+    # t = rtranclp n, so nitpick constructs the closure and genuinely refutes it —
+    # restoring the INVALID the bare-axiom closure form could only report as UNKNOWN.
+    v = isabelle_decide_modal(Implies(Next(p), Always(p)), frame="K",
+                              card="1-3", prove_timeout=40, refute_timeout=40)
+    assert v.status == INVALID, v.refute_output[-800:]

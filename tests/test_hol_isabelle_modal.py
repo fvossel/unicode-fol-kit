@@ -394,6 +394,25 @@ def test_t_in_nstar_absent_when_no_next():
     assert "t_in_nstar" not in to_isabelle_modal(Always(P))
 
 
+def test_temporal_def_form_defines_t_as_rtranclp():
+    # temporal_def=True (the runner's refute form): t is DEFINED as rtranclp n and the
+    # closure axioms are dropped (they become theorems), so nitpick can build the
+    # closure and refute. Audit follow-up #2.
+    thy = isabelle_modal_theory(ALWAYS_IMP_NEXT, temporal_def=True)
+    assert 'definition t :: "i \\<Rightarrow> i \\<Rightarrow> bool" where "t = rtranclp n"' in thy
+    assert "consts t ::" not in thy
+    for ax in ("t_refl:", "t_trans:", "n_in_t:", "t_in_nstar"):
+        assert ax not in thy, ax
+
+
+def test_temporal_def_form_is_off_by_default():
+    # Default (temporal_def=False, the public exporter + the prove theory): the axiom
+    # form is unchanged — consts t pinned to the closure by axioms.
+    thy = to_isabelle_modal(ALWAYS_IMP_NEXT)
+    assert "consts t ::" in thy and "t_in_nstar" in thy
+    assert "definition t ::" not in thy
+
+
 def test_distinct_predicates_not_collapsed():
     # Ab / ab sanitise to the same name; they MUST get distinct consts, else the
     # non-valid □Ab → □ab collapses to the tautology □ab → □ab (soundness) and Isabelle

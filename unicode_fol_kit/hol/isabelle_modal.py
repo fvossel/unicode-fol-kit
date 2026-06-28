@@ -452,6 +452,26 @@ def _temporal_block() -> List[str]:
     ]
 
 
+def _temporal_def_block() -> List[str]:
+    r"""Temporal block with ``t`` **defined** as ``rtranclp n`` (the refl-trans closure
+    of the one-step relation), not a ``consts`` constrained by axioms.
+
+    Used by the runner's refute step: with ``t`` determined by ``n``, nitpick searches
+    a candidate ``n`` and computes ``t`` itself, so it can actually find a finite
+    counter-model to a non-theorem of the Always/Next closure fragment (a ``consts t``
+    with an ``rtranclp`` *axiom* leaves nitpick unable to construct the closure).
+    Requires the next block (``consts n``) to be emitted first.
+    """
+    return [
+        'definition t :: "i \\<Rightarrow> i \\<Rightarrow> bool" where "t = rtranclp n"  '
+        '\\<comment> \\<open>henceforth = reflexive-transitive closure of the one-step n\\<close>',
+        'abbreviation malways :: "(i \\<Rightarrow> bool) \\<Rightarrow> (i \\<Rightarrow> bool)" where',
+        '  "malways \\<phi> \\<equiv> \\<lambda>w. \\<forall>v. t w v \\<longrightarrow> \\<phi> v"',
+        'abbreviation meventually :: "(i \\<Rightarrow> bool) \\<Rightarrow> (i \\<Rightarrow> bool)" where',
+        '  "meventually \\<phi> \\<equiv> \\<lambda>w. \\<exists>v. t w v \\<and> \\<phi> v"',
+    ]
+
+
 def _next_block() -> List[str]:
     return [
         'consts n :: "i \\<Rightarrow> i \\<Rightarrow> bool"  \\<comment> \\<open>one-step temporal successor\\<close>',
@@ -548,29 +568,33 @@ def _domain_axioms(mode: str) -> List[str]:
 
 
 def _collect_axioms(sig: "_Sig", frame: str, mode: str,
-                    temporal_closure: bool) -> List[str]:
+                    temporal_closure: bool, temporal_def: bool = False) -> List[str]:
     """All ``axiomatization where ...`` lines the theory emits, in emission order.
 
     Centralised so the proof emitter and :func:`modal_axiom_names` agree on exactly
     which axioms are in scope (the proof must ``using`` precisely these to discharge
-    an axiom-dependent validity).
+    an axiom-dependent validity). When ``temporal_def`` makes ``t = rtranclp n`` a
+    definition (Always/Eventually + Next), the temporal/next closure axioms become
+    theorems and are omitted.
     """
+    use_temporal_def = temporal_def and sig.uses_temporal and sig.uses_next
     axioms: List[str] = []
     if sig.uses_alethic:
         axioms += _frame_axioms(frame)
     if sig.uses_deontic:
         axioms += _deontic_axioms()
-    if sig.uses_temporal and temporal_closure:
-        axioms += _temporal_axioms()
-    # When Next (n) co-occurs with Always/Eventually (t), link n into t so the
-    # oracle-valid Always(P) -> Next(P) is a theorem of the emitted theory too...
-    if sig.uses_temporal and sig.uses_next:
-        axioms += _next_in_temporal_axiom()
-        # ...and, when t is the closure relation, pin t = n** exactly (not merely a
-        # refl-trans superset of n), so satisfies_modal-valid temporal-induction
-        # formulas are not spuriously refuted (false INVALID).
-        if temporal_closure:
-            axioms += _temporal_next_closure_axiom()
+    if not use_temporal_def:
+        if sig.uses_temporal and temporal_closure:
+            axioms += _temporal_axioms()
+        # When Next (n) co-occurs with Always/Eventually (t), link n into t so the
+        # oracle-valid Always(P) -> Next(P) is a theorem of the emitted theory too...
+        if sig.uses_temporal and sig.uses_next:
+            axioms += _next_in_temporal_axiom()
+            # ...and, when t is the closure relation, pin t = n** exactly (not merely a
+            # refl-trans superset of n), so satisfies_modal-valid temporal-induction
+            # formulas are not spuriously refuted (false INVALID).
+            if temporal_closure:
+                axioms += _temporal_next_closure_axiom()
     if sig.has_quant:
         axioms += _domain_axioms(mode)
     return axioms
@@ -637,6 +661,7 @@ def isabelle_modal_theory(
     theory_name: str = "ModalEmbedding",
     temporal_closure: bool = True,
     proof: Optional[str] = None,
+    temporal_def: bool = False,
 ) -> str:
     """Emit a complete, loadable Isabelle/HOL theory shallow-embedding ``formula``.
 
@@ -724,11 +749,17 @@ def isabelle_modal_theory(
     if sig.uses_deontic:
         lines += _deontic_block()
         lines.append("")
-    if sig.uses_temporal:
-        lines += _temporal_block()
-        lines.append("")
+    # When ``temporal_def`` and BOTH Always/Eventually (t) and Next (n) occur, the
+    # henceforth relation is DEFINED as the reflexive-transitive closure of n
+    # (``t = rtranclp n``) rather than a ``consts`` constrained by axioms — so nitpick
+    # can determine t from a candidate n and actually refute non-theorems of the
+    # closure fragment. n must be declared before t's definition references it.
+    use_temporal_def = temporal_def and sig.uses_temporal and sig.uses_next
     if sig.uses_next:
         lines += _next_block()
+        lines.append("")
+    if sig.uses_temporal:
+        lines += _temporal_def_block() if use_temporal_def else _temporal_block()
         lines.append("")
 
     # Connectives + validity (always present).
@@ -747,7 +778,7 @@ def isabelle_modal_theory(
         lines.append("")
 
     # Axioms.
-    axioms = _collect_axioms(sig, frame, mode, temporal_closure)
+    axioms = _collect_axioms(sig, frame, mode, temporal_closure, temporal_def)
     if axioms:
         lines += axioms
         lines.append("")

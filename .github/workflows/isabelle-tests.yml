@@ -1,0 +1,83 @@
+name: Isabelle live tests
+
+# Runs the Isabelle-backed tests on a real Linux Isabelle install — the platform
+# the runner treats as its primary path (the dev box is Windows, so this is the
+# guarantee that `isabelle_decide_modal` & friends actually work on Linux).
+#
+# Scoped to the relevant paths so it does not run on every commit; also available
+# on demand via the Actions "Run workflow" button (workflow_dispatch). The Isabelle
+# install is cached, so only the first run pays the ~1.2 GB download.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'unicode_fol_kit/hol/**'
+      - 'tests/test_isabelle_runner.py'
+      - 'tests/test_isabelle_runner_live.py'
+      - 'tests/test_hol_isabelle_nonmodal_live.py'
+      - '.github/workflows/isabelle-tests.yml'
+  pull_request:
+    paths:
+      - 'unicode_fol_kit/hol/**'
+      - 'tests/test_isabelle_runner.py'
+      - 'tests/test_isabelle_runner_live.py'
+      - 'tests/test_hol_isabelle_nonmodal_live.py'
+      - '.github/workflows/isabelle-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ISABELLE_VERSION: Isabelle2025-2
+      ISABELLE_SHA256: a20a507bc7c1270d8be96a9f3fbec06345387789d2dc2c4d3df6260d47bfb33c
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache Isabelle
+        id: cache-isabelle
+        uses: actions/cache@v4
+        with:
+          path: ~/${{ env.ISABELLE_VERSION }}
+          key: ${{ env.ISABELLE_VERSION }}-linux-x86_64
+
+      - name: Download & extract Isabelle
+        if: steps.cache-isabelle.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          cd "$HOME"
+          url="https://isabelle.in.tum.de/dist/${ISABELLE_VERSION}_linux.tar.gz"
+          echo "Downloading $url"
+          curl -fsSL -o isabelle.tar.gz "$url"
+          echo "${ISABELLE_SHA256}  isabelle.tar.gz" | sha256sum -c -
+          tar xzf isabelle.tar.gz
+          rm -f isabelle.tar.gz
+          test -x "$HOME/${ISABELLE_VERSION}/bin/isabelle"
+
+      - name: Install package + pytest
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest
+
+      - name: Isabelle version
+        run: |
+          export PATH="$HOME/${ISABELLE_VERSION}/bin:$PATH"
+          isabelle version
+
+      - name: Run the Isabelle-backed tests
+        run: |
+          export PATH="$HOME/${ISABELLE_VERSION}/bin:$PATH"
+          export UFK_ISABELLE_HOME="$HOME/${ISABELLE_VERSION}"
+          python -c "from unicode_fol_kit.hol.isabelle_runner import find_isabelle; print('discovered:', find_isabelle())"
+          pytest -v \
+            tests/test_isabelle_runner.py \
+            tests/test_isabelle_runner_live.py \
+            tests/test_hol_isabelle_nonmodal_live.py

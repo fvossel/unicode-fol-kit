@@ -12,8 +12,9 @@ import pytest
 from unicode_fol_kit.fol.nodes import Atom, Implies, Box, Diamond
 from unicode_fol_kit.hol import isabelle_runner as R
 from unicode_fol_kit.hol.isabelle_runner import (
-    ModalVerdict, IsabelleInstall, IsabelleNotAvailable,
-    isabelle_decide_modal, check_theory, DEFAULT_METHODS, VALID, INVALID, UNKNOWN,
+    ModalVerdict, FolVerdict, IsabelleInstall, IsabelleNotAvailable,
+    isabelle_decide_modal, isabelle_decide_fol, check_theory,
+    DEFAULT_METHODS, VALID, INVALID, UNKNOWN,
 )
 from unicode_fol_kit.hol.isabelle_modal import isabelle_modal_theory, modal_axiom_names
 
@@ -68,6 +69,18 @@ def test_infra_error_detection():
     assert R._infra_error("[runner] wall-clock timeout after 60.0s") == "wall-clock timeout"
     assert R._infra_error("Nitpick found a counterexample for card i = 1") is None
     assert R._infra_error("Finished S_x (0:00:02 elapsed time)", "") is None
+
+
+def test_alethic_countermodel_search():
+    # Needs no Isabelle: a bounded Kripke enumeration that exhibits a witness for an
+    # INVALID propositional alethic formula, and declines outside the fragment.
+    from unicode_fol_kit.fol.nodes import Box, Quantifier, Variable, Knows, Constant
+    cm = R._find_alethic_countermodel(Implies(Box(p), p), "K")        # T axiom, invalid in K
+    assert cm and "Kripke counter-model" in cm and "false at world" in cm
+    assert R._find_alethic_countermodel(Implies(Box(p), p), "T") is None     # valid -> no model
+    x = Variable("x")
+    assert R._find_alethic_countermodel(Quantifier("∀", x, Atom("A", [x])), "K") is None  # quantified
+    assert R._find_alethic_countermodel(Knows(Constant("a"), p), "K") is None             # epistemic
 
 
 def test_battery_proof_splices_into_loadable_theory_shape():
@@ -138,6 +151,19 @@ def test_check_theory_raises_when_no_isabelle(monkeypatch):
 def test_isabelle_available_reflects_find(monkeypatch):
     monkeypatch.setattr(R, "find_isabelle", lambda *a, **k: None)
     assert R.isabelle_available() is False
+
+
+def test_fol_verdict_semantics():
+    assert bool(FolVerdict(status=VALID, method="prove-battery")) is True
+    assert FolVerdict(status=INVALID).is_invalid
+    assert FolVerdict(status=UNKNOWN).is_unknown and not FolVerdict(status=UNKNOWN)
+    assert "valid" in str(FolVerdict(status=VALID))
+
+
+def test_decide_fol_raises_when_no_isabelle(monkeypatch):
+    monkeypatch.setattr(R, "find_isabelle", lambda *a, **k: None)
+    with pytest.raises(IsabelleNotAvailable):
+        isabelle_decide_fol(Implies(p, p))
 
 
 # --------------------------------------------------------------------------- #

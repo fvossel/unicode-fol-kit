@@ -5,6 +5,34 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [Unreleased]
+
+### Added
+
+- **`isabelle_decide_fol` — decide classical FOL / MSFOL through Isabelle.** The
+  counterpart of `isabelle_decide_modal` for the classical fragment: prove-battery →
+  `nitpick` finite counter-model → UNKNOWN (common, since FOL is only semi-decidable),
+  over `to_isabelle_fol` / `to_isabelle_msfol`. Returns a `FolVerdict`. Equality stays
+  the **uninterpreted** `feq` / `fneq` of the embedding (no equality axioms assumed).
+- **Linux CI for the Isabelle-backed tests** (`.github/workflows/isabelle-tests.yml`).
+  Installs a real Linux Isabelle (cached) and runs the gated live tests on
+  `ubuntu-latest` — the standing guarantee that the runner's primary (Linux) path
+  works, since the dev box is Windows. Path-scoped + `workflow_dispatch`.
+
+### Changed
+
+- **`isabelle_decide_modal` INVALID verdicts now carry a concrete counter-model.** For
+  the propositional alethic fragment, `ModalVerdict.countermodel` is populated with a
+  finite Kripke counter-model reconstructed from the toolkit's own `satisfies_modal`
+  evaluator (`isabelle build` does not echo nitpick's model). `None` for fragments the
+  bounded search does not cover — the certified verdict is unaffected.
+- **Temporal `Always`/`Eventually` + `Next` refutation is sharp again.** The runner's
+  *refute* theory now **defines** the henceforth relation as `t = rtranclp n` (the
+  reflexive-transitive closure) instead of axiomatising it, so nitpick can construct the
+  closure and genuinely refute a non-theorem — e.g. `Next(p) → Always(p)` is now
+  `INVALID` instead of `UNKNOWN`. The *prove* theory keeps the axiom form (the battery
+  needs it); both encode `t = n**`. (New `temporal_def` flag on `isabelle_modal_theory`.)
+
 ## [0.8.0] - 2026-06-28
 
 ### Added

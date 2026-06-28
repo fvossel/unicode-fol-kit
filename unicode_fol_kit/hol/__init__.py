@@ -34,8 +34,9 @@ from .isabelle_modal import (
     to_isabelle_modal, isabelle_modal_theory, ISABELLE_TACTICS, modal_axiom_names,
 )
 from .isabelle_runner import (
-    find_isabelle, isabelle_available, isabelle_decide_modal, check_theory,
-    IsabelleInstall, IsabelleNotAvailable, BuildResult, ModalVerdict, DEFAULT_METHODS,
+    find_isabelle, isabelle_available, isabelle_decide_modal, isabelle_decide_fol,
+    check_theory, IsabelleInstall, IsabelleNotAvailable, BuildResult,
+    ModalVerdict, FolVerdict, DEFAULT_METHODS,
 )
 from .thf_modal import to_thf_modal_full, thf_full_definitions, thf_full_frame_axioms
 from .classical import to_thf_fol, to_isabelle_fol, to_thf_msfol, to_isabelle_msfol
@@ -52,9 +53,10 @@ from .intuitionistic import (
 __all__ = [
     "to_isabelle_modal", "isabelle_modal_theory", "ISABELLE_TACTICS",
     "modal_axiom_names",
-    "find_isabelle", "isabelle_available", "isabelle_decide_modal", "check_theory",
-    "IsabelleInstall", "IsabelleNotAvailable", "BuildResult", "ModalVerdict",
-    "DEFAULT_METHODS",
+    "find_isabelle", "isabelle_available", "isabelle_decide_modal",
+    "isabelle_decide_fol", "check_theory",
+    "IsabelleInstall", "IsabelleNotAvailable", "BuildResult",
+    "ModalVerdict", "FolVerdict", "DEFAULT_METHODS",
     "to_thf_modal_full", "thf_full_definitions", "thf_full_frame_axioms",
     "to_thf_fol", "to_isabelle_fol", "to_thf_msfol", "to_isabelle_msfol",
     "to_thf_k3lp", "to_isabelle_k3lp",

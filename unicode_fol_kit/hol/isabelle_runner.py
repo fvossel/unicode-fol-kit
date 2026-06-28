@@ -24,9 +24,10 @@ lemma decides the modal formula (for the chosen frame / domain regime):
    ``nitpick[expect = genuine]``. Nitpick searches for a finite counter-model;
    ``expect = genuine`` makes the build **succeed iff a genuine counter-model is
    found**, so exit 0 here ⇒ the formula is **INVALID**. The verdict is certified by
-   the exit code; the counter-model *text* is best-effort (``isabelle build`` does
-   not echo theory output to stdout, so ``ModalVerdict.countermodel`` is usually
-   ``None`` — that does not weaken the verdict).
+   the exit code; for the propositional alethic fragment ``ModalVerdict.countermodel``
+   then carries a concrete Kripke counter-model reconstructed from the toolkit's own
+   evaluator (``isabelle build`` does not echo nitpick's model), and is ``None`` for
+   fragments the bounded search does not cover — never weakening the verdict.
 3. Otherwise the result is **UNKNOWN** (neither a battery proof nor a finite
    counter-model within the time/size budget — expected, since the logic is
    undecidable).
@@ -78,9 +79,10 @@ from unicode_fol_kit.hol.isabelle_modal import (
 )
 
 __all__ = [
-    "IsabelleNotAvailable", "IsabelleInstall", "BuildResult", "ModalVerdict",
+    "IsabelleNotAvailable", "IsabelleInstall", "BuildResult",
+    "ModalVerdict", "FolVerdict",
     "find_isabelle", "isabelle_available",
-    "check_theory", "isabelle_decide_modal",
+    "check_theory", "isabelle_decide_modal", "isabelle_decide_fol",
     "DEFAULT_METHODS",
 ]
 
@@ -391,8 +393,10 @@ class ModalVerdict:
     frame: str
     mode: str
     method: Optional[str] = None          # the proof family that closed it (when valid)
-    countermodel: Optional[str] = None    # nitpick counter-model text if surfaced (best-effort;
-                                          # usually None under `isabelle build` — verdict still certified)
+    countermodel: Optional[str] = None    # for an INVALID alethic-propositional formula, a concrete
+                                          # Kripke counter-model from the toolkit's evaluator (isabelle
+                                          # build does not echo nitpick's model); None for fragments the
+                                          # bounded search does not cover — verdict still certified
     prove_output: str = ""
     refute_output: str = ""
     prove_elapsed: float = 0.0
@@ -421,6 +425,96 @@ class ModalVerdict:
         if self.status == VALID and self.method:
             extra = f" (by {self.method})"
         return f"ModalVerdict[{self.status}{extra}, frame={self.frame}, mode={self.mode}]"
+
+
+# Frame conditions on the alethic relation r (mirror the emitter's _FRAMES).
+_FRAME_CONDS = {
+    "K": (), "T": ("refl",), "S4": ("refl", "trans"),
+    "S5": ("refl", "trans", "sym"), "KD": ("serial",),
+    "KD45": ("serial", "trans", "eucl"),
+}
+
+# Node types of the purely propositional ALETHIC fragment the bounded countermodel
+# search can exhibit a witness for (no quantifiers / agents / deontic / temporal).
+_ALETHIC_OK = ("Atom", "Not", "And", "Or", "Xor", "Implies", "Iff", "Box", "Diamond")
+
+
+def _is_alethic_propositional(formula: Node) -> bool:
+    """True iff ``formula`` is Box/Diamond + connectives over GROUND atoms only."""
+    from unicode_fol_kit.fol.nodes import Variable
+    for node in formula.walk():
+        if type(node).__name__ not in _ALETHIC_OK and not isinstance(node, Variable):
+            # allow the ground arguments of an atom (Constant/Number/Function), but a
+            # free/bound Variable means it is not propositional.
+            if type(node).__name__ in ("Constant", "Number", "Function"):
+                continue
+            return False
+        if isinstance(node, Variable):
+            return False
+    return True
+
+
+def _frame_ok(worlds, rel, conds) -> bool:
+    if "refl" in conds and not all((w, w) in rel for w in worlds):
+        return False
+    if "trans" in conds and any((a, b) in rel and (b, c) in rel and (a, c) not in rel
+                                for a in worlds for b in worlds for c in worlds):
+        return False
+    if "sym" in conds and any((a, b) in rel and (b, a) not in rel
+                              for a in worlds for b in worlds):
+        return False
+    if "serial" in conds and not all(any((w, v) in rel for v in worlds) for w in worlds):
+        return False
+    if "eucl" in conds and any((a, b) in rel and (a, c) in rel and (b, c) not in rel
+                               for a in worlds for b in worlds for c in worlds):
+        return False
+    return True
+
+
+def _find_alethic_countermodel(formula: Node, frame: str,
+                               max_worlds: int = 4) -> Optional[str]:
+    """A concrete Kripke counter-model to ``formula`` over ``frame``, as a readable
+    string — or ``None`` if the formula is outside the propositional alethic fragment
+    or no counter-model exists within ``max_worlds``.
+
+    Isabelle/nitpick certifies the INVALID verdict; this exhibits a witness from the
+    toolkit's own evaluator (``isabelle build`` does not echo nitpick's model). Bounded
+    brute force over the frame's relations and valuations, decided by ``satisfies_modal``.
+    """
+    if frame not in _FRAME_CONDS or not _is_alethic_propositional(formula):
+        return None
+    from itertools import product
+    from unicode_fol_kit.fol.nodes import Atom
+    from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
+
+    conds = _FRAME_CONDS[frame]
+    keys = sorted({n.to_unicode_str() for n in formula.walk() if isinstance(n, Atom)})
+    for n in range(1, max_worlds + 1):
+        worlds = list(range(n))
+        edges = [(i, j) for i in worlds for j in worlds]
+        for mask in product((False, True), repeat=len(edges)):
+            rel = frozenset(e for e, inc in zip(edges, mask) if inc)
+            if not _frame_ok(worlds, rel, conds):
+                continue
+            for bits in product((False, True), repeat=n * len(keys)):
+                val, idx = {}, 0
+                for w in worlds:
+                    cell = set()
+                    for k in keys:
+                        if bits[idx]:
+                            cell.add(k)
+                        idx += 1
+                    val[w] = cell
+                model = KripkeModel(worlds, {"alethic": rel}, val)
+                bad = [w for w in worlds if not satisfies_modal(formula, model, w)]
+                if bad:
+                    rels = "{" + ", ".join(f"{a}->{b}" for (a, b) in sorted(rel)) + "}"
+                    vals = ", ".join(f"{w}:{{{', '.join(sorted(val[w])) or '-'}}}"
+                                     for w in worlds)
+                    return (f"Kripke counter-model (frame {frame}, {n} world(s)): "
+                            f"worlds={{{', '.join(map(str, worlds))}}}, r={rels}, "
+                            f"valuation=[{vals}]; formula is false at world {bad[0]}")
+    return None
 
 
 def _battery_proof(axiom_ids: Sequence[str], methods: Sequence[str]) -> str:
@@ -461,8 +555,9 @@ def isabelle_decide_modal(
 
     1. tries a proof battery — exit 0 ⇒ :data:`VALID`;
     2. otherwise (``refute``) runs ``nitpick[expect = genuine]`` — exit 0 ⇒
-       :data:`INVALID` (certified by the exit code; ``countermodel`` carries the
-       model text only if the build surfaced it, usually ``None``);
+       :data:`INVALID` (certified by the exit code; for the propositional alethic
+       fragment ``countermodel`` carries a concrete Kripke model from the toolkit's
+       evaluator, else ``None``);
     3. otherwise :data:`UNKNOWN`.
 
     Args:
@@ -514,9 +609,13 @@ def isabelle_decide_modal(
         tok2 = "G" + uuid.uuid4().hex[:8]
         nit_proof = (f"  nitpick[card i = {card}, timeout = {int(refute_timeout)}, "
                      f"expect = genuine]\n  oops")
+        # temporal_def=True: when Always/Eventually co-occur with Next, define
+        # t = rtranclp n so nitpick can construct the closure and actually refute a
+        # non-theorem of the temporal fragment (the prove theory above keeps the
+        # axiom form, which the battery needs — both encode t = n**).
         nit_thy = isabelle_modal_theory(
             formula, mode=mode, frame=frame, tactic="oops", theory_name=tok2,
-            temporal_closure=temporal_closure, proof=nit_proof)
+            temporal_closure=temporal_closure, proof=nit_proof, temporal_def=True)
         # nitpick can use most of the session budget; give the wall clock headroom.
         r2 = check_theory(nit_thy, tok2, install=install,
                           session_timeout=refute_timeout + 30,
@@ -526,6 +625,10 @@ def isabelle_decide_modal(
         if r2.ok:
             m = _NITPICK_CTEX_RE.search(r2.output)
             ctex = m.group(0).strip() if m else None
+            if ctex is None:
+                # isabelle build does not echo nitpick's model; exhibit a witness from
+                # the toolkit's own evaluator for the propositional alethic fragment.
+                ctex = _find_alethic_countermodel(formula, frame)
             return ModalVerdict(status=INVALID, frame=frame, mode=mode,
                                 countermodel=ctex, prove_output=r1.output,
                                 refute_output=refute_output,
@@ -536,3 +639,125 @@ def isabelle_decide_modal(
                         prove_output=r1.output, refute_output=refute_output,
                         prove_elapsed=r1.elapsed, refute_elapsed=refute_elapsed,
                         infra_error=_infra_error(r1.output, refute_output))
+
+
+# --------------------------------------------------------------------------- #
+# Deciding classical FOL / MSFOL through Isabelle.
+# --------------------------------------------------------------------------- #
+
+@dataclass
+class FolVerdict:
+    """Result of deciding a classical FOL formula's validity through Isabelle.
+
+    Same VALID / INVALID / UNKNOWN scheme as :class:`ModalVerdict` (no frame/mode).
+    Note that FOL is only *semi-decidable*, so UNKNOWN is common and expected; and
+    equality ``=`` / ``≠`` is the **uninterpreted** predicate ``feq`` / ``fneq`` of
+    :func:`~unicode_fol_kit.hol.classical.to_isabelle_fol` (no equality axioms are
+    assumed), so e.g. ``∀x. x = x`` is *not* VALID here.
+    """
+
+    status: str
+    method: Optional[str] = None
+    countermodel: Optional[str] = None    # nitpick text if surfaced (usually None; verdict certified)
+    prove_output: str = ""
+    refute_output: str = ""
+    prove_elapsed: float = 0.0
+    refute_elapsed: float = 0.0
+    infra_error: Optional[str] = None
+
+    @property
+    def is_valid(self) -> bool:
+        return self.status == VALID
+
+    @property
+    def is_invalid(self) -> bool:
+        return self.status == INVALID
+
+    @property
+    def is_unknown(self) -> bool:
+        return self.status == UNKNOWN
+
+    def __bool__(self) -> bool:
+        return self.status == VALID
+
+    def __str__(self) -> str:
+        extra = f" (by {self.method})" if self.status == VALID and self.method else ""
+        return f"FolVerdict[{self.status}{extra}]"
+
+
+def isabelle_decide_fol(
+    formula: Node, *,
+    msfol: bool = False,
+    methods: Sequence[str] = DEFAULT_METHODS,
+    refute: bool = True,
+    card: str = "1-4",
+    prove_timeout: int = 60,
+    refute_timeout: int = 60,
+    install: Optional[IsabelleInstall] = None,
+) -> FolVerdict:
+    """Decide a classical **FOL** (or MSFOL) formula's validity by running Isabelle.
+
+    Emits the uninterpreted-signature embedding
+    (:func:`~unicode_fol_kit.hol.classical.to_isabelle_fol`, or ``to_isabelle_msfol``
+    when ``msfol=True``) and, exactly like :func:`isabelle_decide_modal`:
+
+    1. tries a proof battery — exit 0 ⇒ :data:`VALID`;
+    2. otherwise (``refute``) runs ``nitpick[expect = genuine]`` over the individual
+       type ``i`` — exit 0 ⇒ :data:`INVALID`;
+    3. otherwise :data:`UNKNOWN` (common — FOL is only semi-decidable).
+
+    Sound (Isabelle's kernel certifies the proof; nitpick reports only genuine finite
+    counter-models) and necessarily incomplete. Equality is uninterpreted (see
+    :class:`FolVerdict`).
+
+    Args:
+        formula: the FOL AST node.
+        msfol: emit the many-sorted embedding (sorts relativised to guard predicates)
+            instead of plain FOL.
+        methods / refute / card / prove_timeout / refute_timeout / install: as for
+            :func:`isabelle_decide_modal` (``card`` bounds the individual type ``i``).
+
+    Raises:
+        IsabelleNotAvailable: if no Isabelle installation can be located.
+    """
+    install = install or find_isabelle()
+    if install is None:
+        raise IsabelleNotAvailable(
+            "No Isabelle installation found. Set UFK_ISABELLE_HOME (or ISABELLE_HOME) "
+            "to the install directory, or put `isabelle` on PATH.")
+    from unicode_fol_kit.hol.classical import to_isabelle_fol, to_isabelle_msfol
+    emit = to_isabelle_msfol if msfol else to_isabelle_fol
+
+    # --- step 1: prove ---------------------------------------------------- #
+    tok = "G" + uuid.uuid4().hex[:8]
+    prove_proof = _battery_proof([], methods).lstrip()   # no axioms in the FOL embedding
+    prove_thy = emit(formula, theory_name=tok, proof=prove_proof)
+    r1 = check_theory(prove_thy, tok, install=install, session_timeout=prove_timeout)
+    if r1.ok:
+        return FolVerdict(status=VALID, method="prove-battery",
+                          prove_output=r1.output, prove_elapsed=r1.elapsed)
+
+    # --- step 2: refute (nitpick) ----------------------------------------- #
+    refute_output = ""
+    refute_elapsed = 0.0
+    if refute:
+        tok2 = "G" + uuid.uuid4().hex[:8]
+        nit_proof = (f"nitpick[card i = {card}, timeout = {int(refute_timeout)}, "
+                     f"expect = genuine]\n  oops")
+        nit_thy = emit(formula, theory_name=tok2, proof=nit_proof)
+        r2 = check_theory(nit_thy, tok2, install=install,
+                          session_timeout=refute_timeout + 30,
+                          wall_timeout=float(refute_timeout) + 240.0)
+        refute_output = r2.output
+        refute_elapsed = r2.elapsed
+        if r2.ok:
+            m = _NITPICK_CTEX_RE.search(r2.output)
+            return FolVerdict(status=INVALID,
+                              countermodel=(m.group(0).strip() if m else None),
+                              prove_output=r1.output, refute_output=refute_output,
+                              prove_elapsed=r1.elapsed, refute_elapsed=refute_elapsed)
+
+    return FolVerdict(status=UNKNOWN, prove_output=r1.output,
+                      refute_output=refute_output, prove_elapsed=r1.elapsed,
+                      refute_elapsed=refute_elapsed,
+                      infra_error=_infra_error(r1.output, refute_output))
