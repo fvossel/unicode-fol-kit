@@ -46,6 +46,7 @@ from .atp import (
     from_z3, parse_smtlib, load_smtlib,
     find_fitch_proof, fitch_prove, is_valid_fitch,
     tableau_closed, is_valid_tableau, prove_tableau, tableau_model,
+    modal_tableau_closed, is_modal_valid, modal_prove, modal_decide, modal_countermodel,
     check_lj_proof, verify_lj_proof,
 )
 from .semantics import (

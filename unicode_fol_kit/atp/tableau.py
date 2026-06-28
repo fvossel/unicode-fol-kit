@@ -34,6 +34,16 @@ def _neg(f: Node) -> Node:
     return f.formula if isinstance(f, Not) else Not(f)
 
 
+def _any_modal(formulas) -> bool:
+    """True iff any formula carries a modal/temporal/epistemic/deontic operator.
+
+    Such formulas have no classical tableau rule; they are routed to the labelled
+    modal tableau (:mod:`unicode_fol_kit.atp.modal_tableau`) instead of raising.
+    """
+    from .modal_tableau import has_modal
+    return any(has_modal(f) for f in formulas)
+
+
 def _ground_terms(node: Node, acc: set) -> None:
     """Collect the closed (variable-free) constant/number/function terms in ``node``."""
     if isinstance(node, (Constant, Number)):
@@ -218,19 +228,38 @@ def tableau_closed(formulas, max_steps: int = 20000, max_terms: int = 8) -> bool
     ``γ``-instantiation is bounded by ``max_terms`` (the size of the per-branch term
     pool) and ``max_steps``, so a False on a first-order input is "no closed tableau
     within the bounds", never a claim of satisfiability.
+
+    Modal/temporal/epistemic/deontic formulas have no classical rule; they are routed
+    to the labelled modal tableau (over the system **K** by default — for other frames
+    call :mod:`unicode_fol_kit.atp.modal_tableau` directly).
     """
+    formulas = list(formulas)
+    if _any_modal(formulas):
+        from .modal_tableau import modal_tableau_closed
+        return modal_tableau_closed(formulas)
     ctx = _Ctx(max_steps, max_terms)
     return _close(tuple(formulas), frozenset(), (),
                   _initial_terms(formulas, max_terms), frozenset(), ctx)
 
 
 def is_valid_tableau(formula: Node, max_steps: int = 20000, max_terms: int = 8) -> bool:
-    """Return True iff ``formula`` is valid — its negation's tableau closes."""
+    """Return True iff ``formula`` is valid — its negation's tableau closes.
+
+    A modal formula is decided over the system **K** by the labelled modal tableau;
+    use :func:`unicode_fol_kit.atp.modal_tableau.is_modal_valid` for other frames.
+    """
+    if _any_modal([formula]):
+        from .modal_tableau import is_modal_valid
+        return is_modal_valid(formula)
     return tableau_closed([Not(formula)], max_steps, max_terms)
 
 
 def prove_tableau(premises, conclusion: Node, max_steps: int = 20000, max_terms: int = 8) -> bool:
-    """Return True iff ``premises`` entail ``conclusion`` (premises + ¬conclusion close)."""
+    """Return True iff ``premises`` entail ``conclusion`` (premises + ¬conclusion close).
+
+    For modal inputs this is **local** consequence over the system **K** (see
+    :func:`unicode_fol_kit.atp.modal_tableau.modal_prove` for other frames).
+    """
     return tableau_closed(list(premises) + [Not(conclusion)], max_steps, max_terms)
 
 
@@ -240,7 +269,17 @@ def tableau_model(formulas, max_steps: int = 20000, max_terms: int = 8) -> Optio
     On an open (saturated) branch the literals are returned as a dict mapping each
     atom's surface form to its truth value; ``None`` means the tableau closed
     (unsatisfiable) within the bound.
+
+    A modal model is a Kripke structure, not a flat literal assignment, so a modal
+    input is rejected here with a pointer to
+    :func:`unicode_fol_kit.atp.modal_tableau.modal_countermodel`, which returns a
+    verified :class:`~unicode_fol_kit.semantics.kripke.KripkeModel`.
     """
+    if _any_modal(formulas):
+        raise NotImplementedError(
+            "tableau_model: a modal formula's model is a Kripke structure, not a flat "
+            "assignment — use unicode_fol_kit.atp.modal_tableau.modal_countermodel "
+            "(or modal_decide) instead.")
     ctx = _Ctx(max_steps, max_terms)
     closed = _close(tuple(formulas), frozenset(), (),
                     _initial_terms(formulas, max_terms), frozenset(), ctx)
