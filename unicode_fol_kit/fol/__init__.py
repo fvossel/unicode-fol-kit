@@ -26,6 +26,10 @@ from .latex_input import latex_to_unicode, parse_latex
 from .tptp_input import parse_tptp, parse_tptp_formula, load_tptp, TptpFormula
 from .prover9_input import parse_prover9
 from .verbalize import to_english
+from .qml import (
+    qml_translate, qml_axioms, qml_is_valid, qml_equivalent,
+    to_thf_modal, to_isabelle_modal, BARCAN, CONVERSE_BARCAN,
+)
 from .naming import NamingError, ParsingError
 
 __all__ = [
@@ -56,4 +60,6 @@ __all__ = [
     "parse_tptp", "parse_tptp_formula", "load_tptp", "TptpFormula",
     "parse_prover9",
     "to_english",
+    "qml_translate", "qml_axioms", "qml_is_valid", "qml_equivalent",
+    "to_thf_modal", "to_isabelle_modal", "BARCAN", "CONVERSE_BARCAN",
 ]

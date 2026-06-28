@@ -1213,9 +1213,9 @@ def _collect_modal_frames(nodes, alethic_system):
             if isinstance(n, (Box, Diamond)):
                 frames["R"] = alethic_system
             elif isinstance(n, Knows):
-                frames["Rk_" + n.agent] = "S5"
+                frames["Rk_" + (getattr(n.agent, "name", None) or n.agent.to_unicode_str())] = "S5"
             elif isinstance(n, Believes):
-                frames["Rb_" + n.agent] = "KD45"
+                frames["Rb_" + (getattr(n.agent, "name", None) or n.agent.to_unicode_str())] = "KD45"
             elif isinstance(n, (Obligatory, Permitted)):
                 frames["D"] = "KD"
             elif isinstance(n, (Always, Eventually, Next, Until)):

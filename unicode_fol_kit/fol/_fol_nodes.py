@@ -1011,9 +1011,9 @@ def parser_ops_for_mode(mode: str) -> List[ParserOp]:
 # ---------------------------------------------------------------------------
 #
 # ONE skeleton shared by every mode. The %%MARKERS%% are filled by
-# build_grammar() from the mode's ParserOps. The structure is byte-compatible
-# with the six hand-written .lark grammars: right-assoc ↔ and →, the optional
-# Until sub-level, the no-mixing only_X same_level_ops group, the prefix level
+# build_grammar() from the mode's ParserOps. The structure: right-assoc ↔ and →,
+# the optional Until sub-level, the no-mixing only_X same_level_ops group, the
+# prefix level
 # (¬ plus any prefix modal ops, then quantifier / atom / grouping), the tight
 # quantifier binding (body is the prefix level), and the verbatim
 # term/atom/lambda/application layer.

@@ -5,26 +5,13 @@ from lark import Lark, UnexpectedCharacters, UnexpectedToken, UnexpectedEOF
 from lark.exceptions import VisitError
 
 from .nodes import Node, FOLTransformer
-from ._msfl_nodes import (
-    SortedQuantifier, SortedConstant,
-    WeakConjunction, WeakDisjunction,
-    StrongConjunction, StrongDisjunction,
-    LukNegation, LukImplication, LukEquivalence,
-    LambdaVar, Lambda, Application,
-    resolve_lambda_scope,
-)
+from ._msfl_nodes import LambdaVar, Lambda, Application, resolve_lambda_scope
 from ._fol_nodes import (
-    Variable, Constant, Atom,
+    Variable, Constant,
     build_grammar, build_transform_handlers, PARSER_OPS,
 )
-from ._modal_nodes import (
-    Box, Diamond, Knows, Believes,
-    Always, Eventually, Next, Until,
-    Obligatory, Permitted,
-)
-from ._so_nodes import (
-    SecondOrderQuantifier, ConflictingArityError, _infer_so_arity,
-)
+from ._modal_nodes import resolve_agent_variables
+from ._so_nodes import ConflictingArityError  # re-exported for callers/tests
 from .naming import NamingError, ParsingError
 
 _GRAMMARS_DIR = pathlib.Path(__file__).parent / "grammars"
@@ -61,162 +48,12 @@ class LambdaTransformer(FOLTransformer):
         return Application(items[0], items[1])
 
 
-class ModalTransformer(LambdaTransformer):
-    """Extends LambdaTransformer with modal, epistemic, doxastic, temporal, and deontic handlers.
-
-    Used by modal mode (classical unsorted FOL + modal operators). Inherits all
-    classical connective, term, atom, quantifier, and lambda methods. The prefix
-    operators each take their leading operator token plus the single subformula;
-    knows_/believes_ strip the ``K_``/``B_`` prefix from the token to recover the
-    agent string. until_ builds the binary Until node. obligatory_/permitted_
-    build the deontic Obligatory/Permitted nodes.
-    """
-
-    def box_(self, items):
-        # items: [BOX token, formula]
-        return Box(items[1])
-
-    def diamond_(self, items):
-        # items: [DIAMOND token, formula]
-        return Diamond(items[1])
-
-    def always_(self, items):
-        # items: [TALWAYS token, formula]
-        return Always(items[1])
-
-    def eventually_(self, items):
-        # items: [TEVENTUALLY token, formula]
-        return Eventually(items[1])
-
-    def next_(self, items):
-        # items: [TNEXT token, formula]
-        return Next(items[1])
-
-    def knows_(self, items):
-        # items: [KNOWS token (e.g. "K_alice"), formula]; strip the "K_" prefix.
-        agent = str(items[0])[2:]
-        return Knows(agent, items[1])
-
-    def believes_(self, items):
-        # items: [BELIEVES token (e.g. "B_bob"), formula]; strip the "B_" prefix.
-        agent = str(items[0])[2:]
-        return Believes(agent, items[1])
-
-    def until_(self, items):
-        # items: [left, TUNTIL token, right]
-        return Until(items[0], items[2])
-
-    def obligatory_(self, items):
-        # items: [OBLIG token, formula]
-        return Obligatory(items[1])
-
-    def permitted_(self, items):
-        # items: [PERMIT token, formula]
-        return Permitted(items[1])
-
-
-class SecondOrderTransformer(LambdaTransformer):
-    """Extends LambdaTransformer for second-order mode.
-
-    Adds second_order_quantifier_, which reads the bound PREDICATE token and the
-    already-built body, infers the predicate variable's arity from its
-    applications in the body (see _infer_so_arity), and builds a
-    SecondOrderQuantifier. Inherits all classical connective, term, atom, the
-    first-order quantifier_ handler, and lambda methods from LambdaTransformer.
-
-    Lark transformers run bottom-up, so when second_order_quantifier_ fires the
-    body is a fully-built AST node (including any nested SecondOrderQuantifier),
-    which _infer_so_arity can walk directly.
-    """
-
-    def second_order_quantifier_(self, items):
-        # Grammar: (FORALL | EXISTS) PREDICATE negation -> second_order_quantifier_
-        # items[0] is the FORALL/EXISTS token; items[1] is the PREDICATE token
-        # (no terminal handler, so a raw Token); items[2] is the body node.
-        quant = str(items[0])
-        predname = str(items[1])
-        body = items[2]
-        arity = _infer_so_arity(body, predname)
-        return SecondOrderQuantifier(quant, predname, arity, body)
-
-
-class MSFOLTransformer(LambdaTransformer):
-    """Extends LambdaTransformer for MSFOL mode.
-
-    Adds sorted_quantifier_ and sorted_const_.  Inherits all classical
-    connective, term, and lambda methods; the MSFOL grammar never emits
-    xor_ or quantifier_, so those inherited methods are safe-dead.
-    """
-
-    def sorted_quantifier_(self, items):
-        quant_tok, var, sort_tok, formula = items
-        sort = str(sort_tok)[1:]  # strip leading ':'
-        return SortedQuantifier(str(quant_tok), var, sort, formula)
-
-    def sorted_const_(self, items):
-        first, sort_tok = items
-        # NAME tokens are pre-converted to Constant by FOLTransformer.NAME();
-        # CONSTANT tokens arrive as raw Token objects.
-        name = first.name if isinstance(first, Constant) else str(first)
-        sort = str(sort_tok)[1:]  # strip leading ':'
-        return SortedConstant(name, sort)
-
-
-class LukConnectivesMixin:
-    """Łukasiewicz connective handlers shared by MSFLTransformer and FLTransformer.
-
-    Must be mixed into a class that provides _fold_binary (any FOLTransformer descendant),
-    since this mixin calls self._fold_binary but does not define it itself.
-    """
-
-    def luk_not_(self, items):
-        return LukNegation(items[0])
-
-    def luk_implies_(self, items):
-        return LukImplication(items[0], items[1])
-
-    def luk_iff_(self, items):
-        return LukEquivalence(items[0], items[1])
-
-    def weak_and_(self, items):
-        return self._fold_binary(items, WeakConjunction)
-
-    def weak_or_(self, items):
-        return self._fold_binary(items, WeakDisjunction)
-
-    def strong_and_(self, items):
-        return self._fold_binary(items, StrongConjunction)
-
-    def strong_or_(self, items):
-        return self._fold_binary(items, StrongDisjunction)
-
-
-class MSFLTransformer(LukConnectivesMixin, MSFOLTransformer):
-    """Extends MSFOLTransformer for MSFL (fuzzy Łukasiewicz) mode.
-
-    Inherits sorted_quantifier_, sorted_const_, and all term/atom methods from
-    the MSFOLTransformer ancestry.  Inherits the seven Łukasiewicz connective
-    handlers from LukConnectivesMixin.  The MSFL grammar uses luk_*/weak_*/
-    strong_* rule aliases so the inherited classical connective methods
-    (and_, or_, not_, etc.) are safe-dead.
-
-    MRO: MSFLTransformer → LukConnectivesMixin → MSFOLTransformer →
-         LambdaTransformer → FOLTransformer → Transformer
-    """
-
-
-class FLTransformer(LukConnectivesMixin, LambdaTransformer):
-    """Transformer for FL mode (single-sorted Łukasiewicz logic, unsorted quantifiers).
-
-    Inherits lambda_, application_, and all classical term/atom methods from
-    LambdaTransformer (via FOLTransformer) — including the unsorted quantifier_
-    handler.  Inherits the seven Łukasiewicz connective handlers from
-    LukConnectivesMixin.  Has no sorted_quantifier_ or sorted_const_; FL uses
-    plain quantifiers and constants identical to FOL mode.
-
-    MRO: FLTransformer → LukConnectivesMixin → LambdaTransformer →
-         FOLTransformer → Transformer
-    """
+# The per-mode hand-written transformers (Modal/SecondOrder/MSFOL/MSFL/FL +
+# LukConnectivesMixin) and the six per-mode .lark grammars were retired once the
+# registry pipeline (build_grammar / build_transform_handlers over PARSER_OPS) was
+# verified to reproduce them byte-for-byte. The runtime now assembles every mode from
+# the registry on a shared LambdaTransformer base (see _assemble_transformer); only
+# terminals.lark survives, imported by the generated grammar.
 
 
 # MSFLParser's short mode name (used in NamingError/ParsingError messages) -> the
@@ -333,7 +170,12 @@ class MSFLParser:
         try:
             tree = self.parser.parse(text)
             ast = self._transformer.transform(tree)
-            return resolve_lambda_scope(ast)
+            ast = resolve_lambda_scope(ast)
+            if self._mode == "modal":
+                # A free epistemic/doxastic agent variable (K_a) denotes a named agent;
+                # only an agent bound by an enclosing quantifier stays a variable.
+                ast = resolve_agent_variables(ast)
+            return ast
         except UnexpectedCharacters as e:
             raise NamingError(self.parser, e, text, mode=self._mode)
         except (UnexpectedToken, UnexpectedEOF) as e:

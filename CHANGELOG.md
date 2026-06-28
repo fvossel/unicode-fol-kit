@@ -5,15 +5,123 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
-## [Unreleased]
+## [0.7.0] - 2026-06-28
 
 ### Added
 
+- **Epistemic / doxastic frame systems in the first-order embedding.**
+  `qml_is_valid` / `qml_equivalent` now take `systems={"epistemic": "S5", "doxastic":
+  "KD45"}`, emitting per-agent frame axioms for the agent-indexed `Rk` / `Rb` relations
+  — so e.g. factivity `∀x (K_x φ → φ)` is valid under a reflexive epistemic system. This
+  makes the FO path symmetric to the THF exporter (which already had `systems=`).
+- **Quantified modal logic (QML) via shallow embeddings.** Object quantifiers `∀x` /
+  `∃x` under a modality, with the domain-regime semantics that decide the Barcan
+  formulas:
+  - **Semantics** — `KripkeModel` now takes per-world object domains (`domains={w: …}`
+    for varying, `domain=[…]` for constant), and `satisfies_modal` interprets `∀x` /
+    `∃x` *actualistically* (at a world `w` they range over `D_w`). Barcan
+    (`◇∃x A → ∃x ◇A`) and converse Barcan are valid/invalid exactly as the domains
+    vary. Backward compatible (omit the domains for the propositional fragment).
+  - **(A) First-order shallow embedding** (`unicode_fol_kit.fol.qml`): `qml_translate`
+    (with the existence predicate `E!` relativising actualist quantifiers + world/object
+    sort guards), `qml_axioms`, and `qml_is_valid` / `qml_equivalent` decide validity /
+    equivalence with Z3 per domain regime (`constant` / `increasing` / `decreasing` /
+    `varying`) and frame (K/T/S4/S5/KD/KD45). Sound but bounded-incomplete (first-order
+    modal logic is undecidable). The regime↔Barcan correspondence (BF ⇔ decreasing,
+    CBF ⇔ increasing, constant ⇔ both) is cross-checked against exhaustive Kripke-model
+    enumeration over every regime.
+  - **(B) Higher-order shallow embedding** — `to_thf_modal` emits a Benzmüller-style
+    TPTP **THF** problem (lifted `mbox`/`mdia`/`mforall`/`mexists`/`mvalid` + frame and
+    domain axioms) for an external higher-order prover (Leo-III, Satallax); 
+    `to_isabelle_modal` emits an Isabelle/HOL skeleton. Alethic □/◇ fragment.
+  - All re-exported at the package top level; `BARCAN` / `CONVERSE_BARCAN` are provided
+    as the standard litmus formulas.
 - **`⊕L` / `⊕R` (exclusive-or) rules in the sequent calculus** (`A⊕B ≡ ¬(A↔B)`),
   closing the one connective that had no inference rule in either checker.
+- **HOL / Isabelle / THF exporters for all non-fuzzy logics** (new
+  `unicode_fol_kit.hol` subpackage) — Benzmüller-style shallow semantical embeddings,
+  emitted as complete problem files for an external prover (the toolkit emits; it does
+  not run Leo-III / Satallax / Sledgehammer, and FOL / FO-modal / SOL are undecidable, so
+  emission means "a sound problem a prover *may* discharge", never "decided"):
+  - `hol.isabelle_modal.to_isabelle_modal` — a **real, loadable** Isabelle/HOL theory
+    (`theory … imports Main begin … end`, all lifted operators, frame + domain axioms,
+    the formula lifted into the embedding, a real `lemma`) for the **full modal family**:
+    alethic, epistemic/doxastic over **agent-indexed** relations, deontic, temporal.
+    Replaces the old alethic-only skeleton that emitted the lemma inside a comment.
+  - `hol.thf_modal.to_thf_modal_full` — the full-modal-family TPTP **THF** export
+    (agent-indexed epistemic/doxastic, deontic, temporal), extending the alethic-only
+    `qml.to_thf_modal`; self-contained (every relation the macro block references is declared).
+  - `hol.classical` (FOL + MSFOL), `hol.manyvalued` (K3 / LP, cross-checked against the
+    three-valued evaluator), `hol.secondorder` (native HOL predicate quantification),
+    `hol.intuitionistic` (Gödel–McKinsey–Tarski → S4 → HOL, cross-checked against
+    `int_valid`) — each → THF and Isabelle.
+- **First-class agent terms for epistemic/doxastic operators.** The `agent` of
+  `Knows` / `Believes` is now a **term** (Variable or Constant), a structural child, so
+  it is reached by `free_variables` / substitution / β-reduction and can be a quantified
+  variable — `∀x (Student(x) → K_x φ)` (a quantified subject, "every student who…")
+  finally works: the agent is the bound `x`, not a baked-in relation-name suffix.
+  - The Kripke evaluator uses **per-agent** accessibility relations (one agent can know
+    what another does not); object quantifiers ground a bound agent before the modality
+    is reached.
+  - The first-order shallow embedding emits an **agent-indexed ternary** relation
+    `Rk(agent, w, v)` / `Rb(agent, w, v)`, so a bound agent genuinely quantifies over
+    agents (epistemic/doxastic relations are plain `K` — no frame axioms yet).
+  - Parser convention: a free `K_a` is a *named* agent (→ Constant); an agent bound by an
+    enclosing quantifier (`K_x` under `∀x`) stays a Variable. A bare string passed to the
+    constructor is coerced to a Constant (backward compatible).
+
+### Fixed
+
+- **HOL/THF/Isabelle exporters: distinct symbols can no longer collapse to one name.**
+  A de-colliding resolver (`_ThfNames` / `_IsaNames` / the second-order and classical
+  resolvers) guarantees each distinct `(kind, name, arity)` symbol gets a unique emitted
+  functor / `consts`, and a predicate used at two arities is two symbols. Fixes a
+  **soundness hole** where a non-valid formula could be emitted as valid — e.g. `□Ab →
+  □ab` collapsing to the tautology `□ab → □ab` (also in the shipped `qml.to_thf_modal`)
+  — and the duplicate / ill-typed declarations that made `to_isabelle_so` / the modal
+  Isabelle theories non-loadable.
+- **`to_isabelle_modal` is now the real exporter everywhere.** The top-level
+  `to_isabelle_modal` (and `fol.qml.to_isabelle_modal`) delegate to the complete
+  `unicode_fol_kit.hol.isabelle_modal` implementation (a loadable theory with a genuine
+  `lemma`), instead of the old alethic-only skeleton that emitted the lemma in a comment.
+- **`substitute` is now capture-avoiding for a re-binding quantifier.** Substituting a
+  `Variable` (as `satisfies_modal` does when grounding an object quantifier) no longer
+  leaks past an inner quantifier that re-binds the same name: `substitute(∃x A(x), x, a)`
+  now correctly returns `∃x A(x)` unchanged. This fixes a **soundness bug in the modal
+  evaluator**, where a shadowed quantifier (e.g. `∀x ∃x A(x)`, also under modalities)
+  evaluated to the wrong truth value. (The `Lambda` branch already stopped at a rebinding
+  binder; the `Quantifier` / `SortedQuantifier` branches now do too.)
+- **QML rejects an unknown `mode`.** `qml_translate` / `qml_is_valid` / `qml_equivalent`
+  raise `ValueError` on an unrecognised domain regime (e.g. a mis-capitalised
+  `'Increasing'`) instead of silently treating it as constant-domain and returning a
+  wrong validity verdict — matching the existing `frame` validation.
+- **THF export: `possibilist` now emits the `const_dom` axiom.** Since the FO embedding
+  treats `possibilist` as a constant domain, the THF export does too (its actualist
+  `mforall`/`mexists` macros would otherwise model a varying domain), keeping the two
+  embeddings in agreement.
+- **THF export: `=` / `≠` are now uninterpreted predicates, not primitive HOL identity.**
+  `to_thf_modal` previously rendered equality as rigid HOL `=`, diverging from
+  `satisfies_modal` and the FO embedding (which key `=` / `≠` as ordinary
+  world-relativized predicates) — so e.g. `∀x. x=x` was a THF theorem but
+  Kripke-falsifiable. All three embeddings now agree.
 
 ### Internal
 
+- **Retired the parser-equivalence oracle.** The registry-assembled parser was pinned
+  during migration by a byte-for-byte equivalence test against the legacy hand-written
+  per-mode `.lark` grammars + `*Transformer` classes. With that equivalence long
+  established, the reference pipeline was removed: the six per-mode grammar files
+  (`fol`/`msfol`/`msfl`/`fl`/`modal`/`so.lark`) and the legacy transformer classes are
+  gone; the registry self-assembly + grammar-structure guards remain. Only
+  `terminals.lark` survives (imported by the generated grammar at runtime).
+- **Shared symbol-name de-collision** (`fol/_symbol_names.py`): the `dedupe` helper and
+  the THF/Isabelle resolver, previously copy-pasted across the exporters, are now one
+  `SymbolNames` base + `dedupe` used by the THF, Isabelle, classical, and second-order
+  exporters.
+- **Agent token parsing reuses the scope pass.** The epistemic/doxastic agent is parsed
+  as a Variable and resolved to bound-Variable / free-Constant by `resolve_agent_variables`
+  (mirroring `resolve_lambda_scope`), instead of re-deciding variable-vs-constant with a
+  hand-copied lexer regex.
 - **Adversarial audit of the proof checkers.** A multi-agent audit ran independent
   oracles against every accepted proof/derivation of the Fitch and sequent checkers
   across all logics (~75 hand-built adversarial constructions plus >1M fuzzed cases)

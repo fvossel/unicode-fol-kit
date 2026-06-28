@@ -696,7 +696,10 @@ def _subst(term: Node, target: LambdaVar, replacement: Node, fv_repl: set) -> No
     """Capture-avoiding substitution of target with replacement in term.
 
     fv_repl = free_variables(replacement), precomputed by the caller.
-    target is always a LambdaVar; replacement may be any Node.
+    target is a LambdaVar (beta-reduction) or a Variable (grounding a quantified
+    object variable); replacement may be any Node. Substitution stops at a binder that
+    rebinds the target (Lambda/Quantifier/SortedQuantifier) and alpha-renames any binder
+    that would otherwise capture a free variable of replacement.
     """
     if term == target:
         return replacement
@@ -713,8 +716,13 @@ def _subst(term: Node, target: LambdaVar, replacement: Node, fv_repl: set) -> No
             return Lambda(fresh, _subst(new_body, target, replacement, fv_repl))
         return Lambda(term.param, _subst(term.body, target, replacement, fv_repl))
     if isinstance(term, Quantifier):
-        # Quantifier binds a Variable; target is LambdaVar — can never shadow target.
-        # But the quantifier variable may capture a free Variable from replacement.
+        # If the quantifier rebinds the target, the body is shadowed and substitution
+        # stops here. This matters when target is a Variable (e.g. satisfies_modal
+        # grounding an object quantifier); for a LambdaVar target the equality is always
+        # False (distinct classes), so this is a no-op on the beta-reduction path.
+        if term.variable == target:
+            return term
+        # Otherwise the quantifier variable may capture a free Variable from replacement.
         if term.variable in fv_repl:
             avoid = fv_repl | _names_in(term.formula)
             fresh = Variable(_fresh_name(term.variable.name, avoid))
@@ -724,6 +732,8 @@ def _subst(term: Node, target: LambdaVar, replacement: Node, fv_repl: set) -> No
         return Quantifier(term.type, term.variable,
                           _subst(term.formula, target, replacement, fv_repl))
     if isinstance(term, SortedQuantifier):
+        if term.variable == target:
+            return term  # target rebound here — substitution stops
         if term.variable in fv_repl:
             avoid = fv_repl | _names_in(term.formula)
             fresh = Variable(_fresh_name(term.variable.name, avoid))
@@ -738,10 +748,11 @@ def _subst(term: Node, target: LambdaVar, replacement: Node, fv_repl: set) -> No
     return term.map_children(lambda c: _subst(c, target, replacement, fv_repl))
 
 
-def substitute(term: Node, target: LambdaVar, replacement: Node) -> Node:
-    """Substitute target (a LambdaVar) with replacement in term, with full capture avoidance.
+def substitute(term: Node, target, replacement: Node) -> Node:
+    """Substitute target with replacement in term, with full capture avoidance.
 
-    Returns a new Node; the input is never mutated.
+    ``target`` is a LambdaVar (beta-reduction) or a Variable (grounding a quantified
+    object variable into a Constant). Returns a new Node; the input is never mutated.
     """
     return _subst(term, target, replacement, free_variables(replacement))
 
@@ -1072,8 +1083,11 @@ def _uni(node) -> str:
             # wrapped at the prefix level.
             return spec.unicode + _uni_wrap(node.formula, 4)
         if fix == "agent_prefix":
-            # K_<agent> / B_<agent>: glyph, agent name, space, then wrapped operand.
-            return f"{spec.unicode}{node.agent} " + _uni_wrap(node.formula, 4)
+            # K_<agent> / B_<agent>: glyph, agent's name, space, then wrapped operand.
+            # The agent is a term (Variable/Constant); a bare string is also accepted.
+            agent = node.agent
+            agent = agent if isinstance(agent, str) else getattr(agent, "name", None) or agent.to_unicode_str()
+            return f"{spec.unicode}{agent} " + _uni_wrap(node.formula, 4)
         if fix == "binary_until":
             # Ⓤ right-assoc: left slot same_level_ops (≥3), right slot until (≥2.5).
             return f"{_uni_wrap(node.left, 3)} {spec.unicode} {_uni_wrap(node.right, 2.5)}"
@@ -1212,7 +1226,9 @@ def _latex(node) -> str:
         if fix == "prefix":
             return spec.latex + _latex_wrap(node.formula, 4)
         if fix == "agent_prefix":
-            return f"{spec.latex}_{{{node.agent}}} " + _latex_wrap(node.formula, 4)
+            agent = node.agent
+            agent = agent if isinstance(agent, str) else getattr(agent, "name", None) or agent.to_unicode_str()
+            return f"{spec.latex}_{{{agent}}} " + _latex_wrap(node.formula, 4)
         if fix == "binary_until":
             return f"{_latex_wrap(node.left, 3)} {spec.latex} {_latex_wrap(node.right, 2.5)}"
         if fix == "binary_iff":

@@ -131,12 +131,18 @@ class TestDictRoundTrip:
         assert Node.from_dict(expected.to_dict()) == expected
 
     def test_knows_dict_has_agent(self):
+        # The agent is now a term (a bare string is coerced to a Constant), serialised
+        # as a nested node; a legacy string agent still round-trips via from_dict.
         d = Knows("alice", P).to_dict()
-        assert d == {"_type": "Knows", "agent": "alice", "formula": P.to_dict()}
+        assert d == {"_type": "Knows", "agent": Constant("alice").to_dict(),
+                     "formula": P.to_dict()}
+        assert Node.from_dict({"_type": "Knows", "agent": "alice",
+                               "formula": P.to_dict()}) == Knows("alice", P)
 
     def test_believes_dict_has_agent(self):
         d = Believes("bob", Q).to_dict()
-        assert d == {"_type": "Believes", "agent": "bob", "formula": Q.to_dict()}
+        assert d == {"_type": "Believes", "agent": Constant("bob").to_dict(),
+                     "formula": Q.to_dict()}
 
     def test_until_dict(self):
         d = Until(P, Q).to_dict()

@@ -18,8 +18,9 @@ and LaTeX renderers live in _msfl_nodes.py and dispatch by class name;
 serialisation, the tree label, and export-rejection live here.
 
 The bound predicate's ``arity`` is INFERRED from its applications in the body at
-parse time (see msflparser.SecondOrderTransformer); it is recorded on the node
-for the semantics phase but is NOT printed by the renderers, because it is
+parse time (see ``_second_order_quantifier_transform`` / ``_infer_so_arity`` below);
+it is recorded on the node for the semantics phase but is NOT printed by the
+renderers, because it is
 re-inferred on re-parse — keeping the parse → to_unicode_str → parse round-trip
 stable.
 """
@@ -171,8 +172,7 @@ def _infer_so_arity(body: Node, predname: str) -> int:
 def _second_order_quantifier_transform(items):
     """Build a SecondOrderQuantifier from [FORALL/EXISTS, PREDICATE, body].
 
-    Mirrors the legacy SecondOrderTransformer.second_order_quantifier_ exactly:
-    the PREDICATE token has no terminal handler (raw Token), the body is already a
+    The PREDICATE token has no terminal handler (raw Token), the body is already a
     built AST node (Lark transforms bottom-up), and the bound predicate's arity is
     inferred from its applications in the body.
     """
@@ -185,8 +185,8 @@ def _second_order_quantifier_transform(items):
 
 # ∀P / ∃P over a PREDICATE variable, at the quantifier level. The classical
 # first-order quantifier (∀x / ∃x -> quantifier_) is registered for the
-# "second_order" mode in _fol_nodes.py; this adds the second alternative, matching
-# so.lark's two-alternative quantifier rule.
+# "second_order" mode in _fol_nodes.py; this adds the second alternative (the
+# grammar's two-alternative quantifier rule).
 register_parser_op(SecondOrderQuantifier, "second_order", "quantifier",
                    "second_order_quantifier_",
                    "(FORALL | EXISTS) PREDICATE prefix",

@@ -77,6 +77,12 @@ from ..semantics._modal_reject import (
 _R_ALETHIC = "R"
 _R_KNOWS_PREFIX = "Rk_"
 _R_BELIEVES_PREFIX = "Rb_"
+
+
+def _agent_key(agent: Node) -> str:
+    """Agent term's name for the per-agent relation (this propositional translation
+    rejects object quantifiers, so the agent is always a ground Constant here)."""
+    return getattr(agent, "name", None) or agent.to_unicode_str()
 _R_TEMPORAL = "T"
 _R_NEXT = "N"
 _R_DEONTIC = "D"
@@ -158,9 +164,9 @@ def _translate(formula: Node, world: Variable, fresh: _FreshWorlds) -> Node:
 
     # --- epistemic / doxastic (both box-like / universal) ---
     if isinstance(formula, Knows):
-        return _box_like(_R_KNOWS_PREFIX + formula.agent, world, formula.formula, fresh)
+        return _box_like(_R_KNOWS_PREFIX + _agent_key(formula.agent), world, formula.formula, fresh)
     if isinstance(formula, Believes):
-        return _box_like(_R_BELIEVES_PREFIX + formula.agent, world, formula.formula, fresh)
+        return _box_like(_R_BELIEVES_PREFIX + _agent_key(formula.agent), world, formula.formula, fresh)
 
     # --- deontic (box/diamond over a deontic accessibility predicate D) ---
     if isinstance(formula, Obligatory):

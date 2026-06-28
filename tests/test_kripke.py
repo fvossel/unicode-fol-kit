@@ -336,12 +336,41 @@ def test_closure_does_not_mutate_input():
 # Out-of-scope node kinds are rejected
 # ---------------------------------------------------------------------------
 
-def test_quantifier_rejected():
-    """A first-order quantifier is rejected (propositional/ground v1)."""
+def test_quantifier_needs_domain():
+    """An object quantifier needs the model to carry object domains.
+
+    A purely propositional model (no ``domains`` / ``domain``) raises a clear error;
+    a model with per-world domains interprets the quantifier actualistically.
+    """
     f = Box(Quantifier("∀", Variable("x"), Atom("P", [Variable("x")])))
-    model = KripkeModel(worlds={0}, relations={"alethic": {(0, 0)}})
-    with pytest.raises(NotImplementedError):
-        satisfies_modal(f, model, 0)
+    propositional = KripkeModel(worlds={0}, relations={"alethic": {(0, 0)}})
+    with pytest.raises(ValueError):
+        satisfies_modal(f, propositional, 0)
+    model = KripkeModel(worlds={0}, relations={"alethic": {(0, 0)}},
+                        valuation={0: {"P(a)"}}, domain={"a"})
+    assert satisfies_modal(f, model, 0) is True
+
+
+def test_quantifier_shadowing_not_captured():
+    """An inner quantifier that re-binds the outer variable must shadow it.
+
+    Regression: grounding the outer ∀x must NOT leak into the inner ∃x's scope.
+    ∀x ∃x A(x) ≡ ∃x A(x), so with D={a,b} and only A(a) true it is True (witness a).
+    The buggy substitute() corrupted ∃x A(x) into ∃x A(a)/∃x A(b) and returned False.
+    """
+    x = Variable("x")
+    A = lambda t: Atom("A", [t])
+    m = KripkeModel(worlds={0}, valuation={0: {"A(a)"}}, domain={"a", "b"})
+    assert satisfies_modal(Quantifier("∀", x, Quantifier("∃", x, A(x))), m, 0) is True
+    # a legitimate free occurrence alongside the shadowing sub-quantifier:
+    # ∀x (P(x) ∧ ∃x Q(x)) with P(a),P(b),Q(b) all true is True.
+    m2 = KripkeModel(worlds={0}, valuation={0: {"P(a)", "P(b)", "Q(b)"}}, domain={"a", "b"})
+    f = Quantifier("∀", x, And(Atom("P", [x]), Quantifier("∃", x, Atom("Q", [x]))))
+    assert satisfies_modal(f, m2, 0) is True
+    # and the bug propagated through a modality: ∀x □∃x A(x).
+    m3 = KripkeModel(worlds={0, 1}, relations={"alethic": {(0, 1)}},
+                     valuation={1: {"A(a)"}}, domain={"a", "b"})
+    assert satisfies_modal(Quantifier("∀", x, Box(Quantifier("∃", x, A(x)))), m3, 0) is True
 
 
 def test_sorted_quantifier_rejected():

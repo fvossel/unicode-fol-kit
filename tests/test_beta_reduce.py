@@ -147,6 +147,44 @@ class TestBetaReduceVariableCapture:
 
 
 # ---------------------------------------------------------------------------
+# substitute() with a Variable target (grounding a quantified object variable,
+# as satisfies_modal does) — must stop at a rebinding inner quantifier.
+# ---------------------------------------------------------------------------
+
+class TestSubstituteVariableTarget:
+    def test_free_variable_replaced(self):
+        x = Variable("x")
+        # x := a  in  A(x)  →  A(a)
+        assert substitute(Atom("A", [x]), x, Constant("a")) == Atom("A", [Constant("a")])
+
+    def test_stops_at_rebinding_quantifier(self):
+        # x := b  in  ∃x A(x)  must be UNCHANGED — the inner ∃x rebinds x, so the
+        # occurrence is bound, not free (regression: was wrongly yielding ∃x A(b)).
+        x = Variable("x")
+        body = Quantifier("∃", x, Atom("A", [x]))
+        assert substitute(body, x, Constant("b")) == body
+
+    def test_stops_at_rebinding_sorted_quantifier(self):
+        x = Variable("x")
+        body = SortedQuantifier("∃", x, "S", Atom("A", [x]))
+        assert substitute(body, x, Constant("b")) == body
+
+    def test_only_free_occurrences_replaced(self):
+        # x := a  in  P(x) ∧ ∃x Q(x)  →  P(a) ∧ ∃x Q(x)  (only the free P(x) changes).
+        x = Variable("x")
+        term = And(Atom("P", [x]), Quantifier("∃", x, Atom("Q", [x])))
+        expected = And(Atom("P", [Constant("a")]), Quantifier("∃", x, Atom("Q", [x])))
+        assert substitute(term, x, Constant("a")) == expected
+
+    def test_inner_distinct_variable_still_substituted(self):
+        # x := a  in  ∃y A(x, y)  →  ∃y A(a, y)  (y ≠ x, so x stays free).
+        x, y = Variable("x"), Variable("y")
+        term = Quantifier("∃", y, Atom("A", [x, y]))
+        expected = Quantifier("∃", y, Atom("A", [Constant("a"), y]))
+        assert substitute(term, x, Constant("a")) == expected
+
+
+# ---------------------------------------------------------------------------
 # Reduction in subterms (under binders and connectives)
 # ---------------------------------------------------------------------------
 

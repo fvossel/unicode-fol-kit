@@ -9,15 +9,66 @@ standard-translation (``modal_to_fol``) before any first-order export.
 Every node is a frozen dataclass (hashable) subclassing Node. Structural methods
 (free_variables, traversal, to_msfol, _relativize) are inherited unchanged: they
 go through Node.map_children / Node._child_nodes, which already treat the formula
-fields here as structural children, so recursion works automatically. The string
-``agent`` field of Knows/Believes is a plain scalar and is copied verbatim by
-map_children. The Unicode and LaTeX renderers live in _msfl_nodes.py and dispatch
-by class name; serialisation, tree labels, and export-rejection live here.
+fields here as structural children, so recursion works automatically. The
+``agent`` field of Knows/Believes is itself a **term** (Variable or Constant), a
+structural child — so it is reached by free_variables / substitution / β-reduction
+and can be a quantified variable (``∀x (Student(x) → K_x φ)``). The Unicode and
+LaTeX renderers live in _msfl_nodes.py and dispatch by class name; serialisation,
+tree labels, and export-rejection live here.
 """
 
 from dataclasses import dataclass
 
-from ._fol_nodes import Node, Z3Env, NODE_CLASSES, register_operator, register_parser_op
+from ._fol_nodes import (
+    Node, Variable, Constant, Z3Env, NODE_CLASSES,
+    register_operator, register_parser_op,
+)
+
+
+def _coerce_agent(agent):
+    """Coerce an agent to a term Node: a bare string becomes a Constant (named agent)."""
+    return Constant(agent) if isinstance(agent, str) else agent
+
+
+def _agent_label(agent: Node) -> str:
+    """Render an agent term as the short name used in K_<agent> / relation keys."""
+    return getattr(agent, "name", None) or agent.to_unicode_str()
+
+
+def parse_agent_token(token_text: str, prefix_len: int = 2) -> Node:
+    """Turn a 'K_x' / 'B_alice' token into an agent **term**.
+
+    The agent is parsed as a Variable; binding is decided afterwards by the
+    :func:`resolve_agent_variables` scope pass (the same architecture as
+    :func:`resolve_lambda_scope`): an agent bound by an enclosing object quantifier
+    stays a Variable, a free one is demoted to a named Constant. We do not re-decide
+    variable-vs-constant by name form here — that would duplicate the lexer's VARIABLE
+    convention (a quantifier can only bind a VARIABLE-form name, so a bound agent is
+    always such a name anyway).
+    """
+    return Variable(str(token_text)[prefix_len:])
+
+
+def resolve_agent_variables(node: Node, bound: frozenset = frozenset()) -> Node:
+    """Demote a FREE epistemic/doxastic agent variable to a Constant (a named agent).
+
+    An agent that lexes as a variable (``K_x``) is genuinely a bound variable only when
+    an enclosing object quantifier binds its name — ``∀x (Student(x) → K_x φ)`` quantifies
+    over agents. A bare ``K_a`` with no binder denotes the specific named agent ``a``, so
+    its free agent variable is demoted to ``Constant("a")``. Applied as a parser post-pass.
+    """
+    from dataclasses import replace
+    from .nodes import Quantifier, SortedQuantifier
+    if isinstance(node, (Quantifier, SortedQuantifier)):
+        inner = bound | {node.variable.name}
+        return replace(node, formula=resolve_agent_variables(node.formula, inner))
+    if isinstance(node, (Knows, Believes)):
+        agent = node.agent
+        if isinstance(agent, Variable) and agent.name not in bound:
+            agent = Constant(agent.name)
+        return replace(node, agent=agent,
+                       formula=resolve_agent_variables(node.formula, bound))
+    return node.map_children(lambda c: resolve_agent_variables(c, bound))
 
 
 # Shared message for the export back-ends: modal nodes cannot be lowered to a
@@ -97,24 +148,35 @@ class Diamond(Node):
 class Knows(Node):
     """Epistemic K_a φ: agent ``agent`` knows φ.
 
-    ``agent`` is a plain string (the agent name, without the ``K_`` prefix).
+    ``agent`` is a **term** (Variable or Constant), a structural child, so it can be
+    a quantified variable (``∀x (Student(x) → K_x φ)``). A bare string passed to the
+    constructor is coerced to a Constant (a named agent) for backward compatibility.
     """
 
-    agent: str
+    agent: Node
     formula: Node
+
+    def __post_init__(self):
+        """Coerce a string agent to a Constant so legacy ``Knows("alice", φ)`` still works."""
+        coerced = _coerce_agent(self.agent)
+        if coerced is not self.agent:
+            object.__setattr__(self, "agent", coerced)
 
     def _tree_parts(self):
         """Return the K_<agent> label and the single subformula child."""
-        return f"K_{self.agent}", [self.formula]
+        return f"K_{_agent_label(self.agent)}", [self.formula]
 
     def to_dict(self):
-        """Serialise to dict with type tag, agent name, and serialised subformula."""
-        return {"_type": "Knows", "agent": self.agent, "formula": self.formula.to_dict()}
+        """Serialise to dict with type tag, agent term, and serialised subformula."""
+        return {"_type": "Knows", "agent": self.agent.to_dict(),
+                "formula": self.formula.to_dict()}
 
     @staticmethod
     def from_dict(d):
-        """Deserialise a Knows from a dict produced by to_dict."""
-        return Knows(d["agent"], Node.from_dict(d["formula"]))
+        """Deserialise a Knows from a dict produced by to_dict (legacy string agent ok)."""
+        agent = d["agent"]
+        agent = Node.from_dict(agent) if isinstance(agent, dict) else agent
+        return Knows(agent, Node.from_dict(d["formula"]))
 
     def to_z3(self, env: Z3Env = None):
         """Reject Z3 export: modal operators have no direct first-order encoding."""
@@ -133,24 +195,34 @@ class Knows(Node):
 class Believes(Node):
     """Doxastic B_a φ: agent ``agent`` believes φ.
 
-    ``agent`` is a plain string (the agent name, without the ``B_`` prefix).
+    ``agent`` is a **term** (Variable or Constant), a structural child, so it can be a
+    quantified variable. A bare string is coerced to a Constant for backward compatibility.
     """
 
-    agent: str
+    agent: Node
     formula: Node
+
+    def __post_init__(self):
+        """Coerce a string agent to a Constant so legacy ``Believes("alice", φ)`` still works."""
+        coerced = _coerce_agent(self.agent)
+        if coerced is not self.agent:
+            object.__setattr__(self, "agent", coerced)
 
     def _tree_parts(self):
         """Return the B_<agent> label and the single subformula child."""
-        return f"B_{self.agent}", [self.formula]
+        return f"B_{_agent_label(self.agent)}", [self.formula]
 
     def to_dict(self):
-        """Serialise to dict with type tag, agent name, and serialised subformula."""
-        return {"_type": "Believes", "agent": self.agent, "formula": self.formula.to_dict()}
+        """Serialise to dict with type tag, agent term, and serialised subformula."""
+        return {"_type": "Believes", "agent": self.agent.to_dict(),
+                "formula": self.formula.to_dict()}
 
     @staticmethod
     def from_dict(d):
-        """Deserialise a Believes from a dict produced by to_dict."""
-        return Believes(d["agent"], Node.from_dict(d["formula"]))
+        """Deserialise a Believes from a dict produced by to_dict (legacy string agent ok)."""
+        agent = d["agent"]
+        agent = Node.from_dict(agent) if isinstance(agent, dict) else agent
+        return Believes(agent, Node.from_dict(d["formula"]))
 
     def to_z3(self, env: Z3Env = None):
         """Reject Z3 export: modal operators have no direct first-order encoding."""
@@ -401,25 +473,22 @@ register_operator(Until, "binary_until", "Ⓤ", "\\mathbin{\\mathsf{U}}", 2.5)
 #
 # Self-register the modal/epistemic/doxastic/temporal/deontic operators with the
 # PARSER registry so MSFLParser assembles the modal grammar + transformer from the
-# registry alone (no hand-written ModalTransformer, no modal.lark). Each binding
-# mirrors the legacy modal.lark rule and ModalTransformer handler EXACTLY so the
-# assembled parser produces byte-identical ASTs:
+# registry alone — there is no hand-written modal transformer or modal grammar file:
 #
 #   * The prefix operators (□ ◇ Ⓖ Ⓕ Ⓝ K_a B_a Ⓞ Ⓟ) sit at the ¬ (prefix) level —
 #     ``OP prefix -> alias`` — binding as tightly as negation. The classical ¬
 #     (not_) is registered for "modal" in _fol_nodes.py; these add to it.
 #   * Until (Ⓤ) is the binary right-assoc level between the same_level group and →;
 #     registering ANY "until"-level op makes build_grammar route the → level's
-#     left operand through the until rule (impl_body = "until"), reproducing
-#     modal.lark's ``?implication: until`` layering. Its grammar field is the bare
-#     TUNTIL terminal; build_grammar wraps it as ``same_level_ops TUNTIL until``.
+#     left operand through the until rule (impl_body = "until"), giving the
+#     ``?implication: until`` layering. Its grammar field is the bare TUNTIL
+#     terminal; build_grammar wraps it as ``same_level_ops TUNTIL until``.
 #   * Knows/Believes carry their agent in the matched token (e.g. "K_alice"); the
-#     transform strips the two-character "K_"/"B_" prefix, exactly as the legacy
-#     knows_/believes_ handlers did.
+#     transform strips the two-character "K_"/"B_" prefix.
 #
 # Named terminals (with their lexer priorities) are declared via terminal_def so
 # the generated grammar lexes K_a / B_a as KNOWS/BELIEVES (priority 5) ahead of
-# PREDICATE, matching terminals/modal.lark.
+# PREDICATE (terminals come from terminals.lark).
 
 # --- prefix modal/temporal/deontic operators (¬-level) ---
 register_parser_op(Box, "modal", "prefix", "box_", "BOX prefix",
@@ -438,10 +507,10 @@ register_parser_op(Next, "modal", "prefix", "next_", "TNEXT prefix",
                    lambda items: Next(items[1]),
                    terminal_name="TNEXT", terminal_def='TNEXT: "Ⓝ"')
 register_parser_op(Knows, "modal", "prefix", "knows_", "KNOWS prefix",
-                   lambda items: Knows(str(items[0])[2:], items[1]),
+                   lambda items: Knows(parse_agent_token(items[0]), items[1]),
                    terminal_name="KNOWS", terminal_def='KNOWS.5: /K_[a-z][a-zA-Z0-9]*/')
 register_parser_op(Believes, "modal", "prefix", "believes_", "BELIEVES prefix",
-                   lambda items: Believes(str(items[0])[2:], items[1]),
+                   lambda items: Believes(parse_agent_token(items[0]), items[1]),
                    terminal_name="BELIEVES", terminal_def='BELIEVES.5: /B_[a-z][a-zA-Z0-9]*/')
 register_parser_op(Obligatory, "modal", "prefix", "obligatory_", "OBLIG prefix",
                    lambda items: Obligatory(items[1]),
@@ -452,7 +521,7 @@ register_parser_op(Permitted, "modal", "prefix", "permitted_", "PERMIT prefix",
 
 # --- binary temporal Until (Ⓤ): same_level_ops TUNTIL until -> until_ ---
 # items = [left, TUNTIL token, right]; the token is the named terminal (kept in
-# the item list), so the right operand is items[2], exactly as ModalTransformer.
+# the item list), so the right operand is items[2].
 register_parser_op(Until, "modal", "until", "until_", "TUNTIL",
                    lambda items: Until(items[0], items[2]),
                    terminal_name="TUNTIL", terminal_def='TUNTIL: "Ⓤ"')

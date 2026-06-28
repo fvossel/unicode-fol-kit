@@ -54,11 +54,16 @@ from ..fol.nodes import (
     Box, Diamond, Knows, Believes,
     Always, Eventually, Next, Until,
     Obligatory, Permitted,
+    Constant, substitute,
 )
 from ._modal_reject import (
     FUZZY_TYPES, LAMBDA_TYPES,
-    reject_quantifier, reject_fuzzy, reject_lambda,
+    reject_fuzzy, reject_lambda,
 )
+
+# Quantifier-type spellings used by the AST.
+_FORALL = ("∀", "forall")
+_EXISTS = ("∃", "exists")
 
 # Relation-name prefixes / keys (kept here so the model and the standard
 # translation stay in sync via documentation; the strings are the contract).
@@ -67,6 +72,17 @@ _TEMPORAL = "temporal"
 _DEONTIC = "deontic"
 _KNOWS_PREFIX = "K:"
 _BELIEVES_PREFIX = "B:"
+
+
+def _agent_key(agent: Node) -> str:
+    """Relation-key suffix for an epistemic/doxastic agent term.
+
+    The agent is a term (Variable or Constant). Object quantifiers ground a bound
+    agent to a Constant before the modality is reached (``∀x (… → K_x φ)`` becomes
+    ``K_<d> φ`` per individual ``d``), so this is the constant/variable name and the
+    relation key matches the model's ``"K:"+name`` / ``"B:"+name`` convention.
+    """
+    return getattr(agent, "name", None) or agent.to_unicode_str()
 
 World = Any
 Edge = Tuple[World, World]
@@ -99,8 +115,19 @@ class KripkeModel:
         worlds: Iterable[World],
         relations: Optional[Mapping[str, Iterable[Edge]]] = None,
         valuation: Optional[Mapping[World, Iterable[str]]] = None,
+        domains: Optional[Mapping[World, Iterable[Any]]] = None,
+        domain: Optional[Iterable[Any]] = None,
     ):
-        """Build a Kripke model, copying every container so edits never leak in."""
+        """Build a Kripke model, copying every container so edits never leak in.
+
+        ``domains`` maps each world to the set of individuals existing there (the
+        per-world object domain ``D_w`` of quantified modal logic); ``domain`` is a
+        shorthand for a **constant** domain (the same individuals at every world).
+        Supplying either lets :func:`satisfies_modal` interpret object quantifiers
+        (``∀x`` / ``∃x``) *actualistically* — at a world ``w`` they range over
+        ``D_w`` — so the Barcan formulas come out valid or invalid according to how
+        the domains vary. Omit both for the purely propositional fragment.
+        """
         self.worlds: FrozenSet[World] = frozenset(worlds)
         self.relations: Dict[str, FrozenSet[Edge]] = {
             name: frozenset(edges) for name, edges in (relations or {}).items()
@@ -108,6 +135,15 @@ class KripkeModel:
         self.valuation: Dict[World, FrozenSet[str]] = {
             world: frozenset(keys) for world, keys in (valuation or {}).items()
         }
+        if domains is not None:
+            self.domains: Optional[Dict[World, FrozenSet[Any]]] = {
+                world: frozenset(ind) for world, ind in domains.items()
+            }
+        elif domain is not None:
+            const = frozenset(domain)
+            self.domains = {world: const for world in self.worlds}
+        else:
+            self.domains = None
 
     def __repr__(self) -> str:
         """Show world count and the relation / valuation tables for inspection."""
@@ -128,6 +164,20 @@ class KripkeModel:
     def atoms_true_at(self, world: World) -> FrozenSet[str]:
         """Return the ground-atom keys true at ``world`` (empty if undeclared)."""
         return self.valuation.get(world, frozenset())
+
+    def domain_at(self, world: World) -> FrozenSet[Any]:
+        """Return the individuals existing at ``world`` (the object domain ``D_w``).
+
+        Raises ValueError if the model carries no domains (a purely propositional
+        model), since object quantifiers cannot then be interpreted.
+        """
+        if self.domains is None:
+            raise ValueError(
+                "satisfies_modal: this Kripke model has no object domains, so "
+                "object quantifiers (∀x / ∃x) cannot be evaluated — build the model "
+                "with domains={world: [...]} (varying) or domain=[...] (constant)."
+            )
+        return self.domains.get(world, frozenset())
 
 
 def reflexive_transitive_closure(
@@ -251,12 +301,12 @@ def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
     if isinstance(formula, Knows):
         return all(
             satisfies_modal(formula.formula, model, w2)
-            for w2 in model.successors(_KNOWS_PREFIX + formula.agent, world)
+            for w2 in model.successors(_KNOWS_PREFIX + _agent_key(formula.agent), world)
         )
     if isinstance(formula, Believes):
         return all(
             satisfies_modal(formula.formula, model, w2)
-            for w2 in model.successors(_BELIEVES_PREFIX + formula.agent, world)
+            for w2 in model.successors(_BELIEVES_PREFIX + _agent_key(formula.agent), world)
         )
 
     # --- deontic (Standard Deontic Logic / KD over a serial "deontic" relation) ---
@@ -290,9 +340,26 @@ def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
     if isinstance(formula, Until):
         return _until_holds(formula.left, formula.right, model, world)
 
+    # --- object quantifiers (actualist: range over the CURRENT world's domain D_w) ---
+    if isinstance(formula, Quantifier):
+        individuals = model.domain_at(world)
+        instances = (
+            satisfies_modal(substitute(formula.formula, formula.variable, Constant(d)),
+                            model, world)
+            for d in individuals
+        )
+        if formula.type in _FORALL:
+            return all(instances)
+        if formula.type in _EXISTS:
+            return any(instances)
+        raise ValueError(f"satisfies_modal: unknown quantifier type {formula.type!r}")
+
     # --- rejected: out-of-scope node kinds ---
-    if isinstance(formula, (Quantifier, SortedQuantifier)):
-        reject_quantifier(formula, "satisfies_modal")
+    if isinstance(formula, SortedQuantifier):
+        raise NotImplementedError(
+            "satisfies_modal: SortedQuantifier is not supported in the modal "
+            "evaluator; use a plain Quantifier with per-world domains."
+        )
     if isinstance(formula, FUZZY_TYPES):
         reject_fuzzy(formula, "satisfies_modal")
     if isinstance(formula, LAMBDA_TYPES):

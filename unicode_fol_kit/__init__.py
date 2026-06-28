@@ -26,6 +26,8 @@ from .fol import (
     parse_tptp, parse_tptp_formula, load_tptp, TptpFormula,
     parse_prover9,
     to_english,
+    qml_translate, qml_is_valid, qml_equivalent,
+    to_thf_modal, to_isabelle_modal, BARCAN, CONVERSE_BARCAN,
 )
 from .atp import (
     formulas_are_equivalent, check_logical_entailment,
@@ -62,7 +64,7 @@ from .eval import (
     formulas_are_identical, match_predicates, formulas_are_matched_identical,
 )
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 __all__ = [
     "MSFLParser",
@@ -93,6 +95,8 @@ __all__ = [
     "latex_to_unicode", "parse_latex",
     "parse_tptp", "parse_tptp_formula", "load_tptp", "TptpFormula",
     "parse_prover9",
+    "qml_translate", "qml_is_valid", "qml_equivalent",
+    "to_thf_modal", "to_isabelle_modal", "BARCAN", "CONVERSE_BARCAN",
     "from_z3", "parse_smtlib", "load_smtlib",
     "find_fitch_proof", "fitch_prove", "is_valid_fitch",
     "tableau_closed", "is_valid_tableau", "prove_tableau", "tableau_model",

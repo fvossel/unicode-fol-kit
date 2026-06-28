@@ -39,7 +39,9 @@ On top of the AST sits a full reasoning layer: **four proof methods** (a built-i
 - **Verbalization** — `to_english()` paraphrases a formula as an English sentence
 - **Canonical form & exact match** — `canonicalize()` normalises bound-variable renaming, commutativity/associativity, operand duplication, and double negation; `exact_match()` gives a fair NL→FOL comparison stricter than logical equivalence but more forgiving than raw equality
 - **Formula validation** — `validate()` / `is_wellformed()` / `validate_text()` report free variables, inconsistent predicate/function arity, leftover lambda nodes, and parseability of raw model output
-- **Modal, temporal, epistemic & deontic logic** — `MSFLParser(modal=True)` parses `□`/`◇` (alethic), `K_a`/`B_a` (epistemic/doxastic), `Ⓖ`/`Ⓕ`/`Ⓝ`/`Ⓤ` (temporal), `Ⓞ`/`Ⓟ` (obligation/permission); Kripke-model semantics via `satisfies_modal()`; `standard_translation()` to classical FOL so Z3/resolution can decide modal validity
+- **Modal, temporal, epistemic & deontic logic** — `MSFLParser(modal=True)` parses `□`/`◇` (alethic), `K_a`/`B_a` (epistemic/doxastic), `Ⓖ`/`Ⓕ`/`Ⓝ`/`Ⓤ` (temporal), `Ⓞ`/`Ⓟ` (obligation/permission); Kripke-model semantics via `satisfies_modal()`; `standard_translation()` to classical FOL so Z3/resolution can decide modal validity. The agent of `K_a`/`B_a` is a **first-class term**, so a bound `K_x` quantifies over agents — `∀x (Student(x) → K_x φ)` works
+- **Quantified modal logic** — `KripkeModel` with per-world domains + actualist `satisfies_modal()`; a Benzmüller-style **shallow embedding** with `qml_is_valid()` / `qml_equivalent()` (first-order → Z3, per domain regime) and `to_thf_modal()` (higher-order → Leo-III/Satallax); the Barcan formula and its converse come out valid per the constant/increasing/decreasing domain regime
+- **Higher-order / Isabelle / THF exporters** (`unicode_fol_kit.hol`) — Benzmüller-style shallow embeddings of *every* non-fuzzy logic into HOL: a real loadable **Isabelle** theory + **THF** for the full modal family (agent-indexed epistemic/doxastic, deontic, temporal), plus FOL/MSFOL, K3/LP, second-order, and intuitionistic (Gödel–McKinsey–Tarski → S4). Emits sound problem files for an external prover (it does not run one; the quantified logics are undecidable)
 - **Many-valued logic** — `kleene_value()` evaluates a formula over {0, ½, 1} (strong Kleene tables); three-valued `is_valid`/`is_satisfiable`/`entails` with selectable designated values for **Kleene K3** and **Priest LP** (paraconsistent)
 - **Second-order logic** — `MSFLParser(second_order=True)` parses `∀P`/`∃P` over predicate variables (arity inferred; monadic & n-ary); `satisfies_so()` gives finite-model semantics by enumerating relations over the domain
 - **Lambda abstraction** — `λx. φ` syntax in every parser mode; parameters can be variables (`λx.`), named constants (`λfoo.`), or predicate symbols (`λP.`); body extends rightward through all connectives
@@ -88,6 +90,8 @@ The kit has grown four proof methods and a model finder across several logics. T
 | Many-valued K3 / LP | `MSFLParser()` + `logic=` | classical syntax over {0, ½, 1} | `kleene_value()`; `semantics.is_valid`/`is_satisfiable`/`entails` | `truth_table`, three-valued `is_valid`; Fitch under `logic="K3"`/`"LP"` |
 | Second-order | `second_order=True` | ∀P ∃P over predicate vars | `satisfies_so()` / `holds()` | `satisfies_so` on finite models; LK (`∀²`/`∃²`). Rejects `to_z3`/`to_prover9`/`to_tptp` |
 | Intuitionistic | `MSFLParser()` + intuitionistic tools | classical syntax | `IntKripkeModel.forces()` | `int_valid` / `int_countermodel` (decidable, prop.); LJ (`check_lj_proof`) |
+
+Every non-fuzzy logic above also has a **higher-order exporter** in `unicode_fol_kit.hol` — a Benzmüller-style shallow embedding emitted as an Isabelle/HOL theory or a TPTP THF problem for an external prover (Leo-III / Satallax / Sledgehammer); see [Higher-order proving](#higher-order-proving-isabelle--thf-exporters-the-hol-subpackage).
 
 ## Installation
 
@@ -1035,6 +1039,62 @@ standard_translation(parser.parse("Ⓞ P"))                # ∀w0 (D(w, w0) →
 ```
 
 There is no dedicated "forbidden" operator; express it with the operators that exist — "forbidden that φ" is `¬Ⓟφ` (equivalently `Ⓞ¬φ`).
+
+### Quantified modal logic (shallow embedding)
+
+Combining the modalities with `∀x` / `∃x` is **quantified modal logic** (QML), where validity turns on how the individual domain varies between worlds. The kit handles it both semantically and via two *shallow embeddings* (the Benzmüller-style approach: a modal proposition is a function world → bool, the modalities are quantifiers over accessible worlds).
+
+```python
+from unicode_fol_kit import qml_is_valid, qml_equivalent, to_thf_modal, BARCAN, CONVERSE_BARCAN
+from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
+
+# Semantic side: per-world domains D_w; quantifiers are ACTUALIST (∀x ranges over D_w).
+# Barcan  ◇∃x A → ∃x ◇A  is valid under constant domains, fails when domains GROW.
+rel = {"alethic": {(0, 1)}}
+constant   = KripkeModel(worlds={0,1}, relations=rel, valuation={1:{"A(b)"}}, domain={"a","b"})
+increasing = KripkeModel(worlds={0,1}, relations=rel, valuation={1:{"A(b)"}}, domains={0:{"a"}, 1:{"a","b"}})
+satisfies_modal(BARCAN, constant, 0)      # True
+satisfies_modal(BARCAN, increasing, 0)    # False — Barcan fails when an object appears only in a successor
+
+# (A) First-order shallow embedding → Z3: validity per domain regime (sound, bounded).
+qml_is_valid(BARCAN, mode="constant")            # True
+qml_is_valid(BARCAN, mode="increasing")          # False
+qml_is_valid(CONVERSE_BARCAN, mode="increasing") # True   (converse Barcan ↔ cumulative domains)
+
+# (B) Higher-order shallow embedding → TPTP THF (for Leo-III / Satallax):
+thf = to_thf_modal(BARCAN, mode="constant", frame="S5")
+```
+
+- **Semantics.** Build a `KripkeModel` with per-world object domains — `domains={w: [...]}` (varying) or `domain=[...]` (constant). `satisfies_modal` then interprets `∀x` / `∃x` *actualistically*: at a world `w` they range over `D_w`. This is the ground truth against which the embeddings are cross-checked, and it makes the **Barcan formula** (`BARCAN`) and its **converse** (`CONVERSE_BARCAN`) come out valid or invalid exactly as the domains vary.
+- **(A) First-order embedding.** `qml_translate` translates a modal formula (with the existence predicate `E!` relativising the actualist quantifiers) into classical FOL; `qml_is_valid(φ, mode, frame)` and `qml_equivalent(f1, f2, …)` decide validity / equivalence with **Z3**. The `mode` is the domain regime — `"constant"`, `"increasing"`/`"cumulative"`, `"decreasing"`, `"varying"` — and `frame` ∈ {K, T, S4, S5, KD, KD45}. The correspondence (verified against the Kripke enumerator): BF ⇔ decreasing domains, CBF ⇔ increasing, constant ⇔ both. Sound but **bounded-incomplete** — first-order modal logic is undecidable, so a `False` may mean "not proven valid"; use `satisfies_modal` for a definite countermodel.
+- **(B) Higher-order embedding.** `to_thf_modal(φ, mode, frame)` emits a complete Benzmüller-style **TPTP THF** problem (lifted `mbox`/`mdia`/`mforall`/`mexists`/`mvalid`, frame and domain axioms) for an external higher-order prover (Leo-III, Satallax) — emitted like the other exporters, not run in-process. This covers the alethic □/◇ QML fragment; for the **full modal family**, a real loadable **Isabelle** theory, and HOL exports of the other logics, see [Higher-order proving](#higher-order-proving-isabelle--thf-exporters-the-hol-subpackage) below.
+
+## Higher-order proving: Isabelle / THF exporters (the `hol` subpackage)
+
+Beyond the first-order embedding above, `unicode_fol_kit.hol` emits **Benzmüller-style shallow embeddings into higher-order logic** for *all* the non-fuzzy logics — as complete, self-contained problem files for an external prover (Leo-III / Satallax on TPTP **THF**, or Isabelle/HOL theories for Sledgehammer). As everywhere in the kit it **emits**; it does not run a prover — and it cannot decide everything: first-order modal logic, FOL, and SOL are undecidable / not even semi-decidable, so a successful emission means *"here is a sound problem a prover may discharge"*, never *"decided"*. (The propositional fragments — K3/LP, modal K/T/S4/S5 — are decidable, but these exporters target the general case.)
+
+```python
+from unicode_fol_kit import MSFLParser
+from unicode_fol_kit.hol import (
+    to_isabelle_modal, to_thf_modal_full,    # full modal family
+    to_thf_fol, to_isabelle_fol,             # FOL / MSFOL
+    to_thf_k3lp, to_thf_so,                   # K3 / LP, second-order
+    to_thf_intuitionistic,                    # intuitionistic (GMT → S4)
+)
+
+# Quantified, agent-indexed epistemic logic — "every student knows P of themselves":
+f = MSFLParser(modal=True).parse("∀x (Student(x) → K_x P(x))")
+print(to_isabelle_modal(f))    # a real, loadable Isabelle/HOL theory ending in a `lemma`
+print(to_thf_modal_full(f))    # a complete TPTP THF problem; rk is AGENT-indexed
+```
+
+- **Full modal family.** `to_isabelle_modal(φ, frame=…)` emits a **real, loadable** Isabelle theory (`theory … imports Main begin … end`, every lifted operator as an abbreviation, frame + domain axioms, the formula lifted into the embedding, and a genuine `lemma` with a Sledgehammer hook) — replacing the old alethic-only skeleton. `to_thf_modal_full(φ, mode, frame, systems=…)` is the THF counterpart. Both cover alethic □/◇, **epistemic** `K_a` / **doxastic** `B_a`, **deontic** `O`/`P`, and **temporal** `G`/`F`/`X`. Epistemic/doxastic accessibility is **agent-indexed**: the agent of `Knows` / `Believes` is a first-class *term*, so a bound `K_x` (as in the example) genuinely quantifies over agents, exactly as the per-agent Kripke relations do. (`Until` is out of the shallow fragment; temporal `G`/`F`/`X` are linked by an inclusion axiom but remain an approximation of the closure semantics — see the module docstring.)
+- **Classical FOL / MSFOL.** `to_thf_fol` / `to_isabelle_fol` (and the `…_msfol` variants, which relativise each sort to a guard predicate) emit the formula as a HOL conjecture / lemma.
+- **Three-valued K3 / LP.** `to_thf_k3lp(φ, system="K3")` / `to_isabelle_k3lp` (also `…_entailment`) encode the truth-value type, the strong-Kleene connective functions, and the designated set (`{1}` for K3, `{½, 1}` for LP), so emitted theorem-hood matches K3 / LP validity. Cross-checked against `kleene_value`.
+- **Second-order.** `to_thf_so` / `to_isabelle_so` map `∀P` / `∃P` to native higher-order predicate quantifiers (standard semantics). Cross-checked against `satisfies_so` on finite structures.
+- **Intuitionistic.** `to_thf_intuitionistic` / `to_isabelle_intuitionistic` apply the **Gödel–McKinsey–Tarski** box-translation into S4 then the alethic SSE, so emitted theorem-hood matches intuitionistic validity — `p ∨ ¬p`, `¬¬p → p`, and Peirce's law come out as **non-theorems**. Cross-checked against `int_valid` (`gmt_validity_matches_int_valid` runs the differential).
+
+Each embedding is faithful to its in-toolkit ground-truth oracle (`satisfies_modal`, `kleene_value`, `satisfies_so`, `int_valid`), verified by an adversarial differential audit. Equality `=` / `≠` is an **uninterpreted, world-relativized** predicate throughout (not primitive HOL identity), consistently across every exporter.
 
 ## Many-valued logic (Kleene K3 / Priest LP)
 
