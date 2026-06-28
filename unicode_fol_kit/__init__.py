@@ -74,6 +74,7 @@ from .hol import (
     check_theory, IsabelleInstall, IsabelleNotAvailable, BuildResult,
     ModalVerdict, FolVerdict, modal_axiom_names,
 )
+from . import dl   # the ALC description-logic subpackage (dl.concept_satisfiable, …)
 
 __version__ = "0.8.0"
 
@@ -113,6 +114,7 @@ __all__ = [
     "isabelle_decide_fol", "check_theory",
     "IsabelleInstall", "IsabelleNotAvailable", "BuildResult",
     "ModalVerdict", "FolVerdict", "modal_axiom_names",
+    "dl",
     "from_z3", "parse_smtlib", "load_smtlib",
     "find_fitch_proof", "fitch_prove", "is_valid_fitch",
     "tableau_closed", "is_valid_tableau", "prove_tableau", "tableau_model",
