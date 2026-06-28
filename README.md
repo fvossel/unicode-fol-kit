@@ -17,7 +17,7 @@ On top of the AST sits a full reasoning layer: **four proof methods** (a built-i
 - **Unicode round-trip** — `to_unicode_str()` renders any node back to a parseable Unicode formula; re-parsing in the matching mode yields a structurally equal AST
 - **LaTeX export** — `to_latex()` renders any node as LaTeX math-mode markup, with the same precedence-aware parenthesisation as the Unicode renderer
 - **LaTeX import** — `parse_latex()` reads a LaTeX-math formula (the inverse of `to_latex()`); `latex_to_unicode()` does the LaTeX→Unicode translation on its own
-- **TPTP / Prover9 / SMT-LIB import** — read formulas back from the standard tools: `parse_tptp()` / `parse_tptp_formula()` / `load_tptp()` (FOF & CNF), `parse_prover9()`, and `from_z3()` / `parse_smtlib()` — the inverses of `to_tptp()` / `to_prover9()` / `to_z3()`
+- **TPTP / Prover9 / SMT-LIB import** — read formulas back from the standard tools: `parse_tptp()` / `parse_tptp_formula()` / `load_tptp()` (FOF & CNF), `parse_prover9()`, and `from_z3()` / `parse_smtlib()` — the inverses of `to_tptp()` / `to_prover9()` / `to_z3()`. These importers cover **classical FOL** (the format the external tools speak); modal / second-order / fuzzy formulas round-trip instead through **LaTeX or JSON**, which preserve every node family
 - **Normal forms** — `to_nnf()`, `to_pnf()`, `to_cnf()`, `to_dnf()` (equivalence-preserving), `to_tseitin_cnf()` (equisatisfiable, no blow-up), and `skolemize()` (satisfiability-preserving) for classical FOL
 - **Horn check** — `is_horn()` reports whether a formula's clausal form consists of Horn clauses
 - **Traversal API** — `walk()`, `subformulas()`, `atoms()`, `variables()`, `count()`, `depth()` on every node
@@ -94,6 +94,35 @@ The kit has grown four proof methods and a model finder across several logics. T
 | Intuitionistic | `MSFLParser()` + intuitionistic tools | classical syntax | `IntKripkeModel.forces()` | `int_valid` / `int_countermodel` (decidable, prop.); LJ (`check_lj_proof`) |
 
 Every non-fuzzy logic above also has a **higher-order exporter** in `unicode_fol_kit.hol` — a Benzmüller-style shallow embedding emitted as an Isabelle/HOL theory or a TPTP THF problem for an external prover (Leo-III / Satallax / Sledgehammer) — and, with a local Isabelle installed, `isabelle_decide_modal` actually *runs* it to decide modal validity; see [Higher-order proving](#higher-order-proving-isabelle--thf-exporters-the-hol-subpackage).
+
+### Composing parser modes
+
+The four core modes form the `many_sorted` × `fuzzy` 2×2; the **modal** and **second-order** modes are each "classical unsorted FOL + one extension" and do not combine with sorts, fuzziness, or each other. The constructor rejects an unsupported combination with a clear `ValueError`.
+
+| Combine… | with sorts | with fuzzy | with modal | with second-order |
+|---|---|---|---|---|
+| **base FOL** | ✅ MSFOL | ✅ FL | ✅ modal | ✅ second-order |
+| **sorts** | — | ✅ MSFL | ❌ | ❌ |
+| **fuzzy** | ✅ MSFL | — | ❌ | ❌ |
+| **modal** | ❌ | ❌ | — | ❌ |
+| **second-order** | ❌ | ❌ | ❌ | — |
+
+### More non-classical logics
+
+Beyond the table above, the toolkit covers a wide non-classical periphery — each with hand-checked tests and, where a logic is decidable, a real decision procedure:
+
+- **Native modal tableaux** — `atp.modal_tableau` (`is_modal_valid`, `modal_decide`, `modal_countermodel`) decides the propositional box/diamond family (alethic, epistemic `K_a`, doxastic `B_a`, deontic `O`/`P`, one-step `X`) over the systems **K, T, D, B, K4, K45, S4, S5, KD45** in-process, returning a Kripke counter-model verified against `satisfies_modal`. The classical `is_valid_tableau` / `prove_tableau` now route modal inputs here instead of raising.
+- **Past-tense temporal** — the Prior tense-logic duals `Historically` (⒣), `Once` (⒫), `Previous` (⒴) and the binary `Since` (⒮), over the converse temporal relation, in the parser, `satisfies_modal`, the standard translation, and the qml embedding.
+- **More modal frames** — `B`, `S4.2` (convergent), `S4.3` (linear) decided by Z3 (`qml_is_valid`); `GL` (Gödel–Löb provability) via the Löb schema in the Isabelle / THF exporters.
+- **Finite-valued matrices + Belnap–Dunn FDE** — `semantics.matrix`: `TruthMatrix.from_functions` builds any finite logical matrix; ships `K3_MATRIX`, `LP_MATRIX` and the four-valued `FDE_MATRIX` (paraconsistent *and* paracomplete, with no logical truths at all).
+- **Fuzzy t-norms** — `fuzzy_evaluate(…, tnorm=)` and `fuzzy_is_valid(…, tnorm=)` over **Łukasiewicz / Gödel / product**; `z3_fuzzy` also **grounds quantifiers** over a finite domain, so quantified fuzzy validity is now decidable.
+- **First-order intuitionistic** — `int_valid` / `int_countermodel` now search increasing-domain Kripke models for quantified formulas (bounded; propositional stays an exact decision).
+- **Second-order search** — `so_find_model` / `so_find_countermodel` / `so_is_valid_finite` (bounded finite-model search) complement `satisfies_so`.
+- **Many-sorted model finding** — `find_model` / `find_countermodel` now enumerate sort universes for MSFOL and return sorted `Structure`s.
+- **Description logic ALC** — the `unicode_fol_kit.dl` subpackage: concept syntax (⊤ ⊥, ¬ ⊓ ⊔, ∃r.C ∀r.C), `concept_satisfiable` / `subsumes` / `equivalent` / `abox_consistent` via a tableau with TBox internalisation and blocking.
+- **Free logic** (`semantics.free_logic`), **public-announcement / dynamic epistemic** (`semantics.dynamic_epistemic`), **counterfactual conditionals** (`semantics.conditional`, Lewis spheres), and **circumscriptive non-monotonic entailment** (`semantics.nonmonotonic`).
+
+Out of scope (PRs welcome): relevant/relevant-implication logic (Routley–Meyer frames), hybrid logic (nominals / `@`), independence-friendly / dependence logic, and substructural (linear / separation) logics.
 
 ## Installation
 

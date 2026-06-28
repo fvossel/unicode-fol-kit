@@ -5,10 +5,53 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
-## [Unreleased]
+## [0.9.0] - 2026-06-28
+
+A broad non-classical expansion: a native modal tableau, past-tense temporal logic,
+more modal frames, four-valued FDE and a general matrix layer, fuzzy t-norms,
+first-order intuitionistic and second-order search, sorted model finding, a
+description-logic subpackage, and a cluster of non-classical neighbours.
 
 ### Added
 
+- **Native modal tableaux — `unicode_fol_kit.atp.modal_tableau`.** A labelled,
+  install-free tableau that decides the propositional box/diamond family (alethic
+  `□`/`◇`, epistemic `K_a`, doxastic `B_a`, deontic `O`/`P`, one-step temporal `Next`)
+  over the systems **K, T, D, B, K4, K45, S4, S5, KD45** plus per-family systems.
+  `is_modal_valid` / `modal_decide` / `modal_countermodel` return valid / invalid /
+  unknown with a Kripke counter-model **verified** against `satisfies_modal`. The
+  classical `is_valid_tableau` / `prove_tableau` / `tableau_closed` now route modal
+  inputs here instead of raising `ValueError`.
+- **Past-tense temporal operators** — Prior tense logic: `Historically` (⒣), `Once`
+  (⒫), `Previous` (⒴) and binary `Since` (⒮), the duals of `Always`/`Eventually`/
+  `Next`/`Until` over the converse temporal relation. Covered in the parser,
+  `satisfies_modal`, the standard translation, the qml embedding, and `to_english`.
+- **More modal frames** — `B` (Brouwer), `S4.2` (convergent), `S4.3` (linear) decided
+  by Z3 (`qml_is_valid`); `GL` (Gödel–Löb provability) via the Löb schema in the
+  Isabelle / THF exporters (verified to discharge Löb's theorem in real Isabelle).
+- **Finite-valued logical matrices + Belnap–Dunn FDE** — `semantics.matrix`:
+  `TruthMatrix.from_functions` builds any finite matrix; ships `K3_MATRIX`,
+  `LP_MATRIX` (reproducing the existing three-valued decisions) and the four-valued
+  `FDE_MATRIX` (paraconsistent *and* paracomplete, with no logical truths).
+- **Fuzzy t-norm selector + quantifier grounding** — `fuzzy_evaluate(…, tnorm=)` over
+  **Łukasiewicz / Gödel / product** (new `semantics.tnorm`); `z3_fuzzy` decides the two
+  piecewise-linear t-norms and **grounds quantifiers** over a finite domain, so
+  quantified fuzzy validity / satisfiability is now decidable.
+- **First-order intuitionistic Kripke search** — `int_valid` / `int_countermodel`
+  search increasing-domain models for quantified formulas (bounded; the propositional
+  fragment stays an exact decision).
+- **Bounded second-order search** — `so_find_model` / `so_find_countermodel` /
+  `so_is_satisfiable_finite` / `so_is_valid_finite` complement `satisfies_so`.
+- **Many-sorted (MSFOL) model finding** — `find_model` / `find_countermodel` enumerate
+  sort universes and return sorted `Structure`s.
+- **Description logic ALC — `unicode_fol_kit.dl`.** Concept syntax (⊤ ⊥, ¬ ⊓ ⊔, ∃r.C
+  ∀r.C), and a tableau reasoner (`concept_satisfiable`, `subsumes`, `equivalent`,
+  `abox_consistent`) over general TBoxes / ABoxes, with TBox internalisation and subset
+  blocking; cross-checked against the modal tableau.
+- **Non-classical neighbours** — free logic (`semantics.free_logic`), public-
+  announcement / dynamic epistemic logic (`semantics.dynamic_epistemic`),
+  counterfactual conditionals (`semantics.conditional`, Lewis spheres), and
+  circumscriptive non-monotonic entailment (`semantics.nonmonotonic`).
 - **`isabelle_decide_fol` — decide classical FOL / MSFOL through Isabelle.** The
   counterpart of `isabelle_decide_modal` for the classical fragment: prove-battery →
   `nitpick` finite counter-model → UNKNOWN (common, since FOL is only semi-decidable),
@@ -20,6 +63,11 @@ breaking changes.
   works, since the dev box is Windows. Path-scoped + `workflow_dispatch`.
 
 ### Changed
+
+- **`to_english` paraphrases the non-classical operators** (modal / temporal /
+  epistemic / deontic / second-order / fuzzy) instead of falling back to glyphs; the
+  fuzzy strong/weak/Łukasiewicz connectives are named so they do not read as their
+  classical look-alikes. `naming` gained explicit modal / second-order mixing-error hints.
 
 - **`isabelle_decide_modal` INVALID verdicts now carry a concrete counter-model.** For
   the propositional alethic fragment, `ModalVerdict.countermodel` is populated with a
