@@ -5,7 +5,7 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
-## [0.9.0] - 2026-06-28
+## [0.9.0] - 2026-06-29
 
 A broad non-classical expansion: a native modal tableau, past-tense temporal logic,
 more modal frames, four-valued FDE and a general matrix layer, fuzzy t-norms,
