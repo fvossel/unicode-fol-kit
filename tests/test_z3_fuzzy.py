@@ -160,25 +160,25 @@ def test_distinct_atoms_get_distinct_variables():
 
 
 # ---------------------------------------------------------------------------
-# Quantifiers are rejected in v1
+# Quantifiers are decided by finite-domain grounding (need a domain).
 # ---------------------------------------------------------------------------
 
-def test_quantifier_raises_not_implemented_validity():
+def test_quantifier_without_domain_asks_for_one():
     f = P.parse("∀x P(x)")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(ValueError, match="domain"):
         fuzzy_is_valid(f)
-
-
-def test_quantifier_raises_not_implemented_sat():
-    f = P.parse("∃x P(x)")
-    with pytest.raises(NotImplementedError):
-        fuzzy_is_satisfiable(f)
-
-
-def test_quantifier_raises_not_implemented_model():
-    f = P.parse("∀x P(x)")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(ValueError, match="domain"):
+        fuzzy_is_satisfiable(P.parse("∃x P(x)"))
+    with pytest.raises(ValueError, match="domain"):
         fuzzy_get_model(f)
+
+
+def test_quantifier_decided_with_a_domain():
+    # ∀x P(x) is satisfiable (set every instance to 1) but not valid.
+    f = P.parse("∀x P(x)")
+    assert fuzzy_is_satisfiable(f, domain={"a", "b"}) is True
+    assert fuzzy_is_valid(f, domain={"a", "b"}) is False
+    assert fuzzy_get_model(f, threshold=1.0, domain={"a", "b"}) is not None
 
 
 # ---------------------------------------------------------------------------

@@ -41,6 +41,7 @@ from ..fol.nodes import (
     LukNegation, LukImplication, LukEquivalence,
     LambdaVar, Lambda, Application,
 )
+from .tnorm import get_tnorm
 
 # Comparison predicates have no Łukasiewicz reading under a propositional
 # valuation; they are rejected rather than silently treated as opaque atoms.
@@ -114,11 +115,12 @@ def _eval_quantifier(qtype: str, var_name: str, body: Node,
                      universe: Set[str], valuation: Dict[str, float],
                      domain: Optional[Set[str]],
                      sort_universes: Optional[Dict[str, Set[str]]],
-                     descriptor: str) -> float:
+                     descriptor: str, tnorm: str) -> float:
     """Evaluate a quantifier by grounding ``var_name`` over ``universe``.
 
-    ``qtype`` is ``'∀'`` (infimum = min) or ``'∃'`` (supremum = max).
-    ``descriptor`` names the universe source for error messages.
+    ``qtype`` is ``'∀'`` (infimum = min) or ``'∃'`` (supremum = max) — the lattice
+    inf/sup, independent of the t-norm. ``descriptor`` names the universe source for
+    error messages.
     """
     if not universe:
         raise ValueError(
@@ -127,7 +129,7 @@ def _eval_quantifier(qtype: str, var_name: str, body: Node,
         )
     degrees = [
         evaluate(_ground(body, var_name, d), valuation,
-                 domain=domain, sort_universes=sort_universes)
+                 domain=domain, sort_universes=sort_universes, tnorm=tnorm)
         for d in universe
     ]
     if qtype in ("∀", "forall"):
@@ -140,8 +142,9 @@ def _eval_quantifier(qtype: str, var_name: str, body: Node,
 def evaluate(node: Node,
              valuation: Dict[str, float],
              domain: Optional[Set[str]] = None,
-             sort_universes: Optional[Dict[str, Set[str]]] = None) -> float:
-    """Compute the Łukasiewicz truth degree in [0, 1] of an FL/MSFL formula.
+             sort_universes: Optional[Dict[str, Set[str]]] = None,
+             tnorm: str = "lukasiewicz") -> float:
+    """Compute the fuzzy truth degree in [0, 1] of an FL/MSFL formula.
 
     Args:
         node: an FL or MSFL formula node. Build it with
@@ -154,16 +157,21 @@ def evaluate(node: Node,
             range. Required whenever a ``Quantifier`` is evaluated.
         sort_universes: maps each sort name to its set of constant-name strings;
             ``SortedQuantifier`` ranges over the universe of its sort.
+        tnorm: which continuous t-norm fixes the **strong** connectives ⊗ ⊕ → ¬ ↔
+            — ``"lukasiewicz"`` (default), ``"godel"`` or ``"product"``. The weak
+            ∧ / ∨ are always min / max, and ∀ / ∃ always inf / sup, regardless.
 
     Returns:
         The truth degree as a float clamped to [0, 1].
 
     Raises:
         KeyError: a ground atom's key is absent from the valuation.
-        ValueError: a quantifier lacks its domain / sort universe, or one is empty.
+        ValueError: a quantifier lacks its domain / sort universe, or one is empty,
+            or ``tnorm`` is unknown.
         TypeError: the node carries a classical connective, lambda construct,
             numeric literal, comparison atom, or otherwise unsupported type.
     """
+    t = get_tnorm(tnorm)
     # --- Atoms (the base case) --------------------------------------------
     if isinstance(node, Atom):
         if node.predicate in _COMPARISON_PREDS:
@@ -180,29 +188,29 @@ def evaluate(node: Node,
             )
         return _clamp(float(valuation[key]))
 
-    # --- Łukasiewicz negation ---------------------------------------------
+    # --- strong negation (t-norm residual negation; involutive for Łukasiewicz) -
     if isinstance(node, LukNegation):
-        x = evaluate(node.formula, valuation, domain, sort_universes)
-        return _clamp(1.0 - x)
+        x = evaluate(node.formula, valuation, domain, sort_universes, tnorm)
+        return _clamp(t.neg(x))
 
-    # --- Łukasiewicz binary connectives -----------------------------------
+    # --- binary connectives (weak ∧/∨ are min/max; strong ⊗⊕→↔ are the t-norm's) -
     if isinstance(node, (WeakConjunction, WeakDisjunction,
                          StrongConjunction, StrongDisjunction,
                          LukImplication, LukEquivalence)):
-        x = evaluate(node.left, valuation, domain, sort_universes)
-        y = evaluate(node.right, valuation, domain, sort_universes)
+        x = evaluate(node.left, valuation, domain, sort_universes, tnorm)
+        y = evaluate(node.right, valuation, domain, sort_universes, tnorm)
         if isinstance(node, WeakConjunction):
             return _clamp(min(x, y))
         if isinstance(node, WeakDisjunction):
             return _clamp(max(x, y))
         if isinstance(node, StrongConjunction):
-            return _clamp(max(0.0, x + y - 1.0))
+            return _clamp(t.conj(x, y))
         if isinstance(node, StrongDisjunction):
-            return _clamp(min(1.0, x + y))
+            return _clamp(t.disj(x, y))
         if isinstance(node, LukImplication):
-            return _clamp(min(1.0, 1.0 - x + y))
+            return _clamp(t.impl(x, y))
         # LukEquivalence
-        return _clamp(1.0 - abs(x - y))
+        return _clamp(t.equiv(x, y))
 
     # --- Quantifiers -------------------------------------------------------
     if isinstance(node, Quantifier):
@@ -213,7 +221,7 @@ def evaluate(node: Node,
             )
         return _eval_quantifier(node.type, node.variable.name, node.formula,
                                 set(domain), valuation, domain, sort_universes,
-                                descriptor="domain")
+                                descriptor="domain", tnorm=tnorm)
 
     if isinstance(node, SortedQuantifier):
         if sort_universes is None or node.sort not in sort_universes:
@@ -224,7 +232,7 @@ def evaluate(node: Node,
         return _eval_quantifier(node.type, node.variable.name, node.formula,
                                 set(sort_universes[node.sort]), valuation,
                                 domain, sort_universes,
-                                descriptor=f"sort universe {node.sort!r}")
+                                descriptor=f"sort universe {node.sort!r}", tnorm=tnorm)
 
     # --- Rejected node classes (informative errors) -----------------------
     if isinstance(node, _CLASSICAL_CONNECTIVES):
@@ -251,3 +259,52 @@ def evaluate(node: Node,
         )
 
     raise TypeError(f"evaluate: unsupported node type {type(node).__name__}")
+
+
+def ground_quantifiers(node: Node,
+                       domain: Optional[Set[str]] = None,
+                       sort_universes: Optional[Dict[str, Set[str]]] = None) -> Node:
+    """Return a quantifier-free copy of ``node`` by grounding ∀/∃ over their universe.
+
+    ``∀x φ`` becomes the **weak**-conjunction fold (min = infimum) of ``φ[x:=d]`` over
+    the domain, ``∃x φ`` the weak-disjunction fold (max = supremum) — the finite-domain
+    reading of the fuzzy quantifiers. This lets the Z3 decider (:mod:`atp.z3_fuzzy`)
+    handle quantified fuzzy formulas: ground first, then decide the propositional result.
+
+    ``domain`` supplies the universe for unsorted ``∀x``/``∃x``; ``sort_universes`` maps
+    each sort to its universe for ``SortedQuantifier``. Raises ValueError if a needed
+    universe is missing or empty.
+    """
+    if isinstance(node, Quantifier):
+        if not domain:
+            raise ValueError("Grounding an unsorted Quantifier requires a non-empty 'domain'.")
+        insts = [ground_quantifiers(_ground(node.formula, node.variable.name, d),
+                                    domain, sort_universes) for d in sorted(domain)]
+        return _fold_quantifier(node.type, insts)
+    if isinstance(node, SortedQuantifier):
+        if sort_universes is None or not sort_universes.get(node.sort):
+            raise ValueError(
+                f"Grounding a SortedQuantifier over sort {node.sort!r} requires a "
+                f"non-empty 'sort_universes[{node.sort!r}]'.")
+        insts = [ground_quantifiers(_ground(node.formula, node.variable.name, d),
+                                    domain, sort_universes)
+                 for d in sorted(sort_universes[node.sort])]
+        return _fold_quantifier(node.type, insts)
+    if isinstance(node, LukNegation):
+        return LukNegation(ground_quantifiers(node.formula, domain, sort_universes))
+    if isinstance(node, (WeakConjunction, WeakDisjunction,
+                         StrongConjunction, StrongDisjunction,
+                         LukImplication, LukEquivalence)):
+        return type(node)(ground_quantifiers(node.left, domain, sort_universes),
+                          ground_quantifiers(node.right, domain, sort_universes))
+    # Atoms and terms have no quantifier to ground.
+    return node
+
+
+def _fold_quantifier(qtype: str, insts) -> Node:
+    """Fold instances with weak ∧ (∀ = inf) or weak ∨ (∃ = sup)."""
+    op = WeakConjunction if qtype in ("∀", "forall") else WeakDisjunction
+    acc = insts[0]
+    for nxt in insts[1:]:
+        acc = op(acc, nxt)
+    return acc

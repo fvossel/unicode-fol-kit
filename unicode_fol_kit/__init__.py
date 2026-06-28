@@ -53,6 +53,7 @@ from .atp import (
 from .semantics import (
     Structure, term_value, satisfies, models,
     evaluate as fuzzy_evaluate,
+    TNorm, get_tnorm, TNORMS,
     KripkeModel, satisfies_modal, models_at, reflexive_transitive_closure,
     kleene_value, DESIGNATED,
     satisfies_so, holds,
@@ -133,6 +134,7 @@ __all__ = [
     "sequent", "derive", "axiom",
     "check_sequent_proof", "verify_sequent_proof", "render_sequent_proof",
     "Structure", "term_value", "satisfies", "models", "fuzzy_evaluate",
+    "TNorm", "get_tnorm", "TNORMS",
     "KripkeModel", "satisfies_modal", "models_at", "reflexive_transitive_closure",
     "kleene_value", "DESIGNATED",
     "satisfies_so", "holds",

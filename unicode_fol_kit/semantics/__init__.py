@@ -15,7 +15,8 @@ Two complementary evaluators:
 
 from .tarski import Structure, term_value, satisfies, models
 from .secondorder import satisfies_so, holds
-from .fuzzy import evaluate
+from .fuzzy import evaluate, ground_quantifiers
+from .tnorm import TNorm, get_tnorm, TNORMS, LUKASIEWICZ, GODEL, PRODUCT
 from .kripke import (
     KripkeModel, satisfies_modal, models_at, reflexive_transitive_closure,
 )
@@ -38,7 +39,8 @@ __all__ = [
     "Structure", "term_value", "satisfies", "models",
     # Second-order finite-model semantics (∀P / ∃P over predicate variables).
     "satisfies_so", "holds",
-    "evaluate",
+    "evaluate", "ground_quantifiers",
+    "TNorm", "get_tnorm", "TNORMS", "LUKASIEWICZ", "GODEL", "PRODUCT",
     "KripkeModel", "satisfies_modal", "models_at", "reflexive_transitive_closure",
     # Many-valued (Kleene K3 / Priest LP). Note: is_valid/is_satisfiable/entails here are
     # the three-valued versions — distinct from the Z3-based ones at the package top level.

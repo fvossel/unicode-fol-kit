@@ -51,6 +51,37 @@ def _z3_max(a, b):
     return If(a >= b, a, b)
 
 
+def _z3_tnorm_ops(tnorm: str) -> dict:
+    """Z3 builders for the strong connectives of ``tnorm``.
+
+    Only the **piecewise-linear** t-norms are deciders here: Łukasiewicz and Gödel
+    encode into linear real arithmetic (with ``If``), which Z3 decides completely.
+    The product t-norm needs nonlinear arithmetic (``x·y`` / ``y/x``) that Z3 cannot
+    decide completely, so it is rejected with a pointer to the evaluator.
+    """
+    one, zero = RealVal(1), RealVal(0)
+    if tnorm == "lukasiewicz":
+        return {
+            "neg": lambda a: one - a,
+            "sconj": lambda a, b: _z3_max(zero, a + b - one),
+            "sdisj": lambda a, b: _z3_min(one, a + b),
+            "impl": lambda a, b: _z3_min(one, one - a + b),
+        }
+    if tnorm == "godel":
+        return {
+            "neg": lambda a: If(a <= zero, one, zero),
+            "sconj": _z3_min,
+            "sdisj": _z3_max,
+            "impl": lambda a, b: If(a <= b, one, b),
+        }
+    if tnorm == "product":
+        raise NotImplementedError(
+            "z3_fuzzy: the product t-norm needs nonlinear real arithmetic (x·y, y/x) "
+            "that Z3 cannot decide completely; use semantics.fuzzy.evaluate(..., "
+            "tnorm='product') for evaluation, or the lukasiewicz / godel deciders.")
+    raise ValueError(f"z3_fuzzy: unknown t-norm {tnorm!r} (use lukasiewicz / godel).")
+
+
 # =========================
 # Atom collection & degree encoding
 # =========================
@@ -90,51 +121,53 @@ def _collect_atoms(formula: Node, atom_vars: dict) -> None:
     )
 
 
-def _degree(formula: Node, atom_vars: dict):
-    """Return a Z3 Real expression for the Łukasiewicz degree of formula.
+def _degree(formula: Node, atom_vars: dict, ops: dict):
+    """Return a Z3 Real expression for the fuzzy degree of formula under ``ops``.
 
     atom_vars must already map every ground atom to its Z3 Real (see
-    _collect_atoms). Pure function over the AST: never mutates its inputs.
+    _collect_atoms); ``ops`` are the t-norm's strong-connective builders (see
+    :func:`_z3_tnorm_ops`). The weak ∧/∨ are min/max regardless. Pure function over
+    the AST: never mutates its inputs.
     """
     if isinstance(formula, Atom):
         return atom_vars[formula.to_unicode_str()]
 
     if isinstance(formula, LukNegation):
-        return RealVal(1) - _degree(formula.formula, atom_vars)
+        return ops["neg"](_degree(formula.formula, atom_vars, ops))
 
     if isinstance(formula, WeakConjunction):
-        return _z3_min(_degree(formula.left, atom_vars),
-                       _degree(formula.right, atom_vars))
+        return _z3_min(_degree(formula.left, atom_vars, ops),
+                       _degree(formula.right, atom_vars, ops))
 
     if isinstance(formula, WeakDisjunction):
-        return _z3_max(_degree(formula.left, atom_vars),
-                       _degree(formula.right, atom_vars))
+        return _z3_max(_degree(formula.left, atom_vars, ops),
+                       _degree(formula.right, atom_vars, ops))
 
     if isinstance(formula, StrongConjunction):
-        a = _degree(formula.left, atom_vars)
-        b = _degree(formula.right, atom_vars)
-        return _z3_max(RealVal(0), a + b - RealVal(1))
+        a = _degree(formula.left, atom_vars, ops)
+        b = _degree(formula.right, atom_vars, ops)
+        return ops["sconj"](a, b)
 
     if isinstance(formula, StrongDisjunction):
-        a = _degree(formula.left, atom_vars)
-        b = _degree(formula.right, atom_vars)
-        return _z3_min(RealVal(1), a + b)
+        a = _degree(formula.left, atom_vars, ops)
+        b = _degree(formula.right, atom_vars, ops)
+        return ops["sdisj"](a, b)
 
     if isinstance(formula, LukImplication):
-        a = _degree(formula.left, atom_vars)
-        b = _degree(formula.right, atom_vars)
-        return _z3_min(RealVal(1), RealVal(1) - a + b)
+        a = _degree(formula.left, atom_vars, ops)
+        b = _degree(formula.right, atom_vars, ops)
+        return ops["impl"](a, b)
 
     if isinstance(formula, LukEquivalence):
-        a = _degree(formula.left, atom_vars)
-        b = _degree(formula.right, atom_vars)
-        # 1 - |a - b|, with |a - b| spelled via If to keep it piecewise-linear.
-        return RealVal(1) - If(a >= b, a - b, b - a)
+        a = _degree(formula.left, atom_vars, ops)
+        b = _degree(formula.right, atom_vars, ops)
+        # biconditional = min(a → b, b → a), uniform across t-norms.
+        return _z3_min(ops["impl"](a, b), ops["impl"](b, a))
 
     if isinstance(formula, (Quantifier, SortedQuantifier)):
         raise NotImplementedError(
-            "z3_fuzzy handles propositional (quantifier-free) Łukasiewicz "
-            "formulas only. Ground the quantifier(s) first."
+            "z3_fuzzy: a quantifier reached the encoder ungrounded — pass "
+            "domain=/sort_universes= so it is grounded into a finite ∧/∨ first."
         )
 
     raise TypeError(
@@ -144,22 +177,31 @@ def _degree(formula: Node, atom_vars: dict):
     )
 
 
-def degree_expr(formula: Node):
+def degree_expr(formula: Node, tnorm: str = "lukasiewicz",
+                domain=None, sort_universes=None):
     """Build the Z3 degree expression and unit-interval constraints for formula.
 
     Returns a triple ``(expr, constraints, atom_vars)`` where:
 
-    * ``expr`` is a Z3 ``Real`` expression for the formula's truth degree,
+    * ``expr`` is a Z3 ``Real`` expression for the formula's truth degree under
+      the chosen ``tnorm`` (``"lukasiewicz"`` or ``"godel"``),
     * ``constraints`` is a list of ``0 <= v`` and ``v <= 1`` bounds, one pair
       per distinct ground atom,
     * ``atom_vars`` maps each atom key (its ``to_unicode_str()``) to its Z3
       ``Real`` variable.
 
-    Raises ``NotImplementedError`` if the formula contains a quantifier.
+    A quantified formula is first **grounded** over ``domain`` (unsorted ∀x/∃x) and
+    ``sort_universes`` (sorted quantifiers) into a finite weak ∧/∨, so quantified
+    fuzzy validity / satisfiability becomes decidable. Without the matching universe
+    a quantifier raises ``ValueError``.
     """
+    ops = _z3_tnorm_ops(tnorm)
+    if formula.count(Quantifier) or formula.count(SortedQuantifier):
+        from ..semantics.fuzzy import ground_quantifiers
+        formula = ground_quantifiers(formula, domain=domain, sort_universes=sort_universes)
     atom_vars: dict = {}
     _collect_atoms(formula, atom_vars)
-    expr = _degree(formula, atom_vars)
+    expr = _degree(formula, atom_vars, ops)
     constraints = []
     for v in atom_vars.values():
         constraints.append(v >= RealVal(0))
@@ -194,16 +236,19 @@ def _rng_value(model, var):
 # =========================
 
 def fuzzy_is_satisfiable(formula: Node, threshold: float = 1.0,
-                         strict: bool = False, timeout: int = 10000) -> bool:
+                         strict: bool = False, timeout: int = 10000,
+                         tnorm: str = "lukasiewicz",
+                         domain=None, sort_universes=None) -> bool:
     """Return True iff some atom-valuation makes the degree reach the threshold.
 
     With ``strict=False`` (default) the requirement is ``degree >= threshold``;
     with ``strict=True`` it is ``degree > threshold``. Each ground atom ranges
     over [0, 1]. A Z3 ``unknown`` result (e.g. on timeout) returns False.
 
-    Raises ``NotImplementedError`` if the formula contains a quantifier.
+    ``tnorm`` selects the strong-connective semantics (``"lukasiewicz"`` / ``"godel"``);
+    a quantified formula is grounded over ``domain`` / ``sort_universes`` first.
     """
-    expr, constraints, _ = degree_expr(formula)
+    expr, constraints, _ = degree_expr(formula, tnorm, domain, sort_universes)
     thr = RealVal(_to_fraction(threshold))
 
     solver = Solver()
@@ -214,16 +259,19 @@ def fuzzy_is_satisfiable(formula: Node, threshold: float = 1.0,
     return solver.check() == sat
 
 
-def fuzzy_is_valid(formula: Node, timeout: int = 10000) -> bool:
+def fuzzy_is_valid(formula: Node, timeout: int = 10000,
+                   tnorm: str = "lukasiewicz",
+                   domain=None, sort_universes=None) -> bool:
     """Return True iff the formula has degree 1 under every atom-valuation.
 
     Checks validity by asserting ``degree < 1`` together with the [0, 1] atom
     bounds: if that is unsatisfiable, no valuation drops the degree below 1, so
     the formula is valid. A Z3 ``unknown`` result returns False.
 
-    Raises ``NotImplementedError`` if the formula contains a quantifier.
+    ``tnorm`` selects the strong-connective semantics (``"lukasiewicz"`` / ``"godel"``);
+    a quantified formula is grounded over ``domain`` / ``sort_universes`` first.
     """
-    expr, constraints, _ = degree_expr(formula)
+    expr, constraints, _ = degree_expr(formula, tnorm, domain, sort_universes)
 
     solver = Solver()
     solver.set("timeout", timeout)
@@ -234,7 +282,8 @@ def fuzzy_is_valid(formula: Node, timeout: int = 10000) -> bool:
 
 
 def fuzzy_get_model(formula: Node, threshold: float = 1.0,
-                    timeout: int = 10000):
+                    timeout: int = 10000, tnorm: str = "lukasiewicz",
+                    domain=None, sort_universes=None):
     """Return an atom->degree assignment reaching the threshold, or None.
 
     On success the returned dict maps each ground-atom key (its
@@ -242,9 +291,10 @@ def fuzzy_get_model(formula: Node, threshold: float = 1.0,
     giving the formula's resulting degree. Returns None if no valuation reaches
     the threshold (``degree >= threshold``) or Z3 cannot decide within timeout.
 
-    Raises ``NotImplementedError`` if the formula contains a quantifier.
+    ``tnorm`` selects the strong-connective semantics (``"lukasiewicz"`` / ``"godel"``);
+    a quantified formula is grounded over ``domain`` / ``sort_universes`` first.
     """
-    expr, constraints, atom_vars = degree_expr(formula)
+    expr, constraints, atom_vars = degree_expr(formula, tnorm, domain, sort_universes)
     thr = RealVal(_to_fraction(threshold))
 
     solver = Solver()
