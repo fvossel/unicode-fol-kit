@@ -13,9 +13,14 @@ is exactly what makes ``P ∨ ¬P`` and ``¬¬P → P`` fail.
 - :func:`int_countermodel` — a model + world where ``φ`` fails (a witness that it is
   *not* intuitionistically valid), or None.
 
-Propositional only — each atom (by surface form) is a propositional variable; quantified
-formulas are rejected. Every intuitionistic validity is also classically valid (a
-one-world model is a classical valuation), which the test-suite cross-checks.
+The **propositional** fragment is decided exactly (finite-model property). The
+**first-order** fragment (``∀x`` / ``∃x``) is handled over *increasing-domain* Kripke
+models — ``w ⊩ ∀x φ`` quantifies over every later world and every individual existing
+there — by a *bounded* search: a counter-model it finds genuinely refutes validity,
+but a clean search does **not** prove validity (first-order intuitionistic logic is
+undecidable, and some non-theorems such as the double-negation shift have only infinite
+counter-models, being valid in every finite model). Every intuitionistic validity is
+also classically valid, which the test-suite cross-checks.
 
 Public API: :class:`IntKripkeModel`, :func:`int_valid`, :func:`int_countermodel`.
 """
@@ -24,18 +29,32 @@ from dataclasses import dataclass
 from itertools import combinations, product
 from typing import Dict, FrozenSet, List, Optional, Tuple
 
-from ..fol.nodes import Node, Atom, Not, And, Or, Xor, Implies, Iff, Quantifier, SortedQuantifier
+from ..fol.nodes import (
+    Node, Atom, Not, And, Or, Xor, Implies, Iff, Quantifier, SortedQuantifier,
+    Constant, Function, substitute,
+)
 from ..fol._so_nodes import SecondOrderQuantifier
 
 
-def _check_propositional(formula: Node) -> None:
-    """Raise ValueError if ``formula`` contains a quantifier (FOL is out of scope here)."""
+def _is_propositional(formula: Node) -> bool:
+    """True iff ``formula`` has no quantifier (the decidable propositional fragment)."""
+    return not any(
+        isinstance(node, (Quantifier, SortedQuantifier, SecondOrderQuantifier))
+        for node in formula.walk())
+
+
+def _reject_second_order(formula: Node) -> None:
+    """Reject a second-order quantifier / sorted quantifier in the FO search."""
     for node in formula.walk():
-        if isinstance(node, (Quantifier, SortedQuantifier, SecondOrderQuantifier)):
+        if isinstance(node, SecondOrderQuantifier):
+            raise ValueError("intuitionistic: second-order quantifiers are not supported.")
+        if isinstance(node, SortedQuantifier):
             raise ValueError(
-                "intuitionistic: only propositional formulas are supported "
-                "(quantified intuitionistic logic needs varying domains, out of scope)."
-            )
+                "intuitionistic: sorted quantifiers are not supported; use plain ∀x/∃x.")
+        if isinstance(node, Function):
+            raise ValueError(
+                "intuitionistic: function terms are not supported in the first-order "
+                "Kripke search; use predicates over variables and constants.")
 
 
 @dataclass(frozen=True)
@@ -50,9 +69,31 @@ class IntKripkeModel:
 
     upset: Dict[int, FrozenSet[int]]
     valuation: Dict[str, FrozenSet[int]]
+    domains: Optional[Dict[int, FrozenSet]] = None
 
     def forces(self, world: int, formula: Node) -> bool:
-        """Return whether ``world`` forces ``formula`` (the intuitionistic clauses)."""
+        """Return whether ``world`` forces ``formula`` (the intuitionistic clauses).
+
+        First-order clauses (when the model carries per-world ``domains``, which must
+        be **increasing** along the order): ``w ⊩ ∀x φ`` iff for every later ``w' ≥ w``
+        and every ``d ∈ D_{w'}``, ``w' ⊩ φ[x:=d]``; ``w ⊩ ∃x φ`` iff some ``d ∈ D_w``
+        has ``w ⊩ φ[x:=d]``.
+        """
+        if isinstance(formula, Quantifier):
+            if self.domains is None:
+                raise ValueError(
+                    "intuitionistic forcing: a quantifier needs per-world domains "
+                    "(build the model with domains={world: [...]}).")
+            var = formula.variable
+            if formula.type in ("∀", "forall"):
+                return all(
+                    self.forces(w2, substitute(formula.formula, var, Constant(d)))
+                    for w2 in self.upset[world] for d in self.domains[w2])
+            if formula.type in ("∃", "exists"):
+                return any(
+                    self.forces(world, substitute(formula.formula, var, Constant(d)))
+                    for d in self.domains[world])
+            raise ValueError(f"intuitionistic forcing: unknown quantifier {formula.type!r}")
         if isinstance(formula, Atom):
             return world in self.valuation.get(formula.to_unicode_str(), frozenset())
         if isinstance(formula, And):
@@ -125,29 +166,124 @@ def _monotone_valuations(upset: Dict[int, FrozenSet[int]], keys: List[str]):
         yield dict(zip(keys, choice))
 
 
-def int_countermodel(formula: Node, max_worlds: int = 3) -> Optional[Tuple[IntKripkeModel, int]]:
-    """Return ``(model, world)`` where ``formula`` fails intuitionistically, or None.
+def _upclosed_subsets(upset: Dict[int, FrozenSet[int]], allowed) -> List[FrozenSet[int]]:
+    """Every up-closed subset of the (itself up-closed) world set ``allowed``."""
+    worlds = sorted(allowed)
+    out: List[FrozenSet[int]] = []
+    for r in range(len(worlds) + 1):
+        for combo in combinations(worlds, r):
+            s = frozenset(combo)
+            if all(upset[w] <= s for w in s):
+                out.append(s)
+    return out
 
-    Searches every Kripke model up to ``max_worlds`` worlds; a returned pair witnesses
-    that ``formula`` is *not* intuitionistically valid.
+
+def _increasing_domains(upset: Dict[int, FrozenSet[int]], consts: List[str], n_fresh: int):
+    """Yield each increasing per-world domain over ``consts`` + up to ``n_fresh`` elements.
+
+    Constants exist at every world (rigid). A base fresh element ``_e0`` exists
+    everywhere so no world is empty; each further fresh element appears on an
+    up-closed set of worlds (so the domains grow along the order).
     """
-    _check_propositional(formula)
-    keys = _atom_keys(formula)
+    worlds = sorted(upset)
+    base = set(consts)
+    fresh = [f"_e{i}" for i in range(n_fresh)]
+    if not fresh:
+        if base:
+            yield {w: frozenset(base) for w in worlds}
+        return
+    always = frozenset(worlds)
+    var_fresh = fresh[1:]
+    options = _upclosed_subsets(upset, worlds)
+    for appearances in product(options, repeat=len(var_fresh)):
+        appear = {fresh[0]: always}
+        appear.update(zip(var_fresh, appearances))
+        domains = {}
+        for w in worlds:
+            elems = set(base) | {fresh[0]}
+            elems.update(e for e in var_fresh if w in appear[e])
+            domains[w] = frozenset(elems)
+        yield domains
+
+
+def _fo_countermodel(formula: Node, max_worlds: int, domain_elements: int,
+                     max_steps: int) -> Optional[Tuple[IntKripkeModel, int]]:
+    """Bounded first-order intuitionistic counter-model search (sound; not a decision).
+
+    Enumerates Kripke models up to ``max_worlds`` worlds with increasing domains drawn
+    from the formula's constants plus ``domain_elements`` fresh individuals, and
+    monotone predicate valuations respecting element existence. A returned model
+    genuinely refutes intuitionistic validity; ``None`` means "no counter-model within
+    the bounds" — NOT a proof of validity (first-order intuitionistic logic is
+    undecidable).
+    """
+    _reject_second_order(formula)
+    consts = sorted({n.name for n in formula.walk() if isinstance(n, Constant)})
+    preds: Dict[str, int] = {}
+    for node in formula.walk():
+        if isinstance(node, Atom):
+            preds[node.predicate] = len(node.args)
+    steps = 0
     for n in range(1, max_worlds + 1):
         for upset in _partial_orders(n):
-            for valuation in _monotone_valuations(upset, keys):
-                model = IntKripkeModel(upset, valuation)
-                for w in range(n):
-                    if not model.forces(w, formula):
-                        return model, w
+            for domains in _increasing_domains(upset, consts, domain_elements):
+                pool = sorted(set().union(*domains.values()))
+                ground, seen = [], set()
+                for name, ar in preds.items():
+                    for tup in product(pool, repeat=ar):
+                        key = Atom(name, [Constant(t) for t in tup]).to_unicode_str()
+                        if key not in seen:
+                            seen.add(key)
+                            allowed = frozenset(w for w in upset if set(tup) <= domains[w])
+                            ground.append((key, _upclosed_subsets(upset, allowed)))
+                keys = [k for k, _ in ground]
+                option_lists = [opts for _, opts in ground]
+                for choice in (product(*option_lists) if ground else [()]):
+                    steps += 1
+                    if steps > max_steps:
+                        return None
+                    model = IntKripkeModel(upset, dict(zip(keys, choice)), domains)
+                    for w in range(n):
+                        if not model.forces(w, formula):
+                            return model, w
     return None
 
 
-def int_valid(formula: Node, max_worlds: int = 3) -> bool:
-    """Return True iff ``formula`` is intuitionistically valid (no countermodel found).
+def int_countermodel(formula: Node, max_worlds: int = 3,
+                     domain_elements: int = 2,
+                     max_steps: int = 300000) -> Optional[Tuple[IntKripkeModel, int]]:
+    """Return ``(model, world)`` where ``formula`` fails intuitionistically, or None.
 
-    A genuine decision procedure for intuitionistic *propositional* logic up to
-    ``max_worlds`` worlds (the logic has the finite-model property). ``int_valid(φ)``
-    being False is always backed by :func:`int_countermodel`.
+    For a **propositional** formula this is a decision procedure: it searches every
+    Kripke model up to ``max_worlds`` worlds (intuitionistic propositional logic has
+    the finite-model property), so ``None`` proves validity. For a **first-order**
+    formula (containing ∀/∃) it is a *bounded* search over increasing-domain Kripke
+    models (the formula's constants plus ``domain_elements`` fresh individuals, up to
+    ``max_steps`` valuations): a returned model genuinely refutes validity, but
+    ``None`` only means "no counter-model within the bounds" — first-order
+    intuitionistic logic is undecidable.
     """
-    return int_countermodel(formula, max_worlds) is None
+    if _is_propositional(formula):
+        keys = _atom_keys(formula)
+        for n in range(1, max_worlds + 1):
+            for upset in _partial_orders(n):
+                for valuation in _monotone_valuations(upset, keys):
+                    model = IntKripkeModel(upset, valuation)
+                    for w in range(n):
+                        if not model.forces(w, formula):
+                            return model, w
+        return None
+    return _fo_countermodel(formula, max_worlds, domain_elements, max_steps)
+
+
+def int_valid(formula: Node, max_worlds: int = 3,
+              domain_elements: int = 2, max_steps: int = 300000) -> bool:
+    """Return True iff no intuitionistic counter-model to ``formula`` is found.
+
+    **Propositional**: a genuine decision procedure up to ``max_worlds`` worlds (the
+    finite-model property), so ``True`` means intuitionistically valid. **First-order**:
+    a sound but *incomplete* check — ``True`` means "no counter-model within the bounds"
+    (not a proof, since first-order intuitionistic validity is undecidable), while
+    ``False`` is always backed by a real counter-model from :func:`int_countermodel`.
+    """
+    return int_countermodel(formula, max_worlds, domain_elements, max_steps) is None
