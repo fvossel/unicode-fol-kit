@@ -63,6 +63,10 @@ from .semantics import (
     IntKripkeModel, int_valid, int_countermodel,
     TruthMatrix, matrix_value, matrix_is_valid, matrix_is_satisfiable, matrix_entails,
     K3_MATRIX, LP_MATRIX, FDE_MATRIX, MATRICES,
+    FreeModel, free_satisfies, free_holds, NONDENOTING,
+    announce, box_announce, diamond_announce,
+    CounterfactualModel, would, might,
+    minimal_models, minimal_entails,
 )
 from .eval import (
     canonicalize, exact_match,
@@ -125,6 +129,10 @@ __all__ = [
     "IntKripkeModel", "int_valid", "int_countermodel",
     "TruthMatrix", "matrix_value", "matrix_is_valid", "matrix_is_satisfiable",
     "matrix_entails", "K3_MATRIX", "LP_MATRIX", "FDE_MATRIX", "MATRICES",
+    "FreeModel", "free_satisfies", "free_holds", "NONDENOTING",
+    "announce", "box_announce", "diamond_announce",
+    "CounterfactualModel", "would", "might",
+    "minimal_models", "minimal_entails",
     "is_satisfiable", "is_valid", "get_model",
     "fuzzy_is_satisfiable", "fuzzy_is_valid", "fuzzy_get_model",
     "to_z3_arith", "is_satisfiable_arith", "is_valid_arith", "get_model_arith",

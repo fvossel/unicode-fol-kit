@@ -37,6 +37,10 @@ from .matrix import (
     TruthMatrix, matrix_value, matrix_is_valid, matrix_is_satisfiable, matrix_entails,
     K3_MATRIX, LP_MATRIX, FDE_MATRIX, MATRICES,
 )
+from .free_logic import FreeModel, free_satisfies, free_holds, NONDENOTING
+from .dynamic_epistemic import announce, box_announce, diamond_announce
+from .conditional import CounterfactualModel, would, might
+from .nonmonotonic import minimal_models, minimal_entails
 
 __all__ = [
     "Structure", "term_value", "satisfies", "models",
@@ -59,4 +63,9 @@ __all__ = [
     # Finite-valued logical matrices (K3 / LP re-expressed; Belnap–Dunn FDE).
     "TruthMatrix", "matrix_value", "matrix_is_valid", "matrix_is_satisfiable",
     "matrix_entails", "K3_MATRIX", "LP_MATRIX", "FDE_MATRIX", "MATRICES",
+    # Free logic, dynamic epistemic (PAL), counterfactuals, circumscription.
+    "FreeModel", "free_satisfies", "free_holds", "NONDENOTING",
+    "announce", "box_announce", "diamond_announce",
+    "CounterfactualModel", "would", "might",
+    "minimal_models", "minimal_entails",
 ]
