@@ -57,6 +57,16 @@ _MIXING_INFO = {
         "Cannot mix weak conjunction (∧), weak disjunction (∨), "
         "strong conjunction (⊗), and strong disjunction (⊕) without parentheses",
     ),
+    # Modal and second-order modes use the classical connectives at the same-level
+    # group (the modal/temporal/second-order operators bind tighter, like ¬).
+    "modal": (
+        {"∧", "∨", "⊕"},
+        "Cannot mix conjunction (∧), disjunction (∨), and exclusive or (⊕) without parentheses",
+    ),
+    "so": (
+        {"∧", "∨", "⊕"},
+        "Cannot mix conjunction (∧), disjunction (∨), and exclusive or (⊕) without parentheses",
+    ),
 }
 
 

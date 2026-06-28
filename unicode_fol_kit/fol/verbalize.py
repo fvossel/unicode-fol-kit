@@ -14,7 +14,13 @@ from ..fol.nodes import (
     Node, Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
     Variable, Constant, Number, Function,
     SortedQuantifier, SortedConstant,
+    Box, Diamond, Knows, Believes, Obligatory, Permitted,
+    Always, Eventually, Next, Until,
+    Historically, Once, Previous, Since,
+    WeakConjunction, WeakDisjunction, StrongConjunction, StrongDisjunction,
+    LukNegation, LukImplication, LukEquivalence,
 )
+from ._so_nodes import SecondOrderQuantifier
 
 
 # Comparison / equality predicates rendered with an English copula.
@@ -102,5 +108,56 @@ def to_english(node: Node) -> str:
             return f"for every {node.variable.name}, {to_english(node.formula)}"
         return f"for some {node.variable.name}, {to_english(node.formula)}"
 
-    # Anything else (modal, lambda, second-order, fuzzy) falls back to its glyph form.
+    if isinstance(node, SecondOrderQuantifier):
+        kind = "every" if node.type in ("∀", "forall") else "some"
+        return f"for {kind} {node.arity}-ary predicate {node.predicate}, {to_english(node.formula)}"
+
+    # --- modal / temporal / epistemic / doxastic / deontic ---
+    if isinstance(node, Box):
+        return f"necessarily, {_sub(node.formula)}"
+    if isinstance(node, Diamond):
+        return f"possibly, {_sub(node.formula)}"
+    if isinstance(node, Knows):
+        return f"agent {_term(node.agent)} knows that {_sub(node.formula)}"
+    if isinstance(node, Believes):
+        return f"agent {_term(node.agent)} believes that {_sub(node.formula)}"
+    if isinstance(node, Obligatory):
+        return f"it is obligatory that {_sub(node.formula)}"
+    if isinstance(node, Permitted):
+        return f"it is permitted that {_sub(node.formula)}"
+    if isinstance(node, Always):
+        return f"it will always be the case that {_sub(node.formula)}"
+    if isinstance(node, Eventually):
+        return f"it will eventually be the case that {_sub(node.formula)}"
+    if isinstance(node, Next):
+        return f"at the next moment, {_sub(node.formula)}"
+    if isinstance(node, Until):
+        return f"{_sub(node.left)} until {_sub(node.right)}"
+    if isinstance(node, Historically):
+        return f"it has always been the case that {_sub(node.formula)}"
+    if isinstance(node, Once):
+        return f"it was once the case that {_sub(node.formula)}"
+    if isinstance(node, Previous):
+        return f"at the previous moment, {_sub(node.formula)}"
+    if isinstance(node, Since):
+        return f"{_sub(node.left)} since {_sub(node.right)}"
+
+    # --- fuzzy (Łukasiewicz): name the strong/weak/Łukasiewicz operators so they do
+    # NOT read as their classical look-alikes ---
+    if isinstance(node, LukNegation):
+        return f"it is fuzzily not the case that {_sub(node.formula)}"
+    if isinstance(node, WeakConjunction):
+        return f"{_sub(node.left)} and weakly {_sub(node.right)}"
+    if isinstance(node, WeakDisjunction):
+        return f"{_sub(node.left)} or weakly {_sub(node.right)}"
+    if isinstance(node, StrongConjunction):
+        return f"{_sub(node.left)} and strongly {_sub(node.right)}"
+    if isinstance(node, StrongDisjunction):
+        return f"{_sub(node.left)} or strongly {_sub(node.right)}"
+    if isinstance(node, LukImplication):
+        return f"if {_sub(node.left)} then fuzzily {_sub(node.right)}"
+    if isinstance(node, LukEquivalence):
+        return f"{_sub(node.left)} is fuzzily equivalent to {_sub(node.right)}"
+
+    # Anything else (e.g. lambda) falls back to its glyph form.
     return node.to_unicode_str()
