@@ -29,6 +29,10 @@ from .modelfinder import (
     find_model, find_countermodel, is_satisfiable_finite, is_valid_finite,
 )
 from .intuitionistic import IntKripkeModel, int_valid, int_countermodel
+from .matrix import (
+    TruthMatrix, matrix_value, matrix_is_valid, matrix_is_satisfiable, matrix_entails,
+    K3_MATRIX, LP_MATRIX, FDE_MATRIX, MATRICES,
+)
 
 __all__ = [
     "Structure", "term_value", "satisfies", "models",
@@ -45,4 +49,7 @@ __all__ = [
     "find_model", "find_countermodel", "is_satisfiable_finite", "is_valid_finite",
     # Intuitionistic propositional logic (Kripke semantics).
     "IntKripkeModel", "int_valid", "int_countermodel",
+    # Finite-valued logical matrices (K3 / LP re-expressed; Belnap–Dunn FDE).
+    "TruthMatrix", "matrix_value", "matrix_is_valid", "matrix_is_satisfiable",
+    "matrix_entails", "K3_MATRIX", "LP_MATRIX", "FDE_MATRIX", "MATRICES",
 ]

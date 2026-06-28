@@ -59,6 +59,8 @@ from .semantics import (
     truth_table, TruthTable, is_tautology, is_contradiction, is_satisfiable_tt,
     find_model, find_countermodel, is_satisfiable_finite, is_valid_finite,
     IntKripkeModel, int_valid, int_countermodel,
+    TruthMatrix, matrix_value, matrix_is_valid, matrix_is_satisfiable, matrix_entails,
+    K3_MATRIX, LP_MATRIX, FDE_MATRIX, MATRICES,
 )
 from .eval import (
     canonicalize, exact_match,
@@ -117,6 +119,8 @@ __all__ = [
     "truth_table", "TruthTable", "is_tautology", "is_contradiction", "is_satisfiable_tt",
     "find_model", "find_countermodel", "is_satisfiable_finite", "is_valid_finite",
     "IntKripkeModel", "int_valid", "int_countermodel",
+    "TruthMatrix", "matrix_value", "matrix_is_valid", "matrix_is_satisfiable",
+    "matrix_entails", "K3_MATRIX", "LP_MATRIX", "FDE_MATRIX", "MATRICES",
     "is_satisfiable", "is_valid", "get_model",
     "fuzzy_is_satisfiable", "fuzzy_is_valid", "fuzzy_get_model",
     "to_z3_arith", "is_satisfiable_arith", "is_valid_arith", "get_model_arith",
