@@ -228,13 +228,17 @@ def isabelle_available(isabelle_home: Optional[str] = None) -> bool:
 # --------------------------------------------------------------------------- #
 
 def _cygpath(win_path: str) -> str:
-    """Translate a Windows path to a Cygwin ``/cygdrive/<d>/...`` path."""
-    p = os.path.abspath(win_path)
-    drive, rest = os.path.splitdrive(p)
-    rest = rest.replace("\\", "/")
-    if drive and len(drive) >= 2 and drive[1] == ":":
-        return "/cygdrive/" + drive[0].lower() + rest
-    return p.replace("\\", "/")
+    r"""Translate a Windows path to a Cygwin ``/cygdrive/<d>/...`` path.
+
+    Parses the drive letter directly rather than via ``os.path`` (whose drive
+    handling differs on POSIX — ``splitdrive`` ignores ``C:`` and ``abspath``
+    prepends the cwd), so the function is correct and testable on every platform,
+    though it is only *used* on Windows. Inputs from the runner are already absolute.
+    """
+    p = win_path.replace("\\", "/")
+    if len(p) >= 2 and p[0].isalpha() and p[1] == ":":
+        return "/cygdrive/" + p[0].lower() + p[2:]
+    return p
 
 
 def _run_build(install: IsabelleInstall, session_dir: str,
