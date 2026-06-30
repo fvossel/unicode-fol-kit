@@ -5,6 +5,15 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [0.10.1] - 2026-06-30
+
+### Fixed
+
+- `unicode_fol_kit.__version__` now reports the actual package version (it lagged
+  at `"0.9.0"` in the 0.10.0 release). The Sphinx / Read the Docs configuration
+  reads this string for the documented version, so the docs version display is
+  corrected as well.
+
 ## [0.10.0] - 2026-06-30
 
 Natural-language → logic front-end support: attitude operators, a counting
