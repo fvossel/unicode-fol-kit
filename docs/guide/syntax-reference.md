@@ -57,8 +57,15 @@ Atomic formulas are combined with connectives and quantifiers. The available con
 | `φ ⊕ ψ` | exclusive or | classical |
 | `φ → ψ` | implication | classical |
 | `φ ↔ ψ` | biconditional | classical |
+| `φ Ⓒ ψ` | concessive (Contrast) | *whereas* / *although* — truth-functionally `∧` |
 | `∀x φ` | universal | unsorted |
 | `∃x φ` | existential | unsorted |
+| `∃≥n x φ` / `∃≤n x φ` / `∃=n x φ` | counting quantifier (Count) | at least / at most / exactly `n` distinct `x` |
+
+FOL mode additionally accepts two term forms for natural-language translation: the
+degree term `μ(entity, dimension)` (Measure) and the set-cardinality term `|{v : φ}|`
+(Cardinality), compared with `<` / `>`. See {doc}`natural-language` for all five
+NL-front-end constructs (these four plus the modal `Say_a` / `Want_a`).
 
 ### MSFOL mode
 
@@ -181,7 +188,7 @@ Quantifiers can be stacked directly: `∀x:H ∀y:H ∃z:A φ`.
 
 Whitespace is insignificant and may be used freely between tokens — including before sort annotation colons.
 
-The **modal mode** (`MSFLParser(modal=True)`) adds `□` `◇` (alethic), `K_a` `B_a` (epistemic/doxastic), `Ⓞ` `Ⓟ` (deontic), and the temporal operators below; the **second-order mode** (`MSFLParser(second_order=True)`) adds `∀P` / `∃P` over predicate variables.
+The **modal mode** (`MSFLParser(modal=True)`) adds `□` `◇` (alethic), `K_a` `B_a` (epistemic/doxastic), `Say_a` `Want_a` (assertive/bouletic — see {doc}`natural-language`), `Ⓞ` `Ⓟ` (deontic), and the temporal operators below; the **second-order mode** (`MSFLParser(second_order=True)`) adds `∀P` / `∃P` over predicate variables.
 
 ### Temporal operators (modal mode)
 
@@ -317,7 +324,18 @@ All nodes are **frozen** Python dataclasses and can be imported from `unicode_fo
 | `Xor` | `left`, `right` *(FOL only)* |
 | `Implies` | `left`, `right` |
 | `Iff` | `left`, `right` |
+| `Contrast` | `left`, `right` *(FOL — concessive `Ⓒ`; truth-functionally `∧`)* |
 | `Quantifier` | `type: str`, `variable`, `formula` *(FOL / FL — the unsorted modes)* |
+
+### Natural-language extension nodes (FOL mode)
+
+| Class | Fields | Notes |
+|---|---|---|
+| `Count` | `op: str` (`"ge"` / `"le"` / `"eq"`), `n: Number`, `variable`, `formula` | counting quantifier `∃≥n` / `∃≤n` / `∃=n`; `n` is symbolic; FO-expandable on export |
+| `Measure` | `entity`, `dimension` | degree term `μ(e, d)`; exports as the function `measure(e, d)` |
+| `Cardinality` | `variable`, `formula` | set-cardinality term `|{v : φ}|`; binds `v`; no first-order export |
+
+See {doc}`natural-language` for the semantics and worked examples.
 
 ### MSFOL / MSFL nodes
 
@@ -353,7 +371,7 @@ The prefix temporal duals are the past-tense mirrors of the forward operators.
 | `Previous` | `formula` | `⒴` | past dual of `Next` |
 | `Since` | `left`, `right` | `⒮` | past dual of `Until` (binary) |
 
-The alethic (`Box`, `Diamond`), epistemic/doxastic (`Knows`, `Believes`), and deontic (`Obligatory`, `Permitted`) nodes round out the modal family; see the modal-logic page. All modal nodes reject `to_z3` / `to_prover9` / `to_tptp` directly — translate first with `standard_translation()`.
+The alethic (`Box`, `Diamond`), epistemic/doxastic (`Knows`, `Believes`), assertive/bouletic (`Says`, `Wants` — agent-prefix attitude operators `Say_a` / `Want_a`; see {doc}`natural-language`), and deontic (`Obligatory`, `Permitted`) nodes round out the modal family; see the modal-logic page. All modal nodes reject `to_z3` / `to_prover9` / `to_tptp` directly — translate first with `standard_translation()`.
 
 ### Lambda-calculus nodes (all modes)
 

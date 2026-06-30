@@ -5,6 +5,63 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [0.10.0] - 2026-06-30
+
+Natural-language → logic front-end support: attitude operators, a counting
+quantifier, degree and cardinality terms, a concessive connective, a whole-file
+Prover9 reader, TPTP single-quoted atoms, and name sanitisation. These are translation
+targets and interchange aids for pipelines (e.g. CCG → logical form, or OWL → FOL)
+that need a determinate, round-trippable representation of cardinal determiners,
+degree comparatives, counting comparisons, reportative/desiderative attitudes, and
+concessive coordination — and that ingest external problem files whose symbol names
+are not native MSFLParser tokens.
+
+### Added
+
+- **Assertive and bouletic attitude operators** — `Says` (`Say_a φ`, *a asserts that
+  φ*) and `Wants` (`Want_a φ`, *a wants it to be that φ*), modal `agent_prefix`
+  operators alongside `Knows`/`Believes` (the agent is a β-bindable term, so
+  `∀x (Speaker(x) → Say_x φ)` works). `Says` is **non-factive** and **non-doxastic**;
+  `Wants` is **non-veridical** — each a minimal normal modality **K** over its own
+  per-agent accessibility relation (`"Say:"+a` / `"Want:"+a`), with no frame
+  conditions. Wired into the parser (`MSFLParser(modal=True)`), `satisfies_modal`, the
+  modal tableau (`is_modal_valid`), `to_english`, and the dict/Unicode/LaTeX renderers.
+- **Counting quantifier `Count`** — `∃≥n` / `∃≤n` / `∃=n` (at least / at most /
+  exactly *n*). The bound *n* is carried **symbolically** (a `Number`, never expanded
+  into single-letter variables), so an arbitrarily large *n* — `∃≥500 x …` — is
+  represented exactly and coordinated counts compose as `And(Count(…), Count(…))`.
+  First-order expressible: `to_z3` / `to_prover9` / `to_tptp` lower it to the standard
+  distinct-witnesses encoding (a balanced conjunction tree, verified against Z3; the
+  expansion is bounded to `n ≤ 500` — beyond that the exporters raise a clear error,
+  while the symbolic node still round-trips for any `n`). Parses with the default
+  `MSFLParser()`.
+- **Degree term `Measure`** — `μ(entity, dimension)`, a first-class measure-function
+  term for bare quantity comparatives (`μ(x, height) > μ(y, height)`); exports as the
+  uninterpreted binary function `measure(entity, dimension)`.
+- **Set-cardinality term `Cardinality`** — `|{v : φ}|`, the count of individuals
+  satisfying `φ`, for faithful counting comparisons (`|{v : Votes(x, v)}| > |{v :
+  Votes(y, v)}|`). It binds `v`; set cardinality is second-order, so it has **no**
+  first-order export.
+- **Concessive connective `Contrast`** — `P Ⓒ Q` (whereas / although / but),
+  truth-functionally identical to `∧` but kept distinct so a front-end can preserve
+  the concession instead of flattening it.
+- **Whole-file Prover9 reader** — `load_prover9(path)` / `parse_prover9_problem(text)`
+  read a Prover9 / LADR input file: `set` / `clear` / `assign` directives (recognised
+  and skipped), `formulas(LIST). … end_of_list.` blocks, and bare top-level formulas,
+  returning `Prover9Formula(role, formula)` records (the list name becomes the role).
+  Completes the file-reading trio with `load_tptp` and `load_smtlib`.
+- **TPTP single-quoted atoms** — the TPTP reader now accepts single-quoted functor
+  names (`'http___example_org_Thing'(X)`), the form OWL→FOL dumps use for IRIs; the
+  quotes are stripped and the `\'` / `\\` escapes unescaped. A 2.3 MB / 7198-formula
+  OWL ontology dump reads end to end.
+- **Name sanitisation for round-trippable rendering** — `sanitize_names(node)` /
+  `sanitize_all(nodes)` rewrite imported symbol names to MSFLParser-legal tokens
+  (predicates `[A-Z]…`, functions multi-letter lowercase, constants kept or put in the
+  `c_…` form, variables `[a-z][0-9]*`) so that `parse(node.to_unicode_str())` round-trips.
+  Already-legal names are unchanged; a returned `NameMapping` recovers the originals and
+  keeps names consistent across a whole problem. (Verified: all 7198 formulas of the OWL
+  dump round-trip after sanitisation.)
+
 ## [0.9.0] - 2026-06-29
 
 A broad non-classical expansion: a native modal tableau, past-tense temporal logic,

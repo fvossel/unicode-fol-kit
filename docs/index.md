@@ -45,6 +45,7 @@ guide/intuitionistic
 guide/second-order
 guide/description-logic
 guide/nonclassical
+guide/natural-language
 guide/syntax-reference
 ```
 

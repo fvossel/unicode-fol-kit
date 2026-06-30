@@ -52,8 +52,13 @@ signature and documentation of each public entry point; use the search box or th
    parse_tptp_formula
    load_tptp
    parse_prover9
+   parse_prover9_problem
+   load_prover9
    from_z3
    parse_smtlib
+   load_smtlib
+   sanitize_names
+   sanitize_all
    parse_latex
    latex_to_unicode
    to_english
