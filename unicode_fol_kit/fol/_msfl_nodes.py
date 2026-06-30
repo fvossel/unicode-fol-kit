@@ -1,11 +1,12 @@
 """MSFL node classes (sorted quantifiers/constants, Łukasiewicz operators) and to_fol reduction."""
 
 import logging
-from dataclasses import dataclass, is_dataclass
+from dataclasses import dataclass, is_dataclass, replace
 
 from ._fol_nodes import (
     Node, Z3Env, Variable, Constant, Number, Function,
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
+    Count, Cardinality, _COUNT_OPS,
     NODE_CLASSES, OPERATORS, register_operator,
     register_parser_op, _fold_binary,
 )
@@ -608,7 +609,9 @@ def free_variables(node: Node) -> set:
         return set()
     if isinstance(node, Lambda):
         return free_variables(node.body) - {node.param}
-    if isinstance(node, (Quantifier, SortedQuantifier)):
+    if isinstance(node, (Quantifier, SortedQuantifier, Count, Cardinality)):
+        # Count / Cardinality also bind their variable over the matrix; Count's n
+        # is a Number (no free variables), so the binder rule is the same.
         return free_variables(node.formula) - {node.variable}
     if not is_dataclass(node):
         raise TypeError(f"free_variables: unknown node type {type(node).__name__}")
@@ -687,6 +690,10 @@ def _rename(term: Node, old_var, new_var) -> Node:
             return term  # shadowed
         return SortedQuantifier(term.type, term.variable, term.sort,
                                 _rename(term.formula, old_var, new_var))
+    if isinstance(term, (Count, Cardinality)):
+        if term.variable == old_var:
+            return term  # shadowed by the counting/cardinality binder
+        return replace(term, formula=_rename(term.formula, old_var, new_var))
     # Structural: Atom, Function, Application, Not, and the binary connectives —
     # none are binders, so recurse uniformly into every child.
     return term.map_children(lambda c: _rename(c, old_var, new_var))
@@ -742,6 +749,19 @@ def _subst(term: Node, target: LambdaVar, replacement: Node, fv_repl: set) -> No
                                     _subst(new_formula, target, replacement, fv_repl))
         return SortedQuantifier(term.type, term.variable, term.sort,
                                 _subst(term.formula, target, replacement, fv_repl))
+    if isinstance(term, (Count, Cardinality)):
+        # Count / Cardinality bind their variable over the matrix — same
+        # shadowing / capture-avoidance rules as Quantifier (replace() preserves
+        # Count's op and n).
+        if term.variable == target:
+            return term  # target rebound here — substitution stops
+        if term.variable in fv_repl:
+            avoid = fv_repl | _names_in(term.formula)
+            fresh = Variable(_fresh_name(term.variable.name, avoid))
+            new_formula = _rename(term.formula, term.variable, fresh)
+            return replace(term, variable=fresh,
+                           formula=_subst(new_formula, target, replacement, fv_repl))
+        return replace(term, formula=_subst(term.formula, target, replacement, fv_repl))
     # Structural: Atom, Function, Application, Not, and the binary connectives.
     # The binders above handle capture avoidance; these are not binders, so just
     # substitute into every child.
@@ -878,6 +898,10 @@ def _resolve(node: Node, bound: frozenset) -> Node:
     if isinstance(node, SortedQuantifier):
         return SortedQuantifier(node.type, node.variable, node.sort,
                                 _resolve(node.formula, bound - {node.variable.name}))
+    if isinstance(node, (Count, Cardinality)):
+        # Counting / cardinality binders shadow an outer lambda of the same name,
+        # exactly like a quantifier (replace() keeps Count's op and n).
+        return replace(node, formula=_resolve(node.formula, bound - {node.variable.name}))
     if isinstance(node, Atom):
         resolved_args = [_resolve(a, bound) for a in node.args]
         if node.predicate in bound:
@@ -949,6 +973,7 @@ def resolve_lambda_scope(node: Node) -> Node:
 _UNI_BASE_PREC = {
     "Lambda": 0, "Application": 0,
     "Quantifier": 4, "SortedQuantifier": 4, "SecondOrderQuantifier": 4,
+    "Count": 4,
 }
 
 # The same-level binary group (∧ ∨ ⊗ ⊕, grammar precedence 3) is identified by
@@ -1048,6 +1073,12 @@ def _uni_term(node) -> str:
         return str(node.value)
     if cls == "SortedConstant":
         return f"{node.name}:{node.sort}"
+    if cls == "Measure":
+        # μ(entity, dimension) — a measure-function term.
+        return f"μ({_uni_term(node.entity)}, {_uni_term(node.dimension)})"
+    if cls == "Cardinality":
+        # |{v : φ}| — a set-cardinality term; φ renders at the full formula level.
+        return "|{" + node.variable.name + " : " + _uni(node.formula) + "}|"
     if cls == "Function":
         if node.name in _UNI_ARITH_OPS and len(node.args) == 2:
             p = _uni_term_prec(node)
@@ -1068,7 +1099,8 @@ def _uni(node) -> str:
     """Render node as a formula-level Unicode string (no surrounding parens)."""
     cls = type(node).__name__
 
-    if cls in ("Variable", "LambdaVar", "Constant", "Number", "SortedConstant", "Function"):
+    if cls in ("Variable", "LambdaVar", "Constant", "Number", "SortedConstant",
+               "Function", "Measure", "Cardinality"):
         return _uni_term(node)
     if cls == "Atom":
         return _uni_atom(node)
@@ -1104,6 +1136,10 @@ def _uni(node) -> str:
 
     if cls == "Quantifier":
         return f"{node.type}{node.variable.name} " + _uni_wrap(node.formula, 4)
+    if cls == "Count":
+        # ∃≥n / ∃≤n / ∃=n x  body  (binds as tightly as a quantifier).
+        return (f"{_COUNT_OPS[node.op]}{node.n.value} {node.variable.name} "
+                + _uni_wrap(node.formula, 4))
     if cls == "SortedQuantifier":
         return f"{node.type}{node.variable.name}:{node.sort} " + _uni_wrap(node.formula, 4)
     if cls == "SecondOrderQuantifier":
@@ -1179,6 +1215,11 @@ def _latex_term(node) -> str:
         return str(node.value)
     if cls == "SortedConstant":
         return f"{_latex_escape(node.name)}{{:}}\\mathrm{{{node.sort}}}"
+    if cls == "Measure":
+        return f"\\mu({_latex_term(node.entity)}, {_latex_term(node.dimension)})"
+    if cls == "Cardinality":
+        return ("\\lvert\\{" + _latex_escape(node.variable.name) + " : "
+                + _latex(node.formula) + "\\}\\rvert")
     if cls == "Function":
         if node.name in _UNI_ARITH_OPS and len(node.args) == 2:
             p = _uni_term_prec(node)
@@ -1212,7 +1253,8 @@ def _latex(node) -> str:
     """Render node as a LaTeX math-mode string (no surrounding parens)."""
     cls = type(node).__name__
 
-    if cls in ("Variable", "LambdaVar", "Constant", "Number", "SortedConstant", "Function"):
+    if cls in ("Variable", "LambdaVar", "Constant", "Number", "SortedConstant",
+               "Function", "Measure", "Cardinality"):
         return _latex_term(node)
     if cls == "Atom":
         return _latex_atom(node)
@@ -1242,6 +1284,10 @@ def _latex(node) -> str:
 
     if cls == "Quantifier":
         return f"{_LATEX_QUANT[node.type]} {node.variable.name}\\, " + _latex_wrap(node.formula, 4)
+    if cls == "Count":
+        rel = {"ge": "\\geq", "le": "\\leq", "eq": "="}[node.op]
+        return (f"\\exists^{{{rel} {node.n.value}}} {node.variable.name}\\, "
+                + _latex_wrap(node.formula, 4))
     if cls == "SortedQuantifier":
         return (f"{_LATEX_QUANT[node.type]} {node.variable.name}{{:}}\\mathrm{{{node.sort}}}\\, "
                 + _latex_wrap(node.formula, 4))

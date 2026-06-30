@@ -36,8 +36,14 @@ _BLOCKS = _python_blocks()
 
 
 def test_readme_has_examples():
-    """Guard against a regex/format change silently matching zero blocks."""
-    assert len(_BLOCKS) >= 30, f"only {len(_BLOCKS)} python blocks found in README"
+    """Guard against a regex/format change silently matching zero blocks.
+
+    The README is intentionally slim (the full, per-logic worked examples live in
+    the Sphinx docs under ``docs/`` and are verified there); it carries the
+    runnable quickstart snippet, so this only guards that at least one block is
+    still detected and executed.
+    """
+    assert len(_BLOCKS) >= 1, f"only {len(_BLOCKS)} python blocks found in README"
 
 
 def test_readme_examples_execute():

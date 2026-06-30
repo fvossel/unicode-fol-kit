@@ -139,6 +139,18 @@ def test_tptp_rejects_malformed(bad):
         parse_tptp_formula(bad)
 
 
+def test_tptp_single_quoted_atoms():
+    # TPTP single-quoted atoms (the form OWL->FOL dumps use for IRIs) are read as
+    # functor / predicate / constant names with the quotes stripped.
+    f = parse_tptp_formula("'http___ex_org_Thing'(X)")
+    assert f == Atom("Http___ex_org_Thing", [Variable("x")])
+    g = parse_tptp_formula("'rel'(X, 'indiv_1')")
+    assert g == Atom("Rel", [Variable("x"), Constant("indiv_1")])
+    # escaped quote inside a single-quoted atom is unescaped
+    h = parse_tptp_formula(r"'a\'b'(x)")
+    assert h.predicate == "A'b"
+
+
 # ---------------------------------------------------------------------------
 # Prover9
 # ---------------------------------------------------------------------------
@@ -170,6 +182,83 @@ def test_prover9_trailing_period_optional():
 def test_prover9_rejects_malformed(bad):
     with pytest.raises(Prover9ParsingError):
         parse_prover9(bad)
+
+
+# ---------------------------------------------------------------------------
+# Prover9 whole-file reader
+# ---------------------------------------------------------------------------
+
+def test_prover9_problem_file():
+    from unicode_fol_kit import parse_prover9_problem, Prover9Formula
+    text = """
+    % Socrates is mortal
+    set(prolog_style_variables).
+    assign(max_seconds, 30).
+    formulas(assumptions).
+      all X (man(X) -> mortal(X)).
+      man(socrates).
+    end_of_list.
+    formulas(goals).
+      mortal(socrates).
+    end_of_list.
+    """
+    recs = parse_prover9_problem(text)
+    assert all(isinstance(r, Prover9Formula) for r in recs)
+    # the set/assign directives are recognised and skipped
+    assert len(recs) == 3
+    assert recs[0].role == "assumptions"
+    assert recs[0].formula == Quantifier(
+        "∀", Variable("x"),
+        Implies(Atom("man", [Variable("x")]), Atom("mortal", [Variable("x")])))
+    assert recs[1].role == "assumptions"
+    assert recs[1].formula == Atom("man", [Constant("socrates")])
+    assert recs[2].role == "goals"
+    assert recs[2].formula == Atom("mortal", [Constant("socrates")])
+
+
+def test_prover9_problem_bare_and_empty():
+    from unicode_fol_kit import parse_prover9_problem
+    bare = parse_prover9_problem("P(a).\n-Q(b).")
+    assert [r.role for r in bare] == ["", ""]
+    assert bare[1].formula == Not(Atom("Q", [Constant("b")]))
+    # an empty list yields no formulas
+    assert parse_prover9_problem("formulas(sos). end_of_list.") == []
+
+
+def test_prover9_problem_round_trip_random():
+    rng = random.Random(99)
+    conn = ["not", "and", "or", "imp", "iff"]
+    from unicode_fol_kit import parse_prover9_problem
+    for _ in range(200):
+        f = _rand_formula(rng, rng.randint(1, 3), [], connectives=conn)
+        text = f"formulas(sos).\n  {f.to_prover9()}.\nend_of_list.\n"
+        recs = parse_prover9_problem(text)
+        assert len(recs) == 1 and recs[0].role == "sos"
+        assert recs[0].formula == f, f.to_unicode_str()
+
+
+@pytest.mark.parametrize("bad", [
+    "formulas(sos).\n  p(a).\nq(b).",          # missing end_of_list
+    "formulas(g).\n  p(a).\nend_of_listX.",    # typo'd end marker
+    "p(a).\nend_of_list.",                     # stray end_of_list
+    "formulas().\nend_of_list.",               # malformed header (no list name)
+])
+def test_prover9_problem_rejects_malformed_lists(bad):
+    # A malformed list structure is a hard error — NOT silently degraded to bare
+    # formulas with the role information lost (the old Earley-backtracking behaviour).
+    from unicode_fol_kit import parse_prover9_problem
+    with pytest.raises(Prover9ParsingError):
+        parse_prover9_problem(bad)
+
+
+def test_prover9_problem_skips_op_directive_and_keeps_decimals():
+    from unicode_fol_kit import parse_prover9_problem
+    recs = parse_prover9_problem(
+        "set(prolog_style_variables).\nop(800, infix, foo).\nlt(x, 3.14).")
+    # set/op directives are skipped; the decimal point is not a statement terminator.
+    # (lowercase x is a Prover9 constant; lt is an ordinary predicate.)
+    assert len(recs) == 1
+    assert recs[0].formula == Atom("lt", [Constant("x"), Number(3.14)])
 
 
 # ---------------------------------------------------------------------------
@@ -232,5 +321,6 @@ def test_parse_smtlib_arithmetic():
 def test_importer_exports():
     import unicode_fol_kit as u
     for name in ("parse_tptp", "parse_tptp_formula", "load_tptp", "TptpFormula",
-                 "parse_prover9", "from_z3", "parse_smtlib", "load_smtlib"):
+                 "parse_prover9", "parse_prover9_problem", "load_prover9",
+                 "Prover9Formula", "from_z3", "parse_smtlib", "load_smtlib"):
         assert hasattr(u, name) and name in u.__all__, name

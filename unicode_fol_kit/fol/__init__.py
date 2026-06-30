@@ -2,13 +2,14 @@ from .msflparser import MSFLParser
 from .nodes import (
     Node, Variable, Constant, Number, Function,
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
+    Count, Measure, Cardinality, Contrast,
     Z3Env,
     SortedQuantifier, SortedConstant,
     WeakConjunction, WeakDisjunction,
     StrongConjunction, StrongDisjunction,
     LukNegation, LukImplication, LukEquivalence,
     LambdaVar, Lambda, Application,
-    Box, Diamond, Knows, Believes,
+    Box, Diamond, Knows, Believes, Says, Wants,
     Always, Eventually, Next, Until,
     Historically, Once, Previous, Since,
     Obligatory, Permitted,
@@ -25,7 +26,10 @@ from .unification import unify, apply_subst
 from .modal_translation import standard_translation
 from .latex_input import latex_to_unicode, parse_latex
 from .tptp_input import parse_tptp, parse_tptp_formula, load_tptp, TptpFormula
-from .prover9_input import parse_prover9
+from .prover9_input import (
+    parse_prover9, parse_prover9_problem, load_prover9, Prover9Formula,
+)
+from .sanitize import sanitize_names, sanitize_all, NameMapping
 from .verbalize import to_english
 from .qml import (
     qml_translate, qml_axioms, qml_is_valid, qml_equivalent,
@@ -37,6 +41,7 @@ __all__ = [
     "MSFLParser",
     "Node", "Variable", "Constant", "Number", "Function",
     "Atom", "Not", "And", "Or", "Xor", "Implies", "Iff", "Quantifier",
+    "Count", "Measure", "Cardinality", "Contrast",
     "Z3Env",
     "NamingError", "ParsingError",
     "SortedQuantifier", "SortedConstant",
@@ -44,7 +49,7 @@ __all__ = [
     "StrongConjunction", "StrongDisjunction",
     "LukNegation", "LukImplication", "LukEquivalence",
     "LambdaVar", "Lambda", "Application",
-    "Box", "Diamond", "Knows", "Believes",
+    "Box", "Diamond", "Knows", "Believes", "Says", "Wants",
     "Always", "Eventually", "Next", "Until",
     "Historically", "Once", "Previous", "Since",
     "Obligatory", "Permitted",
@@ -60,7 +65,8 @@ __all__ = [
     "standard_translation",
     "latex_to_unicode", "parse_latex",
     "parse_tptp", "parse_tptp_formula", "load_tptp", "TptpFormula",
-    "parse_prover9",
+    "parse_prover9", "parse_prover9_problem", "load_prover9", "Prover9Formula",
+    "sanitize_names", "sanitize_all", "NameMapping",
     "to_english",
     "qml_translate", "qml_axioms", "qml_is_valid", "qml_equivalent",
     "to_thf_modal", "to_isabelle_modal", "BARCAN", "CONVERSE_BARCAN",

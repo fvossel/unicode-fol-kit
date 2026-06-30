@@ -24,11 +24,18 @@ atoms; and the arithmetic dollar-words ``$sum`` / ``$difference`` / ``$product``
 ``$quotient`` map to the ``+`` / ``-`` / ``*`` / ``/`` functions. ``$true`` / ``$false``
 are imported as opaque nullary atoms (the toolkit has no boolean-constant node).
 
+Single-quoted atoms (``'http___example_org_Thing'``) — the form OWL→FOL translators
+emit for IRIs — are accepted as functor / predicate / constant names: the quotes are
+stripped and the ``\\'`` / ``\\\\`` escapes unescaped. The resulting names may contain
+characters that are not legal MSFLParser tokens, so call
+:func:`unicode_fol_kit.fol.sanitize_names` before re-parsing the rendered Unicode.
+
 Scope: the first-order ``fof`` fragment and ``cnf`` clauses. Typed (``tff``/``thf``)
 formulas, ``include`` directives, and the optional 4th/5th annotation fields of a
 statement are out of scope.
 """
 
+import re
 from dataclasses import dataclass
 
 from lark import Lark, Transformer
@@ -101,19 +108,24 @@ varlist: VAR ("," VAR)*
      | term "!=" term   -> disequality
      | DOLLARWORD "(" termlist ")"  -> dollar_atom
      | LOWER "(" termlist ")"       -> pred_app
+     | SQ "(" termlist ")"          -> pred_app
      | DOLLARWORD                   -> bool_const
      | LOWER                        -> prop_atom
+     | SQ                           -> prop_atom
 
 ?term: VAR                          -> var
      | DOLLARWORD "(" termlist ")"  -> dollar_func_app
      | LOWER "(" termlist ")"       -> func_app
+     | SQ "(" termlist ")"          -> func_app
      | LOWER                        -> constant
+     | SQ                           -> constant
      | NUMBER                       -> number
 
 termlist: term ("," term)*
 
 VAR: /[A-Z][A-Za-z0-9_]*/
 LOWER: /[a-z][A-Za-z0-9_]*/
+SQ: /'(\\.|[^'\\])*'/
 DOLLARWORD: /\$[a-z_]+/
 NUMBER: /-?[0-9]+(\.[0-9]+)?/
 
@@ -127,6 +139,23 @@ NUMBER: /-?[0-9]+(\.[0-9]+)?/
 def _cap(name: str) -> str:
     """Capitalise the first letter (invert to_tptp's predicate lower-casing)."""
     return name[:1].upper() + name[1:] if name else name
+
+
+def _functor_name(token) -> str:
+    """Return the bare functor/constant name from a LOWER or single-quoted token.
+
+    A TPTP **single-quoted atom** ``'…'`` is an arbitrary functor name (the form
+    OWL→FOL dumps use for IRIs, e.g. ``'http___example_org_Thing'``). The
+    surrounding quotes are stripped and the TPTP escapes ``\\'`` / ``\\\\`` are
+    unescaped; a plain LOWER token is returned unchanged. The resulting name may
+    contain characters (underscores, etc.) that are not legal MSFLParser tokens —
+    use :func:`unicode_fol_kit.fol.sanitize_names` before re-parsing the rendered
+    Unicode.
+    """
+    s = str(token)
+    if len(s) >= 2 and s[0] == "'" and s[-1] == "'":
+        return re.sub(r"\\(.)", r"\1", s[1:-1])
+    return s
 
 
 class _TptpTransformer(Transformer):
@@ -201,10 +230,10 @@ class _TptpTransformer(Transformer):
         return Atom("≠", [items[0], items[1]])
 
     def pred_app(self, items):
-        return Atom(_cap(str(items[0])), items[1])
+        return Atom(_cap(_functor_name(items[0])), items[1])
 
     def prop_atom(self, items):
-        return Atom(_cap(str(items[0])), [])
+        return Atom(_cap(_functor_name(items[0])), [])
 
     def dollar_atom(self, items):
         word = str(items[0])
@@ -227,14 +256,14 @@ class _TptpTransformer(Transformer):
         return Variable(str(items[0]).lower())
 
     def constant(self, items):
-        return Constant(str(items[0]))
+        return Constant(_functor_name(items[0]))
 
     def number(self, items):
         text = str(items[0])
         return Number(float(text) if "." in text else int(text))
 
     def func_app(self, items):
-        return Function(str(items[0]), items[1])
+        return Function(_functor_name(items[0]), items[1])
 
     def dollar_func_app(self, items):
         word = str(items[0])

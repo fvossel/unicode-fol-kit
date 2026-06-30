@@ -14,13 +14,18 @@ from ..fol.nodes import (
     Node, Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
     Variable, Constant, Number, Function,
     SortedQuantifier, SortedConstant,
-    Box, Diamond, Knows, Believes, Obligatory, Permitted,
+    Count, Measure, Cardinality, Contrast,
+    Box, Diamond, Knows, Believes, Says, Wants, Obligatory, Permitted,
     Always, Eventually, Next, Until,
     Historically, Once, Previous, Since,
     WeakConjunction, WeakDisjunction, StrongConjunction, StrongDisjunction,
     LukNegation, LukImplication, LukEquivalence,
 )
 from ._so_nodes import SecondOrderQuantifier
+
+
+# Counting-quantifier op codes → English determiner phrases.
+_COUNT_WORDS = {"ge": "at least", "le": "at most", "eq": "exactly"}
 
 
 # Comparison / equality predicates rendered with an English copula.
@@ -42,6 +47,10 @@ def _term(node: Node) -> str:
         return str(node.value)
     if isinstance(node, Function):
         return f"{node.name}({', '.join(_term(a) for a in node.args)})"
+    if isinstance(node, Measure):
+        return f"the {_term(node.dimension)} of {_term(node.entity)}"
+    if isinstance(node, Cardinality):
+        return f"the number of {node.variable.name} such that {to_english(node.formula)}"
     return node.to_unicode_str()
 
 
@@ -93,6 +102,9 @@ def to_english(node: Node) -> str:
     if isinstance(node, Xor):
         return f"either {_sub(node.left)} or {_sub(node.right)}, but not both"
 
+    if isinstance(node, Contrast):
+        return f"{_sub(node.left)}, whereas {_sub(node.right)}"
+
     if isinstance(node, Implies):
         return f"if {_sub(node.left)}, then {_sub(node.right)}"
 
@@ -108,6 +120,10 @@ def to_english(node: Node) -> str:
             return f"for every {node.variable.name}, {to_english(node.formula)}"
         return f"for some {node.variable.name}, {to_english(node.formula)}"
 
+    if isinstance(node, Count):
+        return (f"there are {_COUNT_WORDS[node.op]} {node.n.value} {node.variable.name} "
+                f"such that {to_english(node.formula)}")
+
     if isinstance(node, SecondOrderQuantifier):
         kind = "every" if node.type in ("∀", "forall") else "some"
         return f"for {kind} {node.arity}-ary predicate {node.predicate}, {to_english(node.formula)}"
@@ -121,6 +137,10 @@ def to_english(node: Node) -> str:
         return f"agent {_term(node.agent)} knows that {_sub(node.formula)}"
     if isinstance(node, Believes):
         return f"agent {_term(node.agent)} believes that {_sub(node.formula)}"
+    if isinstance(node, Says):
+        return f"agent {_term(node.agent)} says that {_sub(node.formula)}"
+    if isinstance(node, Wants):
+        return f"agent {_term(node.agent)} wants it to be that {_sub(node.formula)}"
     if isinstance(node, Obligatory):
         return f"it is obligatory that {_sub(node.formula)}"
     if isinstance(node, Permitted):

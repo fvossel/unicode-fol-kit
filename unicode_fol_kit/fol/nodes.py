@@ -9,6 +9,7 @@ from ._fol_nodes import (
     Node,
     Variable, Constant, Number, Function,
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
+    Count, Measure, Cardinality, Contrast,
     NODE_CLASSES,
     FOLTransformer,
 )
@@ -25,7 +26,7 @@ from ._msfl_nodes import (
     to_fol,
 )
 from ._modal_nodes import (
-    Box, Diamond, Knows, Believes,
+    Box, Diamond, Knows, Believes, Says, Wants,
     Always, Eventually, Next, Until,
     Historically, Once, Previous, Since,
     Obligatory, Permitted,
@@ -37,6 +38,7 @@ __all__ = [
     "Node",
     "Variable", "Constant", "Number", "Function",
     "Atom", "Not", "And", "Or", "Xor", "Implies", "Iff", "Quantifier",
+    "Count", "Measure", "Cardinality", "Contrast",
     "NODE_CLASSES",
     "FOLTransformer",
     "SortedQuantifier", "SortedConstant",
@@ -44,7 +46,7 @@ __all__ = [
     "StrongConjunction", "StrongDisjunction",
     "LukNegation", "LukImplication", "LukEquivalence",
     "LambdaVar", "Lambda", "Application",
-    "Box", "Diamond", "Knows", "Believes",
+    "Box", "Diamond", "Knows", "Believes", "Says", "Wants",
     "Always", "Eventually", "Next", "Until",
     "Historically", "Once", "Previous", "Since",
     "Obligatory", "Permitted",

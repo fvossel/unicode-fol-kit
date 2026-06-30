@@ -47,7 +47,7 @@ from typing import List, Optional, Tuple
 
 from ..fol.nodes import (
     Node, Atom, Not, And, Or, Xor, Implies, Iff,
-    Box, Diamond, Knows, Believes, Obligatory, Permitted,
+    Box, Diamond, Knows, Believes, Says, Wants, Obligatory, Permitted,
     Next, Always, Eventually, Until,
     Historically, Once, Previous, Since,
 )
@@ -61,6 +61,8 @@ _DEONTIC = "deontic"
 _TEMPORAL = "temporal"
 _KNOWS = "K:"
 _BELIEVES = "B:"
+_SAYS = "Say:"
+_WANTS = "Want:"
 
 # Named modal systems as frame-condition sets (mirrors fol.qml._FRAMES, with the
 # extra non-normal-of-T members B/KB/K4/K45 that a tableau handles uniformly).
@@ -95,7 +97,7 @@ def _neg(f: Node) -> Node:
 
 def has_modal(node: Node) -> bool:
     """True iff ``node`` contains any modal/temporal/epistemic/deontic operator."""
-    modal = (Box, Diamond, Knows, Believes, Obligatory, Permitted,
+    modal = (Box, Diamond, Knows, Believes, Says, Wants, Obligatory, Permitted,
              Next, Always, Eventually, Until,
              Historically, Once, Previous, Since)
     return any(isinstance(n, modal) for n in node.walk())
@@ -127,6 +129,10 @@ def _decompose(f: Node):
         return ("box", _KNOWS + _agent_key(f.agent), f.formula)
     if isinstance(f, Believes):
         return ("box", _BELIEVES + _agent_key(f.agent), f.formula)
+    if isinstance(f, Says):
+        return ("box", _SAYS + _agent_key(f.agent), f.formula)
+    if isinstance(f, Wants):
+        return ("box", _WANTS + _agent_key(f.agent), f.formula)
     if isinstance(f, Obligatory):
         return ("box", _DEONTIC, f.formula)
     if isinstance(f, Permitted):
@@ -175,6 +181,10 @@ def _decompose(f: Node):
             return ("dia", _KNOWS + _agent_key(g.agent), Not(g.formula))
         if isinstance(g, Believes):
             return ("dia", _BELIEVES + _agent_key(g.agent), Not(g.formula))
+        if isinstance(g, Says):
+            return ("dia", _SAYS + _agent_key(g.agent), Not(g.formula))
+        if isinstance(g, Wants):
+            return ("dia", _WANTS + _agent_key(g.agent), Not(g.formula))
         if isinstance(g, Obligatory):
             return ("dia", _DEONTIC, Not(g.formula))
         if isinstance(g, Permitted):

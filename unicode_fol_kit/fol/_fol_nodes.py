@@ -75,6 +75,7 @@ class Node:
     _TREE_LABELS = {
         "And": "∧", "Or": "∨", "Xor": "⊕",
         "Implies": "→", "Iff": "↔", "Not": "¬",
+        "Contrast": "Ⓒ",
     }
 
     def _tree_parts(self):
@@ -270,8 +271,12 @@ class Node:
 
 
 # Term node class names — used by Node.subformulas to exclude atomic terms.
+# Measure and Cardinality are term-valued (they occur in argument position and
+# are compared with </>); Cardinality additionally carries a formula child, which
+# Node.walk still descends into, so its φ is still reported among subformulas.
 _TERM_NAMES = frozenset({
     "Variable", "Constant", "Number", "Function", "SortedConstant", "LambdaVar",
+    "Measure", "Cardinality",
 })
 
 
@@ -792,6 +797,308 @@ class Quantifier(Node):
 
 
 # =========================
+# Counting quantifier, measure / cardinality terms, concessive connective
+# =========================
+#
+# Classical, non-modal extensions used by natural-language → logic front-ends
+# (e.g. CCG pipelines) to translate cardinal determiners, degree comparatives,
+# counting comparisons, and concessive coordination:
+#
+#   * Count       — a cardinality quantifier ∃≥n / ∃≤n / ∃=n carrying its bound n
+#                   SYMBOLICALLY (a Number, not expanded into single-letter
+#                   variables), so an arbitrarily large n is represented exactly.
+#                   It is first-order expressible; the exports lower it to the
+#                   standard distinct-witnesses encoding via _expand().
+#   * Measure     — a degree/measure term μ(entity, dimension) for bare quantity
+#                   comparatives (μ(x, height) > μ(y, height)); an uninterpreted
+#                   binary function on export.
+#   * Cardinality — a set-cardinality term |{v : φ}| for counting comparisons
+#                   (|{v : Votes(x, v)}| > |{v : Votes(y, v)}|). Set cardinality is
+#                   a second-order notion, so it has NO first-order export.
+#   * Contrast    — a concessive connective (whereas / although / but) that is
+#                   truth-functionally ∧, but kept as a distinct node so the
+#                   concession survives translation instead of flattening to ∧.
+#
+# Count and Cardinality BIND their variable, so the binder-aware passes in
+# _msfl_nodes.py (free_variables / substitute / resolve_lambda_scope) special-case
+# them alongside Quantifier, and the renderers special-case Count / Measure /
+# Cardinality (binders/terms are not regular operators). Contrast IS a regular
+# level2 operator and is driven entirely by the operator registry — it needs no
+# renderer branch and no binder handling.
+
+# op code -> the ∃-prefixed surface glyph (and its inverse, used by the parser).
+_COUNT_OPS = {"ge": "∃≥", "le": "∃≤", "eq": "∃="}
+_COUNT_TOKEN_TO_OP = {glyph: op for op, glyph in _COUNT_OPS.items()}
+
+# Largest witness count Count._expand() will materialise. The distinct-witnesses
+# encoding is O(n²) constraints under n nested quantifiers, so a large n produces a
+# tree that is both huge and deeper than Python's recursion limit; the Count node
+# itself keeps n symbolically and round-trips for ANY n, so only the to_z3 / to_prover9
+# / to_tptp *expansion* is bounded.
+_COUNT_EXPAND_MAX = 500
+_COUNT_TOO_LARGE = (
+    "Count.to_z3/to_prover9/to_tptp: n={n} is too large to expand to first-order "
+    "(the distinct-witnesses encoding materialises O(n²) constraints under n nested "
+    "quantifiers; the limit is n<={limit}). The Count node keeps n symbolically and "
+    "round-trips via to_unicode_str / to_dict for any n — only this first-order "
+    "lowering is bounded."
+)
+
+
+def _balanced_and(parts):
+    """Fold a non-empty list of formulas into a *balanced* And tree (shallow depth).
+
+    A left-associative fold would make an n-element conjunction n deep, so an
+    O(n²)-conjunct counting expansion overflows Python's recursion limit on
+    traversal; a balanced tree is only O(log n) deep.
+    """
+    while len(parts) > 1:
+        merged = [And(parts[i], parts[i + 1]) for i in range(0, len(parts) - 1, 2)]
+        if len(parts) % 2:
+            merged.append(parts[-1])
+        parts = merged
+    return parts[0]
+
+
+@dataclass(frozen=True)
+class Count(Node):
+    """A counting (cardinality) quantifier ∃≥n / ∃≤n / ∃=n over a single variable.
+
+    ``op`` is ``"ge"`` / ``"le"`` / ``"eq"`` (at least / at most / exactly); ``n``
+    is a :class:`Number` wrapping a non-negative integer bound — kept SYMBOLIC, not
+    expanded into single-letter variables, so an arbitrarily large bound (e.g. 500)
+    is represented exactly. ``variable`` is the bound counting variable and
+    ``formula`` its matrix. Semantics: ``∃≥n x φ`` is true iff at least ``n``
+    DISTINCT individuals satisfy ``φ`` (``∃≤n`` at most, ``∃=n`` exactly). The
+    counting quantifier is first-order expressible; :meth:`to_z3` / :meth:`to_prover9`
+    / :meth:`to_tptp` lower it to the standard distinct-witnesses encoding (see
+    :meth:`_expand`).
+    """
+
+    op: str
+    n: Number
+    variable: Variable
+    formula: Node
+
+    def __post_init__(self):
+        """Validate the op code and that n is a non-negative integer Number."""
+        if self.op not in _COUNT_OPS:
+            raise ValueError(
+                f"Count: unknown op {self.op!r}; expected one of 'ge', 'le', 'eq'.")
+        if not (isinstance(self.n, Number) and isinstance(self.n.value, int)
+                and self.n.value >= 0):
+            raise ValueError(
+                "Count: n must be a Number wrapping a non-negative integer.")
+
+    def _tree_parts(self):
+        """Return the ∃≥n / ∃≤n / ∃=n label (with the bound variable) and the matrix."""
+        return (f"{_COUNT_OPS[self.op]}{self.n.value} {self.variable.name}",
+                [self.formula])
+
+    def to_dict(self):
+        """Serialise to dict with op, n, bound variable, and serialised matrix."""
+        return {"_type": "Count", "op": self.op, "n": self.n.to_dict(),
+                "variable": self.variable.to_dict(),
+                "formula": self.formula.to_dict()}
+
+    @staticmethod
+    def from_dict(d):
+        """Deserialise a Count from a dict produced by to_dict."""
+        return Count(d["op"], Node.from_dict(d["n"]),
+                     Node.from_dict(d["variable"]), Node.from_dict(d["formula"]))
+
+    def _expand(self) -> "Node":
+        """Lower to plain FOL via the standard distinct-witnesses counting encoding.
+
+        ``∃≥m x φ`` becomes ``∃x_0 … ∃x_{m-1} (⋀ φ[x_i] ∧ ⋀_{i<j} x_i ≠ x_j)``;
+        ``∃≤n`` is ``¬(∃≥n+1)``; ``∃=n`` is ``∃≥n ∧ ¬(∃≥n+1)``. Fresh witness
+        variables are chosen to avoid the matrix's free variables, and the bound
+        variable is substituted out capture-avoidingly, so the result is a closed,
+        meaning-preserving classical formula.
+        """
+        from ._msfl_nodes import substitute, free_variables  # lazy: avoid import cycle
+        if self.n.value > _COUNT_EXPAND_MAX:
+            raise NotImplementedError(
+                _COUNT_TOO_LARGE.format(n=self.n.value, limit=_COUNT_EXPAND_MAX))
+        var, phi = self.variable, self.formula
+        avoid = {v.name for v in free_variables(phi)} | {var.name}
+
+        def fresh(k):
+            """Return k fresh Variables not clashing with the matrix or each other."""
+            out, i = [], 0
+            while len(out) < k:
+                cand = f"{var.name}_{i}"
+                if cand not in avoid:
+                    out.append(Variable(cand))
+                    avoid.add(cand)
+                i += 1
+            return out
+
+        def at_least(m):
+            """Build the plain-FOL 'at least m distinct φ' formula."""
+            if m <= 0:
+                # '≥ 0' is vacuously true: ∃x (φ ∨ ¬φ), valid on a non-empty domain.
+                w = fresh(1)[0]
+                g = substitute(phi, var, w)
+                return Quantifier("∃", w, Or(g, Not(g)))
+            ws = fresh(m)
+            conjuncts = [substitute(phi, var, w) for w in ws]
+            conjuncts += [Atom("≠", [ws[i], ws[j]])
+                          for i in range(m) for j in range(i + 1, m)]
+            body = _balanced_and(conjuncts)        # balanced ⇒ shallow recursion
+            for w in reversed(ws):
+                body = Quantifier("∃", w, body)
+            return body
+
+        if self.op == "ge":
+            return at_least(self.n.value)
+        if self.op == "le":
+            return Not(at_least(self.n.value + 1))
+        return And(at_least(self.n.value), Not(at_least(self.n.value + 1)))
+
+    def to_z3(self, env: Z3Env = None):
+        """Lower to the distinct-witnesses encoding, then translate to Z3."""
+        return self._expand().to_z3(env)
+
+    def to_prover9(self) -> str:
+        """Lower to the distinct-witnesses encoding, then render Prover9 syntax."""
+        return self._expand().to_prover9()
+
+    def to_tptp(self) -> str:
+        """Lower to the distinct-witnesses encoding, then render TPTP syntax."""
+        return self._expand().to_tptp()
+
+
+@dataclass(frozen=True)
+class Measure(Node):
+    """A degree/measure term μ(entity, dimension): the degree to which ``entity`` has
+    the gradable dimension ``dimension``.
+
+    A first-class measure-function term, the clean argument for bare (standard-less)
+    quantity comparatives — ``more water`` / ``taller`` become ``μ(x, dim) > μ(y, dim)``
+    rather than a thin relational ``More(x, c)``. Both children are terms. On export it
+    is the uninterpreted binary function ``measure(entity, dimension)`` (the ``μ`` glyph
+    is ASCII-folded to ``measure`` so the first-order back-ends accept it), and ``>`` / ``<``
+    over the resulting degrees use the back-end's ordering.
+    """
+
+    entity: Node
+    dimension: Node
+
+    def _tree_parts(self):
+        """Return the μ label and the entity/dimension children."""
+        return "μ", [self.entity, self.dimension]
+
+    def to_dict(self):
+        """Serialise to dict with serialised entity and dimension terms."""
+        return {"_type": "Measure", "entity": self.entity.to_dict(),
+                "dimension": self.dimension.to_dict()}
+
+    @staticmethod
+    def from_dict(d):
+        """Deserialise a Measure from a dict produced by to_dict."""
+        return Measure(Node.from_dict(d["entity"]), Node.from_dict(d["dimension"]))
+
+    def to_z3(self, env: Z3Env = None):
+        """Translate to an uninterpreted binary Z3 function ``measure`` in sort S."""
+        env = env or Z3Env()
+        return env.get_func("measure", 2)(self.entity.to_z3(env), self.dimension.to_z3(env))
+
+    def to_prover9(self) -> str:
+        """Render as the Prover9 function ``measure(entity, dimension)``."""
+        return f"measure({self.entity.to_prover9()}, {self.dimension.to_prover9()})"
+
+    def to_tptp(self) -> str:
+        """Render as the TPTP function ``measure(entity, dimension)``."""
+        return f"measure({self.entity.to_tptp()},{self.dimension.to_tptp()})"
+
+
+# Shared rejection message: a set-cardinality term is not first-order definable.
+_NO_CARDINALITY_EXPORT = (
+    "Cardinality terms (|{v : φ}|) denote set cardinality, a second-order notion "
+    "with no first-order counterpart — counting comparisons such as 'more …​ than …' "
+    "are not first-order definable. Keep the term at the AST level, or express a "
+    "fixed-bound count with the Count quantifier (∃≥n / ∃≤n / ∃=n)."
+)
+
+
+@dataclass(frozen=True)
+class Cardinality(Node):
+    """A set-cardinality term |{v : φ}|: the number of individuals ``v`` satisfying ``φ``.
+
+    The first-class ``|S|`` term behind faithful counting comparisons — ``more votes
+    than`` becomes ``|{v : Votes(x, v)}| > |{v : Votes(y, v)}|``. It BINDS ``variable``
+    over the matrix ``formula``. Set cardinality is genuinely second-order, so it has
+    no first-order export: :meth:`to_z3` / :meth:`to_prover9` / :meth:`to_tptp` reject.
+    """
+
+    variable: Variable
+    formula: Node
+
+    def _tree_parts(self):
+        """Return the |v| cardinality label (with the bound variable) and the matrix."""
+        return f"|{self.variable.name}|", [self.formula]
+
+    def to_dict(self):
+        """Serialise to dict with the bound variable and serialised matrix."""
+        return {"_type": "Cardinality", "variable": self.variable.to_dict(),
+                "formula": self.formula.to_dict()}
+
+    @staticmethod
+    def from_dict(d):
+        """Deserialise a Cardinality from a dict produced by to_dict."""
+        return Cardinality(Node.from_dict(d["variable"]), Node.from_dict(d["formula"]))
+
+    def to_z3(self, env: Z3Env = None):
+        """Reject Z3 export: set cardinality has no first-order counterpart."""
+        raise NotImplementedError(_NO_CARDINALITY_EXPORT)
+
+    def to_prover9(self) -> str:
+        """Reject Prover9 export: set cardinality has no first-order counterpart."""
+        raise NotImplementedError(_NO_CARDINALITY_EXPORT)
+
+    def to_tptp(self) -> str:
+        """Reject TPTP export: set cardinality has no first-order counterpart."""
+        raise NotImplementedError(_NO_CARDINALITY_EXPORT)
+
+
+@dataclass(frozen=True)
+class Contrast(Node):
+    """A concessive (contrastive) connective ``P Ⓒ Q`` — whereas / although / but.
+
+    Truth-functionally identical to classical conjunction (concession is a discourse
+    relation, not a truth-functional one), but kept as a distinct node so a front-end
+    can preserve the contrast rather than flattening it to ∧. Exports therefore behave
+    exactly like :class:`And`.
+    """
+
+    left: Node
+    right: Node
+
+    def to_dict(self):
+        """Serialise to dict with type tag and recursively serialised operands."""
+        return {"_type": "Contrast", "left": self.left.to_dict(), "right": self.right.to_dict()}
+
+    @staticmethod
+    def from_dict(d):
+        """Deserialise a Contrast from a dict produced by to_dict."""
+        return Contrast(Node.from_dict(d["left"]), Node.from_dict(d["right"]))
+
+    def to_z3(self, env: Z3Env = None):
+        """Translate like And (concession is truth-functionally conjunction)."""
+        env = env or Z3Env()
+        return z3.And(self.left.to_z3(env), self.right.to_z3(env))
+
+    def to_prover9(self) -> str:
+        """Render like And, using the Prover9 ampersand operator."""
+        return f"({self.left.to_prover9()} & {self.right.to_prover9()})"
+
+    def to_tptp(self) -> str:
+        """Render like And, using the TPTP ampersand operator."""
+        return f"({self.left.to_tptp()} & {self.right.to_tptp()})"
+
+
+# =========================
 # Registry
 # =========================
 
@@ -800,6 +1107,7 @@ NODE_CLASSES = {
     "Function": Function, "Atom": Atom, "Not": Not, "And": And,
     "Or": Or, "Xor": Xor, "Implies": Implies, "Iff": Iff,
     "Quantifier": Quantifier,
+    "Count": Count, "Measure": Measure, "Cardinality": Cardinality,
 }
 
 
@@ -1089,6 +1397,7 @@ _BASE_GRAMMAR_TEMPLATE = '''\
     | NAME "(" termlist ")"                 -> function_
 %%CONST_ALTS%%
     | NUMBER                                -> number_
+%%TERM_EXTRA%%
     | "(" term ")"
 
 lambda_: LAMBDA (VARIABLE | NAME | PREDICATE) "." formula
@@ -1125,6 +1434,20 @@ _MODE_TERMINAL_IMPORTS = {
 }
 
 _SORTED_MODES = frozenset({"msfol", "msfl"})
+
+
+# Per-mode atom_term extensions that are NOT registry-driven (the term layer is the
+# one hand-written part of the template). The classical (fol) mode gains the
+# measure term μ(entity, dimension) and the set-cardinality term |{v : φ}|; the
+# matching FOLTransformer.measure_ / .cardinality_ handlers turn them into Measure /
+# Cardinality nodes. A mode absent from this map gets no extra term form.
+_TERM_EXTRA_CLASSICAL = (
+    '    | "μ" "(" termlist ")"                  -> measure_\n'
+    '    | "|" "{" VARIABLE ":" formula "}" "|"  -> cardinality_'
+)
+_MODE_TERM_EXTRA = {
+    "fol": _TERM_EXTRA_CLASSICAL,
+}
 
 
 def build_grammar(mode: str) -> str:
@@ -1197,6 +1520,9 @@ def build_grammar(mode: str) -> str:
     # --- term-layer constant handling ----------------------------------------
     const_alts = _CONST_ALTS_SORTED if mode in _SORTED_MODES else _CONST_ALTS_PLAIN
 
+    # --- term-layer extensions (measure / cardinality; non-registry) ---------
+    term_extra = _MODE_TERM_EXTRA.get(mode, "")
+
     grammar = _BASE_GRAMMAR_TEMPLATE
     grammar = grammar.replace("%%TERMINAL_IMPORTS%%", _MODE_TERMINAL_IMPORTS[mode])
     grammar = grammar.replace("%%TERMINAL_DEFS%%\n", terminal_defs)
@@ -1209,6 +1535,7 @@ def build_grammar(mode: str) -> str:
     grammar = grammar.replace("%%PREFIX_OPS%%", prefix_ops)
     grammar = grammar.replace("%%QUANT_OPS%%", quant_ops)
     grammar = grammar.replace("%%CONST_ALTS%%", const_alts)
+    grammar = grammar.replace("%%TERM_EXTRA%%\n", (term_extra + "\n") if term_extra else "")
     return grammar
 
 
@@ -1387,6 +1714,18 @@ class FOLTransformer(Transformer):
         formula = items[2]
         return Quantifier(str(quant), var, formula)
 
+    def measure_(self, items):
+        """Transform μ(entity, dimension) into a Measure term node (exactly 2 args)."""
+        args = items[0] if items and isinstance(items[0], list) else list(items)
+        if len(args) != 2:
+            raise ValueError(
+                f"μ(...) takes exactly two arguments (entity, dimension); got {len(args)}.")
+        return Measure(args[0], args[1])
+
+    def cardinality_(self, items):
+        """Transform |{v : φ}| into a Cardinality term node binding v over φ."""
+        return Cardinality(items[0], items[1])
+
 
 # =========================
 # Parser registration (FOL / MSFOL connectives + quantifier)
@@ -1457,3 +1796,32 @@ for _m in _CLASSICAL_MODES:
 for _m in _UNSORTED_QUANT_MODES:
     register_parser_op(Quantifier, _m, "quantifier", "quantifier_",
                        "(FORALL | EXISTS) VARIABLE prefix", _quantifier_transform)
+
+
+# --- counting quantifier: ∃≥n / ∃≤n / ∃=n (Count), classical fol mode only ---
+# COUNTOP is one named terminal matching all three glyphs (∃ followed by ≥/≤/=),
+# at lexer priority 5 so it wins over EXISTS (∃) on the longer match; the matched
+# glyph in items[0] selects the op code. The bound NUMBER must be an integer.
+def _count_transform(items):
+    """Build a Count from [COUNTOP glyph token, NUMBER token, Variable, body]."""
+    op = _COUNT_TOKEN_TO_OP[str(items[0])]
+    text = str(items[1])
+    if "." in text:
+        raise ValueError(
+            f"counting quantifier bound must be an integer, got {text!r}.")
+    return Count(op, Number(int(text)), items[2], items[3])
+
+
+register_parser_op(Count, "fol", "quantifier", "count_",
+                   "COUNTOP NUMBER VARIABLE prefix", _count_transform,
+                   terminal_name="COUNTOP", terminal_def="COUNTOP.5: /∃[≥≤=]/")
+
+
+# --- concessive connective: P Ⓒ Q (Contrast), classical fol mode only ---
+# A regular level2 operator (same precedence as ∧ ∨ ⊕): self-registers with the
+# renderers and the parser, so no renderer branch is needed (it dispatches on
+# spec.fixity == "level2"). Truth-functionally conjunction; kept distinct in the AST.
+register_operator(Contrast, "level2", "Ⓒ", "\\mathbin{\\mathsf{C}}", 3)
+register_parser_op(Contrast, "fol", "level2", "contrast_", '"Ⓒ"',
+                   lambda items: _fold_binary(items, Contrast),
+                   only_name="only_contrast")

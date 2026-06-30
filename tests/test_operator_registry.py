@@ -245,7 +245,10 @@ _EXPECTED_REAL_OPERATORS = [
     ("Permitted", "prefix", "Ⓟ", "\\mathsf{P} ", 4.0),
     ("Knows", "agent_prefix", "K_", "K", 4.0),
     ("Believes", "agent_prefix", "B_", "B", 4.0),
+    ("Says", "agent_prefix", "Say_", "\\mathsf{Say}", 4.0),
+    ("Wants", "agent_prefix", "Want_", "\\mathsf{Want}", 4.0),
     ("Until", "binary_until", "Ⓤ", "\\mathbin{\\mathsf{U}}", 2.5),
+    ("Contrast", "level2", "Ⓒ", "\\mathbin{\\mathsf{C}}", 3.0),
 ]
 
 
@@ -276,7 +279,8 @@ def test_binders_are_not_in_operator_registry():
     so they must not appear in OPERATORS.
     """
     for name in ("Quantifier", "SortedQuantifier", "SecondOrderQuantifier",
-                 "Lambda", "Application", "Atom", "Function"):
+                 "Lambda", "Application", "Atom", "Function",
+                 "Count", "Measure", "Cardinality"):
         assert name not in OPERATORS
 
 

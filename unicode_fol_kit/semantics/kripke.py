@@ -18,6 +18,8 @@ Relation-name convention (keys of :attr:`KripkeModel.relations`):
 - ``"alethic"``        — the accessibility relation for Box □ / Diamond ◇.
 - ``"K:" + agent``     — the epistemic relation for ``Knows(agent, …)``.
 - ``"B:" + agent``     — the doxastic relation for ``Believes(agent, …)``.
+- ``"Say:" + agent``   — the assertive relation for ``Says(agent, …)`` (non-factive).
+- ``"Want:" + agent``  — the bouletic relation for ``Wants(agent, …)`` (non-veridical).
 - ``"temporal"``       — the one-step successor relation for Next / Always /
                          Eventually / Until.
 - ``"deontic"``        — the (serial) accessibility relation for Obligatory O /
@@ -51,7 +53,7 @@ from ..fol.nodes import (
     Node,
     Atom, Not, And, Or, Xor, Implies, Iff,
     Quantifier, SortedQuantifier,
-    Box, Diamond, Knows, Believes,
+    Box, Diamond, Knows, Believes, Says, Wants,
     Always, Eventually, Next, Until,
     Historically, Once, Previous, Since,
     Obligatory, Permitted,
@@ -73,6 +75,8 @@ _TEMPORAL = "temporal"
 _DEONTIC = "deontic"
 _KNOWS_PREFIX = "K:"
 _BELIEVES_PREFIX = "B:"
+_SAYS_PREFIX = "Say:"
+_WANTS_PREFIX = "Want:"
 
 
 def _agent_key(agent: Node) -> str:
@@ -343,6 +347,19 @@ def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
         return all(
             satisfies_modal(formula.formula, model, w2)
             for w2 in model.successors(_BELIEVES_PREFIX + _agent_key(formula.agent), world)
+        )
+
+    # --- assertive / bouletic (both universal K-modalities, no frame conditions:
+    # Says is non-factive / non-doxastic, Wants is non-veridical) ---
+    if isinstance(formula, Says):
+        return all(
+            satisfies_modal(formula.formula, model, w2)
+            for w2 in model.successors(_SAYS_PREFIX + _agent_key(formula.agent), world)
+        )
+    if isinstance(formula, Wants):
+        return all(
+            satisfies_modal(formula.formula, model, w2)
+            for w2 in model.successors(_WANTS_PREFIX + _agent_key(formula.agent), world)
         )
 
     # --- deontic (Standard Deontic Logic / KD over a serial "deontic" relation) ---

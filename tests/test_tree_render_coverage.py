@@ -18,12 +18,13 @@ from unicode_fol_kit.fol.msflparser import MSFLParser
 from unicode_fol_kit.fol.nodes import (
     Atom, Variable, Constant, Number, Function,
     Not, And, Or, Xor, Implies, Iff, Quantifier,
+    Count, Measure, Cardinality, Contrast,
     LukNegation, WeakConjunction, WeakDisjunction,
     StrongConjunction, StrongDisjunction, LukImplication, LukEquivalence,
     Lambda, LambdaVar, Application,
     SortedQuantifier, SortedConstant,
     Box, Diamond, Always, Eventually, Next, Until,
-    Knows, Believes, Obligatory, Permitted,
+    Knows, Believes, Says, Wants, Obligatory, Permitted,
     SecondOrderQuantifier,
 )
 
@@ -39,11 +40,14 @@ FORMULAS = {
     "classical": _FOL.parse("∀x ((P(ff(x)) → Q(x)) ↔ ¬R(7)) ⊕ S"),
     "and": _FOL.parse("P ∧ Q(alice)"),
     "or": _FOL.parse("P ∨ Q(c_1)"),
+    "count": _FOL.parse("∃≥2 x (P(x) ∧ Q(x))"),
+    "measure_card_contrast": _FOL.parse("(μ(a, height) > b) Ⓒ (|{v : R(v)}| > c)"),
     "lambda": _FOL.parse("(λx. P(x))(alice)"),
     "sorted": _MS.parse("∀x:Human (P(x) → Q(alice:Human))"),
     "luk": _FL.parse("¬P → (P ⊗ Q) → (P ⊕ Q) → (P ∧ Q) → (P ∨ Q) → (P ↔ Q)"),
     "modal": _MODAL.parse(
-        "□P ∧ ◇Q ∧ ⒼR ∧ ⒻS ∧ ⓃP ∧ ⓄQ ∧ ⓅR ∧ K_alice P ∧ B_bob Q ∧ (P Ⓤ Q)"
+        "□P ∧ ◇Q ∧ ⒼR ∧ ⒻS ∧ ⓃP ∧ ⓄQ ∧ ⓅR ∧ K_alice P ∧ B_bob Q "
+        "∧ Say_alice P ∧ Want_bob Q ∧ (P Ⓤ Q)"
     ),
     "second_order": _SO.parse("∀Z ∃W (Z(alice) ∧ W(alice, bob))"),
 }
@@ -52,12 +56,13 @@ FORMULAS = {
 TARGET_CLASSES = {
     "Atom", "Variable", "Constant", "Number", "Function",
     "Not", "And", "Or", "Xor", "Implies", "Iff", "Quantifier",
+    "Count", "Measure", "Cardinality", "Contrast",
     "LukNegation", "WeakConjunction", "WeakDisjunction",
     "StrongConjunction", "StrongDisjunction", "LukImplication", "LukEquivalence",
     "Lambda", "LambdaVar", "Application",
     "SortedQuantifier", "SortedConstant",
     "Box", "Diamond", "Always", "Eventually", "Next", "Until",
-    "Knows", "Believes", "Obligatory", "Permitted",
+    "Knows", "Believes", "Says", "Wants", "Obligatory", "Permitted",
     "SecondOrderQuantifier",
 }
 

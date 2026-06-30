@@ -34,7 +34,8 @@ _GDIR = (pathlib.Path(__file__).parent.parent
 
 # Expected operator rule-aliases the assembled grammar/transformer must expose.
 _EXPECTED_ALIASES = {
-    "fol": {"not_", "and_", "or_", "xor_", "implies_", "iff_", "quantifier_"},
+    "fol": {"not_", "and_", "or_", "xor_", "implies_", "iff_", "quantifier_",
+            "count_", "contrast_"},
     "msfol": {"not_", "and_", "or_", "implies_", "iff_",
               "sorted_quantifier_", "sorted_const_"},
     "msfl": {"luk_not_", "weak_and_", "weak_or_", "strong_and_", "strong_or_",
@@ -43,7 +44,8 @@ _EXPECTED_ALIASES = {
            "luk_implies_", "luk_iff_", "quantifier_"},
     "modal": {"not_", "and_", "or_", "xor_", "implies_", "iff_", "quantifier_",
               "box_", "diamond_", "always_", "eventually_", "next_",
-              "knows_", "believes_", "obligatory_", "permitted_", "until_",
+              "knows_", "believes_", "says_", "wants_",
+              "obligatory_", "permitted_", "until_",
               "historically_", "once_", "previous_", "since_"},
     "second_order": {"not_", "and_", "or_", "xor_", "implies_", "iff_",
                      "quantifier_", "second_order_quantifier_"},

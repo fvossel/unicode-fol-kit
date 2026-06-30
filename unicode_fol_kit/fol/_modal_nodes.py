@@ -62,7 +62,7 @@ def resolve_agent_variables(node: Node, bound: frozenset = frozenset()) -> Node:
     if isinstance(node, (Quantifier, SortedQuantifier)):
         inner = bound | {node.variable.name}
         return replace(node, formula=resolve_agent_variables(node.formula, inner))
-    if isinstance(node, (Knows, Believes)):
+    if isinstance(node, (Knows, Believes, Says, Wants)):
         agent = node.agent
         if isinstance(agent, Variable) and agent.name not in bound:
             agent = Constant(agent.name)
@@ -223,6 +223,107 @@ class Believes(Node):
         agent = d["agent"]
         agent = Node.from_dict(agent) if isinstance(agent, dict) else agent
         return Believes(agent, Node.from_dict(d["formula"]))
+
+    def to_z3(self, env: Z3Env = None):
+        """Reject Z3 export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_EXPORT)
+
+    def to_prover9(self) -> str:
+        """Reject Prover9 export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_EXPORT)
+
+    def to_tptp(self) -> str:
+        """Reject TPTP export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_EXPORT)
+
+
+@dataclass(frozen=True)
+class Says(Node):
+    """Assertive (reportative) Say_a φ: agent ``agent`` asserts/says that φ.
+
+    A NON-factive, NON-doxastic attitude: ``Says_a φ`` does not entail φ (an
+    assertion can be false) and does not entail ``Believes_a φ`` (one may assert
+    what one disbelieves). It is the minimal normal modality K over its own
+    per-agent ``"Say:"`` accessibility relation — no frame conditions — so neither
+    factivity (T) nor any doxastic bridge is validated. ``agent`` is a **term**
+    (Variable or Constant), a structural child, so a bound agent variable works
+    (``∀x (Speaker(x) → Say_x φ)``); a bare string is coerced to a Constant.
+    """
+
+    agent: Node
+    formula: Node
+
+    def __post_init__(self):
+        """Coerce a string agent to a Constant so ``Says("alice", φ)`` still works."""
+        coerced = _coerce_agent(self.agent)
+        if coerced is not self.agent:
+            object.__setattr__(self, "agent", coerced)
+
+    def _tree_parts(self):
+        """Return the Say_<agent> label and the single subformula child."""
+        return f"Say_{_agent_label(self.agent)}", [self.formula]
+
+    def to_dict(self):
+        """Serialise to dict with type tag, agent term, and serialised subformula."""
+        return {"_type": "Says", "agent": self.agent.to_dict(),
+                "formula": self.formula.to_dict()}
+
+    @staticmethod
+    def from_dict(d):
+        """Deserialise a Says from a dict produced by to_dict (legacy string agent ok)."""
+        agent = d["agent"]
+        agent = Node.from_dict(agent) if isinstance(agent, dict) else agent
+        return Says(agent, Node.from_dict(d["formula"]))
+
+    def to_z3(self, env: Z3Env = None):
+        """Reject Z3 export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_EXPORT)
+
+    def to_prover9(self) -> str:
+        """Reject Prover9 export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_EXPORT)
+
+    def to_tptp(self) -> str:
+        """Reject TPTP export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_EXPORT)
+
+
+@dataclass(frozen=True)
+class Wants(Node):
+    """Bouletic (desiderative) Want_a φ: agent ``agent`` wants it to be that φ.
+
+    A NON-veridical attitude: ``Wants_a φ`` does not entail φ — wanting something
+    does not make it so (this is the whole point: ``Wants_a(Fly(a)) ∧ Fly(a)`` is
+    not derivable). It is the minimal normal modality K over its own per-agent
+    ``"Want:"`` accessibility relation — no frame conditions — so veridicality (T)
+    is not validated. ``agent`` is a **term** (Variable or Constant), a structural
+    child, so a bound agent variable works; a bare string is coerced to a Constant.
+    """
+
+    agent: Node
+    formula: Node
+
+    def __post_init__(self):
+        """Coerce a string agent to a Constant so ``Wants("alice", φ)`` still works."""
+        coerced = _coerce_agent(self.agent)
+        if coerced is not self.agent:
+            object.__setattr__(self, "agent", coerced)
+
+    def _tree_parts(self):
+        """Return the Want_<agent> label and the single subformula child."""
+        return f"Want_{_agent_label(self.agent)}", [self.formula]
+
+    def to_dict(self):
+        """Serialise to dict with type tag, agent term, and serialised subformula."""
+        return {"_type": "Wants", "agent": self.agent.to_dict(),
+                "formula": self.formula.to_dict()}
+
+    @staticmethod
+    def from_dict(d):
+        """Deserialise a Wants from a dict produced by to_dict (legacy string agent ok)."""
+        agent = d["agent"]
+        agent = Node.from_dict(agent) if isinstance(agent, dict) else agent
+        return Wants(agent, Node.from_dict(d["formula"]))
 
     def to_z3(self, env: Z3Env = None):
         """Reject Z3 export: modal operators have no direct first-order encoding."""
@@ -615,6 +716,8 @@ register_operator(Obligatory, "prefix", "Ⓞ", "\\mathsf{O} ", 4)
 register_operator(Permitted, "prefix", "Ⓟ", "\\mathsf{P} ", 4)
 register_operator(Knows, "agent_prefix", "K_", "K", 4)
 register_operator(Believes, "agent_prefix", "B_", "B", 4)
+register_operator(Says, "agent_prefix", "Say_", "\\mathsf{Say}", 4)
+register_operator(Wants, "agent_prefix", "Want_", "\\mathsf{Want}", 4)
 register_operator(Until, "binary_until", "Ⓤ", "\\mathbin{\\mathsf{U}}", 2.5)
 # Past-tense (parenthesised glyphs to read apart from the circled future
 # operators; LaTeX overlined so ⒫ never collides with the deontic \mathsf{P}=Ⓟ).
@@ -669,6 +772,15 @@ register_parser_op(Knows, "modal", "prefix", "knows_", "KNOWS prefix",
 register_parser_op(Believes, "modal", "prefix", "believes_", "BELIEVES prefix",
                    lambda items: Believes(parse_agent_token(items[0]), items[1]),
                    terminal_name="BELIEVES", terminal_def='BELIEVES.5: /B_[a-z][a-zA-Z0-9]*/')
+# Assertive Say_<agent> / bouletic Want_<agent>: agent_prefix like Knows/Believes.
+# The "Say_"/"Want_" prefix is 4/5 characters; parse_agent_token strips it to get
+# the agent name. Priority 5 so the token wins over PREDICATE (Say_alice, Want_x).
+register_parser_op(Says, "modal", "prefix", "says_", "SAYS prefix",
+                   lambda items: Says(parse_agent_token(items[0], 4), items[1]),
+                   terminal_name="SAYS", terminal_def='SAYS.5: /Say_[a-z][a-zA-Z0-9]*/')
+register_parser_op(Wants, "modal", "prefix", "wants_", "WANTS prefix",
+                   lambda items: Wants(parse_agent_token(items[0], 5), items[1]),
+                   terminal_name="WANTS", terminal_def='WANTS.5: /Want_[a-z][a-zA-Z0-9]*/')
 register_parser_op(Obligatory, "modal", "prefix", "obligatory_", "OBLIG prefix",
                    lambda items: Obligatory(items[1]),
                    terminal_name="OBLIG", terminal_def='OBLIG: "Ⓞ"')
