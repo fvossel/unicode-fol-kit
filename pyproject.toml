@@ -35,6 +35,10 @@ docs = [
     "furo>=2024.1.29",
     "myst-parser>=2.0",
 ]
+test = [
+    "pytest>=7.0",
+    "pytest-xdist>=3.0",   # parallel test runs: pytest -n auto (the suite is Z3-bound)
+]
 
 [project.urls]
 Documentation = "https://unicode-fol-kit.readthedocs.io/"
