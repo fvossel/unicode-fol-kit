@@ -6,6 +6,7 @@ from .fol import (
     Z3Env,
     NamingError, ParsingError,
     SortedQuantifier, SortedConstant,
+    SortedCount, SortedCardinality,
     WeakConjunction, WeakDisjunction,
     StrongConjunction, StrongDisjunction,
     LukNegation, LukImplication, LukEquivalence,
@@ -82,7 +83,7 @@ from .hol import (
 )
 from . import dl   # the ALC description-logic subpackage (dl.concept_satisfiable, …)
 
-__version__ = "0.10.1"
+__version__ = "0.11.0"
 
 __all__ = [
     "MSFLParser",
@@ -94,6 +95,7 @@ __all__ = [
     "formulas_are_equivalent", "check_logical_entailment",
     "check_logical_entailment_vampire",
     "SortedQuantifier", "SortedConstant",
+    "SortedCount", "SortedCardinality",
     "WeakConjunction", "WeakDisjunction",
     "StrongConjunction", "StrongDisjunction",
     "LukNegation", "LukImplication", "LukEquivalence",

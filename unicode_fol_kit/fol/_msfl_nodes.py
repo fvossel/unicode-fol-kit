@@ -6,7 +6,7 @@ from dataclasses import dataclass, is_dataclass, replace
 from ._fol_nodes import (
     Node, Z3Env, Variable, Constant, Number, Function,
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
-    Count, Cardinality, _COUNT_OPS,
+    Count, Cardinality, _COUNT_OPS, _COUNT_TOKEN_TO_OP,
     NODE_CLASSES, OPERATORS, register_operator,
     register_parser_op, _fold_binary,
 )
@@ -118,6 +118,147 @@ class SortedConstant(Node):
     def to_tptp(self) -> str:
         _logger.info("Auto-reducing %s to FOL for TPTP export.", type(self).__name__)
         return to_fol(self).to_tptp()
+
+
+@dataclass(frozen=True)
+class SortedCount(Node):
+    """A sort-restricted counting quantifier ∃≥n / ∃≤n / ∃=n x:S over one sorted variable.
+
+    The many-sorted counterpart of :class:`Count`: ``∃≥n x:S φ`` is true iff at least
+    ``n`` DISTINCT elements OF SORT ``S`` satisfy ``φ`` (``∃≤n`` at most, ``∃=n`` exactly).
+    ``op`` is ``"ge"`` / ``"le"`` / ``"eq"``; ``n`` is a non-negative-integer :class:`Number`
+    kept SYMBOLIC (never expanded); ``variable`` is the bound counting variable; ``sort`` the
+    sort name it ranges over; ``formula`` its matrix. Reduction to plain FOL relativises the
+    matrix with the sort guard and reuses the distinct-witnesses encoding of :class:`Count`
+    (see :meth:`_relativize`); :meth:`to_z3` / :meth:`to_prover9` / :meth:`to_tptp` auto-reduce.
+    """
+
+    op: str
+    n: Number
+    variable: Variable
+    sort: str
+    formula: Node
+
+    def __post_init__(self):
+        """Validate the op code and that n is a non-negative integer Number."""
+        if self.op not in _COUNT_OPS:
+            raise ValueError(
+                f"SortedCount: unknown op {self.op!r}; expected one of 'ge', 'le', 'eq'.")
+        if not (isinstance(self.n, Number) and isinstance(self.n.value, int)
+                and self.n.value >= 0):
+            raise ValueError(
+                "SortedCount: n must be a Number wrapping a non-negative integer.")
+
+    def _tree_parts(self):
+        """Return the ∃≥n x:S label (with the sorted bound variable) and the matrix."""
+        return (f"{_COUNT_OPS[self.op]}{self.n.value} {self.variable.name}:{self.sort}",
+                [self.formula])
+
+    def to_dict(self):
+        """Serialise to dict with op, n, sorted bound variable, and serialised matrix."""
+        return {"_type": "SortedCount", "op": self.op, "n": self.n.to_dict(),
+                "variable": self.variable.to_dict(), "sort": self.sort,
+                "formula": self.formula.to_dict()}
+
+    @staticmethod
+    def from_dict(d):
+        """Deserialise a SortedCount from a dict produced by to_dict."""
+        return SortedCount(d["op"], Node.from_dict(d["n"]),
+                           Node.from_dict(d["variable"]), d["sort"],
+                           Node.from_dict(d["formula"]))
+
+    def to_msfol(self) -> "Node":
+        """Reduce the matrix to classical FOL; keep the sorted counting binder."""
+        return SortedCount(self.op, self.n, self.variable, self.sort,
+                           self.formula.to_msfol())
+
+    def _relativize(self, facts: list) -> "Node":
+        """Guard the matrix with the sort predicate, then delegate to unsorted Count.
+
+        ``∃≥n x:S φ`` ≡ '≥ n distinct x with (S(x) ∧ φ)'. Guarding the matrix and reusing
+        :class:`Count`'s encoding is correct for EVERY op, because Count's ≤/= readings are
+        themselves defined via 'at least' over the (now sort-guarded) matrix.
+        """
+        guarded = And(Atom(self.sort, [self.variable]), self.formula._relativize(facts))
+        return Count(self.op, self.n, self.variable, guarded)
+
+    def to_z3(self, env: Z3Env = None):
+        """Auto-reduce to FOL (sort-guarded Count), then translate to Z3."""
+        _logger.info("Auto-reducing %s to FOL for Z3 export.", type(self).__name__)
+        return to_fol(self).to_z3(env)
+
+    def to_prover9(self) -> str:
+        """Auto-reduce to FOL (sort-guarded Count), then render Prover9 syntax."""
+        _logger.info("Auto-reducing %s to FOL for Prover9 export.", type(self).__name__)
+        return to_fol(self).to_prover9()
+
+    def to_tptp(self) -> str:
+        """Auto-reduce to FOL (sort-guarded Count), then render TPTP syntax."""
+        _logger.info("Auto-reducing %s to FOL for TPTP export.", type(self).__name__)
+        return to_fol(self).to_tptp()
+
+
+# Shared rejection message: a sorted set-cardinality term is not first-order definable.
+_NO_SORTED_CARDINALITY_EXPORT = (
+    "SortedCardinality terms (|{v:S : φ}|) denote set cardinality, a second-order notion "
+    "with no first-order counterpart. Keep the term at the AST level, or express a "
+    "fixed-bound sorted count with the SortedCount quantifier (∃≥n / ∃≤n / ∃=n x:S)."
+)
+
+
+@dataclass(frozen=True)
+class SortedCardinality(Node):
+    """A sort-restricted set-cardinality term |{v:S : φ}|: the number of elements of sort
+    ``S`` satisfying ``φ``.
+
+    The many-sorted counterpart of :class:`Cardinality`. It BINDS ``variable`` (of sort
+    ``sort``) over the matrix ``formula``. Set cardinality is genuinely second-order, so it
+    has no first-order export: :meth:`to_z3` / :meth:`to_prover9` / :meth:`to_tptp` reject.
+    """
+
+    variable: Variable
+    sort: str
+    formula: Node
+
+    def _tree_parts(self):
+        """Return the |v:S| cardinality label (with the sorted bound variable) and the matrix."""
+        return f"|{self.variable.name}:{self.sort}|", [self.formula]
+
+    def to_dict(self):
+        """Serialise to dict with the sorted bound variable and serialised matrix."""
+        return {"_type": "SortedCardinality", "variable": self.variable.to_dict(),
+                "sort": self.sort, "formula": self.formula.to_dict()}
+
+    @staticmethod
+    def from_dict(d):
+        """Deserialise a SortedCardinality from a dict produced by to_dict."""
+        return SortedCardinality(Node.from_dict(d["variable"]), d["sort"],
+                                 Node.from_dict(d["formula"]))
+
+    def to_msfol(self) -> "Node":
+        """Reduce the matrix to classical FOL; keep the sorted cardinality binder."""
+        return SortedCardinality(self.variable, self.sort, self.formula.to_msfol())
+
+    def _relativize(self, facts: list) -> "Node":
+        """Guard the matrix with the sort predicate and fall back to unsorted Cardinality.
+
+        ``|{v:S : φ}|`` = ``|{v : S(v) ∧ φ}|``. The result is still export-free (Cardinality
+        rejects), but the reduction keeps the term semantically faithful under to_fol.
+        """
+        guarded = And(Atom(self.sort, [self.variable]), self.formula._relativize(facts))
+        return Cardinality(self.variable, guarded)
+
+    def to_z3(self, env: Z3Env = None):
+        """Reject Z3 export: sorted set cardinality has no first-order counterpart."""
+        raise NotImplementedError(_NO_SORTED_CARDINALITY_EXPORT)
+
+    def to_prover9(self) -> str:
+        """Reject Prover9 export: sorted set cardinality has no first-order counterpart."""
+        raise NotImplementedError(_NO_SORTED_CARDINALITY_EXPORT)
+
+    def to_tptp(self) -> str:
+        """Reject TPTP export: sorted set cardinality has no first-order counterpart."""
+        raise NotImplementedError(_NO_SORTED_CARDINALITY_EXPORT)
 
 
 @dataclass(frozen=True)
@@ -483,6 +624,38 @@ for _m in ("msfol", "msfl"):
                        "", _sorted_const_transform)
 
 
+def _sorted_count_transform(items):
+    """Build a SortedCount from [COUNTOP glyph, NUMBER, Variable, SORT, body]."""
+    op = _COUNT_TOKEN_TO_OP[str(items[0])]
+    text = str(items[1])
+    if "." in text:
+        raise ValueError(
+            f"counting quantifier bound must be an integer, got {text!r}.")
+    sort = str(items[3])[1:]  # strip leading ':'
+    return SortedCount(op, Number(int(text)), items[2], sort, items[4])
+
+
+def _sorted_cardinality_transform(items):
+    """Build a SortedCardinality from [VARIABLE, SORT, formula]."""
+    var, sort_tok, formula = items
+    return SortedCardinality(var, str(sort_tok)[1:], formula)  # strip leading ':'
+
+
+# --- sorted counting quantifier: ∃≥n / ∃≤n / ∃=n x:S (SortedCount), MSFOL only ---
+# The classical unsorted Count lives in fol/modal/second-order; MSFOL, where every
+# binder is sorted, gets the sort-annotated counting quantifier instead. COUNTOP is
+# the shared priority-5 terminal (∃ followed by ≥/≤/=).
+register_parser_op(SortedCount, "msfol", "quantifier", "sorted_count_",
+                   "COUNTOP NUMBER VARIABLE SORT prefix", _sorted_count_transform,
+                   terminal_name="COUNTOP", terminal_def="COUNTOP.5: /∃[≥≤=]/")
+
+# --- sorted set-cardinality term: |{v:S : φ}| (SortedCardinality), MSFOL only ---
+# Handler-only op: the grammar alternative is emitted by the SORTED term-extra in
+# build_grammar (like sorted_const_); the transform is attached to the Transformer.
+register_parser_op(SortedCardinality, "msfol", "quantifier", "sorted_cardinality_",
+                   "", _sorted_cardinality_transform)
+
+
 # =========================
 # Lambda-Calculus Nodes
 # =========================
@@ -609,9 +782,11 @@ def free_variables(node: Node) -> set:
         return set()
     if isinstance(node, Lambda):
         return free_variables(node.body) - {node.param}
-    if isinstance(node, (Quantifier, SortedQuantifier, Count, Cardinality)):
-        # Count / Cardinality also bind their variable over the matrix; Count's n
-        # is a Number (no free variables), so the binder rule is the same.
+    if isinstance(node, (Quantifier, SortedQuantifier, Count, Cardinality,
+                         SortedCount, SortedCardinality)):
+        # Count / Cardinality (and their sorted variants) also bind their variable
+        # over the matrix; Count's n is a Number (no free variables) and the sort is
+        # a plain string, so the binder rule is the same.
         return free_variables(node.formula) - {node.variable}
     if not is_dataclass(node):
         raise TypeError(f"free_variables: unknown node type {type(node).__name__}")
@@ -690,7 +865,7 @@ def _rename(term: Node, old_var, new_var) -> Node:
             return term  # shadowed
         return SortedQuantifier(term.type, term.variable, term.sort,
                                 _rename(term.formula, old_var, new_var))
-    if isinstance(term, (Count, Cardinality)):
+    if isinstance(term, (Count, Cardinality, SortedCount, SortedCardinality)):
         if term.variable == old_var:
             return term  # shadowed by the counting/cardinality binder
         return replace(term, formula=_rename(term.formula, old_var, new_var))
@@ -749,10 +924,10 @@ def _subst(term: Node, target: LambdaVar, replacement: Node, fv_repl: set) -> No
                                     _subst(new_formula, target, replacement, fv_repl))
         return SortedQuantifier(term.type, term.variable, term.sort,
                                 _subst(term.formula, target, replacement, fv_repl))
-    if isinstance(term, (Count, Cardinality)):
-        # Count / Cardinality bind their variable over the matrix — same
-        # shadowing / capture-avoidance rules as Quantifier (replace() preserves
-        # Count's op and n).
+    if isinstance(term, (Count, Cardinality, SortedCount, SortedCardinality)):
+        # Count / Cardinality (and sorted variants) bind their variable over the
+        # matrix — same shadowing / capture-avoidance rules as Quantifier (replace()
+        # preserves Count's op/n and the sorted variants' sort).
         if term.variable == target:
             return term  # target rebound here — substitution stops
         if term.variable in fv_repl:
@@ -898,9 +1073,9 @@ def _resolve(node: Node, bound: frozenset) -> Node:
     if isinstance(node, SortedQuantifier):
         return SortedQuantifier(node.type, node.variable, node.sort,
                                 _resolve(node.formula, bound - {node.variable.name}))
-    if isinstance(node, (Count, Cardinality)):
-        # Counting / cardinality binders shadow an outer lambda of the same name,
-        # exactly like a quantifier (replace() keeps Count's op and n).
+    if isinstance(node, (Count, Cardinality, SortedCount, SortedCardinality)):
+        # Counting / cardinality binders (and sorted variants) shadow an outer lambda
+        # of the same name, exactly like a quantifier (replace() keeps op/n/sort).
         return replace(node, formula=_resolve(node.formula, bound - {node.variable.name}))
     if isinstance(node, Atom):
         resolved_args = [_resolve(a, bound) for a in node.args]
@@ -973,7 +1148,7 @@ def resolve_lambda_scope(node: Node) -> Node:
 _UNI_BASE_PREC = {
     "Lambda": 0, "Application": 0,
     "Quantifier": 4, "SortedQuantifier": 4, "SecondOrderQuantifier": 4,
-    "Count": 4,
+    "Count": 4, "SortedCount": 4,
 }
 
 # The same-level binary group (∧ ∨ ⊗ ⊕, grammar precedence 3) is identified by
@@ -1079,6 +1254,10 @@ def _uni_term(node) -> str:
     if cls == "Cardinality":
         # |{v : φ}| — a set-cardinality term; φ renders at the full formula level.
         return "|{" + node.variable.name + " : " + _uni(node.formula) + "}|"
+    if cls == "SortedCardinality":
+        # |{v:S : φ}| — a sort-restricted set-cardinality term.
+        return ("|{" + node.variable.name + ":" + node.sort + " : "
+                + _uni(node.formula) + "}|")
     if cls == "Function":
         if node.name in _UNI_ARITH_OPS and len(node.args) == 2:
             p = _uni_term_prec(node)
@@ -1100,7 +1279,7 @@ def _uni(node) -> str:
     cls = type(node).__name__
 
     if cls in ("Variable", "LambdaVar", "Constant", "Number", "SortedConstant",
-               "Function", "Measure", "Cardinality"):
+               "Function", "Measure", "Cardinality", "SortedCardinality"):
         return _uni_term(node)
     if cls == "Atom":
         return _uni_atom(node)
@@ -1139,6 +1318,10 @@ def _uni(node) -> str:
     if cls == "Count":
         # ∃≥n / ∃≤n / ∃=n x  body  (binds as tightly as a quantifier).
         return (f"{_COUNT_OPS[node.op]}{node.n.value} {node.variable.name} "
+                + _uni_wrap(node.formula, 4))
+    if cls == "SortedCount":
+        # ∃≥n / ∃≤n / ∃=n x:S  body  (sorted counting quantifier).
+        return (f"{_COUNT_OPS[node.op]}{node.n.value} {node.variable.name}:{node.sort} "
                 + _uni_wrap(node.formula, 4))
     if cls == "SortedQuantifier":
         return f"{node.type}{node.variable.name}:{node.sort} " + _uni_wrap(node.formula, 4)
@@ -1220,6 +1403,10 @@ def _latex_term(node) -> str:
     if cls == "Cardinality":
         return ("\\lvert\\{" + _latex_escape(node.variable.name) + " : "
                 + _latex(node.formula) + "\\}\\rvert")
+    if cls == "SortedCardinality":
+        return ("\\lvert\\{" + _latex_escape(node.variable.name)
+                + "{:}\\mathrm{" + node.sort + "} : "
+                + _latex(node.formula) + "\\}\\rvert")
     if cls == "Function":
         if node.name in _UNI_ARITH_OPS and len(node.args) == 2:
             p = _uni_term_prec(node)
@@ -1254,7 +1441,7 @@ def _latex(node) -> str:
     cls = type(node).__name__
 
     if cls in ("Variable", "LambdaVar", "Constant", "Number", "SortedConstant",
-               "Function", "Measure", "Cardinality"):
+               "Function", "Measure", "Cardinality", "SortedCardinality"):
         return _latex_term(node)
     if cls == "Atom":
         return _latex_atom(node)
@@ -1288,6 +1475,10 @@ def _latex(node) -> str:
         rel = {"ge": "\\geq", "le": "\\leq", "eq": "="}[node.op]
         return (f"\\exists^{{{rel} {node.n.value}}} {node.variable.name}\\, "
                 + _latex_wrap(node.formula, 4))
+    if cls == "SortedCount":
+        rel = {"ge": "\\geq", "le": "\\leq", "eq": "="}[node.op]
+        return (f"\\exists^{{{rel} {node.n.value}}} {node.variable.name}{{:}}\\mathrm{{{node.sort}}}\\, "
+                + _latex_wrap(node.formula, 4))
     if cls == "SortedQuantifier":
         return (f"{_LATEX_QUANT[node.type]} {node.variable.name}{{:}}\\mathrm{{{node.sort}}}\\, "
                 + _latex_wrap(node.formula, 4))
@@ -1310,6 +1501,8 @@ def _latex(node) -> str:
 NODE_CLASSES.update({
     "SortedQuantifier": SortedQuantifier,
     "SortedConstant": SortedConstant,
+    "SortedCount": SortedCount,
+    "SortedCardinality": SortedCardinality,
     "WeakConjunction": WeakConjunction,
     "WeakDisjunction": WeakDisjunction,
     "StrongConjunction": StrongConjunction,

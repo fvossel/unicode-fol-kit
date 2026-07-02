@@ -7,8 +7,10 @@ EQUIVALENT to the input. It normalizes four — and only four — kinds of
 difference:
 
   (a) ALPHA-renaming of bound variables (Quantifier / SortedQuantifier bound
-      Variable, Lambda param): two formulas that differ only in the names of
-      their bound variables canonicalize identically. Bound variables are
+      Variable, Lambda param, and the counting-quantifier / set-cardinality
+      binders Count and Cardinality, which likewise bind a Variable over their
+      matrix): two formulas that differ only in the names of their bound
+      variables canonicalize identically. Bound variables are
       renamed to a deterministic scheme (``q0``, ``q1``, … — a single lowercase
       letter plus digits, which is a valid VARIABLE token and therefore
       round-trips through the parser; underscores are deliberately avoided
@@ -64,9 +66,11 @@ from unicode_fol_kit.fol.nodes import (
     Node, Variable,
     And, Or, Xor, Iff, Implies,
     Not, Quantifier, SortedQuantifier,
+    Count, Cardinality, SortedCount, SortedCardinality,
     WeakConjunction, WeakDisjunction, StrongConjunction, StrongDisjunction,
     LukNegation, LukImplication, LukEquivalence,
     Lambda, LambdaVar,
+    free_variables,
 )
 
 
@@ -103,30 +107,58 @@ def _alpha_normalize(node: Node) -> Node:
     """Rename every bound variable to a canonical ``q0``, ``q1``, … name.
 
     Performs a deterministic pre-order traversal: each binder encountered
-    (Quantifier / SortedQuantifier over a Variable, Lambda over a LambdaVar)
-    consumes the next ``q``-index and its bound occurrences are rewritten to a
-    fresh canonical name of the matching kind (Variable for quantifiers,
-    LambdaVar for lambdas). An environment maps each currently-in-scope original
-    bound name to its canonical replacement; inner binders shadow outer ones of
-    the same name, exactly as scope demands.
+    (Quantifier / SortedQuantifier / Count / Cardinality over a Variable, Lambda
+    over a LambdaVar) consumes the next FREE-name-avoiding ``q``-index and its
+    bound occurrences are rewritten to a fresh canonical name of the matching kind
+    (Variable for quantifiers/counts/cardinalities, LambdaVar for lambdas). An
+    environment maps each currently-in-scope original bound name to its canonical
+    replacement; inner binders shadow outer ones of the same name, exactly as
+    scope demands.
 
-    The scheme is capture-safe: canonical names are ``q<depth-order>``, freshly
-    minted per binder, so an inner binder never reuses an enclosing canonical
-    name. Free variables are left untouched. The result is invariant under any
-    alpha-renaming of ``node`` (P3) and is idempotent (re-running assigns the
-    same names in the same order).
+    The scheme is capture-safe in BOTH directions. (i) An inner binder never
+    reuses an enclosing canonical name, because names are minted from a single
+    monotonic counter. (ii) A bound variable is never renamed onto a FREE variable
+    of the matrix: ``avoid`` holds every free name in ``node`` (a ``q``-name is a
+    legal VARIABLE token, so a formula may legitimately contain a free ``q0``), and
+    the mint skips any ``q``-index already in ``avoid``. Without (ii) the disjoint
+    formulas ``∃x P(x)`` and ``∃x P(q0)`` would both collapse to ``∃q0 P(q0)`` and
+    wrongly compare equal — a false positive that breaks equivalence-preservation
+    (P1). Free variables themselves are left untouched. The result is invariant
+    under any alpha-renaming of ``node`` (P3; renaming bound variables cannot change
+    the free-name set) and is idempotent (P2; a second pass sees the same free
+    names and the same binder-encounter order, so it assigns identical names).
     """
     counter = [0]
-    return _alpha(node, {}, {}, counter)
+    avoid = frozenset(v.name for v in free_variables(node))
+    return _alpha(node, {}, {}, counter, avoid)
 
 
-def _alpha(node: Node, var_env: dict, lam_env: dict, counter: list) -> Node:
+def _fresh_canonical_name(counter: list, avoid) -> str:
+    """Return the next ``q``-index name that does NOT collide with a free name.
+
+    Advances the monotonic ``counter`` past any ``q``-index present in ``avoid``
+    (the set of names free in the whole formula), so a minted bound name is always
+    disjoint from every free variable — the capture-safety guarantee (ii) in
+    :func:`_alpha_normalize`. Distinctness among minted names is preserved because
+    every successful mint consumes a strictly larger counter value.
+    """
+    name = f"q{counter[0]}"
+    counter[0] += 1
+    while name in avoid:
+        name = f"q{counter[0]}"
+        counter[0] += 1
+    return name
+
+
+def _alpha(node: Node, var_env: dict, lam_env: dict, counter: list, avoid) -> Node:
     """Recurse, rewriting bound occurrences per the two environments.
 
     ``var_env`` maps an in-scope original logical-variable name to its canonical
     Variable; ``lam_env`` does the same for lambda-bound names → canonical
     LambdaVar. The environments are copied (never mutated) when entering a
-    binder, so siblings never see each other's bindings.
+    binder, so siblings never see each other's bindings. ``avoid`` is the frozen
+    set of names free in the whole formula, threaded unchanged so every fresh
+    canonical name skips them (see :func:`_fresh_canonical_name`).
     """
     if isinstance(node, Variable):
         return var_env.get(node.name, node)
@@ -134,32 +166,61 @@ def _alpha(node: Node, var_env: dict, lam_env: dict, counter: list) -> Node:
         return lam_env.get(node.name, node)
 
     if isinstance(node, Quantifier):
-        fresh = Variable(f"q{counter[0]}")
-        counter[0] += 1
+        fresh = Variable(_fresh_canonical_name(counter, avoid))
         inner = dict(var_env)
         inner[node.variable.name] = fresh
-        return Quantifier(node.type, fresh, _alpha(node.formula, inner, lam_env, counter))
+        return Quantifier(node.type, fresh, _alpha(node.formula, inner, lam_env, counter, avoid))
 
     if isinstance(node, SortedQuantifier):
-        fresh = Variable(f"q{counter[0]}")
-        counter[0] += 1
+        fresh = Variable(_fresh_canonical_name(counter, avoid))
         inner = dict(var_env)
         inner[node.variable.name] = fresh
         return SortedQuantifier(
             node.type, fresh, node.sort,
-            _alpha(node.formula, inner, lam_env, counter),
+            _alpha(node.formula, inner, lam_env, counter, avoid),
         )
 
     if isinstance(node, Lambda):
-        fresh = LambdaVar(f"q{counter[0]}")
-        counter[0] += 1
+        fresh = LambdaVar(_fresh_canonical_name(counter, avoid))
         inner = dict(lam_env)
         inner[node.param.name] = fresh
-        return Lambda(fresh, _alpha(node.body, var_env, inner, counter))
+        return Lambda(fresh, _alpha(node.body, var_env, inner, counter, avoid))
+
+    # Count / Cardinality also bind a logical Variable over their matrix (Count
+    # additionally carries the op code and the symbolic bound n, both copied
+    # verbatim — neither contains a variable). They rename like a quantifier.
+    if isinstance(node, Count):
+        fresh = Variable(_fresh_canonical_name(counter, avoid))
+        inner = dict(var_env)
+        inner[node.variable.name] = fresh
+        return Count(node.op, node.n, fresh,
+                     _alpha(node.formula, inner, lam_env, counter, avoid))
+
+    if isinstance(node, Cardinality):
+        fresh = Variable(_fresh_canonical_name(counter, avoid))
+        inner = dict(var_env)
+        inner[node.variable.name] = fresh
+        return Cardinality(fresh, _alpha(node.formula, inner, lam_env, counter, avoid))
+
+    # The sorted counterparts bind a Variable too; the sort string is copied verbatim.
+    if isinstance(node, SortedCount):
+        fresh = Variable(_fresh_canonical_name(counter, avoid))
+        inner = dict(var_env)
+        inner[node.variable.name] = fresh
+        return SortedCount(node.op, node.n, fresh, node.sort,
+                           _alpha(node.formula, inner, lam_env, counter, avoid))
+
+    if isinstance(node, SortedCardinality):
+        fresh = Variable(_fresh_canonical_name(counter, avoid))
+        inner = dict(var_env)
+        inner[node.variable.name] = fresh
+        return SortedCardinality(fresh, node.sort,
+                                 _alpha(node.formula, inner, lam_env, counter, avoid))
 
     # Non-binder structural node (Atom, Function, Not, binary connectives,
-    # Application, …): recurse into every child with the same environments.
-    return node.map_children(lambda c: _alpha(c, var_env, lam_env, counter))
+    # Measure, Contrast, Application, …): recurse into every child with the same
+    # environments.
+    return node.map_children(lambda c: _alpha(c, var_env, lam_env, counter, avoid))
 
 
 # ---------------------------------------------------------------------------
@@ -259,6 +320,37 @@ def _sort_key(operand: Node, levels: dict) -> str:
             parts.append("LAM")
             rec(n.body, inner)
             return
+        if isinstance(n, Count):
+            inner = dict(local)
+            inner[n.variable.name] = local_depth[0]
+            local_depth[0] += 1
+            # op and n distinguish ∃≥3 from ∃≤3 / ∃≥5; neither is renamable, so
+            # the key stays invariant under bound-variable renaming (P3).
+            parts.append(f"CNT{n.op}:{n.n.value}")
+            rec(n.formula, inner)
+            return
+        if isinstance(n, Cardinality):
+            inner = dict(local)
+            inner[n.variable.name] = local_depth[0]
+            local_depth[0] += 1
+            parts.append("CARD")
+            rec(n.formula, inner)
+            return
+        if isinstance(n, SortedCount):
+            inner = dict(local)
+            inner[n.variable.name] = local_depth[0]
+            local_depth[0] += 1
+            # op, n AND sort are all significant and non-renamable.
+            parts.append(f"SCNT{n.op}:{n.n.value}:{n.sort}")
+            rec(n.formula, inner)
+            return
+        if isinstance(n, SortedCardinality):
+            inner = dict(local)
+            inner[n.variable.name] = local_depth[0]
+            local_depth[0] += 1
+            parts.append(f"SCARD:{n.sort}")
+            rec(n.formula, inner)
+            return
         parts.append(cls_name)
         if cls_name == "Atom":
             parts.append(n.predicate)
@@ -348,11 +440,30 @@ def _structural(node: Node, levels: dict) -> Node:
         inner = dict(levels)
         inner[node.param.name] = next_level
         return Lambda(node.param, _structural(node.body, inner))
+    if isinstance(node, Count):
+        inner = dict(levels)
+        inner[node.variable.name] = next_level
+        return Count(node.op, node.n, node.variable,
+                     _structural(node.formula, inner))
+    if isinstance(node, Cardinality):
+        inner = dict(levels)
+        inner[node.variable.name] = next_level
+        return Cardinality(node.variable, _structural(node.formula, inner))
+    if isinstance(node, SortedCount):
+        inner = dict(levels)
+        inner[node.variable.name] = next_level
+        return SortedCount(node.op, node.n, node.variable, node.sort,
+                           _structural(node.formula, inner))
+    if isinstance(node, SortedCardinality):
+        inner = dict(levels)
+        inner[node.variable.name] = next_level
+        return SortedCardinality(node.variable, node.sort,
+                                 _structural(node.formula, inner))
 
     # Any other node (Implies, LukImplication, Not/LukNegation without a nested
-    # negation, atoms, terms, Application): keep its shape, recursing structurally
-    # into the children. Operand order of the non-commutative connectives is
-    # thereby preserved.
+    # negation, Contrast, Measure, atoms, terms, Application): keep its shape,
+    # recursing structurally into the children. Operand order of the
+    # non-commutative connectives is thereby preserved.
     return node.map_children(lambda c: _structural(c, levels))
 
 

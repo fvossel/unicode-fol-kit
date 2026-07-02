@@ -14,6 +14,12 @@ All of these are reached through `MSFLParser`: `Count`, `Measure`, `Cardinality`
 `Contrast` parse with the **default** parser; the attitude operators `Says`/`Wants` are
 **modal** (`MSFLParser(modal=True)`), like `Knows`/`Believes`.
 
+`Count`, `Measure`, `Cardinality`, and `Contrast` are not confined to the plain `fol`
+mode — they parse in every classical mode that extends first-order logic, so a CCG form
+that nests them under a modal or second-order operator round-trips as **one string** (see
+{ref}`cross-mode-availability` at the end of this page for the full matrix and the sorted
+`SortedCount` / `SortedCardinality` variants used in many-sorted mode).
+
 ## Counting quantifier — `Count` (∃≥n / ∃≤n / ∃=n)
 
 `Count` is a cardinality quantifier: *at least*, *at most*, or *exactly* `n` distinct
@@ -329,3 +335,75 @@ out, shared = sanitize_all([n1, n2])
 [o.to_unicode_str() for o in out]              # → ['HttpexA(c_x)', 'HttpexA(c_y)']
 shared.predicate                               # → {'http___ex_A': 'HttpexA'}
 ```
+
+(cross-mode-availability)=
+## Cross-mode availability
+
+The counting quantifier, the concessive connective, and the degree / cardinality terms are
+first-order constructs, so they are available in **every classical mode that extends
+first-order logic** — not only the plain `fol` mode. That means a CCG-derived logical form
+which nests one of them under a modal or second-order operator parses, and *round-trips*, as
+a single string:
+
+```python
+from unicode_fol_kit import MSFLParser
+
+modal = MSFLParser(modal=True)
+so = MSFLParser(second_order=True)
+
+# a counting quantifier under a doxastic operator — one parseable string
+f = modal.parse("B_a ∃≥3 x Pass(x)")
+modal.parse(f.to_unicode_str()) == f            # True
+
+# a counting quantifier under a second-order quantifier
+g = so.parse("∃P ∃≥2 x P(x)")
+so.parse(g.to_unicode_str()) == g               # True
+
+# Contrast, Measure, and Cardinality work under those operators too
+modal.parse("□(μ(x, height) > μ(y, height))")   # Measure inside a box
+so.parse("∃P (|{x : P(x)}| > z)")               # Cardinality under ∃P
+```
+
+### Many-sorted mode — `SortedCount` and `SortedCardinality`
+
+In the many-sorted mode every binder carries a sort, so the counting quantifier and the
+set-cardinality term take **sort-annotated** forms — `∃≥n x:S φ` (`SortedCount`) and
+`|{v:S : φ}|` (`SortedCardinality`) — mirroring `SortedQuantifier`. `Contrast`, the
+`Measure` term, and `Xor` (`⊕`) are available in many-sorted mode as well.
+
+```python
+from unicode_fol_kit import MSFLParser, is_valid, to_english
+from unicode_fol_kit.fol.nodes import SortedCount, SortedCardinality
+
+ms = MSFLParser(many_sorted=True)
+
+sc = ms.parse("∃≥3 x:Student Pass(x)")          # SortedCount(op='ge', n=3, sort='Student', …)
+isinstance(sc, SortedCount)                      # True
+ms.parse(sc.to_unicode_str()) == sc              # True   (round-trips with the sort)
+
+card = ms.parse("|{x:Student : Pass(x)}| > z").args[0]
+isinstance(card, SortedCardinality)              # True
+```
+
+`SortedCount` is first-order expressible: it reduces to plain FOL by guarding the matrix
+with the sort predicate and reusing the distinct-witnesses counting encoding, so its logic
+is decided by the Z3 backend just like the unsorted `Count`:
+
+```python
+is_valid(ms.parse("∃≥2 x:S P(x) → ∃≥1 x:S P(x)"))   # True
+is_valid(ms.parse("∃=2 x:S P(x) → ∃≥2 x:S P(x)"))   # True
+to_english(ms.parse("∃≥3 x:Student Pass(x)"))
+# → 'there are at least 3 x of sort Student such that x is pass'
+```
+
+`SortedCardinality`, like the unsorted `Cardinality`, denotes a second-order notion and has
+**no** first-order export (`to_z3` / `to_prover9` / `to_tptp` raise).
+
+### Why not the fuzzy modes?
+
+The fuzzy modes (`fuzzy=True`, and `many_sorted=True, fuzzy=True`) deliberately **do not**
+accept these constructs. Fuzzy logic here is a many-valued (Łukasiewicz) logic, not a
+conservative extension of classical FOL: it reinterprets the connectives, and its evaluator
+rejects the comparison atoms (`μ(x,d) > μ(y,d)`, `|…| > …`) and the classical conjunction
+that `Contrast` and the counting encoding rely on. Admitting them there would produce
+parse-only nodes with no truth semantics, so a clean rejection is the honest boundary.

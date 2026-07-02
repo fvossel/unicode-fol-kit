@@ -15,6 +15,7 @@ from ..fol.nodes import (
     Variable, Constant, Number, Function,
     SortedQuantifier, SortedConstant,
     Count, Measure, Cardinality, Contrast,
+    SortedCount, SortedCardinality,
     Box, Diamond, Knows, Believes, Says, Wants, Obligatory, Permitted,
     Always, Eventually, Next, Until,
     Historically, Once, Previous, Since,
@@ -51,6 +52,9 @@ def _term(node: Node) -> str:
         return f"the {_term(node.dimension)} of {_term(node.entity)}"
     if isinstance(node, Cardinality):
         return f"the number of {node.variable.name} such that {to_english(node.formula)}"
+    if isinstance(node, SortedCardinality):
+        return (f"the number of {node.variable.name} of sort {node.sort} such that "
+                f"{to_english(node.formula)}")
     return node.to_unicode_str()
 
 
@@ -123,6 +127,10 @@ def to_english(node: Node) -> str:
     if isinstance(node, Count):
         return (f"there are {_COUNT_WORDS[node.op]} {node.n.value} {node.variable.name} "
                 f"such that {to_english(node.formula)}")
+
+    if isinstance(node, SortedCount):
+        return (f"there are {_COUNT_WORDS[node.op]} {node.n.value} {node.variable.name} "
+                f"of sort {node.sort} such that {to_english(node.formula)}")
 
     if isinstance(node, SecondOrderQuantifier):
         kind = "every" if node.type in ("∀", "forall") else "some"

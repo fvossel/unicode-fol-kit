@@ -13,8 +13,9 @@ import pytest
 
 from unicode_fol_kit.fol.msflparser import MSFLParser
 from unicode_fol_kit.fol.nodes import (
-    Variable, Constant, Atom,
+    Variable, Constant, Atom, Number,
     And, Or, Xor, Iff, Implies, Not, Quantifier,
+    Count, Cardinality,
     WeakConjunction, WeakDisjunction,
     StrongConjunction, StrongDisjunction, LukNegation,
     Lambda, LambdaVar,
@@ -416,6 +417,115 @@ class TestAlphaVsSortInterplay:
         # (∀x P(x)) ∧ (∀y P(y)) — alpha-equivalent conjuncts collapse to one.
         f = FOL.parse("(∀x P(x)) ∧ (∀y P(y))")
         assert canonicalize(f) == canonicalize(FOL.parse("∀x P(x)"))
+
+
+# ---------------------------------------------------------------------------
+# Count / Cardinality binders — alpha-normalised exactly like a quantifier.
+#
+# Count(op, n, v, φ) and Cardinality(v, φ) bind ``v`` over their matrix, so canonicalize
+# must treat them as binders (rename their bound variable, key the commutative sort by
+# their enclosing level). The op / bound n / matrix stay significant.
+# ---------------------------------------------------------------------------
+
+class TestCountCardinalityBinders:
+    def test_count_alpha_invariant(self):
+        # P3: differ only in the bound-variable name → identical canonical form.
+        a = FOL.parse("∃≥3 x P(x)")
+        b = FOL.parse("∃≥3 y P(y)")
+        assert canonicalize(a) == canonicalize(b)
+        assert exact_match(a, b)
+
+    def test_count_alpha_normalized_name_roundtrips(self):
+        # Bound variable is renamed to the canonical q-scheme, which re-parses.
+        c = canonicalize(FOL.parse("∃=2 x (P(x) ∧ Q(x))"))
+        assert c == Count("eq", Number(2), Variable("q0"),
+                          And(P("P", Variable("q0")), P("Q", Variable("q0"))))
+        assert FOL.parse(c.to_unicode_str()) == c
+
+    def test_count_op_and_bound_significant(self):
+        base = FOL.parse("∃≥3 x P(x)")
+        assert canonicalize(base) != canonicalize(FOL.parse("∃≤3 x P(x)"))   # op
+        assert canonicalize(base) != canonicalize(FOL.parse("∃=3 x P(x)"))   # op
+        assert canonicalize(base) != canonicalize(FOL.parse("∃≥4 x P(x)"))   # bound
+
+    def test_count_matrix_commutativity_normalized(self):
+        # P4 inside the matrix: the commutative ∧ under the count is still sorted.
+        a = FOL.parse("∃≥2 x (P(x) ∧ Q(x))")
+        b = FOL.parse("∃≥2 x (Q(x) ∧ P(x))")
+        assert canonicalize(a) == canonicalize(b)
+
+    def test_count_idempotent_and_equivalence_preserving(self):
+        # P2 idempotency + P1 (the count is FOL-expressible, so Z3 can check).
+        f = FOL.parse("∃=2 x (P(x) ∨ ¬P(x))")
+        c = canonicalize(f)
+        assert canonicalize(c) == c
+        assert formulas_are_equivalent(f, c)
+
+    def test_cardinality_alpha_invariant(self):
+        a = FOL.parse("|{x : Votes(x)}| > c")
+        b = FOL.parse("|{y : Votes(y)}| > c")
+        assert canonicalize(a) == canonicalize(b)
+        assert exact_match(a, b)
+
+    def test_cardinality_matrix_significant(self):
+        a = FOL.parse("|{x : P(x)}| > c")
+        assert canonicalize(a) != canonicalize(FOL.parse("|{x : Q(x)}| > c"))
+
+    def test_binder_free_variable_not_captured(self):
+        # A free variable inside the matrix keeps its identity across canonicalize
+        # (only the bound variable is renamed), so distinct free vars stay distinct.
+        a = FOL.parse("∃≥2 x R(x, y)")
+        assert canonicalize(a) == canonicalize(FOL.parse("∃≥2 z R(z, y)"))
+        assert canonicalize(a) != canonicalize(FOL.parse("∃≥2 z R(z, w)"))
+
+    def test_count_vs_quantifier_do_not_conflate(self):
+        # A counting quantifier is not the same canonical shape as a plain ∃.
+        assert canonicalize(FOL.parse("∃≥1 x P(x)")) != \
+            canonicalize(FOL.parse("∃x P(x)"))
+
+
+class TestAlphaCaptureSafety:
+    """The canonical bound-variable rename must NOT capture a free variable that
+    happens to be named like a canonical q-name. ``∃x P(x)`` and ``∃x P(q0)`` are
+    logically distinct (q0 free in the second) and must stay distinct after
+    canonicalize — otherwise exact_match yields a false positive, breaking P1.
+    Regression for the capture-unsafety the adversarial review surfaced; the fix
+    (free-name avoidance in _alpha_normalize) covers every binder kind.
+    """
+
+    def test_count_free_qname_not_captured(self):
+        a = FOL.parse("∃≥2 x P(x, x)")     # no free variable
+        b = FOL.parse("∃≥2 x P(x, q0)")    # q0 is FREE
+        assert not exact_match(a, b)
+        # the bound variable is renamed AROUND the free q0
+        c = canonicalize(b)
+        assert "q0" in c.to_unicode_str()          # the free q0 survives verbatim
+        assert c.variable.name != "q0"             # the bound var avoided it
+        assert canonicalize(c) == c                 # still idempotent
+        assert FOL.parse(c.to_unicode_str()) == c   # still round-trips
+
+    def test_cardinality_free_qname_not_captured(self):
+        a = FOL.parse("|{x : P(x, x)}| > c")
+        b = FOL.parse("|{x : P(x, q0)}| > c")
+        assert not exact_match(a, b)
+
+    def test_quantifier_free_qname_not_captured(self):
+        # Pre-existing binder — the same fix protects it.
+        assert not exact_match(FOL.parse("∀x P(x, x)"), FOL.parse("∀x P(x, q0)"))
+        assert not exact_match(FOL.parse("∃x ∃y R(x, y, q1)"),
+                               FOL.parse("∃x ∃y R(x, y, y)"))
+
+    def test_lambda_free_qname_not_captured(self):
+        # Lambda binds a LambdaVar; a free LambdaVar named q0 must not be captured.
+        a = resolve(Lambda(LambdaVar("z"), Atom("P", [LambdaVar("z"), LambdaVar("z")])))
+        b = resolve(Lambda(LambdaVar("z"), Atom("P", [LambdaVar("z"), LambdaVar("q0")])))
+        assert not exact_match(a, b)
+
+    def test_free_qname_avoidance_is_idempotent_and_equiv_preserving(self):
+        f = FOL.parse("∃≥2 x (P(x) ∨ ¬P(x)) ∧ Q(q0)")
+        c = canonicalize(f)
+        assert canonicalize(c) == c                 # P2
+        assert formulas_are_equivalent(f, c)        # P1 (Z3)
 
 
 # ---------------------------------------------------------------------------

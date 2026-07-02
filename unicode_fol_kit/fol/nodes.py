@@ -15,6 +15,7 @@ from ._fol_nodes import (
 )
 from ._msfl_nodes import (
     SortedQuantifier, SortedConstant,
+    SortedCount, SortedCardinality,
     WeakConjunction, WeakDisjunction,
     StrongConjunction, StrongDisjunction,
     LukNegation, LukImplication, LukEquivalence,
@@ -42,6 +43,7 @@ __all__ = [
     "NODE_CLASSES",
     "FOLTransformer",
     "SortedQuantifier", "SortedConstant",
+    "SortedCount", "SortedCardinality",
     "WeakConjunction", "WeakDisjunction",
     "StrongConjunction", "StrongDisjunction",
     "LukNegation", "LukImplication", "LukEquivalence",

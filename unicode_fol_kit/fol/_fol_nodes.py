@@ -1437,16 +1437,33 @@ _SORTED_MODES = frozenset({"msfol", "msfl"})
 
 
 # Per-mode atom_term extensions that are NOT registry-driven (the term layer is the
-# one hand-written part of the template). The classical (fol) mode gains the
-# measure term μ(entity, dimension) and the set-cardinality term |{v : φ}|; the
-# matching FOLTransformer.measure_ / .cardinality_ handlers turn them into Measure /
-# Cardinality nodes. A mode absent from this map gets no extra term form.
+# one hand-written part of the template). The classical unsorted modes (fol, modal,
+# second_order) gain the measure term μ(entity, dimension) and the set-cardinality
+# term |{v : φ}|; the matching FOLTransformer.measure_ / .cardinality_ handlers
+# (base-class methods, so available in every mode) turn them into Measure /
+# Cardinality nodes. All three share the plain (unsorted) term layer, so the same
+# fragment applies verbatim; modal / second-order are included so a measure or
+# cardinality term can appear under their operators (e.g. ◇(μ(x, height) > μ(y,
+# height)) or ∃P (|{v : P(v)}| > c)). The SORTED modes msfol/msfl are absent because
+# the |{v : φ}| binder would need a sort annotation; a mode absent from this map
+# gets no extra term form.
 _TERM_EXTRA_CLASSICAL = (
     '    | "μ" "(" termlist ")"                  -> measure_\n'
     '    | "|" "{" VARIABLE ":" formula "}" "|"  -> cardinality_'
 )
+# Sorted variant (MSFOL): the measure term is unchanged (its args are the mode's
+# termlist), but the cardinality binder carries a sort annotation on the bound
+# variable — |{v:Sort : φ}| → SortedCardinality — to stay consistent with MSFOL's
+# rule that every binder is sorted.
+_TERM_EXTRA_SORTED = (
+    '    | "μ" "(" termlist ")"                       -> measure_\n'
+    '    | "|" "{" VARIABLE SORT ":" formula "}" "|"  -> sorted_cardinality_'
+)
 _MODE_TERM_EXTRA = {
     "fol": _TERM_EXTRA_CLASSICAL,
+    "modal": _TERM_EXTRA_CLASSICAL,
+    "second_order": _TERM_EXTRA_CLASSICAL,
+    "msfol": _TERM_EXTRA_SORTED,
 }
 
 
@@ -1748,12 +1765,13 @@ def _fold_binary(items, node_cls):
 
 
 # Classical ∧ ∨ ¬ → ↔ are shared by FOL, MSFOL, modal, and second-order modes;
-# ⊕ (Xor) by FOL, modal, and second-order (NOT MSFOL). The unsorted quantifier is
-# shared by FOL, modal, and second-order. Each connective registers once per mode
-# with the SAME grammar fragment and transform, so the assembled parser produces
-# byte-identical ASTs in every mode.
+# ⊕ (Xor) by every CLASSICAL mode — FOL, MSFOL, modal, and second-order (the glyph ⊕
+# is the Łukasiewicz strong disjunction in the fuzzy modes, so Xor stays out of those).
+# The unsorted quantifier is shared by FOL, modal, and second-order (the sorted modes
+# use SortedQuantifier). Each connective registers once per mode with the SAME grammar
+# fragment and transform, so the assembled parser produces byte-identical ASTs.
 _CLASSICAL_MODES = ("fol", "msfol", "modal", "second_order")
-_XOR_MODES = ("fol", "modal", "second_order")
+_XOR_MODES = ("fol", "msfol", "modal", "second_order")
 _UNSORTED_QUANT_MODES = ("fol", "modal", "second_order")
 
 
@@ -1798,7 +1816,23 @@ for _m in _UNSORTED_QUANT_MODES:
                        "(FORALL | EXISTS) VARIABLE prefix", _quantifier_transform)
 
 
-# --- counting quantifier: ∃≥n / ∃≤n / ∃=n (Count), classical fol mode only ---
+# Modes that accept the NL / CCG translation-target nodes (Count, Contrast, and —
+# via _MODE_TERM_EXTRA below — the Measure / Cardinality terms). These are the
+# CLASSICAL, UNSORTED modes — every mode that is a conservative extension of
+# classical unsorted FOL and therefore reads the constructs with IDENTICAL
+# semantics: plain fol, modal (fol + modal operators), and second-order (fol +
+# quantifiers over predicate variables). A CCG-derived form routinely nests one of
+# these fol-level constructs under a modal or second-order operator — e.g. "every
+# professor believes at least three students will pass" is Believes_x(∃≥3 y …) —
+# so registering the same grammar fragment + transform across the family lets the
+# whole mixed formula parse (and round-trip) as a single string, not only as a
+# hand-built AST. (The SORTED classical modes msfol/msfl need sort-annotated
+# binders, and the fuzzy modes fl/msfl reinterpret the connectives and reject
+# comparison atoms, so neither is included here.)
+_NL_NODE_MODES = ("fol", "modal", "second_order")
+
+
+# --- counting quantifier: ∃≥n / ∃≤n / ∃=n (Count), fol + modal modes ---
 # COUNTOP is one named terminal matching all three glyphs (∃ followed by ≥/≤/=),
 # at lexer priority 5 so it wins over EXISTS (∃) on the longer match; the matched
 # glyph in items[0] selects the op code. The bound NUMBER must be an integer.
@@ -1812,16 +1846,21 @@ def _count_transform(items):
     return Count(op, Number(int(text)), items[2], items[3])
 
 
-register_parser_op(Count, "fol", "quantifier", "count_",
-                   "COUNTOP NUMBER VARIABLE prefix", _count_transform,
-                   terminal_name="COUNTOP", terminal_def="COUNTOP.5: /∃[≥≤=]/")
+for _m in _NL_NODE_MODES:
+    register_parser_op(Count, _m, "quantifier", "count_",
+                       "COUNTOP NUMBER VARIABLE prefix", _count_transform,
+                       terminal_name="COUNTOP", terminal_def="COUNTOP.5: /∃[≥≤=]/")
 
 
-# --- concessive connective: P Ⓒ Q (Contrast), classical fol mode only ---
+# --- concessive connective: P Ⓒ Q (Contrast) — every CLASSICAL mode ---
 # A regular level2 operator (same precedence as ∧ ∨ ⊕): self-registers with the
 # renderers and the parser, so no renderer branch is needed (it dispatches on
 # spec.fixity == "level2"). Truth-functionally conjunction; kept distinct in the AST.
+# Unlike the counting binder it needs no sort annotation, so it drops into the sorted
+# MSFOL mode too — hence the classical-mode list rather than _NL_NODE_MODES.
+_CONTRAST_MODES = ("fol", "modal", "second_order", "msfol")
 register_operator(Contrast, "level2", "Ⓒ", "\\mathbin{\\mathsf{C}}", 3)
-register_parser_op(Contrast, "fol", "level2", "contrast_", '"Ⓒ"',
-                   lambda items: _fold_binary(items, Contrast),
-                   only_name="only_contrast")
+for _m in _CONTRAST_MODES:
+    register_parser_op(Contrast, _m, "level2", "contrast_", '"Ⓒ"',
+                       lambda items: _fold_binary(items, Contrast),
+                       only_name="only_contrast")

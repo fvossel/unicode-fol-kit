@@ -5,6 +5,54 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [0.11.0] - 2026-07-02
+
+Cross-logic parity for the natural-language / CCG translation-target constructs, plus a
+capture-safety fix in the canonical form. The guiding principle: anything expressible in
+classical FOL should also be expressible in the richer classical logics that extend it
+(modal, second-order, and many-sorted), so a construct is no longer arbitrarily confined
+to the plain `fol` mode.
+
+### Added
+
+- **Counting quantifier, concessive connective, and degree/cardinality terms across the
+  classical modes.** `Count` (`∃≥n` / `∃≤n` / `∃=n`), `Contrast` (`Ⓒ`), `Measure` (`μ`),
+  and `Cardinality` (`|{v : φ}|`) — previously accepted only by `MSFLParser()` — now also
+  parse in **modal** mode (`MSFLParser(modal=True)`) and **second-order** mode
+  (`MSFLParser(second_order=True)`), with identical semantics. A CCG-derived form that
+  nests a counting quantifier under a modal or second-order operator — e.g.
+  `B_a ∃≥3 x Pass(x)` ("a believes at least three x pass") — now parses and round-trips as
+  a single string, not only as a hand-assembled AST.
+- **MSFOL many-sorted parity: `SortedCount` and `SortedCardinality`.** The many-sorted mode
+  (`MSFLParser(many_sorted=True)`) gains sort-annotated counterparts of the counting
+  quantifier and the set-cardinality term — `∃≥n x:S φ` (`SortedCount`) and `|{v:S : φ}|`
+  (`SortedCardinality`) — mirroring `SortedQuantifier`. `SortedCount` reduces to plain FOL
+  by guarding the matrix with the sort predicate and reusing the distinct-witnesses
+  encoding (so it is Z3-checkable); `SortedCardinality` is second-order and, like
+  `Cardinality`, has no first-order export. `Contrast`, the `Measure` term, and `Xor` (`⊕`,
+  previously excluded from MSFOL) are available in MSFOL too. Both new node types are
+  exported from the package root.
+- The fuzzy modes (FL / MSFL) deliberately **do not** gain these constructs: fuzzy logic is
+  not a conservative extension of classical FOL (it reinterprets the connectives and its
+  evaluator rejects comparison atoms), so counting/degree/cardinality/concession have no
+  faithful truth semantics there. This is an intentional boundary, not an omission.
+
+### Fixed
+
+- **`exact_match` / `canonicalize` now α-normalize the counting and cardinality binders.**
+  `Count` and `Cardinality` (and their new sorted variants) bind a variable, but the
+  canonical form previously treated only `Quantifier` / `SortedQuantifier` / `Lambda` as
+  binders. As a result `∃≥3 x P(x)` and `∃≥3 y P(y)` — α-equivalent — compared as unequal.
+  They now canonicalize identically, while the op, the bound `n`, the sort, and the matrix
+  stay significant.
+- **Capture-safety of the canonical bound-variable rename.** The rename to canonical names
+  `q0, q1, …` did not avoid free variables that happen to be named the same way, so the
+  logically-distinct `∃x P(x)` and `∃x P(q0)` (where `q0` is free) both canonicalized to
+  `∃q0 P(q0)` — a false positive in `exact_match` that violated equivalence-preservation.
+  The rename now skips any canonical name that occurs free in the formula. The bug affected
+  every binder (`Quantifier` / `Lambda` included) and was newly reachable through the
+  counting binders; the fix covers all of them.
+
 ## [0.10.1] - 2026-06-30
 
 ### Fixed

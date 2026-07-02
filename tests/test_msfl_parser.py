@@ -265,9 +265,11 @@ class TestMSFOLMode:
         result = self.p.parse("P(x) ↔ Q(y)")
         assert type(result) is Iff
 
-    def test_xor_rejected(self):
-        with pytest.raises((NamingError, ParsingError)):
-            self.p.parse("P(x) ⊕ Q(y)")
+    def test_xor_accepted(self):
+        # MSFOL is classical, so ⊕ is Xor (as in fol/modal/second-order); the glyph
+        # is Łukasiewicz strong disjunction only in the fuzzy modes.
+        result = self.p.parse("P(x) ⊕ Q(y)")
+        assert type(result) is Xor
 
     def test_unsorted_quantifier_rejected(self):
         with pytest.raises((NamingError, ParsingError)):
@@ -665,7 +667,7 @@ class TestFLMode:
         with pytest.raises((NamingError, ParsingError)):
             self.p.parse("P(alice:Human)")
 
-    # -- ⊕ is StrongDisjunction in FL, NOT Xor (which is FOL-only) --
+    # -- ⊕ is StrongDisjunction in FL, NOT the classical Xor of the crisp modes --
 
     def test_strong_disjunction_not_xor(self):
         result = self.p.parse("P(x) ⊕ Q(x)")
