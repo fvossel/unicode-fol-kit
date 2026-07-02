@@ -1,0 +1,905 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, Felix Vossel
+# This file is distributed under the same license as the unicode-fol-kit
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: unicode-fol-kit 0.11.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-07-02 22:46+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: de\n"
+"Language-Team: de <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../guide/higher-order.md:1
+msgid "Higher-order proving: Isabelle / THF exporters"
+msgstr "Beweisen höherer Stufe: Isabelle-/THF-Exporter"
+
+#: ../../guide/higher-order.md:3
+msgid ""
+"The `unicode_fol_kit.hol` subpackage emits Benzmüller-style **shallow "
+"semantical embeddings** of every non-fuzzy logic into higher-order logic "
+"— as complete, self-contained problem files for an external prover (Leo-"
+"III / Satallax on TPTP **THF**, or Isabelle/HOL theories for "
+"Sledgehammer). With a local Isabelle installed, the opt-in runner turns "
+"*emit* into *proven / refuted* and reads a real verdict off the build."
+msgstr ""
+"Das Subpackage `unicode_fol_kit.hol` erzeugt **flache semantische "
+"Einbettungen** (shallow semantical embeddings) im Stil von Benzmüller für "
+"jede nicht-unscharfe Logik in die Logik höherer Stufe — als vollständige, "
+"in sich geschlossene Problemdateien für einen externen Beweiser (Leo-III "
+"/ Satallax über TPTP **THF**, oder Isabelle/HOL-Theorien für "
+"Sledgehammer). Mit einer lokal installierten Isabelle verwandelt der "
+"optionale Runner *Emission* in *bewiesen / widerlegt* und liest ein "
+"echtes Ergebnis aus dem Build aus."
+
+#: ../../guide/higher-order.md:5
+msgid "What the exporters emit (and what they cannot decide)"
+msgstr "Was die Exporter erzeugen (und was sie nicht entscheiden können)"
+
+#: ../../guide/higher-order.md:7
+msgid ""
+"The exporters **emit**; they do not themselves run a prover. They also "
+"cannot decide everything: first-order modal logic, FOL, and SOL are "
+"undecidable / not even semi-decidable, so a successful emission means "
+"*\"here is a sound problem a prover may discharge\"*, never "
+"*\"decided\"*. (The propositional fragments — K3/LP, modal K/T/S4/S5 — "
+"are decidable, but these exporters target the general case.) Equality `=`"
+" / `≠` is an **uninterpreted, world-relativized** predicate throughout "
+"(not primitive HOL identity), consistently across every exporter."
+msgstr ""
+"Die Exporter **erzeugen** lediglich; sie führen selbst keinen Beweiser "
+"aus. Sie können auch nicht alles entscheiden: modale Logik erster Stufe, "
+"FOL und SOL sind unentscheidbar bzw. nicht einmal semi-entscheidbar, "
+"sodass eine erfolgreiche Emission bedeutet *\"hier ist ein korrektes "
+"Problem, das ein Beweiser eventuell abschließen kann\"*, niemals "
+"*\"entschieden\"*. (Die aussagenlogischen Fragmente — K3/LP, modal "
+"K/T/S4/S5 — sind entscheidbar, doch diese Exporter zielen auf den "
+"allgemeinen Fall ab.) Gleichheit `=` / `≠` ist durchgängig ein "
+"**uninterpretiertes, welt-relativiertes** Prädikat (nicht die primitive "
+"HOL-Identität), konsistent über alle Exporter hinweg."
+
+#: ../../guide/higher-order.md:9
+msgid ""
+"Each exporter has a THF variant (`to_thf_*`) and an Isabelle variant "
+"(`to_isabelle_*`). **None of these names are top-level** — `from "
+"unicode_fol_kit import *` does *not* bring them in. Import them from "
+"`unicode_fol_kit.hol`:"
+msgstr ""
+"Jeder Exporter besitzt eine THF-Variante (`to_thf_*`) und eine Isabelle-"
+"Variante (`to_isabelle_*`). **Keiner dieser Namen liegt auf oberster "
+"Ebene** — `from unicode_fol_kit import *` bindet sie *nicht* ein. "
+"Importieren Sie sie aus `unicode_fol_kit.hol`:"
+
+#: ../../guide/higher-order.md:29
+msgid ""
+"The **runner** entry points (`find_isabelle`, `isabelle_available`, "
+"`isabelle_decide_modal`, `isabelle_decide_fol`, `check_theory`, and the "
+"verdict dataclasses) *are* exposed both top-level and under "
+"`unicode_fol_kit.hol`. The pure exporters above are "
+"`unicode_fol_kit.hol`-only."
+msgstr ""
+"Die Einstiegspunkte des **Runners** (`find_isabelle`, "
+"`isabelle_available`, `isabelle_decide_modal`, `isabelle_decide_fol`, "
+"`check_theory` sowie die Verdict-Dataclasses) sind *sowohl* auf oberster "
+"Ebene als auch unter `unicode_fol_kit.hol` verfügbar. Die reinen Exporter "
+"oben sind ausschließlich über `unicode_fol_kit.hol` erreichbar."
+
+#: ../../guide/higher-order.md:31
+msgid ""
+"**Full modal family.** `to_isabelle_modal(φ, mode=\"constant\", "
+"frame=\"K\", …)` emits a real, loadable Isabelle theory (`theory … "
+"imports Main begin … end`, every lifted operator as an abbreviation, "
+"frame + domain axioms, the formula lifted into the embedding, and a "
+"genuine `lemma`). `to_thf_modal_full(φ, mode, frame, systems=…)` is the "
+"THF counterpart. Both cover alethic □/◇, **epistemic** `K_a` / "
+"**doxastic** `B_a`, **deontic** `Ⓞ`/`Ⓟ`, and **temporal** `Ⓖ`/`Ⓕ`/`Ⓝ`. "
+"Epistemic/doxastic accessibility is **agent-indexed**: the agent of "
+"`Knows` / `Believes` is a first-class *term*, so a bound `K_x` (as in the"
+" example) genuinely quantifies over agents, exactly as the per-agent "
+"Kripke relations do. (`Until` is out of the shallow fragment; temporal "
+"`Ⓖ`/`Ⓕ`/`Ⓝ` are linked by an inclusion axiom but remain an approximation "
+"of the closure semantics — see the `isabelle_modal` module docstring.)"
+msgstr ""
+"**Vollständige modale Familie.** `to_isabelle_modal(φ, "
+"mode=\"constant\", frame=\"K\", …)` erzeugt eine reale, ladbare Isabelle-"
+"Theorie (`theory … imports Main begin … end`, jeder gelifteter Operator "
+"als Abbreviation, Rahmen- + Domänenaxiome, die in die Einbettung "
+"geliftete Formel sowie ein echtes `lemma`). `to_thf_modal_full(φ, mode, "
+"frame, systems=…)` ist das THF-Gegenstück. Beide decken alethisch □/◇, "
+"**epistemisch** `K_a` / **doxastisch** `B_a`, **deontisch** `Ⓞ`/`Ⓟ` und "
+"**temporal** `Ⓖ`/`Ⓕ`/`Ⓝ` ab. Die epistemische/doxastische Erreichbarkeit "
+"ist **agenten-indiziert**: Der Agent von `Knows` / `Believes` ist ein "
+"vollwertiger *Term*, sodass ein gebundenes `K_x` (wie im Beispiel) "
+"tatsächlich über Agenten quantifiziert — genau wie es die "
+"agentenspezifischen Kripke-Relationen tun. (`Until` liegt außerhalb des "
+"flachen Fragments; temporal `Ⓖ`/`Ⓕ`/`Ⓝ` sind über ein Inklusionsaxiom "
+"verknüpft, bleiben aber eine Annäherung an die Abschlusssemantik — siehe "
+"den Docstring des Moduls `isabelle_modal`.)"
+
+#: ../../guide/higher-order.md:32
+msgid ""
+"**Classical FOL / MSFOL.** `to_thf_fol` / `to_isabelle_fol` (and the "
+"`to_thf_msfol` / `to_isabelle_msfol` variants, which relativise each sort"
+" to a guard predicate) emit the formula as a HOL conjecture / lemma."
+msgstr ""
+"**Klassische FOL / MSFOL.** `to_thf_fol` / `to_isabelle_fol` (sowie die "
+"Varianten `to_thf_msfol` / `to_isabelle_msfol`, die jede Sorte auf ein "
+"Wächterprädikat relativieren) erzeugen die Formel als HOL-Vermutung "
+"(conjecture) bzw. -Lemma."
+
+#: ../../guide/higher-order.md:33
+#, python-brace-format
+msgid ""
+"**Three-valued K3 / LP.** `to_thf_k3lp(φ, system=\"K3\")` / "
+"`to_isabelle_k3lp` (also the `…_entailment` variants) encode the truth-"
+"value type, the strong-Kleene connective functions, and the designated "
+"set (`{1}` for K3, `{½, 1}` for LP), so emitted theorem-hood matches K3 /"
+" LP validity. The Isabelle lemma carries a real proof that discharges — "
+"case-exhaustion over the three truth values for a valid formula, an `exI`"
+" witness for a refutation. Cross-checked against `kleene_value`."
+msgstr ""
+"**Dreiwertig K3 / LP.** `to_thf_k3lp(φ, system=\"K3\")` / "
+"`to_isabelle_k3lp` (sowie die Varianten `…_entailment`) kodieren den "
+"Wahrheitswerttyp, die starken Kleene-Junktorfunktionen und die "
+"ausgezeichnete Menge (`{1}` für K3, `{½, 1}` für LP), sodass die "
+"erzeugte Theoremhaftigkeit der K3-/LP-Gültigkeit entspricht. Das "
+"Isabelle-Lemma trägt einen echten, abschließenden Beweis — vollständige "
+"Fallunterscheidung über die drei Wahrheitswerte für eine gültige Formel, "
+"einen `exI`-Zeugen für eine Widerlegung. Gegengeprüft anhand von "
+"`kleene_value`."
+
+#: ../../guide/higher-order.md:34
+msgid ""
+"**Second-order.** `to_thf_so` / `to_isabelle_so` map `∀P` / `∃P` to "
+"native higher-order predicate quantifiers (standard semantics). Cross-"
+"checked against `satisfies_so` on finite structures."
+msgstr ""
+"**Zweite Stufe.** `to_thf_so` / `to_isabelle_so` bilden `∀P` / `∃P` auf "
+"native Prädikatquantoren höherer Stufe ab (Standardsemantik). "
+"Gegengeprüft anhand von `satisfies_so` auf endlichen Strukturen."
+
+#: ../../guide/higher-order.md:35
+msgid ""
+"**Intuitionistic.** `to_thf_intuitionistic` / "
+"`to_isabelle_intuitionistic` apply the **Gödel–McKinsey–Tarski** box-"
+"translation into S4 then the alethic SSE, so emitted theorem-hood matches"
+" intuitionistic validity — `p ∨ ¬p`, `¬¬p → p`, and Peirce's law come out"
+" as **non-theorems**. For a valid formula the Isabelle theory carries a "
+"real, Isabelle-checked proof (gated on the decidable `gmt_is_s4_valid` "
+"oracle); a non-theorem is left `oops`. Cross-checked against `int_valid`."
+msgstr ""
+"**Intuitionistisch.** `to_thf_intuitionistic` / "
+"`to_isabelle_intuitionistic` wenden die **Gödel-McKinsey-Tarski**-Box-"
+"Übersetzung nach S4 und anschließend die alethische SSE an, sodass die "
+"erzeugte Theoremhaftigkeit der intuitionistischen Gültigkeit entspricht "
+"— `p ∨ ¬p`, `¬¬p → p` und das Peircesche Gesetz erweisen sich als "
+"**Nicht-Theoreme**. Für eine gültige Formel trägt die Isabelle-Theorie "
+"einen echten, von Isabelle geprüften Beweis (abgesichert durch das "
+"entscheidbare Orakel `gmt_is_s4_valid`); ein Nicht-Theorem wird mit "
+"`oops` offengelassen. Gegengeprüft anhand von `int_valid`."
+
+#: ../../guide/higher-order.md:37
+msgid ""
+"Each embedding is faithful to its in-toolkit ground-truth oracle "
+"(`satisfies_modal`, `kleene_value`, `satisfies_so`, `int_valid`), "
+"verified by an adversarial differential audit."
+msgstr ""
+"Jede Einbettung ist treu gegenüber dem zugehörigen Referenzorakel im "
+"Toolkit (`satisfies_modal`, `kleene_value`, `satisfies_so`, "
+"`int_valid`), verifiziert durch eine adversarielle Differenzialprüfung."
+
+#: ../../guide/higher-order.md:39
+msgid "Classical FOL: `to_thf_fol` / `to_isabelle_fol`"
+msgstr "Klassische FOL: `to_thf_fol` / `to_isabelle_fol`"
+
+#: ../../guide/higher-order.md:41
+msgid ""
+"The simplest exporters. `to_thf_fol` returns a TPTP-THF problem string; "
+"`to_isabelle_fol` returns a loadable Isabelle theory. Predicates become "
+"`$i > $o` declarations, the formula becomes the `goal` conjecture, and "
+"`=` / `≠` are the *uninterpreted* predicates `feq` / `fneq` (so `∀x. x = "
+"x` is **not** a theorem of the embedding — no equality axioms are "
+"assumed)."
+msgstr ""
+"Die einfachsten Exporter. `to_thf_fol` liefert eine TPTP-THF-"
+"Problemzeichenkette; `to_isabelle_fol` liefert eine ladbare Isabelle-"
+"Theorie. Prädikate werden zu `$i > $o`-Deklarationen, die Formel wird "
+"zur `goal`-Vermutung, und `=` / `≠` sind die *uninterpretierten* "
+"Prädikate `feq` / `fneq` (sodass `∀x. x = x` **kein** Theorem der "
+"Einbettung ist — es werden keine Gleichheitsaxiome angenommen)."
+
+#: ../../guide/higher-order.md:59
+msgid ""
+"The Isabelle variant wraps the same formula in a `theory … begin … end` "
+"block with an uninterpreted individual type `i`, `consts` declarations, "
+"and a `lemma goal` left on the `oops` hook so the theory always loads:"
+msgstr ""
+"Die Isabelle-Variante umschließt dieselbe Formel mit einem Block `theory "
+"… begin … end`, einem uninterpretierten Individuentyp `i`, `consts`-"
+"Deklarationen und einem `lemma goal`, das auf dem `oops`-Haken belassen "
+"wird, sodass die Theorie stets lädt:"
+
+#: ../../guide/higher-order.md:77
+msgid ""
+"By default the formula is the **conjecture** (what you ask the prover to "
+"prove). Pass `conjecture=False` to emit it as an **axiom** instead — "
+"useful when you want to add a hypothesis to a separate problem file:"
+msgstr ""
+"Standardmäßig ist die Formel die **Vermutung** (conjecture) — das, was "
+"der Beweiser beweisen soll. Übergeben Sie `conjecture=False`, um sie "
+"stattdessen als **Axiom** zu erzeugen — nützlich, wenn Sie einer "
+"separaten Problemdatei eine Hypothese hinzufügen möchten:"
+
+#: ../../guide/higher-order.md:85
+msgid "Equality is uninterpreted"
+msgstr "Gleichheit ist uninterpretiert"
+
+#: ../../guide/higher-order.md:87
+msgid ""
+"`feq` / `fneq` carry no built-in reflexivity, symmetry, or transitivity. "
+"This is deliberate and consistent across every exporter — the embedding "
+"does not silently assume HOL identity:"
+msgstr ""
+"`feq` / `fneq` besitzen keine eingebaute Reflexivität, Symmetrie oder "
+"Transitivität. Das ist beabsichtigt und über alle Exporter hinweg "
+"konsistent — die Einbettung nimmt nicht stillschweigend die HOL-"
+"Identität an:"
+
+#: ../../guide/higher-order.md:96
+msgid "Comparison operators and arithmetic in FOL"
+msgstr "Vergleichsoperatoren und Arithmetik in FOL"
+
+#: ../../guide/higher-order.md:98
+msgid ""
+"Comparison predicates (`≤`, `≥`, `<`, `>`) become uninterpreted binary "
+"predicates (`fle`, `fge`, `flt`, `fgt`); arithmetic operators (`+`, `-`, "
+"`*`, `/`) become uninterpreted function symbols whose names are sanitised"
+" to TPTP-legal identifiers:"
+msgstr ""
+"Vergleichsprädikate (`≤`, `≥`, `<`, `>`) werden zu uninterpretierten "
+"binären Prädikaten (`fle`, `fge`, `flt`, `fgt`); arithmetische Operatoren "
+"(`+`, `-`, `*`, `/`) werden zu uninterpretierten Funktionssymbolen, deren "
+"Namen zu TPTP-zulässigen Bezeichnern bereinigt werden:"
+
+#: ../../guide/higher-order.md:118
+msgid "Custom Isabelle names and proofs"
+msgstr "Benutzerdefinierte Isabelle-Namen und Beweise"
+
+#: ../../guide/higher-order.md:120
+msgid ""
+"Control the theory and lemma names to match your project structure, and "
+"choose a concrete proof tactic instead of the `oops` hook:"
+msgstr ""
+"Steuern Sie die Theorie- und Lemma-Namen passend zu Ihrer "
+"Projektstruktur, und wählen Sie eine konkrete Beweistaktik anstelle des "
+"`oops`-Hakens:"
+
+#: ../../guide/higher-order.md:149
+msgid "Many-sorted FOL: `to_thf_msfol` / `to_isabelle_msfol`"
+msgstr "Mehrsortige FOL: `to_thf_msfol` / `to_isabelle_msfol`"
+
+#: ../../guide/higher-order.md:151
+msgid ""
+"The MSFOL exporters take a formula parsed with "
+"`MSFLParser(many_sorted=True)` and **relativise each sort to a guard "
+"predicate** of type `$i > $o`: a `∀x:Person …` becomes `! [X: $i] : ( "
+"person @ X ) => …`, a `∃y:Document …` becomes `? [Y: $i] : ( document @ Y"
+" ) & …`. There is one untyped individual type and one guard per sort. "
+"**Import `to_isabelle_msfol` from `unicode_fol_kit.hol`** — it is *not* "
+"available through `from unicode_fol_kit import *`."
+msgstr ""
+"Die MSFOL-Exporter nehmen eine mit `MSFLParser(many_sorted=True)` "
+"geparste Formel entgegen und **relativieren jede Sorte auf ein "
+"Wächterprädikat** (guard predicate) vom Typ `$i > $o`: Ein `∀x:Person …` "
+"wird zu `! [X: $i] : ( person @ X ) => …`, ein `∃y:Document …` wird zu "
+"`? [Y: $i] : ( document @ Y ) & …`. Es gibt einen einzigen ungetypten "
+"Individuentyp und einen Wächter pro Sorte. **Importieren Sie "
+"`to_isabelle_msfol` aus `unicode_fol_kit.hol`** — es ist *nicht* über "
+"`from unicode_fol_kit import *` verfügbar."
+
+#: ../../guide/higher-order.md:169
+msgid ""
+"The Isabelle MSFOL theory has the same shape as the FOL one, with each "
+"sort emitted as a `consts … :: \"i \\<Rightarrow> bool\"` guard:"
+msgstr ""
+"Die Isabelle-MSFOL-Theorie hat dieselbe Form wie die FOL-Theorie, wobei "
+"jede Sorte als Wächter `consts … :: \"i \\<Rightarrow> bool\"` erzeugt "
+"wird:"
+
+#: ../../guide/higher-order.md:179
+msgid ""
+"`include_sort_facts=` (default `True`) controls whether sort-inhabitation"
+" facts are added when a free constant of a sort occurs; for purely "
+"quantified formulas like the one above it makes no difference, but it is "
+"available for problems with sorted constants:"
+msgstr ""
+"`include_sort_facts=` (Standard `True`) steuert, ob "
+"Sortenbewohntheitsfakten (sort-inhabitation facts) hinzugefügt werden, "
+"wenn eine freie Konstante einer Sorte auftritt; bei rein quantifizierten "
+"Formeln wie der obigen macht das keinen Unterschied, steht aber für "
+"Probleme mit sortierten Konstanten zur Verfügung:"
+
+#: ../../guide/higher-order.md:187
+msgid "Many-sorted hierarchies"
+msgstr "Mehrsortige Hierarchien"
+
+#: ../../guide/higher-order.md:189
+msgid ""
+"Many-sorted FOL scales to deep domain hierarchies — every sort that "
+"appears becomes its own guard:"
+msgstr ""
+"Mehrsortige FOL skaliert auf tiefe Domänenhierarchien — jede "
+"auftretende Sorte erhält ihren eigenen Wächter:"
+
+#: ../../guide/higher-order.md:199
+msgid "Second-order: `to_thf_so` / `to_isabelle_so`"
+msgstr "Zweite Stufe: `to_thf_so` / `to_isabelle_so`"
+
+#: ../../guide/higher-order.md:201
+msgid ""
+"The SO exporters map predicate quantifiers `∀P` / `∃P` directly onto "
+"**native higher-order quantifiers** of the target — a `P` of arity 1 has "
+"type `$i > $o` (THF) / `i \\<Rightarrow> bool` (Isabelle). This is "
+"**standard (full) second-order semantics**, which is not even semi-"
+"decidable, so a sound prover may fail to close a valid goal. Parse with "
+"`MSFLParser(second_order=True)`."
+msgstr ""
+"Die SO-Exporter bilden Prädikatquantoren `∀P` / `∃P` direkt auf **native "
+"Quantoren höherer Stufe** des Zielsystems ab — ein `P` der Stelligkeit 1 "
+"hat den Typ `$i > $o` (THF) / `i \\<Rightarrow> bool` (Isabelle). Dies "
+"ist die **standardmäßige (volle) Semantik zweiter Stufe**, die nicht "
+"einmal semi-entscheidbar ist, sodass ein korrekter Beweiser ein gültiges "
+"Ziel unter Umständen nicht abschließen kann. Parsen Sie mit "
+"`MSFLParser(second_order=True)`."
+
+#: ../../guide/higher-order.md:217
+msgid ""
+"A more substantial example — the Leibniz characterisation of identity (`x"
+" = y` iff `x` and `y` share every property). The `∀P` becomes a genuine "
+"higher-order quantifier `! [P: ( $i > $o )]`:"
+msgstr ""
+"Ein umfangreicheres Beispiel — die Leibnizsche Charakterisierung der "
+"Identität (`x = y` genau dann, wenn `x` und `y` jede Eigenschaft "
+"teilen). Das `∀P` wird zu einem echten Quantor höherer Stufe `! [P: ( "
+"$i > $o )]`:"
+
+#: ../../guide/higher-order.md:226
+msgid ""
+"The Isabelle variant names its theory via `name=` (note: this exporter "
+"uses `name=`, not `theory_name=`):"
+msgstr ""
+"Die Isabelle-Variante benennt ihre Theorie über `name=` (Hinweis: dieser "
+"Exporter verwendet `name=`, nicht `theory_name=`):"
+
+#: ../../guide/higher-order.md:235
+msgid "The full modal family: `to_thf_modal_full` / `to_isabelle_modal`"
+msgstr "Die vollständige modale Familie: `to_thf_modal_full` / `to_isabelle_modal`"
+
+#: ../../guide/higher-order.md:237
+msgid ""
+"These cover the whole modal surface in one shallow embedding over a world"
+" type, with a *separate accessibility family per modality*:"
+msgstr ""
+"Diese decken das gesamte modale Spektrum in einer einzigen flachen "
+"Einbettung über einem Welt-Typ ab, mit einer *eigenen "
+"Erreichbarkeitsfamilie pro Modalität*:"
+
+#: ../../guide/higher-order.md
+msgid "modality"
+msgstr "Modalität"
+
+#: ../../guide/higher-order.md
+msgid "operators"
+msgstr "Operatoren"
+
+#: ../../guide/higher-order.md
+msgid "THF relation"
+msgstr "THF-Relation"
+
+#: ../../guide/higher-order.md
+msgid "lifted op"
+msgstr "gelifteter Operator"
+
+#: ../../guide/higher-order.md
+msgid "alethic"
+msgstr "alethisch"
+
+#: ../../guide/higher-order.md
+msgid "`□` `◇`"
+msgstr "`□` `◇`"
+
+#: ../../guide/higher-order.md
+msgid "`r : mu > mu > $o`"
+msgstr "`r : mu > mu > $o`"
+
+#: ../../guide/higher-order.md
+msgid "`mbox` / `mdia`"
+msgstr "`mbox` / `mdia`"
+
+#: ../../guide/higher-order.md
+msgid "epistemic"
+msgstr "epistemisch"
+
+#: ../../guide/higher-order.md
+msgid "`K_a`"
+msgstr "`K_a`"
+
+#: ../../guide/higher-order.md
+msgid "`rk : $i > mu > mu > $o` (agent-indexed)"
+msgstr "`rk : $i > mu > mu > $o` (agenten-indiziert)"
+
+#: ../../guide/higher-order.md
+msgid "`mknows`"
+msgstr "`mknows`"
+
+#: ../../guide/higher-order.md
+msgid "doxastic"
+msgstr "doxastisch"
+
+#: ../../guide/higher-order.md
+msgid "`B_a`"
+msgstr "`B_a`"
+
+#: ../../guide/higher-order.md
+msgid "`rb : $i > mu > mu > $o` (agent-indexed)"
+msgstr "`rb : $i > mu > mu > $o` (agenten-indiziert)"
+
+#: ../../guide/higher-order.md
+msgid "`mbelieves`"
+msgstr "`mbelieves`"
+
+#: ../../guide/higher-order.md
+msgid "deontic"
+msgstr "deontisch"
+
+#: ../../guide/higher-order.md
+msgid "`Ⓞ` `Ⓟ`"
+msgstr "`Ⓞ` `Ⓟ`"
+
+#: ../../guide/higher-order.md
+msgid "`d : mu > mu > $o` (serial)"
+msgstr "`d : mu > mu > $o` (seriell)"
+
+#: ../../guide/higher-order.md
+msgid "`mobl` / `mperm`"
+msgstr "`mobl` / `mperm`"
+
+#: ../../guide/higher-order.md
+msgid "temporal"
+msgstr "temporal"
+
+#: ../../guide/higher-order.md
+msgid "`Ⓖ` `Ⓕ` `Ⓝ`"
+msgstr "`Ⓖ` `Ⓕ` `Ⓝ`"
+
+#: ../../guide/higher-order.md
+msgid "`t` / `tnext : mu > mu > $o`"
+msgstr "`t` / `tnext : mu > mu > $o`"
+
+#: ../../guide/higher-order.md
+msgid "`malways` / `meventually`"
+msgstr "`malways` / `meventually`"
+
+#: ../../guide/higher-order.md:247
+msgid ""
+"Parse modal formulas with `MSFLParser(modal=True)`. The deontic / "
+"temporal operators are the circled letters `Ⓞ Ⓟ` and `Ⓖ Ⓕ Ⓝ`."
+msgstr ""
+"Parsen Sie modale Formeln mit `MSFLParser(modal=True)`. Die "
+"deontischen/temporalen Operatoren sind die eingekreisten Buchstaben "
+"`Ⓞ Ⓟ` und `Ⓖ Ⓕ Ⓝ`."
+
+#: ../../guide/higher-order.md:249
+msgid "Alethic □/◇ and the frame argument"
+msgstr "Alethisch □/◇ und das Argument `frame`"
+
+#: ../../guide/higher-order.md:251
+msgid ""
+"`frame=` (one of `K` / `T` / `S4` / `S5`) chooses which frame axioms come"
+" into scope. Over `K` the T-axiom `□P → P` is *not* derivable; over a "
+"reflexive (`T`) frame it is — the embedding just emits the right `axiom` "
+"lines and the prover does the rest."
+msgstr ""
+"`frame=` (eines von `K` / `T` / `S4` / `S5`) wählt aus, welche "
+"Rahmenaxiome in Kraft treten. Über `K` ist das T-Axiom `□P → P` *nicht* "
+"herleitbar; über einem reflexiven (`T`) Rahmen ist es das — die "
+"Einbettung erzeugt lediglich die passenden `axiom`-Zeilen, und der "
+"Beweiser erledigt den Rest."
+
+#: ../../guide/higher-order.md:266
+msgid ""
+"The Isabelle counterpart is a complete, loadable theory. For the T-axiom "
+"over a reflexive frame:"
+msgstr ""
+"Das Isabelle-Gegenstück ist eine vollständige, ladbare Theorie. Für das "
+"T-Axiom über einem reflexiven Rahmen:"
+
+#: ../../guide/higher-order.md:281
+msgid ""
+"The default tactic is the `sledgehammer` / `oops` hook, so the theory "
+"always loads even when no automatic proof is found; pass `tactic=` (e.g. "
+"`\"auto\"`, `\"blast\"`, `\"metis\"`) or `proof=` to substitute a "
+"concrete proof. `mode=` selects the constant- (`\"constant\"`) vs. "
+"varying-domain quantifier regime."
+msgstr ""
+"Die Standardtaktik ist der `sledgehammer`-/`oops`-Haken, sodass die "
+"Theorie stets lädt, auch wenn kein automatischer Beweis gefunden wird; "
+"übergeben Sie `tactic=` (z. B. `\"auto\"`, `\"blast\"`, `\"metis\"`) "
+"oder `proof=`, um einen konkreten Beweis einzusetzen. `mode=` wählt "
+"zwischen dem Regime mit konstanter (`\"constant\"`) und dem mit "
+"variierender Domäne für die Quantoren."
+
+#: ../../guide/higher-order.md:292
+msgid "Epistemic K_a / doxastic B_a — agent-indexed"
+msgstr "Epistemisch K_a / doxastisch B_a — agenten-indiziert"
+
+#: ../../guide/higher-order.md:294
+msgid ""
+"The agent of `Knows` / `Believes` is a **first-class term**, so the "
+"accessibility relation `rk` / `rb` is indexed by an `$i`-typed agent. A "
+"*bound* `K_x` therefore genuinely quantifies over agents:"
+msgstr ""
+"Der Agent von `Knows` / `Believes` ist ein **vollwertiger Term**, sodass "
+"die Erreichbarkeitsrelation `rk` / `rb` durch einen `$i`-getypten "
+"Agenten indiziert ist. Ein *gebundenes* `K_x` quantifiziert daher "
+"tatsächlich über Agenten:"
+
+#: ../../guide/higher-order.md:315
+msgid "Deontic Ⓞ/Ⓟ and temporal Ⓖ/Ⓕ/Ⓝ"
+msgstr "Deontisch Ⓞ/Ⓟ und temporal Ⓖ/Ⓕ/Ⓝ"
+
+#: ../../guide/higher-order.md:317
+msgid ""
+"Deontic obligation / permission lift to `mobl` / `mperm` over a "
+"**serial** relation `d` (so \"ought implies can\" — `d_serial` is always "
+"emitted). Temporal `Ⓖ` (always) / `Ⓕ` (eventually) / `Ⓝ` (next) lift to "
+"`malways` / `meventually` over the temporal relation `t`:"
+msgstr ""
+"Deontische Verpflichtung / Erlaubnis liften zu `mobl` / `mperm` über "
+"einer **seriellen** Relation `d` (sodass \"Sollen impliziert Können\" "
+"gilt — `d_serial` wird stets erzeugt). Temporal `Ⓖ` (immer) / `Ⓕ` "
+"(irgendwann) / `Ⓝ` (als Nächstes) liften zu `malways` / `meventually` "
+"über der temporalen Relation `t`:"
+
+#: ../../guide/higher-order.md:339
+msgid "Per-family system selection with `systems=`"
+msgstr "Familienspezifische Systemwahl mit `systems=`"
+
+#: ../../guide/higher-order.md:341
+#, python-brace-format
+msgid ""
+"`to_thf_modal_full(φ, systems={...})` lets you give the **epistemic / "
+"doxastic** families their own modal strength independently of the alethic"
+" `frame`. Mapping `epistemic → \"S5\"` emits reflexivity, transitivity "
+"and symmetry axioms for `rk`:"
+msgstr ""
+"`to_thf_modal_full(φ, systems={...})` erlaubt es, den **epistemischen / "
+"doxastischen** Familien unabhängig vom alethischen `frame` eine eigene "
+"modale Stärke zu geben. Die Zuordnung `epistemic → \"S5\"` erzeugt "
+"Reflexivitäts-, Transitivitäts- und Symmetrieaxiome für `rk`:"
+
+#: ../../guide/higher-order.md:351
+msgid "A sample emitted Isabelle theory"
+msgstr "Eine beispielhaft erzeugte Isabelle-Theorie"
+
+#: ../../guide/higher-order.md:353
+msgid ""
+"`to_isabelle_modal` returns a `str` — a complete theory that starts with "
+"`theory ModalEmbedding` and ends with `end`, with every lifted operator "
+"as an `abbreviation`, the frame axioms via `axiomatization`, and the "
+"formula as a real `lemma`:"
+msgstr ""
+"`to_isabelle_modal` liefert einen `str` — eine vollständige Theorie, die "
+"mit `theory ModalEmbedding` beginnt und mit `end` endet, mit jedem "
+"gelifteten Operator als `abbreviation`, den Rahmenaxiomen über "
+"`axiomatization` und der Formel als echtem `lemma`:"
+
+#: ../../guide/higher-order.md:364
+msgid "Intuitionistic logic: the GMT translation"
+msgstr "Intuitionistische Logik: die GMT-Übersetzung"
+
+#: ../../guide/higher-order.md:366
+msgid ""
+"`to_thf_intuitionistic` / `to_isabelle_intuitionistic` route an "
+"intuitionistic propositional formula through the "
+"**Gödel–McKinsey–Tarski** box-translation into S4 and then the alethic "
+"SSE, so emitted theorem-hood matches intuitionistic validity. The "
+"translation itself is exposed as `gmt_translate`, and its decidable S4 "
+"oracle as `gmt_is_s4_valid`."
+msgstr ""
+"`to_thf_intuitionistic` / `to_isabelle_intuitionistic` leiten eine "
+"intuitionistische aussagenlogische Formel durch die **Gödel-McKinsey-"
+"Tarski**-Box-Übersetzung nach S4 und anschließend durch die alethische "
+"SSE, sodass die erzeugte Theoremhaftigkeit der intuitionistischen "
+"Gültigkeit entspricht. Die Übersetzung selbst wird als `gmt_translate` "
+"bereitgestellt, ihr entscheidbares S4-Orakel als `gmt_is_s4_valid`."
+
+#: ../../guide/higher-order.md:383
+msgid ""
+"The S4 oracle decides intuitionistic validity directly: the classical "
+"tautologies that *fail* intuitionistically come out **False**, while "
+"genuine intuitionistic theorems come out **True**:"
+msgstr ""
+"Das S4-Orakel entscheidet die intuitionistische Gültigkeit direkt: Die "
+"klassischen Tautologien, die intuitionistisch *scheitern*, ergeben "
+"**False**, während echte intuitionistische Theoreme **True** ergeben:"
+
+#: ../../guide/higher-order.md:393
+msgid ""
+"The THF export is the boxed formula over a reflexive-transitive (S4) "
+"frame. For Peirce's law — an intuitionistic **non-theorem** — a sound "
+"prover will refuse it:"
+msgstr ""
+"Der THF-Export ist die geboxte Formel über einem reflexiv-transitiven "
+"(S4-)Rahmen. Für das Peircesche Gesetz — ein intuitionistisches "
+"**Nicht-Theorem** — wird ein korrekter Beweiser es ablehnen:"
+
+#: ../../guide/higher-order.md:404
+msgid ""
+"For a **valid** formula the Isabelle theory carries a real, Isabelle-"
+"checked proof (gated on `gmt_is_s4_valid`); a non-theorem is left on "
+"`oops`:"
+msgstr ""
+"Für eine **gültige** Formel trägt die Isabelle-Theorie einen echten, von "
+"Isabelle geprüften Beweis (abgesichert durch `gmt_is_s4_valid`); ein "
+"Nicht-Theorem wird bei `oops` belassen:"
+
+#: ../../guide/higher-order.md:416
+msgid "Three-valued K3 / LP (bonus exporters)"
+msgstr "Dreiwertig K3 / LP (Bonus-Exporter)"
+
+#: ../../guide/higher-order.md:418
+#, python-brace-format
+msgid ""
+"`to_thf_k3lp(φ, system=\"K3\"|\"LP\")` / `to_isabelle_k3lp` encode the "
+"three truth values, the strong-Kleene connective functions, and the "
+"designated set, so emitted theorem-hood matches K3 / LP validity. The law"
+" of excluded middle is a K3 non-theorem (the designated set is `{T}`) but"
+" holds in LP:"
+msgstr ""
+"`to_thf_k3lp(φ, system=\"K3\"|\"LP\")` / `to_isabelle_k3lp` kodieren die "
+"drei Wahrheitswerte, die starken Kleene-Junktorfunktionen und die "
+"ausgezeichnete Menge, sodass die erzeugte Theoremhaftigkeit der K3-/LP-"
+"Gültigkeit entspricht. Der Satz vom ausgeschlossenen Dritten ist ein "
+"Nicht-Theorem in K3 (die ausgezeichnete Menge ist `{T}`), gilt aber in "
+"LP:"
+
+#: ../../guide/higher-order.md:433
+msgid "Actually running it: the Isabelle runner"
+msgstr "Tatsächliche Ausführung: der Isabelle-Runner"
+
+#: ../../guide/higher-order.md:435
+msgid ""
+"If a local **Isabelle/HOL** is installed, "
+"`unicode_fol_kit.hol.isabelle_runner` writes the embedding to a scratch "
+"session, runs `isabelle build`, and reads the verdict off the build. It "
+"is **opt-in**: with no Isabelle present everything above still works and "
+"these calls raise a clear `IsabelleNotAvailable` (the live tests skip). "
+"The cheap predicate is `isabelle_available()`; `find_isabelle()` locates "
+"an install and returns an `IsabelleInstall` (or `None`). These two are "
+"cheap and safe to call unconditionally:"
+msgstr ""
+"Ist lokal eine **Isabelle/HOL** installiert, schreibt "
+"`unicode_fol_kit.hol.isabelle_runner` die Einbettung in eine "
+"Scratch-Sitzung, führt `isabelle build` aus und liest das Ergebnis aus "
+"dem Build. Dies ist **optional**: Ohne vorhandene Isabelle funktioniert "
+"alles Obige weiterhin, und diese Aufrufe lösen ein eindeutiges "
+"`IsabelleNotAvailable` aus (die Live-Tests werden übersprungen). Das "
+"günstige Prädikat ist `isabelle_available()`; `find_isabelle()` "
+"lokalisiert eine Installation und liefert eine `IsabelleInstall` (oder "
+"`None`). Beide sind günstig und können bedenkenlos unbedingt aufgerufen "
+"werden:"
+
+#: ../../guide/higher-order.md:454
+msgid ""
+"On a machine *with* Isabelle, `available` is `True` and `install` is a "
+"populated `IsabelleInstall`; on a machine *without* one, `available` is "
+"`False` and `install` is `None`. Either way the call is honest and never "
+"raises — guard your actual `isabelle_decide_*` calls behind it."
+msgstr ""
+"Auf einer Maschine *mit* Isabelle ist `available` `True` und `install` "
+"eine befüllte `IsabelleInstall`; auf einer Maschine *ohne* Isabelle ist "
+"`available` `False` und `install` `None`. So oder so ist der Aufruf "
+"ehrlich und löst nie eine Ausnahme aus — sichern Sie Ihre eigentlichen "
+"`isabelle_decide_*`-Aufrufe dahinter ab."
+
+#: ../../guide/higher-order.md:456
+msgid "Deciding modal validity: `isabelle_decide_modal`"
+msgstr "Entscheidung modaler Gültigkeit: `isabelle_decide_modal`"
+
+#: ../../guide/higher-order.md:458
+msgid ""
+"`isabelle_decide_modal(φ, *, frame=\"K\", mode=\"constant\", …)` decides "
+"validity (for the chosen `frame` / `mode`) in three steps, read off the "
+"build's exit code:"
+msgstr ""
+"`isabelle_decide_modal(φ, *, frame=\"K\", mode=\"constant\", …)` "
+"entscheidet die Gültigkeit (für den gewählten `frame` / `mode`) in drei "
+"Schritten, abgelesen am Exit-Code des Builds:"
+
+#: ../../guide/higher-order.md:460
+msgid ""
+"**Prove** — emit the lemma with a proof battery that brings the "
+"frame/domain axioms into scope (`using <axioms> by (blast | force | "
+"fastforce | auto | meson … | metis …)`; the method list is "
+"`DEFAULT_METHODS`, overridable via `methods=`). A successful `isabelle "
+"build` ⇒ **VALID**."
+msgstr ""
+"**Prove** — erzeugt das Lemma mit einer Beweisbatterie, die die Rahmen-/"
+"Domänenaxiome in Kraft setzt (`using <axioms> by (blast | force | "
+"fastforce | auto | meson … | metis …)`; die Methodenliste ist "
+"`DEFAULT_METHODS`, überschreibbar über `methods=`). Ein erfolgreicher "
+"`isabelle build` ⇒ **VALID**."
+
+#: ../../guide/higher-order.md:461
+msgid ""
+"**Refute** — otherwise emit `nitpick[expect = genuine]`, whose build "
+"succeeds **iff** Isabelle finds a genuine finite counter-model ⇒ "
+"**INVALID**."
+msgstr ""
+"**Refute** — andernfalls wird `nitpick[expect = genuine]` erzeugt, "
+"dessen Build **genau dann** erfolgreich ist, wenn Isabelle ein echtes "
+"endliches Gegenmodell findet ⇒ **INVALID**."
+
+#: ../../guide/higher-order.md:462
+msgid ""
+"Otherwise ⇒ **UNKNOWN** (expected — first-order modal logic is "
+"undecidable)."
+msgstr ""
+"Andernfalls ⇒ **UNKNOWN** (erwartbar — modale Logik erster Stufe ist "
+"unentscheidbar)."
+
+#: ../../guide/higher-order.md:464
+msgid ""
+"This is **sound** (Isabelle's kernel certifies the proof; nitpick reports"
+" only *genuine* counter-models) and necessarily **incomplete**; `UNKNOWN`"
+" is a real outcome, not a failure. The verdict is validated "
+"*differentially* against an independent brute-force Kripke oracle "
+"(`satisfies_modal`) across K/T/S4/S5 in the test suite."
+msgstr ""
+"Dies ist **korrekt** (sound) — der Isabelle-Kernel zertifiziert den "
+"Beweis, nitpick meldet nur *echte* Gegenmodelle — und notwendigerweise "
+"**unvollständig**; `UNKNOWN` ist ein reales Ergebnis, kein Fehlschlag. "
+"Das Ergebnis wird *differenziell* gegen ein unabhängiges Brute-Force-"
+"Kripke-Orakel (`satisfies_modal`) über K/T/S4/S5 in der Testsuite "
+"validiert."
+
+#: ../../guide/higher-order.md:466
+msgid ""
+"Every line below that actually invokes Isabelle is gated with `# doctest:"
+" +SKIP` — it needs a local install and can take tens of seconds per call."
+" The shape of the returned `ModalVerdict` is shown without invoking the "
+"prover:"
+msgstr ""
+"Jede nachfolgende Zeile, die Isabelle tatsächlich aufruft, ist mit `# "
+"doctest: +SKIP` abgesichert — sie benötigt eine lokale Installation und "
+"kann pro Aufruf mehrere zehn Sekunden dauern. Die Struktur des "
+"zurückgegebenen `ModalVerdict` wird ohne Aufruf des Beweisers gezeigt:"
+
+#: ../../guide/higher-order.md:480
+msgid ""
+"The verdict is a `ModalVerdict` dataclass; you can build one yourself (no"
+" Isabelle needed) to see its fields — `status`, `frame`, `mode`, "
+"`method`, `countermodel`, `prove_output`, `refute_output`, "
+"`prove_elapsed`, `refute_elapsed`, `infra_error`:"
+msgstr ""
+"Das Ergebnis ist eine Dataclass `ModalVerdict`; Sie können selbst eine "
+"erstellen (ohne dass Isabelle nötig wäre), um ihre Felder zu sehen — "
+"`status`, `frame`, `mode`, `method`, `countermodel`, `prove_output`, "
+"`refute_output`, `prove_elapsed`, `refute_elapsed`, `infra_error`:"
+
+#: ../../guide/higher-order.md:496
+msgid ""
+"**Locating Isabelle.** `find_isabelle()` looks at an explicit path, then "
+"`UFK_ISABELLE_HOME` / `ISABELLE_HOME`, then `isabelle` on `PATH`, then a "
+"light scan of standard install locations (no path is hard-coded). "
+"**Linux/macOS is the primary path** — `isabelle` is invoked directly; "
+"**Windows** is also supported, with the build routed through Isabelle's "
+"bundled Cygwin automatically (path translation + launcher exec-bit "
+"fixup), exposed as the `cygwin_bash` field of `IsabelleInstall`."
+msgstr ""
+"**Isabelle lokalisieren.** `find_isabelle()` prüft zunächst einen "
+"expliziten Pfad, dann `UFK_ISABELLE_HOME` / `ISABELLE_HOME`, dann "
+"`isabelle` auf dem `PATH`, dann eine leichte Durchsuchung "
+"standardmäßiger Installationsorte (kein Pfad ist fest verdrahtet). "
+"**Linux/macOS ist der primäre Pfad** — `isabelle` wird direkt "
+"aufgerufen; **Windows** wird ebenfalls unterstützt, wobei der Build "
+"automatisch über das mitgelieferte Cygwin von Isabelle geleitet wird "
+"(Pfadübersetzung + Korrektur des Exec-Bits des Launchers), zugänglich "
+"über das Feld `cygwin_bash` von `IsabelleInstall`."
+
+#: ../../guide/higher-order.md:497
+msgid ""
+"**Counter-models.** An `INVALID` verdict in the propositional alethic "
+"fragment carries a concrete Kripke counter-model in "
+"`ModalVerdict.countermodel`, reconstructed from `satisfies_modal` "
+"(`isabelle build` does not echo nitpick's model). For "
+"`Always`/`Eventually` together with `Next`, the refute theory defines the"
+" henceforth relation as the reflexive-transitive closure of the one-step "
+"relation, so the closure fragment is genuinely refuted rather than left "
+"`UNKNOWN`."
+msgstr ""
+"**Gegenmodelle.** Ein Ergebnis `INVALID` im aussagenlogischen "
+"alethischen Fragment trägt ein konkretes Kripke-Gegenmodell in "
+"`ModalVerdict.countermodel`, rekonstruiert aus `satisfies_modal` "
+"(`isabelle build` gibt das Modell von nitpick nicht aus). Für "
+"`Always`/`Eventually` zusammen mit `Next` definiert die Refute-Theorie "
+"die Henceforth-Relation als reflexiv-transitiven Abschluss der "
+"Einzelschrittrelation, sodass das Abschlussfragment tatsächlich "
+"widerlegt und nicht auf `UNKNOWN` belassen wird."
+
+#: ../../guide/higher-order.md:499
+msgid "Deciding classical validity: `isabelle_decide_fol`"
+msgstr "Entscheidung klassischer Gültigkeit: `isabelle_decide_fol`"
+
+#: ../../guide/higher-order.md:501
+msgid ""
+"`isabelle_decide_fol(φ, *, msfol=False, …)` decides classical validity "
+"the same way (prove-battery → nitpick finite counter-model), returning a "
+"`FolVerdict` (same fields as `ModalVerdict`, minus `frame` / `mode`). FOL"
+" is only semi-decidable, so `UNKNOWN` is common; equality is the "
+"**uninterpreted** `feq` / `fneq` of the embedding (no equality axioms are"
+" assumed, so `∀x. x = x` is *not* valid here)."
+msgstr ""
+"`isabelle_decide_fol(φ, *, msfol=False, …)` entscheidet die klassische "
+"Gültigkeit auf dieselbe Weise (Beweisbatterie → endliches nitpick-"
+"Gegenmodell) und liefert ein `FolVerdict` (dieselben Felder wie "
+"`ModalVerdict`, ohne `frame` / `mode`). FOL ist nur semi-entscheidbar, "
+"sodass `UNKNOWN` häufig vorkommt; Gleichheit ist das **uninterpretierte** "
+"`feq` / `fneq` der Einbettung (es werden keine Gleichheitsaxiome "
+"angenommen, sodass `∀x. x = x` hier *nicht* gültig ist)."
+
+#: ../../guide/higher-order.md:516
+msgid "`FolVerdict` has the same fields minus `frame` / `mode`:"
+msgstr "`FolVerdict` besitzt dieselben Felder ohne `frame` / `mode`:"
+
+#: ../../guide/higher-order.md:525
+msgid "Building an arbitrary theory: `check_theory`"
+msgstr "Beliebige Theorien bauen: `check_theory`"
+
+#: ../../guide/higher-order.md:527
+msgid ""
+"`check_theory(theory_text, theory_name)` builds an arbitrary self-"
+"contained theory and returns a `BuildResult` — used internally, and handy"
+" for the non-modal exporters (`to_isabelle_fol`, `to_isabelle_k3lp`, "
+"`to_isabelle_intuitionistic`, …), whose emitted proofs are themselves "
+"built against real Isabelle in the test suite. The `BuildResult` fields "
+"are `ok`, `exit_code`, `output`, `theory_name`, `session`, `elapsed`:"
+msgstr ""
+"`check_theory(theory_text, theory_name)` baut eine beliebige, in sich "
+"geschlossene Theorie und liefert ein `BuildResult` — intern verwendet "
+"und praktisch für die nicht-modalen Exporter (`to_isabelle_fol`, "
+"`to_isabelle_k3lp`, `to_isabelle_intuitionistic`, …), deren erzeugte "
+"Beweise in der Testsuite selbst gegen eine reale Isabelle gebaut werden. "
+"Die Felder von `BuildResult` sind `ok`, `exit_code`, `output`, "
+"`theory_name`, `session`, `elapsed`:"
+
+#: ../../guide/higher-order.md:535
+msgid ""
+"A round trip — emit a provable intuitionistic theory, then build it (the "
+"build call needs a local Isabelle, so it is skipped here):"
+msgstr ""
+"Ein Round-Trip — eine beweisbare intuitionistische Theorie erzeugen und "
+"anschließend bauen (der Build-Aufruf benötigt eine lokale Isabelle und "
+"wird hier daher übersprungen):"
+
+#: ../../guide/higher-order.md:550
+msgid ""
+"When no Isabelle is present, `check_theory` / `isabelle_decide_*` raise "
+"`IsabelleNotAvailable`; catch it (or gate on `isabelle_available()`) to "
+"keep the pure-export path working everywhere:"
+msgstr ""
+"Ist keine Isabelle vorhanden, lösen `check_theory` / `isabelle_decide_*` "
+"`IsabelleNotAvailable` aus; fangen Sie diese Ausnahme ab (oder sichern "
+"Sie über `isabelle_available()` ab), damit der reine Export-Pfad überall "
+"funktioniert:"

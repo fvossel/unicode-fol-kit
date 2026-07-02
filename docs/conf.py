@@ -25,6 +25,19 @@ copyright = f"{date.today().year}, {author}"
 release = _version
 version = _version
 
+# -- Internationalization ------------------------------------------------------
+# Translations are managed with sphinx-intl (gettext .po files under locale/).
+# READTHEDOCS_LANGUAGE is set by Read the Docs on a project's translation build
+# (configured in the RtD dashboard, not in this repo); a local build defaults to
+# English and picks another language with ``sphinx-build -D language=de``.
+# Regenerate/update the message catalogs after editing any guide page:
+#   sphinx-build -b gettext docs docs/_build/gettext
+#   sphinx-intl update -p docs/_build/gettext -l de -d docs/locale
+# then translate the new/changed msgid entries in docs/locale/de/LC_MESSAGES/*.po.
+language = os.environ.get("READTHEDOCS_LANGUAGE", "en")
+locale_dirs = ["locale/"]
+gettext_compact = False  # one .po per source file, mirroring the docs/ tree
+
 # -- General configuration ---------------------------------------------------
 extensions = [
     "sphinx.ext.autodoc",

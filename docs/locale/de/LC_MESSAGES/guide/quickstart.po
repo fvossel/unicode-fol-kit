@@ -1,0 +1,653 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, Felix Vossel
+# This file is distributed under the same license as the unicode-fol-kit
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: unicode-fol-kit 0.11.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-07-02 22:46+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: de\n"
+"Language-Team: de <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../guide/quickstart.md:1
+msgid "Quickstart"
+msgstr "Schnellstart"
+
+#: ../../guide/quickstart.md:3
+msgid ""
+"A hands-on tour of the package: parse a classical first-order formula, "
+"decide its validity and satisfiability, read out a model, prove an "
+"entailment, find a finite model, verbalize a formula as English, round-"
+"trip it back to Unicode and LaTeX, and dip into two non-classical logics."
+" Every example below runs against the installed package exactly as shown "
+"— copy any block and paste it into a REPL."
+msgstr ""
+"Ein praxisnaher Rundgang durch das Paket: eine klassische Formel der "
+"Prädikatenlogik erster Stufe parsen, ihre Gültigkeit und Erfüllbarkeit "
+"entscheiden, ein Modell auslesen, eine Folgerung beweisen, ein endliches "
+"Modell finden, eine Formel als englischen Text verbalisieren, sie "
+"verlustfrei zu Unicode und LaTeX zurückparsen, und einen Blick in zwei "
+"nichtklassische Logiken werfen. Jedes Beispiel unten läuft exakt so gegen "
+"das installierte Paket, wie es dargestellt ist — jeder Block kann kopiert"
+" und in eine REPL eingefügt werden."
+
+#: ../../guide/quickstart.md:9
+msgid "The one import you always start with"
+msgstr "Der eine Import, mit dem alles beginnt"
+
+#: ../../guide/quickstart.md:11
+msgid ""
+"Almost everything flows from `MSFLParser`. With no flags it is "
+"**classical first-order logic**; the `.parse` method turns a Unicode (or "
+"LaTeX-decoded) string into an AST `Node` that every reasoning function "
+"consumes."
+msgstr ""
+"Fast alles geht von `MSFLParser` aus. Ohne Flags handelt es sich um "
+"**klassische Prädikatenlogik erster Stufe**; die Methode `.parse` "
+"wandelt eine Unicode- (oder aus LaTeX dekodierte) Zeichenkette in einen "
+"AST-`Node` um, den jede Inferenzfunktion verarbeitet."
+
+#: ../../guide/quickstart.md:26
+msgid ""
+"The most useful entry points for a newcomer, all importable straight from"
+" the package:"
+msgstr ""
+"Die nützlichsten Einstiegspunkte für Einsteiger, alle direkt aus dem "
+"Paket importierbar:"
+
+#: ../../guide/quickstart.md
+msgid "Want to…"
+msgstr "Ziel…"
+
+#: ../../guide/quickstart.md
+msgid "Call"
+msgstr "Aufruf"
+
+#: ../../guide/quickstart.md
+msgid "Returns"
+msgstr "Rückgabe"
+
+#: ../../guide/quickstart.md
+msgid "decide validity (Z3)"
+msgstr "Gültigkeit entscheiden (Z3)"
+
+#: ../../guide/quickstart.md
+msgid "`is_valid(φ)`"
+msgstr "`is_valid(φ)`"
+
+#: ../../guide/quickstart.md
+msgid "`bool`"
+msgstr "`bool`"
+
+#: ../../guide/quickstart.md
+msgid "decide satisfiability (Z3)"
+msgstr "Erfüllbarkeit entscheiden (Z3)"
+
+#: ../../guide/quickstart.md
+msgid "`is_satisfiable(φ)`"
+msgstr "`is_satisfiable(φ)`"
+
+#: ../../guide/quickstart.md
+msgid "see a satisfying valuation"
+msgstr "eine erfüllende Belegung ansehen"
+
+#: ../../guide/quickstart.md
+msgid "`get_model(φ)`"
+msgstr "`get_model(φ)`"
+
+#: ../../guide/quickstart.md
+msgid "`dict` or `None`"
+msgstr "`dict` oder `None`"
+
+#: ../../guide/quickstart.md
+msgid "prove Γ ⊨ φ (no solver needed)"
+msgstr "Γ ⊨ φ beweisen (kein Solver nötig)"
+
+#: ../../guide/quickstart.md
+msgid "`prove(premises, φ)`"
+msgstr "`prove(premises, φ)`"
+
+#: ../../guide/quickstart.md
+msgid "find a finite first-order model"
+msgstr "ein endliches Modell erster Stufe finden"
+
+#: ../../guide/quickstart.md
+msgid "`find_model([φ, …])`"
+msgstr "`find_model([φ, …])`"
+
+#: ../../guide/quickstart.md
+msgid "`Structure` or `None`"
+msgstr "`Structure` oder `None`"
+
+#: ../../guide/quickstart.md
+msgid "find a counterexample to Γ ⊨ φ"
+msgstr "ein Gegenbeispiel zu Γ ⊨ φ finden"
+
+#: ../../guide/quickstart.md
+msgid "`find_countermodel(Γ, φ)`"
+msgstr "`find_countermodel(Γ, φ)`"
+
+#: ../../guide/quickstart.md
+msgid "build a truth table"
+msgstr "eine Wahrheitstafel erstellen"
+
+#: ../../guide/quickstart.md
+msgid "`truth_table(φ, logic=…)`"
+msgstr "`truth_table(φ, logic=…)`"
+
+#: ../../guide/quickstart.md
+msgid "`TruthTable`"
+msgstr "`TruthTable`"
+
+#: ../../guide/quickstart.md
+msgid "read a formula as English"
+msgstr "eine Formel als englischen Text lesen"
+
+#: ../../guide/quickstart.md
+msgid "`to_english(φ)`"
+msgstr "`to_english(φ)`"
+
+#: ../../guide/quickstart.md
+msgid "`str`"
+msgstr "`str`"
+
+#: ../../guide/quickstart.md
+msgid "render back to text / LaTeX"
+msgstr "zurück in Text / LaTeX rendern"
+
+#: ../../guide/quickstart.md
+msgid "`φ.to_unicode_str()`, `φ.to_latex()`"
+msgstr "`φ.to_unicode_str()`, `φ.to_latex()`"
+
+#: ../../guide/quickstart.md:47
+msgid "The remaining sections work through these one at a time."
+msgstr "Die restlichen Abschnitte behandeln diese Punkte einzeln der Reihe nach."
+
+#: ../../guide/quickstart.md:49
+msgid "Parse and check validity"
+msgstr "Parsen und Gültigkeit prüfen"
+
+#: ../../guide/quickstart.md:51
+msgid ""
+"`is_valid` decides validity with Z3 (sound and complete on the decidable "
+"fragment it reaches; it has a `timeout` in milliseconds, default "
+"`10000`)."
+msgstr ""
+"`is_valid` entscheidet die Gültigkeit mit Z3 (korrekt und vollständig auf"
+" dem entscheidbaren Fragment, das erreicht wird; es besitzt einen "
+"`timeout` in Millisekunden, Standardwert `10000`)."
+
+#: ../../guide/quickstart.md:66
+msgid ""
+"Note that a single lowercase letter like `x` is a *variable*; an "
+"individual constant needs a multi-character name such as `socrates`. "
+"(This matters for the model finder below: a formula like `P(a)` with the "
+"variable `a` is read with an implicit universal closure.)"
+msgstr ""
+"Zu beachten ist, dass ein einzelner Kleinbuchstabe wie `x` eine "
+"*Variable* ist; eine Individuenkonstante benötigt einen mehrzeichigen "
+"Namen wie `socrates`. (Das ist für den weiter unten behandelten "
+"Modell-Finder relevant: Eine Formel wie `P(a)` mit der Variablen `a` "
+"wird mit impliziter Allabschluss-Lesart interpretiert.)"
+
+#: ../../guide/quickstart.md:70
+msgid "More validity examples"
+msgstr "Weitere Beispiele zur Gültigkeit"
+
+#: ../../guide/quickstart.md:72
+msgid "Propositional tautologies:"
+msgstr "Aussagenlogische Tautologien:"
+
+#: ../../guide/quickstart.md:89
+msgid "First-order logic laws:"
+msgstr "Gesetze der Prädikatenlogik erster Stufe:"
+
+#: ../../guide/quickstart.md:106
+msgid "Invalid formulas (no logical consequence):"
+msgstr "Ungültige Formeln (keine logische Folgerung):"
+
+#: ../../guide/quickstart.md:114
+msgid "Satisfiability and reading out a model"
+msgstr "Erfüllbarkeit und Auslesen eines Modells"
+
+#: ../../guide/quickstart.md:116
+msgid ""
+"Validity and satisfiability are duals: **φ is valid iff ¬φ is "
+"unsatisfiable**. `is_satisfiable` asks whether *some* interpretation "
+"makes φ true; `get_model` returns one such interpretation as a plain "
+"`dict` (or `None` when none exists)."
+msgstr ""
+"Gültigkeit und Erfüllbarkeit sind dual zueinander: **φ ist genau dann "
+"gültig, wenn ¬φ unerfüllbar ist**. `is_satisfiable` prüft, ob "
+"*irgendeine* Interpretation φ wahr macht; `get_model` liefert eine "
+"solche Interpretation als einfaches `dict` zurück (oder `None`, wenn "
+"keine existiert)."
+
+#: ../../guide/quickstart.md:129
+msgid ""
+"`get_model` hands back a witnessing valuation. For a propositional "
+"formula the keys are the atoms and the values are stringified Z3 "
+"booleans; an unsatisfiable formula gives `None`:"
+msgstr ""
+"`get_model` liefert eine bezeugende Belegung zurück. Bei einer "
+"aussagenlogischen Formel sind die Schlüssel die Atome und die Werte "
+"stringifizierte Z3-Booleans; eine unerfüllbare Formel liefert `None`:"
+
+#: ../../guide/quickstart.md:139
+msgid ""
+"With quantifiers and predicates the model describes each predicate's "
+"interpretation as a Z3 function table:"
+msgstr ""
+"Bei Quantoren und Prädikaten beschreibt das Modell die Interpretation "
+"jedes Prädikats als Z3-Funktionstabelle:"
+
+#: ../../guide/quickstart.md:147
+msgid "Finding satisfying assignments systematically"
+msgstr "Erfüllende Belegungen systematisch finden"
+
+#: ../../guide/quickstart.md:149
+msgid "When multiple satisfying models exist, `get_model` returns one:"
+msgstr ""
+"Existieren mehrere erfüllende Modelle, liefert `get_model` eines davon "
+"zurück:"
+
+#: ../../guide/quickstart.md:163
+msgid "Contradictions and unsatisfiability:"
+msgstr "Widersprüche und Unerfüllbarkeit:"
+
+#: ../../guide/quickstart.md:176
+msgid "Prove an entailment without any external solver"
+msgstr "Eine Folgerung ohne externen Solver beweisen"
+
+#: ../../guide/quickstart.md:178
+msgid ""
+"`prove(premises, conclusion)` runs the built-in resolution prover — it "
+"needs no Z3 and no external binary. It is sound and refutation-complete "
+"for first-order logic (and therefore only *semidecidable*: bounded by "
+"`max_steps`, default `10000`). `premises` is any iterable of `Node`s."
+msgstr ""
+"`prove(premises, conclusion)` nutzt den eingebauten Resolutionsbeweiser —"
+" er benötigt weder Z3 noch ein externes Binary. Er ist korrekt und "
+"widerlegungsvollständig für die Prädikatenlogik erster Stufe (und damit "
+"nur *semientscheidbar*: begrenzt durch `max_steps`, Standardwert "
+"`10000`). `premises` ist ein beliebiges Iterable von `Node`-Objekten."
+
+#: ../../guide/quickstart.md:195
+msgid "More entailment examples"
+msgstr "Weitere Beispiele zu Folgerungen"
+
+#: ../../guide/quickstart.md:197
+msgid "Classical inference patterns:"
+msgstr "Klassische Schlussmuster:"
+
+#: ../../guide/quickstart.md:213
+msgid "Multi-step reasoning with quantifiers:"
+msgstr "Mehrschrittiges Schließen mit Quantoren:"
+
+#: ../../guide/quickstart.md:239
+msgid "Non-entailments (return False):"
+msgstr "Nicht-Folgerungen (liefern False):"
+
+#: ../../guide/quickstart.md:255
+msgid "Find a finite first-order model"
+msgstr "Ein endliches Modell erster Stufe finden"
+
+#: ../../guide/quickstart.md:257
+msgid ""
+"`find_model([φ, …])` searches finite domains of increasing size and "
+"returns the first `Structure` satisfying **every** formula in the list, "
+"or `None` if it finds none up to `max_size` (default `4`). Use multi-"
+"character names so they are read as constants:"
+msgstr ""
+"`find_model([φ, …])` durchsucht endliche Domänen wachsender Größe und "
+"liefert die erste `Structure`, die **jede** Formel in der Liste erfüllt,"
+" oder `None`, falls bis `max_size` (Standardwert `4`) keine gefunden "
+"wird. Mehrzeichige Namen verwenden, damit sie als Konstanten gelesen "
+"werden:"
+
+#: ../../guide/quickstart.md:271
+#, python-brace-format
+msgid ""
+"The structure tells the whole story: a one-element domain `{0}` where "
+"`felix` denotes `0`, and both `Cat` and `Cute` hold of `0`. A theory "
+"needing two *distinct* individuals forces a larger domain automatically:"
+msgstr ""
+"Die Struktur erzählt die ganze Geschichte: eine einelementige Domäne "
+"`{0}`, in der `felix` für `0` steht und sowohl `Cat` als auch `Cute` auf "
+"`0` zutreffen. Eine Theorie, die zwei *verschiedene* Individuen benötigt,"
+" erzwingt automatisch eine größere Domäne:"
+
+#: ../../guide/quickstart.md:282
+msgid ""
+"An unsatisfiable theory yields `None` (note `a` here is a *variable*, so "
+"the two formulas are jointly contradictory under universal closure):"
+msgstr ""
+"Eine unerfüllbare Theorie liefert `None` (zu beachten: `a` ist hier eine "
+"*Variable*, sodass die beiden Formeln unter Allabschluss gemeinsam "
+"widersprüchlich sind):"
+
+#: ../../guide/quickstart.md:289
+msgid "More model-finding examples"
+msgstr "Weitere Beispiele zur Modellsuche"
+
+#: ../../guide/quickstart.md:291
+msgid "Building increasingly complex models:"
+msgstr "Zunehmend komplexere Modelle aufbauen:"
+
+#: ../../guide/quickstart.md:300
+msgid "Symmetric and reflexive relations:"
+msgstr "Symmetrische und reflexive Relationen:"
+
+#: ../../guide/quickstart.md:312
+msgid "Unsatisfiable constraints:"
+msgstr "Unerfüllbare Bedingungen:"
+
+#: ../../guide/quickstart.md:323
+msgid "Model for theories with specific constants:"
+msgstr "Modell für Theorien mit konkreten Konstanten:"
+
+#: ../../guide/quickstart.md:337
+msgid "Finding counterexamples"
+msgstr "Gegenbeispiele finden"
+
+#: ../../guide/quickstart.md:339
+msgid ""
+"`find_countermodel(premises, conclusion)` finds a structure that "
+"satisfies the premises but falsifies the conclusion — witnessing that the"
+" conclusion does *not* follow. It returns `None` if the entailment holds "
+"(premises do entail conclusion)."
+msgstr ""
+"`find_countermodel(premises, conclusion)` findet eine Struktur, die die "
+"Prämissen erfüllt, aber die Konklusion falsifiziert — als Beleg, dass "
+"die Konklusion *nicht* folgt. Die Funktion liefert `None`, wenn die "
+"Folgerung gilt (die Prämissen die Konklusion also implizieren)."
+
+#: ../../guide/quickstart.md:357
+msgid "Counterexample examples"
+msgstr "Beispiele zu Gegenbeispielen"
+
+#: ../../guide/quickstart.md:359
+msgid "Testing logical mistakes:"
+msgstr "Logische Fehlschlüsse testen:"
+
+#: ../../guide/quickstart.md:377
+msgid "Read a formula back as English"
+msgstr "Eine Formel als englischen Text zurücklesen"
+
+#: ../../guide/quickstart.md:379
+msgid ""
+"`to_english` verbalizes any node — a readability aid (not a parse "
+"inverse). Predicate names of the shape `Adjective(x)` become \"x is …\"; "
+"binary predicates are left as-is."
+msgstr ""
+"`to_english` verbalisiert einen beliebigen Knoten — als Lesehilfe (keine"
+" Umkehrung des Parsens). Prädikatnamen der Form `Adjective(x)` werden zu"
+" „x is …“; binäre Prädikate bleiben unverändert."
+
+#: ../../guide/quickstart.md:396
+msgid ""
+"That last line also reveals the precedence: `∧` binds tighter than `→`, "
+"so the verbalizer parenthesizes the antecedent."
+msgstr ""
+"Die letzte Zeile offenbart zudem die Präzedenz: `∧` bindet stärker als "
+"`→`, weshalb der Verbalisierer das Antezedens in Klammern setzt."
+
+#: ../../guide/quickstart.md:399
+msgid "More verbalization examples"
+msgstr "Weitere Beispiele zur Verbalisierung"
+
+#: ../../guide/quickstart.md:401
+msgid "Propositional formulas:"
+msgstr "Aussagenlogische Formeln:"
+
+#: ../../guide/quickstart.md:411
+msgid "Quantified formulas with readable predicate names:"
+msgstr "Quantifizierte Formeln mit lesbaren Prädikatnamen:"
+
+#: ../../guide/quickstart.md:424
+msgid "Nested quantifiers:"
+msgstr "Verschachtelte Quantoren:"
+
+#: ../../guide/quickstart.md:437
+msgid "Round-trip to Unicode and LaTeX"
+msgstr "Round-Trip zu Unicode und LaTeX"
+
+#: ../../guide/quickstart.md:439
+msgid ""
+"`to_unicode_str()` is the inverse of parsing: it renders any node back to"
+" a parseable Unicode string, and re-parsing reproduces a structurally "
+"equal AST. The renderer is precedence-aware — it inserts only the "
+"parentheses the grammar requires."
+msgstr ""
+"`to_unicode_str()` ist die Umkehrung des Parsens: Sie rendert einen "
+"beliebigen Knoten zurück in eine parsbare Unicode-Zeichenkette, und "
+"erneutes Parsen reproduziert einen strukturell gleichen AST. Der "
+"Renderer berücksichtigt die Präzedenz — er setzt nur die Klammern, die "
+"die Grammatik erfordert."
+
+#: ../../guide/quickstart.md:452
+msgid ""
+"`to_latex()` uses the same precedence rules, so parentheses are "
+"reconstructed (not copied from the original spelling):"
+msgstr ""
+"`to_latex()` verwendet dieselben Präzedenzregeln, sodass Klammern "
+"rekonstruiert (nicht aus der ursprünglichen Schreibweise kopiert) "
+"werden:"
+
+#: ../../guide/quickstart.md:461
+msgid ""
+"Don't have the Unicode symbols handy? Write LaTeX and decode it. "
+"`latex_to_unicode` converts a LaTeX string to the kit's Unicode syntax, "
+"and `parse_latex` parses LaTeX directly into an AST:"
+msgstr ""
+"Keine Unicode-Symbole zur Hand? LaTeX schreiben und dekodieren lassen. "
+"`latex_to_unicode` wandelt eine LaTeX-Zeichenkette in die Unicode-Syntax"
+" des Kits um, und `parse_latex` parst LaTeX direkt in einen AST:"
+
+#: ../../guide/quickstart.md:475
+msgid "Rendering and symbol examples"
+msgstr "Beispiele zu Rendering und Symbolen"
+
+#: ../../guide/quickstart.md:477
+msgid "Converting propositional operators:"
+msgstr "Aussagenlogische Operatoren konvertieren:"
+
+#: ../../guide/quickstart.md:490
+msgid "LaTeX input variants:"
+msgstr "Varianten der LaTeX-Eingabe:"
+
+#: ../../guide/quickstart.md:509
+msgid "Working with propositional operators and precedence"
+msgstr "Arbeiten mit aussagenlogischen Operatoren und Präzedenz"
+
+#: ../../guide/quickstart.md:511
+msgid ""
+"The kit supports classical propositional logic operators with precedence "
+"(tightest to loosest): `¬`, `∧`, `∨`, `⊕`, `→`, `↔`"
+msgstr ""
+"Das Kit unterstützt klassische aussagenlogische Operatoren mit folgender"
+" Präzedenz (stärkste zu schwächste Bindung): `¬`, `∧`, `∨`, `⊕`, `→`, `↔`"
+
+#: ../../guide/quickstart.md:528
+msgid "Operator examples"
+msgstr "Beispiele zu Operatoren"
+
+#: ../../guide/quickstart.md:530
+msgid "Creating formulas with all operators:"
+msgstr "Formeln mit allen Operatoren erstellen:"
+
+#: ../../guide/quickstart.md:550
+msgid "Truth tables for operators:"
+msgstr "Wahrheitstafeln für Operatoren:"
+
+#: ../../guide/quickstart.md:574
+msgid "An end-to-end vignette"
+msgstr "Eine durchgängige Beispielvignette"
+
+#: ../../guide/quickstart.md:576
+msgid ""
+"Putting the classical tools together — parse a theory, verbalize it, "
+"decide validity, prove the entailment, and exhibit a model — all from one"
+" set of names:"
+msgstr ""
+"Die klassischen Werkzeuge im Zusammenspiel — eine Theorie parsen, sie "
+"verbalisieren, ihre Gültigkeit entscheiden, die Folgerung beweisen und "
+"ein Modell vorlegen — alles mit demselben Namensbestand:"
+
+#: ../../guide/quickstart.md:598
+msgid "Extended end-to-end example: a food chain"
+msgstr "Erweitertes durchgängiges Beispiel: eine Nahrungskette"
+
+#: ../../guide/quickstart.md:600
+msgid "A more complex scenario involving multiple predicates and reasoning:"
+msgstr ""
+"Ein komplexeres Szenario mit mehreren Prädikaten und Schlussfolgerungen:"
+
+#: ../../guide/quickstart.md:628
+msgid "One non-classical taster: modal validity"
+msgstr "Ein nichtklassischer Vorgeschmack: modale Gültigkeit"
+
+#: ../../guide/quickstart.md:630
+msgid ""
+"Pass `modal=True` to parse `□`/`◇`. `is_modal_valid` decides "
+"propositional modal validity in-process over a chosen frame (K, T, D, B, "
+"K4, S4, S5, …), returning a Kripke counter-model internally where one "
+"exists."
+msgstr ""
+"`modal=True` übergeben, um `□`/`◇` zu parsen. `is_modal_valid` "
+"entscheidet die aussagenlogisch-modale Gültigkeit prozessintern über "
+"einen gewählten Frame (K, T, D, B, K4, S4, S5, …) und liefert intern ein"
+" Kripke-Gegenmodell, sofern eines existiert."
+
+#: ../../guide/quickstart.md:647
+msgid "More modal logic examples"
+msgstr "Weitere Beispiele zur Modallogik"
+
+#: ../../guide/quickstart.md:649
+msgid "Modal axioms in different frames:"
+msgstr "Modale Axiome in verschiedenen Frames:"
+
+#: ../../guide/quickstart.md:671
+msgid "Combining necessity and possibility:"
+msgstr "Notwendigkeit und Möglichkeit kombinieren:"
+
+#: ../../guide/quickstart.md:684
+msgid "Another taster: a three-valued truth table"
+msgstr "Ein weiterer Vorgeschmack: eine dreiwertige Wahrheitstafel"
+
+#: ../../guide/quickstart.md:686
+msgid ""
+"`truth_table(formula, logic=...)` builds a `TruthTable` over classical, "
+"Kleene **K3**, or Priest **LP** values. Each distinct atom is a "
+"propositional variable. Excluded middle is a classical tautology but "
+"*not* a K3 tautology — when `P` is undefined (½), `P ∨ ¬P` is also ½, "
+"which K3 does not designate:"
+msgstr ""
+"`truth_table(formula, logic=...)` erstellt eine `TruthTable` über "
+"klassischen, Kleene-**K3**- oder Priest-**LP**-Werten. Jedes eigenständige"
+" Atom ist eine aussagenlogische Variable. Der Satz vom ausgeschlossenen "
+"Dritten ist eine klassische Tautologie, *aber keine* K3-Tautologie — ist"
+" `P` undefiniert (½), so ist auch `P ∨ ¬P` gleich ½, was K3 nicht als "
+"ausgezeichneten Wert führt:"
+
+#: ../../guide/quickstart.md:707
+msgid ""
+"A classical table over two atoms — `.render()` returns GitHub-flavoured "
+"Markdown, and the `is_tautology` / `is_contradiction` / `is_satisfiable` "
+"properties summarise it:"
+msgstr ""
+"Eine klassische Tafel über zwei Atomen — `.render()` liefert "
+"GitHub-artiges Markdown, und die Eigenschaften `is_tautology` / "
+"`is_contradiction` / `is_satisfiable` fassen sie zusammen:"
+
+#: ../../guide/quickstart.md:724
+#, python-brace-format
+msgid "For a single valuation, `kleene_value` evaluates directly over {0, ½, 1}:"
+msgstr ""
+"Für eine einzelne Belegung wertet `kleene_value` direkt über {0, ½, 1} "
+"aus:"
+
+#: ../../guide/quickstart.md:732
+msgid "More three-valued examples"
+msgstr "Weitere dreiwertige Beispiele"
+
+#: ../../guide/quickstart.md:734
+msgid "Kleene K3 logic (with undefined value ½):"
+msgstr "Kleene-K3-Logik (mit undefiniertem Wert ½):"
+
+#: ../../guide/quickstart.md:771
+msgid "Priest LP logic (with contradictory value, both T and F):"
+msgstr "Priest-LP-Logik (mit widersprüchlichem Wert, sowohl T als auch F):"
+
+#: ../../guide/quickstart.md:791
+msgid "Truth table properties:"
+msgstr "Eigenschaften der Wahrheitstafel:"
+
+#: ../../guide/quickstart.md:809
+msgid "Formula normalization and transformation"
+msgstr "Formelnormalisierung und -transformation"
+
+#: ../../guide/quickstart.md:811
+msgid "The kit includes functions to normalize formulas into standard forms:"
+msgstr ""
+"Das Kit enthält Funktionen, um Formeln in Standardformen zu "
+"normalisieren:"
+
+#: ../../guide/quickstart.md:841
+msgid "Extracting formula information"
+msgstr "Informationen aus Formeln extrahieren"
+
+#: ../../guide/quickstart.md:843
+msgid "Get structural information about parsed formulas:"
+msgstr "Strukturelle Informationen zu geparsten Formeln abrufen:"
+
+#: ../../guide/quickstart.md:866
+msgid "When parsing fails"
+msgstr "Wenn das Parsen fehlschlägt"
+
+#: ../../guide/quickstart.md:868
+msgid ""
+"A malformed formula raises a descriptive error rather than returning a "
+"bad AST, so you can catch and report it. Both `ParsingError` and "
+"`NamingError` are exported:"
+msgstr ""
+"Eine fehlerhafte Formel löst einen aussagekräftigen Fehler aus, statt "
+"einen fehlerhaften AST zurückzugeben, sodass er abgefangen und "
+"gemeldet werden kann. Sowohl `ParsingError` als auch `NamingError` "
+"werden exportiert:"
+
+#: ../../guide/quickstart.md:880
+msgid "Error handling examples"
+msgstr "Beispiele zur Fehlerbehandlung"
+
+#: ../../guide/quickstart.md:882
+msgid "Common parsing mistakes:"
+msgstr "Häufige Parsing-Fehler:"
+
+#: ../../guide/quickstart.md:910
+msgid "Next steps"
+msgstr "Nächste Schritte"
+
+#: ../../guide/quickstart.md:912
+msgid ""
+"The kit has four proof methods and a model finder across several logics, "
+"plus modal, fuzzy, second-order, and intuitionistic modes. To pick the "
+"right entry point for a given question and logic, see **Choosing a "
+"tool**."
+msgstr ""
+"Das Kit verfügt über vier Beweismethoden und einen Modell-Finder über "
+"mehrere Logiken hinweg, dazu modale, unscharfe (fuzzy), Modi für Logik "
+"zweiter Stufe und intuitionistische Modi. Um für eine gegebene "
+"Fragestellung und Logik den passenden Einstiegspunkt zu wählen, siehe "
+"**Choosing a tool**."

@@ -1,0 +1,1632 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, Felix Vossel
+# This file is distributed under the same license as the unicode-fol-kit
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: unicode-fol-kit 0.11.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-07-02 22:46+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: de <LL@li.org>\n"
+"Language: de\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../guide/syntax-reference.md:1
+msgid "Syntax reference"
+msgstr "Syntaxreferenz"
+
+#: ../../guide/syntax-reference.md:3
+msgid ""
+"The full surface syntax accepted by `MSFLParser`, the AST node catalogue, "
+"and the parser's error / mixing-hint behaviour. Because all modes share the "
+"same term and atom layer, most of the syntax is identical across modes; "
+"differences are called out explicitly."
+msgstr ""
+"Die vollständige Oberflächensyntax, die von `MSFLParser` akzeptiert wird, "
+"der Katalog der AST-Knoten sowie das Fehler- und Mischungshinweisverhalten "
+"des Parsers. Da alle Modi dieselbe Term- und Atomebene teilen, ist der "
+"größte Teil der Syntax modusübergreifend identisch; Unterschiede werden "
+"explizit hervorgehoben."
+
+#: ../../guide/syntax-reference.md:5
+msgid "Tokens"
+msgstr "Token"
+
+#: ../../guide/syntax-reference.md:7
+msgid ""
+"The lexer distinguishes the following token kinds. Because the patterns are "
+"mutually exclusive, a given identifier is unambiguously a variable, a "
+"constant, a function/predicate name, a number, or a sort annotation."
+msgstr ""
+"Der Lexer unterscheidet die folgenden Token-Arten. Da sich die Muster "
+"gegenseitig ausschließen, ist ein gegebener Bezeichner eindeutig entweder "
+"eine Variable, eine Konstante, ein Funktions-/Prädikatname, eine Zahl oder "
+"eine Sortenannotation."
+
+#: ../../guide/syntax-reference.md
+msgid "Token"
+msgstr "Token"
+
+#: ../../guide/syntax-reference.md
+msgid "Pattern"
+msgstr "Muster"
+
+#: ../../guide/syntax-reference.md
+msgid "Examples"
+msgstr "Beispiele"
+
+#: ../../guide/syntax-reference.md
+msgid "Meaning"
+msgstr "Bedeutung"
+
+#: ../../guide/syntax-reference.md
+msgid "Variable"
+msgstr "Variable"
+
+#: ../../guide/syntax-reference.md
+msgid "one lowercase letter, optional trailing digits"
+msgstr "ein Kleinbuchstabe, optional gefolgt von Ziffern"
+
+#: ../../guide/syntax-reference.md
+msgid "`x`, `y`, `x1`, `z42`"
+msgstr "`x`, `y`, `x1`, `z42`"
+
+#: ../../guide/syntax-reference.md
+msgid "a (possibly bound) logical variable"
+msgstr "eine (möglicherweise gebundene) logische Variable"
+
+#: ../../guide/syntax-reference.md
+msgid "Name"
+msgstr "Name"
+
+#: ../../guide/syntax-reference.md
+msgid ""
+"lowercase, at least two letters, may contain digits and uppercase after the "
+"first letter"
+msgstr ""
+"kleingeschrieben, mindestens zwei Buchstaben, darf nach dem ersten "
+"Buchstaben Ziffern und Großbuchstaben enthalten"
+
+#: ../../guide/syntax-reference.md
+msgid "`socrates`, `distance`, `centerOf`, `foo1`"
+msgstr "`socrates`, `distance`, `centerOf`, `foo1`"
+
+#: ../../guide/syntax-reference.md
+msgid "a bare constant or a function symbol"
+msgstr "eine unmarkierte Konstante oder ein Funktionssymbol"
+
+#: ../../guide/syntax-reference.md
+msgid "Constant (`c_`)"
+msgstr "Konstante (`c_`)"
+
+#: ../../guide/syntax-reference.md
+msgid "`c_` followed by letters/digits"
+msgstr "`c_` gefolgt von Buchstaben/Ziffern"
+
+#: ../../guide/syntax-reference.md
+msgid "`c_a`, `c_zero`, `c_42`"
+msgstr "`c_a`, `c_zero`, `c_42`"
+
+#: ../../guide/syntax-reference.md
+msgid "an explicitly marked constant"
+msgstr "eine explizit markierte Konstante"
+
+#: ../../guide/syntax-reference.md
+msgid "Predicate"
+msgstr "Prädikat"
+
+#: ../../guide/syntax-reference.md
+msgid "one uppercase letter, then letters/digits"
+msgstr "ein Großbuchstabe, gefolgt von Buchstaben/Ziffern"
+
+#: ../../guide/syntax-reference.md
+msgid "`P`, `Human`, `OnSurfaceOf`"
+msgstr "`P`, `Human`, `OnSurfaceOf`"
+
+#: ../../guide/syntax-reference.md
+msgid "a predicate symbol"
+msgstr "ein Prädikatsymbol"
+
+#: ../../guide/syntax-reference.md
+msgid "Number"
+msgstr "Zahl"
+
+#: ../../guide/syntax-reference.md
+msgid "digits, optional decimal part"
+msgstr "Ziffern, optionaler Dezimalanteil"
+
+#: ../../guide/syntax-reference.md
+msgid "`0`, `42`, `3.14`"
+msgstr "`0`, `42`, `3.14`"
+
+#: ../../guide/syntax-reference.md
+msgid "a numeric literal"
+msgstr "ein numerisches Literal"
+
+#: ../../guide/syntax-reference.md
+msgid "Sort annotation"
+msgstr "Sortenannotation"
+
+#: ../../guide/syntax-reference.md
+msgid "`:` followed by an uppercase letter and letters/digits"
+msgstr "`:` gefolgt von einem Großbuchstaben sowie Buchstaben/Ziffern"
+
+#: ../../guide/syntax-reference.md
+msgid "`:Human`, `:Sort1`"
+msgstr "`:Human`, `:Sort1`"
+
+#: ../../guide/syntax-reference.md
+msgid "a sort tag *(MSFOL and MSFL modes only)*"
+msgstr "eine Sortenmarkierung *(nur in den Modi MSFOL und MSFL)*"
+
+#: ../../guide/syntax-reference.md:18
+msgid ""
+"The `c_` form exists so that **single-letter constants** can be written "
+"without colliding with variables. A bare `a` is always a variable; if you "
+"need the constant *a*, write `c_a`."
+msgstr ""
+"Die `c_`-Form existiert, damit **einbuchstabige Konstanten** geschrieben "
+"werden können, ohne mit Variablen zu kollidieren. Ein bloßes `a` ist immer "
+"eine Variable; wird die Konstante *a* benötigt, schreibt man `c_a`."
+
+#: ../../guide/syntax-reference.md:20
+msgid ""
+"A function or predicate is recognised by being immediately followed by a "
+"parenthesised argument list, e.g. `distance(x, y)` or `Human(socrates)`. The"
+" same token class (Name) serves both as a bare constant and, when applied, "
+"as a function symbol."
+msgstr ""
+"Eine Funktion oder ein Prädikat wird daran erkannt, dass unmittelbar eine "
+"geklammerte Argumentliste folgt, z. B. `distance(x, y)` oder "
+"`Human(socrates)`. Dieselbe Token-Klasse (Name) dient sowohl als unmarkierte"
+" Konstante als auch, bei Anwendung, als Funktionssymbol."
+
+#: ../../guide/syntax-reference.md:22
+msgid ""
+"The sort annotation token always begins with `:`, which makes it lexically "
+"disjoint from all other tokens. **Whitespace before the colon is optional**:"
+" `∀x:Human P(x)` and `∀x :Human P(x)` are both valid and produce identical "
+"parse trees."
+msgstr ""
+"Das Sortenannotations-Token beginnt stets mit `:`, wodurch es lexikalisch "
+"von allen anderen Token getrennt ist. **Leerraum vor dem Doppelpunkt ist "
+"optional**: `∀x:Human P(x)` und `∀x :Human P(x)` sind beide gültig und "
+"erzeugen identische Parse-Bäume."
+
+#: ../../guide/syntax-reference.md:24
+msgid "Terms"
+msgstr "Terme"
+
+#: ../../guide/syntax-reference.md:26
+msgid "A term is one of:"
+msgstr "Ein Term ist eines der folgenden:"
+
+#: ../../guide/syntax-reference.md:28
+msgid "a variable (`x`, `x1`)"
+msgstr "eine Variable (`x`, `x1`)"
+
+#: ../../guide/syntax-reference.md:29
+msgid "a constant (`socrates`, `c_a`) or number (`42`, `3.14`)"
+msgstr "eine Konstante (`socrates`, `c_a`) oder eine Zahl (`42`, `3.14`)"
+
+#: ../../guide/syntax-reference.md:30
+msgid ""
+"in MSFOL / MSFL modes: a **sort-annotated constant** (`alice:Human`, "
+"`c_a:Sort1`)"
+msgstr ""
+"in den Modi MSFOL / MSFL: eine **sortenannotierte Konstante** "
+"(`alice:Human`, `c_a:Sort1`)"
+
+#: ../../guide/syntax-reference.md:31
+msgid "a function application (`f(t1, …, tn)`, e.g. `centerOf(x)`)"
+msgstr "eine Funktionsanwendung (`f(t1, …, tn)`, z. B. `centerOf(x)`)"
+
+#: ../../guide/syntax-reference.md:32
+msgid "an arithmetic combination of terms using `+`, `-`, `*`, `/`"
+msgstr "eine arithmetische Verknüpfung von Termen mittels `+`, `-`, `*`, `/`"
+
+#: ../../guide/syntax-reference.md:33
+msgid "a parenthesised term (`(t)`)"
+msgstr "ein geklammerter Term (`(t)`)"
+
+#: ../../guide/syntax-reference.md:35
+msgid ""
+"Arithmetic follows the usual precedence: `*` and `/` bind tighter than `+` "
+"and `-`, and both groups are left-associative. For example `x + y * z` "
+"parses as `x + (y * z)`."
+msgstr ""
+"Arithmetische Ausdrücke folgen der üblichen Präzedenz: `*` und `/` binden "
+"stärker als `+` und `-`, und beide Gruppen sind linksassoziativ. "
+"Beispielsweise wird `x + y * z` als `x + (y * z)` geparst."
+
+#: ../../guide/syntax-reference.md:37
+msgid ""
+"**Sort rules in MSFOL / MSFL modes:** variables are sorted implicitly by the"
+" quantifier that binds them; ground constants must carry an explicit sort "
+"annotation. An unsorted constant (e.g. bare `alice`) is a syntax error in "
+"sorted modes."
+msgstr ""
+"**Sortenregeln in den Modi MSFOL / MSFL:** Variablen werden implizit durch "
+"den sie bindenden Quantor sortiert; Grundkonstanten müssen eine explizite "
+"Sortenannotation tragen. Eine nicht sortierte Konstante (z. B. ein bloßes "
+"`alice`) ist in sortenbehafteten Modi ein Syntaxfehler."
+
+#: ../../guide/syntax-reference.md:39
+msgid "Atomic formulas"
+msgstr "Atomare Formeln"
+
+#: ../../guide/syntax-reference.md:41
+msgid "An atomic formula is either:"
+msgstr "Eine atomare Formel ist entweder:"
+
+#: ../../guide/syntax-reference.md:43
+msgid ""
+"a predicate applied to terms: `P`, `Human(socrates)`, `OnSurfaceOf(y, x)` (a"
+" predicate may be nullary, i.e. used without arguments)"
+msgstr ""
+"ein auf Terme angewendetes Prädikat: `P`, `Human(socrates)`, `OnSurfaceOf(y,"
+" x)` (ein Prädikat kann nullstellig sein, d. h. ohne Argumente verwendet "
+"werden)"
+
+#: ../../guide/syntax-reference.md:44
+msgid ""
+"an infix comparison between two terms: `=`, `≠`, `<`, `>`, `≤`, `≥`, e.g. "
+"`x1 + 1 = y1` or `distance(y, c) > distance(z, c)`"
+msgstr ""
+"ein Infixvergleich zwischen zwei Termen: `=`, `≠`, `<`, `>`, `≤`, `≥`, z. B."
+" `x1 + 1 = y1` oder `distance(y, c) > distance(z, c)`"
+
+#: ../../guide/syntax-reference.md:46
+msgid "Compound formulas"
+msgstr "Zusammengesetzte Formeln"
+
+#: ../../guide/syntax-reference.md:48
+msgid ""
+"Atomic formulas are combined with connectives and quantifiers. The available"
+" connectives and their interpretations depend on the mode."
+msgstr ""
+"Atomare Formeln werden mit Konnektoren und Quantoren verknüpft. Die "
+"verfügbaren Konnektoren und ihre Interpretationen hängen vom Modus ab."
+
+#: ../../guide/syntax-reference.md:50
+msgid "FOL mode"
+msgstr "FOL-Modus"
+
+#: ../../guide/syntax-reference.md
+msgid "Syntax"
+msgstr "Syntax"
+
+#: ../../guide/syntax-reference.md
+msgid "Operator"
+msgstr "Operator"
+
+#: ../../guide/syntax-reference.md
+msgid "Interpretation"
+msgstr "Interpretation"
+
+#: ../../guide/syntax-reference.md
+msgid "`¬φ`"
+msgstr "`¬φ`"
+
+#: ../../guide/syntax-reference.md
+msgid "negation"
+msgstr "Negation"
+
+#: ../../guide/syntax-reference.md
+msgid "classical"
+msgstr "klassisch"
+
+#: ../../guide/syntax-reference.md
+msgid "`φ ∧ ψ`"
+msgstr "`φ ∧ ψ`"
+
+#: ../../guide/syntax-reference.md
+msgid "conjunction"
+msgstr "Konjunktion"
+
+#: ../../guide/syntax-reference.md
+msgid "`φ ∨ ψ`"
+msgstr "`φ ∨ ψ`"
+
+#: ../../guide/syntax-reference.md
+msgid "disjunction"
+msgstr "Disjunktion"
+
+#: ../../guide/syntax-reference.md
+msgid "`φ ⊕ ψ`"
+msgstr "`φ ⊕ ψ`"
+
+#: ../../guide/syntax-reference.md
+msgid "exclusive or"
+msgstr "Exklusiv-Oder"
+
+#: ../../guide/syntax-reference.md
+msgid "`φ → ψ`"
+msgstr "`φ → ψ`"
+
+#: ../../guide/syntax-reference.md
+msgid "implication"
+msgstr "Implikation"
+
+#: ../../guide/syntax-reference.md
+msgid "`φ ↔ ψ`"
+msgstr "`φ ↔ ψ`"
+
+#: ../../guide/syntax-reference.md
+msgid "biconditional"
+msgstr "Bikonditional"
+
+#: ../../guide/syntax-reference.md
+msgid "`φ Ⓒ ψ`"
+msgstr "`φ Ⓒ ψ`"
+
+#: ../../guide/syntax-reference.md
+msgid "concessive (Contrast)"
+msgstr "konzessiv (Contrast)"
+
+#: ../../guide/syntax-reference.md
+msgid "*whereas* / *although* — truth-functionally `∧`"
+msgstr "*während* / *obwohl* — wahrheitsfunktional `∧`"
+
+#: ../../guide/syntax-reference.md
+msgid "`∀x φ`"
+msgstr "`∀x φ`"
+
+#: ../../guide/syntax-reference.md
+msgid "universal"
+msgstr "universell"
+
+#: ../../guide/syntax-reference.md
+msgid "unsorted"
+msgstr "unsortiert"
+
+#: ../../guide/syntax-reference.md
+msgid "`∃x φ`"
+msgstr "`∃x φ`"
+
+#: ../../guide/syntax-reference.md
+msgid "existential"
+msgstr "existenziell"
+
+#: ../../guide/syntax-reference.md
+msgid "`∃≥n x φ` / `∃≤n x φ` / `∃=n x φ`"
+msgstr "`∃≥n x φ` / `∃≤n x φ` / `∃=n x φ`"
+
+#: ../../guide/syntax-reference.md
+msgid "counting quantifier (Count)"
+msgstr "Zählquantor (Count)"
+
+#: ../../guide/syntax-reference.md
+msgid "at least / at most / exactly `n` distinct `x`"
+msgstr "mindestens / höchstens / genau `n` verschiedene `x`"
+
+#: ../../guide/syntax-reference.md:65
+#, python-brace-format
+msgid ""
+"FOL mode additionally accepts two term forms for natural-language "
+"translation: the degree term `μ(entity, dimension)` (Measure) and the set-"
+"cardinality term `|{v : φ}|` (Cardinality), compared with `<` / `>`. See "
+"{doc}`natural-language` for all five NL-front-end constructs (these four "
+"plus the modal `Say_a` / `Want_a`)."
+msgstr ""
+"Der FOL-Modus akzeptiert zusätzlich zwei Termformen für die Übersetzung "
+"natürlicher Sprache: den Gradterm `μ(entity, dimension)` (Measure) und den "
+"Mengenkardinalitätsterm `|{v : φ}|` (Cardinality), die mit `<` / `>` "
+"verglichen werden. Siehe {doc}`natural-language` für alle fünf NL-Frontend-"
+"Konstrukte (diese vier plus das modale `Say_a` / `Want_a`)."
+
+#: ../../guide/syntax-reference.md:70
+msgid "MSFOL mode"
+msgstr "MSFOL-Modus"
+
+#: ../../guide/syntax-reference.md:72
+msgid ""
+"Same connectives as FOL **except `⊕` (exclusive or) is not available**. "
+"Quantifiers require a sort annotation:"
+msgstr ""
+"Dieselben Konnektoren wie in FOL, **außer dass `⊕` (Exklusiv-Oder) nicht "
+"verfügbar ist**. Quantoren erfordern eine Sortenannotation:"
+
+#: ../../guide/syntax-reference.md
+msgid "`¬φ`, `φ ∧ ψ`, `φ ∨ ψ`, `φ → ψ`, `φ ↔ ψ`"
+msgstr "`¬φ`, `φ ∧ ψ`, `φ ∨ ψ`, `φ → ψ`, `φ ↔ ψ`"
+
+#: ../../guide/syntax-reference.md
+msgid "classical (as FOL)"
+msgstr "klassisch (wie in FOL)"
+
+#: ../../guide/syntax-reference.md
+msgid "`∀x:Sort φ`, `∃x:Sort φ`"
+msgstr "`∀x:Sort φ`, `∃x:Sort φ`"
+
+#: ../../guide/syntax-reference.md
+msgid "sorted quantifiers"
+msgstr "sortenbehaftete Quantoren"
+
+#: ../../guide/syntax-reference.md:79
+msgid "MSFL mode"
+msgstr "MSFL-Modus"
+
+#: ../../guide/syntax-reference.md:81
+msgid "Connectives are reinterpreted as Łukasiewicz operators:"
+msgstr "Konnektoren werden als Łukasiewicz-Operatoren neu interpretiert:"
+
+#: ../../guide/syntax-reference.md
+msgid "Semantics"
+msgstr "Semantik"
+
+#: ../../guide/syntax-reference.md
+msgid "Łuk. negation"
+msgstr "Łuk.-Negation"
+
+#: ../../guide/syntax-reference.md
+msgid "1 − φ"
+msgstr "1 − φ"
+
+#: ../../guide/syntax-reference.md
+msgid "weak conjunction"
+msgstr "schwache Konjunktion"
+
+#: ../../guide/syntax-reference.md
+msgid "min(φ, ψ)"
+msgstr "min(φ, ψ)"
+
+#: ../../guide/syntax-reference.md
+msgid "weak disjunction"
+msgstr "schwache Disjunktion"
+
+#: ../../guide/syntax-reference.md
+msgid "max(φ, ψ)"
+msgstr "max(φ, ψ)"
+
+#: ../../guide/syntax-reference.md
+msgid "`φ ⊗ ψ`"
+msgstr "`φ ⊗ ψ`"
+
+#: ../../guide/syntax-reference.md
+msgid "strong conjunction"
+msgstr "starke Konjunktion"
+
+#: ../../guide/syntax-reference.md
+msgid "max(0, φ + ψ − 1)"
+msgstr "max(0, φ + ψ − 1)"
+
+#: ../../guide/syntax-reference.md
+msgid "strong disjunction"
+msgstr "starke Disjunktion"
+
+#: ../../guide/syntax-reference.md
+msgid "min(1, φ + ψ)"
+msgstr "min(1, φ + ψ)"
+
+#: ../../guide/syntax-reference.md
+msgid "Łuk. implication"
+msgstr "Łuk.-Implikation"
+
+#: ../../guide/syntax-reference.md
+msgid "min(1, 1 − φ + ψ)"
+msgstr "min(1, 1 − φ + ψ)"
+
+#: ../../guide/syntax-reference.md
+msgid "Łuk. equivalence"
+msgstr "Łuk.-Äquivalenz"
+
+#: ../../guide/syntax-reference.md
+msgid "1 − |φ − ψ|"
+msgstr "1 − |φ − ψ|"
+
+#: ../../guide/syntax-reference.md:94
+msgid "FL mode"
+msgstr "FL-Modus"
+
+#: ../../guide/syntax-reference.md:96
+msgid ""
+"Same Łukasiewicz connectives as MSFL, but with **unsorted** quantifiers and "
+"plain constants (no `:Sort` required):"
+msgstr ""
+"Dieselben Łukasiewicz-Konnektoren wie in MSFL, jedoch mit **unsortierten** "
+"Quantoren und einfachen Konstanten (kein `:Sort` erforderlich):"
+
+#: ../../guide/syntax-reference.md
+msgid "`∀x φ`, `∃x φ`"
+msgstr "`∀x φ`, `∃x φ`"
+
+#: ../../guide/syntax-reference.md
+msgid "unsorted quantifiers"
+msgstr "unsortierte Quantoren"
+
+#: ../../guide/syntax-reference.md:109
+msgid ""
+"A formula may be wrapped in parentheses `( … )` or square brackets `[ … ]`; "
+"the two are interchangeable for grouping."
+msgstr ""
+"Eine Formel darf in runde Klammern `( … )` oder eckige Klammern `[ … ]` "
+"eingeschlossen werden; beide sind zur Gruppierung austauschbar."
+
+#: ../../guide/syntax-reference.md:111
+msgid "Operator precedence"
+msgstr "Operatorpräzedenz"
+
+#: ../../guide/syntax-reference.md:113
+msgid ""
+"The precedence levels are the same across all four core modes (MSFL/FL use "
+"the same syntactic structure with Łukasiewicz semantics):"
+msgstr ""
+"Die Präzedenzstufen sind in allen vier Kernmodi identisch (MSFL/FL verwenden"
+" dieselbe syntaktische Struktur mit Łukasiewicz-Semantik):"
+
+#: ../../guide/syntax-reference.md
+msgid "Precedence"
+msgstr "Präzedenz"
+
+#: ../../guide/syntax-reference.md
+msgid "Operators"
+msgstr "Operatoren"
+
+#: ../../guide/syntax-reference.md
+msgid "Associativity"
+msgstr "Assoziativität"
+
+#: ../../guide/syntax-reference.md
+msgid "1 (highest)"
+msgstr "1 (höchste)"
+
+#: ../../guide/syntax-reference.md
+msgid "`¬`, quantifiers `∀` / `∃`"
+msgstr "`¬`, Quantoren `∀` / `∃`"
+
+#: ../../guide/syntax-reference.md
+msgid "prefix"
+msgstr "präfix"
+
+#: ../../guide/syntax-reference.md
+msgid "2"
+msgstr "2"
+
+#: ../../guide/syntax-reference.md
+msgid "`∧` `∨` `⊕` (FOL) / `∧` `∨` (MSFOL) / `∧` `∨` `⊗` `⊕` (MSFL / FL)"
+msgstr "`∧` `∨` `⊕` (FOL) / `∧` `∨` (MSFOL) / `∧` `∨` `⊗` `⊕` (MSFL / FL)"
+
+#: ../../guide/syntax-reference.md
+msgid "left"
+msgstr "links"
+
+#: ../../guide/syntax-reference.md
+msgid "3"
+msgstr "3"
+
+#: ../../guide/syntax-reference.md
+msgid "`→`"
+msgstr "`→`"
+
+#: ../../guide/syntax-reference.md
+msgid "right"
+msgstr "rechts"
+
+#: ../../guide/syntax-reference.md
+msgid "4 (lowest)"
+msgstr "4 (niedrigste)"
+
+#: ../../guide/syntax-reference.md
+msgid "`↔`"
+msgstr "`↔`"
+
+#: ../../guide/syntax-reference.md:122
+msgid "Worked examples (parenthesised to show how the parser groups them):"
+msgstr ""
+"Durchgerechnete Beispiele (geklammert, um zu zeigen, wie der Parser sie "
+"gruppiert):"
+
+#: ../../guide/syntax-reference.md:124
+msgid ""
+"`¬P(x) ∧ Q(x)` → `(¬P(x)) ∧ Q(x)` — negation binds tighter than conjunction"
+msgstr ""
+"`¬P(x) ∧ Q(x)` → `(¬P(x)) ∧ Q(x)` — Negation bindet stärker als Konjunktion"
+
+#: ../../guide/syntax-reference.md:125
+msgid ""
+"`P(x) ∧ Q(x) → R(x)` → `(P(x) ∧ Q(x)) → R(x)` — conjunction binds tighter "
+"than implication"
+msgstr ""
+"`P(x) ∧ Q(x) → R(x)` → `(P(x) ∧ Q(x)) → R(x)` — Konjunktion bindet stärker "
+"als Implikation"
+
+#: ../../guide/syntax-reference.md:126
+msgid ""
+"`P(x) → Q(x) ↔ R(x)` → `(P(x) → Q(x)) ↔ R(x)` — implication binds tighter "
+"than biconditional"
+msgstr ""
+"`P(x) → Q(x) ↔ R(x)` → `(P(x) → Q(x)) ↔ R(x)` — Implikation bindet stärker "
+"als Bikonditional"
+
+#: ../../guide/syntax-reference.md:127
+msgid ""
+"`P(x) → Q(x) → R(x)` → `P(x) → (Q(x) → R(x))` — implication is right-"
+"associative"
+msgstr ""
+"`P(x) → Q(x) → R(x)` → `P(x) → (Q(x) → R(x))` — Implikation ist "
+"rechtsassoziativ"
+
+#: ../../guide/syntax-reference.md:128
+msgid ""
+"`P(x) ∧ Q(x) ∧ R(x)` → `(P(x) ∧ Q(x)) ∧ R(x)` — conjunction is left-"
+"associative"
+msgstr ""
+"`P(x) ∧ Q(x) ∧ R(x)` → `(P(x) ∧ Q(x)) ∧ R(x)` — Konjunktion ist "
+"linksassoziativ"
+
+#: ../../guide/syntax-reference.md:130
+msgid "These verdicts are exactly what the parser produces, e.g.:"
+msgstr ""
+"Diese Ergebnisse entsprechen genau dem, was der Parser erzeugt, z. B.:"
+
+#: ../../guide/syntax-reference.md:142
+msgid "Mixing same-level operators"
+msgstr "Mischen von Operatoren derselben Ebene"
+
+#: ../../guide/syntax-reference.md:144
+msgid ""
+"The same-level connectives (level 2 above) **cannot be mixed without "
+"explicit parentheses**. This is deliberate: it avoids the silent, easy-to-"
+"misread grouping that a default precedence would impose."
+msgstr ""
+"Konnektoren derselben Ebene (Ebene 2 oben) **können nicht ohne explizite "
+"Klammern gemischt werden**. Dies ist beabsichtigt: Es vermeidet die stille, "
+"leicht misszuverstehende Gruppierung, die eine Standardpräzedenz erzwingen "
+"würde."
+
+#: ../../guide/syntax-reference.md:146
+msgid "**FOL mode** — `∧`, `∨`, `⊕` cannot be mixed."
+msgstr "**FOL-Modus** — `∧`, `∨`, `⊕` können nicht gemischt werden."
+
+#: ../../guide/syntax-reference.md:147
+msgid "**MSFOL mode** — `∧` and `∨` cannot be mixed."
+msgstr "**MSFOL-Modus** — `∧` und `∨` können nicht gemischt werden."
+
+#: ../../guide/syntax-reference.md:148
+msgid "**MSFL / FL mode** — `∧`, `∨`, `⊗`, `⊕` cannot be mixed."
+msgstr "**MSFL-/FL-Modus** — `∧`, `∨`, `⊗`, `⊕` können nicht gemischt werden."
+
+#: ../../guide/syntax-reference.md:149
+msgid ""
+"**Modal and second-order modes** — same as FOL (`∧`, `∨`, `⊕`), since the "
+"modal/temporal and second-order operators bind tighter, like `¬`."
+msgstr ""
+"**Modal- und Modi zweiter Stufe** — wie in FOL (`∧`, `∨`, `⊕`), da die "
+"modalen/temporalen Operatoren sowie die Operatoren zweiter Stufe stärker "
+"binden, wie `¬`."
+
+#: ../../guide/syntax-reference.md:156
+msgid ""
+"A chain of the *same* operator is always fine: `P ∧ Q ∧ R`, `P ⊗ Q ⊗ R`, "
+"etc."
+msgstr ""
+"Eine Kette *desselben* Operators ist stets zulässig: `P ∧ Q ∧ R`, `P ⊗ Q ⊗ "
+"R` usw."
+
+#: ../../guide/syntax-reference.md:158
+msgid "Quantifier scope"
+msgstr "Quantorenreichweite"
+
+#: ../../guide/syntax-reference.md:160
+msgid ""
+"A quantifier binds **only the immediately following (tightly bound) "
+"formula**, not the rest of the line:"
+msgstr ""
+"Ein Quantor bindet **nur die unmittelbar folgende (eng gebundene) Formel**, "
+"nicht den Rest der Zeile:"
+
+#: ../../guide/syntax-reference.md:167
+msgid ""
+"If you intend the quantifier to range over the whole formula — which is "
+"usually what is meant — **add parentheses**:"
+msgstr ""
+"Soll der Quantor über die gesamte Formel reichen — was in der Regel "
+"beabsichtigt ist —, **müssen Klammern hinzugefügt werden**:"
+
+#: ../../guide/syntax-reference.md:174
+msgid "Quantifiers can be stacked directly: `∀x:H ∀y:H ∃z:A φ`."
+msgstr ""
+"Quantoren können direkt aufeinandergestapelt werden: `∀x:H ∀y:H ∃z:A φ`."
+
+#: ../../guide/syntax-reference.md:176
+msgid "Supported symbols"
+msgstr "Unterstützte Symbole"
+
+#: ../../guide/syntax-reference.md
+msgid "Category"
+msgstr "Kategorie"
+
+#: ../../guide/syntax-reference.md
+msgid "FOL"
+msgstr "FOL"
+
+#: ../../guide/syntax-reference.md
+msgid "MSFOL"
+msgstr "MSFOL"
+
+#: ../../guide/syntax-reference.md
+msgid "MSFL"
+msgstr "MSFL"
+
+#: ../../guide/syntax-reference.md
+msgid "FL"
+msgstr "FL"
+
+#: ../../guide/syntax-reference.md
+msgid "Quantifiers"
+msgstr "Quantoren"
+
+#: ../../guide/syntax-reference.md
+msgid "`∀` `∃` (unsorted)"
+msgstr "`∀` `∃` (unsortiert)"
+
+#: ../../guide/syntax-reference.md
+msgid "`∀` `∃` (sorted `:Sort`)"
+msgstr "`∀` `∃` (sortiert `:Sort`)"
+
+#: ../../guide/syntax-reference.md
+msgid "Connectives"
+msgstr "Konnektoren"
+
+#: ../../guide/syntax-reference.md
+msgid "`∧` `∨` `⊕` `¬` `→` `↔`"
+msgstr "`∧` `∨` `⊕` `¬` `→` `↔`"
+
+#: ../../guide/syntax-reference.md
+msgid "`∧` `∨` `¬` `→` `↔`"
+msgstr "`∧` `∨` `¬` `→` `↔`"
+
+#: ../../guide/syntax-reference.md
+msgid "`∧` `∨` `⊗` `⊕` `¬` `→` `↔`"
+msgstr "`∧` `∨` `⊗` `⊕` `¬` `→` `↔`"
+
+#: ../../guide/syntax-reference.md
+msgid "Lambda"
+msgstr "Lambda"
+
+#: ../../guide/syntax-reference.md
+msgid "`λ`"
+msgstr "`λ`"
+
+#: ../../guide/syntax-reference.md
+msgid "Sort annotations"
+msgstr "Sortenannotationen"
+
+#: ../../guide/syntax-reference.md
+msgid "—"
+msgstr "—"
+
+#: ../../guide/syntax-reference.md
+msgid "`:Sort`"
+msgstr "`:Sort`"
+
+#: ../../guide/syntax-reference.md
+msgid "Equality / comparison"
+msgstr "Gleichheit / Vergleich"
+
+#: ../../guide/syntax-reference.md
+msgid "`=` `≠` `<` `>` `≤` `≥`"
+msgstr "`=` `≠` `<` `>` `≤` `≥`"
+
+#: ../../guide/syntax-reference.md
+msgid "same"
+msgstr "gleich"
+
+#: ../../guide/syntax-reference.md
+msgid "Arithmetic"
+msgstr "Arithmetik"
+
+#: ../../guide/syntax-reference.md
+msgid "`+` `-` `*` `/`"
+msgstr "`+` `-` `*` `/`"
+
+#: ../../guide/syntax-reference.md
+msgid "Grouping"
+msgstr "Gruppierung"
+
+#: ../../guide/syntax-reference.md
+msgid "`(` `)` `[` `]`"
+msgstr "`(` `)` `[` `]`"
+
+#: ../../guide/syntax-reference.md
+msgid "Argument separator"
+msgstr "Argumenttrennzeichen"
+
+#: ../../guide/syntax-reference.md
+msgid "`,`"
+msgstr "`,`"
+
+#: ../../guide/syntax-reference.md:189
+msgid ""
+"Whitespace is insignificant and may be used freely between tokens — "
+"including before sort annotation colons."
+msgstr ""
+"Leerraum ist bedeutungslos und darf zwischen Token frei verwendet werden — "
+"auch vor den Doppelpunkten der Sortenannotationen."
+
+#: ../../guide/syntax-reference.md:191
+#, python-brace-format
+msgid ""
+"The **modal mode** (`MSFLParser(modal=True)`) adds `□` `◇` (alethic), `K_a` "
+"`B_a` (epistemic/doxastic), `Say_a` `Want_a` (assertive/bouletic — see "
+"{doc}`natural-language`), `Ⓞ` `Ⓟ` (deontic), and the temporal operators "
+"below; the **second-order mode** (`MSFLParser(second_order=True)`) adds `∀P`"
+" / `∃P` over predicate variables."
+msgstr ""
+"Der **Modal-Modus** (`MSFLParser(modal=True)`) fügt `□` `◇` (alethisch), "
+"`K_a` `B_a` (epistemisch/doxastisch), `Say_a` `Want_a` (assertiv/bouletisch "
+"— siehe {doc}`natural-language`), `Ⓞ` `Ⓟ` (deontisch) sowie die unten "
+"stehenden temporalen Operatoren hinzu; der **Modus zweiter Stufe** "
+"(`MSFLParser(second_order=True)`) fügt `∀P` / `∃P` über Prädikatvariablen "
+"hinzu."
+
+#: ../../guide/syntax-reference.md:193
+msgid "Temporal operators (modal mode)"
+msgstr "Temporale Operatoren (Modal-Modus)"
+
+#: ../../guide/syntax-reference.md
+msgid "Glyph"
+msgstr "Glyphe"
+
+#: ../../guide/syntax-reference.md
+msgid "Surface syntax"
+msgstr "Oberflächensyntax"
+
+#: ../../guide/syntax-reference.md
+msgid "`Ⓖ`"
+msgstr "`Ⓖ`"
+
+#: ../../guide/syntax-reference.md
+msgid "`Always`"
+msgstr "`Always`"
+
+#: ../../guide/syntax-reference.md
+msgid "`Ⓖφ`"
+msgstr "`Ⓖφ`"
+
+#: ../../guide/syntax-reference.md
+msgid "henceforth (now and at every future point)"
+msgstr "fortan (jetzt und zu jedem zukünftigen Zeitpunkt)"
+
+#: ../../guide/syntax-reference.md
+msgid "`Ⓕ`"
+msgstr "`Ⓕ`"
+
+#: ../../guide/syntax-reference.md
+msgid "`Eventually`"
+msgstr "`Eventually`"
+
+#: ../../guide/syntax-reference.md
+msgid "`Ⓕφ`"
+msgstr "`Ⓕφ`"
+
+#: ../../guide/syntax-reference.md
+msgid "eventually (now or at some future point)"
+msgstr "irgendwann (jetzt oder zu einem zukünftigen Zeitpunkt)"
+
+#: ../../guide/syntax-reference.md
+msgid "`Ⓝ`"
+msgstr "`Ⓝ`"
+
+#: ../../guide/syntax-reference.md
+msgid "`Next`"
+msgstr "`Next`"
+
+#: ../../guide/syntax-reference.md
+msgid "`Ⓝφ`"
+msgstr "`Ⓝφ`"
+
+#: ../../guide/syntax-reference.md
+msgid "at the immediately following point"
+msgstr "am unmittelbar folgenden Zeitpunkt"
+
+#: ../../guide/syntax-reference.md
+msgid "`Ⓤ`"
+msgstr "`Ⓤ`"
+
+#: ../../guide/syntax-reference.md
+msgid "`Until`"
+msgstr "`Until`"
+
+#: ../../guide/syntax-reference.md
+msgid "`φ Ⓤ ψ`"
+msgstr "`φ Ⓤ ψ`"
+
+#: ../../guide/syntax-reference.md
+msgid "φ holds until ψ does (binary)"
+msgstr "φ gilt, bis ψ gilt (binär)"
+
+#: ../../guide/syntax-reference.md
+msgid "`⒣`"
+msgstr "`⒣`"
+
+#: ../../guide/syntax-reference.md
+msgid "`Historically`"
+msgstr "`Historically`"
+
+#: ../../guide/syntax-reference.md
+msgid "`⒣φ`"
+msgstr "`⒣φ`"
+
+#: ../../guide/syntax-reference.md
+msgid "has always been (now and at every **past** point)"
+msgstr "war stets der Fall (jetzt und zu jedem **vergangenen** Zeitpunkt)"
+
+#: ../../guide/syntax-reference.md
+msgid "`⒫`"
+msgstr "`⒫`"
+
+#: ../../guide/syntax-reference.md
+msgid "`Once`"
+msgstr "`Once`"
+
+#: ../../guide/syntax-reference.md
+msgid "`⒫φ`"
+msgstr "`⒫φ`"
+
+#: ../../guide/syntax-reference.md
+msgid "was once the case (now or at some **past** point)"
+msgstr "war einmal der Fall (jetzt oder zu einem **vergangenen** Zeitpunkt)"
+
+#: ../../guide/syntax-reference.md
+msgid "`⒴`"
+msgstr "`⒴`"
+
+#: ../../guide/syntax-reference.md
+msgid "`Previous`"
+msgstr "`Previous`"
+
+#: ../../guide/syntax-reference.md
+msgid "`⒴φ`"
+msgstr "`⒴φ`"
+
+#: ../../guide/syntax-reference.md
+msgid "at every immediate **past** point (yesterday)"
+msgstr "an jedem unmittelbar **vergangenen** Zeitpunkt (gestern)"
+
+#: ../../guide/syntax-reference.md
+msgid "`⒮`"
+msgstr "`⒮`"
+
+#: ../../guide/syntax-reference.md
+msgid "`Since`"
+msgstr "`Since`"
+
+#: ../../guide/syntax-reference.md
+msgid "`φ ⒮ ψ`"
+msgstr "`φ ⒮ ψ`"
+
+#: ../../guide/syntax-reference.md
+msgid "φ has held since ψ was last true (binary)"
+msgstr "φ gilt, seit ψ zuletzt wahr war (binär)"
+
+#: ../../guide/syntax-reference.md:206
+msgid ""
+"The four past-tense duals `⒣` / `⒫` / `⒴` / `⒮` (Prior tense logic) run over"
+" the **converse** of the one-step `\"temporal\"` relation: `⒣`/`⒫`/`⒴` are "
+"the backward mirrors of `Ⓖ`/`Ⓕ`/`Ⓝ`, and `⒮` is the backward mirror of `Ⓤ`. "
+"They are recognised throughout the toolkit — parser, `satisfies_modal`, "
+"`standard_translation`, and the QML embedding. The prefix temporal operators"
+" (`Ⓖ Ⓕ Ⓝ ⒣ ⒫ ⒴`) bind as tightly as `¬`; the binary `Ⓤ` and `⒮` bind looser "
+"than `∧`/`∨` but tighter than `→`, right-associative."
+msgstr ""
+"Die vier vergangenheitsbezogenen Duale `⒣` / `⒫` / `⒴` / `⒮` (Priorsche "
+"Zeitlogik) operieren über der **Umkehrung** der einschrittigen "
+"`\"temporal\"`-Relation: `⒣`/`⒫`/`⒴` sind die rückwärtigen Spiegelungen von "
+"`Ⓖ`/`Ⓕ`/`Ⓝ`, und `⒮` ist die rückwärtige Spiegelung von `Ⓤ`. Sie werden im "
+"gesamten Toolkit erkannt — Parser, `satisfies_modal`, `standard_translation`"
+" und die QML-Einbettung. Die präfigierten temporalen Operatoren (`Ⓖ Ⓕ Ⓝ ⒣ ⒫ "
+"⒴`) binden so stark wie `¬`; das binäre `Ⓤ` und `⒮` binden schwächer als "
+"`∧`/`∨`, aber stärker als `→`, und sind rechtsassoziativ."
+
+#: ../../guide/syntax-reference.md:218
+msgid "Lambda abstraction and application (all modes)"
+msgstr "Lambda-Abstraktion und -Anwendung (alle Modi)"
+
+#: ../../guide/syntax-reference.md:220
+msgid ""
+"A lambda abstraction is written `λ` followed by a parameter name, a literal "
+"`.`, and a body formula. Every parser mode supports identical lambda surface"
+" notation."
+msgstr ""
+"Eine Lambda-Abstraktion wird als `λ` gefolgt von einem Parameternamen, einem"
+" wörtlichen `.` und einer Rumpfformel geschrieben. Jeder Parser-Modus "
+"unterstützt identische Lambda-Oberflächennotation."
+
+#: ../../guide/syntax-reference.md:222
+msgid "Parameter types"
+msgstr "Parametertypen"
+
+#: ../../guide/syntax-reference.md
+msgid "Parameter form"
+msgstr "Parameterform"
+
+#: ../../guide/syntax-reference.md
+msgid "Example"
+msgstr "Beispiel"
+
+#: ../../guide/syntax-reference.md
+msgid "Typical use"
+msgstr "Typische Verwendung"
+
+#: ../../guide/syntax-reference.md
+msgid "Single lowercase letter"
+msgstr "Einzelner Kleinbuchstabe"
+
+#: ../../guide/syntax-reference.md
+msgid "`λx. P(x)`"
+msgstr "`λx. P(x)`"
+
+#: ../../guide/syntax-reference.md
+msgid "value variable"
+msgstr "Wertvariable"
+
+#: ../../guide/syntax-reference.md
+msgid "Multi-letter lowercase name"
+msgstr "Mehrbuchstabiger Kleinbuchstaben-Name"
+
+#: ../../guide/syntax-reference.md
+msgid "`λfoo. P(foo(x))`"
+msgstr "`λfoo. P(foo(x))`"
+
+#: ../../guide/syntax-reference.md
+msgid "named-constant parameter"
+msgstr "Parameter für benannte Konstante"
+
+#: ../../guide/syntax-reference.md
+msgid "Uppercase predicate symbol"
+msgstr "Großgeschriebenes Prädikatsymbol"
+
+#: ../../guide/syntax-reference.md
+msgid "`λP. P(x)`"
+msgstr "`λP. P(x)`"
+
+#: ../../guide/syntax-reference.md
+msgid "predicate / higher-order parameter"
+msgstr "Prädikats-/Parameter höherer Ordnung"
+
+#: ../../guide/syntax-reference.md:230
+msgid ""
+"All three token classes become a `LambdaVar` in the AST. Scope resolution "
+"(applied automatically by `parse()`) then rewrites body occurrences of the "
+"lambda-bound name:"
+msgstr ""
+"Alle drei Token-Klassen werden im AST zu einer `LambdaVar`. Die "
+"Bereichsauflösung (automatisch von `parse()` angewendet) schreibt "
+"anschließend Vorkommen des lambda-gebundenen Namens im Rumpf um:"
+
+#: ../../guide/syntax-reference.md:232
+msgid ""
+"**Variable occurrence** — `λx. P(x)`: the `x` in `P(x)` becomes "
+"`LambdaVar(\"x\")`."
+msgstr ""
+"**Variablenvorkommen** — `λx. P(x)`: Das `x` in `P(x)` wird zu "
+"`LambdaVar(\"x\")`."
+
+#: ../../guide/syntax-reference.md:233
+msgid ""
+"**Predicate-application occurrence** — `λP. P(x)`: the `P(x)` in the body "
+"becomes `Application(LambdaVar(\"P\"), Variable(\"x\"))`. Multi-argument "
+"atoms curry left: `P(x, y)` → `Application(Application(LambdaVar(\"P\"), x),"
+" y)`."
+msgstr ""
+"**Vorkommen einer Prädikatsanwendung** — `λP. P(x)`: Das `P(x)` im Rumpf "
+"wird zu `Application(LambdaVar(\"P\"), Variable(\"x\"))`. Atome mit mehreren"
+" Argumenten werden linksseitig curryfiziert: `P(x, y)` → "
+"`Application(Application(LambdaVar(\"P\"), x), y)`."
+
+#: ../../guide/syntax-reference.md:234
+msgid ""
+"**Named-function occurrence** — `λfoo. P(foo(x))`: the `foo(x)` in `P`'s "
+"argument list (a term-level function call) becomes "
+"`Application(LambdaVar(\"foo\"), Variable(\"x\"))`."
+msgstr ""
+"**Vorkommen einer benannten Funktion** — `λfoo. P(foo(x))`: Das `foo(x)` in "
+"der Argumentliste von `P` (ein Funktionsaufruf auf Termebene) wird zu "
+"`Application(LambdaVar(\"foo\"), Variable(\"x\"))`."
+
+#: ../../guide/syntax-reference.md:236
+msgid ""
+"The scope obeys the **innermost-binder rule**: a quantifier removes the "
+"quantified name from the lambda-bound set. Inside `λx. ∀x P(x)`, the `x` in "
+"`P(x)` is logical (stays `Variable`)."
+msgstr ""
+"Der Geltungsbereich folgt der **Regel des innersten Binders**: Ein Quantor "
+"entfernt den quantifizierten Namen aus der Menge der lambda-gebundenen "
+"Namen. Innerhalb von `λx. ∀x P(x)` ist das `x` in `P(x)` logisch (bleibt "
+"`Variable`)."
+
+#: ../../guide/syntax-reference.md:238
+msgid "Body scope"
+msgstr "Rumpfreichweite"
+
+#: ../../guide/syntax-reference.md:240
+msgid ""
+"The body extends rightward through all connectives — lambda has lower "
+"precedence than every binary operator:"
+msgstr ""
+"Der Rumpf erstreckt sich nach rechts durch alle Konnektoren — Lambda hat "
+"eine niedrigere Präzedenz als jeder binäre Operator:"
+
+#: ../../guide/syntax-reference.md:247
+msgid "Multi-parameter lambdas are written by nesting: `λP. λx. P(x)`."
+msgstr ""
+"Lambdas mit mehreren Parametern werden durch Verschachtelung geschrieben: "
+"`λP. λx. P(x)`."
+
+#: ../../guide/syntax-reference.md:249
+msgid "Application syntax"
+msgstr "Anwendungssyntax"
+
+#: ../../guide/syntax-reference.md:251
+msgid ""
+"A lambda application requires both sides to be parenthesised: `(func)(arg)`."
+msgstr ""
+"Eine Lambda-Anwendung erfordert, dass beide Seiten geklammert sind: "
+"`(func)(arg)`."
+
+#: ../../guide/syntax-reference.md:260
+msgid ""
+"Higher-order application inside the body — a predicate parameter applied to "
+"arguments — is written in the natural `P(x)` notation, not as `(P)(x)`. "
+"Scope resolution handles the rewrite automatically."
+msgstr ""
+"Eine Anwendung höherer Ordnung innerhalb des Rumpfs — ein auf Argumente "
+"angewendeter Prädikatsparameter — wird in der natürlichen `P(x)`-Notation "
+"geschrieben, nicht als `(P)(x)`. Die Bereichsauflösung übernimmt die "
+"Umschreibung automatisch."
+
+#: ../../guide/syntax-reference.md:262
+msgid "Parse examples"
+msgstr "Parse-Beispiele"
+
+#: ../../guide/syntax-reference.md:284
+msgid "A complete example per mode"
+msgstr "Ein vollständiges Beispiel pro Modus"
+
+#: ../../guide/syntax-reference.md:303
+msgid "AST nodes"
+msgstr "AST-Knoten"
+
+#: ../../guide/syntax-reference.md:305
+msgid ""
+"All nodes are **frozen** Python dataclasses and can be imported from "
+"`unicode_fol_kit`. Being frozen, every node is immutable and **hashable**, "
+"so nodes can be put in sets, used as dict keys, and deduplicated. `Function`"
+" and `Atom` store their `args` as a `tuple` (a list passed to the "
+"constructor is accepted and coerced), which is what makes them hashable."
+msgstr ""
+"Alle Knoten sind **eingefrorene** (frozen) Python-Dataclasses und können aus"
+" `unicode_fol_kit` importiert werden. Da sie eingefroren sind, ist jeder "
+"Knoten unveränderlich und **hashbar**, sodass Knoten in Mengen abgelegt, als"
+" Dictionary-Schlüssel verwendet und dedupliziert werden können. `Function` "
+"und `Atom` speichern ihre `args` als `tuple` (eine an den Konstruktor "
+"übergebene Liste wird akzeptiert und umgewandelt), wodurch sie hashbar "
+"werden."
+
+#: ../../guide/syntax-reference.md:307
+msgid "Shared term and atom nodes (all modes)"
+msgstr "Gemeinsame Term- und Atomknoten (alle Modi)"
+
+#: ../../guide/syntax-reference.md
+msgid "Class"
+msgstr "Klasse"
+
+#: ../../guide/syntax-reference.md
+msgid "Fields"
+msgstr "Felder"
+
+#: ../../guide/syntax-reference.md
+msgid "Notes"
+msgstr "Anmerkungen"
+
+#: ../../guide/syntax-reference.md
+msgid "`Variable`"
+msgstr "`Variable`"
+
+#: ../../guide/syntax-reference.md
+msgid "`name: str`"
+msgstr "`name: str`"
+
+#: ../../guide/syntax-reference.md
+msgid "bound or free variable"
+msgstr "gebundene oder freie Variable"
+
+#: ../../guide/syntax-reference.md
+msgid "`Constant`"
+msgstr "`Constant`"
+
+#: ../../guide/syntax-reference.md
+msgid "bare constant or `c_`-prefixed"
+msgstr "unmarkierte oder mit `c_` versehene Konstante"
+
+#: ../../guide/syntax-reference.md
+msgid "`Number`"
+msgstr "`Number`"
+
+#: ../../guide/syntax-reference.md
+msgid "`value: int | float`"
+msgstr "`value: int | float`"
+
+#: ../../guide/syntax-reference.md
+msgid "numeric literal"
+msgstr "numerisches Literal"
+
+#: ../../guide/syntax-reference.md
+msgid "`Function`"
+msgstr "`Function`"
+
+#: ../../guide/syntax-reference.md
+msgid "`name: str`, `args: tuple`"
+msgstr "`name: str`, `args: tuple`"
+
+#: ../../guide/syntax-reference.md
+msgid "function application and arithmetic ops"
+msgstr "Funktionsanwendung und arithmetische Operationen"
+
+#: ../../guide/syntax-reference.md
+msgid "`Atom`"
+msgstr "`Atom`"
+
+#: ../../guide/syntax-reference.md
+msgid "`predicate: str`, `args: tuple`"
+msgstr "`predicate: str`, `args: tuple`"
+
+#: ../../guide/syntax-reference.md
+msgid "predicate or infix comparison"
+msgstr "Prädikat oder Infixvergleich"
+
+#: ../../guide/syntax-reference.md:317
+msgid "Classical formula nodes (FOL / MSFOL)"
+msgstr "Klassische Formelknoten (FOL / MSFOL)"
+
+#: ../../guide/syntax-reference.md
+msgid "`Not`"
+msgstr "`Not`"
+
+#: ../../guide/syntax-reference.md
+msgid "`formula`"
+msgstr "`formula`"
+
+#: ../../guide/syntax-reference.md
+msgid "`And`"
+msgstr "`And`"
+
+#: ../../guide/syntax-reference.md
+msgid "`left`, `right`"
+msgstr "`left`, `right`"
+
+#: ../../guide/syntax-reference.md
+msgid "`Or`"
+msgstr "`Or`"
+
+#: ../../guide/syntax-reference.md
+msgid "`Xor`"
+msgstr "`Xor`"
+
+#: ../../guide/syntax-reference.md
+msgid "`left`, `right` *(FOL only)*"
+msgstr "`left`, `right` *(nur FOL)*"
+
+#: ../../guide/syntax-reference.md
+msgid "`Implies`"
+msgstr "`Implies`"
+
+#: ../../guide/syntax-reference.md
+msgid "`Iff`"
+msgstr "`Iff`"
+
+#: ../../guide/syntax-reference.md
+msgid "`Contrast`"
+msgstr "`Contrast`"
+
+#: ../../guide/syntax-reference.md
+msgid "`left`, `right` *(FOL — concessive `Ⓒ`; truth-functionally `∧`)*"
+msgstr "`left`, `right` *(FOL — konzessiv `Ⓒ`; wahrheitsfunktional `∧`)*"
+
+#: ../../guide/syntax-reference.md
+msgid "`Quantifier`"
+msgstr "`Quantifier`"
+
+#: ../../guide/syntax-reference.md
+msgid "`type: str`, `variable`, `formula` *(FOL / FL — the unsorted modes)*"
+msgstr ""
+"`type: str`, `variable`, `formula` *(FOL / FL — die unsortierten Modi)*"
+
+#: ../../guide/syntax-reference.md:330
+msgid "Natural-language extension nodes (FOL mode)"
+msgstr "Erweiterungsknoten für natürliche Sprache (FOL-Modus)"
+
+#: ../../guide/syntax-reference.md
+msgid "`Count`"
+msgstr "`Count`"
+
+#: ../../guide/syntax-reference.md
+msgid "`op: str` (`\"ge\"` / `\"le\"` / `\"eq\"`), `n: Number`, `variable`, `formula`"
+msgstr "`op: str` (`\"ge\"` / `\"le\"` / `\"eq\"`), `n: Number`, `variable`, `formula`"
+
+#: ../../guide/syntax-reference.md
+msgid ""
+"counting quantifier `∃≥n` / `∃≤n` / `∃=n`; `n` is symbolic; FO-expandable on"
+" export"
+msgstr ""
+"Zählquantor `∃≥n` / `∃≤n` / `∃=n`; `n` ist symbolisch; beim Export "
+"erststufig expandierbar"
+
+#: ../../guide/syntax-reference.md
+msgid "`Measure`"
+msgstr "`Measure`"
+
+#: ../../guide/syntax-reference.md
+msgid "`entity`, `dimension`"
+msgstr "`entity`, `dimension`"
+
+#: ../../guide/syntax-reference.md
+msgid "degree term `μ(e, d)`; exports as the function `measure(e, d)`"
+msgstr "Gradterm `μ(e, d)`; wird als Funktion `measure(e, d)` exportiert"
+
+#: ../../guide/syntax-reference.md
+msgid "`Cardinality`"
+msgstr "`Cardinality`"
+
+#: ../../guide/syntax-reference.md
+msgid "`variable`, `formula`"
+msgstr "`variable`, `formula`"
+
+#: ../../guide/syntax-reference.md
+msgid "set-cardinality term `"
+msgstr "Mengenkardinalitätsterm `"
+
+#: ../../guide/syntax-reference.md:338
+#, python-brace-format
+msgid "See {doc}`natural-language` for the semantics and worked examples."
+msgstr ""
+"Siehe {doc}`natural-language` für die Semantik und durchgerechnete "
+"Beispiele."
+
+#: ../../guide/syntax-reference.md:340
+msgid "MSFOL / MSFL nodes"
+msgstr "MSFOL-/MSFL-Knoten"
+
+#: ../../guide/syntax-reference.md
+msgid "`SortedQuantifier`"
+msgstr "`SortedQuantifier`"
+
+#: ../../guide/syntax-reference.md
+msgid "`type: str`, `variable`, `sort: str`, `formula`"
+msgstr "`type: str`, `variable`, `sort: str`, `formula`"
+
+#: ../../guide/syntax-reference.md
+msgid "sort annotation without leading `:`"
+msgstr "Sortenannotation ohne führenden `:`"
+
+#: ../../guide/syntax-reference.md
+msgid "`SortedConstant`"
+msgstr "`SortedConstant`"
+
+#: ../../guide/syntax-reference.md
+msgid "`name: str`, `sort: str`"
+msgstr "`name: str`, `sort: str`"
+
+#: ../../guide/syntax-reference.md:347
+msgid "MSFL Łukasiewicz nodes"
+msgstr "MSFL-Łukasiewicz-Knoten"
+
+#: ../../guide/syntax-reference.md
+msgid "`LukNegation`"
+msgstr "`LukNegation`"
+
+#: ../../guide/syntax-reference.md
+msgid "`WeakConjunction`"
+msgstr "`WeakConjunction`"
+
+#: ../../guide/syntax-reference.md
+msgid "`WeakDisjunction`"
+msgstr "`WeakDisjunction`"
+
+#: ../../guide/syntax-reference.md
+msgid "`StrongConjunction`"
+msgstr "`StrongConjunction`"
+
+#: ../../guide/syntax-reference.md
+msgid "`StrongDisjunction`"
+msgstr "`StrongDisjunction`"
+
+#: ../../guide/syntax-reference.md
+msgid "`LukImplication`"
+msgstr "`LukImplication`"
+
+#: ../../guide/syntax-reference.md
+msgid "`LukEquivalence`"
+msgstr "`LukEquivalence`"
+
+#: ../../guide/syntax-reference.md:359
+msgid "Modal / temporal nodes (modal mode)"
+msgstr "Modal-/Temporalknoten (Modal-Modus)"
+
+#: ../../guide/syntax-reference.md:361
+msgid ""
+"The prefix temporal duals are the past-tense mirrors of the forward "
+"operators."
+msgstr ""
+"Die präfigierten temporalen Duale sind die vergangenheitsbezogenen "
+"Spiegelungen der Vorwärtsoperatoren."
+
+#: ../../guide/syntax-reference.md
+msgid "henceforth (future)"
+msgstr "fortan (Zukunft)"
+
+#: ../../guide/syntax-reference.md
+msgid "eventually (future)"
+msgstr "irgendwann (Zukunft)"
+
+#: ../../guide/syntax-reference.md
+msgid "next point"
+msgstr "nächster Zeitpunkt"
+
+#: ../../guide/syntax-reference.md
+msgid "strong until (binary)"
+msgstr "starkes Until (binär)"
+
+#: ../../guide/syntax-reference.md
+msgid "past dual of `Always`"
+msgstr "vergangenheitsbezogenes Dual von `Always`"
+
+#: ../../guide/syntax-reference.md
+msgid "past dual of `Eventually`"
+msgstr "vergangenheitsbezogenes Dual von `Eventually`"
+
+#: ../../guide/syntax-reference.md
+msgid "past dual of `Next`"
+msgstr "vergangenheitsbezogenes Dual von `Next`"
+
+#: ../../guide/syntax-reference.md
+msgid "past dual of `Until` (binary)"
+msgstr "vergangenheitsbezogenes Dual von `Until` (binär)"
+
+#: ../../guide/syntax-reference.md:374
+#, python-brace-format
+msgid ""
+"The alethic (`Box`, `Diamond`), epistemic/doxastic (`Knows`, `Believes`), "
+"assertive/bouletic (`Says`, `Wants` — agent-prefix attitude operators "
+"`Say_a` / `Want_a`; see {doc}`natural-language`), and deontic (`Obligatory`,"
+" `Permitted`) nodes round out the modal family; see the modal-logic page. "
+"All modal nodes reject `to_z3` / `to_prover9` / `to_tptp` directly — "
+"translate first with `standard_translation()`."
+msgstr ""
+"Die alethischen (`Box`, `Diamond`), epistemischen/doxastischen (`Knows`, "
+"`Believes`), assertiven/bouletischen (`Says`, `Wants` — "
+"Einstellungsoperatoren mit Agens-Präfix `Say_a` / `Want_a`; siehe "
+"{doc}`natural-language`) und deontischen (`Obligatory`, `Permitted`) Knoten "
+"runden die modale Familie ab; siehe die Seite zur Modallogik. Alle modalen "
+"Knoten weisen `to_z3` / `to_prover9` / `to_tptp` direkt zurück — zunächst "
+"mit `standard_translation()` übersetzen."
+
+#: ../../guide/syntax-reference.md:376
+msgid "Lambda-calculus nodes (all modes)"
+msgstr "Lambda-Kalkül-Knoten (alle Modi)"
+
+#: ../../guide/syntax-reference.md
+msgid "`LambdaVar`"
+msgstr "`LambdaVar`"
+
+#: ../../guide/syntax-reference.md
+msgid "lambda-bound variable; frozen and hashable — distinct from `Variable`"
+msgstr ""
+"lambda-gebundene Variable; eingefroren und hashbar — verschieden von "
+"`Variable`"
+
+#: ../../guide/syntax-reference.md
+msgid "`Lambda`"
+msgstr "`Lambda`"
+
+#: ../../guide/syntax-reference.md
+msgid "`param: LambdaVar`, `body: Node`"
+msgstr "`param: LambdaVar`, `body: Node`"
+
+#: ../../guide/syntax-reference.md
+msgid "lambda abstraction `λparam. body`"
+msgstr "Lambda-Abstraktion `λparam. body`"
+
+#: ../../guide/syntax-reference.md
+msgid "`Application`"
+msgstr "`Application`"
+
+#: ../../guide/syntax-reference.md
+msgid "`func: Node`, `arg: Node`"
+msgstr "`func: Node`, `arg: Node`"
+
+#: ../../guide/syntax-reference.md
+msgid "lambda application `func(arg)`"
+msgstr "Lambda-Anwendung `func(arg)`"
+
+#: ../../guide/syntax-reference.md:384
+msgid ""
+"`LambdaVar` is kept separate from `Variable` so that logical binding (by "
+"quantifiers) and lambda binding never get confused. `free_variables()` "
+"returns a mixed set that may contain both."
+msgstr ""
+"`LambdaVar` wird getrennt von `Variable` gehalten, damit logische Bindung "
+"(durch Quantoren) und Lambda-Bindung nie verwechselt werden. "
+"`free_variables()` liefert eine gemischte Menge, die beide enthalten kann."
+
+#: ../../guide/syntax-reference.md:386
+msgid "Reductions"
+msgstr "Reduktionen"
+
+#: ../../guide/syntax-reference.md:388
+msgid "Every MSFL node implements two reduction steps:"
+msgstr "Jeder MSFL-Knoten implementiert zwei Reduktionsschritte:"
+
+#: ../../guide/syntax-reference.md:390
+msgid ""
+"**`to_msfol()`** — lowers Łukasiewicz connectives to classical nodes while "
+"preserving sort annotations (`SortedQuantifier` and `SortedConstant` survive"
+" unchanged)."
+msgstr ""
+"**`to_msfol()`** — senkt Łukasiewicz-Konnektoren auf klassische Knoten ab "
+"und bewahrt dabei Sortenannotationen (`SortedQuantifier` und "
+"`SortedConstant` bleiben unverändert erhalten)."
+
+#: ../../guide/syntax-reference.md:391
+msgid ""
+"**`_relativize(facts)`** — eliminates sort annotations by replacing `∀x:S φ`"
+" with `∀x (S(x) → φ)` and `∃x:S φ` with `∃x (S(x) ∧ φ)`, and replacing "
+"`SortedConstant(name, sort)` with a plain `Constant(name)`."
+msgstr ""
+"**`_relativize(facts)`** — eliminiert Sortenannotationen, indem `∀x:S φ` "
+"durch `∀x (S(x) → φ)` und `∃x:S φ` durch `∃x (S(x) ∧ φ)` ersetzt wird, und "
+"ersetzt `SortedConstant(name, sort)` durch ein einfaches `Constant(name)`."
+
+#: ../../guide/syntax-reference.md:393
+msgid ""
+"The top-level helper `to_fol(node, include_sort_facts=False)` chains both "
+"steps and optionally conjoins sort-membership atoms for all ground constants"
+" at the top level."
+msgstr ""
+"Der übergeordnete Hilfsaufruf `to_fol(node, include_sort_facts=False)` "
+"verkettet beide Schritte und verknüpft optional Sortenzugehörigkeitsatome "
+"für alle Grundkonstanten auf oberster Ebene konjunktiv."
+
+#: ../../guide/syntax-reference.md:395
+msgid "Error handling"
+msgstr "Fehlerbehandlung"
+
+#: ../../guide/syntax-reference.md:397
+msgid ""
+"Parse errors are reported with human-readable messages rather than raw "
+"parser internals. Lexer-level problems (an invalid character, a malformed "
+"name or number, or an attempt to mix same-level connectives without "
+"parentheses) raise `NamingError`; structural problems (an incomplete formula"
+" or a misplaced operator) raise `ParsingError`. Both report the offending "
+"position and, where useful, a hint. The hint text is **mode-aware**:"
+msgstr ""
+"Parse-Fehler werden mit menschenlesbaren Meldungen gemeldet statt mit rohen "
+"internen Parser-Details. Probleme auf Lexer-Ebene (ein ungültiges Zeichen, "
+"ein fehlerhafter Name oder eine fehlerhafte Zahl, oder der Versuch, "
+"Konnektoren derselben Ebene ohne Klammern zu mischen) lösen `NamingError` "
+"aus; strukturelle Probleme (eine unvollständige Formel oder ein falsch "
+"platzierter Operator) lösen `ParsingError` aus. Beide melden die betreffende"
+" Position und, wo hilfreich, einen Hinweis. Der Hinweistext ist "
+"**modusabhängig**:"
+
+#: ../../guide/syntax-reference.md:425
+msgid ""
+"The modal and second-order modes share FOL's same-level group because their "
+"extra operators (modal/temporal prefixes, `∀P` / `∃P`) bind tighter, at the "
+"`¬` level, and so never participate in same-level mixing."
+msgstr ""
+"Die Modal- und Modi zweiter Stufe teilen sich FOLs Gruppe derselben Ebene, "
+"da ihre zusätzlichen Operatoren (modale/temporale Präfixe, `∀P` / `∃P`) "
+"stärker binden, auf der Ebene von `¬`, und daher nie an der Mischung "
+"derselben Ebene beteiligt sind."

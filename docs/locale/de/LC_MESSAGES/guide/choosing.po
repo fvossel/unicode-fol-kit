@@ -1,0 +1,1204 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, Felix Vossel
+# This file is distributed under the same license as the unicode-fol-kit
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: unicode-fol-kit 0.11.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-07-02 22:46+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: de\n"
+"Language-Team: de <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../guide/choosing.md:1
+msgid "Choosing a tool"
+msgstr "Das richtige Werkzeug wählen"
+
+#: ../../guide/choosing.md:3
+msgid ""
+"The kit spans several proof methods, a model finder, and a wide non-"
+"classical periphery across many logics. The tables below map a question "
+"(and a logic) to the entry point that answers it; each entry point is "
+"documented in detail in its own section. After the tables, the **Worked "
+"recipes** section gives one short, runnable example for every row — copy "
+"a recipe, change the formula, and you have a working program."
+msgstr ""
+"Das Kit umfasst mehrere Beweismethoden, einen Modellfinder und eine "
+"breite nichtklassische Peripherie über viele Logiken hinweg. Die "
+"folgenden Tabellen ordnen einer Frage (und einer Logik) den Einstiegspunkt"
+" zu, der sie beantwortet; jeder Einstiegspunkt ist in einem eigenen "
+"Abschnitt ausführlich dokumentiert. Nach den Tabellen liefert der "
+"Abschnitt **Ausgearbeitete Rezepte** ein kurzes, lauffähiges Beispiel zu "
+"jeder Zeile — ein Rezept kopieren, die Formel ändern, und man hat ein "
+"funktionierendes Programm."
+
+#: ../../guide/choosing.md:5
+msgid "Three things hold across the whole kit:"
+msgstr "Drei Dinge gelten für das gesamte Kit:"
+
+#: ../../guide/choosing.md:7
+msgid ""
+"**Parse first.** Every reasoning entry point takes an AST `Node`, not a "
+"string. You get one from a parser — `MSFLParser().parse` for classical "
+"FOL, with flags `many_sorted` / `fuzzy` / `modal` / `second_order` for "
+"the other modes — or from an importer (`parse_tptp`, `parse_prover9`, "
+"`parse_smtlib`, `parse_latex`)."
+msgstr ""
+"**Erst parsen.** Jeder Einstiegspunkt für das Schließen erwartet einen "
+"AST-`Node`, keinen String. Man erhält einen solchen von einem Parser — "
+"`MSFLParser().parse` für klassische FOL, mit den Flags `many_sorted` / "
+"`fuzzy` / `modal` / `second_order` für die anderen Modi — oder von einem "
+"Importer (`parse_tptp`, `parse_prover9`, `parse_smtlib`, `parse_latex`)."
+
+#: ../../guide/choosing.md:8
+msgid ""
+"**A single lowercase letter is a *variable*; a constant needs a multi-"
+"character name** (`socrates`, `tom`). This trips up almost every first "
+"formula."
+msgstr ""
+"**Ein einzelner Kleinbuchstabe ist eine *Variable*; eine Konstante "
+"benötigt einen mehrzeichigen Namen** (`socrates`, `tom`). Darüber "
+"stolpert fast jede erste Formel."
+
+#: ../../guide/choosing.md:9
+msgid ""
+"**Decidable vs. semidecidable vs. bounded.** Truth tables, propositional "
+"tableaux, matrices, ALC, and (propositional) modal/intuitionistic "
+"validity *terminate with a verdict*. Resolution and Fitch are "
+"*semidecidable* (they may not halt on a non-theorem). The finite model "
+"finder and the second-order / quantified non-classical searches are "
+"*bounded* — a negative result means \"not found within the bound\", not a"
+" proof."
+msgstr ""
+"**Entscheidbar vs. semi-entscheidbar vs. beschränkt.** Wahrheitstafeln, "
+"aussagenlogische Tableaux, Matrizen, ALC und (aussagenlogische) "
+"modale/intuitionistische Gültigkeit *terminieren mit einem Urteil*. "
+"Resolution und Fitch sind *semi-entscheidbar* (sie halten bei einem "
+"Nicht-Theorem möglicherweise nicht an). Der endliche Modellfinder und die "
+"Suchen zweiter Stufe / quantifizierten nichtklassischen Logiken sind "
+"*beschränkt* — ein negatives Ergebnis bedeutet „innerhalb der Schranke "
+"nicht gefunden“, nicht einen Beweis."
+
+#: ../../guide/choosing.md:11
+msgid "Which tool for which question"
+msgstr "Welches Werkzeug für welche Frage"
+
+#: ../../guide/choosing.md
+msgid "Your question"
+msgstr "Ihre Frage"
+
+#: ../../guide/choosing.md
+msgid "Use"
+msgstr "Verwenden"
+
+#: ../../guide/choosing.md
+msgid "Returns"
+msgstr "Rückgabe"
+
+#: ../../guide/choosing.md
+msgid "Sound / complete / decidable"
+msgstr "Korrekt / vollständig / entscheidbar"
+
+#: ../../guide/choosing.md
+msgid "Is this valid / does Γ entail φ? (general FOL, no external solver)"
+msgstr ""
+"Ist dies gültig / folgt φ aus Γ? (allgemeine FOL, kein externer Solver)"
+
+#: ../../guide/choosing.md
+msgid "`prove`, `is_valid_resolution`"
+msgstr "`prove`, `is_valid_resolution`"
+
+#: ../../guide/choosing.md
+msgid "bool"
+msgstr "bool"
+
+#: ../../guide/choosing.md
+msgid "sound; refutation-complete; **semidecidable**"
+msgstr "korrekt; widerlegungsvollständig; **semi-entscheidbar**"
+
+#: ../../guide/choosing.md
+msgid "Same, with an SMT solver"
+msgstr "Dasselbe, mit einem SMT-Solver"
+
+#: ../../guide/choosing.md
+msgid "`is_valid`, `is_satisfiable`, `get_model` (Z3)"
+msgstr "`is_valid`, `is_satisfiable`, `get_model` (Z3)"
+
+#: ../../guide/choosing.md
+msgid "bool / model"
+msgstr "bool / Modell"
+
+#: ../../guide/choosing.md
+msgid "sound & complete on Z3's decidable fragment"
+msgstr "korrekt & vollständig auf Z3s entscheidbarem Fragment"
+
+#: ../../guide/choosing.md
+msgid "Same, via an external FO prover"
+msgstr "Dasselbe, über einen externen FO-Prover"
+
+#: ../../guide/choosing.md
+msgid "`check_logical_entailment` (Prover9), `check_logical_entailment_vampire`"
+msgstr "`check_logical_entailment` (Prover9), `check_logical_entailment_vampire`"
+
+#: ../../guide/choosing.md
+msgid "sound; complete for FOL; needs the binary"
+msgstr "korrekt; vollständig für FOL; benötigt die ausführbare Datei"
+
+#: ../../guide/choosing.md
+msgid "Propositional / modal tautology? (decidably)"
+msgstr "Aussagenlogische / modale Tautologie? (entscheidbar)"
+
+#: ../../guide/choosing.md
+msgid "`is_valid_tableau`, `prove_tableau`, `tableau_closed`"
+msgstr "`is_valid_tableau`, `prove_tableau`, `tableau_closed`"
+
+#: ../../guide/choosing.md
+msgid ""
+"sound & complete; decidable propositionally; routes modal inputs to the "
+"native modal tableau"
+msgstr ""
+"korrekt & vollständig; aussagenlogisch entscheidbar; leitet modale "
+"Eingaben an das native modale Tableau weiter"
+
+#: ../../guide/choosing.md
+msgid "Modal validity in-process (no external solver)"
+msgstr "Modale Gültigkeit im Prozess (ohne externen Solver)"
+
+#: ../../guide/choosing.md
+msgid ""
+"`is_modal_valid`, `modal_decide`, `modal_countermodel` "
+"(`atp.modal_tableau`)"
+msgstr ""
+"`is_modal_valid`, `modal_decide`, `modal_countermodel` "
+"(`atp.modal_tableau`)"
+
+#: ../../guide/choosing.md
+msgid "bool / verdict / Kripke counter-model"
+msgstr "bool / Urteil / Kripke-Gegenmodell"
+
+#: ../../guide/choosing.md
+msgid "sound & complete for propositional **K, T, D, B, K4, K45, S4, S5, KD45**"
+msgstr ""
+"korrekt & vollständig für aussagenlogisches **K, T, D, B, K4, K45, S4, "
+"S5, KD45**"
+
+#: ../../guide/choosing.md
+msgid "Check a Fitch proof I wrote"
+msgstr "Einen selbst geschriebenen Fitch-Beweis prüfen"
+
+#: ../../guide/choosing.md
+msgid "`check_proof`, `verify_proof`"
+msgstr "`check_proof`, `verify_proof`"
+
+#: ../../guide/choosing.md
+msgid "bool / `ProofResult`"
+msgstr "bool / `ProofResult`"
+
+#: ../../guide/choosing.md
+msgid "sound; FOL/MSFOL by rule table, K3/LP + modal propositionally"
+msgstr ""
+"korrekt; FOL/MSFOL per Regeltabelle, K3/LP + modal aussagenlogisch"
+
+#: ../../guide/choosing.md
+msgid "Find a Fitch proof"
+msgstr "Einen Fitch-Beweis finden"
+
+#: ../../guide/choosing.md
+msgid "`find_fitch_proof`, `fitch_prove`, `is_valid_fitch`"
+msgstr "`find_fitch_proof`, `fitch_prove`, `is_valid_fitch`"
+
+#: ../../guide/choosing.md
+msgid "`Proof` / bool"
+msgstr "`Proof` / bool"
+
+#: ../../guide/choosing.md
+msgid "sound; complete propositionally, depth-bounded FO"
+msgstr ""
+"korrekt; aussagenlogisch vollständig, tiefenbeschränkt für FO"
+
+#: ../../guide/choosing.md
+msgid "Check a sequent (LK) derivation"
+msgstr "Eine Sequenzenherleitung (LK) prüfen"
+
+#: ../../guide/choosing.md
+msgid "`check_sequent_proof`, `verify_sequent_proof`"
+msgstr "`check_sequent_proof`, `verify_sequent_proof`"
+
+#: ../../guide/choosing.md
+msgid "bool / `SequentResult`"
+msgstr "bool / `SequentResult`"
+
+#: ../../guide/choosing.md
+msgid "sound; reaches the second-order fragment"
+msgstr "korrekt; erreicht das Fragment zweiter Stufe"
+
+#: ../../guide/choosing.md
+msgid "Check an intuitionistic (LJ) derivation"
+msgstr "Eine intuitionistische Herleitung (LJ) prüfen"
+
+#: ../../guide/choosing.md
+msgid "`check_lj_proof`, `verify_lj_proof`"
+msgstr "`check_lj_proof`, `verify_lj_proof`"
+
+#: ../../guide/choosing.md
+msgid "sound for intuitionistic consequence"
+msgstr "korrekt für intuitionistische Folgerung"
+
+#: ../../guide/choosing.md
+msgid "Find a model / countermodel"
+msgstr "Ein Modell / Gegenmodell finden"
+
+#: ../../guide/choosing.md
+msgid ""
+"`find_model`, `find_countermodel`, `is_satisfiable_finite`, "
+"`is_valid_finite`"
+msgstr ""
+"`find_model`, `find_countermodel`, `is_satisfiable_finite`, "
+"`is_valid_finite`"
+
+#: ../../guide/choosing.md
+msgid "`Structure` / None / bool"
+msgstr "`Structure` / None / bool"
+
+#: ../../guide/choosing.md
+msgid "finite search up to size N; enumerates sort universes for MSFOL"
+msgstr ""
+"endliche Suche bis zur Größe N; zählt Sortenuniversen für MSFOL auf"
+
+#: ../../guide/choosing.md
+msgid "Find a second-order model / decide finite SO validity"
+msgstr ""
+"Ein Modell zweiter Stufe finden / endliche Gültigkeit zweiter Stufe "
+"entscheiden"
+
+#: ../../guide/choosing.md
+msgid "`so_find_model`, `so_find_countermodel`, `so_is_valid_finite`"
+msgstr "`so_find_model`, `so_find_countermodel`, `so_is_valid_finite`"
+
+#: ../../guide/choosing.md
+msgid "bounded finite-model search"
+msgstr "beschränkte Suche nach endlichen Modellen"
+
+#: ../../guide/choosing.md
+msgid "Truth table (classical / K3 / LP)"
+msgstr "Wahrheitstafel (klassisch / K3 / LP)"
+
+#: ../../guide/choosing.md
+msgid "`truth_table`, `is_tautology`, `is_contradiction`, `is_satisfiable_tt`"
+msgstr "`truth_table`, `is_tautology`, `is_contradiction`, `is_satisfiable_tt`"
+
+#: ../../guide/choosing.md
+msgid "`TruthTable` / bool"
+msgstr "`TruthTable` / bool"
+
+#: ../../guide/choosing.md
+msgid "decidable; propositional only"
+msgstr "entscheidbar; nur aussagenlogisch"
+
+#: ../../guide/choosing.md
+msgid "Finite-valued matrix / Belnap–Dunn FDE consequence"
+msgstr "Endlichwertige Matrix / Belnap–Dunn-FDE-Folgerung"
+
+#: ../../guide/choosing.md
+msgid "`TruthMatrix` (`semantics.matrix`); `K3_MATRIX`, `LP_MATRIX`, `FDE_MATRIX`"
+msgstr "`TruthMatrix` (`semantics.matrix`); `K3_MATRIX`, `LP_MATRIX`, `FDE_MATRIX`"
+
+#: ../../guide/choosing.md
+msgid "matrix verdicts"
+msgstr "Matrixurteile"
+
+#: ../../guide/choosing.md
+msgid "decidable; propositional, any finite matrix"
+msgstr "entscheidbar; aussagenlogisch, jede endliche Matrix"
+
+#: ../../guide/choosing.md
+msgid "Intuitionistic validity (prop. or first-order)"
+msgstr "Intuitionistische Gültigkeit (aussagenlogisch oder erster Stufe)"
+
+#: ../../guide/choosing.md
+msgid "`int_valid`, `int_countermodel`"
+msgstr "`int_valid`, `int_countermodel`"
+
+#: ../../guide/choosing.md
+msgid "bool / `IntKripkeModel`"
+msgstr "bool / `IntKripkeModel`"
+
+#: ../../guide/choosing.md
+msgid "decidable propositionally; bounded Kripke search for quantifiers"
+msgstr ""
+"aussagenlogisch entscheidbar; beschränkte Kripke-Suche für Quantoren"
+
+#: ../../guide/choosing.md
+msgid "Evaluate truth in a structure"
+msgstr "Wahrheit in einer Struktur auswerten"
+
+#: ../../guide/choosing.md
+msgid ""
+"`satisfies` (FOL/MSFOL), `satisfies_so`/`holds` (SO), `satisfies_modal` "
+"(modal)"
+msgstr ""
+"`satisfies` (FOL/MSFOL), `satisfies_so`/`holds` (SO), `satisfies_modal` "
+"(modal)"
+
+#: ../../guide/choosing.md
+msgid "direct Tarskian / Kripke / finite SO semantics"
+msgstr "direkte tarskische / Kripke- / endliche SO-Semantik"
+
+#: ../../guide/choosing.md
+msgid "Decide modal validity with a real prover (Isabelle installed)"
+msgstr ""
+"Modale Gültigkeit mit einem echten Prover entscheiden (Isabelle "
+"installiert)"
+
+#: ../../guide/choosing.md
+msgid "`isabelle_decide_modal`"
+msgstr "`isabelle_decide_modal`"
+
+#: ../../guide/choosing.md
+msgid "`ModalVerdict` (valid / invalid / unknown)"
+msgstr "`ModalVerdict` (valid / invalid / unknown)"
+
+#: ../../guide/choosing.md
+msgid "sound (kernel-checked proof or genuine nitpick countermodel); incomplete"
+msgstr ""
+"korrekt (kernel-geprüfter Beweis oder echtes Nitpick-Gegenmodell); "
+"unvollständig"
+
+#: ../../guide/choosing.md
+msgid "Fuzzy degree or decision (Łukasiewicz / Gödel / product)"
+msgstr "Fuzzy-Grad oder -Entscheidung (Łukasiewicz / Gödel / Produkt)"
+
+#: ../../guide/choosing.md
+msgid ""
+"`fuzzy_evaluate(…, tnorm=)`; `fuzzy_is_valid(…, tnorm=)`, "
+"`fuzzy_is_satisfiable`, `fuzzy_get_model`"
+msgstr ""
+"`fuzzy_evaluate(…, tnorm=)`; `fuzzy_is_valid(…, tnorm=)`, "
+"`fuzzy_is_satisfiable`, `fuzzy_get_model`"
+
+#: ../../guide/choosing.md
+msgid "degree / bool"
+msgstr "Grad / bool"
+
+#: ../../guide/choosing.md
+msgid "real-arithmetic decision via Z3; quantifiers grounded over a finite domain"
+msgstr ""
+"reellarithmetische Entscheidung über Z3; Quantoren über einem endlichen "
+"Bereich grundiert"
+
+#: ../../guide/choosing.md
+msgid "Description-logic concept reasoning (ALC)"
+msgstr "Beschreibungslogisches Schließen über Konzepte (ALC)"
+
+#: ../../guide/choosing.md
+msgid ""
+"`concept_satisfiable`, `subsumes`, `equivalent`, `abox_consistent` "
+"(`unicode_fol_kit.dl`)"
+msgstr ""
+"`concept_satisfiable`, `subsumes`, `equivalent`, `abox_consistent` "
+"(`unicode_fol_kit.dl`)"
+
+#: ../../guide/choosing.md
+msgid "sound & complete; tableau with TBox internalisation and blocking"
+msgstr ""
+"korrekt & vollständig; Tableau mit TBox-Internalisierung und Blockierung"
+
+#: ../../guide/choosing.md
+msgid "Read a formula back as English"
+msgstr "Eine Formel als englischen Text zurücklesen"
+
+#: ../../guide/choosing.md
+msgid "`to_english`"
+msgstr "`to_english`"
+
+#: ../../guide/choosing.md
+msgid "str"
+msgstr "str"
+
+#: ../../guide/choosing.md
+msgid "readability aid, not a parse inverse"
+msgstr "Lesehilfe, keine Umkehrung des Parsens"
+
+#: ../../guide/choosing.md
+msgid "Check / canonicalize a formula before reasoning"
+msgstr "Eine Formel vor dem Schließen prüfen / kanonisieren"
+
+#: ../../guide/choosing.md
+msgid ""
+"`validate_text`, `is_wellformed`, `formulas_are_equivalent`, "
+"`canonicalize`"
+msgstr ""
+"`validate_text`, `is_wellformed`, `formulas_are_equivalent`, "
+"`canonicalize`"
+
+#: ../../guide/choosing.md
+msgid "report / bool / Node"
+msgstr "Bericht / bool / Node"
+
+#: ../../guide/choosing.md
+msgid "static checks; equivalence via Z3"
+msgstr "statische Prüfungen; Äquivalenz über Z3"
+
+#: ../../guide/choosing.md
+msgid "Import a problem from another format"
+msgstr "Ein Problem aus einem anderen Format importieren"
+
+#: ../../guide/choosing.md
+msgid "`parse_tptp`, `parse_prover9`, `parse_smtlib`, `parse_latex`"
+msgstr "`parse_tptp`, `parse_prover9`, `parse_smtlib`, `parse_latex`"
+
+#: ../../guide/choosing.md
+msgid "Node(s)"
+msgstr "Node(s)"
+
+#: ../../guide/choosing.md
+msgid "round-trips into the same AST"
+msgstr "lässt sich verlustfrei in denselben AST zurückparsen"
+
+#: ../../guide/choosing.md:37
+msgid "Worked recipes"
+msgstr "Ausgearbeitete Rezepte"
+
+#: ../../guide/choosing.md:39
+msgid ""
+"One runnable example per question above, in reading order. They share "
+"these imports — later recipes assume `parse` and the helpers are already "
+"defined:"
+msgstr ""
+"Ein lauffähiges Beispiel pro obiger Frage, in Lesereihenfolge. Sie teilen"
+" sich diese Importe — spätere Rezepte setzen voraus, dass `parse` und die"
+" Hilfsfunktionen bereits definiert sind:"
+
+#: ../../guide/choosing.md:49
+msgid "I want to … decide validity / entailment (general FOL, no external solver)"
+msgstr ""
+"Ich möchte … Gültigkeit / Folgerung entscheiden (allgemeine FOL, kein "
+"externer Solver)"
+
+#: ../../guide/choosing.md:51
+msgid ""
+"`is_valid_resolution` decides a single formula by refutation; `prove` "
+"decides `premises ⊨ conclusion`. Both are sound and refutation-complete, "
+"but only *semidecidable* — bound the work with `max_steps` if you suspect"
+" a non-theorem."
+msgstr ""
+"`is_valid_resolution` entscheidet eine einzelne Formel durch Widerlegung;"
+" `prove` entscheidet `premises ⊨ conclusion`. Beide sind korrekt und "
+"widerlegungsvollständig, aber nur *semi-entscheidbar* — begrenzen Sie die"
+" Arbeit mit `max_steps`, wenn Sie ein Nicht-Theorem vermuten."
+
+#: ../../guide/choosing.md:64
+msgid "I want to … decide validity / get a model with Z3"
+msgstr "Ich möchte … Gültigkeit entscheiden / ein Modell mit Z3 erhalten"
+
+#: ../../guide/choosing.md:66
+msgid ""
+"`is_valid` / `is_satisfiable` call Z3; `get_model` returns a satisfying "
+"assignment (or `None`). Z3 is sound and complete on its decidable "
+"fragment and is the fastest default for ground / propositional / EPR-"
+"shaped problems."
+msgstr ""
+"`is_valid` / `is_satisfiable` rufen Z3 auf; `get_model` liefert eine "
+"erfüllende Belegung (oder `None`). Z3 ist korrekt und vollständig auf "
+"seinem entscheidbaren Fragment und die schnellste Standardwahl für "
+"grundierte / aussagenlogische / EPR-förmige Probleme."
+
+#: ../../guide/choosing.md:74
+msgid "I want to … decide FOL with an external prover"
+msgstr "Ich möchte … FOL mit einem externen Prover entscheiden"
+
+#: ../../guide/choosing.md:76
+msgid ""
+"`check_logical_entailment` (Prover9) and "
+"`check_logical_entailment_vampire` (Vampire) are complete for FOL but "
+"need the binary installed, so they are not run here."
+msgstr ""
+"`check_logical_entailment` (Prover9) und "
+"`check_logical_entailment_vampire` (Vampire) sind vollständig für FOL, "
+"benötigen aber die installierte ausführbare Datei, weshalb sie hier "
+"nicht ausgeführt werden."
+
+#: ../../guide/choosing.md:87
+msgid "I want to … decide a propositional / modal tautology"
+msgstr "Ich möchte … eine aussagenlogische / modale Tautologie entscheiden"
+
+#: ../../guide/choosing.md:89
+msgid ""
+"`is_valid_tableau` is a decidable analytic-tableau check for the "
+"propositional fragment; `prove_tableau` takes premises; `tableau_closed` "
+"reports whether a set of formulas is jointly unsatisfiable."
+msgstr ""
+"`is_valid_tableau` ist eine entscheidbare analytische Tableau-Prüfung "
+"für das aussagenlogische Fragment; `prove_tableau` nimmt Prämissen "
+"entgegen; `tableau_closed` meldet, ob eine Formelmenge gemeinsam "
+"unerfüllbar ist."
+
+#: ../../guide/choosing.md:97
+msgid "I want to … decide modal validity in-process"
+msgstr "Ich möchte … modale Gültigkeit im Prozess entscheiden"
+
+#: ../../guide/choosing.md:99
+msgid ""
+"`is_modal_valid` returns a bool over a named frame; `modal_decide` "
+"returns the verdict string `\"valid\"` / `\"invalid\"`; "
+"`modal_countermodel` returns a refuting `KripkeModel`. Frames: **K, T, D,"
+" B, K4, K45, S4, S5, KD45**."
+msgstr ""
+"`is_modal_valid` liefert einen bool über einem benannten Frame; "
+"`modal_decide` liefert den Urteilsstring `\"valid\"` / `\"invalid\"`; "
+"`modal_countermodel` liefert ein widerlegendes `KripkeModel`. Frames: "
+"**K, T, D, B, K4, K45, S4, S5, KD45**."
+
+#: ../../guide/choosing.md:112
+msgid "I want to … check a Fitch proof I wrote / find one"
+msgstr ""
+"Ich möchte … einen selbst geschriebenen Fitch-Beweis prüfen / einen "
+"finden"
+
+#: ../../guide/choosing.md:114
+msgid ""
+"`check_proof` verifies a `Proof`; `find_fitch_proof` searches for one "
+"(depth-bounded), `fitch_prove` / `is_valid_fitch` are its boolean "
+"wrappers."
+msgstr ""
+"`check_proof` verifiziert einen `Proof`; `find_fitch_proof` sucht nach "
+"einem (tiefenbeschränkt), `fitch_prove` / `is_valid_fitch` sind dessen "
+"boolesche Wrapper."
+
+#: ../../guide/choosing.md:124
+msgid "I want to … check a sequent (LK / LJ) derivation"
+msgstr "Ich möchte … eine Sequenzenherleitung (LK / LJ) prüfen"
+
+#: ../../guide/choosing.md:126
+msgid ""
+"`sequent` / `derive` / `axiom` build a derivation tree; "
+"`check_sequent_proof` verifies it (classical **LK**, reaching the second-"
+"order fragment), `check_lj_proof` verifies the single-succedent **LJ** "
+"restriction (intuitionistic)."
+msgstr ""
+"`sequent` / `derive` / `axiom` bauen einen Herleitungsbaum auf; "
+"`check_sequent_proof` verifiziert ihn (klassisches **LK**, das das "
+"Fragment zweiter Stufe erreicht), `check_lj_proof` verifiziert die "
+"einsukzedente **LJ**-Restriktion (intuitionistisch)."
+
+#: ../../guide/choosing.md:145
+msgid "I want to … find a (counter)model by finite search"
+msgstr "Ich möchte … ein (Gegen-)Modell durch endliche Suche finden"
+
+#: ../../guide/choosing.md:147
+msgid ""
+"`find_model` returns a `Structure` satisfying a theory; "
+"`find_countermodel` satisfies the premises but refutes the conclusion; "
+"`is_valid_finite` / `is_satisfiable_finite` are the booleans. The search "
+"is bounded by `max_size`."
+msgstr ""
+"`find_model` liefert eine `Structure`, die eine Theorie erfüllt; "
+"`find_countermodel` erfüllt die Prämissen, widerlegt aber die "
+"Konklusion; `is_valid_finite` / `is_satisfiable_finite` sind die "
+"booleschen Varianten. Die Suche ist durch `max_size` beschränkt."
+
+#: ../../guide/choosing.md:158
+msgid "I want to … find a second-order model / decide finite SO validity"
+msgstr ""
+"Ich möchte … ein Modell zweiter Stufe finden / endliche Gültigkeit "
+"zweiter Stufe entscheiden"
+
+#: ../../guide/choosing.md:160
+msgid ""
+"Parse with `second_order=True`. `so_is_valid_finite` decides over finite "
+"models up to `max_size`; `so_find_model` / `so_find_countermodel` return "
+"witnesses."
+msgstr ""
+"Mit `second_order=True` parsen. `so_is_valid_finite` entscheidet über "
+"endlichen Modellen bis `max_size`; `so_find_model` / "
+"`so_find_countermodel` liefern Zeugen."
+
+#: ../../guide/choosing.md:169
+msgid "I want to … build a truth table (classical / K3 / LP)"
+msgstr "Ich möchte … eine Wahrheitstafel erstellen (klassisch / K3 / LP)"
+
+#: ../../guide/choosing.md:171
+msgid ""
+"`truth_table(φ, logic=…)` builds a `TruthTable`; `is_tautology` / "
+"`is_contradiction` / `is_satisfiable_tt` are classical boolean shortcuts."
+" Each distinct atom is a propositional variable."
+msgstr ""
+"`truth_table(φ, logic=…)` erstellt eine `TruthTable`; `is_tautology` / "
+"`is_contradiction` / `is_satisfiable_tt` sind klassische boolesche "
+"Abkürzungen. Jedes eigenständige Atom ist eine Aussagevariable."
+
+#: ../../guide/choosing.md:182
+msgid "I want to … reason in an arbitrary finite-valued matrix (incl. FDE)"
+msgstr ""
+"Ich möchte … in einer beliebigen endlichwertigen Matrix schließen "
+"(einschließlich FDE)"
+
+#: ../../guide/choosing.md:184
+msgid ""
+"`matrix_is_valid` / `matrix_entails` / `matrix_is_satisfiable` evaluate "
+"over a `TruthMatrix`. The kit ships `K3_MATRIX`, `LP_MATRIX`, "
+"`FDE_MATRIX`. FDE is paraconsistent — it blocks explosion."
+msgstr ""
+"`matrix_is_valid` / `matrix_entails` / `matrix_is_satisfiable` werten "
+"über einer `TruthMatrix` aus. Das Kit liefert `K3_MATRIX`, `LP_MATRIX`, "
+"`FDE_MATRIX`. FDE ist parakonsistent — es blockiert die Explosion."
+
+#: ../../guide/choosing.md:194
+msgid "I want to … decide intuitionistic validity / get a Kripke countermodel"
+msgstr ""
+"Ich möchte … intuitionistische Gültigkeit entscheiden / ein Kripke-"
+"Gegenmodell erhalten"
+
+#: ../../guide/choosing.md:196
+msgid ""
+"`int_valid` is decidable propositionally and does a bounded Kripke search"
+" for quantifiers; `int_countermodel` returns the refuting "
+"`(IntKripkeModel, world)` pair."
+msgstr ""
+"`int_valid` ist aussagenlogisch entscheidbar und führt eine beschränkte "
+"Kripke-Suche für Quantoren durch; `int_countermodel` liefert das "
+"widerlegende `(IntKripkeModel, world)`-Paar."
+
+#: ../../guide/choosing.md:205
+msgid "I want to … evaluate truth in a structure I built"
+msgstr "Ich möchte … Wahrheit in einer selbst gebauten Struktur auswerten"
+
+#: ../../guide/choosing.md:207
+msgid ""
+"`satisfies` evaluates a closed FOL/MSFOL formula in a hand-built "
+"`Structure`; `satisfies_so` / `holds` do the second-order case; "
+"`satisfies_modal` evaluates against a `KripkeModel`."
+msgstr ""
+"`satisfies` wertet eine geschlossene FOL/MSFOL-Formel in einer manuell "
+"gebauten `Structure` aus; `satisfies_so` / `holds` übernehmen den Fall "
+"zweiter Stufe; `satisfies_modal` wertet gegen ein `KripkeModel` aus."
+
+#: ../../guide/choosing.md:217
+msgid "I want to … decide a fuzzy degree or fuzzy validity"
+msgstr "Ich möchte … einen Fuzzy-Grad oder Fuzzy-Gültigkeit entscheiden"
+
+#: ../../guide/choosing.md:219
+msgid ""
+"Parse with `fuzzy=True`. `fuzzy_evaluate` returns the degree of a formula"
+" under a `[0,1]` valuation; `fuzzy_is_valid` / `fuzzy_is_satisfiable` "
+"decide via Z3 reals. Pick the t-norm with `tnorm=\"lukasiewicz\"` / "
+"`\"godel\"` / `\"product\"`."
+msgstr ""
+"Mit `fuzzy=True` parsen. `fuzzy_evaluate` liefert den Grad einer Formel "
+"unter einer `[0,1]`-Belegung; `fuzzy_is_valid` / `fuzzy_is_satisfiable` "
+"entscheiden über Z3-Reelle. Die t-Norm wird mit `tnorm=\"lukasiewicz\"` "
+"/ `\"godel\"` / `\"product\"` gewählt."
+
+#: ../../guide/choosing.md:229
+msgid "I want to … reason about ALC concepts / an ABox"
+msgstr "Ich möchte … über ALC-Konzepte / eine ABox schließen"
+
+#: ../../guide/choosing.md:231
+msgid ""
+"Use `unicode_fol_kit.dl`. Build concepts with `dl.Atomic` / `dl.And` / "
+"`dl.Exists` / …, axioms with `dl.TBox().add(...)`, facts with "
+"`dl.ABox()`. Then `dl.subsumes` / `dl.concept_satisfiable` / "
+"`dl.equivalent` / `dl.abox_consistent`."
+msgstr ""
+"`unicode_fol_kit.dl` verwenden. Konzepte mit `dl.Atomic` / `dl.And` / "
+"`dl.Exists` / … aufbauen, Axiome mit `dl.TBox().add(...)`, Fakten mit "
+"`dl.ABox()`. Dann `dl.subsumes` / `dl.concept_satisfiable` / "
+"`dl.equivalent` / `dl.abox_consistent`."
+
+#: ../../guide/choosing.md:242
+msgid "I want to … read a formula back as English / check it statically"
+msgstr ""
+"Ich möchte … eine Formel als englischen Text zurücklesen / sie statisch "
+"prüfen"
+
+#: ../../guide/choosing.md:244
+msgid ""
+"`to_english` verbalizes a formula; `validate_text` returns a "
+"`ValidationReport`; `is_wellformed` and `formulas_are_equivalent` are "
+"quick booleans."
+msgstr ""
+"`to_english` verbalisiert eine Formel; `validate_text` liefert einen "
+"`ValidationReport`; `is_wellformed` und `formulas_are_equivalent` sind "
+"schnelle boolesche Prüfungen."
+
+#: ../../guide/choosing.md:254
+msgid "I want to … import a problem from another format"
+msgstr "Ich möchte … ein Problem aus einem anderen Format importieren"
+
+#: ../../guide/choosing.md:256
+msgid ""
+"The importers return the *same* AST every reasoning function consumes, so"
+" you can pipe an external problem straight into a prover."
+msgstr ""
+"Die Importer liefern denselben AST zurück, den jede Schlussfolgerungs"
+"funktion konsumiert, sodass Sie ein externes Problem direkt in einen "
+"Prover einspeisen können."
+
+#: ../../guide/choosing.md:266
+msgid "Logics supported"
+msgstr "Unterstützte Logiken"
+
+#: ../../guide/choosing.md
+msgid "Logic"
+msgstr "Logik"
+
+#: ../../guide/choosing.md
+msgid "Enable"
+msgstr "Aktivieren"
+
+#: ../../guide/choosing.md
+msgid "Operators added"
+msgstr "Hinzugefügte Operatoren"
+
+#: ../../guide/choosing.md
+msgid "Semantics"
+msgstr "Semantik"
+
+#: ../../guide/choosing.md
+msgid "What can decide / reason about it"
+msgstr "Was darüber entscheiden / darüber schließen kann"
+
+#: ../../guide/choosing.md
+msgid "Classical FOL"
+msgstr "Klassische FOL"
+
+#: ../../guide/choosing.md
+msgid "`MSFLParser()`"
+msgstr "`MSFLParser()`"
+
+#: ../../guide/choosing.md
+msgid "∀ ∃ ∧ ∨ ¬ → ↔ ⊕ = ≠"
+msgstr "∀ ∃ ∧ ∨ ¬ → ↔ ⊕ = ≠"
+
+#: ../../guide/choosing.md
+msgid "`satisfies()`"
+msgstr "`satisfies()`"
+
+#: ../../guide/choosing.md
+msgid ""
+"resolution, Z3, Prover9/Vampire, tableaux (prop.), Fitch, LK, finite "
+"model finder"
+msgstr ""
+"Resolution, Z3, Prover9/Vampire, Tableaux (aussagenlogisch), Fitch, LK, "
+"endlicher Modellfinder"
+
+#: ../../guide/choosing.md
+msgid "Many-sorted FOL (MSFOL)"
+msgstr "Mehrsortige FOL (MSFOL)"
+
+#: ../../guide/choosing.md
+msgid "`many_sorted=True`"
+msgstr "`many_sorted=True`"
+
+#: ../../guide/choosing.md
+msgid "sorted `∀x:S`, `c:S`"
+msgstr "sortiertes `∀x:S`, `c:S`"
+
+#: ../../guide/choosing.md
+msgid ""
+"resolution / Z3 (via `to_fol()`), Fitch; `find_model` enumerates sort "
+"universes"
+msgstr ""
+"Resolution / Z3 (über `to_fol()`), Fitch; `find_model` zählt "
+"Sortenuniversen auf"
+
+#: ../../guide/choosing.md
+msgid "Fuzzy (FL)"
+msgstr "Fuzzy (FL)"
+
+#: ../../guide/choosing.md
+msgid "`fuzzy=True`"
+msgstr "`fuzzy=True`"
+
+#: ../../guide/choosing.md
+msgid "weak ∧ ∨, strong ⊗ ⊕, Łuk ¬ → ↔"
+msgstr "schwaches ∧ ∨, starkes ⊗ ⊕, Łuk ¬ → ↔"
+
+#: ../../guide/choosing.md
+msgid "`fuzzy_evaluate()`"
+msgstr "`fuzzy_evaluate()`"
+
+#: ../../guide/choosing.md
+msgid ""
+"`fuzzy_is_valid` / `fuzzy_is_satisfiable` (Z3 reals); Łukasiewicz / Gödel"
+" / product t-norms"
+msgstr ""
+"`fuzzy_is_valid` / `fuzzy_is_satisfiable` (Z3-Reelle); Łukasiewicz- / "
+"Gödel- / Produkt-t-Normen"
+
+#: ../../guide/choosing.md
+msgid "Many-sorted fuzzy (MSFL)"
+msgstr "Mehrsortige Fuzzylogik (MSFL)"
+
+#: ../../guide/choosing.md
+msgid "`many_sorted=True, fuzzy=True`"
+msgstr "`many_sorted=True, fuzzy=True`"
+
+#: ../../guide/choosing.md
+msgid "sorts + Łukasiewicz"
+msgstr "Sorten + Łukasiewicz"
+
+#: ../../guide/choosing.md
+msgid "`fuzzy_*` (Z3 reals); `to_msfol()` lowers to classical"
+msgstr "`fuzzy_*` (Z3-Reelle); `to_msfol()` senkt auf klassisch ab"
+
+#: ../../guide/choosing.md
+msgid "Modal / temporal / epistemic / deontic"
+msgstr "Modal / temporal / epistemisch / deontisch"
+
+#: ../../guide/choosing.md
+msgid "`modal=True`"
+msgstr "`modal=True`"
+
+#: ../../guide/choosing.md
+msgid "□ ◇, K_a B_a, Ⓖ Ⓕ Ⓝ Ⓤ, Ⓞ Ⓟ (+ past-tense ⒣ ⒫ ⒴ ⒮)"
+msgstr "□ ◇, K_a B_a, Ⓖ Ⓕ Ⓝ Ⓤ, Ⓞ Ⓟ (+ Vergangenheitsform ⒣ ⒫ ⒴ ⒮)"
+
+#: ../../guide/choosing.md
+msgid "`satisfies_modal()`"
+msgstr "`satisfies_modal()`"
+
+#: ../../guide/choosing.md
+msgid ""
+"native modal tableau (`is_modal_valid` / `modal_decide`); "
+"`standard_translation()` → Z3/resolution; `qml_is_valid`; Fitch "
+"(K/T/S4/S5, prop.)"
+msgstr ""
+"natives modales Tableau (`is_modal_valid` / `modal_decide`); "
+"`standard_translation()` → Z3/Resolution; `qml_is_valid`; Fitch "
+"(K/T/S4/S5, aussagenlogisch)"
+
+#: ../../guide/choosing.md
+msgid "Many-valued K3 / LP / FDE"
+msgstr "Mehrwertiges K3 / LP / FDE"
+
+#: ../../guide/choosing.md
+msgid "`MSFLParser()` + `logic=` / `semantics.matrix`"
+msgstr "`MSFLParser()` + `logic=` / `semantics.matrix`"
+
+#: ../../guide/choosing.md
+#, python-brace-format
+msgid "classical syntax over {0, ½, 1} / four-valued"
+msgstr "klassische Syntax über {0, ½, 1} / vierwertig"
+
+#: ../../guide/choosing.md
+msgid "`kleene_value()`; `TruthMatrix`"
+msgstr "`kleene_value()`; `TruthMatrix`"
+
+#: ../../guide/choosing.md
+msgid ""
+"`truth_table`, three-valued `is_valid`; `K3_MATRIX` / `LP_MATRIX` / "
+"`FDE_MATRIX`; Fitch under `logic=\"K3\"`/`\"LP\"`"
+msgstr ""
+"`truth_table`, dreiwertiges `is_valid`; `K3_MATRIX` / `LP_MATRIX` / "
+"`FDE_MATRIX`; Fitch unter `logic=\"K3\"`/`\"LP\"`"
+
+#: ../../guide/choosing.md
+msgid "Second-order"
+msgstr "Zweiter Stufe"
+
+#: ../../guide/choosing.md
+msgid "`second_order=True`"
+msgstr "`second_order=True`"
+
+#: ../../guide/choosing.md
+msgid "∀P ∃P over predicate vars"
+msgstr "∀P ∃P über Prädikatvariablen"
+
+#: ../../guide/choosing.md
+msgid "`satisfies_so()` / `holds()`"
+msgstr "`satisfies_so()` / `holds()`"
+
+#: ../../guide/choosing.md
+msgid ""
+"`satisfies_so` on finite models; `so_is_valid_finite` / `so_find_model` "
+"(bounded search); LK (`∀²`/`∃²`). Rejects `to_z3`/`to_prover9`/`to_tptp`"
+msgstr ""
+"`satisfies_so` auf endlichen Modellen; `so_is_valid_finite` / "
+"`so_find_model` (beschränkte Suche); LK (`∀²`/`∃²`). Lehnt "
+"`to_z3`/`to_prover9`/`to_tptp` ab"
+
+#: ../../guide/choosing.md
+msgid "Intuitionistic"
+msgstr "Intuitionistisch"
+
+#: ../../guide/choosing.md
+msgid "`MSFLParser()` + intuitionistic tools"
+msgstr "`MSFLParser()` + intuitionistische Werkzeuge"
+
+#: ../../guide/choosing.md
+msgid "classical syntax"
+msgstr "klassische Syntax"
+
+#: ../../guide/choosing.md
+msgid "`IntKripkeModel.forces()`"
+msgstr "`IntKripkeModel.forces()`"
+
+#: ../../guide/choosing.md
+msgid ""
+"`int_valid` / `int_countermodel` (decidable prop.; bounded first-order "
+"search); LJ (`check_lj_proof`)"
+msgstr ""
+"`int_valid` / `int_countermodel` (aussagenlogisch entscheidbar; "
+"beschränkte Suche erster Stufe); LJ (`check_lj_proof`)"
+
+#: ../../guide/choosing.md
+msgid "Description logic ALC"
+msgstr "Beschreibungslogik ALC"
+
+#: ../../guide/choosing.md
+msgid "`unicode_fol_kit.dl`"
+msgstr "`unicode_fol_kit.dl`"
+
+#: ../../guide/choosing.md
+msgid "⊤ ⊥, ¬ ⊓ ⊔, ∃r.C ∀r.C"
+msgstr "⊤ ⊥, ¬ ⊓ ⊔, ∃r.C ∀r.C"
+
+#: ../../guide/choosing.md
+msgid "concept/ABox interpretations"
+msgstr "Konzept-/ABox-Interpretationen"
+
+#: ../../guide/choosing.md
+msgid ""
+"`concept_satisfiable` / `subsumes` / `equivalent` / `abox_consistent` "
+"(tableau)"
+msgstr ""
+"`concept_satisfiable` / `subsumes` / `equivalent` / `abox_consistent` "
+"(Tableau)"
+
+#: ../../guide/choosing.md
+msgid "Free / dynamic-epistemic / counterfactual / circumscriptive"
+msgstr "Frei / dynamisch-epistemisch / kontrafaktisch / zirkumskriptiv"
+
+#: ../../guide/choosing.md
+msgid ""
+"`semantics.free_logic`, `semantics.dynamic_epistemic`, "
+"`semantics.conditional`, `semantics.nonmonotonic`"
+msgstr ""
+"`semantics.free_logic`, `semantics.dynamic_epistemic`, "
+"`semantics.conditional`, `semantics.nonmonotonic`"
+
+#: ../../guide/choosing.md
+msgid "logic-specific"
+msgstr "logikspezifisch"
+
+#: ../../guide/choosing.md
+msgid "per-module model classes"
+msgstr "modulspezifische Modellklassen"
+
+#: ../../guide/choosing.md
+msgid ""
+"free-logic evaluation, public-announcement (PAL) updates, Lewis-sphere "
+"counterfactuals, circumscriptive non-monotonic entailment"
+msgstr ""
+"Auswertung in freier Logik, Public-Announcement-Updates (PAL), "
+"Lewis-Sphären-Kontrafaktische, zirkumskriptive nichtmonotone Folgerung"
+
+#: ../../guide/choosing.md:281
+msgid ""
+"Every non-fuzzy logic above also has a **higher-order exporter** in "
+"`unicode_fol_kit.hol` — a Benzmüller-style shallow embedding emitted as "
+"an Isabelle/HOL theory or a TPTP THF problem for an external prover (Leo-"
+"III / Satallax / Sledgehammer) — and, with a local Isabelle installed, "
+"`isabelle_decide_modal` actually *runs* it to decide modal validity."
+msgstr ""
+"Jede nicht-fuzzy Logik oben verfügt zudem über einen **Exporter für "
+"Logik höherer Stufe** in `unicode_fol_kit.hol` — eine flache Einbettung "
+"im Benzmüller-Stil, ausgegeben als Isabelle/HOL-Theorie oder als TPTP-"
+"THF-Problem für einen externen Prover (Leo-III / Satallax / "
+"Sledgehammer) — und mit einer lokal installierten Isabelle *führt* "
+"`isabelle_decide_modal` sie tatsächlich aus, um modale Gültigkeit zu "
+"entscheiden."
+
+#: ../../guide/choosing.md:283
+msgid "Recipes for the peripheral logics"
+msgstr "Rezepte für die peripheren Logiken"
+
+#: ../../guide/choosing.md:285
+#, python-brace-format
+msgid ""
+"The four small evaluators each build an AST from "
+"`unicode_fol_kit.fol.nodes` and reason over an explicit, hand-built "
+"model. See {doc}`nonclassical` for the full treatment; these are the one-"
+"line \"is this the tool I want?\" probes."
+msgstr ""
+"Die vier kleinen Auswerter bauen jeweils einen AST aus "
+"`unicode_fol_kit.fol.nodes` und schließen über ein explizites, manuell "
+"gebautes Modell. Die vollständige Behandlung findet sich unter "
+"{doc}`nonclassical`; dies sind die einzeiligen „ist das das Werkzeug, "
+"das ich will?“-Proben."
+
+#: ../../guide/choosing.md:287
+msgid ""
+"**Free logic** — universal instantiation fails when a constant is non-"
+"denoting:"
+msgstr ""
+"**Freie Logik** — Allinstanziierung schlägt fehl, wenn eine Konstante "
+"nicht denotiert:"
+
+#: ../../guide/choosing.md:302
+msgid ""
+"**Public-announcement (dynamic epistemic) logic** — knowledge changes "
+"after a truthful announcement:"
+msgstr ""
+"**Public-Announcement-Logik (dynamische epistemische Logik)** — Wissen "
+"ändert sich nach einer wahrhaftigen Ankündigung:"
+
+#: ../../guide/choosing.md:316
+msgid ""
+"**Counterfactual conditionals** — Lewis-sphere \"would\" / \"might\", "
+"non-monotone in the antecedent:"
+msgstr ""
+"**Kontrafaktische Konditionale** — Lewis-Sphären-„würde“ / „könnte“, "
+"nichtmonoton im Antezedens:"
+
+#: ../../guide/choosing.md:333
+msgid ""
+"**Circumscription (non-monotonic entailment)** — minimal-model reasoning "
+"that strengthening can retract:"
+msgstr ""
+"**Zirkumskription (nichtmonotone Folgerung)** — Schließen über "
+"Minimalmodelle, das eine Verstärkung zurücknehmen kann:"
+
+#: ../../guide/choosing.md:346
+msgid "Recipes for the exporters and bridges"
+msgstr "Rezepte für die Exporter und Brücken"
+
+#: ../../guide/choosing.md:348
+msgid ""
+"**Standard translation** lowers a modal formula to first-order logic so "
+"the classical provers can take it:"
+msgstr ""
+"Die **Standardübersetzung** senkt eine modale Formel auf Prädikatenlogik"
+" erster Stufe ab, sodass die klassischen Prover sie verarbeiten können:"
+
+#: ../../guide/choosing.md:356
+msgid ""
+"**Quantified modal validity** in-process, choosing the domain mode "
+"(`constant` / `varying` / `increasing` / `decreasing`):"
+msgstr ""
+"**Quantifizierte modale Gültigkeit** im Prozess, mit Wahl des "
+"Domänenmodus (`constant` / `varying` / `increasing` / `decreasing`):"
+
+#: ../../guide/choosing.md:363
+msgid ""
+"**Higher-order THF / Isabelle export** for an external HOL prover — "
+"`to_thf_modal` returns a THF problem string:"
+msgstr ""
+"**THF-/Isabelle-Export für Logik höherer Stufe** für einen externen "
+"HOL-Prover — `to_thf_modal` liefert einen THF-Problem-String:"
+
+#: ../../guide/choosing.md:370
+msgid "Composing parser modes"
+msgstr "Parser-Modi kombinieren"
+
+#: ../../guide/choosing.md:372
+msgid ""
+"The four core parser modes form the `many_sorted` × `fuzzy` 2×2; the "
+"**modal** and **second-order** modes are each \"classical unsorted FOL + "
+"one extension\" and do not combine with sorts, fuzziness, or each other. "
+"The constructor rejects an unsupported combination with a clear "
+"`ValueError`. (The matrix, ALC, intuitionistic, and peripheral logics are"
+" separate subsystems, not parser flags.)"
+msgstr ""
+"Die vier Kern-Parser-Modi bilden das `many_sorted` × `fuzzy`-2×2; die "
+"Modi **modal** und **second-order** sind jeweils „klassische, "
+"unsortierte FOL + eine Erweiterung“ und kombinieren sich weder mit "
+"Sorten noch mit Fuzziness noch untereinander. Der Konstruktor lehnt eine"
+" nicht unterstützte Kombination mit einem klaren `ValueError` ab. (Die "
+"Matrix-, ALC-, intuitionistischen und peripheren Logiken sind separate "
+"Subsysteme, keine Parser-Flags.)"
+
+#: ../../guide/choosing.md
+msgid "Combine…"
+msgstr "Kombinieren …"
+
+#: ../../guide/choosing.md
+msgid "with sorts"
+msgstr "mit Sorten"
+
+#: ../../guide/choosing.md
+msgid "with fuzzy"
+msgstr "mit Fuzzy"
+
+#: ../../guide/choosing.md
+msgid "with modal"
+msgstr "mit Modal"
+
+#: ../../guide/choosing.md
+msgid "with second-order"
+msgstr "mit zweiter Stufe"
+
+#: ../../guide/choosing.md
+msgid "**base FOL**"
+msgstr "**Basis-FOL**"
+
+#: ../../guide/choosing.md
+msgid "✅ MSFOL"
+msgstr "✅ MSFOL"
+
+#: ../../guide/choosing.md
+msgid "✅ FL"
+msgstr "✅ FL"
+
+#: ../../guide/choosing.md
+msgid "✅ modal"
+msgstr "✅ modal"
+
+#: ../../guide/choosing.md
+msgid "✅ second-order"
+msgstr "✅ zweiter Stufe"
+
+#: ../../guide/choosing.md
+msgid "**sorts**"
+msgstr "**Sorten**"
+
+#: ../../guide/choosing.md
+msgid "—"
+msgstr "—"
+
+#: ../../guide/choosing.md
+msgid "✅ MSFL"
+msgstr "✅ MSFL"
+
+#: ../../guide/choosing.md
+msgid "❌"
+msgstr "❌"
+
+#: ../../guide/choosing.md
+msgid "**fuzzy**"
+msgstr "**fuzzy**"
+
+#: ../../guide/choosing.md
+msgid "**modal**"
+msgstr "**modal**"
+
+#: ../../guide/choosing.md
+msgid "**second-order**"
+msgstr "**zweiter Stufe**"
+
+#: ../../guide/choosing.md:382
+msgid "Out of scope"
+msgstr "Außerhalb des Umfangs"
+
+#: ../../guide/choosing.md:384
+msgid ""
+"PRs welcome for: relevant / relevant-implication logic (Routley–Meyer "
+"frames), hybrid logic (nominals / `@`), independence-friendly / "
+"dependence logic, and substructural (linear / separation) logics."
+msgstr ""
+"PRs willkommen für: Relevanzlogik / Logik der relevanten Implikation "
+"(Routley–Meyer-Frames), Hybridlogik (Nominale / `@`), "
+"unabhängigkeitsfreundliche / Abhängigkeitslogik sowie substrukturelle "
+"(lineare / Separations-) Logiken."
+

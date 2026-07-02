@@ -1,0 +1,710 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, Felix Vossel
+# This file is distributed under the same license as the unicode-fol-kit
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: unicode-fol-kit 0.11.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-07-02 22:46+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: de\n"
+"Language-Team: de <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../guide/parsing.md:1
+msgid "Parsing and the AST"
+msgstr "Parsen und der AST"
+
+#: ../../guide/parsing.md:3
+msgid ""
+"`MSFLParser` turns a Unicode formula string into a typed AST of Python "
+"dataclasses. One parser class covers six modes — classical FOL, many-"
+"sorted FOL (MSFOL), many-sorted fuzzy logic (MSFL), single-sorted fuzzy "
+"logic (FL), modal/temporal/epistemic/deontic logic, and second-order "
+"logic — each selected by constructor flags."
+msgstr ""
+"`MSFLParser` wandelt eine Unicode-Formelzeichenkette in einen typisierten "
+"AST aus Python-Dataclasses um. Eine einzige Parser-Klasse deckt sechs "
+"Modi ab — klassische Prädikatenlogik erster Stufe (FOL), mehrsortige FOL "
+"(MSFOL), mehrsortige Fuzzy-Logik (MSFL), einsortige Fuzzy-Logik (FL), "
+"Modal-/Temporal-/Epistemische/Deontische Logik sowie Logik zweiter Stufe "
+"— jeweils ausgewählt über Konstruktor-Flags."
+
+#: ../../guide/parsing.md:5
+msgid "Parser modes"
+msgstr "Parser-Modi"
+
+#: ../../guide/parsing.md:7
+msgid ""
+"The four core modes form the `many_sorted` × `fuzzy` matrix; two further "
+"modes — modal and second-order — are each enabled by their own flag and "
+"are mutually exclusive with the others."
+msgstr ""
+"Die vier Kernmodi bilden die `many_sorted` × `fuzzy`-Matrix; zwei weitere "
+"Modi — modal und second-order — werden jeweils über ein eigenes Flag "
+"aktiviert und schließen sich gegenseitig mit den anderen Modi aus."
+
+#: ../../guide/parsing.md
+msgid "`many_sorted`"
+msgstr "`many_sorted`"
+
+#: ../../guide/parsing.md
+msgid "`fuzzy`"
+msgstr "`fuzzy`"
+
+#: ../../guide/parsing.md
+msgid "Mode"
+msgstr "Modus"
+
+#: ../../guide/parsing.md
+msgid "Quantifiers"
+msgstr "Quantoren"
+
+#: ../../guide/parsing.md
+msgid "Constants"
+msgstr "Konstanten"
+
+#: ../../guide/parsing.md
+msgid "Connectives"
+msgstr "Junktoren"
+
+#: ../../guide/parsing.md
+msgid "`False`"
+msgstr "`False`"
+
+#: ../../guide/parsing.md
+msgid "**FOL**"
+msgstr "**FOL**"
+
+#: ../../guide/parsing.md
+msgid "unsorted `∀x`"
+msgstr "unsortiert `∀x`"
+
+#: ../../guide/parsing.md
+msgid "unsorted"
+msgstr "unsortiert"
+
+#: ../../guide/parsing.md
+msgid "classical ∧ ∨ ⊕ ¬ → ↔"
+msgstr "klassisch ∧ ∨ ⊕ ¬ → ↔"
+
+#: ../../guide/parsing.md
+msgid "`True`"
+msgstr "`True`"
+
+#: ../../guide/parsing.md
+msgid "**MSFOL**"
+msgstr "**MSFOL**"
+
+#: ../../guide/parsing.md
+msgid "sorted `∀x:Sort`"
+msgstr "sortenbehaftet `∀x:Sort`"
+
+#: ../../guide/parsing.md
+msgid "sorted `alice:Sort`"
+msgstr "sortenbehaftet `alice:Sort`"
+
+#: ../../guide/parsing.md
+msgid "classical ∧ ∨ ¬ → ↔"
+msgstr "klassisch ∧ ∨ ¬ → ↔"
+
+#: ../../guide/parsing.md
+msgid "**MSFL**"
+msgstr "**MSFL**"
+
+#: ../../guide/parsing.md
+msgid "weak ∧ ∨, strong ⊗ ⊕, Łuk ¬ → ↔"
+msgstr "schwach ∧ ∨, stark ⊗ ⊕, Łuk ¬ → ↔"
+
+#: ../../guide/parsing.md
+msgid "**FL**"
+msgstr "**FL**"
+
+#: ../../guide/parsing.md:27
+msgid ""
+"The two extension modes are classical unsorted FOL plus their own "
+"operators:"
+msgstr ""
+"Die beiden Erweiterungsmodi sind klassische unsortierte FOL zuzüglich "
+"ihrer eigenen Operatoren:"
+
+#: ../../guide/parsing.md:29
+msgid ""
+"**modal** (`modal=True`) — adds `□ ◇` (alethic), `K_a B_a` "
+"(epistemic/doxastic), `Ⓖ Ⓕ Ⓝ Ⓤ` (temporal), and `Ⓞ Ⓟ` (deontic). The "
+"agent of `K_a`/`B_a` is a first-class term, so a bound `K_x` quantifies "
+"over agents."
+msgstr ""
+"**modal** (`modal=True`) — fügt `□ ◇` (alethisch), `K_a B_a` "
+"(epistemisch/doxastisch), `Ⓖ Ⓕ Ⓝ Ⓤ` (temporal) und `Ⓞ Ⓟ` (deontisch) "
+"hinzu. Der Agent von `K_a`/`B_a` ist ein vollwertiger Term, sodass ein "
+"gebundenes `K_x` über Agenten quantifiziert."
+
+#: ../../guide/parsing.md:30
+msgid ""
+"**second-order** (`second_order=True`) — adds `∀P / ∃P` over predicate "
+"variables (arity inferred from use)."
+msgstr ""
+"**second-order** (`second_order=True`) — fügt `∀P / ∃P` über "
+"Prädikatvariablen hinzu (die Stelligkeit wird aus der Verwendung "
+"abgeleitet)."
+
+#: ../../guide/parsing.md:32
+msgid ""
+"The constructor rejects an unsupported combination with a clear "
+"`ValueError`. The two extension modes are classical unsorted FOL plus "
+"their own operators, so neither can be sorted or fuzzy:"
+msgstr ""
+"Der Konstruktor weist eine nicht unterstützte Kombination mit einem "
+"eindeutigen `ValueError` zurück. Die beiden Erweiterungsmodi sind "
+"klassische unsortierte FOL zuzüglich ihrer eigenen Operatoren, sodass "
+"keiner der beiden sortenbehaftet oder fuzzy sein kann:"
+
+#: ../../guide/parsing.md:49
+msgid "Unicode surface syntax"
+msgstr "Unicode-Oberflächensyntax"
+
+#: ../../guide/parsing.md:51
+msgid ""
+"Formulas are written with natural symbols — `∀ ∃ ∧ ∨ ¬ → ↔ ⊕ ⊗ = ≠ ≤ ≥` —"
+" with no ASCII fallbacks required. Predicates are uppercase-initial and "
+"applied with parentheses; the lowercase identifier rules below decide "
+"whether a bare lowercase token is a variable or a constant."
+msgstr ""
+"Formeln werden mit natürlichen Symbolen geschrieben — `∀ ∃ ∧ ∨ ¬ → ↔ ⊕ ⊗ ="
+" ≠ ≤ ≥` — ohne dass ASCII-Ersatzdarstellungen erforderlich sind. "
+"Prädikate beginnen mit einem Großbuchstaben und werden mit Klammern "
+"angewendet; die folgenden Regeln für Kleinbuchstaben-Bezeichner "
+"entscheiden, ob ein einfaches Kleinbuchstaben-Token eine Variable oder "
+"eine Konstante ist."
+
+#: ../../guide/parsing.md:61
+msgid "The three lowercase identifier classes"
+msgstr "Die drei Klassen von Kleinbuchstaben-Bezeichnern"
+
+#: ../../guide/parsing.md:63
+msgid ""
+"A bare lowercase token resolves to one of three terminal classes — and "
+"therefore one of three node types — purely by its spelling:"
+msgstr ""
+"Ein einfaches Kleinbuchstaben-Token wird allein aufgrund seiner "
+"Schreibweise einer von drei terminalen Klassen — und damit einem von drei"
+" Knotentypen — zugeordnet:"
+
+#: ../../guide/parsing.md:65
+msgid ""
+"**`VARIABLE`** — a single lowercase letter, optionally followed by digits"
+" (`x`, `y`, `x2`). It becomes a `Variable`."
+msgstr ""
+"**`VARIABLE`** — ein einzelner Kleinbuchstabe, optional gefolgt von "
+"Ziffern (`x`, `y`, `x2`). Er wird zu einer `Variable`."
+
+#: ../../guide/parsing.md:66
+msgid ""
+"**`NAME`** — a multi-character lowercase identifier with a non-leading "
+"letter (`alice`, `socrates`). It becomes a `Constant` (and, when applied "
+"with parentheses, the head of a `Function`)."
+msgstr ""
+"**`NAME`** — ein mehrzeichiger Kleinbuchstaben-Bezeichner mit einem nicht"
+" führenden Buchstaben (`alice`, `socrates`). Er wird zu einer `Constant` "
+"(und, wenn er mit Klammern angewendet wird, zum Kopf einer `Function`)."
+
+#: ../../guide/parsing.md:67
+msgid ""
+"**`CONSTANT`** — the explicit `c_`-prefix form (`c_7`, `c_alice`). It "
+"becomes a `Constant` too, and is the way to force a single-symbol name to"
+" be a constant."
+msgstr ""
+"**`CONSTANT`** — die explizite Form mit `c_`-Präfix (`c_7`, `c_alice`). "
+"Sie wird ebenfalls zu einer `Constant` und ist die Möglichkeit, einen "
+"einzelnen Buchstaben als Konstante zu erzwingen."
+
+#: ../../guide/parsing.md:79
+msgid ""
+"Because a single lowercase letter is always a *variable*, a function "
+"symbol must be a multi-character `NAME`; `f(x)` is a parse error (`f` is "
+"a variable, which cannot be applied), whereas `father(x)` is a "
+"`Function`:"
+msgstr ""
+"Da ein einzelner Kleinbuchstabe stets eine *Variable* ist, muss ein "
+"Funktionssymbol ein mehrzeichiger `NAME` sein; `f(x)` ist ein Parse-"
+"Fehler (`f` ist eine Variable, die nicht angewendet werden kann), während"
+" `father(x)` eine `Function` ist:"
+
+#: ../../guide/parsing.md:89
+msgid "Comparisons and arithmetic"
+msgstr "Vergleiche und Arithmetik"
+
+#: ../../guide/parsing.md:91
+msgid ""
+"The six infix comparison glyphs `= ≠ < > ≤ ≥` build a binary `Atom` whose"
+" predicate is the glyph itself; the four arithmetic operators `+ - * /` "
+"build a `Function` whose name is the glyph, with the usual precedence "
+"(`*`/`/` bind tighter than `+`/`-`):"
+msgstr ""
+"Die sechs Infix-Vergleichssymbole `= ≠ < > ≤ ≥` bilden ein binäres "
+"`Atom`, dessen Prädikat das Symbol selbst ist; die vier arithmetischen "
+"Operatoren `+ - * /` bilden eine `Function`, deren Name das Symbol ist, "
+"mit der üblichen Präzedenz (`*`/`/` binden stärker als `+`/`-`):"
+
+#: ../../guide/parsing.md:110
+msgid "Tight quantifier scope"
+msgstr "Enger Quantorenskopus"
+
+#: ../../guide/parsing.md:112
+msgid ""
+"A quantifier binds only the immediately following prefix-level formula, "
+"not the rest of the line: `∀x P(x) ∧ Q(x)` is `(∀x P(x)) ∧ Q(x)`, with "
+"the second `Q(x)` *outside* the quantifier. Add parentheses to extend the"
+" scope."
+msgstr ""
+"Ein Quantor bindet nur die unmittelbar folgende Formel auf Präfixebene, "
+"nicht den Rest der Zeile: `∀x P(x) ∧ Q(x)` entspricht `(∀x P(x)) ∧ "
+"Q(x)`, wobei das zweite `Q(x)` *außerhalb* des Quantors liegt. Um den "
+"Skopus zu erweitern, sind Klammern hinzuzufügen."
+
+#: ../../guide/parsing.md:128
+msgid "Both parentheses `( … )` and square brackets `[ … ]` group identically:"
+msgstr ""
+"Sowohl runde Klammern `( … )` als auch eckige Klammern `[ … ]` gruppieren"
+" auf dieselbe Weise:"
+
+#: ../../guide/parsing.md:135
+msgid "MSFOL — sorted quantifiers and constants, and `to_fol` lowering"
+msgstr ""
+"MSFOL — sortenbehaftete Quantoren und Konstanten sowie Herabstufung mit "
+"`to_fol`"
+
+#: ../../guide/parsing.md:137
+msgid ""
+"In many-sorted mode quantifiers and ground constants must carry a sort "
+"annotation. The colon may be written with or without a space before it."
+msgstr ""
+"Im mehrsortigen Modus müssen Quantoren und Grundkonstanten eine "
+"Sortenannotation tragen. Der Doppelpunkt kann mit oder ohne "
+"vorangehendes Leerzeichen geschrieben werden."
+
+#: ../../guide/parsing.md:152
+msgid ""
+"`to_fol` *relativises* a sorted formula to plain FOL: a `∀x:S` becomes a "
+"guarded `∀x (S(x) → …)`, a `∃x:S` becomes `∃x (S(x) ∧ …)`, and a "
+"`SortedConstant` drops to a plain `Constant`."
+msgstr ""
+"`to_fol` *relativiert* eine sortenbehaftete Formel zu reiner FOL: Ein "
+"`∀x:S` wird zu einem geschützten `∀x (S(x) → …)`, ein `∃x:S` wird zu "
+"`∃x (S(x) ∧ …)`, und eine `SortedConstant` wird zu einer einfachen "
+"`Constant` herabgestuft."
+
+#: ../../guide/parsing.md:173
+msgid ""
+"Passing `include_sort_facts=True` conjoins the collected sort-membership "
+"atoms (e.g. `Human(socrates)`) onto the result:"
+msgstr ""
+"Wird `include_sort_facts=True` übergeben, werden die gesammelten "
+"Sortenzugehörigkeits-Atome (z. B. `Human(socrates)`) konjunktiv an das "
+"Ergebnis angehängt:"
+
+#: ../../guide/parsing.md:181
+msgid "MSFL / FL — Łukasiewicz operators"
+msgstr "MSFL / FL — Łukasiewicz-Operatoren"
+
+#: ../../guide/parsing.md:183
+msgid ""
+"In the fuzzy modes `∧`/`∨` are the weak (min/max) connectives, `⊗`/`⊕` "
+"the strong (t-norm/t-conorm) connectives, and `¬`/`→`/`↔` their "
+"Łukasiewicz counterparts. Each glyph maps to a distinct node class — the "
+"same `∧` glyph is `And` in FOL but `WeakConjunction` here."
+msgstr ""
+"In den Fuzzy-Modi sind `∧`/`∨` die schwachen (Min/Max-)Junktoren, `⊗`/`⊕`"
+" die starken (T-Norm/T-Conorm-)Junktoren und `¬`/`→`/`↔` deren "
+"Łukasiewicz-Gegenstücke. Jedes Symbol wird auf eine eigene Knotenklasse "
+"abgebildet — dasselbe Symbol `∧` ist in FOL `And`, hier jedoch "
+"`WeakConjunction`."
+
+#: ../../guide/parsing.md:198
+msgid ""
+"`to_msfol()` lowers every Łukasiewicz node to its classical counterpart "
+"(this is the first half of what `to_fol` does), leaving the structure "
+"otherwise unchanged:"
+msgstr ""
+"`to_msfol()` stuft jeden Łukasiewicz-Knoten auf sein klassisches "
+"Gegenstück herab (dies ist die erste Hälfte dessen, was `to_fol` "
+"leistet), wobei die Struktur ansonsten unverändert bleibt:"
+
+#: ../../guide/parsing.md:209
+msgid "FL is the same connectives with unsorted quantifiers and plain constants:"
+msgstr ""
+"FL verwendet dieselben Junktoren mit unsortierten Quantoren und "
+"einfachen Konstanten:"
+
+#: ../../guide/parsing.md:218
+msgid "Modal, temporal, epistemic, deontic"
+msgstr "Modal, temporal, epistemisch, deontisch"
+
+#: ../../guide/parsing.md:220
+msgid ""
+"Modal mode is classical unsorted FOL plus the prefix operators `□ ◇` "
+"(alethic), `Ⓖ Ⓕ Ⓝ` (temporal future), `Ⓞ Ⓟ` (deontic), the agent "
+"operators `K_a B_a`, and the infix temporal `Ⓤ` (until)."
+msgstr ""
+"Der modale Modus ist klassische unsortierte FOL zuzüglich der "
+"Präfixoperatoren `□ ◇` (alethisch), `Ⓖ Ⓕ Ⓝ` (temporale Zukunft), `Ⓞ Ⓟ` "
+"(deontisch), der Agentenoperatoren `K_a B_a` sowie des Infix-Operators "
+"`Ⓤ` (until, temporal)."
+
+#: ../../guide/parsing.md:234
+msgid ""
+"The agent of `K_a`/`B_a` is a **term**, not a bare string. A *free* agent"
+" denotes a named individual (a `Constant`), while an agent bound by an "
+"enclosing quantifier stays a `Variable` — so `K_x` genuinely quantifies "
+"over agents:"
+msgstr ""
+"Der Agent von `K_a`/`B_a` ist ein **Term**, keine bloße Zeichenkette. Ein"
+" *freier* Agent bezeichnet ein benanntes Individuum (eine `Constant`), "
+"während ein von einem umschließenden Quantor gebundener Agent eine "
+"`Variable` bleibt — sodass `K_x` tatsächlich über Agenten quantifiziert:"
+
+#: ../../guide/parsing.md:249
+msgid ""
+"(The free `K_a P(a)` resolves the agent `a` to a `Constant` even though "
+"the same letter `a` *inside* `P(a)` stays a `Variable` — agent position "
+"and term position are resolved independently.)"
+msgstr ""
+"(Das freie `K_a P(a)` löst den Agenten `a` zu einer `Constant` auf, "
+"obwohl derselbe Buchstabe `a` *innerhalb* von `P(a)` eine `Variable` "
+"bleibt — Agentenposition und Termposition werden unabhängig voneinander "
+"aufgelöst.)"
+
+#: ../../guide/parsing.md:251
+msgid "Second-order — arity inference and `ConflictingArityError`"
+msgstr "Second-Order — Stelligkeitsableitung und `ConflictingArityError`"
+
+#: ../../guide/parsing.md:253
+msgid ""
+"Second-order mode adds `∀P / ∃P` over a predicate variable. The bound "
+"predicate's arity is **inferred** from its applications in the body and "
+"recorded on the node (it is not part of the surface syntax):"
+msgstr ""
+"Der Second-Order-Modus fügt `∀P / ∃P` über eine Prädikatvariable hinzu. "
+"Die Stelligkeit des gebundenen Prädikats wird aus seinen Anwendungen im "
+"Rumpf **abgeleitet** und am Knoten vermerkt (sie ist nicht Teil der "
+"Oberflächensyntax):"
+
+#: ../../guide/parsing.md:268
+msgid ""
+"If the same bound predicate is applied at two different arities the "
+"inference fails with `ConflictingArityError` (a subclass of "
+"`ParsingError`, so a caller catching the parser's error type also catches"
+" this):"
+msgstr ""
+"Wird dasselbe gebundene Prädikat mit zwei unterschiedlichen "
+"Stelligkeiten angewendet, schlägt die Ableitung mit "
+"`ConflictingArityError` fehl (eine Unterklasse von `ParsingError`, "
+"sodass ein Aufrufer, der den Fehlertyp des Parsers abfängt, auch diesen "
+"Fehler abfängt):"
+
+#: ../../guide/parsing.md:284
+msgid "Natural-language constructs"
+msgstr "Konstrukte für natürliche Sprache"
+
+#: ../../guide/parsing.md:286
+msgid ""
+"Classical FOL mode (`many_sorted=False, fuzzy=False`) carries four extra "
+"surface forms used by natural-language → logic front-ends. They are FOL-"
+"mode only."
+msgstr ""
+"Der klassische FOL-Modus (`many_sorted=False, fuzzy=False`) bietet vier "
+"zusätzliche Oberflächenformen, die von Natürliche-Sprache-zu-Logik-"
+"Frontends verwendet werden. Sie stehen nur im FOL-Modus zur Verfügung."
+
+#: ../../guide/parsing.md:288
+msgid "Counting quantifier `∃≥n / ∃≤n / ∃=n`"
+msgstr "Zählquantor `∃≥n / ∃≤n / ∃=n`"
+
+#: ../../guide/parsing.md:290
+msgid ""
+"The counting quantifier binds a variable and carries its bound `n` "
+"**symbolically** (a `Number`, not expanded), so an arbitrarily large `n` "
+"round-trips exactly:"
+msgstr ""
+"Der Zählquantor bindet eine Variable und führt seine Schranke `n` "
+"**symbolisch** (als `Number`, nicht expandiert), sodass sich ein "
+"beliebig großes `n` exakt zurückparsen lässt:"
+
+#: ../../guide/parsing.md:303
+msgid ""
+"It is first-order expressible; the first-order exporters lower it to the "
+"distinct-witnesses encoding on demand (the AST keeps `n` symbolic):"
+msgstr ""
+"Er ist erststufig ausdrückbar; die Prädikatenlogik-erster-Stufe-Exporter "
+"stufen ihn bei Bedarf auf die Kodierung mit unterschiedlichen Zeugen "
+"herab (der AST behält `n` symbolisch):"
+
+#: ../../guide/parsing.md:311
+msgid "Measure term `μ(entity, dimension)`"
+msgstr "Maßterm `μ(entity, dimension)`"
+
+#: ../../guide/parsing.md:313
+msgid ""
+"A degree/measure term for bare comparatives (`taller`, `more water`) — an"
+" uninterpreted binary function on export. Both children are terms; the "
+"result is typically compared with `>`/`<`:"
+msgstr ""
+"Ein Grad-/Maßterm für einfache Komparative (`taller`, `more water`) — "
+"beim Export eine uninterpretierte zweistellige Funktion. Beide "
+"Kindknoten sind Terme; das Ergebnis wird typischerweise mit `>`/`<` "
+"verglichen:"
+
+#: ../../guide/parsing.md:323
+#, python-brace-format
+msgid "Set-cardinality term `|{v : φ}|`"
+msgstr "Mengenkardinalitätsterm `|{v : φ}|`"
+
+#: ../../guide/parsing.md:325
+msgid ""
+"A set-cardinality term for faithful counting comparisons (`more votes "
+"than`). It *binds* its variable over the matrix. Set cardinality is "
+"genuinely second-order, so it has no first-order export:"
+msgstr ""
+"Ein Mengenkardinalitätsterm für getreue Zählvergleiche (`more votes "
+"than`). Er *bindet* seine Variable über der Matrix. Mengenkardinalität "
+"ist echt zweitstufig und besitzt daher keinen Export nach Prädikatenlogik"
+" erster Stufe:"
+
+#: ../../guide/parsing.md:337
+msgid ""
+"Exporting a `Cardinality` to a first-order back-end raises — it is not "
+"first-order definable:"
+msgstr ""
+"Der Export einer `Cardinality` in ein Backend erster Stufe löst eine "
+"Ausnahme aus — sie ist nicht erststufig definierbar:"
+
+#: ../../guide/parsing.md:349
+msgid "Concessive connective `Ⓒ`"
+msgstr "Konzessiver Junktor `Ⓒ`"
+
+#: ../../guide/parsing.md:351
+msgid ""
+"A concessive (contrastive) connective — *whereas / although / but*. It is"
+" truth-functionally identical to `∧`, but kept as a distinct node so a "
+"front-end can preserve the concession rather than flattening it:"
+msgstr ""
+"Ein konzessiver (kontrastiver) Junktor — *während / obwohl / aber*. Er "
+"ist wahrheitsfunktional identisch mit `∧`, wird jedoch als eigener "
+"Knoten geführt, damit ein Frontend die Konzession erhalten kann, statt "
+"sie einzuebnen:"
+
+#: ../../guide/parsing.md:360
+msgid "Lambda syntax"
+msgstr "Lambda-Syntax"
+
+#: ../../guide/parsing.md:362
+msgid ""
+"Every mode supports lambda abstraction with `λx. φ`. The parameter can be"
+" a variable (`λx.`), a named constant (`λfoo.`), or a predicate symbol "
+"(`λP.`); the body extends rightward through all connectives. `parse()` "
+"applies scope resolution automatically, so the returned AST is fully "
+"resolved."
+msgstr ""
+"Jeder Modus unterstützt Lambda-Abstraktion mit `λx. φ`. Der Parameter "
+"kann eine Variable (`λx.`), eine benannte Konstante (`λfoo.`) oder ein "
+"Prädikatsymbol (`λP.`) sein; der Rumpf erstreckt sich nach rechts über "
+"alle Junktoren. `parse()` wendet die Skopusauflösung automatisch an, "
+"sodass der zurückgegebene AST vollständig aufgelöst ist."
+
+#: ../../guide/parsing.md:377
+msgid "It works in the fuzzy and extension modes too:"
+msgstr "Sie funktioniert auch in den Fuzzy- und Erweiterungsmodi:"
+
+#: ../../guide/parsing.md:389
+msgid "ASCII tree view"
+msgstr "ASCII-Baumansicht"
+
+#: ../../guide/parsing.md:391
+msgid ""
+"`tree_str()` renders any node as a readable ASCII tree; `print` it to "
+"display. (A quantifier folds its bound variable — and, in MSFOL/MSFL, its"
+" sort — into the node label.)"
+msgstr ""
+"`tree_str()` stellt jeden Knoten als lesbaren ASCII-Baum dar; zur "
+"Anzeige mit `print` ausgeben. (Ein Quantor faltet seine gebundene "
+"Variable — und, in MSFOL/MSFL, ihre Sorte — in die Knotenbeschriftung.)"
+
+#: ../../guide/parsing.md:413
+msgid ""
+"The label format is node-specific — a counting quantifier shows `∃≥n`, a "
+"`Knows` shows its agent, and a second-order quantifier shows the bound "
+"predicate with its inferred arity:"
+msgstr ""
+"Das Beschriftungsformat ist knotenspezifisch — ein Zählquantor zeigt "
+"`∃≥n`, ein `Knows` zeigt seinen Agenten, und ein Second-Order-Quantor "
+"zeigt das gebundene Prädikat mit seiner abgeleiteten Stelligkeit:"
+
+#: ../../guide/parsing.md:434
+msgid "Graphviz DOT view"
+msgstr "Graphviz-DOT-Ansicht"
+
+#: ../../guide/parsing.md:436
+msgid ""
+"`to_dot()` renders the same label/child view as a Graphviz `digraph` "
+"source string (no external dependency — it returns the source, which you "
+"can pipe to `dot`):"
+msgstr ""
+"`to_dot()` stellt dieselbe Beschriftungs-/Kindansicht als Graphviz-"
+"`digraph`-Quelltext dar (keine externe Abhängigkeit — es wird der "
+"Quelltext zurückgegeben, den Sie an `dot` weiterleiten können):"
+
+#: ../../guide/parsing.md:454
+msgid "Inspection API"
+msgstr "Inspektions-API"
+
+#: ../../guide/parsing.md:456
+msgid ""
+"Every node exposes a small structural-inspection API. `walk()` yields the"
+" node and every descendant in pre-order; `subformulas()` is the same but "
+"excludes atomic terms; `atoms()` / `variables()` collect those leaf "
+"families; `count()` and `depth()` give size and height; a leaf has depth "
+"1."
+msgstr ""
+"Jeder Knoten stellt eine kleine API zur strukturellen Inspektion "
+"bereit. `walk()` liefert den Knoten und jeden Nachkommen in Preorder-"
+"Reihenfolge; `subformulas()` tut dasselbe, schließt jedoch atomare "
+"Terme aus; `atoms()` / `variables()` sammeln diese Blattfamilien; "
+"`count()` und `depth()` liefern Größe und Höhe; ein Blatt hat die Tiefe "
+"1."
+
+#: ../../guide/parsing.md:471
+msgid ""
+"`count` takes an optional class to filter by, and `Atom` is importable "
+"from the top level:"
+msgstr ""
+"`count` nimmt optional eine Klasse zum Filtern entgegen, und `Atom` "
+"lässt sich aus der obersten Ebene importieren:"
+
+#: ../../guide/parsing.md:480
+msgid "Unicode round-trip"
+msgstr "Unicode-Round-Trip"
+
+#: ../../guide/parsing.md:482
+msgid ""
+"`to_unicode_str()` is the inverse of parsing: it renders any node back to"
+" a Unicode formula string, and re-parsing that string in the same mode "
+"reproduces a structurally equal AST. The renderer is precedence-aware and"
+" inserts only the parentheses the grammar requires — including the no-"
+"mixing rule for same-level connectives and the tight-binding rule for "
+"quantifiers, so the reconstructed parenthesisation reflects the AST "
+"rather than the original spelling."
+msgstr ""
+"`to_unicode_str()` ist die Umkehrung des Parsens: Sie rendert jeden "
+"Knoten zurück in eine Unicode-Formelzeichenkette, und erneutes Parsen "
+"dieser Zeichenkette im selben Modus reproduziert einen strukturell "
+"gleichen AST. Der Renderer ist präzedenzbewusst und fügt nur die "
+"Klammern ein, die die Grammatik erfordert — einschließlich der "
+"Mischverbotsregel für gleichrangige Junktoren und der Regel des engen "
+"Quantorenskopus, sodass die rekonstruierte Klammerung den AST "
+"widerspiegelt und nicht die ursprüngliche Schreibweise."
+
+#: ../../guide/parsing.md:496
+msgid ""
+"The round-trip holds in every mode (each re-parsed in its matching "
+"parser):"
+msgstr ""
+"Der Round-Trip gilt in jedem Modus (jeweils erneut geparst mit dem "
+"passenden Parser):"
+
+#: ../../guide/parsing.md:507
+msgid "The natural-language constructs round-trip too:"
+msgstr "Auch die Konstrukte für natürliche Sprache lassen sich verlustfrei zurückparsen:"
+
+#: ../../guide/parsing.md:518
+msgid ""
+"`to_unicode_str()` is available on every node, so subformulas render too."
+" The output targets parseable ASTs; alpha-renamed variables introduced by"
+" reduction (e.g. `x_0`) are not valid surface tokens and will not round-"
+"trip."
+msgstr ""
+"`to_unicode_str()` steht auf jedem Knoten zur Verfügung, sodass auch "
+"Teilformeln gerendert werden. Die Ausgabe zielt auf parsbare ASTs ab; "
+"durch Reduktion eingeführte alpha-umbenannte Variablen (z. B. `x_0`) "
+"sind keine gültigen Oberflächen-Token und lassen sich nicht verlustfrei "
+"zurückparsen."
+
+#: ../../guide/parsing.md:525
+msgid "JSON round-trip"
+msgstr "JSON-Round-Trip"
+
+#: ../../guide/parsing.md:527
+msgid ""
+"`to_dict()` produces a JSON-serialisable dict keyed by a `_type` "
+"discriminator; `Node.from_dict()` rebuilds the AST. The round-trip is "
+"structure-preserving across all node families (including modal and "
+"second-order nodes that the TPTP/Prover9 exporters cannot represent)."
+msgstr ""
+"`to_dict()` erzeugt ein JSON-serialisierbares Dict mit einem `_type`-"
+"Diskriminator als Schlüssel; `Node.from_dict()` baut den AST wieder auf."
+" Der Round-Trip erhält die Struktur über alle Knotenfamilien hinweg "
+"(einschließlich modaler und Second-Order-Knoten, die die TPTP-/Prover9-"
+"Exporter nicht darstellen können)."
+
+#: ../../guide/parsing.md:543
+msgid ""
+"It holds for the extension and natural-language nodes too — including the"
+" inferred arity on a second-order quantifier and the symbolic `n` on a "
+"counting quantifier:"
+msgstr ""
+"Er gilt auch für die Erweiterungs- und Natürliche-Sprache-Knoten — "
+"einschließlich der abgeleiteten Stelligkeit an einem Second-Order-"
+"Quantor und des symbolischen `n` an einem Zählquantor:"
+
+#: ../../guide/parsing.md:559
+msgid "The error model: `NamingError` vs `ParsingError`"
+msgstr "Das Fehlermodell: `NamingError` versus `ParsingError`"
+
+#: ../../guide/parsing.md:561
+msgid ""
+"`parse()` raises one of two errors. `NamingError` is a **lexer-level** "
+"failure — an unrecognised character, a malformed identifier, or a token "
+"that cannot start where it appears. `ParsingError` is a **parser-level** "
+"failure — a structurally incomplete formula (unexpected token or end of "
+"input). They are distinct classes (`NamingError` is *not* a subclass of "
+"`ParsingError`), so catch both if you want to handle any malformed input."
+msgstr ""
+"`parse()` löst einen von zwei Fehlern aus. `NamingError` ist ein Fehler "
+"auf **Lexer-Ebene** — ein nicht erkanntes Zeichen, ein fehlerhaft "
+"geformter Bezeichner oder ein Token, das an seiner Position nicht "
+"beginnen darf. `ParsingError` ist ein Fehler auf **Parser-Ebene** — eine "
+"strukturell unvollständige Formel (unerwartetes Token oder Eingabeende)."
+" Es handelt sich um unterschiedliche Klassen (`NamingError` ist *keine* "
+"Unterklasse von `ParsingError`), sodass beide abgefangen werden müssen, "
+"um jede Art von fehlerhafter Eingabe zu behandeln."
+
+#: ../../guide/parsing.md:581
+msgid ""
+"The **no-mixing rule** — same-level connectives `∧ ∨ ⊕` cannot be "
+"combined without explicit parentheses — surfaces as a `NamingError`, "
+"because the offending connective is rejected by the lexer at the point "
+"where mixing would begin. The message carries a hint naming the rule:"
+msgstr ""
+"Die **Mischverbotsregel** — gleichrangige Junktoren `∧ ∨ ⊕` dürfen ohne "
+"explizite Klammern nicht kombiniert werden — äußert sich als "
+"`NamingError`, da der störende Junktor bereits vom Lexer an der Stelle "
+"zurückgewiesen wird, an der die Mischung beginnen würde. Die "
+"Fehlermeldung enthält einen Hinweis, der die Regel benennt:"
+
+#: ../../guide/parsing.md:594
+msgid ""
+"Parenthesising the mixed group resolves it; the resulting AST reflects "
+"the chosen grouping:"
+msgstr ""
+"Das Klammern der gemischten Gruppe löst das Problem; der resultierende "
+"AST spiegelt die gewählte Gruppierung wider:"
+

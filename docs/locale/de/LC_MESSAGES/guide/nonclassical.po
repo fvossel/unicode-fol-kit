@@ -1,0 +1,695 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, Felix Vossel
+# This file is distributed under the same license as the unicode-fol-kit
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: unicode-fol-kit 0.11.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-07-02 22:46+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: de\n"
+"Language-Team: de <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../guide/nonclassical.md:1
+msgid "Further Non-Classical Logics"
+msgstr "Weitere nichtklassische Logiken"
+
+#: ../../guide/nonclassical.md:3
+msgid ""
+"New in 0.9.0: four small semantic evaluators for logics that sit just "
+"outside classical FOL — free logic, public-announcement (dynamic "
+"epistemic) logic, counterfactual conditionals, and circumscriptive non-"
+"monotonic entailment. Each builds an AST with the node constructors from "
+"`unicode_fol_kit.fol.nodes` and evaluates it against an explicit, hand-"
+"built model."
+msgstr ""
+"Neu in 0.9.0: vier kleine semantische Auswertungsmodule für Logiken, die "
+"unmittelbar außerhalb der klassischen Prädikatenlogik erster Stufe (FOL) "
+"liegen — freie Logik, Logik öffentlicher Bekanntgabe (dynamische "
+"epistemische Logik), kontrafaktische Konditionale und zirkumskriptive "
+"nichtmonotone Folgerung. Jedes Modul baut mit den Knoten-Konstruktoren aus"
+" `unicode_fol_kit.fol.nodes` einen AST auf und wertet ihn gegen ein "
+"explizites, von Hand erstelltes Modell aus."
+
+#: ../../guide/nonclassical.md:5
+msgid "Free logic"
+msgstr "Freie Logik"
+
+#: ../../guide/nonclassical.md:7
+msgid ""
+"Classical FOL assumes every term denotes an existing individual, so "
+"universal instantiation `∀x φ → φ(c)` and existential generalisation "
+"`φ(c) → ∃x φ` are valid. Free logic drops that assumption: quantifiers "
+"range only over an inner `existing` domain `E ⊆ outer`, while constants "
+"may denote a merely-possible object of the wider `outer` domain — or fail"
+" to denote at all. The existence predicate `E!(t)` says \"`t` denotes an "
+"existing object\", and the classical rules hold only in their guarded "
+"forms `(∀x φ ∧ E!(c)) → φ(c)`."
+msgstr ""
+"Die klassische FOL setzt voraus, dass jeder Term ein existierendes "
+"Individuum denotiert, sodass Allinstanziierung `∀x φ → φ(c)` und "
+"Existenzgeneralisierung `φ(c) → ∃x φ` gültig sind. Die freie Logik gibt "
+"diese Annahme auf: Quantoren reichen nur über einen inneren `existing`-"
+"Bereich `E ⊆ outer`, während Konstanten ein lediglich mögliches Objekt des"
+" umfassenderen `outer`-Bereichs denotieren können — oder überhaupt nicht "
+"denotieren. Das Existenzprädikat `E!(t)` besagt, dass „`t` ein "
+"existierendes Objekt denotiert“, und die klassischen Regeln gelten nur in"
+" ihren guarded Formen `(∀x φ ∧ E!(c)) → φ(c)`."
+
+#: ../../guide/nonclassical.md:9
+msgid ""
+"A `FreeModel` carries the `outer` tuple, the `existing` inner subset, a "
+"(possibly partial) constant/function interpretation — a name absent from "
+"`constants` is non-denoting — and predicate tables over `outer`. Two "
+"policies govern an atom containing a non-denoting term: `\"negative\"` "
+"(default) makes it simply false (so `t = t` also fails), while "
+"`\"positive\"` keeps self-identity `t = t` true for any term."
+msgstr ""
+"Ein `FreeModel` trägt das `outer`-Tupel, den inneren Teilbereich "
+"`existing`, eine (möglicherweise partielle) Konstanten-/"
+"Funktionsinterpretation — ein in `constants` fehlender Name ist "
+"nicht-denotierend — sowie Prädikattabellen über `outer`. Zwei Policies "
+"regeln ein Atom mit einem nicht-denotierenden Term: `\"negative\"` "
+"(Standard) macht es einfach falsch (sodass auch `t = t` scheitert), "
+"während `\"positive\"` die Selbstidentität `t = t` für jeden Term wahr "
+"lässt."
+
+#: ../../guide/nonclassical.md:30
+msgid ""
+"The negative/positive split shows up on a non-denoting constant (one "
+"absent from `constants`):"
+msgstr ""
+"Die Aufteilung negative/positive zeigt sich bei einer nicht-denotierenden"
+" Konstante (einer, die in `constants` fehlt):"
+
+#: ../../guide/nonclassical.md:38
+msgid ""
+"`free_satisfies(formula, model, assignment, policy)` is the open-formula "
+"form; `free_holds` is the convenience wrapper for a closed formula under "
+"the empty assignment. Pass an `assignment` to evaluate a formula with "
+"free variables — note that a variable can be bound to a *non-existing* "
+"outer element, since the assignment is not restricted to the inner "
+"domain:"
+msgstr ""
+"`free_satisfies(formula, model, assignment, policy)` ist die Form für "
+"offene Formeln; `free_holds` ist der bequeme Wrapper für eine geschlossene"
+" Formel unter der leeren Belegung. Übergeben Sie eine `assignment`, um "
+"eine Formel mit freien Variablen auszuwerten — beachten Sie, dass eine "
+"Variable an ein *nicht existierendes* Element von `outer` gebunden sein "
+"kann, da die Belegung nicht auf den inneren Bereich beschränkt ist:"
+
+#: ../../guide/nonclassical.md:49
+msgid "An unknown policy is rejected up front:"
+msgstr "Eine unbekannte Policy wird von vornherein zurückgewiesen:"
+
+#: ../../guide/nonclassical.md:55
+msgid "Guarded inference rules are valid"
+msgstr "Guarded Schlussregeln sind gültig"
+
+#: ../../guide/nonclassical.md:57
+msgid ""
+"Free logic keeps universal instantiation and existential generalisation "
+"in their *guarded* forms — `(∀x φ ∧ E!(c)) → φ(c)` and `(φ(c) ∧ E!(c)) → "
+"∃x φ`. Both come out valid even on a model where the bare (unguarded) "
+"rules fail:"
+msgstr ""
+"Die freie Logik behält Allinstanziierung und Existenzgeneralisierung in "
+"ihren *guarded* Formen bei — `(∀x φ ∧ E!(c)) → φ(c)` und `(φ(c) ∧ E!(c)) →"
+" ∃x φ`. Beide erweisen sich als gültig, selbst auf einem Modell, auf dem "
+"die bloßen (ungesicherten) Regeln scheitern:"
+
+#: ../../guide/nonclassical.md:72
+msgid ""
+"Without the guard, existential generalisation breaks when the witness "
+"does not exist — `P(c)` can be true while `∃x P(x)` is false:"
+msgstr ""
+"Ohne die Absicherung scheitert die Existenzgeneralisierung, wenn der "
+"Zeuge nicht existiert — `P(c)` kann wahr sein, während `∃x P(x)` falsch "
+"ist:"
+
+#: ../../guide/nonclassical.md:82
+msgid "Partial functions: non-denoting function terms"
+msgstr "Partielle Funktionen: nicht-denotierende Funktionsterme"
+
+#: ../../guide/nonclassical.md:84
+msgid ""
+"A function term is non-denoting when any argument is non-denoting, or "
+"when the partial table has no entry for the argument tuple. A non-"
+"denoting function term then behaves exactly like a non-denoting constant "
+"— an ordinary predicate over it is false, and `E!` of it is false:"
+msgstr ""
+"Ein Funktionsterm ist nicht-denotierend, wenn ein beliebiges Argument "
+"nicht-denotierend ist oder wenn die partielle Tabelle keinen Eintrag für "
+"das Argumenttupel besitzt. Ein nicht-denotierender Funktionsterm verhält "
+"sich dann genau wie eine nicht-denotierende Konstante — ein gewöhnliches "
+"Prädikat darüber ist falsch, und `E!` davon ist falsch:"
+
+#: ../../guide/nonclassical.md:103
+msgid "Function composition and chained partial applications"
+msgstr "Funktionskomposition und verkettete partielle Anwendungen"
+
+#: ../../guide/nonclassical.md:105
+msgid ""
+"Partial functions propagate non-denotation when composed. If `f(x)` is "
+"non-denoting, then any application of a second function to `f(x)` is also"
+" non-denoting, even if the second function itself is total on existing "
+"objects:"
+msgstr ""
+"Partielle Funktionen pflanzen Nicht-Denotation bei Komposition fort. Ist "
+"`f(x)` nicht-denotierend, so ist auch jede Anwendung einer zweiten "
+"Funktion auf `f(x)` nicht-denotierend, selbst wenn die zweite Funktion "
+"selbst auf existierenden Objekten total ist:"
+
+#: ../../guide/nonclassical.md:131
+msgid "Quantifying over non-existing objects"
+msgstr "Quantifizierung über nicht existierende Objekte"
+
+#: ../../guide/nonclassical.md:133
+msgid ""
+"Variables can range over the full outer domain (existing and merely-"
+"possible), independent of whether a particular binding refers to an "
+"existing object. This enables reasoning about generic properties of all "
+"objects, or specific exceptional cases:"
+msgstr ""
+"Variablen können über den gesamten `outer`-Bereich reichen (existierende "
+"und lediglich mögliche Objekte), unabhängig davon, ob eine bestimmte "
+"Bindung auf ein existierendes Objekt verweist. Dies ermöglicht "
+"Schlussfolgerungen über generische Eigenschaften aller Objekte oder über "
+"spezifische Ausnahmefälle:"
+
+#: ../../guide/nonclassical.md:151
+msgid "Large domains: outer vs existing"
+msgstr "Große Bereiche: outer vs. existing"
+
+#: ../../guide/nonclassical.md:153
+msgid ""
+"Real-world applications often have a small existential domain but large "
+"outer domain (representing possibilities, abstract entities, etc.):"
+msgstr ""
+"Praxisanwendungen haben oft einen kleinen existenziellen Bereich, aber "
+"einen großen `outer`-Bereich (der Möglichkeiten, abstrakte Entitäten usw."
+" repräsentiert):"
+
+#: ../../guide/nonclassical.md:168
+msgid "The policy split on an ordinary predicate"
+msgstr "Die Policy-Aufteilung bei einem gewöhnlichen Prädikat"
+
+#: ../../guide/nonclassical.md:170
+msgid ""
+"The `\"negative\"`/`\"positive\"` distinction only ever changes the "
+"verdict on **self-identity** `t = t` of a non-denoting term; every "
+"*other* atom with a non-denoting term is false under both policies. "
+"Compare an ordinary predicate against identity for a non-denoting "
+"constant `k` (absent from `constants`):"
+msgstr ""
+"Die Unterscheidung `\"negative\"`/`\"positive\"` ändert stets nur das "
+"Urteil über die **Selbstidentität** `t = t` eines nicht-denotierenden "
+"Terms; jedes *andere* Atom mit einem nicht-denotierenden Term ist unter "
+"beiden Policies falsch. Vergleichen Sie ein gewöhnliches Prädikat mit der"
+" Identität für eine nicht-denotierende Konstante `k` (die in `constants`"
+" fehlt):"
+
+#: ../../guide/nonclassical.md:183
+msgid "Public announcement / dynamic epistemic logic"
+msgstr "Öffentliche Bekanntgabe / dynamische epistemische Logik"
+
+#: ../../guide/nonclassical.md:185
+msgid ""
+"Static epistemic logic (`Knows` over a `KripkeModel`) describes what "
+"agents know; public announcement logic (PAL) adds the dynamics. A "
+"truthful public announcement of `φ` removes every world where `φ` is "
+"false, so knowledge changes. `announce(model, φ)` returns that updated "
+"model — `M|φ`, with relations and valuation cut down to the surviving "
+"worlds — and the box / diamond operators evaluate `[φ!]ψ` and `⟨φ!⟩ψ` at "
+"a world:"
+msgstr ""
+"Die statische epistemische Logik (`Knows` über einem `KripkeModel`) "
+"beschreibt, was Agenten wissen; die Logik der öffentlichen Bekanntgabe "
+"(PAL) fügt die Dynamik hinzu. Eine wahrhaftige öffentliche Bekanntgabe von"
+" `φ` entfernt jede Welt, in der `φ` falsch ist, sodass sich das Wissen "
+"ändert. `announce(model, φ)` liefert dieses aktualisierte Modell — "
+"`M|φ`, mit auf die verbliebenen Welten reduzierten Relationen und "
+"Bewertung — und die Box-/Diamant-Operatoren werten `[φ!]ψ` und `⟨φ!⟩ψ` an"
+" einer Welt aus:"
+
+#: ../../guide/nonclassical.md:205
+msgid ""
+"`box_announce` is vacuously true when the announcement is false at the "
+"world (an untruthful announcement is not made); `diamond_announce` is its"
+" dual — true iff the announcement is truthful *and* the post-condition "
+"then holds. The Moore sentence `p ∧ ¬K_a p` is the classic self-refuting "
+"announcement: true before, but announcing it makes it false."
+msgstr ""
+"`box_announce` ist vakuos wahr, wenn die Bekanntgabe an der Welt falsch "
+"ist (eine unwahrhaftige Bekanntgabe wird nicht gemacht); `diamond_announce`"
+" ist dazu dual — wahr genau dann, wenn die Bekanntgabe wahrhaftig ist "
+"*und* die Nachbedingung dann gilt. Der Moore-Satz `p ∧ ¬K_a p` ist die "
+"klassische selbstwiderlegende Bekanntgabe: vorher wahr, aber ihre "
+"Bekanntgabe macht ihn falsch."
+
+#: ../../guide/nonclassical.md:214
+msgid "Inspecting the updated model"
+msgstr "Das aktualisierte Modell untersuchen"
+
+#: ../../guide/nonclassical.md:216
+msgid ""
+"`announce` returns a brand-new `KripkeModel` (the inputs are never "
+"mutated); every relation and the valuation are cut down to the survivors,"
+" so you can inspect the result with the ordinary `KripkeModel` accessors:"
+msgstr ""
+"`announce` liefert ein völlig neues `KripkeModel` (die Eingaben werden "
+"nie verändert); jede Relation und die Bewertung werden auf die "
+"verbliebenen Welten reduziert, sodass Sie das Ergebnis mit den üblichen "
+"`KripkeModel`-Zugriffsmethoden untersuchen können:"
+
+#: ../../guide/nonclassical.md:226
+msgid ""
+"Announcing a formula that is already established is idempotent — re-"
+"announcing `p` after `M|p` changes nothing:"
+msgstr ""
+"Die Bekanntgabe einer bereits etablierten Formel ist idempotent — die "
+"erneute Bekanntgabe von `p` nach `M|p` ändert nichts:"
+
+#: ../../guide/nonclassical.md:233
+msgid "Box vs diamond: vacuity and duality"
+msgstr "Box vs. Diamant: Vakuität und Dualität"
+
+#: ../../guide/nonclassical.md:235
+msgid ""
+"`box_announce` is the PAL box `[φ!]ψ`; `diamond_announce` is its dual "
+"`⟨φ!⟩ψ`. At a world where the announcement is **false**, an untruthful "
+"announcement is simply not made: the box is vacuously true and the "
+"diamond is false. World 1 above is a `¬p` world:"
+msgstr ""
+"`box_announce` ist die PAL-Box `[φ!]ψ`; `diamond_announce` ist ihr Dual "
+"`⟨φ!⟩ψ`. An einer Welt, an der die Bekanntgabe **falsch** ist, wird eine "
+"unwahrhaftige Bekanntgabe einfach nicht gemacht: Die Box ist vakuos wahr "
+"und der Diamant ist falsch. Welt 1 oben ist eine `¬p`-Welt:"
+
+#: ../../guide/nonclassical.md:243
+msgid "The duality `⟨φ!⟩ψ ≡ φ ∧ ¬[φ!]¬ψ` holds pointwise:"
+msgstr "Die Dualität `⟨φ!⟩ψ ≡ φ ∧ ¬[φ!]¬ψ` gilt punktweise:"
+
+#: ../../guide/nonclassical.md:251
+msgid "A two-agent scenario"
+msgstr "Ein Zwei-Agenten-Szenario"
+
+#: ../../guide/nonclassical.md:253
+msgid ""
+"With two agents who each see a different fact, a public announcement can "
+"teach one agent something the other already knew. Four worlds enumerate "
+"the truth values of `p` and `q`; agent `a` can tell `q`'s value apart (so"
+" `a` knows `q`) and agent `b` can tell `p`'s value apart (so `b` knows "
+"`p`):"
+msgstr ""
+"Bei zwei Agenten, die jeweils eine andere Tatsache sehen, kann eine "
+"öffentliche Bekanntgabe einem Agenten etwas beibringen, das der andere "
+"bereits wusste. Vier Welten zählen die Wahrheitswerte von `p` und `q` "
+"auf; Agent `a` kann den Wert von `q` unterscheiden (also weiß `a`, dass "
+"`q` gilt) und Agent `b` kann den Wert von `p` unterscheiden (also weiß "
+"`b`, dass `p` gilt):"
+
+#: ../../guide/nonclassical.md:269
+#, python-brace-format
+msgid ""
+"The relation key `\"K:a\"` is the epistemic accessibility relation for "
+"agent `a`; see {doc}`modal` for the full relation-name convention."
+msgstr ""
+"Der Relationsschlüssel `\"K:a\"` ist die epistemische Erreichbarkeits-"
+"relation für Agent `a`; die vollständige Namenskonvention für Relationen "
+"finden Sie unter {doc}`modal`."
+
+#: ../../guide/nonclassical.md:271
+msgid "Multi-agent knowledge updates and chain announcements"
+msgstr "Wissensaktualisierungen mit mehreren Agenten und verkettete Bekanntgaben"
+
+#: ../../guide/nonclassical.md:273
+msgid ""
+"Public announcements compose: announcing one fact, then another, "
+"progressively constrains the shared model. A classic puzzle involves "
+"secret information revealed step by step:"
+msgstr ""
+"Öffentliche Bekanntgaben lassen sich verketten: Die Bekanntgabe einer "
+"Tatsache, dann einer weiteren, schränkt das gemeinsame Modell "
+"schrittweise ein. Ein klassisches Rätsel betrifft geheime Informationen, "
+"die schrittweise aufgedeckt werden:"
+
+#: ../../guide/nonclassical.md:304
+msgid "Vacuous announcements and untruthful scenarios"
+msgstr "Vakuose Bekanntgaben und unwahrhaftige Szenarien"
+
+#: ../../guide/nonclassical.md:306
+msgid ""
+"An announcement that is false at the current world does not occur; the "
+"model is unchanged in the PAL semantics. This is distinct from announcing"
+" its negation:"
+msgstr ""
+"Eine Bekanntgabe, die an der aktuellen Welt falsch ist, findet nicht "
+"statt; das Modell bleibt in der PAL-Semantik unverändert. Dies "
+"unterscheidet sich von der Bekanntgabe ihrer Negation:"
+
+#: ../../guide/nonclassical.md:320
+msgid "Counterfactual conditionals"
+msgstr "Kontrafaktische Konditionale"
+
+#: ../../guide/nonclassical.md:322
+msgid ""
+"The material conditional gets counterfactuals wrong. `A □→ B` (\"if A "
+"were the case, B would be\") is evaluated over Lewis's system of spheres:"
+" each world carries a nested sequence of world-sets ordered innermost "
+"(closest) first, and `A □→ B` holds iff, in the smallest sphere that "
+"contains an `A`-world, every `A`-world is a `B`-world (vacuously true if "
+"no sphere holds an `A`-world). The \"might\" counterfactual `A ◇→ B` is "
+"the dual `¬(A □→ ¬B)`."
+msgstr ""
+"Das materiale Konditional erfasst Kontrafaktika falsch. `A □→ B` ("
+"„wäre A der Fall, würde B gelten“) wird über Lewis' Sphärensystem "
+"ausgewertet: Jede Welt trägt eine verschachtelte Folge von Weltmengen, "
+"geordnet mit der innersten (nächsten) zuerst, und `A □→ B` gilt genau "
+"dann, wenn in der kleinsten Sphäre, die eine `A`-Welt enthält, jede "
+"`A`-Welt eine `B`-Welt ist (vakuos wahr, wenn keine Sphäre eine `A`-Welt "
+"enthält). Das „könnte“-Kontrafaktikum `A ◇→ B` ist das Dual `¬(A □→ ¬B)`."
+
+#: ../../guide/nonclassical.md:324
+#, python-brace-format
+msgid ""
+"A `CounterfactualModel` takes the worlds, a `valuation` mapping each "
+"world to the set of atom keys (`atom.to_unicode_str()`) true there, and "
+"`spheres` mapping each world to its nested list of frozensets. A world "
+"omitted from `spheres` defaults to the single sphere `{w}`."
+msgstr ""
+"Ein `CounterfactualModel` nimmt die Welten, eine `valuation`, die jede "
+"Welt auf die Menge der dort wahren Atomschlüssel (`atom.to_unicode_str()`)"
+" abbildet, sowie `spheres`, die jede Welt auf ihre verschachtelte Liste "
+"von Frozensets abbildet. Eine in `spheres` fehlende Welt hat standard-"
+"mäßig die einzelne Sphäre `{w}`."
+
+#: ../../guide/nonclassical.md:343
+msgid "Complex sphere systems and multi-layer counterfactuals"
+msgstr "Komplexe Sphärensysteme und mehrschichtige Kontrafaktika"
+
+#: ../../guide/nonclassical.md:345
+msgid ""
+"More intricate models can represent graded similarity. A world\\s sphere "
+"system is a nested list, so you can express \"closest\", \"next-"
+"closest\", and so on:"
+msgstr ""
+"Aufwendigere Modelle können abgestufte Ähnlichkeit darstellen. Das "
+"Sphärensystem einer Welt ist eine verschachtelte Liste, sodass Sie "
+"„nächste“, „zweitnächste“ usw. ausdrücken können:"
+
+#: ../../guide/nonclassical.md:377
+msgid "Disjunctive antecedents and complex consequents"
+msgstr "Disjunktive Antezedenzien und komplexe Konsequenzen"
+
+#: ../../guide/nonclassical.md:379
+msgid ""
+"Counterfactuals work with propositional formulas of arbitrary complexity "
+"(¬, ∧, ∨, →, ↔). Test complex reasoning chains:"
+msgstr ""
+"Kontrafaktika funktionieren mit aussagenlogischen Formeln beliebiger "
+"Komplexität (¬, ∧, ∨, →, ↔). Testen Sie komplexe Schlussfolgerungsketten:"
+
+#: ../../guide/nonclassical.md:391
+msgid ""
+"Antecedent strengthening fails — the hallmark non-monotonicity of "
+"counterfactuals. `A □→ B` can hold while `(A ∧ C) □→ B` does not, because"
+" narrowing the antecedent reaches into a more distant sphere:"
+msgstr ""
+"Antezedens-Verstärkung schlägt fehl — das Kennzeichen der "
+"Nichtmonotonie von Kontrafaktika. `A □→ B` kann gelten, während "
+"`(A ∧ C) □→ B` nicht gilt, weil die Einengung des Antezedens in eine "
+"entferntere Sphäre reicht:"
+
+#: ../../guide/nonclassical.md:398
+msgid "\"Would\" vs \"might\""
+msgstr "„Würde“ vs. „könnte“"
+
+#: ../../guide/nonclassical.md:400
+msgid ""
+"`might` is defined as the dual `A ◇→ B ≡ ¬(A □→ ¬B)`. On the model above,"
+" the closest `A`-world (world 1) is a `B`-world but not a `C`-world, so "
+"\"if A were, B might hold\" but \"if A were, C might hold\" fails:"
+msgstr ""
+"`might` ist als Dual `A ◇→ B ≡ ¬(A □→ ¬B)` definiert. Im Modell oben ist "
+"die nächste `A`-Welt (Welt 1) eine `B`-Welt, aber keine `C`-Welt, sodass "
+"„wäre A, könnte B gelten“ zutrifft, aber „wäre A, könnte C gelten“ "
+"scheitert:"
+
+#: ../../guide/nonclassical.md:408
+msgid ""
+"A genuine tie inside one sphere — two equally-close `A`-worlds, one `B` "
+"and one not — separates \"would\" from \"might\": neither all nor none of"
+" the closest `A`-worlds are `B`:"
+msgstr ""
+"Ein echtes Unentschieden innerhalb einer Sphäre — zwei gleich nahe "
+"`A`-Welten, eine `B` und eine nicht — trennt „würde“ von „könnte“: "
+"weder alle noch keine der nächsten `A`-Welten sind `B`:"
+
+#: ../../guide/nonclassical.md:420
+msgid "Vacuous truth and the default sphere"
+msgstr "Vakuose Wahrheit und die Standardsphäre"
+
+#: ../../guide/nonclassical.md:422
+msgid ""
+"If **no** sphere of the world contains an `A`-world, `A □→ B` is "
+"vacuously true for *any* `B`, and the matching \"might\" is false:"
+msgstr ""
+"Enthält **keine** Sphäre der Welt eine `A`-Welt, so ist `A □→ B` für "
+"*jedes* `B` vakuos wahr, und das entsprechende „könnte“ ist falsch:"
+
+#: ../../guide/nonclassical.md:435
+#, python-brace-format
+msgid ""
+"A world omitted from `spheres` defaults to the single sphere `{w}`, so a "
+"one-world model evaluates the counterfactual at the world itself:"
+msgstr ""
+"Eine in `spheres` fehlende Welt hat standardmäßig die einzelne Sphäre "
+"`{w}`, sodass ein Ein-Welt-Modell das Kontrafaktikum an der Welt selbst "
+"auswertet:"
+
+#: ../../guide/nonclassical.md:442
+msgid ""
+"Antecedents and consequents must be propositional (atoms and `¬ ∧ ∨ → "
+"↔`); a quantifier or modal node raises `TypeError`:"
+msgstr ""
+"Antezedenzien und Konsequenzen müssen aussagenlogisch sein (Atome und "
+"`¬ ∧ ∨ → ↔`); ein Quantor- oder Modal-Knoten löst `TypeError` aus:"
+
+#: ../../guide/nonclassical.md:449
+msgid "Circumscription / non-monotonic entailment"
+msgstr "Zirkumskription / nichtmonotone Folgerung"
+
+#: ../../guide/nonclassical.md:451
+msgid ""
+"Classical entailment is monotonic: adding premises never retracts a "
+"conclusion. Circumscription (McCarthy) captures defeasible reasoning by "
+"believing only what holds in the minimal models of a theory — those "
+"making the circumscribed predicates as small as possible. "
+"`minimal_entails(premises, conclusion, circumscribed=…)` is `True` iff "
+"the conclusion holds in every ≤-minimal model. With `circumscribed=None` "
+"*all* predicates are minimised, giving closed-world-style semantics."
+msgstr ""
+"Klassische Folgerung ist monoton: Das Hinzufügen von Prämissen widerruft "
+"nie eine Schlussfolgerung. Zirkumskription (McCarthy) erfasst "
+"widerlegbares Schließen, indem nur geglaubt wird, was in den "
+"Minimalmodellen einer Theorie gilt — jenen, die die zirkumskribierten "
+"Prädikate so klein wie möglich machen. "
+"`minimal_entails(premises, conclusion, circumscribed=…)` ist `True` genau"
+" dann, wenn die Schlussfolgerung in jedem ≤-minimalen Modell gilt. Mit "
+"`circumscribed=None` werden *alle* Prädikate minimiert, was eine Semantik"
+" nach Art der Closed-World-Annahme ergibt."
+
+#: ../../guide/nonclassical.md:453
+msgid ""
+"The search reuses the finite model finder, so it is **bounded** (domains "
+"up to `max_size`): `True` means minimal-model entailment over models "
+"within the bound, not a proof over all models."
+msgstr ""
+"Die Suche verwendet den Finite-Modell-Finder wieder und ist daher "
+"**beschränkt** (Bereiche bis `max_size`): `True` bedeutet Minimalmodell-"
+"Folgerung über Modelle innerhalb der Schranke, nicht einen Beweis über "
+"alle Modelle."
+
+#: ../../guide/nonclassical.md:466
+msgid ""
+"The relation is genuinely non-monotonic — strengthening the premises can "
+"flip a `True` to `False`:"
+msgstr ""
+"Die Relation ist tatsächlich nichtmonoton — das Verstärken der Prämissen"
+" kann ein `True` in `False` verwandeln:"
+
+#: ../../guide/nonclassical.md:477
+msgid "Inspecting the minimal models"
+msgstr "Die Minimalmodelle untersuchen"
+
+#: ../../guide/nonclassical.md:479
+#, python-brace-format
+msgid ""
+"`minimal_models(premises, circumscribed=…)` returns the underlying "
+"≤-minimal `Structure`s so you can read off domains, constants and "
+"predicate extensions. For `{P(a) → Q(a)}` circumscribing both `P` and "
+"`Q`, the unique minimal model makes both predicates empty (vacuously "
+"satisfying the implication), which is exactly why `¬Q(a)` is entailed:"
+msgstr ""
+"`minimal_models(premises, circumscribed=…)` liefert die zugrunde "
+"liegenden ≤-minimalen `Structure`-Objekte, sodass Sie Bereiche, "
+"Konstanten und Prädikatextensionen ablesen können. Für `{P(a) → Q(a)}` "
+"mit zirkumskribierten `P` und `Q` macht das eindeutige Minimalmodell "
+"beide Prädikate leer (was die Implikation vakuos erfüllt), weshalb genau"
+" deswegen `¬Q(a)` gefolgert wird:"
+
+#: ../../guide/nonclassical.md:490
+msgid "Closed-world reasoning (and the unique-names caveat)"
+msgstr "Closed-World-Schließen (und der Vorbehalt der Unique-Names-Annahme)"
+
+#: ../../guide/nonclassical.md:492
+msgid ""
+"Circumscribing a predicate makes it false of everything not forced true —"
+" the closed-world assumption. Assert `P(a)` and circumscribe `P`; then "
+"`P(a)` stays entailed but anything *not* asserted is minimally false. "
+"With `circumscribed=None` *every* predicate is minimised, so an empty "
+"theory entails `¬P(a)`:"
+msgstr ""
+"Die Zirkumskription eines Prädikats macht es für alles falsch, was nicht"
+" erzwungenermaßen wahr ist — die Closed-World-Annahme. Behaupten Sie "
+"`P(a)` und zirkumskribieren Sie `P`; dann bleibt `P(a)` gefolgert, aber "
+"alles, was *nicht* behauptet wurde, ist minimal falsch. Mit "
+"`circumscribed=None` wird *jedes* Prädikat minimiert, sodass eine leere "
+"Theorie `¬P(a)` folgert:"
+
+#: ../../guide/nonclassical.md:501
+msgid ""
+"A subtlety worth internalising: the search is over **bounded finite "
+"models with no unique-names assumption**, so two constants may denote the"
+" *same* object. Asserting `P(a)` does **not** by itself entail `¬P(b)` — "
+"there is a minimal model where `a` and `b` collapse to one `P`-object:"
+msgstr ""
+"Eine Feinheit, die man verinnerlichen sollte: Die Suche erfolgt über "
+"**beschränkte endliche Modelle ohne Unique-Names-Annahme**, sodass zwei "
+"Konstanten dasselbe Objekt denotieren können. Die Behauptung `P(a)` "
+"folgert für sich genommen **nicht** `¬P(b)` — es gibt ein Minimalmodell,"
+" in dem `a` und `b` zu einem `P`-Objekt zusammenfallen:"
+
+#: ../../guide/nonclassical.md:512
+msgid "Disjunction splits into incomparable minima"
+msgstr "Disjunktion spaltet sich in unvergleichbare Minima auf"
+
+#: ../../guide/nonclassical.md:514
+msgid ""
+"A disjunctive premise has two minimal models (one for each disjunct), so "
+"neither disjunct is entailed on its own — but the disjunction is:"
+msgstr ""
+"Eine disjunktive Prämisse hat zwei Minimalmodelle (eines für jedes "
+"Disjunkt), sodass keines der Disjunkte für sich allein gefolgert wird —"
+" die Disjunktion jedoch schon:"
+
+#: ../../guide/nonclassical.md:521
+msgid "Comparing minimal models across domain sizes"
+msgstr "Minimalmodelle über verschiedene Bereichsgrößen hinweg vergleichen"
+
+#: ../../guide/nonclassical.md:523
+msgid ""
+"Minimal models are found independently at each domain size (1, 2, 3, …). "
+"Models are grouped by their \"fixed part\" — shared constants, functions,"
+" and non-circumscribed predicates — and only models that are minimal "
+"*within their group* are returned. This allows reasoning with a tight "
+"domain bound:"
+msgstr ""
+"Minimalmodelle werden unabhängig für jede Bereichsgröße (1, 2, 3, …) "
+"gefunden. Modelle werden nach ihrem „festen Teil“ gruppiert — gemeinsame"
+" Konstanten, Funktionen und nicht zirkumskribierte Prädikate — und nur "
+"Modelle, die *innerhalb ihrer Gruppe* minimal sind, werden zurückgegeben."
+" Dies erlaubt Schließen mit einer engen Bereichsschranke:"
+
+#: ../../guide/nonclassical.md:540
+msgid "Quantified rules and existential bases"
+msgstr "Quantifizierte Regeln und existenzielle Basen"
+
+#: ../../guide/nonclassical.md:542
+msgid ""
+"Theories with quantified rules combine non-monotonicity with first-order "
+"quantification. A rule \"all Ps are Qs\" with P minimised can express "
+"defaults that are retracted as examples accumulate:"
+msgstr ""
+"Theorien mit quantifizierten Regeln verbinden Nichtmonotonie mit "
+"Quantifizierung erster Stufe. Eine Regel „alle Ps sind Qs“ mit "
+"minimiertem P kann Standardannahmen ausdrücken, die widerrufen werden, "
+"sobald sich Gegenbeispiele häufen:"
+
+#: ../../guide/nonclassical.md:568
+msgid "Default reasoning: assume-normal, then retract"
+msgstr "Standardschließen: Normalität annehmen, dann widerrufen"
+
+#: ../../guide/nonclassical.md:570
+msgid ""
+"The canonical use is an *abnormality* predicate `Ab`: circumscribe it to "
+"assume nothing is abnormal by default, and let new facts force "
+"exceptions. An empty theory assumes a fixed individual is normal; "
+"learning it is abnormal — directly, or via a rule like \"penguins are "
+"abnormal\" — retracts that conclusion:"
+msgstr ""
+"Die kanonische Verwendung ist ein *Abnormalitäts*-Prädikat `Ab`: "
+"zirkumskribieren Sie es, um standardmäßig anzunehmen, dass nichts "
+"abnormal ist, und lassen Sie neue Fakten Ausnahmen erzwingen. Eine leere"
+" Theorie nimmt an, dass ein festes Individuum normal ist; die "
+"Kenntnisnahme, dass es abnormal ist — direkt oder über eine Regel wie "
+"„Pinguine sind abnormal“ — widerruft diese Schlussfolgerung:"
+
+#: ../../guide/nonclassical.md:591
+msgid ""
+"This is **parallel** circumscription: every named predicate is minimised "
+"on an equal footing, and the *non*-circumscribed predicates are held "
+"fixed (models are compared only when their fixed parts agree). It is "
+"**not** prioritised circumscription with *varied* predicates, so the "
+"textbook \"Tweety the bird flies by default\" pattern — which lets a "
+"derived `Flies` predicate float while `Ab` is minimised — is **not** "
+"captured: circumscribe the abnormality predicate(s) and reason about "
+"*them*, as above, rather than expecting a separate consequence predicate "
+"to be pinned for free."
+msgstr ""
+"Dies ist **parallele** Zirkumskription: Jedes benannte Prädikat wird "
+"gleichberechtigt minimiert, und die *nicht* zirkumskribierten Prädikate "
+"werden festgehalten (Modelle werden nur verglichen, wenn ihre festen "
+"Teile übereinstimmen). Es handelt sich **nicht** um priorisierte "
+"Zirkumskription mit *variierten* Prädikaten, sodass das aus Lehrbüchern "
+"bekannte Muster „Tweety, der Vogel, fliegt standardmäßig“ — bei dem ein "
+"abgeleitetes `Flies`-Prädikat frei bleibt, während `Ab` minimiert wird —"
+" **nicht** erfasst wird: Zirkumskribieren Sie stattdessen das/die "
+"Abnormalitätsprädikat(e) und schließen Sie über *diese*, wie oben "
+"gezeigt, anstatt zu erwarten, dass ein separates Konsequenzprädikat "
+"kostenlos festgelegt wird."
+
+#: ../../guide/nonclassical.md:594
+msgid "Out of scope"
+msgstr "Nicht im Funktionsumfang"
+
+#: ../../guide/nonclassical.md:596
+msgid ""
+"These four evaluators cover the non-classical neighbours the toolkit "
+"ships. Several others are deliberately **not** provided: relevant / "
+"relevance logic, hybrid logic (nominals and `@`), independence-friendly "
+"and dependence logic, and substructural logics (linear, the Lambek "
+"calculus, and friends). If you need one of those, the AST and the "
+"existing evaluators are a reasonable base to build on, but no first-class"
+" support exists today."
+msgstr ""
+"Diese vier Auswertungsmodule decken die nichtklassischen Nachbarlogiken "
+"ab, die das Toolkit mitbringt. Mehrere andere werden bewusst **nicht** "
+"bereitgestellt: Relevanzlogik, Hybridlogik (Nominale und `@`), "
+"unabhängigkeitsfreundliche Logik und Abhängigkeitslogik sowie "
+"substrukturelle Logiken (lineare Logik, der Lambek-Kalkül und "
+"Verwandte). Falls Sie eine davon benötigen, bieten der AST und die "
+"bestehenden Auswertungsmodule eine vernünftige Grundlage zum Aufbauen, "
+"aber derzeit besteht keine erstklassige Unterstützung."
+

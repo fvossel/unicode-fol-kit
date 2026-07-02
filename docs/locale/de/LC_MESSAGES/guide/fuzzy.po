@@ -1,0 +1,631 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, Felix Vossel
+# This file is distributed under the same license as the unicode-fol-kit
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: unicode-fol-kit 0.11.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-07-02 22:46+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: de\n"
+"Language-Team: de <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../guide/fuzzy.md:1
+msgid "Fuzzy (Łukasiewicz / BL) logic"
+msgstr "Fuzzylogik (Łukasiewicz / BL)"
+
+#: ../../guide/fuzzy.md:3
+msgid ""
+"The fuzzy layer interprets the Łukasiewicz / basic-logic (BL) connectives"
+" over the real interval `[0, 1]`: `fuzzy_evaluate` computes a truth "
+"**degree** under a valuation, and `fuzzy_is_satisfiable` / "
+"`fuzzy_is_valid` / `fuzzy_get_model` decide formulas via Z3 reals. "
+"Version 0.9.0 adds a t-norm selector (Łukasiewicz / Gödel / product) and "
+"quantifier grounding so quantified fuzzy validity is decidable."
+msgstr ""
+"Die Fuzzy-Schicht interpretiert die Łukasiewicz-/Basic-Logic-Operatoren "
+"(BL) über dem reellen Intervall `[0, 1]`: `fuzzy_evaluate` berechnet "
+"einen Wahrheits**grad** unter einer Belegung, und `fuzzy_is_satisfiable` "
+"/ `fuzzy_is_valid` / `fuzzy_get_model` entscheiden Formeln mittels Z3-"
+"Reellzahlen. Version 0.9.0 fügt einen t-Norm-Selektor (Łukasiewicz / "
+"Gödel / Produkt) sowie eine Quantoren-Grundierung hinzu, sodass "
+"quantifizierte Fuzzy-Gültigkeit entscheidbar wird."
+
+#: ../../guide/fuzzy.md:5
+msgid "Everything on this page is imported from the top-level package:"
+msgstr "Alles auf dieser Seite wird aus dem Top-Level-Package importiert:"
+
+#: ../../guide/fuzzy.md:19
+msgid "Parsing fuzzy formulas (FL / MSFL mode)"
+msgstr "Parsen von Fuzzy-Formeln (FL-/MSFL-Modus)"
+
+#: ../../guide/fuzzy.md:21
+msgid ""
+"Parse with `MSFLParser(fuzzy=True)` for single-sorted FL (unsorted "
+"quantifiers, plain constants) or `MSFLParser(many_sorted=True, "
+"fuzzy=True)` for many-sorted MSFL (`∀x:Sort`, `alice:Sort`). In both "
+"modes the connectives carry Łukasiewicz semantics:"
+msgstr ""
+"Parsen Sie mit `MSFLParser(fuzzy=True)` für einsortiges FL (unsortierte "
+"Quantoren, einfache Konstanten) oder mit `MSFLParser(many_sorted=True, "
+"fuzzy=True)` für mehrsortiges MSFL (`∀x:Sort`, `alice:Sort`). In beiden "
+"Modi tragen die Operatoren Łukasiewicz-Semantik:"
+
+#: ../../guide/fuzzy.md
+msgid "Surface"
+msgstr "Oberfläche"
+
+#: ../../guide/fuzzy.md
+msgid "Node"
+msgstr "Knoten"
+
+#: ../../guide/fuzzy.md
+msgid "Semantics"
+msgstr "Semantik"
+
+#: ../../guide/fuzzy.md
+msgid "weak `∧`"
+msgstr "schwaches `∧`"
+
+#: ../../guide/fuzzy.md
+msgid "`WeakConjunction`"
+msgstr "`WeakConjunction`"
+
+#: ../../guide/fuzzy.md
+msgid "`min(x, y)`"
+msgstr "`min(x, y)`"
+
+#: ../../guide/fuzzy.md
+msgid "weak `∨`"
+msgstr "schwaches `∨`"
+
+#: ../../guide/fuzzy.md
+msgid "`WeakDisjunction`"
+msgstr "`WeakDisjunction`"
+
+#: ../../guide/fuzzy.md
+msgid "`max(x, y)`"
+msgstr "`max(x, y)`"
+
+#: ../../guide/fuzzy.md
+msgid "strong `⊗`"
+msgstr "starkes `⊗`"
+
+#: ../../guide/fuzzy.md
+msgid "`StrongConjunction`"
+msgstr "`StrongConjunction`"
+
+#: ../../guide/fuzzy.md
+msgid "t-norm (default `max(0, x+y−1)`)"
+msgstr "t-Norm (Standard `max(0, x+y−1)`)"
+
+#: ../../guide/fuzzy.md
+msgid "strong `⊕`"
+msgstr "starkes `⊕`"
+
+#: ../../guide/fuzzy.md
+msgid "`StrongDisjunction`"
+msgstr "`StrongDisjunction`"
+
+#: ../../guide/fuzzy.md
+msgid "t-conorm (default `min(1, x+y)`)"
+msgstr "t-Konorm (Standard `min(1, x+y)`)"
+
+#: ../../guide/fuzzy.md
+msgid "`¬`"
+msgstr "`¬`"
+
+#: ../../guide/fuzzy.md
+msgid "`LukNegation`"
+msgstr "`LukNegation`"
+
+#: ../../guide/fuzzy.md
+msgid "`1 − x`"
+msgstr "`1 − x`"
+
+#: ../../guide/fuzzy.md
+msgid "`→`"
+msgstr "`→`"
+
+#: ../../guide/fuzzy.md
+msgid "`LukImplication`"
+msgstr "`LukImplication`"
+
+#: ../../guide/fuzzy.md
+msgid "`min(1, 1−x+y)`"
+msgstr "`min(1, 1−x+y)`"
+
+#: ../../guide/fuzzy.md
+msgid "`↔`"
+msgstr "`↔`"
+
+#: ../../guide/fuzzy.md
+msgid "`LukEquivalence`"
+msgstr "`LukEquivalence`"
+
+#: ../../guide/fuzzy.md
+msgid "`1 − |x−y|`"
+msgstr "`1 − |x−y|`"
+
+#: ../../guide/fuzzy.md:33
+msgid ""
+"Classical boolean nodes (`And`/`Or`/`Not`/…) are intentionally rejected "
+"by the evaluator: a formula meant for fuzzy evaluation must be parsed in "
+"FL/MSFL mode so its connectives are unambiguous. You can also build nodes"
+" directly — `StrongConjunction`, `LukNegation`, etc. — instead of "
+"parsing."
+msgstr ""
+"Klassische boolesche Knoten (`And`/`Or`/`Not`/…) werden vom Evaluator "
+"bewusst zurückgewiesen: Eine für die Fuzzy-Auswertung bestimmte Formel "
+"muss im FL-/MSFL-Modus geparst werden, damit ihre Operatoren eindeutig "
+"sind. Alternativ können Sie Knoten auch direkt aufbauen — "
+"`StrongConjunction`, `LukNegation` usw. — anstatt zu parsen."
+
+#: ../../guide/fuzzy.md:50
+msgid ""
+"Parsing a classical boolean formula in fuzzy mode (or feeding a "
+"classically parsed formula to the evaluator) is the one common mistake — "
+"the connective node carries no Łukasiewicz reading and the evaluator "
+"rejects it:"
+msgstr ""
+"Eine klassische boolesche Formel im Fuzzy-Modus zu parsen (oder eine "
+"klassisch geparste Formel dem Evaluator zu übergeben) ist der häufigste "
+"Fehler — der Operator-Knoten trägt keine Łukasiewicz-Lesart, und der "
+"Evaluator weist ihn zurück:"
+
+#: ../../guide/fuzzy.md:60
+msgid "`fuzzy_evaluate` — truth degree under a valuation"
+msgstr "`fuzzy_evaluate` — Wahrheitsgrad unter einer Belegung"
+
+#: ../../guide/fuzzy.md:62
+msgid ""
+"`fuzzy_evaluate(node, valuation, domain=None, sort_universes=None, "
+"tnorm=\"lukasiewicz\")` returns the degree in `[0, 1]`. The `valuation` "
+"maps each ground atom's canonical key — its `to_unicode_str()` rendering,"
+" e.g. `\"P(alice)\"` or just `\"P\"` — to a degree. A missing key raises "
+"`KeyError`."
+msgstr ""
+"`fuzzy_evaluate(node, valuation, domain=None, sort_universes=None, "
+"tnorm=\"lukasiewicz\")` liefert den Grad in `[0, 1]`. Die `valuation` "
+"bildet den kanonischen Schlüssel jedes Grundatoms — seine "
+"`to_unicode_str()`-Darstellung, z. B. `\"P(alice)\"` oder einfach `\"P\"`"
+" — auf einen Grad ab. Ein fehlender Schlüssel löst `KeyError` aus."
+
+#: ../../guide/fuzzy.md:76
+msgid "Weak vs strong, side by side"
+msgstr "Schwach vs. stark im Vergleich"
+
+#: ../../guide/fuzzy.md:78
+msgid ""
+"The weak `∧ / ∨` are the lattice `min / max`; the strong `⊗ / ⊕` are the "
+"t-norm and its t-conorm. They coincide only at the extremes — in the "
+"middle the strong pair is \"more demanding\" (`⊗ ≤ ∧`) and \"more "
+"permissive\" (`⊕ ≥ ∨`):"
+msgstr ""
+"Die schwache `∧ / ∨` sind das Verband-`min / max`; die starke `⊗ / ⊕` "
+"sind die t-Norm und ihre t-Konorm. Sie stimmen nur an den Extremen "
+"überein — dazwischen ist das starke Paar \"anspruchsvoller\" (`⊗ ≤ ∧`) "
+"und \"nachgiebiger\" (`⊕ ≥ ∨`):"
+
+#: ../../guide/fuzzy.md:88
+msgid ""
+"Many Łukasiewicz degrees are not exactly representable in binary floating"
+" point: `0.6 + 0.7 − 1` evaluates to `0.2999999999999998`, so the "
+"examples above wrap a noisy result in `round(..., 10)`. The underlying "
+"arithmetic is exact; only the display is rounded."
+msgstr ""
+"Viele Łukasiewicz-Grade sind in binärer Gleitkommadarstellung nicht exakt"
+" darstellbar: `0.6 + 0.7 − 1` ergibt `0.2999999999999998`, daher wird das"
+" verrauschte Ergebnis in den obigen Beispielen in `round(..., 10)` "
+"eingepackt. Die zugrunde liegende Arithmetik ist exakt; nur die Anzeige "
+"wird gerundet."
+
+#: ../../guide/fuzzy.md:90
+msgid "Negation and implication"
+msgstr "Negation und Implikation"
+
+#: ../../guide/fuzzy.md:92
+msgid ""
+"Łukasiewicz negation `1 − x` is **involutive** (`¬¬P = P`), and the "
+"implication is the residuum of `⊗`:"
+msgstr ""
+"Die Łukasiewicz-Negation `1 − x` ist **involutiv** (`¬¬P = P`), und die "
+"Implikation ist das Residuum von `⊗`:"
+
+#: ../../guide/fuzzy.md:102
+msgid "A missing atom raises `KeyError`"
+msgstr "Ein fehlendes Atom löst `KeyError` aus"
+
+#: ../../guide/fuzzy.md:104
+msgid "Every ground atom that appears must have a degree in the valuation:"
+msgstr ""
+"Jedes vorkommende Grundatom muss in der Belegung einen Grad besitzen:"
+
+#: ../../guide/fuzzy.md:111
+msgid "Quantifiers (inf / sup over a finite domain)"
+msgstr "Quantoren (inf / sup über einem endlichen Wertebereich)"
+
+#: ../../guide/fuzzy.md:113
+msgid ""
+"Quantifiers are the infimum (`∀` = min) and supremum (`∃` = max) over a "
+"finite `domain` of constant names; a `SortedQuantifier` ranges over "
+"`sort_universes[sort]`:"
+msgstr ""
+"Quantoren sind das Infimum (`∀` = min) und das Supremum (`∃` = max) über "
+"einem endlichen `domain` von Konstantennamen; ein `SortedQuantifier` "
+"läuft über `sort_universes[sort]`:"
+
+#: ../../guide/fuzzy.md:120
+msgid ""
+"For sorted quantifiers, pass `sort_universes`. The bound variable is "
+"grounded to a **bare** constant, so the valuation keys drop the sort "
+"annotation (`Tall(alice)`, not `Tall(alice:Person)`):"
+msgstr ""
+"Für sortierte Quantoren übergeben Sie `sort_universes`. Die gebundene "
+"Variable wird zu einer **nackten** Konstante grundiert, sodass die "
+"Belegungsschlüssel die Sortenannotation weglassen (`Tall(alice)`, nicht "
+"`Tall(alice:Person)`):"
+
+#: ../../guide/fuzzy.md:131
+msgid "Omitting the universe for a quantifier raises `ValueError`:"
+msgstr ""
+"Das Weglassen des Wertebereichs für einen Quantor löst `ValueError` aus:"
+
+#: ../../guide/fuzzy.md:138
+msgid "The three t-norms"
+msgstr "Die drei t-Normen"
+
+#: ../../guide/fuzzy.md:140
+msgid ""
+"A *t-norm* `T` fixes the **strong** connectives `⊗ ⊕ → ¬ ↔`; the weak `∧ "
+"/ ∨` stay `min / max` and the quantifiers stay inf / sup regardless of "
+"`tnorm`. Three continuous t-norms ship — their ordinal sums generate "
+"every continuous t-norm (Mostert–Shields):"
+msgstr ""
+"Eine *t-Norm* `T` legt die **starken** Operatoren `⊗ ⊕ → ¬ ↔` fest; die "
+"schwachen `∧ / ∨` bleiben `min / max`, und die Quantoren bleiben "
+"unabhängig von `tnorm` inf / sup. Drei stetige t-Normen sind enthalten — "
+"ihre Ordinalsummen erzeugen jede stetige t-Norm (Mostert–Shields):"
+
+#: ../../guide/fuzzy.md
+msgid "`tnorm`"
+msgstr "`tnorm`"
+
+#: ../../guide/fuzzy.md
+msgid "`⊗`"
+msgstr "`⊗`"
+
+#: ../../guide/fuzzy.md
+msgid "`⊕`"
+msgstr "`⊕`"
+
+#: ../../guide/fuzzy.md
+msgid "`\"lukasiewicz\"` (default)"
+msgstr "`\"lukasiewicz\"` (Standard)"
+
+#: ../../guide/fuzzy.md
+msgid "`max(0, x+y−1)`"
+msgstr "`max(0, x+y−1)`"
+
+#: ../../guide/fuzzy.md
+msgid "`min(1, x+y)`"
+msgstr "`min(1, x+y)`"
+
+#: ../../guide/fuzzy.md
+msgid "`1−x` (involutive)"
+msgstr "`1−x` (involutiv)"
+
+#: ../../guide/fuzzy.md
+msgid "`\"godel\"`"
+msgstr "`\"godel\"`"
+
+#: ../../guide/fuzzy.md
+msgid "`1 if x≤y else y`"
+msgstr "`1 falls x≤y sonst y`"
+
+#: ../../guide/fuzzy.md
+msgid "`1 if x≤0 else 0`"
+msgstr "`1 falls x≤0 sonst 0`"
+
+#: ../../guide/fuzzy.md
+msgid "`\"product\"`"
+msgstr "`\"product\"`"
+
+#: ../../guide/fuzzy.md
+msgid "`x·y`"
+msgstr "`x·y`"
+
+#: ../../guide/fuzzy.md
+msgid "`x+y−x·y`"
+msgstr "`x+y−x·y`"
+
+#: ../../guide/fuzzy.md
+msgid "`1 if x≤y else y/x`"
+msgstr "`1 falls x≤y sonst y/x`"
+
+#: ../../guide/fuzzy.md:148
+msgid ""
+"Pass `tnorm=` to `fuzzy_evaluate` and to the deciders. The strong "
+"conjunction `⊗` is the clearest discriminator — same inputs, three "
+"answers:"
+msgstr ""
+"Übergeben Sie `tnorm=` an `fuzzy_evaluate` und an die Entscheider. Die "
+"starke Konjunktion `⊗` ist der klarste Unterscheider — gleiche Eingaben, "
+"drei Antworten:"
+
+#: ../../guide/fuzzy.md:161
+msgid "The implication `→` and equivalence `↔` differ too:"
+msgstr "Auch die Implikation `→` und die Äquivalenz `↔` unterscheiden sich:"
+
+#: ../../guide/fuzzy.md:175
+msgid "Negation: Łukasiewicz vs Gödel/product"
+msgstr "Negation: Łukasiewicz vs. Gödel/Produkt"
+
+#: ../../guide/fuzzy.md:177
+msgid ""
+"Only Łukasiewicz negation is *involutive*. The Gödel and product "
+"negations are the residual \"`x → 0`\": `0` whenever `x > 0`, so they "
+"collapse all positive degrees:"
+msgstr ""
+"Nur die Łukasiewicz-Negation ist *involutiv*. Die Gödel- und die Produkt-"
+"Negation sind das Residuum \"`x → 0`\": `0` immer wenn `x > 0`, sodass "
+"sie alle positiven Grade kollabieren lassen:"
+
+#: ../../guide/fuzzy.md:186
+msgid "`get_tnorm`, `TNORMS`, and the `TNorm` object"
+msgstr "`get_tnorm`, `TNORMS` und das `TNorm`-Objekt"
+
+#: ../../guide/fuzzy.md:188
+msgid ""
+"`get_tnorm(name)` returns the `TNorm` object and `TNORMS` is the registry"
+" dict. Each `TNorm` exposes the raw scalar operations `conj` / `disj` / "
+"`impl` / `neg` and the derived `equiv` — handy for plotting a connective "
+"or sanity-checking a hand calculation:"
+msgstr ""
+"`get_tnorm(name)` liefert das `TNorm`-Objekt, und `TNORMS` ist das "
+"Registry-Dict. Jedes `TNorm`-Objekt stellt die rohen Skalaroperationen "
+"`conj` / `disj` / `impl` / `neg` sowie das abgeleitete `equiv` bereit — "
+"nützlich, um einen Operator zu plotten oder eine Handrechnung zu "
+"überprüfen:"
+
+#: ../../guide/fuzzy.md:210
+msgid "An unknown name raises `ValueError`:"
+msgstr "Ein unbekannter Name löst `ValueError` aus:"
+
+#: ../../guide/fuzzy.md:217
+msgid "`fuzzy_is_satisfiable` / `fuzzy_is_valid` / `fuzzy_get_model` (Z3 reals)"
+msgstr ""
+"`fuzzy_is_satisfiable` / `fuzzy_is_valid` / `fuzzy_get_model` (Z3-"
+"Reellzahlen)"
+
+#: ../../guide/fuzzy.md:219
+msgid ""
+"Rather than fixing a valuation, you can ask the solver whether *some* (or"
+" *every*) assignment reaches a degree. Each ground atom becomes a Z3 "
+"`Real` constrained to `[0, 1]`, and the connectives become their "
+"piecewise-linear definitions."
+msgstr ""
+"Anstatt eine Belegung festzulegen, können Sie den Solver fragen, ob "
+"*irgendeine* (oder *jede*) Zuweisung einen bestimmten Grad erreicht. "
+"Jedes Grundatom wird zu einer Z3-`Real`-Variable, die auf `[0, 1]` "
+"eingeschränkt ist, und die Operatoren werden zu ihren stückweise "
+"linearen Definitionen."
+
+#: ../../guide/fuzzy.md:221
+msgid ""
+"`fuzzy_is_valid(formula)` — `True` iff the degree is `1` under every "
+"valuation (it asserts `degree < 1` and checks unsatisfiability)."
+msgstr ""
+"`fuzzy_is_valid(formula)` — `True` genau dann, wenn der Grad unter jeder "
+"Belegung `1` ist (es wird `degree < 1` behauptet und auf Unerfüllbarkeit"
+" geprüft)."
+
+#: ../../guide/fuzzy.md:222
+msgid ""
+"`fuzzy_is_satisfiable(formula, threshold=1.0, strict=False)` — `True` iff"
+" some valuation reaches `degree >= threshold` (`> threshold` when "
+"`strict=True`)."
+msgstr ""
+"`fuzzy_is_satisfiable(formula, threshold=1.0, strict=False)` — `True` "
+"genau dann, wenn eine Belegung `degree >= threshold` erreicht (`> "
+"threshold`, wenn `strict=True`)."
+
+#: ../../guide/fuzzy.md:223
+msgid ""
+"`fuzzy_get_model(formula, threshold=1.0)` — an atom→degree dict reaching "
+"the threshold (plus a `'degree'` entry), or `None`."
+msgstr ""
+"`fuzzy_get_model(formula, threshold=1.0)` — ein Atom→Grad-Dict, das den "
+"Schwellenwert erreicht (plus einen `'degree'`-Eintrag), oder `None`."
+
+#: ../../guide/fuzzy.md:241
+msgid ""
+"The exact degrees a model assigns to `P` and `Q` are solver-dependent; "
+"only the `'degree'` it achieves (here `1.0`) is determined by the "
+"threshold."
+msgstr ""
+"Die exakten Grade, die ein Modell `P` und `Q` zuweist, sind "
+"solverabhängig; nur das erreichte `'degree'` (hier `1.0`) wird durch den"
+" Schwellenwert festgelegt."
+
+#: ../../guide/fuzzy.md:243
+msgid "Thresholds and `strict`"
+msgstr "Schwellenwerte und `strict`"
+
+#: ../../guide/fuzzy.md:245
+msgid ""
+"The threshold is the bar the degree must clear. `strict=True` turns `>=` "
+"into `>`, which matters exactly at the boundary — the weak `P ∧ ¬P` peaks"
+" at `0.5`, so it reaches `0.5` but never *exceeds* it:"
+msgstr ""
+"Der Schwellenwert ist die Marke, die der Grad überschreiten muss. "
+"`strict=True` verwandelt `>=` in `>`, was genau an der Grenze eine Rolle"
+" spielt — das schwache `P ∧ ¬P` erreicht sein Maximum bei `0.5`, also "
+"wird `0.5` erreicht, aber nie *überschritten*:"
+
+#: ../../guide/fuzzy.md:254
+msgid "A partial-degree model"
+msgstr "Ein Modell mit partiellem Grad"
+
+#: ../../guide/fuzzy.md:256
+msgid ""
+"Ask `fuzzy_get_model` for a witness that reaches a partial threshold; the"
+" returned `'degree'` meets it exactly when the solver can hit the bound, "
+"and is `None` when the threshold is unreachable:"
+msgstr ""
+"Fragen Sie `fuzzy_get_model` nach einem Zeugen, der einen partiellen "
+"Schwellenwert erreicht; das zurückgegebene `'degree'` erfüllt ihn genau "
+"dann, wenn der Solver die Grenze erreichen kann, und ist `None`, wenn "
+"der Schwellenwert unerreichbar ist:"
+
+#: ../../guide/fuzzy.md:266
+msgid "Validity differs by t-norm"
+msgstr "Gültigkeit unterscheidet sich je nach t-Norm"
+
+#: ../../guide/fuzzy.md:268
+msgid ""
+"The same formula can be valid under one t-norm and not another. Excluded "
+"middle `P ⊕ ¬P` is Łukasiewicz-valid (bounded sum reaches `1`) but Gödel-"
+"invalid (Gödel `⊕` is `max`, which only reaches `1` if `P` or `¬P` is "
+"`1`):"
+msgstr ""
+"Dieselbe Formel kann unter einer t-Norm gültig sein und unter einer "
+"anderen nicht. Der Satz vom ausgeschlossenen Dritten `P ⊕ ¬P` ist "
+"Łukasiewicz-gültig (die beschränkte Summe erreicht `1`), aber Gödel-"
+"ungültig (Gödel-`⊕` ist `max`, das nur dann `1` erreicht, wenn `P` oder "
+"`¬P` gleich `1` ist):"
+
+#: ../../guide/fuzzy.md:283
+msgid "Modus ponens and a De Morgan law survive both deciders:"
+msgstr "Modus ponens und ein De-Morgan-Gesetz überstehen beide Entscheider:"
+
+#: ../../guide/fuzzy.md:291
+msgid "The product t-norm is evaluator-only"
+msgstr "Die Produkt-t-Norm ist nur für den Evaluator"
+
+#: ../../guide/fuzzy.md:293
+msgid ""
+"The Łukasiewicz and Gödel t-norms are **piecewise-linear**, so Z3 decides"
+" them; `fuzzy_is_valid(…, tnorm=\"lukasiewicz\")` and `fuzzy_is_valid(…, "
+"tnorm=\"godel\")` are full decision procedures. The **product** t-norm "
+"needs nonlinear arithmetic (`x·y`, `y/x`) that Z3 cannot decide "
+"completely, so it is **evaluator-only** — `fuzzy_evaluate(…, "
+"tnorm=\"product\")` works, but passing it to the Z3 deciders raises "
+"`NotImplementedError`:"
+msgstr ""
+"Die Łukasiewicz- und die Gödel-t-Norm sind **stückweise linear**, sodass "
+"Z3 sie entscheiden kann; `fuzzy_is_valid(…, tnorm=\"lukasiewicz\")` und "
+"`fuzzy_is_valid(…, tnorm=\"godel\")` sind vollständige "
+"Entscheidungsverfahren. Die **Produkt**-t-Norm benötigt nichtlineare "
+"Arithmetik (`x·y`, `y/x`), die Z3 nicht vollständig entscheiden kann, "
+"daher ist sie **nur für den Evaluator** — `fuzzy_evaluate(…, "
+"tnorm=\"product\")` funktioniert, aber die Übergabe an die Z3-"
+"Entscheider löst `NotImplementedError` aus:"
+
+#: ../../guide/fuzzy.md:302
+msgid "An unknown name still raises `ValueError` in the decider path:"
+msgstr ""
+"Ein unbekannter Name löst im Entscheiderpfad weiterhin `ValueError` aus:"
+
+#: ../../guide/fuzzy.md:309
+msgid "A distinguishing validity: contraction"
+msgstr "Eine unterscheidende Gültigkeit: Kontraktion"
+
+#: ../../guide/fuzzy.md:311
+msgid ""
+"Contraction `p → (p ⊗ p)` separates the two deciders. Under Gödel it is "
+"valid (`⊗` is idempotent `min`, so `p ⊗ p = p` and the implication is "
+"always `1`); under Łukasiewicz it fails (at `p = 0.5` the consequent `p ⊗"
+" p = 0`, so the degree is only `0.5`):"
+msgstr ""
+"Die Kontraktion `p → (p ⊗ p)` trennt die beiden Entscheider. Unter Gödel"
+" ist sie gültig (`⊗` ist das idempotente `min`, sodass `p ⊗ p = p` gilt "
+"und die Implikation stets `1` ist); unter Łukasiewicz scheitert sie (bei"
+" `p = 0.5` ist das Konsequens `p ⊗ p = 0`, sodass der Grad nur `0.5` "
+"beträgt):"
+
+#: ../../guide/fuzzy.md:324
+msgid "Quantifier grounding (0.9.0)"
+msgstr "Quantoren-Grundierung (0.9.0)"
+
+#: ../../guide/fuzzy.md:326
+msgid ""
+"The Z3 deciders are propositional, but passing `domain=` (and "
+"`sort_universes=` for sorted quantifiers) **grounds** each quantifier "
+"over the finite universe first — `∀` folds into a weak-conjunction (min),"
+" `∃` into a weak-disjunction (max) — so quantified fuzzy validity and "
+"satisfiability become decidable:"
+msgstr ""
+"Die Z3-Entscheider sind aussagenlogisch, aber die Übergabe von `domain=`"
+" (und `sort_universes=` für sortierte Quantoren) **grundiert** zunächst "
+"jeden Quantor über dem endlichen Universum — `∀` faltet zu einer "
+"schwachen Konjunktion (min), `∃` zu einer schwachen Disjunktion (max) — "
+"sodass quantifizierte Fuzzy-Gültigkeit und -Erfüllbarkeit entscheidbar "
+"werden:"
+
+#: ../../guide/fuzzy.md:339
+msgid ""
+"Grounded satisfiability and models work the same way — the model keys are"
+" the grounded ground atoms:"
+msgstr ""
+"Grundierte Erfüllbarkeit und Modelle funktionieren auf dieselbe Weise — "
+"die Modellschlüssel sind die grundierten Grundatome:"
+
+#: ../../guide/fuzzy.md:355
+msgid "Sorted quantifiers ground over `sort_universes` instead:"
+msgstr "Sortierte Quantoren grundieren stattdessen über `sort_universes`:"
+
+#: ../../guide/fuzzy.md:365
+msgid ""
+"Without the matching universe a quantifier raises `ValueError` (in the "
+"deciders) or, in `fuzzy_evaluate`, when `domain` is omitted:"
+msgstr ""
+"Ohne das passende Universum löst ein Quantor `ValueError` aus (in den "
+"Entscheidern) oder, in `fuzzy_evaluate`, wenn `domain` weggelassen wird:"
+
+#: ../../guide/fuzzy.md:372
+msgid "Building fuzzy nodes directly"
+msgstr "Fuzzy-Knoten direkt aufbauen"
+
+#: ../../guide/fuzzy.md:374
+msgid ""
+"Every connective has a node class — `WeakConjunction`, `WeakDisjunction`,"
+" `StrongConjunction`, `StrongDisjunction`, `LukNegation`, "
+"`LukImplication`, `LukEquivalence` — that the evaluator and deciders "
+"accept without parsing. Each binary class takes `(left, right)`; "
+"`LukNegation` takes one operand; an atom is `Atom(predicate, args)`:"
+msgstr ""
+"Jeder Operator besitzt eine Knotenklasse — `WeakConjunction`, "
+"`WeakDisjunction`, `StrongConjunction`, `StrongDisjunction`, "
+"`LukNegation`, `LukImplication`, `LukEquivalence` —, die der Evaluator "
+"und die Entscheider ohne Parsen akzeptieren. Jede binäre Klasse nimmt "
+"`(left, right)`; `LukNegation` nimmt einen Operanden; ein Atom ist "
+"`Atom(predicate, args)`:"
+
+#: ../../guide/fuzzy.md:396
+msgid "End-to-end: a small fuzzy rule base"
+msgstr "End-to-End: eine kleine Fuzzy-Regelbasis"
+
+#: ../../guide/fuzzy.md:398
+msgid ""
+"Parse → evaluate → solve, in one scenario. A diagnostic rule says that "
+"strong *fever* together with a *cough* implies elevated *risk*; we both "
+"score it under a fixed reading and ask whether the antecedent can reach a"
+" target degree."
+msgstr ""
+"Parsen → auswerten → lösen, in einem Szenario. Eine diagnostische Regel "
+"besagt, dass starkes *Fieber* zusammen mit *Husten* ein erhöhtes "
+"*Risiko* impliziert; wir bewerten sie sowohl unter einer festen "
+"Ablesung als auch fragen, ob das Antezedens einen Zielgrad erreichen "
+"kann."
+
