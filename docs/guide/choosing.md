@@ -369,7 +369,7 @@ isinstance(thf, str) and "thf" in thf   # → True   (a TPTP THF problem ready f
 
 ## Composing parser modes
 
-The four core parser modes form the `many_sorted` × `fuzzy` 2×2; the **modal** and **second-order** modes are each "classical unsorted FOL + one extension" and do not combine with sorts, fuzziness, or each other. The constructor rejects an unsupported combination with a clear `ValueError`. (The matrix, ALC, intuitionistic, and peripheral logics are separate subsystems, not parser flags.)
+The four core parser modes form the `many_sorted` × `fuzzy` 2×2; the **modal** and **second-order** modes are each "classical unsorted FOL + one extension" and do not combine with sorts, fuzziness, or each other. The **dependence**, **linear**, and **lambek** modes are standalone logics (their connectives and semantics replace the classical ones), so they combine with nothing. The constructor rejects an unsupported combination with a clear `ValueError`. (The matrix, ALC, intuitionistic, relevant, and peripheral logics are separate subsystems, not parser flags.)
 
 | Combine… | with sorts | with fuzzy | with modal | with second-order |
 |---|---|---|---|---|
@@ -379,6 +379,11 @@ The four core parser modes form the `many_sorted` × `fuzzy` 2×2; the **modal**
 | **modal** | ❌ | ❌ | — | ❌ |
 | **second-order** | ❌ | ❌ | ❌ | — |
 
-## Out of scope
+## The frontier families
 
-PRs welcome for: relevant / relevant-implication logic (Routley–Meyer frames), hybrid logic (nominals / `@`), independence-friendly / dependence logic, and substructural (linear / separation) logics.
+The families this page used to list as out of scope now ship first-class:
+
+- **Hybrid logic H(@)** — nominals and the satisfaction operator, inside the modal mode (`MSFLParser(modal=True)` parses `@i (P ∧ ◇j)`); Kripke evaluation via `KripkeModel(nominals=…)` and validity per frame via `hybrid_is_valid`. See {doc}`hybrid`.
+- **Relevant logic B** — Routley–Meyer semantics over the classical syntax; `rel_valid` / `rel_countermodel` refute the paradoxes of material implication. See {doc}`relevant`.
+- **Dependence / IF logic** — team semantics over finite structures: `MSFLParser(dependence=True)` parses `=(x, y)` and `∃y/{x} φ`; evaluate with `team_satisfies` / `team_models`. See {doc}`dependence`.
+- **Substructural logics** — `MSFLParser(linear=True)` (⊗ & ⊕ ⊸ ! 𝟙, prover `ill_prove`) and `MSFLParser(lambek=True)` (• \ /, decision procedure `lambek_derivable`). See {doc}`substructural`.

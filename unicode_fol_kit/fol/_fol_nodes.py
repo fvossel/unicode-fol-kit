@@ -1231,7 +1231,8 @@ _VALID_PARSE_LEVELS = frozenset({
     "prefix", "level2", "implication", "biimplication", "until", "quantifier",
 })
 
-_VALID_MODES = frozenset({"fol", "msfol", "msfl", "fl", "modal", "second_order"})
+_VALID_MODES = frozenset({"fol", "msfol", "msfl", "fl", "modal", "second_order",
+                          "dependence", "linear", "lambek"})
 
 
 @dataclass(frozen=True)
@@ -1431,6 +1432,9 @@ _MODE_TERMINAL_IMPORTS = {
     "fl":    "PREDICATE, CONSTANT, NAME, VARIABLE, NUMBER, FORALL, EXISTS, LAMBDA",
     "modal": "PREDICATE, CONSTANT, NAME, VARIABLE, NUMBER, FORALL, EXISTS, LAMBDA",
     "second_order": "PREDICATE, CONSTANT, NAME, VARIABLE, NUMBER, FORALL, EXISTS, LAMBDA",
+    "dependence": "PREDICATE, CONSTANT, NAME, VARIABLE, NUMBER, FORALL, EXISTS, LAMBDA",
+    "linear": "PREDICATE, CONSTANT, NAME, VARIABLE, NUMBER, FORALL, EXISTS, LAMBDA",
+    "lambek": "PREDICATE, CONSTANT, NAME, VARIABLE, NUMBER, FORALL, EXISTS, LAMBDA",
 }
 
 _SORTED_MODES = frozenset({"msfol", "msfl"})
@@ -1549,7 +1553,18 @@ def build_grammar(mode: str) -> str:
     grammar = grammar.replace("%%UNTIL_BLOCK%%\n", until_block)
     grammar = grammar.replace("%%LEVEL2_ALTS%%", level2_alts)
     grammar = grammar.replace("%%ONLY_RULES%%\n", (only_rules + "\n") if only_rules else "")
-    grammar = grammar.replace("%%PREFIX_OPS%%", prefix_ops)
+    # A mode may register NO quantifier ops (linear, lambek — propositional) or
+    # NO prefix ops. Lark rejects a rule with an empty right-hand side, so the
+    # empty level is excised from the template rather than left dangling: the
+    # `| quantifier` alternative and the ?quantifier rule disappear together,
+    # and an empty prefix level promotes the next alternative into first place.
+    if not quant:
+        grammar = grammar.replace("\n    | quantifier", "")
+        grammar = grammar.replace("\n?quantifier: %%QUANT_OPS%%\n", "\n")
+    if prefix_ops:
+        grammar = grammar.replace("%%PREFIX_OPS%%", prefix_ops)
+    else:
+        grammar = grammar.replace("%%PREFIX_OPS%%\n    | ", "")
     grammar = grammar.replace("%%QUANT_OPS%%", quant_ops)
     grammar = grammar.replace("%%CONST_ALTS%%", const_alts)
     grammar = grammar.replace("%%TERM_EXTRA%%\n", (term_extra + "\n") if term_extra else "")

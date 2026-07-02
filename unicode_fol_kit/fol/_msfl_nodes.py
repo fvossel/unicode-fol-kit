@@ -10,6 +10,7 @@ from ._fol_nodes import (
     NODE_CLASSES, OPERATORS, register_operator,
     register_parser_op, _fold_binary,
 )
+from ._team_nodes import SlashedExists
 
 _logger = logging.getLogger(__name__)
 
@@ -782,6 +783,17 @@ def free_variables(node: Node) -> set:
         return set()
     if isinstance(node, Lambda):
         return free_variables(node.body) - {node.param}
+    if isinstance(node, SlashedExists):
+        # The slash set is not decoration: each name is a free OCCURRENCE of the
+        # variable it references (the team column the witness must be independent
+        # of), so it belongs in the free set alongside the matrix's variables. A
+        # slash name is free unless the SlashedExists' own binder captures it (it
+        # cannot — a variable never independent of itself is meaningless, but the
+        # subtraction below keeps the rule uniform). Omitting them would let the
+        # capture-avoidance machinery (canonicalize / _subst) mint a fresh name
+        # equal to a free slash name and silently capture it.
+        slashed = {Variable(n) for n in node.slashed}
+        return (free_variables(node.formula) | slashed) - {node.variable}
     if isinstance(node, (Quantifier, SortedQuantifier, Count, Cardinality,
                          SortedCount, SortedCardinality)):
         # Count / Cardinality (and their sorted variants) also bind their variable
@@ -826,6 +838,10 @@ def _names_in(node: Node) -> set:
     # child (Lambda.param, Quantifier.variable), so it is included here — exactly
     # what "names in, free and bound" requires.
     result: set = set()
+    if isinstance(node, SlashedExists):
+        # Slash names are variable references but plain strings, so _child_nodes()
+        # misses them; add them so a fresh-name mint never collides with one.
+        result |= {Variable(n) for n in node.slashed}
     for child in node._child_nodes():
         result |= _names_in(child)
     return result
@@ -869,6 +885,15 @@ def _rename(term: Node, old_var, new_var) -> Node:
         if term.variable == old_var:
             return term  # shadowed by the counting/cardinality binder
         return replace(term, formula=_rename(term.formula, old_var, new_var))
+    if isinstance(term, SlashedExists):
+        # The slash set refers to ENCLOSING binders by name, so a mention of the
+        # renamed variable is updated even when the matrix is shadowed.
+        slashed = tuple(new_var.name if n == old_var.name else n
+                        for n in term.slashed)
+        if term.variable == old_var:
+            return replace(term, slashed=slashed)  # matrix shadowed
+        return replace(term, slashed=slashed,
+                       formula=_rename(term.formula, old_var, new_var))
     # Structural: Atom, Function, Application, Not, and the binary connectives —
     # none are binders, so recurse uniformly into every child.
     return term.map_children(lambda c: _rename(c, old_var, new_var))
@@ -924,6 +949,40 @@ def _subst(term: Node, target: LambdaVar, replacement: Node, fv_repl: set) -> No
                                     _subst(new_formula, target, replacement, fv_repl))
         return SortedQuantifier(term.type, term.variable, term.sort,
                                 _subst(term.formula, target, replacement, fv_repl))
+    if isinstance(term, SlashedExists):
+        # The slash set names variables (team columns). Substituting one of them
+        # transforms the annotation according to what replaces it:
+        #   • another VARIABLE z  → rename the slash entry x↦z (independence is now
+        #     from the column z). This is the standard Variable-target substitution
+        #     and MUST preserve the constraint, not drop it.
+        #   • a ground/compound term → the column no longer exists, so "independent
+        #     of x" is vacuous and the entry is dropped; an emptied slash set
+        #     degrades to a plain existential.
+        # Substitution into a slash entry does NOT stop at the binder's own
+        # variable (the slash set refers to ENCLOSING binders), so it is handled
+        # before the shadowing check below.
+        slashed = term.slashed
+        if isinstance(target, Variable) and target.name in slashed:
+            if isinstance(replacement, Variable):
+                slashed = tuple(replacement.name if n == target.name else n
+                                for n in slashed)
+                term = replace(term, slashed=slashed)
+            else:
+                slashed = tuple(n for n in slashed if n != target.name)
+                if not slashed:
+                    # An emptied slash set degrades to a plain existential.
+                    inner: Node = Quantifier("∃", term.variable, term.formula)
+                    return _subst(inner, target, replacement, fv_repl)
+                term = replace(term, slashed=slashed)
+        if term.variable == target:
+            return term  # target rebound here — substitution stops
+        if term.variable in fv_repl:
+            avoid = fv_repl | _names_in(term.formula)
+            fresh = Variable(_fresh_name(term.variable.name, avoid))
+            new_formula = _rename(term.formula, term.variable, fresh)
+            return replace(term, variable=fresh,
+                           formula=_subst(new_formula, target, replacement, fv_repl))
+        return replace(term, formula=_subst(term.formula, target, replacement, fv_repl))
     if isinstance(term, (Count, Cardinality, SortedCount, SortedCardinality)):
         # Count / Cardinality (and sorted variants) bind their variable over the
         # matrix — same shadowing / capture-avoidance rules as Quantifier (replace()
@@ -1073,9 +1132,10 @@ def _resolve(node: Node, bound: frozenset) -> Node:
     if isinstance(node, SortedQuantifier):
         return SortedQuantifier(node.type, node.variable, node.sort,
                                 _resolve(node.formula, bound - {node.variable.name}))
-    if isinstance(node, (Count, Cardinality, SortedCount, SortedCardinality)):
-        # Counting / cardinality binders (and sorted variants) shadow an outer lambda
-        # of the same name, exactly like a quantifier (replace() keeps op/n/sort).
+    if isinstance(node, (Count, Cardinality, SortedCount, SortedCardinality,
+                         SlashedExists)):
+        # Counting / cardinality / slashed binders shadow an outer lambda of the
+        # same name, exactly like a quantifier (replace() keeps op/n/sort/slash).
         return replace(node, formula=_resolve(node.formula, bound - {node.variable.name}))
     if isinstance(node, Atom):
         resolved_args = [_resolve(a, bound) for a in node.args]
@@ -1148,7 +1208,7 @@ def resolve_lambda_scope(node: Node) -> Node:
 _UNI_BASE_PREC = {
     "Lambda": 0, "Application": 0,
     "Quantifier": 4, "SortedQuantifier": 4, "SecondOrderQuantifier": 4,
-    "Count": 4, "SortedCount": 4,
+    "Count": 4, "SortedCount": 4, "SlashedExists": 4,
 }
 
 # The same-level binary group (∧ ∨ ⊗ ⊕, grammar precedence 3) is identified by
@@ -1323,6 +1383,19 @@ def _uni(node) -> str:
         # ∃≥n / ∃≤n / ∃=n x:S  body  (sorted counting quantifier).
         return (f"{_COUNT_OPS[node.op]}{node.n.value} {node.variable.name}:{node.sort} "
                 + _uni_wrap(node.formula, 4))
+    if cls == "SlashedExists":
+        # ∃x/{y, z}  body  (IF-logic slashed existential; binds like a quantifier).
+        return (f"∃{node.variable.name}/{{{', '.join(node.slashed)}}} "
+                + _uni_wrap(node.formula, 4))
+    if cls == "Nominal":
+        # A hybrid nominal renders as its bare (NAME-legal) name.
+        return node.name
+    if cls == "One":
+        # The multiplicative unit of the linear mode.
+        return "𝟙"
+    if cls == "Dependence":
+        # The dependence atom =(t1, …, tn); terms render at the term level.
+        return "=(" + ", ".join(_uni_term(a) for a in node.args) + ")"
     if cls == "SortedQuantifier":
         return f"{node.type}{node.variable.name}:{node.sort} " + _uni_wrap(node.formula, 4)
     if cls == "SecondOrderQuantifier":
@@ -1479,6 +1552,16 @@ def _latex(node) -> str:
         rel = {"ge": "\\geq", "le": "\\leq", "eq": "="}[node.op]
         return (f"\\exists^{{{rel} {node.n.value}}} {node.variable.name}{{:}}\\mathrm{{{node.sort}}}\\, "
                 + _latex_wrap(node.formula, 4))
+    if cls == "SlashedExists":
+        slashed = ", ".join(_latex_escape(n) for n in node.slashed)
+        return (f"\\exists {node.variable.name} / \\{{{slashed}\\}}\\, "
+                + _latex_wrap(node.formula, 4))
+    if cls == "Nominal":
+        return f"\\mathsf{{{_latex_escape(node.name)}}}"
+    if cls == "One":
+        return "\\mathbf{1}"
+    if cls == "Dependence":
+        return "{=}(" + ", ".join(_latex_term(a) for a in node.args) + ")"
     if cls == "SortedQuantifier":
         return (f"{_LATEX_QUANT[node.type]} {node.variable.name}{{:}}\\mathrm{{{node.sort}}}\\, "
                 + _latex_wrap(node.formula, 4))

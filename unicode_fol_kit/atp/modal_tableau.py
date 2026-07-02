@@ -21,7 +21,10 @@ branch is read off directly as a Kripke counter-model. The temporal *closure*
 operators ``Always`` (G), ``Eventually`` (F) and ``Until`` need least/greatest-fixpoint
 (eventuality) machinery beyond a basic labelled tableau and are rejected with a pointer
 to :func:`~unicode_fol_kit.semantics.kripke.satisfies_modal` /
-:func:`~unicode_fol_kit.hol.isabelle_runner.isabelle_decide_modal`.
+:func:`~unicode_fol_kit.hol.isabelle_runner.isabelle_decide_modal`. Hybrid constructs
+(``Nominal`` / ``At``) are likewise rejected — a nominal's name-exactly-one-world
+constraint has no rule here; use ``hybrid_is_valid`` (the standard translation + Z3)
+or evaluate in a ``KripkeModel`` with a ``nominals=`` assignment.
 
 **Frame conditions** are realised as structural rules over the edge set: reflexivity
 adds ``w → w`` for every world, symmetry mirrors each edge, transitivity takes the
@@ -50,6 +53,7 @@ from ..fol.nodes import (
     Box, Diamond, Knows, Believes, Says, Wants, Obligatory, Permitted,
     Next, Always, Eventually, Until,
     Historically, Once, Previous, Since,
+    Nominal, At,
 )
 from ..semantics.kripke import KripkeModel, satisfies_modal
 from .fitch import is_falsum
@@ -96,11 +100,22 @@ def _neg(f: Node) -> Node:
 
 
 def has_modal(node: Node) -> bool:
-    """True iff ``node`` contains any modal/temporal/epistemic/deontic operator."""
+    """True iff ``node`` contains any modal/temporal/epistemic/deontic/hybrid operator.
+
+    Hybrid constructs (Nominal / At) count as modal so the classical tableau
+    routes them here, where they get the clean hybrid rejection instead of a
+    generic no-rule error.
+    """
     modal = (Box, Diamond, Knows, Believes, Says, Wants, Obligatory, Permitted,
              Next, Always, Eventually, Until,
-             Historically, Once, Previous, Since)
+             Historically, Once, Previous, Since,
+             Nominal, At)
     return any(isinstance(n, modal) for n in node.walk())
+
+
+def _contains_hybrid(node: Node) -> bool:
+    """True iff ``node`` contains a hybrid construct (a Nominal or an At)."""
+    return any(isinstance(n, (Nominal, At)) for n in node.walk())
 
 
 def _decompose(f: Node):
@@ -519,8 +534,19 @@ def _check_frame(frame: str, systems) -> None:
 
 
 def _run(formulas, frame: str, systems, max_worlds: int, max_steps: int):
-    """Build the root branch from ``formulas`` at world 0 and search it."""
+    """Build the root branch from ``formulas`` at world 0 and search it.
+
+    Hybrid constructs are rejected up front — a nominal names ONE world, a
+    constraint this labelled tableau has no rule for, and treating it as an
+    ordinary atom would produce wrong verdicts (e.g. it would refute ``@i i``).
+    Every public entry point funnels through here, so the guard covers them all.
+    """
     _check_frame(frame, systems)
+    for f in formulas:
+        if _contains_hybrid(f):
+            raise NotImplementedError(
+                "modal_tableau: hybrid constructs (nominals/@) are not supported "
+                "by the modal tableau; use hybrid_is_valid or a KripkeModel.")
     ctx = _Ctx(frame, systems, max_worlds, max_steps)
     root = _Branch()
     for f in formulas:

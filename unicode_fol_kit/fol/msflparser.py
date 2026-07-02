@@ -61,6 +61,7 @@ class LambdaTransformer(FOLTransformer):
 _REGISTRY_MODE = {
     "fol": "fol", "msfol": "msfol", "msfl": "msfl", "fl": "fl",
     "modal": "modal", "so": "second_order",
+    "dependence": "dependence", "linear": "linear", "lambek": "lambek",
 }
 
 
@@ -107,19 +108,47 @@ class MSFLParser:
             is an uppercase PREDICATE; the bound predicate's arity is inferred
             from its applications in the body). Cannot be combined with
             many_sorted, fuzzy, or modal in v1.
+        dependence: if True, parse the team-semantic dependence/IF fragment —
+            literals, ∧, splitting ∨, ∀/∃, dependence atoms ``=(x, y)``, and
+            slashed existentials ``∃y/{x} φ``. Standalone (no other flag).
+        linear: if True, parse propositional intuitionistic linear logic —
+            ``⊗ & ⊕ ⊸ ! 𝟙`` over atomic propositions. Standalone.
+        lambek: if True, parse Lambek-calculus category types — ``• \\ /`` over
+            atomic categories (``NP``, ``S``, …). Standalone.
 
     Mode matrix:
         (False, False) → FOL:   classical ops incl. xor (⊕), unsorted quantifiers/constants
-        (True,  False) → MSFOL: classical ∧∨¬→↔ (no xor), sorted quantifiers/constants
+        (True,  False) → MSFOL: classical ∧∨¬→↔⊕, sorted quantifiers/constants
         (True,  True)  → MSFL:  Łukasiewicz operators, sorted quantifiers/constants
         (False, True)  → FL:    Łukasiewicz operators, unsorted quantifiers/constants
-        modal=True        → MODAL: classical unsorted FOL + modal/temporal operators
+        modal=True        → MODAL: classical unsorted FOL + modal/temporal/hybrid operators
         second_order=True → SO:    classical unsorted FOL + second-order quantifiers (∀P / ∃P)
+        dependence=True   → DEP:   team-semantic dependence/IF fragment
+        linear=True       → ILL:   propositional intuitionistic linear logic
+        lambek=True       → L:     Lambek-calculus category types
     """
 
     def __init__(self, many_sorted: bool = False, fuzzy: bool = False,
-                 modal: bool = False, second_order: bool = False):
-        if second_order:
+                 modal: bool = False, second_order: bool = False,
+                 dependence: bool = False, linear: bool = False,
+                 lambek: bool = False):
+        _exclusive = [name for name, flag in (
+            ("dependence", dependence), ("linear", linear), ("lambek", lambek),
+        ) if flag]
+        if _exclusive and (many_sorted or fuzzy or modal or second_order
+                           or len(_exclusive) > 1):
+            raise ValueError(
+                f"{_exclusive[0]}=True cannot be combined with any other mode "
+                "flag; the dependence / linear / lambek modes are standalone "
+                "logics with their own connectives and semantics."
+            )
+        if dependence:
+            self._mode = "dependence"
+        elif linear:
+            self._mode = "linear"
+        elif lambek:
+            self._mode = "lambek"
+        elif second_order:
             if many_sorted or fuzzy or modal:
                 raise ValueError(
                     "second_order=True cannot be combined with many_sorted, fuzzy, "

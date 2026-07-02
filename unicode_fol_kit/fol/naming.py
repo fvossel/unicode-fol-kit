@@ -67,6 +67,18 @@ _MIXING_INFO = {
         {"∧", "∨", "⊕"},
         "Cannot mix conjunction (∧), disjunction (∨), and exclusive or (⊕) without parentheses",
     ),
+    "dependence": (
+        {"∧", "∨"},
+        "Cannot mix conjunction (∧) and splitting disjunction (∨) without parentheses",
+    ),
+    "linear": (
+        {"⊗", "&", "⊕"},
+        "Cannot mix tensor (⊗), with (&), and plus (⊕) without parentheses",
+    ),
+    "lambek": (
+        {"•"},
+        "Parenthesise nested products (•) explicitly",
+    ),
 }
 
 

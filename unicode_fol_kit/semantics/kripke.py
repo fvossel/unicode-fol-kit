@@ -29,6 +29,13 @@ A missing relation denotes the empty relation; a missing world valuation denotes
 the empty set (every atom false there). Inputs are never mutated: the closure
 and path helpers build fresh sets.
 
+Hybrid logic H(@) is interpreted through the optional ``nominals`` mapping
+(name → world): ``Nominal(i)`` is true exactly at the world the assignment
+names, and ``At(i, φ)`` evaluates φ *at* that world, wherever the evaluation
+currently stands. A nominal without an assignment raises a ValueError naming
+it (rather than silently defaulting), since a nominal must name exactly one
+world for the hybrid semantics to make sense.
+
 Documented temporal semantics:
 
 - ``Next φ``: φ holds at **all** immediate ``"temporal"``-successors of the
@@ -57,6 +64,7 @@ from ..fol.nodes import (
     Always, Eventually, Next, Until,
     Historically, Once, Previous, Since,
     Obligatory, Permitted,
+    Nominal, At,
     Constant, substitute,
 )
 from ._modal_reject import (
@@ -109,6 +117,10 @@ class KripkeModel:
             a key is ``atom.to_unicode_str()`` (e.g. ``"P"`` or ``"Likes(a, b)"``).
             A missing world maps to the empty set (every atom false there). Each
             entry is copied into a frozen set.
+        nominals: maps a NOMINAL NAME (str) to the single world it names (the
+            hybrid-logic assignment interpreting ``Nominal`` / ``At``). Defaults
+            to empty. Every referenced world must be in ``worlds`` — a dangling
+            assignment raises ValueError at construction time.
 
     All mappings default to empty, so ``KripkeModel({0, 1})`` is a valid
     (atom-free, relation-free) frame. The constructor copies every container, so
@@ -122,6 +134,7 @@ class KripkeModel:
         valuation: Optional[Mapping[World, Iterable[str]]] = None,
         domains: Optional[Mapping[World, Iterable[Any]]] = None,
         domain: Optional[Iterable[Any]] = None,
+        nominals: Optional[Mapping[str, World]] = None,
     ):
         """Build a Kripke model, copying every container so edits never leak in.
 
@@ -132,6 +145,10 @@ class KripkeModel:
         (``∀x`` / ``∃x``) *actualistically* — at a world ``w`` they range over
         ``D_w`` — so the Barcan formulas come out valid or invalid according to how
         the domains vary. Omit both for the purely propositional fragment.
+
+        ``nominals`` maps each hybrid nominal name to the ONE world it names;
+        every referenced world must exist in ``worlds`` (checked here, so a
+        dangling nominal fails fast instead of at evaluation time).
         """
         self.worlds: FrozenSet[World] = frozenset(worlds)
         self.relations: Dict[str, FrozenSet[Edge]] = {
@@ -149,6 +166,13 @@ class KripkeModel:
             self.domains = {world: const for world in self.worlds}
         else:
             self.domains = None
+        self.nominals: Dict[str, World] = dict(nominals or {})
+        for name, named in self.nominals.items():
+            if named not in self.worlds:
+                raise ValueError(
+                    f"KripkeModel: nominal {name!r} is assigned to world "
+                    f"{named!r}, which is not among the model's worlds."
+                )
 
     def __repr__(self) -> str:
         """Show world count and the relation / valuation tables for inspection."""
@@ -277,6 +301,21 @@ def _since_holds(
     return search(world, frozenset())
 
 
+def _nominal_world(model: KripkeModel, name: str) -> World:
+    """Return the world the nominal ``name`` names; raise if it is unassigned.
+
+    A nominal must name exactly one world, so an assignment-free nominal is a
+    modelling error — the ValueError names the offending nominal and shows the
+    ``nominals=`` fix rather than silently picking a truth value.
+    """
+    if name not in model.nominals:
+        raise ValueError(
+            f"satisfies_modal: the nominal {name!r} has no world assignment in "
+            f"this model — build the KripkeModel with nominals={{{name!r}: world}}."
+        )
+    return model.nominals[name]
+
+
 def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
     """Return whether ``formula`` is true at ``world`` in the Kripke ``model``.
 
@@ -284,6 +323,10 @@ def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
     fragment:
 
     - ``Atom`` — its Unicode key is in the world's valuation.
+    - ``Nominal i`` — true iff ``world`` IS the world ``model.nominals[i]``
+      names (a nominal holds at exactly one world).
+    - ``At(i, φ)`` — φ holds at the world named ``i``, regardless of the
+      current world (the hybrid satisfaction operator ``@i φ``).
     - ``Not / And / Or / Xor / Implies / Iff`` — the classical truth tables,
       recursing at the **same** world.
     - ``Box φ`` — φ holds at every ``"alethic"``-successor; ``Diamond φ`` — at
@@ -305,6 +348,13 @@ def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
     # --- atomic ---
     if isinstance(formula, Atom):
         return formula.to_unicode_str() in model.atoms_true_at(world)
+
+    # --- hybrid: a nominal is true exactly at the world it names; @ jumps there ---
+    if isinstance(formula, Nominal):
+        return world == _nominal_world(model, formula.name)
+    if isinstance(formula, At):
+        return satisfies_modal(formula.formula, model,
+                               _nominal_world(model, formula.nominal.name))
 
     # --- classical connectives (recurse at the same world) ---
     if isinstance(formula, Not):

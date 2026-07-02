@@ -16,6 +16,10 @@ from ..fol.nodes import (
     SortedQuantifier, SortedConstant,
     Count, Measure, Cardinality, Contrast,
     SortedCount, SortedCardinality,
+    Nominal, At,
+    Dependence, SlashedExists,
+    Tensor, With, OPlus, LinearImplies, OfCourse, One,
+    Product, Under, Over,
     Box, Diamond, Knows, Believes, Says, Wants, Obligatory, Permitted,
     Always, Eventually, Next, Until,
     Historically, Once, Previous, Since,
@@ -169,6 +173,48 @@ def to_english(node: Node) -> str:
         return f"at the previous moment, {_sub(node.formula)}"
     if isinstance(node, Since):
         return f"{_sub(node.left)} since {_sub(node.right)}"
+
+    # --- hybrid (nominals and @) ---
+    if isinstance(node, Nominal):
+        return f"this is world {node.name}"
+    if isinstance(node, At):
+        return f"at world {node.nominal.name}, {_sub(node.formula)}"
+
+    # --- dependence / IF (team semantics) ---
+    if isinstance(node, Dependence):
+        if len(node.args) == 1:
+            return f"the value of {_term(node.args[0])} is constant"
+        deps = ", ".join(_term(a) for a in node.args[:-1])
+        return (f"the value of {_term(node.args[-1])} is functionally "
+                f"determined by {deps}")
+    if isinstance(node, SlashedExists):
+        indep = ", ".join(node.slashed)
+        return (f"for some {node.variable.name} chosen independently of "
+                f"{indep}, {to_english(node.formula)}")
+
+    # --- linear logic (resource reading) ---
+    if isinstance(node, Tensor):
+        return f"{_sub(node.left)} together with {_sub(node.right)}"
+    if isinstance(node, With):
+        return f"a free choice between {_sub(node.left)} and {_sub(node.right)}"
+    if isinstance(node, OPlus):
+        return f"{_sub(node.left)} or else {_sub(node.right)}"
+    if isinstance(node, LinearImplies):
+        return f"consuming {_sub(node.left)} yields {_sub(node.right)}"
+    if isinstance(node, OfCourse):
+        return f"an unlimited supply of {_sub(node.formula)}"
+    if isinstance(node, One):
+        return "the empty resource"
+
+    # --- Lambek calculus (categorial reading) ---
+    if isinstance(node, Product):
+        return f"{_sub(node.left)} followed by {_sub(node.right)}"
+    if isinstance(node, Under):
+        return (f"something that combines with {_sub(node.left)} on its left "
+                f"to give {_sub(node.right)}")
+    if isinstance(node, Over):
+        return (f"something that combines with {_sub(node.right)} on its right "
+                f"to give {_sub(node.left)}")
 
     # --- fuzzy (Łukasiewicz): name the strong/weak/Łukasiewicz operators so they do
     # NOT read as their classical look-alikes ---

@@ -7,6 +7,10 @@ from .fol import (
     NamingError, ParsingError,
     SortedQuantifier, SortedConstant,
     SortedCount, SortedCardinality,
+    Nominal, At,
+    Dependence, SlashedExists,
+    Tensor, With, OPlus, LinearImplies, OfCourse, One,
+    Product, Under, Over,
     WeakConjunction, WeakDisjunction,
     StrongConjunction, StrongDisjunction,
     LukNegation, LukImplication, LukEquivalence,
@@ -30,6 +34,7 @@ from .fol import (
     parse_prover9, parse_prover9_problem, load_prover9, Prover9Formula,
     sanitize_names, sanitize_all, NameMapping,
     to_english,
+    hybrid_is_valid,
     qml_translate, qml_is_valid, qml_equivalent,
     to_thf_modal, to_isabelle_modal, BARCAN, CONVERSE_BARCAN,
 )
@@ -52,6 +57,10 @@ from .atp import (
     tableau_closed, is_valid_tableau, prove_tableau, tableau_model,
     modal_tableau_closed, is_modal_valid, modal_prove, modal_decide, modal_countermodel,
     check_lj_proof, verify_lj_proof,
+    ill_prove, ill_derivable, check_ill_proof, verify_ill_proof,
+    render_ill_proof, ILLSequent, ILLDerivation,
+    lambek_prove, lambek_derivable, check_lambek_proof, verify_lambek_proof,
+    render_lambek_proof, LambekSequent, LambekDerivation,
 )
 from .semantics import (
     Structure, term_value, satisfies, models,
@@ -70,6 +79,8 @@ from .semantics import (
     announce, box_announce, diamond_announce,
     CounterfactualModel, would, might,
     minimal_models, minimal_entails,
+    RelevantModel, rel_satisfies, rel_countermodel, rel_valid,
+    team_satisfies, team_models, MAX_TEAM_SEARCH,
 )
 from .eval import (
     canonicalize, exact_match,
@@ -83,7 +94,7 @@ from .hol import (
 )
 from . import dl   # the ALC description-logic subpackage (dl.concept_satisfiable, …)
 
-__version__ = "0.11.0"
+__version__ = "0.12.0"
 
 __all__ = [
     "MSFLParser",
@@ -96,6 +107,10 @@ __all__ = [
     "check_logical_entailment_vampire",
     "SortedQuantifier", "SortedConstant",
     "SortedCount", "SortedCardinality",
+    "Nominal", "At",
+    "Dependence", "SlashedExists",
+    "Tensor", "With", "OPlus", "LinearImplies", "OfCourse", "One",
+    "Product", "Under", "Over",
     "WeakConjunction", "WeakDisjunction",
     "StrongConjunction", "StrongDisjunction",
     "LukNegation", "LukImplication", "LukEquivalence",
@@ -139,6 +154,14 @@ __all__ = [
     "announce", "box_announce", "diamond_announce",
     "CounterfactualModel", "would", "might",
     "minimal_models", "minimal_entails",
+    "RelevantModel", "rel_satisfies", "rel_countermodel", "rel_valid",
+    "team_satisfies", "team_models", "MAX_TEAM_SEARCH",
+    "hybrid_is_valid",
+    "ill_prove", "ill_derivable", "check_ill_proof", "verify_ill_proof",
+    "render_ill_proof", "ILLSequent", "ILLDerivation",
+    "lambek_prove", "lambek_derivable", "check_lambek_proof",
+    "verify_lambek_proof", "render_lambek_proof", "LambekSequent",
+    "LambekDerivation",
     "is_satisfiable", "is_valid", "get_model",
     "fuzzy_is_satisfiable", "fuzzy_is_valid", "fuzzy_get_model",
     "to_z3_arith", "is_satisfiable_arith", "is_valid_arith", "get_model_arith",

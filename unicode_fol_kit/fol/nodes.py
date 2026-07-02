@@ -33,6 +33,10 @@ from ._modal_nodes import (
     Obligatory, Permitted,
 )
 from ._so_nodes import SecondOrderQuantifier
+from ._hybrid_nodes import Nominal, At
+from ._team_nodes import Dependence, SlashedExists
+from ._linear_nodes import Tensor, With, OPlus, LinearImplies, OfCourse, One
+from ._lambek_nodes import Product, Under, Over
 
 __all__ = [
     "Z3Env",
@@ -44,6 +48,10 @@ __all__ = [
     "FOLTransformer",
     "SortedQuantifier", "SortedConstant",
     "SortedCount", "SortedCardinality",
+    "Nominal", "At",
+    "Dependence", "SlashedExists",
+    "Tensor", "With", "OPlus", "LinearImplies", "OfCourse", "One",
+    "Product", "Under", "Over",
     "WeakConjunction", "WeakDisjunction",
     "StrongConjunction", "StrongDisjunction",
     "LukNegation", "LukImplication", "LukEquivalence",

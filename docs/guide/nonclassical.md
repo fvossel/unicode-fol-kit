@@ -591,6 +591,6 @@ minimal_entails(theory, Not(Ab(tweety)), circumscribed={"Ab"}, max_size=2)   # �
 This is **parallel** circumscription: every named predicate is minimised on an equal footing, and the *non*-circumscribed predicates are held fixed (models are compared only when their fixed parts agree). It is **not** prioritised circumscription with *varied* predicates, so the textbook "Tweety the bird flies by default" pattern — which lets a derived `Flies` predicate float while `Ab` is minimised — is **not** captured: circumscribe the abnormality predicate(s) and reason about *them*, as above, rather than expecting a separate consequence predicate to be pinned for free.
 ```
 
-## Out of scope
+## Further non-classical families
 
-These four evaluators cover the non-classical neighbours the toolkit ships. Several others are deliberately **not** provided: relevant / relevance logic, hybrid logic (nominals and `@`), independence-friendly and dependence logic, and substructural logics (linear, the Lambek calculus, and friends). If you need one of those, the AST and the existing evaluators are a reasonable base to build on, but no first-class support exists today.
+These four evaluators cover one cluster of non-classical neighbours. The families that used to be listed here as out of scope now have first-class support of their own: {doc}`relevant logic <relevant>` (Routley–Meyer semantics for the basic system B), {doc}`hybrid logic <hybrid>` (nominals and `@` in the modal mode), {doc}`dependence / IF logic <dependence>` (team semantics), and {doc}`substructural logics <substructural>` (intuitionistic linear logic and the Lambek calculus, each with a sequent prover).

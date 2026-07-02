@@ -103,6 +103,12 @@ signature and documentation of each public entry point; use the search box or th
    is_valid_tableau
    prove_tableau
    tableau_model
+   ill_prove
+   ill_derivable
+   check_ill_proof
+   lambek_prove
+   lambek_derivable
+   check_lambek_proof
 ```
 
 ## Modal, temporal, epistemic & deontic logic
@@ -120,6 +126,7 @@ signature and documentation of each public entry point; use the search box or th
    modal_prove
    qml_is_valid
    qml_equivalent
+   hybrid_is_valid
    to_thf_modal
    to_isabelle_modal
    isabelle_decide_modal
@@ -149,6 +156,11 @@ signature and documentation of each public entry point; use the search box or th
    free_holds
    announce
    would
+   rel_valid
+   rel_countermodel
+   rel_satisfies
+   team_satisfies
+   team_models
 ```
 
 ## Subpackage modules

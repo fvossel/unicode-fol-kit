@@ -6,6 +6,10 @@ from .nodes import (
     Z3Env,
     SortedQuantifier, SortedConstant,
     SortedCount, SortedCardinality,
+    Nominal, At,
+    Dependence, SlashedExists,
+    Tensor, With, OPlus, LinearImplies, OfCourse, One,
+    Product, Under, Over,
     WeakConjunction, WeakDisjunction,
     StrongConjunction, StrongDisjunction,
     LukNegation, LukImplication, LukEquivalence,
@@ -24,7 +28,7 @@ from .nodes import (
 from .normalforms import to_nnf, to_pnf, to_cnf, to_dnf, to_tseitin_cnf, skolemize, is_horn
 from .lambda_tools import has_lambdas, eliminate_lambdas, beta_reduce_step, reduce_trace
 from .unification import unify, apply_subst
-from .modal_translation import standard_translation
+from .modal_translation import standard_translation, hybrid_is_valid
 from .latex_input import latex_to_unicode, parse_latex
 from .tptp_input import parse_tptp, parse_tptp_formula, load_tptp, TptpFormula
 from .prover9_input import (
@@ -47,6 +51,10 @@ __all__ = [
     "NamingError", "ParsingError",
     "SortedQuantifier", "SortedConstant",
     "SortedCount", "SortedCardinality",
+    "Nominal", "At",
+    "Dependence", "SlashedExists",
+    "Tensor", "With", "OPlus", "LinearImplies", "OfCourse", "One",
+    "Product", "Under", "Over",
     "WeakConjunction", "WeakDisjunction",
     "StrongConjunction", "StrongDisjunction",
     "LukNegation", "LukImplication", "LukEquivalence",
@@ -64,7 +72,7 @@ __all__ = [
     "to_nnf", "to_pnf", "to_cnf", "to_dnf", "to_tseitin_cnf", "skolemize", "is_horn",
     "has_lambdas", "eliminate_lambdas", "beta_reduce_step", "reduce_trace",
     "unify", "apply_subst",
-    "standard_translation",
+    "standard_translation", "hybrid_is_valid",
     "latex_to_unicode", "parse_latex",
     "parse_tptp", "parse_tptp_formula", "load_tptp", "TptpFormula",
     "parse_prover9", "parse_prover9_problem", "load_prover9", "Prover9Formula",

@@ -44,6 +44,10 @@ guide/fuzzy
 guide/intuitionistic
 guide/second-order
 guide/description-logic
+guide/hybrid
+guide/relevant
+guide/dependence
+guide/substructural
 guide/nonclassical
 guide/natural-language
 guide/syntax-reference

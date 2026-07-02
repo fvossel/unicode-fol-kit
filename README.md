@@ -2,8 +2,9 @@
 
 A Python toolkit for **first-order logic with Unicode operators** — *parse, transform,
 and reason about* formulas — with a reasoning layer that reaches well beyond classical
-FOL into modal, temporal, many-valued, fuzzy, intuitionistic, second-order, description,
-and a range of non-classical logics.
+FOL into modal, temporal, hybrid, many-valued, fuzzy, intuitionistic, relevant,
+second-order, description, dependence/IF, substructural, and a range of further
+non-classical logics.
 
 ```python
 from unicode_fol_kit import MSFLParser, is_valid
@@ -13,10 +14,11 @@ phi = MSFLParser().parse(
 print(is_valid(phi))   # True
 ```
 
-One parser class, `MSFLParser`, has **six modes** (classical FOL, many-sorted FOL,
-many-sorted and single-sorted Łukasiewicz fuzzy logic, modal/temporal/epistemic/deontic,
-and second-order) selected by constructor flags, with natural Unicode surface syntax
-(`∀ ∃ ∧ ∨ ¬ → ↔ ⊕ ⊗ □ ◇ …`) and no ASCII fallbacks.
+One parser class, `MSFLParser`, has **nine modes** (classical FOL, many-sorted FOL,
+many-sorted and single-sorted Łukasiewicz fuzzy logic, modal/temporal/epistemic/deontic/
+hybrid, second-order, team-semantic dependence/IF logic, intuitionistic linear logic,
+and the Lambek calculus) selected by constructor flags, with natural Unicode surface
+syntax (`∀ ∃ ∧ ∨ ¬ → ↔ ⊕ ⊗ □ ◇ @ ⊸ 𝟙 …`) and no ASCII fallbacks.
 
 On top of the AST sits a full reasoning stack — **four proof methods** (a built-in
 resolution prover, Fitch natural deduction with checker *and* searcher, the Gentzen
@@ -55,6 +57,10 @@ optional external tools you install separately to unlock the corresponding backe
 | Second-order | `MSFLParser(second_order=True)` | `satisfies_so`, bounded `so_is_valid_finite` / `so_find_countermodel` |
 | Description logic **ALC** | `unicode_fol_kit.dl` | `concept_satisfiable` / `subsumes` / `abox_consistent` (tableau, TBox + ABox) |
 | Free · public-announcement · counterfactual · circumscription | `semantics.free_logic` / `dynamic_epistemic` / `conditional` / `nonmonotonic` | dedicated evaluators and (non-monotonic) consequence |
+| Hybrid **H(@)** (nominals, `@i φ`) | `MSFLParser(modal=True)` | `KripkeModel(nominals=…)`, `hybrid_is_valid` per frame (standard translation + Z3) |
+| Relevant logic **B** | classical syntax + `semantics.relevant` | `rel_valid` / `rel_countermodel` (Routley–Meyer, bounded exhaustive search) |
+| Dependence / IF (team semantics) | `MSFLParser(dependence=True)` | `team_satisfies` / `team_models` over finite structures |
+| Linear logic (ILL) · Lambek calculus | `MSFLParser(linear=True)` / `lambek=True` | `ill_prove` (cut-free; complete for !-free) · `lambek_derivable` (decision procedure) |
 
 With a local **Isabelle** installed, the `hol` subpackage's shallow embeddings become
 *proofs*: `isabelle_decide_modal` / `isabelle_decide_fol` actually run the prover. See

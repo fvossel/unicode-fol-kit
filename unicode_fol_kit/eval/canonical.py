@@ -67,6 +67,7 @@ from unicode_fol_kit.fol.nodes import (
     And, Or, Xor, Iff, Implies,
     Not, Quantifier, SortedQuantifier,
     Count, Cardinality, SortedCount, SortedCardinality,
+    SlashedExists,
     WeakConjunction, WeakDisjunction, StrongConjunction, StrongDisjunction,
     LukNegation, LukImplication, LukEquivalence,
     Lambda, LambdaVar,
@@ -217,6 +218,19 @@ def _alpha(node: Node, var_env: dict, lam_env: dict, counter: list, avoid) -> No
         return SortedCardinality(fresh, node.sort,
                                  _alpha(node.formula, inner, lam_env, counter, avoid))
 
+    # The IF slashed existential binds its variable AND carries a slash set of
+    # NAMES referring to enclosing binders: those names follow the enclosing
+    # binders' canonical renames (looked up in var_env), so alpha-variant slash
+    # annotations canonicalize identically.
+    if isinstance(node, SlashedExists):
+        fresh = Variable(_fresh_canonical_name(counter, avoid))
+        slashed = tuple(var_env[n].name if n in var_env else n
+                        for n in node.slashed)
+        inner = dict(var_env)
+        inner[node.variable.name] = fresh
+        return SlashedExists(fresh, slashed,
+                             _alpha(node.formula, inner, lam_env, counter, avoid))
+
     # Non-binder structural node (Atom, Function, Not, binary connectives,
     # Measure, Contrast, Application, …): recurse into every child with the same
     # environments.
@@ -351,6 +365,24 @@ def _sort_key(operand: Node, levels: dict) -> str:
             parts.append(f"SCARD:{n.sort}")
             rec(n.formula, inner)
             return
+        if isinstance(n, SlashedExists):
+            # Slash names are encoded positionally like variable occurrences
+            # (operand-bound by local index, enclosing-bound by level), so the
+            # key stays invariant under bound-variable renaming (P3).
+            enc = []
+            for s in n.slashed:
+                if s in local:
+                    enc.append(f"b{local[s]}")
+                elif s in levels:
+                    enc.append(f"L{levels[s]}")
+                else:
+                    enc.append(f"v:{s}")
+            inner = dict(local)
+            inner[n.variable.name] = local_depth[0]
+            local_depth[0] += 1
+            parts.append("SLEX:" + ",".join(enc))
+            rec(n.formula, inner)
+            return
         parts.append(cls_name)
         if cls_name == "Atom":
             parts.append(n.predicate)
@@ -459,6 +491,11 @@ def _structural(node: Node, levels: dict) -> Node:
         inner[node.variable.name] = next_level
         return SortedCardinality(node.variable, node.sort,
                                  _structural(node.formula, inner))
+    if isinstance(node, SlashedExists):
+        inner = dict(levels)
+        inner[node.variable.name] = next_level
+        return SlashedExists(node.variable, node.slashed,
+                             _structural(node.formula, inner))
 
     # Any other node (Implies, LukImplication, Not/LukNegation without a nested
     # negation, Contrast, Measure, atoms, terms, Application): keep its shape,

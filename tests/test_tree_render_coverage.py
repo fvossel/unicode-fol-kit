@@ -33,6 +33,9 @@ _MS = MSFLParser(many_sorted=True)
 _FL = MSFLParser(fuzzy=True)
 _MODAL = MSFLParser(modal=True)
 _SO = MSFLParser(second_order=True)
+_DEP = MSFLParser(dependence=True)
+_LIN = MSFLParser(linear=True)
+_LAM = MSFLParser(lambek=True)
 
 # Representative formulas whose union instantiates every node class. Each string
 # stays inside its mode's no-mixing / associativity rules so it parses cleanly.
@@ -50,6 +53,11 @@ FORMULAS = {
         "∧ Say_alice P ∧ Want_bob Q ∧ (P Ⓤ Q)"
     ),
     "second_order": _SO.parse("∀Z ∃W (Z(alice) ∧ W(alice, bob))"),
+    "sorted_count_card": _MS.parse("∃≥2 x:Human (P(x) ∧ (|{y:Human : Q(y)}| > z))"),
+    "hybrid": _MODAL.parse("@i (P ∧ ◇j)"),
+    "dependence": _DEP.parse("∀x ∃y/{x} (=(x, y) ∧ R(x, y))"),
+    "linear": _LIN.parse("!A ⊗ (A ⊸ B) ⊗ (C & D) ⊗ (E ⊕ F) ⊗ 𝟙"),
+    "lambek": _LAM.parse("(NP • ((NP \\ S) / NP)) \\ S"),
 }
 
 # Every node class the coverage set must exercise (old + the 0.5.0 additions).
@@ -64,6 +72,11 @@ TARGET_CLASSES = {
     "Box", "Diamond", "Always", "Eventually", "Next", "Until",
     "Knows", "Believes", "Says", "Wants", "Obligatory", "Permitted",
     "SecondOrderQuantifier",
+    "SortedCount", "SortedCardinality",
+    "Nominal", "At",
+    "Dependence", "SlashedExists",
+    "Tensor", "With", "OPlus", "LinearImplies", "OfCourse", "One",
+    "Product", "Under", "Over",
 }
 
 

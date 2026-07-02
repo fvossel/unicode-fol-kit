@@ -5,6 +5,61 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [0.12.0] - 2026-07-03
+
+The four families the documentation used to list as deliberately out of scope are
+now first-class: relevant logic, hybrid logic, dependence / IF logic, and the
+substructural pair (intuitionistic linear logic and the Lambek calculus). Each
+ships with parser support, real semantics or a real proof system, hand-checked
+tests cross-checked against existing oracles, and a documentation page.
+
+### Added
+
+- **Relevant logic B** (`semantics.relevant`) — the Priest–Sylvan *simplified*
+  Routley–Meyer semantics for the basic affixing system **B** over the classical
+  propositional syntax: `RelevantModel` (worlds, normal worlds, involutive Routley
+  star, ternary accessibility at non-normal worlds), `rel_satisfies`, and a
+  verified exhaustive countermodel search `rel_countermodel` / `rel_valid`
+  (bounded, mirroring `int_valid`'s contract). The headline non-theorems come out
+  right: `p → (q → p)`, explosion, disjunctive syllogism, Peirce, and even
+  `p ∨ ¬p` are refuted, while the B-validities hold. Random formulas are
+  cross-checked against the classical Z3 oracle (every classical countermodel is
+  a one-world Routley–Meyer model). B is the decidable base; full **R** is
+  undecidable (Urquhart 1984) and stays out of scope.
+- **Hybrid logic H(@)** — nominals and the satisfaction operator inside the modal
+  mode: `MSFLParser(modal=True)` now parses nominals (`i`, `here`) as formulas
+  and `@i φ`; `KripkeModel` takes a `nominals=` assignment and `satisfies_modal`
+  evaluates both constructs; the standard translation maps a nominal to a
+  world-equality with a reserved `nom_…` constant, and the new
+  `hybrid_is_valid(φ, frame="K"|"T"|"S4"|"S5")` decides hybrid validity via Z3.
+  The ↓ binder is deliberately absent (it makes validity undecidable); the modal
+  tableau rejects hybrid input with a clear error instead of guessing.
+- **Dependence / IF logic** (`MSFLParser(dependence=True)` + `semantics.team`) —
+  Väänänen-style **team semantics** over the toolkit's finite `Structure`s:
+  dependence atoms `=(x, y)` (functional determination; `=(x)` constancy) and
+  IF slashed existentials `∃y/{x} φ` (witness chosen uniformly in the slashed
+  variables), with the splitting `∨`, strict `∃`, duplicating `∀`, and flat
+  literals. `team_satisfies` / `team_models` evaluate; the fragment is honest —
+  no `→`/`↔`, negation on atoms only, and no classical export (dependence logic
+  is expressively second-order). Tested with flatness and downward-closure
+  property tests against the Tarski evaluator and the classic `|dom| = 1`
+  signalling facts.
+- **Substructural logics** — two new sequent provers in `atp`:
+  `MSFLParser(linear=True)` parses propositional **intuitionistic linear logic**
+  (`⊗ & ⊕ ⊸ ! 𝟙`) and `ill_prove` / `ill_derivable` / `check_ill_proof` decide it
+  by cut-free backward search — a complete decision procedure for the !-free
+  fragment, honestly bounded when `!` occurs; `MSFLParser(lambek=True)` parses
+  **Lambek-calculus** types (`• \ /` over categories like `NP`, `S`) and
+  `lambek_prove` / `lambek_derivable` are a complete, terminating decision
+  procedure for L (ordered, nonempty antecedents — `A, A\B ⊢ B` derives,
+  `A\B, A ⊢ B` does not). Every found derivation is re-validated by its checker,
+  and every derivable sequent's classical collapse is verified Z3-valid in the
+  test suite.
+- The frontier constructs render, verbalize (`to_english`), serialise
+  (dict/JSON), and round-trip like every other node family; `exact_match` /
+  `canonicalize` α-normalise the slashed binder (slash sets follow their
+  enclosing binders' renames).
+
 ## [0.11.0] - 2026-07-02
 
 Cross-logic parity for the natural-language / CCG translation-target constructs, plus a

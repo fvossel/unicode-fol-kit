@@ -41,6 +41,8 @@ from .free_logic import FreeModel, free_satisfies, free_holds, NONDENOTING
 from .dynamic_epistemic import announce, box_announce, diamond_announce
 from .conditional import CounterfactualModel, would, might
 from .nonmonotonic import minimal_models, minimal_entails
+from .relevant import RelevantModel, rel_satisfies, rel_countermodel, rel_valid
+from .team import team_satisfies, team_models, MAX_TEAM_SEARCH
 
 __all__ = [
     "Structure", "term_value", "satisfies", "models",
@@ -68,4 +70,6 @@ __all__ = [
     "announce", "box_announce", "diamond_announce",
     "CounterfactualModel", "would", "might",
     "minimal_models", "minimal_entails",
+    "RelevantModel", "rel_satisfies", "rel_countermodel", "rel_valid",
+    "team_satisfies", "team_models", "MAX_TEAM_SEARCH",
 ]

@@ -27,6 +27,14 @@ from .modal_tableau import (
     modal_tableau_closed, is_modal_valid, modal_prove, modal_decide, modal_countermodel,
 )
 from .lj import check_lj_proof, verify_lj_proof
+from .linear import (
+    ill_prove, ill_derivable, check_ill_proof, verify_ill_proof,
+    render_ill_proof, ILLSequent, ILLDerivation,
+)
+from .lambek import (
+    lambek_prove, lambek_derivable, check_lambek_proof, verify_lambek_proof,
+    render_lambek_proof, LambekSequent, LambekDerivation,
+)
 
 __all__ = [
     "formulas_are_equivalent",
@@ -49,4 +57,9 @@ __all__ = [
     "modal_tableau_closed", "is_modal_valid", "modal_prove", "modal_decide",
     "modal_countermodel",
     "check_lj_proof", "verify_lj_proof",
+    "ill_prove", "ill_derivable", "check_ill_proof", "verify_ill_proof",
+    "render_ill_proof", "ILLSequent", "ILLDerivation",
+    "lambek_prove", "lambek_derivable", "check_lambek_proof",
+    "verify_lambek_proof", "render_lambek_proof", "LambekSequent",
+    "LambekDerivation",
 ]
