@@ -91,6 +91,8 @@ from .hol import (
     find_isabelle, isabelle_available, isabelle_decide_modal, isabelle_decide_fol,
     check_theory, IsabelleInstall, IsabelleNotAvailable, BuildResult,
     ModalVerdict, FolVerdict, modal_axiom_names,
+    modal_faithfulness_theory, intuitionistic_faithfulness_theory,
+    conditional_faithfulness_theory, relevant_faithfulness_theory,
 )
 from . import dl   # the ALC description-logic subpackage (dl.concept_satisfiable, …)
 
@@ -139,6 +141,8 @@ __all__ = [
     "isabelle_decide_fol", "check_theory",
     "IsabelleInstall", "IsabelleNotAvailable", "BuildResult",
     "ModalVerdict", "FolVerdict", "modal_axiom_names",
+    "modal_faithfulness_theory", "intuitionistic_faithfulness_theory",
+    "conditional_faithfulness_theory", "relevant_faithfulness_theory",
     "dl",
     "from_z3", "parse_smtlib", "load_smtlib",
     "find_fitch_proof", "fitch_prove", "is_valid_fitch",
