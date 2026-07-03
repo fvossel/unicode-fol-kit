@@ -5,6 +5,16 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [0.13.1] - 2026-07-03
+
+Documentation correctness fix: the higher-order guide and the `hol/__init__`,
+`isabelle_modal`, and `thf_modal` docstrings previously described FOL as "not even
+semi-decidable". That is wrong — FOL validity is recursively enumerable (Gödel
+completeness), so FOL and the standard first-order modal logics K/T/S4/S5 are
+**undecidable but semi-decidable**; only full second-order validity is *not even
+semi-decidable*. Corrected in the source text and in the German translation. No code
+changes.
+
 ## [0.13.0] - 2026-07-03
 
 Deep and shallow HOL embeddings with **machine-checked faithfulness proofs**,
