@@ -50,8 +50,9 @@ inductive / least-fixpoint definition and is out of the shallow fragment (use
 Honesty
 -------
 The toolkit *emits* a theory; it does **not** run Isabelle, Sledgehammer, or any
-prover. First-order modal logic (like FOL and SOL) is **undecidable / not even
-semi-decidable**, so a successful emission means "here is a sound problem an
+prover. First-order modal logic, like FOL, is **undecidable but semi-decidable**
+(validity is recursively enumerable; full second-order logic is *not even
+semi-decidable*), so a successful emission means "here is a sound problem an
 external prover *may* discharge", never "the formula is decided". Propositional
 modal K/T/S4/S5 *are* decidable, but this emitter does not itself decide them.
 The default proof tactic is a Sledgehammer hook followed by an ``oops`` fallback

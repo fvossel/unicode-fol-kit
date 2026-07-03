@@ -4,7 +4,7 @@ The `unicode_fol_kit.hol` subpackage emits Benzmüller-style **shallow semantica
 
 ## What the exporters emit (and what they cannot decide)
 
-The exporters **emit**; they do not themselves run a prover. They also cannot decide everything: first-order modal logic, FOL, and SOL are undecidable / not even semi-decidable, so a successful emission means *"here is a sound problem a prover may discharge"*, never *"decided"*. (The propositional fragments — K3/LP, modal K/T/S4/S5 — are decidable, but these exporters target the general case.) Equality `=` / `≠` is an **uninterpreted, world-relativized** predicate throughout (not primitive HOL identity), consistently across every exporter.
+The exporters **emit**; they do not themselves run a prover. They also cannot decide everything: first-order modal logic, FOL, and SOL are all **undecidable**, so a successful emission means *"here is a sound problem a prover may discharge"*, never *"decided"*. (FOL and the standard first-order modal logics are still *semi-decidable* — validity is recursively enumerable — whereas full second-order validity is *not even semi-decidable*; the propositional fragments K3/LP and modal K/T/S4/S5 are outright decidable, but these exporters target the general case.) Equality `=` / `≠` is an **uninterpreted, world-relativized** predicate throughout (not primitive HOL identity), consistently across every exporter.
 
 Each exporter has a THF variant (`to_thf_*`) and an Isabelle variant (`to_isabelle_*`). **None of these names are top-level** — `from unicode_fol_kit import *` does *not* bring them in. Import them from `unicode_fol_kit.hol`:
 

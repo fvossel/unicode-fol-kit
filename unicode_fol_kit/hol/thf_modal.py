@@ -66,9 +66,11 @@ closure (it is not first-order definable). This module therefore embeds:
   it ``Gφ→Xφ`` (and ``Xφ→Fφ`` wherever the evaluator agrees) is now a theorem of the
   embedding.
 
-UNDECIDABILITY / honesty. First-order (and higher-order) modal logic is **undecidable
-and not even semi-decidable** in general; SOL likewise. "Emit a problem a prover may
-discharge" is the honest claim — never "decide every instance". The propositional
+UNDECIDABILITY / honesty. First-order modal logic is **undecidable** — though the
+standard systems emitted here (K/T/S4/S5, deontic KD) are still *semi-decidable*:
+validity is recursively enumerable. (Higher-order modal logic and full second-order
+logic are *not even semi-decidable*.) "Emit a problem a prover may discharge" is the
+honest claim — never "decide every instance". The propositional
 fragments (modal K/T/S4/S5, deontic KD) are decidable, but this export targets the
 quantified family, so a ``Theorem`` verdict depends on an external HOL ATP and is not
 guaranteed to terminate.

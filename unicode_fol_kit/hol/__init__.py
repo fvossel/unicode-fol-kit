@@ -5,7 +5,9 @@ logics into higher-order logic — as complete, self-contained problem files for
 external prover (Leo-III / Satallax on TPTP **THF**, or Isabelle/HOL theories for
 Sledgehammer). The exporters only emit; a successful emission means "here is a sound
 problem an external prover *may* discharge", never "decided" — first-order modal logic,
-FOL and SOL are undecidable / not semi-decidable.
+FOL and SOL are all undecidable (FOL and the standard first-order modal logics are still
+semi-decidable — validity is recursively enumerable — whereas full second-order validity
+is not even semi-decidable).
 
 The optional :mod:`~unicode_fol_kit.hol.isabelle_runner` is the other half: if a local
 Isabelle/HOL is installed, it actually *runs* it on the emitted modal theories
