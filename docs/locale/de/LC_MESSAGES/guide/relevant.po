@@ -1,0 +1,406 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, Felix Vossel
+# This file is distributed under the same license as the unicode-fol-kit
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: unicode-fol-kit 0.13.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-07-03 14:38+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: de\n"
+"Language-Team: de <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../guide/relevant.md:1
+msgid "Relevant logic"
+msgstr "Relevante Logik"
+
+#: ../../guide/relevant.md:3
+msgid ""
+"The toolkit implements the basic affixing relevant logic **B** through "
+"the Priest–Sylvan **simplified Routley–Meyer semantics** (Priest & Sylvan"
+" 1992; Priest, *Introduction to Non-Classical Logic*, 2nd ed., ch. 10): "
+"`rel_valid` and `rel_countermodel` perform an exhaustive bounded model "
+"search, `rel_satisfies` replays the truth clauses on a `RelevantModel` "
+"you can also build by hand. The syntax is the ordinary classical "
+"propositional fragment of `MSFLParser` — `∧ ∨ ¬ → ↔` over nullary atoms —"
+" reused with relevant semantics, exactly as the [intuitionistic "
+"guide](intuitionistic.md) reuses it over Kripke models."
+msgstr ""
+"Das Toolkit implementiert die grundlegende affixierende relevante Logik **B** "
+"durch die Priest–Sylvan **vereinfachte Routley–Meyer-Semantik** (Priest & Sylvan"
+" 1992; Priest, *Introduction to Non-Classical Logic*, 2. Aufl., Kap. 10): "
+"`rel_valid` und `rel_countermodel` führen eine erschöpfende beschränkte Modellsuche "
+"durch, `rel_satisfies` spielt die Wahrheitsbedingungen auf einem `RelevantModel` "
+"nach, das man auch von Hand konstruieren kann. Die Syntax ist das gewöhnliche "
+"klassische aussagenlogische Fragment von `MSFLParser` — `∧ ∨ ¬ → ↔` über nulläre Atome — "
+"wiederverwendet mit relevanter Semantik, genau wie der [intuitionistische "
+"Leitfaden](intuitionistic.md) ihn über Kripke-Modelle wiederverwendet."
+
+#: ../../guide/relevant.md:5
+msgid "Why relevance?"
+msgstr "Warum Relevanz?"
+
+#: ../../guide/relevant.md:7
+msgid ""
+"Classically, `A → B` is material: it holds whenever `A` is false or `B` "
+"is true, however unrelated the two are. That validates the \"paradoxes of"
+" material implication\" — `P → (Q → P)` (a true consequent follows from "
+"*anything*) and `(P ∧ ¬P) → Q` (*ex falso quodlibet*: a contradiction "
+"entails everything). Relevance logics insist that `→` express a genuine "
+"connection between antecedent and consequent, so both paradoxes — and "
+"with them the explosion of inconsistent theories — must fail. **B** is "
+"the weakest logic in the mainstream relevant family: what it validates, "
+"essentially all relevance logics validate."
+msgstr ""
+"Klassisch ist `A → B` materiell: Es gilt, wenn `A` falsch oder `B` wahr ist, "
+"egal wie unzusammenhängend sie sind. Das validiert die \"Paradoxien der "
+"materiellen Implikation\" — `P → (Q → P)` (ein wahres Konsequens folgt aus "
+"*irgendetwas*) und `(P ∧ ¬P) → Q` (*ex falso quodlibet*: ein Widerspruch "
+"impliziert alles). Relevanzlogiken bestehen darauf, dass `→` eine echte "
+"Verbindung zwischen Antezedens und Konsequens ausdrückt; daher müssen beide "
+"Paradoxien — und mit ihnen die Explosion inkonsistenter Theorien — scheitern. "
+"**B** ist die schwächste Logik in der gebräuchlichen relevanten Familie: Was sie "
+"validiert, validieren im Wesentlichen alle Relevanzlogiken."
+
+#: ../../guide/relevant.md:9
+msgid "The simplified Routley–Meyer semantics"
+msgstr "Die vereinfachte Routley–Meyer-Semantik"
+
+#: ../../guide/relevant.md:11
+msgid "An interpretation is `⟨W, N, *, R, V⟩`:"
+msgstr "Eine Interpretation ist `⟨W, N, *, R, V⟩`:"
+
+#: ../../guide/relevant.md:13
+msgid "`W` — a set of worlds, with `N ⊆ W` a **nonempty** set of *normal* worlds;"
+msgstr "`W` — eine Menge von Welten, wobei `N ⊆ W` eine **nichtleere** Menge *normaler* Welten ist;"
+
+#: ../../guide/relevant.md:14
+msgid ""
+"`*` — the **Routley star**, an involution on worlds (`w** = w`), "
+"interpreting negation;"
+msgstr ""
+"`*` — der **Routley-Stern**, eine Involution auf Welten (`w** = w`), "
+"die Negation interpretiert;"
+
+#: ../../guide/relevant.md:15
+msgid ""
+"`R` — a ternary relation sourced only at *non-normal* worlds (`R ⊆ (W∖N) "
+"× W × W`), interpreting `→` there;"
+msgstr ""
+"`R` — eine ternäre Relation, die nur an *nicht-normalen* Welten angesetzt ist "
+"(`R ⊆ (W∖N) × W × W`), und dort `→` interpretiert;"
+
+#: ../../guide/relevant.md:16
+msgid "`V` — a valuation mapping each atom to the set of worlds where it holds."
+msgstr "`V` — eine Bewertung, die jedem Atom die Menge der Welten zuordnet, in denen es gilt."
+
+#: ../../guide/relevant.md:18
+msgid "Truth at a world `w`:"
+msgstr "Wahrheit in einer Welt `w`:"
+
+#: ../../guide/relevant.md
+msgid "formula"
+msgstr "Formel"
+
+#: ../../guide/relevant.md
+msgid "true at `w` iff"
+msgstr "in `w` wahr genau dann wenn"
+
+#: ../../guide/relevant.md
+msgid "`p`"
+msgstr "`p`"
+
+#: ../../guide/relevant.md
+msgid "`w ∈ V(p)`"
+msgstr "`w ∈ V(p)`"
+
+#: ../../guide/relevant.md
+msgid "`A ∧ B`"
+msgstr "`A ∧ B`"
+
+#: ../../guide/relevant.md
+msgid "`w ⊨ A` and `w ⊨ B`"
+msgstr "`w ⊨ A` und `w ⊨ B`"
+
+#: ../../guide/relevant.md
+msgid "`A ∨ B`"
+msgstr "`A ∨ B`"
+
+#: ../../guide/relevant.md
+msgid "`w ⊨ A` or `w ⊨ B`"
+msgstr "`w ⊨ A` oder `w ⊨ B`"
+
+#: ../../guide/relevant.md
+msgid "`¬A`"
+msgstr "`¬A`"
+
+#: ../../guide/relevant.md
+msgid "`w* ⊭ A`"
+msgstr "`w* ⊭ A`"
+
+#: ../../guide/relevant.md
+msgid "`A → B`, `w ∈ N`"
+msgstr "`A → B`, `w ∈ N`"
+
+#: ../../guide/relevant.md
+msgid "for **all** `x ∈ W`: `x ⊨ A` ⇒ `x ⊨ B`"
+msgstr "für **alle** `x ∈ W`: `x ⊨ A` ⇒ `x ⊨ B`"
+
+#: ../../guide/relevant.md
+msgid "`A → B`, `w ∉ N`"
+msgstr "`A → B`, `w ∉ N`"
+
+#: ../../guide/relevant.md
+msgid "for all `x, y` with `R(w, x, y)`: `x ⊨ A` ⇒ `y ⊨ B`"
+msgstr "für alle `x, y` mit `R(w, x, y)`: `x ⊨ A` ⇒ `y ⊨ B`"
+
+#: ../../guide/relevant.md:29
+msgid ""
+"`A ↔ B` abbreviates `(A → B) ∧ (B → A)`. A formula is **valid** iff it is"
+" true at every normal world of every interpretation."
+msgstr "`
+"`A ↔ B` steht für `(A → B) ∧ (B → A)`. Eine Formel ist **gültig** genau dann, "
+"wenn sie in jeder normalen Welt jeder Interpretation wahr ist."
+
+#: ../../guide/relevant.md:31
+msgid ""
+"Two devices do all the work. The **star** decouples the truth of `¬A` at "
+"`w` from the falsity of `A` at `w`, so a world may be *inconsistent* (`w "
+"⊨ A` and `w ⊨ ¬A`, when `w* ⊭ A`) or *incomplete* (neither), without any "
+"global collapse. The **non-normal worlds** evaluate `→` by the ternary "
+"`R` rather than by truth-preservation, so a conditional can fail at some "
+"world even when it never leads from truth to falsity — which is exactly "
+"what refutes nested-implication paradoxes like `P → (Q → P)`."
+msgstr ""
+"Zwei Mechanismen erledigen die ganze Arbeit. Der **Stern** entkoppelt die "
+"Wahrheit von `¬A` in `w` von der Falschheit von `A` in `w`, sodass eine Welt "
+"*inkonsistent* sein kann (`w ⊨ A` und `w ⊨ ¬A`, wenn `w* ⊭ A`) oder "
+"*unvollständig* (keins von beidem), ohne einen globalen Kollaps. Die "
+"**nicht-normalen Welten** werten `→` durch die ternäre Relation `R` statt "
+"durch Wahrheitserhaltung; daher kann eine Implikation in einer Welt "
+"fehlschlagen, selbst wenn sie niemals von Wahrheit zu Falschheit führt — "
+"genau das widerlegt verschachtelte Implikationsparadoxa wie `P → (Q → P)`."
+
+#: ../../guide/relevant.md:33
+msgid "Validity and the headline failures"
+msgstr "Gültigkeit und die wesentlichen Fehlschläge"
+
+#: ../../guide/relevant.md:57
+msgid ""
+"The profile is instructively different from intuitionistic logic: **B "
+"keeps both double-negation laws** (the star is an involution, so `¬¬P` "
+"and `P` hold at exactly the same worlds) **yet loses excluded middle** — "
+"a world can simply be incomplete about `P`. Intuitionistic logic rejects "
+"`¬¬P → P` and `P ∨ ¬P` alike; classical logic keeps both; B splits them. "
+"And where intuitionistic logic happily keeps `(P ∧ ¬P) → Q` and `P → (Q →"
+" P)`, B rejects them — relevance and constructivity prune classical logic"
+" along entirely different axes."
+msgstr ""
+"Das Profil unterscheidet sich lehrreich von der intuitionistischen Logik: "
+"**B** behält beide Doppelnegationsgesetze bei (der Stern ist eine Involution, "
+"also gelten `¬¬P` und `P` in genau denselben Welten) **verliert aber das "
+"Gesetz vom ausgeschlossenen Dritten** — eine Welt kann einfach unvollständig "
+"in Bezug auf `P` sein. Die intuitionistische Logik lehnt `¬¬P → P` und "
+"`P ∨ ¬P` gleichermaßen ab; die klassische Logik behält beide; B trennt sie. "
+"Und wo die intuitionistische Logik `(P ∧ ¬P) → Q` und `P → (Q → P)` gerne "
+"beibehält, lehnt B sie ab — Relevanz und Konstruktivität schneiden die "
+"klassische Logik entlang völlig verschiedener Achsen."
+
+#: ../../guide/relevant.md:59
+msgid "Reading a countermodel"
+msgstr "Ein Gegenmodell lesen"
+
+#: ../../guide/relevant.md:61
+msgid ""
+"`rel_countermodel(φ)` returns `None` or a verified pair `(model, world)`:"
+" a `RelevantModel` together with a *normal* world of it where `φ` fails. "
+"The refutation of excluded middle is a two-world model whose star swaps "
+"the worlds:"
+msgstr ""
+"`rel_countermodel(φ)` gibt `None` oder ein verifiziertes Paar `(model, world)` "
+"zurück: ein `RelevantModel` zusammen mit einer *normalen* Welt, in der `φ` "
+"fehlschlägt. Die Widerlegung des Gesetzes vom ausgeschlossenen Dritten ist ein "
+"Zwei-Welten-Modell, dessen Stern die Welten vertauscht:"
+
+#: ../../guide/relevant.md:76
+#, python-brace-format
+msgid ""
+"At `w0` neither disjunct holds: `P` fails there outright (`V(P) = "
+"{'w1'}`), and `¬P` fails because its star world `w0* = w1` *does* satisfy"
+" `P`. So `w0` is an incomplete world, and the disjunction is unforced:"
+msgstr ""
+"In `w0` gilt keiner der Disjunkte: `P` misslingt dort völlig (`V(P) = {'w1'}`), "
+"und `¬P` misslingt, weil seine Sternwelt `w0* = w1` *doch* `P` erfüllt. "
+"Also ist `w0` eine unvollständige Welt, und die Disjunktion ist nicht erzwungen:"
+
+#: ../../guide/relevant.md:85
+msgid ""
+"The positive paradox falls in a model that needs neither the star nor `R`"
+" — just a `Q`-world that lacks `P`:"
+msgstr ""
+"Das positive Paradoxon tritt in einem Modell auf, das weder den Stern noch `R` "
+"braucht — einfach eine `Q`-Welt, die `P` nicht enthält:"
+
+#: ../../guide/relevant.md:100
+msgid ""
+"Read the last three lines against the normal-world clause: `P → (Q → P)` "
+"holds at `w0` only if *every* `P`-world satisfies `Q → P`; but `w0` "
+"itself is a `P`-world at which `Q → P` fails. The truth of the "
+"consequent's *conclusion* at `w0` is beside the point — what matters is "
+"the missing connection between `Q` and `P`."
+msgstr ""
+"Lies die letzten drei Zeilen im Vergleich zur Klausel für normale Welten: "
+"`P → (Q → P)` gilt in `w0` nur, wenn *jede* `P`-Welt `Q → P` erfüllt; aber "
+"`w0` selbst ist eine `P`-Welt, in der `Q → P` fehlschlägt. Die Wahrheit des "
+"Konsequents *Schlusses* in `w0` ist nebensächlich — entscheidend ist die "
+"fehlende Verbindung zwischen `Q` und `P`."
+
+#: ../../guide/relevant.md:102
+msgid "Building a model by hand"
+msgstr "Ein Modell von Hand bauen"
+
+#: ../../guide/relevant.md:104
+msgid ""
+"`RelevantModel` accepts plain tuples, sets and dicts and freezes them "
+"internally (the constructor validates that `N` is nonempty, that the star"
+" is a total involution, and that `R` is sourced at non-normal worlds "
+"only). `star` defaults to the identity and `R` to empty. Here is an "
+"*inconsistent* world refuting explosion — note that `w1 ⊨ P ∧ ¬P` does "
+"**not** make everything true there:"
+msgstr ""
+"`RelevantModel` akzeptiert einfache Tupel, Mengen und dicts und friert sie "
+"intern ein (der Konstruktor prüft, dass `N` nichtleer ist, dass der Stern "
+"eine totale Involution ist und dass `R` nur an nicht-normalen Welten "
+"angesetzt ist). `star` ist standardmäßig die Identität und `R` ist leer. "
+"Hier ist eine *inkonsistente* Welt, die Explosion widerlegt — beachte, dass "
+"`w1 ⊨ P ∧ ¬P` dort **nicht** alles wahr macht:"
+
+#: ../../guide/relevant.md:122
+msgid ""
+"Non-normal worlds refute Peirce's law by *vacuity*: with no `R`-triples "
+"sourced at `w1`, every conditional whatsoever holds there, while `P` does"
+" not:"
+msgstr ""
+"Nicht-normale Welten widerlegen Peirces Gesetz durch *Vakuität*: ohne `R`-Triple "
+"mit Quelle `w1` gilt dort jede bedingte Aussage, während `P` nicht gilt:"
+
+#: ../../guide/relevant.md:132
+msgid "The bounded-validity contract"
+msgstr "Der Vertrag der beschränkten Gültigkeit"
+
+#: ../../guide/relevant.md:134
+msgid ""
+"`rel_countermodel(φ, max_worlds=2)` searches **every** interpretation "
+"with at most `max_worlds` worlds and exactly one normal world (which is "
+"without loss of generality for countermodel existence), every involution "
+"for `*`, every `R ⊆ (W∖N) × W × W` and every valuation of `φ`'s atoms, "
+"and verifies the countermodel with `rel_satisfies` before returning it. "
+"The contract of `rel_valid` is therefore exactly that of the first-order "
+"`int_valid`:"
+msgstr ""
+"`rel_countermodel(φ, max_worlds=2)` durchsucht **jede** Interpretation mit "
+"höchstens `max_worlds` Welten und genau einer normalen Welt (was für die "
+"Existenz eines Gegenmodells ohne Verlust an Allgemeinheit ist), jede "
+"Involution für `*`, jedes `R ⊆ (W∖N) × W × W` und jede Bewertung der Atome "
+"von `φ`, und verifiziert das Gegenmodell vor der Rückgabe mit `rel_satisfies`. "
+"Der Vertrag von `rel_valid` ist daher genau der des prädikatenlogischen "
+"`int_valid`."
+
+#: ../../guide/relevant.md:136
+msgid ""
+"**`False` is definitive** — it is backed by an explicit, verified "
+"countermodel; the formula is certainly not a theorem of B."
+msgstr ""
+"**`False` ist endgültig** — es wird durch ein explizites, verifiziertes "
+"Gegenmodell gestützt; die Formel ist mit Sicherheit kein Theorem von B."
+
+#: ../../guide/relevant.md:137
+msgid ""
+"**`True` is bounded** — it means \"no countermodel with at most "
+"`max_worlds` worlds\". B is decidable, but this search is not a decision "
+"procedure: a non-theorem whose smallest refuting interpretation needs "
+"more worlds than the bound is reported valid."
+msgstr ""
+"**`True` ist beschränkt** — es bedeutet \"kein Gegenmodell mit höchstens "
+"`max_worlds` Welten\". B ist entscheidbar, aber diese Suche ist kein "
+"Entscheidungsverfahren: Ein Nicht-Theorem, dessen kleinste widerlegende "
+"Interpretation mehr Welten als die Schranke benötigt, wird als gültig "
+"gemeldet."
+
+#: ../../guide/relevant.md:139
+msgid ""
+"The search space is exponential — roughly `2^((n−1)·n²)` ternary "
+"relations and `2^(n·a)` valuations for `n` worlds and `a` atoms. The "
+"default `max_worlds=2` checks about two thousand interpretations for a "
+"3-atom formula (milliseconds); `max_worlds=3` already costs on the order "
+"of `10⁸` interpretations. Every headline invalidity above falls within "
+"two worlds."
+msgstr ""
+"Der Suchraum ist exponentiell — ungefähr `2^((n−1)·n²)` ternäre "
+"Relationen und `2^(n·a)` Bewertungen für `n` Welten und `a` Atome. Die "
+"Standardgrenze `max_worlds=2` prüft etwa zweitausend Interpretationen für "
+"eine Formel mit drei Atomen (Millisekunden); `max_worlds=3` kostet bereits "
+"im Bereich von `10⁸` Interpretationen. Jede oben genannte Überschrif-"
+"tungsungültigkeit fällt in zwei Welten."
+
+#: ../../guide/relevant.md:141
+msgid ""
+"One consequence of the semantics is worth internalising: a **1-world** "
+"interpretation *is* a classical valuation — the single world is normal, "
+"the only involution on it is the identity (so `¬` is classical negation) "
+"and `R` must be empty (so `→` is material implication over that world). "
+"Hence `max_worlds=1` decides *classical* validity, and B's soundness with"
+" respect to classical logic (`B ⊆ CL`) is executable:"
+msgstr ""
+"Eine Konsequenz der Semantik ist es wert, verinnerlicht zu werden: Eine "
+"**1-Welt**-Interpretation *ist* eine klassische Bewertung — die einzelne "
+"Welt ist normal, die einzige Involution auf ihr ist die Identität (also "
+"ist `¬` klassische Negation) und `R` muss leer sein (also ist `→` materielle "
+"Implikation über dieser Welt). Daher entscheidet `max_worlds=1` die *klassische* "
+"Gültigkeit, und Bs Korrektheit bezüglich der klassischen Logik (`B ⊆ CL`) "
+"ist ausführbar:"
+
+#: ../../guide/relevant.md:155
+msgid "Beyond B: why the toolkit ships B"
+msgstr "Über B hinaus: warum das Toolkit B liefert"
+
+#: ../../guide/relevant.md:157
+msgid ""
+"B is the *basic* affixing system: the stronger relevant logics (DW, TW, "
+"T, E, **R**, …) arise by imposing frame conditions on `R` — and each "
+"condition validates new implicational theorems. **Contraction**, for "
+"instance, holds in R but not in B, and the search exhibits the two-world "
+"reason:"
+msgstr ""
+"B ist das *basale* affixierende System: die stärkeren relevanten Logiken (DW, TW, "
+"T, E, **R**, …) entstehen durch das Auferlegen von Rahmenbedingungen auf `R` — und "
+"jede Bedingung validiert neue Implikationstheoreme. **Kontraktion** gilt zum "
+"Beispiel in R, aber nicht in B, und die Suche zeigt den Zwei-Welten-Grund:"
+
+#: ../../guide/relevant.md:163
+msgid ""
+"So `B ⊂ R` properly. The decisive fact is Urquhart's theorem (\"The "
+"undecidability of entailment and relevant implication\", *J. Symbolic "
+"Logic* 49, 1984): the logics **R**, **E** and their neighbours are "
+"**undecidable**, so no terminating countermodel-or-proof search for them "
+"can exist. B, by contrast, is decidable, and its simplified semantics "
+"keeps the model search small and honest — which is why the toolkit ships "
+"B."
+msgstr ""
+"So ist `B ⊂ R` echt. Die entscheidende Tatsache ist Urquharts Theorem (\"Die "
+"Unentscheidbarkeit von Folgerung und relevanter Implikation\", *J. Symbolic "
+"Logic* 49, 1984): Die Logiken **R**, **E** und ihre Nachbarn sind "
+"**unentscheidbar**, daher kann es keine terminierende Gegenmodell- oder "
+"Beweissuche für sie geben. B dagegen ist entscheidbar, und seine "
+"vereinfachte Semantik hält die Modellsuche klein und ehrlich — weshalb das "
+"Toolkit B liefert."

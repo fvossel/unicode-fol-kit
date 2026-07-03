@@ -1,0 +1,351 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, Felix Vossel
+# This file is distributed under the same license as the unicode-fol-kit
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: unicode-fol-kit 0.13.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-07-03 14:38+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: de\n"
+"Language-Team: de <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../guide/hybrid.md:1
+msgid "Hybrid logic H(@) — naming worlds"
+msgstr "Hybride Logik H(@) — Welten benennen"
+
+#: ../../guide/hybrid.md:3
+msgid ""
+"Plain modal logic can say *\"somewhere accessible, P holds\"* (`◇P`) — "
+"but it cannot say **where**. Hybrid logic H(@) closes that gap with two "
+"constructs that parse in the modal mode (`MSFLParser(modal=True)`):"
+msgstr ""
+"Die gewöhnliche Modallogik kann ausdrücken, dass *„irgendwo im "
+"Nachfolgebereich P gilt“* (`◇P`) — aber nicht **wo** genau. Die hybride "
+"Logik H(@) schließt diese Lücke mit zwei Konstrukten, die im modalen "
+"Modus geparst werden (`MSFLParser(modal=True)`):"
+
+#: ../../guide/hybrid.md:5
+msgid ""
+"a **nominal** `i` — an atomic formula true at *exactly one* world, "
+"thereby naming it;"
+msgstr ""
+"ein **Nominal** `i` — eine atomare Formel, die in *genau einer* Welt "
+"wahr ist und diese damit benennt;"
+
+#: ../../guide/hybrid.md:6
+msgid ""
+"the **satisfaction operator** `@i φ` — \"at the world named `i`, `φ` "
+"holds\", evaluated *there* no matter where you currently stand."
+msgstr ""
+"der **Erfüllungsoperator** `@i φ` — „in der mit `i` benannten Welt gilt "
+"`φ`“, ausgewertet *dort*, unabhängig vom aktuellen Auswertungspunkt."
+
+#: ../../guide/hybrid.md:8
+msgid ""
+"Together they buy things plain modal logic cannot express: asserting "
+"facts about a *specific* world from anywhere (`@i P`), asserting **world "
+"equality** (`@i j` — \"the worlds named `i` and `j` are the same\"), and "
+"pinning frame properties to named points (`(◇i ∧ @i P) → ◇P`). H(@) over "
+"**K** stays decidable — the undecidable `↓` binder is deliberately not in"
+" the kit (see the boundary section below)."
+msgstr ""
+"Zusammen ermöglichen sie Aussagen, die die gewöhnliche Modallogik nicht "
+"ausdrücken kann: Fakten über eine *bestimmte* Welt von überall aus "
+"behaupten (`@i P`), **Weltengleichheit** ausdrücken (`@i j` — „die mit "
+"`i` und `j` benannten Welten sind dieselbe“) und Rahmeneigenschaften an "
+"benannte Punkte knüpfen (`(◇i ∧ @i P) → ◇P`). H(@) über **K** bleibt "
+"entscheidbar — der unentscheidbare `↓`-Binder ist bewusst nicht im Kit "
+"enthalten (siehe Abschnitt „Grenzen“ weiter unten)."
+
+#: ../../guide/hybrid.md:10
+msgid "Syntax"
+msgstr "Syntax"
+
+#: ../../guide/hybrid.md
+msgid "construct"
+msgstr "Konstrukt"
+
+#: ../../guide/hybrid.md
+msgid "Unicode"
+msgstr "Unicode"
+
+#: ../../guide/hybrid.md
+msgid "AST node"
+msgstr "AST-Knoten"
+
+#: ../../guide/hybrid.md
+msgid "meaning"
+msgstr "Bedeutung"
+
+#: ../../guide/hybrid.md
+msgid "nominal"
+msgstr "Nominal"
+
+#: ../../guide/hybrid.md
+msgid "`i` (a bare lowercase name in formula position)"
+msgstr "`i` (ein einfacher Kleinbuchstabenname in Formelposition)"
+
+#: ../../guide/hybrid.md
+msgid "`Nominal(\"i\")`"
+msgstr "`Nominal(\"i\")`"
+
+#: ../../guide/hybrid.md
+msgid "true at exactly the world named `i`"
+msgstr "wahr genau in der Welt mit Namen `i`"
+
+#: ../../guide/hybrid.md
+msgid "satisfaction"
+msgstr "Erfüllung"
+
+#: ../../guide/hybrid.md
+msgid "`@i φ`"
+msgstr "`@i φ`"
+
+#: ../../guide/hybrid.md
+msgid "`At(Nominal(\"i\"), φ)`"
+msgstr "`At(Nominal(\"i\"), φ)`"
+
+#: ../../guide/hybrid.md
+msgid "`φ` holds at the world named `i`"
+msgstr "`φ` gilt in der Welt mit Namen `i`"
+
+#: ../../guide/hybrid.md:17
+msgid ""
+"`@i` binds like the other prefix operators (`¬`, `K_a`), and nominals "
+"combine freely with every modal operator:"
+msgstr ""
+"`@i` bindet wie die anderen Präfixoperatoren (`¬`, `K_a`), und Nominale "
+"lassen sich frei mit allen modalen Operatoren kombinieren:"
+
+#: ../../guide/hybrid.md:31
+msgid ""
+"The nodes are ordinary kit nodes — they render, serialise, and round-trip"
+" like everything else, and `At` coerces a bare string for convenience:"
+msgstr ""
+"Die Knoten sind gewöhnliche Kit-Knoten — sie werden wie alle anderen "
+"gerendert, serialisiert und im Round-Trip verarbeitet, und `At` wandelt "
+"zur Bequemlichkeit einen einfachen String automatisch um:"
+
+#: ../../guide/hybrid.md:43
+msgid "Evaluating with a nominal assignment"
+msgstr "Auswertung mit einer Nominalzuweisung"
+
+#: ../../guide/hybrid.md:45
+msgid ""
+"A `KripkeModel` interprets nominals through the optional `nominals=` "
+"mapping (name → world). Every referenced world must exist — a dangling "
+"assignment raises at construction time. A nominal is then true at "
+"**exactly** the world it names, and `@i φ` evaluates `φ` at that world, "
+"wherever the evaluation currently stands:"
+msgstr ""
+"Ein `KripkeModel` interpretiert Nominale über die optionale `nominals=`-"
+"Abbildung (Name → Welt). Jede referenzierte Welt muss existieren — eine "
+"hängende Zuweisung löst beim Erstellen einen Fehler aus. Ein Nominal ist "
+"dann in **genau** der Welt wahr, die es benennt, und `@i φ` wertet `φ` "
+"in dieser Welt aus, unabhängig vom aktuellen Auswertungspunkt:"
+
+#: ../../guide/hybrid.md:64
+msgid ""
+"`@i i` is true everywhere (the world named `i` is, trivially, named `i`),"
+" and `@` composes with the modal operators — `◇i` reads \"some successor "
+"is the world `i`\":"
+msgstr ""
+"`@i i` ist überall wahr (die Welt mit Namen `i` heißt trivialerweise "
+"`i`), und `@` lässt sich mit modalen Operatoren kombinieren — `◇i` liest "
+"sich als „ein Nachfolger ist die Welt `i`“:"
+
+#: ../../guide/hybrid.md:74
+msgid ""
+"A nominal without an assignment is a modelling error, not a truth value —"
+" the evaluator raises a `ValueError` naming the offending nominal:"
+msgstr ""
+"Ein Nominal ohne Zuweisung ist ein Modellierungsfehler, kein Wahrheits­"
+"wert — der Auswerter löst einen `ValueError` aus, der das betreffende "
+"Nominal benennt:"
+
+#: ../../guide/hybrid.md:81
+msgid "The standard translation: nominals as world constants"
+msgstr "Die Standardübersetzung: Nominale als Weltenkonstanten"
+
+#: ../../guide/hybrid.md:83
+#, python-brace-format
+msgid ""
+"`standard_translation` maps hybrid constructs into classical FOL "
+"alongside the modal ones ({doc}`modal`). A nominal becomes a **world "
+"equality** against a dedicated constant, and `@i` simply **re-anchors** "
+"the current-world term at that constant — no quantifier is introduced:"
+msgstr ""
+"`standard_translation` bildet hybride Konstrukte — ebenso wie modale "
+"({doc}`modal`) — in klassische Prädikatenlogik ab. Ein Nominal wird zu "
+"einer **Weltengleichheit** mit einer dedizierten Konstante, und `@i` "
+"**verankert** den Term der aktuellen Welt einfach an dieser Konstante neu "
+"— es wird kein Quantor eingeführt:"
+
+#: ../../guide/hybrid.md:85
+msgid "`ST(i)(w)` = `w = nom_i`"
+msgstr "`ST(i)(w)` = `w = nom_i`"
+
+#: ../../guide/hybrid.md:86
+msgid "`ST(@i φ)(w)` = `ST(φ)(nom_i)`"
+msgstr "`ST(@i φ)(w)` = `ST(φ)(nom_i)`"
+
+#: ../../guide/hybrid.md:97
+msgid ""
+"The `nom_` prefix keeps the generated world constants **disjoint from "
+"user constants**: a formula whose atoms mention a ground constant `i` can"
+" never collide with the nominal `i` — the translation of `@i P(i)` is "
+"`P(i, nom_i)`, with both symbols intact."
+msgstr ""
+"Das Präfix `nom_` hält die erzeugten Weltenkonstanten **disjunkt von "
+"Benutzerkonstanten**: Eine Formel, deren Atome eine Grundkonstante `i` "
+"enthalten, kann nie mit dem Nominal `i` kollidieren — die Übersetzung von "
+"`@i P(i)` ist `P(i, nom_i)`, mit beiden Symbolen unverändert."
+
+#: ../../guide/hybrid.md:99
+msgid ""
+"Because a first-order constant denotes exactly one domain element, "
+"`nom_i` captures the \"true at exactly one world\" semantics of a nominal"
+" *for free* once the worlds are the FO domain — no extra axiom needed."
+msgstr ""
+"Da eine prädikatenlogische Konstante genau ein Domänenelement bezeichnet, "
+"erfasst `nom_i` die Semantik „wahr in genau einer Welt“ eines Nominals "
+"*kostenfrei*, sobald die Welten die FO-Domäne sind — kein zusätzliches "
+"Axiom erforderlich."
+
+#: ../../guide/hybrid.md:101
+msgid "Deciding validity: `hybrid_is_valid`"
+msgstr "Gültigkeitsentscheidung: `hybrid_is_valid`"
+
+#: ../../guide/hybrid.md:103
+msgid ""
+"`hybrid_is_valid(formula, frame=…)` decides hybrid-modal validity over "
+"the frame classes **K / T / S4 / S5** by closing the standard translation"
+" over the current world under the frame axioms — `frame_axioms → ∀w "
+"ST(φ)(w)` — and asking the Z3 validity oracle. The nominal constants stay"
+" free, and first-order validity quantifies free constants universally: "
+"that is exactly \"for every nominal assignment\". First-order validity is"
+" only semi-decidable in general, but H(@) over K is **decidable** and "
+"these translation images are small enough that Z3 settles them instantly;"
+" `True` is always a real proof."
+msgstr ""
+"`hybrid_is_valid(formula, frame=…)` entscheidet hybride Modalvalidität "
+"über den Rahmenklassen **K / T / S4 / S5**, indem die Standardübersetzung "
+"über die aktuelle Welt unter den Rahmenaxiomen abgeschlossen wird — "
+"`frame_axioms → ∀w ST(φ)(w)` — und das Z3-Validitätsorakel befragt wird. "
+"Die Nominalkonstanten bleiben frei, und prädikatenlogische Gültigkeit "
+"quantifiziert freie Konstanten universell: Das entspricht genau „für jede "
+"Nominalzuweisung“. Prädikatenlogische Gültigkeit ist im Allgemeinen nur "
+"semientscheidbar, aber H(@) über K ist **entscheidbar**, und diese "
+"Übersetzungsbilder sind klein genug, dass Z3 sie sofort löst; `True` ist "
+"stets ein echter Beweis."
+
+#: ../../guide/hybrid.md:105
+msgid "The standard H(@) validities all come out true over **K**:"
+msgstr "Alle Standard-H(@)-Gültigkeiten ergeben über **K** den Wert wahr:"
+
+#: ../../guide/hybrid.md:119
+msgid ""
+"… while the tempting non-theorems are refuted (each fails on a two-world "
+"model):"
+msgstr ""
+"… während die verlockenden Nicht-Theoreme widerlegt werden (jedes "
+"scheitert an einem Zwei-Welten-Modell):"
+
+#: ../../guide/hybrid.md:128
+msgid "Frame sensitivity"
+msgstr "Rahmenabhängigkeit"
+
+#: ../../guide/hybrid.md:130
+msgid ""
+"`frame=` constrains the **alethic** relation: `\"K\"` (no conditions), "
+"`\"T\"` (reflexive), `\"S4\"` (reflexive + transitive), `\"S5\"` "
+"(reflexive + symmetric + transitive). The frame schemas keep their usual "
+"behaviour with nominals mixed in — the T schema with a nominal conjoined "
+"still needs reflexivity, and the 4 schema pinned to a named world still "
+"needs transitivity:"
+msgstr ""
+"`frame=` schränkt die **alethische** Relation ein: `\"K\"` (keine "
+"Bedingungen), `\"T\"` (reflexiv), `\"S4\"` (reflexiv + transitiv), "
+"`\"S5\"` (reflexiv + symmetrisch + transitiv). Die Rahmen-Schemata "
+"behalten ihr gewohntes Verhalten, wenn Nominale hinzukommen — das "
+"T-Schema mit einem konjungierten Nominal benötigt weiterhin Reflexivität, "
+"und das 4-Schema, das auf eine benannte Welt festgelegt ist, benötigt "
+"weiterhin Transitivität:"
+
+#: ../../guide/hybrid.md:142
+#, python-brace-format
+msgid ""
+"On pure modal input (no nominals) `hybrid_is_valid` agrees with the "
+"native tableau `is_modal_valid` ({doc}`modal`) — the tests cross-check "
+"the two oracles on the standard schemas."
+msgstr ""
+"Bei rein modaler Eingabe (ohne Nominale) stimmt `hybrid_is_valid` mit dem "
+"nativen Tableau `is_modal_valid` ({doc}`modal`) überein — die Tests "
+"gleichen die beiden Orakel anhand der Standard-Schemata ab."
+
+#: ../../guide/hybrid.md:144
+msgid "The honest boundary"
+msgstr "Die ehrliche Grenze"
+
+#: ../../guide/hybrid.md:146
+msgid ""
+"**The `↓` binder is deliberately out of scope.** Full hybrid logic adds "
+"`↓x φ` (\"name the current world x and continue\"), which makes validity "
+"**undecidable**; H(@) without it stays decidable. There is no `↓` node in"
+" the kit."
+msgstr ""
+"**Der `↓`-Binder liegt bewusst außerhalb des Umfangs.** Die vollständige "
+"hybride Logik fügt `↓x φ` hinzu („benenne die aktuelle Welt x und fahre "
+"fort“), was Gültigkeit **unentscheidbar** macht; H(@) ohne ihn bleibt "
+"entscheidbar. Es gibt keinen `↓`-Knoten im Kit."
+
+#: ../../guide/hybrid.md:147
+msgid ""
+"**The modal tableau rejects hybrid input** — cleanly, never with a wrong "
+"verdict. A labelled tableau would need extra rules to honour a nominal's "
+"name-exactly-one-world constraint (treating it as an ordinary atom would "
+"wrongly refute `@i i`), so `is_modal_valid`, `modal_decide`, "
+"`modal_prove`, `modal_countermodel`, and `modal_tableau_closed` all raise"
+" on nominals:"
+msgstr ""
+"**Das modale Tableau lehnt hybride Eingaben ab** — sauber, niemals mit "
+"einem falschen Urteil. Ein beschriftetes Tableau würde zusätzliche Regeln "
+"benötigen, um die Einschränkung eines Nominals (genau eine Welt zu "
+"benennen) zu berücksichtigen (es als gewöhnliches Atom zu behandeln würde "
+"`@i i` fälschlicherweise widerlegen), daher lösen `is_modal_valid`, "
+"`modal_decide`, `modal_prove`, `modal_countermodel` und "
+"`modal_tableau_closed` bei Nominalen einen Fehler aus:"
+
+#: ../../guide/hybrid.md:157
+msgid ""
+"**The direct classical exporters reject too** (`Nominal(…).to_z3()` and "
+"friends raise): a nominal is world-relative, so the *sanctioned* routes "
+"into classical reasoning are the standard translation and "
+"`hybrid_is_valid`."
+msgstr ""
+"**Auch die direkten klassischen Exporter lehnen ab** (`Nominal(…).to_z3()` "
+"und Ähnliches lösen einen Fehler aus): Ein Nominal ist weltrelativ, daher "
+"sind die *sanktionierten* Wege in die klassische Schlussfolgerung die "
+"Standardübersetzung und `hybrid_is_valid`."
+
+#: ../../guide/hybrid.md:159
+#, python-brace-format
+msgid ""
+"For the plain modal machinery these constructs extend — Kripke models, "
+"the standard translation, the tableau, frames — see {doc}`modal`; for "
+"quantified modal logic see {doc}`quantified-modal`."
+msgstr ""
+"Für die gewöhnliche modale Maschinerie, die diese Konstrukte erweitern — "
+"Kripke-Modelle, die Standardübersetzung, das Tableau, Rahmen — siehe "
+"{doc}`modal`; für quantifizierte Modallogik siehe {doc}`quantified-modal`."

@@ -1,0 +1,359 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, Felix Vossel
+# This file is distributed under the same license as the unicode-fol-kit
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: unicode-fol-kit 0.13.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-07-03 14:38+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: de\n"
+"Language-Team: de <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../guide/substructural.md:1
+msgid "Substructural logics: linear and Lambek"
+msgstr "Substrukturelle Logiken: lineare Logik und Lambek-Kalkül"
+
+#: ../../guide/substructural.md:3
+msgid ""
+"Intuitionistic linear logic (ILL) and the Lambek calculus **L** are "
+"logics of **resources** rather than truths. A classical hypothesis, once "
+"established, can be reused (contraction) or ignored (weakening) at will; "
+"a linear hypothesis is *consumed* — used exactly once — and a Lambek "
+"hypothesis is consumed *in the order it was given*. The toolkit parses "
+"both (`MSFLParser(linear=True)` / `MSFLParser(lambek=True)`) and decides "
+"derivability with cut-free backward sequent search:"
+msgstr ""
+"Die intuitionistische lineare Logik (ILL) und der Lambek-Kalkül **L** sind "
+"Logiken von **Ressourcen** anstelle von Wahrheiten. Eine klassische "
+"Hypothese kann, sobald sie etabliert ist, nach Belieben wiederverwendet "
+"(Kontraktion) oder ignoriert (Schwächung) werden; eine lineare Hypothese "
+"wird *konsumiert* – also genau einmal verwendet – und eine Lambek-Hypothese "
+"wird *in der vorgegebenen Reihenfolge* konsumiert. Das Toolkit parst beide "
+"(`MSFLParser(linear=True)` / `MSFLParser(lambek=True)`) und entscheidet "
+"die Herleitbarkeit mittels schnittfreier Rückwärtssuche im Sequenzenkalkül:"
+
+#: ../../guide/substructural.md
+msgid "Logic"
+msgstr "Logik"
+
+#: ../../guide/substructural.md
+msgid "Functions"
+msgstr "Funktionen"
+
+#: ../../guide/substructural.md
+msgid "Module"
+msgstr "Modul"
+
+#: ../../guide/substructural.md
+msgid "ILL prover (complete decision for the !-free fragment)"
+msgstr "ILL-Beweiser (vollständiges Entscheidungsverfahren für das !-freie Fragment)"
+
+#: ../../guide/substructural.md
+msgid "`ill_prove`, `ill_derivable`"
+msgstr "`ill_prove`, `ill_derivable`"
+
+#: ../../guide/substructural.md
+msgid "`unicode_fol_kit.atp.linear`"
+msgstr "`unicode_fol_kit.atp.linear`"
+
+#: ../../guide/substructural.md
+msgid "ILL derivation checker"
+msgstr "ILL-Ableitungsprüfer"
+
+#: ../../guide/substructural.md
+msgid "`check_ill_proof`, `verify_ill_proof`"
+msgstr "`check_ill_proof`, `verify_ill_proof`"
+
+#: ../../guide/substructural.md
+msgid "Lambek decision procedure (L is decidable)"
+msgstr "Lambek-Entscheidungsverfahren (L ist entscheidbar)"
+
+#: ../../guide/substructural.md
+msgid "`lambek_prove`, `lambek_derivable`"
+msgstr "`lambek_prove`, `lambek_derivable`"
+
+#: ../../guide/substructural.md
+msgid "`unicode_fol_kit.atp.lambek`"
+msgstr "`unicode_fol_kit.atp.lambek`"
+
+#: ../../guide/substructural.md
+msgid "Lambek derivation checker"
+msgstr "Lambek-Ableitungsprüfer"
+
+#: ../../guide/substructural.md
+msgid "`check_lambek_proof`, `verify_lambek_proof`"
+msgstr "`check_lambek_proof`, `verify_lambek_proof`"
+
+#: ../../guide/substructural.md:18
+msgid ""
+"Both provers return an explicit derivation tree that the corresponding "
+"checker re-validates step by step (and does so automatically before any "
+"proof is handed back, so a search bug can lose proofs but never invent "
+"them)."
+msgstr ""
+"Beide Beweiser geben einen expliziten Ableitungsbaum zurück, den der "
+"entsprechende Prüfer Schritt für Schritt validiert (und dies automatisch "
+"tut, bevor ein Beweis zurückgegeben wird, sodass ein Fehler in der Suche "
+"zwar Beweise übersehen, aber niemals fälschlicherweise erfinden kann)."
+
+#: ../../guide/substructural.md:22
+msgid "Resources, not truths — why `A ⊬ A ⊗ A`"
+msgstr "Ressourcen statt Wahrheiten – warum `A ⊬ A ⊗ A` gilt"
+
+#: ../../guide/substructural.md:24
+msgid ""
+"A sequent `Γ ⊢ C` here reads \"consuming exactly the resources in `Γ` "
+"produces one `C`\". Dropping contraction and weakening makes the two "
+"classical absurdities of resource accounting underivable: one `A` does "
+"not make two, and a resource cannot be silently discarded."
+msgstr ""
+"Eine Sequenz `Γ ⊢ C` ist hier zu lesen als: „Das Konsumieren genau der "
+"Ressourcen in `Γ` erzeugt ein `C`“. Der Verzicht auf Kontraktion und "
+"Schwächung macht die beiden klassischen Absurditäten der "
+"Ressourcenbuchhaltung unherleitbar: Aus einem `A` werden nicht zwei, "
+"und eine Ressource kann nicht einfach stillschweigend verworfen werden."
+
+#: ../../guide/substructural.md:39
+msgid ""
+"Exchange, by contrast, *is* kept: the antecedent is a multiset, so order "
+"never matters in ILL (that is the extra rule Lambek drops below)."
+msgstr ""
+"Vertauschung (Exchange) hingegen *wird* beibehalten: Das Antezedens ist "
+"eine Multimenge, sodass die Reihenfolge in der ILL keine Rolle spielt "
+"(das ist die zusätzliche Regel, die Lambek weiter unten weglässt)."
+
+#: ../../guide/substructural.md:42
+msgid "The connective tour, vending-machine style"
+msgstr "Ein Rundgang durch die Konnektive nach Art eines Verkaufsautomaten"
+
+#: ../../guide/substructural.md:44
+msgid ""
+"Read `Coin ⊸ Coffee` as a vending machine: it consumes one coin and "
+"produces one coffee. `⊸L` is exactly \"insert coin\":"
+msgstr ""
+"Betrachten Sie `Coin ⊸ Coffee` als einen Verkaufsautomaten: Er konsumiert "
+"eine Münze und produziert einen Kaffee. `⊸L` entspricht genau dem "
+"„Münzeinwurf“:"
+
+#: ../../guide/substructural.md:56
+msgid ""
+"The two conjunctions split what classical `∧` conflates. `Tea & Coffee` "
+"(*with*) is a **menu**: both options are offered, you take exactly one. "
+"`Tea ⊗ Coffee` (*tensor*) is a **tray**: both items, side by side, and "
+"both must be accounted for:"
+msgstr ""
+"Die beiden Konjunktionen spalten auf, was das klassische `∧` verschmilzt. "
+"`Tea & Coffee` (*with* / additives Und) ist eine **Speisekarte**: Beide "
+"Optionen werden angeboten, Sie wählen genau eine. `Tea ⊗ Coffee` (*Tensor* "
+"/ multiplikatives Und) ist ein **Tablett**: Beide Artikel liegen "
+"nebeneinander und beide müssen verbucht werden:"
+
+#: ../../guide/substructural.md:70
+msgid ""
+"`⊕` is the dual choice — the **provider** picks, you must be ready for "
+"either:"
+msgstr ""
+"`⊕` ist die duale Auswahl – der **Anbieter** entscheidet, und Sie müssen "
+"für beide Optionen bereit sein:"
+
+#: ../../guide/substructural.md:77
+msgid ""
+"`𝟙` is the empty resource, `⊗`'s neutral element, and `⊗` commutes "
+"(exchange):"
+msgstr ""
+"`𝟙` ist die leere Ressource, das neutrale Element von `⊗`, und `⊗` "
+"kommutiert (Vertauschung):"
+
+#: ../../guide/substructural.md:85
+msgid "`!` as banking"
+msgstr "`!` als Bankwesen"
+
+#: ../../guide/substructural.md:87
+msgid ""
+"`!A` is an **account** holding `A`s rather than a single note: the "
+"exponential re-admits, for banked formulas only, exactly the structural "
+"rules linear logic dropped. Dereliction (`!D`) withdraws one, contraction"
+" (`!C`) duplicates the account, weakening (`!W`) lets an account be "
+"ignored — and promotion (`!P`) opens an account only when everything used"
+" to produce `A` is itself banked:"
+msgstr ""
+"`!A` ist ein **Konto**, das `A`s enthält, statt eines einzelnen "
+"Geldscheins: Das Exponential erlaubt – ausschließlich für auf Konten "
+"liegende Formeln – genau jene strukturellen Regeln wieder, die die "
+"lineare Logik verworfen hat. Dereliktion (`!D`) hebt eines ab, "
+"Kontraktion (`!C`) dupliziert das Konto, Schwächung (`!W`) erlaubt "
+"das Ignorieren eines Kontos – und Promotion (`!P`) eröffnet ein Konto "
+"nur dann, wenn alles, was zur Erzeugung von `A` verwendet wird, selbst "
+"auf einem Konto liegt:"
+
+#: ../../guide/substructural.md:100
+msgid ""
+"`ill_prove` returns the derivation tree; `.render()` prints it with the "
+"rule at each node (premises indented below their conclusion):"
+msgstr ""
+"`ill_prove` gibt den Ableitungsbaum zurück; `.render()` gibt ihn mit der "
+"Regel an jedem Knoten aus (Prämissen sind unter ihrer Konklusion "
+"eingerückt):"
+
+#: ../../guide/substructural.md:113
+msgid "The Lambek calculus as grammar"
+msgstr "Der Lambek-Kalkül als Grammatik"
+
+#: ../../guide/substructural.md:115
+msgid ""
+"`MSFLParser(lambek=True)` parses the type logic of categorial grammar: "
+"atomic categories (`NP`, `S`, …) and three connectives — `A • B` (an `A` "
+"followed by a `B`), `A \\ B` (*under*: combines with an `A` on its "
+"**left** to give a `B`) and `B / A` (*over*: combines with an `A` on its "
+"**right** to give a `B`). On top of linearity, L drops **exchange**: the "
+"antecedent is a sequence, and word order is exactly what the calculus "
+"tracks."
+msgstr ""
+"`MSFLParser(lambek=True)` parst die Typenlogik der Kategorialgrammatik: "
+"atomare Kategorien (`NP`, `S`, …) und drei Konnektive – `A • B` "
+"(ein `A` gefolgt von einem `B`), `A \\ B` (*under*: verbindet sich mit "
+"einem `A` zu seiner **Linken** zu einem `B`) und `B / A` (*over*: "
+"verbindet sich mit einem `A` zu seiner **Rechten** zu einem `B`). "
+"Zusätzlich zur Linearität verzichtet L auf die **Vertauschung**: "
+"Das Antezedens ist eine Sequenz, und die Wortreihenfolge ist "
+"genau das, was der Kalkül nachverfolgt."
+
+#: ../../guide/substructural.md:122
+msgid ""
+"A transitive verb like *sees* is `(NP \\ S) / NP`: it first finds its "
+"object `NP` on the right, then its subject `NP` on the left, yielding a "
+"sentence:"
+msgstr ""
+"Ein transitives Verb wie *sieht* ist `(NP \\ S) / NP`: Es sucht zuerst sein "
+"Objekt-`NP` auf der rechten Seite, dann sein Subjekt-`NP` auf der linken "
+"Seite, was einen Satz ergibt:"
+
+#: ../../guide/substructural.md:135
+msgid ""
+"The derivation *is* the parse of the sentence — `/L` consumes the object,"
+" `\\L` the subject:"
+msgstr ""
+"Die Ableitung *ist* die syntaktische Analyse des Satzes – `/L` konsumiert "
+"das Objekt, `\\L` das Subjekt:"
+
+#: ../../guide/substructural.md:148
+msgid ""
+"Order sensitivity is total — the same resources in the wrong arrangement "
+"fail, and the two slashes are genuinely different types:"
+msgstr ""
+"Die Sensitivität für die Reihenfolge ist absolut – dieselben Ressourcen "
+"in der falschen Reihenfolge schlagen fehl, und die beiden Schrägstriche "
+"sind tatsächlich unterschiedliche Typen:"
+
+#: ../../guide/substructural.md:158
+msgid ""
+"The classic categorial laws come out as theorems — type lifting, "
+"composition, and associativity of `•`:"
+msgstr ""
+"Die klassischen kategorialen Gesetze ergeben sich als Theoreme – "
+"Typanhebung (Type-Lifting), Komposition und Assoziativität von `•`:"
+
+#: ../../guide/substructural.md:168
+msgid ""
+"Antecedents must be **nonempty** (Lambek's restriction, the variant "
+"relevant to grammar — a category must be assigned to at least one word):"
+msgstr ""
+"Antezedenzien müssen **nicht-leer** sein (Lambeks Einschränkung, die für "
+"die Grammatik relevante Variante – einer Kategorie muss mindestens ein Wort "
+"zugewiesen sein):"
+
+#: ../../guide/substructural.md:175
+msgid "Decidability status — what a `None` means"
+msgstr "Entscheidungsstatus – was ein `None` bedeutet"
+
+#: ../../guide/substructural.md:177
+msgid "The three fragments give three different guarantees:"
+msgstr "Die drei Fragmente bieten drei verschiedene Garantien:"
+
+#: ../../guide/substructural.md:179
+msgid ""
+"**Lambek calculus: a decision procedure.** Every rule's premises are "
+"strictly smaller than its conclusion, so the exhaustive, memoised "
+"backward search always terminates, and `lambek_prove(...) is None` "
+"*proves* underivability."
+msgstr ""
+"**Lambek-Kalkül: ein Entscheidungsverfahren.** Die Prämissen jeder Regel "
+"sind strikt kleiner als ihre Konklusion, sodass die vollständige, "
+"memoisierte Rückwärtssuche immer terminiert und `lambek_prove(...) is "
+"None` die Nicht-Herleitbarkeit *beweist*."
+
+#: ../../guide/substructural.md:182
+msgid ""
+"**!-free ILL: a decision procedure.** The same size argument applies, and"
+" the default depth bound (the sequent's total node count) can never "
+"truncate a proof, so `None` again proves underivability."
+msgstr ""
+"**!-freie ILL: ein Entscheidungsverfahren.** Es gilt das gleiche "
+"Größenargument, und die standardmäßige Tiefenbegrenzung (die Gesamtzahl "
+"der Knoten der Sequenz) kann einen Beweis niemals abschneiden, "
+"sodass `None` auch hier die Nicht-Herleitbarkeit beweist."
+
+#: ../../guide/substructural.md:185
+msgid ""
+"**ILL with `!`: a bounded search.** Contraction (`!C`) *grows* sequents, "
+"so the search is depth- and step-bounded, and `None` means only \"no "
+"derivation found within the bound\" — honest, but not a refutation. Raise"
+" `max_depth` / `max_steps` to search deeper:"
+msgstr ""
+"**ILL mit `!`: eine begrenzte Suche.** Kontraktion (`!C`) lässt Sequenzen "
+"*anwachsen*, sodass die Suche tiefen- und schrittbegrenzt ist. `None` "
+"bedeutet hier lediglich „keine Ableitung innerhalb der Grenzen gefunden“ – "
+"ehrlich, aber keine Widerlegung. Erhöhen Sie `max_depth` / `max_steps`, "
+"um tiefer zu suchen:"
+
+#: ../../guide/substructural.md:195
+msgid "The honest boundary: no classical export"
+msgstr "Die ehrliche Grenze: kein klassischer Export"
+
+#: ../../guide/substructural.md:197
+msgid ""
+"Every other logic in the kit exports to Z3/Prover9/TPTP through some "
+"faithful or documented encoding. The substructural nodes deliberately "
+"**refuse**: the only candidate collapse (`⊗`,`&` → `∧`; `⊕` → `∨`; `⊸` → "
+"`→`; drop `!` and word order) erases precisely the distinctions these "
+"logics exist to draw. It is *sound* — every ILL/L theorem collapses to a "
+"classical tautology, which the test-suite verifies against Z3 — but "
+"wildly incomplete in reverse, so shipping it as `to_z3()` would silently "
+"classicalise your formulas:"
+msgstr ""
+"Jede andere Logik im Toolkit lässt sich über eine originalgetreue oder "
+"dokumentierte Kodierung nach Z3/Prover9/TPTP exportieren. Die "
+"substrukturellen Knoten **weigern** sich jedoch bewusst dagegen: Die einzige "
+"mögliche Reduktion (Kollaps: `⊗`,`&` → `∧`; `⊕` → `∨`; `⊸` → `→`; Weglassen "
+"von `!` und Wortreihenfolge) löscht genau jene Unterschiede aus, "
+"derentwegen diese Logiken überhaupt existieren. Sie ist zwar *korrekt* "
+"(sound) – jedes ILL/L-Theorem kollabiert zu einer klassischen Tautologie, "
+"was die Testsuite mit Z3 verifiziert –, aber in umgekehrter Richtung extrem "
+"unvollständig. Die Bereitstellung als `to_z3()` würde Ihre Formeln "
+"daher stillschweigend klassisch uminterpretieren:"
+
+#: ../../guide/substructural.md:211
+msgid ""
+"The collapse's blind spot in one line: `A & B ⊢ A ⊗ B` is **not** ILL-"
+"derivable (a menu is not a tray), yet its collapse `(A ∧ B) → (A ∧ B)` is"
+" classically valid. Classical logic simply cannot see the difference — "
+"which is why these two logics get provers of their own instead of an "
+"export."
+msgstr ""
+"Der blinde Fleck des Kollapses in einer Zeile zusammengefasst: `A & B ⊢ "
+"A ⊗ B` ist in der ILL **nicht** herleitbar (eine Speisekarte ist kein "
+"Tablett), aber der Kollaps `(A ∧ B) → (A ∧ B)` ist klassisch gültig. "
+"Die klassische Logik kann den Unterschied schlichtweg nicht erkennen – "
+"weshalb diese beiden Logiken eigene Beweiser erhalten, anstatt exportiert "
+"zu werden."

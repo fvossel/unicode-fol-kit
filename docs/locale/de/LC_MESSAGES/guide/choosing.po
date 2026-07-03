@@ -9,7 +9,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: unicode-fol-kit 0.11.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-02 22:46+0200\n"
+"POT-Creation-Date: 2026-07-03 14:38+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: de\n"
@@ -35,12 +35,12 @@ msgid ""
 msgstr ""
 "Das Kit umfasst mehrere Beweismethoden, einen Modellfinder und eine "
 "breite nichtklassische Peripherie über viele Logiken hinweg. Die "
-"folgenden Tabellen ordnen einer Frage (und einer Logik) den Einstiegspunkt"
-" zu, der sie beantwortet; jeder Einstiegspunkt ist in einem eigenen "
-"Abschnitt ausführlich dokumentiert. Nach den Tabellen liefert der "
-"Abschnitt **Ausgearbeitete Rezepte** ein kurzes, lauffähiges Beispiel zu "
-"jeder Zeile — ein Rezept kopieren, die Formel ändern, und man hat ein "
-"funktionierendes Programm."
+"folgenden Tabellen ordnen einer Frage (und einer Logik) den "
+"Einstiegspunkt zu, der sie beantwortet; jeder Einstiegspunkt ist in einem"
+" eigenen Abschnitt ausführlich dokumentiert. Nach den Tabellen liefert "
+"der Abschnitt **Ausgearbeitete Rezepte** ein kurzes, lauffähiges Beispiel"
+" zu jeder Zeile — ein Rezept kopieren, die Formel ändern, und man hat ein"
+" funktionierendes Programm."
 
 #: ../../guide/choosing.md:5
 msgid "Three things hold across the whole kit:"
@@ -84,8 +84,8 @@ msgstr ""
 "aussagenlogische Tableaux, Matrizen, ALC und (aussagenlogische) "
 "modale/intuitionistische Gültigkeit *terminieren mit einem Urteil*. "
 "Resolution und Fitch sind *semi-entscheidbar* (sie halten bei einem "
-"Nicht-Theorem möglicherweise nicht an). Der endliche Modellfinder und die "
-"Suchen zweiter Stufe / quantifizierten nichtklassischen Logiken sind "
+"Nicht-Theorem möglicherweise nicht an). Der endliche Modellfinder und die"
+" Suchen zweiter Stufe / quantifizierten nichtklassischen Logiken sind "
 "*beschränkt* — ein negatives Ergebnis bedeutet „innerhalb der Schranke "
 "nicht gefunden“, nicht einen Beweis."
 
@@ -111,8 +111,7 @@ msgstr "Korrekt / vollständig / entscheidbar"
 
 #: ../../guide/choosing.md
 msgid "Is this valid / does Γ entail φ? (general FOL, no external solver)"
-msgstr ""
-"Ist dies gültig / folgt φ aus Γ? (allgemeine FOL, kein externer Solver)"
+msgstr "Ist dies gültig / folgt φ aus Γ? (allgemeine FOL, kein externer Solver)"
 
 #: ../../guide/choosing.md
 msgid "`prove`, `is_valid_resolution`"
@@ -206,8 +205,7 @@ msgstr "bool / `ProofResult`"
 
 #: ../../guide/choosing.md
 msgid "sound; FOL/MSFOL by rule table, K3/LP + modal propositionally"
-msgstr ""
-"korrekt; FOL/MSFOL per Regeltabelle, K3/LP + modal aussagenlogisch"
+msgstr "korrekt; FOL/MSFOL per Regeltabelle, K3/LP + modal aussagenlogisch"
 
 #: ../../guide/choosing.md
 msgid "Find a Fitch proof"
@@ -223,8 +221,7 @@ msgstr "`Proof` / bool"
 
 #: ../../guide/choosing.md
 msgid "sound; complete propositionally, depth-bounded FO"
-msgstr ""
-"korrekt; aussagenlogisch vollständig, tiefenbeschränkt für FO"
+msgstr "korrekt; aussagenlogisch vollständig, tiefenbeschränkt für FO"
 
 #: ../../guide/choosing.md
 msgid "Check a sequent (LK) derivation"
@@ -272,8 +269,7 @@ msgstr "`Structure` / None / bool"
 
 #: ../../guide/choosing.md
 msgid "finite search up to size N; enumerates sort universes for MSFOL"
-msgstr ""
-"endliche Suche bis zur Größe N; zählt Sortenuniversen für MSFOL auf"
+msgstr "endliche Suche bis zur Größe N; zählt Sortenuniversen für MSFOL auf"
 
 #: ../../guide/choosing.md
 msgid "Find a second-order model / decide finite SO validity"
@@ -335,8 +331,7 @@ msgstr "bool / `IntKripkeModel`"
 
 #: ../../guide/choosing.md
 msgid "decidable propositionally; bounded Kripke search for quantifiers"
-msgstr ""
-"aussagenlogisch entscheidbar; beschränkte Kripke-Suche für Quantoren"
+msgstr "aussagenlogisch entscheidbar; beschränkte Kripke-Suche für Quantoren"
 
 #: ../../guide/choosing.md
 msgid "Evaluate truth in a structure"
@@ -410,8 +405,7 @@ msgstr ""
 
 #: ../../guide/choosing.md
 msgid "sound & complete; tableau with TBox internalisation and blocking"
-msgstr ""
-"korrekt & vollständig; Tableau mit TBox-Internalisierung und Blockierung"
+msgstr "korrekt & vollständig; Tableau mit TBox-Internalisierung und Blockierung"
 
 #: ../../guide/choosing.md
 msgid "Read a formula back as English"
@@ -525,8 +519,8 @@ msgid ""
 msgstr ""
 "`check_logical_entailment` (Prover9) und "
 "`check_logical_entailment_vampire` (Vampire) sind vollständig für FOL, "
-"benötigen aber die installierte ausführbare Datei, weshalb sie hier "
-"nicht ausgeführt werden."
+"benötigen aber die installierte ausführbare Datei, weshalb sie hier nicht"
+" ausgeführt werden."
 
 #: ../../guide/choosing.md:87
 msgid "I want to … decide a propositional / modal tautology"
@@ -538,10 +532,9 @@ msgid ""
 "propositional fragment; `prove_tableau` takes premises; `tableau_closed` "
 "reports whether a set of formulas is jointly unsatisfiable."
 msgstr ""
-"`is_valid_tableau` ist eine entscheidbare analytische Tableau-Prüfung "
-"für das aussagenlogische Fragment; `prove_tableau` nimmt Prämissen "
-"entgegen; `tableau_closed` meldet, ob eine Formelmenge gemeinsam "
-"unerfüllbar ist."
+"`is_valid_tableau` ist eine entscheidbare analytische Tableau-Prüfung für"
+" das aussagenlogische Fragment; `prove_tableau` nimmt Prämissen entgegen;"
+" `tableau_closed` meldet, ob eine Formelmenge gemeinsam unerfüllbar ist."
 
 #: ../../guide/choosing.md:97
 msgid "I want to … decide modal validity in-process"
@@ -561,9 +554,7 @@ msgstr ""
 
 #: ../../guide/choosing.md:112
 msgid "I want to … check a Fitch proof I wrote / find one"
-msgstr ""
-"Ich möchte … einen selbst geschriebenen Fitch-Beweis prüfen / einen "
-"finden"
+msgstr "Ich möchte … einen selbst geschriebenen Fitch-Beweis prüfen / einen finden"
 
 #: ../../guide/choosing.md:114
 msgid ""
@@ -603,9 +594,9 @@ msgid ""
 "is bounded by `max_size`."
 msgstr ""
 "`find_model` liefert eine `Structure`, die eine Theorie erfüllt; "
-"`find_countermodel` erfüllt die Prämissen, widerlegt aber die "
-"Konklusion; `is_valid_finite` / `is_satisfiable_finite` sind die "
-"booleschen Varianten. Die Suche ist durch `max_size` beschränkt."
+"`find_countermodel` erfüllt die Prämissen, widerlegt aber die Konklusion;"
+" `is_valid_finite` / `is_satisfiable_finite` sind die booleschen "
+"Varianten. Die Suche ist durch `max_size` beschränkt."
 
 #: ../../guide/choosing.md:158
 msgid "I want to … find a second-order model / decide finite SO validity"
@@ -696,8 +687,8 @@ msgid ""
 msgstr ""
 "Mit `fuzzy=True` parsen. `fuzzy_evaluate` liefert den Grad einer Formel "
 "unter einer `[0,1]`-Belegung; `fuzzy_is_valid` / `fuzzy_is_satisfiable` "
-"entscheiden über Z3-Reelle. Die t-Norm wird mit `tnorm=\"lukasiewicz\"` "
-"/ `\"godel\"` / `\"product\"` gewählt."
+"entscheiden über Z3-Reelle. Die t-Norm wird mit `tnorm=\"lukasiewicz\"` /"
+" `\"godel\"` / `\"product\"` gewählt."
 
 #: ../../guide/choosing.md:229
 msgid "I want to … reason about ALC concepts / an ABox"
@@ -740,9 +731,9 @@ msgid ""
 "The importers return the *same* AST every reasoning function consumes, so"
 " you can pipe an external problem straight into a prover."
 msgstr ""
-"Die Importer liefern denselben AST zurück, den jede Schlussfolgerungs"
-"funktion konsumiert, sodass Sie ein externes Problem direkt in einen "
-"Prover einspeisen können."
+"Die Importer liefern denselben AST zurück, den jede "
+"Schlussfolgerungsfunktion konsumiert, sodass Sie ein externes Problem "
+"direkt in einen Prover einspeisen können."
 
 #: ../../guide/choosing.md:266
 msgid "Logics supported"
@@ -1001,8 +992,8 @@ msgid ""
 "free-logic evaluation, public-announcement (PAL) updates, Lewis-sphere "
 "counterfactuals, circumscriptive non-monotonic entailment"
 msgstr ""
-"Auswertung in freier Logik, Public-Announcement-Updates (PAL), "
-"Lewis-Sphären-Kontrafaktische, zirkumskriptive nichtmonotone Folgerung"
+"Auswertung in freier Logik, Public-Announcement-Updates (PAL), Lewis-"
+"Sphären-Kontrafaktische, zirkumskriptive nichtmonotone Folgerung"
 
 #: ../../guide/choosing.md:281
 msgid ""
@@ -1012,11 +1003,11 @@ msgid ""
 "III / Satallax / Sledgehammer) — and, with a local Isabelle installed, "
 "`isabelle_decide_modal` actually *runs* it to decide modal validity."
 msgstr ""
-"Jede nicht-fuzzy Logik oben verfügt zudem über einen **Exporter für "
-"Logik höherer Stufe** in `unicode_fol_kit.hol` — eine flache Einbettung "
-"im Benzmüller-Stil, ausgegeben als Isabelle/HOL-Theorie oder als TPTP-"
-"THF-Problem für einen externen Prover (Leo-III / Satallax / "
-"Sledgehammer) — und mit einer lokal installierten Isabelle *führt* "
+"Jede nicht-fuzzy Logik oben verfügt zudem über einen **Exporter für Logik"
+" höherer Stufe** in `unicode_fol_kit.hol` — eine flache Einbettung im "
+"Benzmüller-Stil, ausgegeben als Isabelle/HOL-Theorie oder als TPTP-THF-"
+"Problem für einen externen Prover (Leo-III / Satallax / Sledgehammer) — "
+"und mit einer lokal installierten Isabelle *führt* "
 "`isabelle_decide_modal` sie tatsächlich aus, um modale Gültigkeit zu "
 "entscheiden."
 
@@ -1035,8 +1026,8 @@ msgstr ""
 "Die vier kleinen Auswerter bauen jeweils einen AST aus "
 "`unicode_fol_kit.fol.nodes` und schließen über ein explizites, manuell "
 "gebautes Modell. Die vollständige Behandlung findet sich unter "
-"{doc}`nonclassical`; dies sind die einzeiligen „ist das das Werkzeug, "
-"das ich will?“-Proben."
+"{doc}`nonclassical`; dies sind die einzeiligen „ist das das Werkzeug, das"
+" ich will?“-Proben."
 
 #: ../../guide/choosing.md:287
 msgid ""
@@ -1079,8 +1070,8 @@ msgid ""
 "**Standard translation** lowers a modal formula to first-order logic so "
 "the classical provers can take it:"
 msgstr ""
-"Die **Standardübersetzung** senkt eine modale Formel auf Prädikatenlogik"
-" erster Stufe ab, sodass die klassischen Prover sie verarbeiten können:"
+"Die **Standardübersetzung** senkt eine modale Formel auf Prädikatenlogik "
+"erster Stufe ab, sodass die klassischen Prover sie verarbeiten können:"
 
 #: ../../guide/choosing.md:356
 msgid ""
@@ -1095,8 +1086,8 @@ msgid ""
 "**Higher-order THF / Isabelle export** for an external HOL prover — "
 "`to_thf_modal` returns a THF problem string:"
 msgstr ""
-"**THF-/Isabelle-Export für Logik höherer Stufe** für einen externen "
-"HOL-Prover — `to_thf_modal` liefert einen THF-Problem-String:"
+"**THF-/Isabelle-Export für Logik höherer Stufe** für einen externen HOL-"
+"Prover — `to_thf_modal` liefert einen THF-Problem-String:"
 
 #: ../../guide/choosing.md:370
 msgid "Composing parser modes"
@@ -1107,17 +1098,22 @@ msgid ""
 "The four core parser modes form the `many_sorted` × `fuzzy` 2×2; the "
 "**modal** and **second-order** modes are each \"classical unsorted FOL + "
 "one extension\" and do not combine with sorts, fuzziness, or each other. "
-"The constructor rejects an unsupported combination with a clear "
-"`ValueError`. (The matrix, ALC, intuitionistic, and peripheral logics are"
-" separate subsystems, not parser flags.)"
+"The **dependence**, **linear**, and **lambek** modes are standalone "
+"logics (their connectives and semantics replace the classical ones), so "
+"they combine with nothing. The constructor rejects an unsupported "
+"combination with a clear `ValueError`. (The matrix, ALC, intuitionistic, "
+"relevant, and peripheral logics are separate subsystems, not parser "
+"flags.)"
 msgstr ""
 "Die vier Kern-Parser-Modi bilden das `many_sorted` × `fuzzy`-2×2; die "
-"Modi **modal** und **second-order** sind jeweils „klassische, "
-"unsortierte FOL + eine Erweiterung“ und kombinieren sich weder mit "
-"Sorten noch mit Fuzziness noch untereinander. Der Konstruktor lehnt eine"
-" nicht unterstützte Kombination mit einem klaren `ValueError` ab. (Die "
-"Matrix-, ALC-, intuitionistischen und peripheren Logiken sind separate "
-"Subsysteme, keine Parser-Flags.)"
+"Modi **modal** und **second-order** sind jeweils „klassische, unsortierte"
+" FOL + eine Erweiterung“ und kombinieren sich weder mit Sorten noch mit "
+"Fuzziness noch untereinander. Die Modi **dependence**, **linear** und "
+"**lambek** sind eigenständige Logiken (ihre Junktoren und ihre Semantik "
+"ersetzen die klassischen), kombinieren sich also mit nichts. Der "
+"Konstruktor lehnt eine nicht unterstützte Kombination mit einem klaren "
+"`ValueError` ab. (Die Matrix-, ALC-, intuitionistischen, relevanten und "
+"peripheren Logiken sind separate Subsysteme, keine Parser-Flags.)"
 
 #: ../../guide/choosing.md
 msgid "Combine…"
@@ -1188,17 +1184,65 @@ msgid "**second-order**"
 msgstr "**zweiter Stufe**"
 
 #: ../../guide/choosing.md:382
-msgid "Out of scope"
-msgstr "Außerhalb des Umfangs"
+msgid "The frontier families"
+msgstr "Die Grenzbereiche"
 
 #: ../../guide/choosing.md:384
+msgid "The families this page used to list as out of scope now ship first-class:"
+msgstr "Die Logikfamilien, die auf dieser Seite früher als „außerhalb des Umfangs“ geführt wurden, sind nun voll integriert:"
+
+#: ../../guide/choosing.md:386
+#, python-brace-format
 msgid ""
-"PRs welcome for: relevant / relevant-implication logic (Routley–Meyer "
-"frames), hybrid logic (nominals / `@`), independence-friendly / "
-"dependence logic, and substructural (linear / separation) logics."
+"**Hybrid logic H(@)** — nominals and the satisfaction operator, inside "
+"the modal mode (`MSFLParser(modal=True)` parses `@i (P ∧ ◇j)`); Kripke "
+"evaluation via `KripkeModel(nominals=…)` and validity per frame via "
+"`hybrid_is_valid`. See {doc}`hybrid`."
 msgstr ""
-"PRs willkommen für: Relevanzlogik / Logik der relevanten Implikation "
-"(Routley–Meyer-Frames), Hybridlogik (Nominale / `@`), "
-"unabhängigkeitsfreundliche / Abhängigkeitslogik sowie substrukturelle "
-"(lineare / Separations-) Logiken."
+"**Hybridlogik H(@)** — Nominale und der Erfüllungsoperator innerhalb des modalen Modus (`MSFLParser(modal=True)` parst `@i (P ∧ ◇j)`); Kripke-Auswertung über `KripkeModel(nominals=…)` und Gültigkeitsprüfung pro Frame via `hybrid_is_valid`. Siehe {doc}`hybrid`."
+
+#: ../../guide/choosing.md:387
+#, python-brace-format
+msgid ""
+"**Relevant logic B** — Routley–Meyer semantics over the classical syntax;"
+" `rel_valid` / `rel_countermodel` refute the paradoxes of material "
+"implication. See {doc}`relevant`."
+msgstr ""
+"**Relevanzlogik B** — Routley–Meyer-Semantik über der klassischen Syntax; `rel_valid` / `rel_countermodel` widerlegen die Paradoxien der materialen Implikation. Siehe {doc}`relevant`."
+
+#: ../../guide/choosing.md:388
+#, python-brace-format
+msgid ""
+"**Dependence / IF logic** — team semantics over finite structures: "
+"`MSFLParser(dependence=True)` parses `=(x, y)` and `∃y/{x} φ`; evaluate "
+"with `team_satisfies` / `team_models`. See {doc}`dependence`."
+msgstr ""
+"**Abhängigkeits- / IF-Logik** — Team-Semantik über endlichen Strukturen: `MSFLParser(dependence=True)` parst `=(x, y)` und `∃y/{x} φ`; Auswertung mittels `team_satisfies` / `team_models`. Siehe {doc}`dependence`."
+
+#: ../../guide/choosing.md:389
+#, python-brace-format
+msgid ""
+"**Substructural logics** — `MSFLParser(linear=True)` (⊗ & ⊕ ⊸ ! 𝟙, prover"
+" `ill_prove`) and `MSFLParser(lambek=True)` (• \\ /, decision procedure "
+"`lambek_derivable`). See {doc}`substructural`."
+msgstr ""
+"**Substrukturelle Logiken** — `MSFLParser(linear=True)` (⊗ & ⊕ ⊸ ! 𝟙, Prover `ill_prove`) und `MSFLParser(lambek=True)` (• \\ /, Entscheidungsverfahren `lambek_derivable`). Siehe {doc}`substructural`."
+
+#~ msgid "Out of scope"
+#~ msgstr "Außerhalb des Umfangs"
+
+#~ msgid ""
+#~ "PRs welcome for: relevant / relevant-"
+#~ "implication logic (Routley–Meyer frames), "
+#~ "hybrid logic (nominals / `@`), "
+#~ "independence-friendly / dependence logic, "
+#~ "and substructural (linear / separation) "
+#~ "logics."
+#~ msgstr ""
+#~ "PRs willkommen für: Relevanzlogik / "
+#~ "Logik der relevanten Implikation (Routley"
+#~ "–Meyer-Frames), Hybridlogik (Nominale / "
+#~ "`@`), unabhängigkeitsfreundliche / "
+#~ "Abhängigkeitslogik sowie substrukturelle (lineare"
+#~ " / Separations-) Logiken."
 
