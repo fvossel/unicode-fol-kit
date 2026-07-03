@@ -553,3 +553,35 @@ When no Isabelle is present, `check_theory` / `isabelle_decide_*` raise `Isabell
 from unicode_fol_kit.hol import IsabelleNotAvailable
 print(issubclass(IsabelleNotAvailable, Exception))    # → True
 ```
+
+## Deep and shallow embeddings with faithfulness proofs
+
+The exporters above give one *minimal (lightweight) shallow* embedding — accessibility and valuation as `consts`, formulas as `w ⇒ bool` — which is the style that automates best. The `unicode_fol_kit.hol.deepshallow` subpackage reproduces the full construction of Benzmüller, *Faithful Logic Embeddings in HOL — Deep and Shallow* (arXiv:2502.19311): for one object logic it emits **all three** embeddings side by side and the **machine-checked faithfulness proofs** relating them.
+
+Each emitted theory contains
+
+- a **deep** embedding — the object syntax as a `datatype` with a recursive `primrec truthD`, so you can reason *about* the logic (induction over formula structure, meta-theorems);
+- a **maximal (heavyweight) shallow** embedding — every semantic parameter (`W`, the accessibility structure, `V`) carried explicitly as `⇒ w ⇒ bool`;
+- a **minimal (lightweight) shallow** embedding — those parameters fixed as metalogical `consts`;
+- the `primrec` mappings `dpToMax` / `dpToMin` and the theorems `faithful1a`/`faithful1b` (deep ↔ maximal), `faithful2`/`faithful3` (↔ minimal in the fixed model) and `sound_min`, each closed by a one-line `induct`.
+
+Unlike the emit-only exporters, these theories are **verified end to end**: a green `check_theory` build means Isabelle's kernel discharged every faithfulness proof. Four worlds-based logics are covered — propositional modal K, intuitionistic (Kripke), Lewis counterfactual (sphere), and relevant logic B (Routley–Meyer):
+
+```python
+from unicode_fol_kit.fol.nodes import Atom, Implies, Box
+from unicode_fol_kit.hol import modal_faithfulness_theory, modal_to_deep, check_theory
+from unicode_fol_kit.hol.deepshallow import AtomConsts
+
+# The deep embedding is propositional, so atoms are 0-ary (a bare lowercase name
+# parses as a hybrid-logic *nominal* in modal mode, not a propositional atom):
+p, q = Atom("p", ()), Atom("q", ())
+k_axiom = Implies(Box(Implies(p, q)), Implies(Box(p), Box(q)))
+print(modal_to_deep(k_axiom, AtomConsts()))
+# → (ImpD (BoxD (ImpD (Atm p_p) (Atm p_q))) (ImpD (BoxD (Atm p_p)) (BoxD (Atm p_q))))
+
+theory = modal_faithfulness_theory("ModalFaithfulness")   # the full certificate
+result = check_theory(theory, "ModalFaithfulness")        # doctest: +SKIP
+print(result.ok)                                          # doctest: +SKIP  → True
+```
+
+The four entry points are `modal_faithfulness_theory`, `intuitionistic_faithfulness_theory`, `conditional_faithfulness_theory` and `relevant_faithfulness_theory` (each optionally grounding the certificate in a concrete formula). The stack targets the propositional/schematic fragment, where induction over the syntax datatype applies; the quantified decision path stays in `to_isabelle_modal` / `isabelle_decide_modal` above.

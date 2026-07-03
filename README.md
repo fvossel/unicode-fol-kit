@@ -63,7 +63,11 @@ optional external tools you install separately to unlock the corresponding backe
 | Linear logic (ILL) · Lambek calculus | `MSFLParser(linear=True)` / `lambek=True` | `ill_prove` (cut-free; complete for !-free) · `lambek_derivable` (decision procedure) |
 
 With a local **Isabelle** installed, the `hol` subpackage's shallow embeddings become
-*proofs*: `isabelle_decide_modal` / `isabelle_decide_fol` actually run the prover. See
+*proofs*: `isabelle_decide_modal` / `isabelle_decide_fol` actually run the prover. The
+`hol.deepshallow` subpackage goes further, emitting — for propositional modal,
+intuitionistic, Lewis-conditional and relevant logic — the **deep, maximal-shallow and
+minimal-shallow** embeddings side by side with **machine-checked faithfulness proofs**
+between them (Benzmüller, arXiv:2502.19311), verified end to end by Isabelle. See
 the [higher-order guide](https://unicode-fol-kit.readthedocs.io/en/latest/guide/higher-order.html).
 
 ## Building the documentation locally

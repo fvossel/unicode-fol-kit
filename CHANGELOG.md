@@ -5,6 +5,39 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [0.13.0] - 2026-07-03
+
+Deep and shallow HOL embeddings with **machine-checked faithfulness proofs**,
+reproducing Benzmüller, *Faithful Logic Embeddings in HOL — Deep and Shallow*
+(arXiv:2502.19311). For each of four worlds-based non-classical logics the new
+`unicode_fol_kit.hol.deepshallow` subpackage emits one self-contained Isabelle/HOL
+theory carrying all three embeddings — a **deep** one (object syntax as a `datatype`
+with a recursive `truthD`), a **maximal (heavyweight) shallow** one (every semantic
+parameter explicit), and a **minimal (lightweight) shallow** one (accessibility and
+valuation fixed as `consts`) — together with the `primrec` mappings `dpToMax` /
+`dpToMin` and the theorems `faithful1a`/`faithful1b` (deep ↔ maximal),
+`faithful2`/`faithful3` (↔ minimal in the fixed model) and `sound_min`, each closed
+by a one-line `induct`. Unlike the existing emit-only shallow exporters, these
+theories are **verified end to end** by the Isabelle runner (`check_theory`): a
+green build means Isabelle's kernel discharged every faithfulness proof.
+
+Added:
+
+- `modal_faithfulness_theory` / `modal_to_deep` — propositional modal logic K.
+- `intuitionistic_faithfulness_theory` / `int_to_deep` — intuitionistic
+  propositional logic (Kripke semantics: preorder ≤, persistent valuation).
+- `conditional_faithfulness_theory` / `counterfactual_to_deep` — Lewis
+  counterfactual (sphere) logic, matching `semantics.conditional`.
+- `relevant_faithfulness_theory` / `rel_to_deep` — relevant logic B (simplified
+  Routley–Meyer semantics: normal worlds, Routley star, ternary relation), matching
+  `semantics.relevant`.
+- Isabelle-gated live tests that build each emitted theory and assert the kernel
+  discharges the five faithfulness theorems, plus always-run structure tests.
+
+The stack targets the propositional/schematic fragment (where induction over the
+syntax datatype applies); the quantified decision path stays in
+`unicode_fol_kit.hol.isabelle_modal`.
+
 ## [0.12.0] - 2026-07-03
 
 The four families the documentation used to list as deliberately out of scope are

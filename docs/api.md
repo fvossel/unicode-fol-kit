@@ -131,6 +131,10 @@ signature and documentation of each public entry point; use the search box or th
    to_isabelle_modal
    isabelle_decide_modal
    isabelle_decide_fol
+   modal_faithfulness_theory
+   intuitionistic_faithfulness_theory
+   conditional_faithfulness_theory
+   relevant_faithfulness_theory
 ```
 
 ## Many-valued, fuzzy, intuitionistic & second-order

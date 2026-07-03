@@ -94,7 +94,7 @@ from .hol import (
 )
 from . import dl   # the ALC description-logic subpackage (dl.concept_satisfiable, …)
 
-__version__ = "0.12.0"
+__version__ = "0.13.0"
 
 __all__ = [
     "MSFLParser",

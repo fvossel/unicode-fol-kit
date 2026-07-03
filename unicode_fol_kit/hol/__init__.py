@@ -28,6 +28,10 @@ Modules:
   (native higher-order predicate quantification; standard semantics).
 - :mod:`~unicode_fol_kit.hol.intuitionistic` — intuitionistic propositional logic → HOL
   via the Gödel–McKinsey–Tarski translation into S4 then the alethic SSE.
+- :mod:`~unicode_fol_kit.hol.deepshallow` — the **deep + maximal-shallow +
+  minimal-shallow** embeddings of a non-classical logic *with machine-checked
+  faithfulness proofs* between them (Benzmüller, arXiv:2502.19311). Unlike the
+  emit-only SSE above, these theories are verified end to end by the Isabelle runner.
 """
 
 from .isabelle_modal import (
@@ -49,6 +53,12 @@ from .intuitionistic import (
     gmt_translate, to_thf_intuitionistic, to_isabelle_intuitionistic,
     gmt_is_s4_valid, gmt_validity_matches_int_valid,
 )
+from .deepshallow import (
+    modal_faithfulness_theory, modal_to_deep,
+    intuitionistic_faithfulness_theory, int_to_deep,
+    conditional_faithfulness_theory, counterfactual_to_deep,
+    relevant_faithfulness_theory, rel_to_deep,
+)
 
 __all__ = [
     "to_isabelle_modal", "isabelle_modal_theory", "ISABELLE_TACTICS",
@@ -64,4 +74,8 @@ __all__ = [
     "to_thf_so", "to_isabelle_so",
     "gmt_translate", "to_thf_intuitionistic", "to_isabelle_intuitionistic",
     "gmt_is_s4_valid", "gmt_validity_matches_int_valid",
+    "modal_faithfulness_theory", "modal_to_deep",
+    "intuitionistic_faithfulness_theory", "int_to_deep",
+    "conditional_faithfulness_theory", "counterfactual_to_deep",
+    "relevant_faithfulness_theory", "rel_to_deep",
 ]
