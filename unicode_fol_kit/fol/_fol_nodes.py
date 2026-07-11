@@ -1,5 +1,6 @@
 """Z3 environment, base Node class, classical FOL nodes, registry, and Lark transformer."""
 
+import re
 from typing import List, Tuple, Union, Dict
 from lark import Transformer
 from dataclasses import dataclass, fields
@@ -318,9 +319,72 @@ class Variable(Node):
         return self.name.upper()
 
 
+# --------------------------------------------------------------------------- #
+# Reversible ASCII transliteration for non-ASCII constant names.
+#
+# A constant may carry a non-ASCII (Greek) letter — e.g. a threshold ``θ`` — which
+# the Kripke evaluator and Z3 handle directly (Z3 symbol names are arbitrary
+# strings). The *text*-based first-order back-ends (Prover9 / TPTP) accept only
+# ASCII identifiers, so on export each Greek letter (except the reserved operator
+# glyphs λ / μ) maps to its conventional ASCII name and any other non-ASCII
+# character uses a reversible ``uXXXX`` codepoint escape — a name is never emitted
+# raw. Deterministic; invertible via :func:`constant_name_from_ascii` (exactly for a
+# single-symbol constant, the realistic case).
+# --------------------------------------------------------------------------- #
+
+_GREEK_CONST_TO_ASCII = {
+    "α": "alpha", "β": "beta", "γ": "gamma", "δ": "delta", "ε": "epsilon",
+    "ζ": "zeta", "η": "eta", "θ": "theta", "ι": "iota", "κ": "kappa",
+    "ν": "nu", "ξ": "xi", "ο": "omicron", "π": "pi", "ρ": "rho",
+    "σ": "sigma", "τ": "tau", "υ": "upsilon", "φ": "phi", "χ": "chi",
+    "ψ": "psi", "ω": "omega",
+}
+_ASCII_TO_GREEK_CONST = {v: k for k, v in _GREEK_CONST_TO_ASCII.items()}
+_UESC_RE = re.compile(r"u([0-9a-f]{4})")
+
+
+def constant_name_to_ascii(name: str) -> str:
+    """Transliterate a (possibly non-ASCII) constant name to a valid ASCII identifier.
+
+    ASCII characters pass through; a Greek letter maps to its conventional name
+    (``θ`` → ``theta``); any other non-ASCII character becomes a reversible ``uXXXX``
+    codepoint escape. Deterministic; inverse is :func:`constant_name_from_ascii`.
+    """
+    out = []
+    for ch in name:
+        if ch.isascii():
+            out.append(ch)
+        elif ch in _GREEK_CONST_TO_ASCII:
+            out.append(_GREEK_CONST_TO_ASCII[ch])
+        else:
+            out.append("u%04x" % ord(ch))
+    return "".join(out)
+
+
+def constant_name_from_ascii(s: str) -> str:
+    """Inverse of :func:`constant_name_to_ascii` for a single transliterated symbol.
+
+    Recovers the original character when ``s`` is exactly one Greek name (``theta`` →
+    ``θ``) or a ``uXXXX`` escape; otherwise returns ``s`` unchanged. Multi-symbol
+    concatenations are deterministic forward but not uniquely decodable, so only
+    single-symbol constants (the realistic case) are guaranteed to round-trip.
+    """
+    if s in _ASCII_TO_GREEK_CONST:
+        return _ASCII_TO_GREEK_CONST[s]
+    m = _UESC_RE.fullmatch(s)
+    if m:
+        return chr(int(m.group(1), 16))
+    return s
+
+
 @dataclass(frozen=True)
 class Constant(Node):
-    """A ground constant, produced by a bare NAME or by the c_-prefixed CONSTANT terminal."""
+    """A ground constant, produced by a bare NAME, a c_-prefixed CONSTANT, or a
+    non-ASCII (Greek, e.g. ``θ``) CONSTANT token.
+
+    The name may contain non-ASCII letters; the Kripke evaluator and Z3 use them
+    directly, while the ASCII-only Prover9 / TPTP exporters transliterate them via
+    :func:`constant_name_to_ascii` (``θ`` → ``theta``)."""
 
     name: str
 
@@ -334,16 +398,16 @@ class Constant(Node):
         return Constant(d["name"])
 
     def to_z3(self, env: Z3Env = None):
-        """Translate to a Z3 constant in the uninterpreted sort S."""
+        """Translate to a Z3 constant in the uninterpreted sort S (Z3 accepts the raw name)."""
         return (env or Z3Env()).get_symbol(self.name)
 
     def to_prover9(self) -> str:
-        """Render the constant name as-is."""
-        return self.name
+        """Render the constant name, transliterating any non-ASCII to ASCII (Prover9 is ASCII-only)."""
+        return constant_name_to_ascii(self.name)
 
     def to_tptp(self) -> str:
-        """Render constant in TPTP syntax. TPTP requires constants to start with a lowercase letter."""
-        return self.name.lower()
+        """Render constant in TPTP syntax (ASCII, lowercase-initial): transliterate then lowercase."""
+        return constant_name_to_ascii(self.name).lower()
 
 
 @dataclass(frozen=True)

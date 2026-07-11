@@ -1,6 +1,6 @@
 PREDICATE: /[A-Z][a-zA-Z0-9]*/
 
-CONSTANT.3: /c_[a-zA-Z0-9]+/
+CONSTANT.3: /c_[a-zA-Z0-9]+/ | /[αβγδεζηθικνξοπρστυφχψω]+/
 
 NAME.2: /[a-z][a-zA-Z0-9]*[a-zA-Z][a-zA-Z0-9]*/
 

@@ -19,7 +19,9 @@ The full modal family handled by the AST:
   variable in agent position (``∀x (Student(x) → K_x φ)``) quantifies over agents,
   exactly as in :func:`satisfies_modal`;
 - **deontic** ``Obligatory`` / ``Permitted`` over a (serial) relation ``d``;
-- **temporal** ``Always`` / ``Eventually`` / ``Next`` over a relation ``t``.
+- **temporal** ``Always`` / ``Eventually`` over the henceforth relation ``t`` and
+  ``Next`` over the one-step relation ``n``, plus the binary interval operators
+  ``Until`` / ``Since`` as inductive least fixpoints over ``n`` (see below).
 
 The embedding is **faithful to** :func:`satisfies_modal` on the overlapping
 fragment: every modality is read as a box/diamond over the corresponding
@@ -43,9 +45,26 @@ the one-step successor relation ``n``. In ``satisfies_modal`` ``Always`` /
 co-occurs with ``Always`` / ``Eventually`` (both ``n`` and ``t`` declared) this
 module emits the linking axiom ``n_in_t : "⋀w v. n w v ⟹ t w v"`` (one-step
 successor ⟹ henceforth-reachable), so ``Always(P) → Next(P)`` is likewise a
-theorem of the emitted theory. ``Until`` is **not** emitted: it needs an
-inductive / least-fixpoint definition and is out of the shallow fragment (use
-``satisfies_modal`` for it).
+theorem of the emitted theory.
+
+Binary interval operators ``Until`` / ``Since``
+-----------------------------------------------
+``Until`` and ``Since`` are emitted as **inductive least-fixpoint predicates**
+``muntil`` / ``msince`` over the one-step relation ``n`` (not as box/diamond
+abbreviations). ``muntil phi psi`` is the least predicate closed under
+``psi w ⟹ muntil w`` and ``phi w ∧ n w v ∧ muntil v ⟹ muntil w``, so it denotes
+exactly the **finite forward ``n``-paths** with ``psi`` at the endpoint and
+``phi`` at every earlier point — the faithful counterpart of the depth-first path
+search in :func:`satisfies_modal` (``_until_holds``); ``msince`` is the backward
+mirror over the converse of ``n`` (``_since_holds``). A plain interval reading over
+the closure ``t`` would *not* be faithful on branching / short-cut frames (it asks
+``phi`` at every ``t``-intermediate world, the path search only along one path); the
+least fixpoint is faithful on **every** frame. Because these read the one-step
+relation ``n``, using ``Until`` / ``Since`` declares ``n`` (as ``Next`` does) and,
+when ``Always`` / ``Eventually`` also occur, links ``n`` into the henceforth ``t``
+so the two agree. The Isabelle-verified characterization (the strong-Until /
+Since fixpoint equation and reachability) lives in ``tests/test_hol_isabelle_modal``
+and the live ``check_theory`` gate.
 
 Honesty
 -------
@@ -72,7 +91,7 @@ from unicode_fol_kit.fol.nodes import (
     Node, Variable, Constant, Number, Function,
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
     Box, Diamond, Knows, Believes,
-    Always, Eventually, Next, Until,
+    Always, Eventually, Next, Until, Since,
     Obligatory, Permitted, SortedQuantifier,
 )
 from unicode_fol_kit.fol._symbol_names import SymbolNames
@@ -286,9 +305,15 @@ def _lift(node: Node, names: "_IsaNames") -> str:
         return f"({binder} (\\<lambda>{x}. {_lift(node.formula, names)}))"
 
     if isinstance(node, Until):
-        raise NotImplementedError(
-            "to_isabelle_modal: Until is outside the shallow fragment (it needs an "
-            "inductive / least-fixpoint definition); evaluate it with satisfies_modal.")
+        # Strong "left until right" as the inductive predicate ``muntil`` (least
+        # fixpoint over the one-step relation n), matching satisfies_modal's finite
+        # forward-path search exactly. See _until_block.
+        return f"(muntil {_lift(node.left, names)} {_lift(node.right, names)})"
+    if isinstance(node, Since):
+        # Past-tense "left since right" as ``msince`` (least fixpoint over the CONVERSE
+        # of n), the backward mirror of muntil — matching satisfies_modal's backward
+        # path search. See _since_block.
+        return f"(msince {_lift(node.left, names)} {_lift(node.right, names)})"
     if isinstance(node, SortedQuantifier):
         raise NotImplementedError(
             "to_isabelle_modal: SortedQuantifier is not supported; use a plain ∀x/∃x.")
@@ -313,7 +338,18 @@ class _Sig:
         self.uses_deontic = False
         self.uses_temporal = False   # Always / Eventually  (relation t)
         self.uses_next = False       # Next                 (relation n)
+        self.uses_until = False      # Until (inductive muntil over n)
+        self.uses_since = False      # Since (inductive msince over converse n)
         self.has_quant = False
+
+    @property
+    def needs_next_rel(self) -> bool:
+        """Whether the one-step relation ``n`` must be declared.
+
+        ``n`` is needed by ``Next`` (mnext) and by the inductive ``muntil`` / ``msince``
+        (which do a one-step forward / backward path search over it).
+        """
+        return self.uses_next or self.uses_until or self.uses_since
 
 
 def _scan_term(node: Node, sig: _Sig) -> None:
@@ -377,8 +413,15 @@ def _scan(node: Node, sig: _Sig) -> None:
         _scan(node.formula, sig)
         return
     if isinstance(node, Until):
-        raise NotImplementedError(
-            "to_isabelle_modal: Until is outside the shallow fragment.")
+        sig.uses_until = True
+        _scan(node.left, sig)
+        _scan(node.right, sig)
+        return
+    if isinstance(node, Since):
+        sig.uses_since = True
+        _scan(node.left, sig)
+        _scan(node.right, sig)
+        return
     if isinstance(node, SortedQuantifier):
         raise NotImplementedError(
             "to_isabelle_modal: SortedQuantifier is not supported; use a plain ∀x/∃x.")
@@ -477,11 +520,56 @@ def _temporal_def_block() -> List[str]:
     ]
 
 
-def _next_block() -> List[str]:
+def _next_consts_block() -> List[str]:
+    """Declare the one-step successor relation ``n`` (needed by Next / Until / Since)."""
     return [
         'consts n :: "i \\<Rightarrow> i \\<Rightarrow> bool"  \\<comment> \\<open>one-step temporal successor\\<close>',
+    ]
+
+
+def _next_abbrev_block() -> List[str]:
+    """The ``mnext`` box-over-``n`` abbreviation (emitted only when Next occurs)."""
+    return [
         'abbreviation mnext :: "(i \\<Rightarrow> bool) \\<Rightarrow> (i \\<Rightarrow> bool)" where',
         '  "mnext \\<phi> \\<equiv> \\<lambda>w. \\<forall>v. n w v \\<longrightarrow> \\<phi> v"',
+    ]
+
+
+def _until_block() -> List[str]:
+    r"""``muntil`` — strong "left until right" as a least fixpoint over ``n``.
+
+    Defined inductively so it denotes exactly the FINITE forward paths
+    ``w = w0 \<rightarrow> ... \<rightarrow> wn`` (one-step ``n`` edges, n \<ge> 0) with ``psi`` at the
+    endpoint and ``phi`` at every earlier point — the faithful counterpart of
+    :func:`unicode_fol_kit.semantics.kripke._until_holds` (its depth-first path
+    search). A plain box/diamond-over-``t`` abbreviation could NOT capture "phi all
+    the way along the path" (on a branching/short-cut frame the interval reading
+    over the closure ``t`` differs from the path search); the least fixpoint does,
+    so this is faithful to ``satisfies_modal`` on every frame, not just linear ones.
+    ``n`` (the one-step relation) must be declared first.
+    """
+    return [
+        'inductive muntil :: "(i \\<Rightarrow> bool) \\<Rightarrow> (i \\<Rightarrow> bool) \\<Rightarrow> i \\<Rightarrow> bool"',
+        '  for phi :: "i \\<Rightarrow> bool" and psi :: "i \\<Rightarrow> bool" where',
+        '  muntil_base: "psi w \\<Longrightarrow> muntil phi psi w"',
+        '| muntil_step: "phi w \\<Longrightarrow> n w v \\<Longrightarrow> muntil phi psi v '
+        '\\<Longrightarrow> muntil phi psi w"',
+    ]
+
+
+def _since_block() -> List[str]:
+    r"""``msince`` — past-tense "left since right", the backward mirror of ``muntil``.
+
+    Same least fixpoint but stepping along the CONVERSE of ``n`` (``n v w``: ``v`` is a
+    one-step predecessor of ``w``), so it denotes the finite BACKWARD paths matching
+    :func:`unicode_fol_kit.semantics.kripke._since_holds`. ``n`` must be declared first.
+    """
+    return [
+        'inductive msince :: "(i \\<Rightarrow> bool) \\<Rightarrow> (i \\<Rightarrow> bool) \\<Rightarrow> i \\<Rightarrow> bool"',
+        '  for phi :: "i \\<Rightarrow> bool" and psi :: "i \\<Rightarrow> bool" where',
+        '  msince_base: "psi w \\<Longrightarrow> msince phi psi w"',
+        '| msince_step: "phi w \\<Longrightarrow> n v w \\<Longrightarrow> msince phi psi v '
+        '\\<Longrightarrow> msince phi psi w"',
     ]
 
 
@@ -596,7 +684,7 @@ def _collect_axioms(sig: "_Sig", frame: str, mode: str,
     definition (Always/Eventually + Next), the temporal/next closure axioms become
     theorems and are omitted.
     """
-    use_temporal_def = temporal_def and sig.uses_temporal and sig.uses_next
+    use_temporal_def = temporal_def and sig.uses_temporal and sig.needs_next_rel
     axioms: List[str] = []
     if sig.uses_alethic:
         axioms += _frame_axioms(frame)
@@ -605,9 +693,12 @@ def _collect_axioms(sig: "_Sig", frame: str, mode: str,
     if not use_temporal_def:
         if sig.uses_temporal and temporal_closure:
             axioms += _temporal_axioms()
-        # When Next (n) co-occurs with Always/Eventually (t), link n into t so the
-        # oracle-valid Always(P) -> Next(P) is a theorem of the emitted theory too...
-        if sig.uses_temporal and sig.uses_next:
+        # When the one-step relation n co-occurs with Always/Eventually (t) — because
+        # Next, Until, or Since is present — link n into t so t and the n-based
+        # operators agree (t denotes the closure of the SAME one-step relation the
+        # path-search Until/Since and Next read), keeping the oracle-valid
+        # Always(P) -> Next(P) and the Always/Until interplay theorems of the theory...
+        if sig.uses_temporal and sig.needs_next_rel:
             axioms += _next_in_temporal_axiom()
             # ...and, when t is the closure relation, pin t = n** exactly (not merely a
             # refl-trans superset of n), so satisfies_modal-valid temporal-induction
@@ -738,7 +829,7 @@ def isabelle_modal_theory(
     sig = _Sig()
     _scan(formula, sig)               # which modalities occur (relation/operator blocks)
     names = _IsaNames(formula)        # de-colliding constant names (decls + usages agree)
-    body = _lift(formula, names)  # may raise on Until / SortedQuantifier — do before emitting.
+    body = _lift(formula, names)  # may raise on SortedQuantifier — do before emitting.
 
     lines: List[str] = []
     lines.append(f"theory {theory_name}")
@@ -773,12 +864,24 @@ def isabelle_modal_theory(
     # (``t = rtranclp n``) rather than a ``consts`` constrained by axioms — so nitpick
     # can determine t from a candidate n and actually refute non-theorems of the
     # closure fragment. n must be declared before t's definition references it.
-    use_temporal_def = temporal_def and sig.uses_temporal and sig.uses_next
-    if sig.uses_next:
-        lines += _next_block()
+    use_temporal_def = temporal_def and sig.uses_temporal and sig.needs_next_rel
+    # The one-step relation n is declared once when Next, Until, or Since needs it;
+    # the mnext abbreviation only when Next actually occurs.
+    if sig.needs_next_rel:
+        lines += _next_consts_block()
+        if sig.uses_next:
+            lines += _next_abbrev_block()
         lines.append("")
     if sig.uses_temporal:
         lines += _temporal_def_block() if use_temporal_def else _temporal_block()
+        lines.append("")
+    # Inductive least-fixpoint definitions for the binary interval operators; they
+    # step over n (declared above), so they follow it.
+    if sig.uses_until:
+        lines += _until_block()
+        lines.append("")
+    if sig.uses_since:
+        lines += _since_block()
         lines.append("")
 
     # Connectives + validity (always present).

@@ -217,7 +217,8 @@ def _st(formula: Node, w: Variable, fresh: _Fresh, mode: str) -> Node:
     if isinstance(formula, Until):
         raise NotImplementedError(
             "qml: Until is not first-order definable (needs transitive closure); "
-            "evaluate it with satisfies_modal instead."
+            "evaluate it with satisfies_modal, or emit the HOL embedding with "
+            "to_isabelle_modal (inductive least-fixpoint muntil)."
         )
     if isinstance(formula, SortedQuantifier):
         raise NotImplementedError("qml: SortedQuantifier is not supported; use a plain ∀x/∃x.")

@@ -21,8 +21,11 @@ from unicode_fol_kit.hol.isabelle_modal import (
 from unicode_fol_kit.fol.nodes import (
     Variable, Constant, Atom, Not, And, Or, Implies, Iff, Xor, Quantifier,
     Box, Diamond, Knows, Believes, Obligatory, Permitted,
-    Always, Eventually, Next, Until, SortedQuantifier,
+    Always, Eventually, Next, Until, Since, SortedQuantifier,
 )
+
+from unicode_fol_kit.hol.isabelle_runner import isabelle_available
+from unicode_fol_kit.hol.isabelle_runner import check_theory
 
 
 def _balanced(s: str, op: str, cl: str) -> bool:
@@ -246,13 +249,76 @@ def test_all_tactics_emit():
 
 
 # --------------------------------------------------------------------------- #
-# Errors / unsupported.
+# Binary interval operators Until / Since (inductive least fixpoints over n).
 # --------------------------------------------------------------------------- #
 
-def test_until_rejected():
-    with pytest.raises(NotImplementedError):
-        to_isabelle_modal(Until(P, Q))
+def test_until_emits_inductive_muntil():
+    thy = to_isabelle_modal(Until(P, Q))
+    # Inductive predicate, not a box/diamond abbreviation, with both defining clauses.
+    assert 'inductive muntil ::' in thy
+    assert 'muntil_base: "psi w \\<Longrightarrow> muntil phi psi w"' in thy
+    assert '| muntil_step: "phi w \\<Longrightarrow> n w v \\<Longrightarrow> muntil phi psi v' in thy
+    # The lemma body uses the lifted predicate on the two operands.
+    assert '(muntil p q)' in thy
+    # Until reads the one-step relation n, so n is declared even without Next.
+    assert 'consts n ::' in thy
+    # ...but the mnext abbreviation is only for Next, which is absent here.
+    assert 'mnext' not in thy
+    assert thy.rstrip().endswith("end")
 
+
+def test_since_emits_inductive_msince_converse_step():
+    thy = to_isabelle_modal(Since(P, Q))
+    assert 'inductive msince ::' in thy
+    assert 'msince_base: "psi w \\<Longrightarrow> msince phi psi w"' in thy
+    # Since steps over the CONVERSE of n: the step premise is `n v w`, not `n w v`.
+    assert '| msince_step: "phi w \\<Longrightarrow> n v w \\<Longrightarrow> msince phi psi v' in thy
+    assert '(msince p q)' in thy
+    assert 'consts n ::' in thy
+    assert thy.rstrip().endswith("end")
+
+
+def test_until_with_temporal_links_n_into_t():
+    # Until (reads n) mixed with Always/Eventually (read the henceforth t): the n_in_t
+    # link axiom must be emitted so t denotes the closure of the SAME one-step relation
+    # the path-search Until reads (faithfulness of the Always/Until interplay).
+    thy = to_isabelle_modal(Implies(Until(P, Q), Eventually(Q)))
+    assert 'inductive muntil ::' in thy
+    assert 'consts t ::' in thy
+    assert 'n_in_t' in thy
+    assert 't_in_nstar' in thy  # temporal_closure default pins t = n** exactly
+    assert thy.rstrip().endswith("end")
+
+
+def test_until_no_longer_rejected():
+    # Regression: Until / Since used to raise NotImplementedError; now they emit.
+    to_isabelle_modal(Until(P, Q))
+    to_isabelle_modal(Since(P, Q))
+    to_isabelle_modal(And(Until(P, Q), Next(Since(Q, P))))
+
+
+@pytest.mark.skipif(
+    not isabelle_available(),
+    reason="no Isabelle installation found (set UFK_ISABELLE_HOME / ISABELLE_HOME)")
+def test_until_since_theory_loads_and_proves_live():
+    """The emitted Until/Since theory LOADS in real Isabelle, and the strong-Until
+    base case Q -> (P U Q) is provable through the emitted inductive scaffold."""
+    # (1) A mixed temporal theory (Until + Since + Next + Always + Diamond) loads.
+    mixed = And(Until(P, Q), And(Since(P, Q), And(Next(P), And(Always(P), Diamond(Q)))))
+    thy = isabelle_modal_theory(mixed, frame="S4", theory_name="MixedTemporalLoad")
+    r = check_theory(thy, "MixedTemporalLoad", session_timeout=300)
+    assert r.ok, r.output[-2000:]
+    # (2) Q -> (P U Q) is valid (Until base clause) and proves via muntil.intros.
+    thy2 = isabelle_modal_theory(
+        Implies(Q, Until(P, Q)), theory_name="UntilBaseValid",
+        proof="  using muntil.intros by blast")
+    r2 = check_theory(thy2, "UntilBaseValid", session_timeout=300)
+    assert r2.ok, r2.output[-2000:]
+
+
+# --------------------------------------------------------------------------- #
+# Errors / unsupported.
+# --------------------------------------------------------------------------- #
 
 def test_sorted_quantifier_rejected():
     with pytest.raises(NotImplementedError):

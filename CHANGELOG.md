@@ -5,6 +5,52 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [0.15.0] - 2026-07-11
+
+Added — **non-ASCII (Greek) constant names.** A ground constant may now be written
+with a Greek letter — e.g. a threshold `θ` in `μ(x, volume) > θ` (“too much”) — so a
+bare `θ` lexes as a `CONSTANT` rather than being rejected. The reserved operator
+glyphs **λ** (Lambda) and **μ** (Measure) are excluded and keep their operator
+meaning. Scope is deliberately narrow: **constants only** — predicates, function
+names, and variables stay ASCII.
+
+The Kripke evaluator and the Z3 backend carry the raw unicode name directly. The
+text-based, ASCII-only first-order back-ends (`to_prover9` / `to_tptp`) transliterate
+it deterministically and reversibly via the new `constant_name_to_ascii` /
+`constant_name_from_ascii` helpers: each Greek letter maps to its conventional name
+(`θ` → `theta`) and any other non-ASCII character to a reversible `uXXXX` codepoint
+escape, so an emitted problem is always valid ASCII and never contains a raw
+non-ASCII identifier. Round-trip is exact for single-symbol constants (the realistic
+case). Serialization (`to_dict` / `from_dict`) preserves the unicode name.
+
+## [0.14.0] - 2026-07-10
+
+Added — **binary interval operators `Until` (Ⓤ) and `Since` (Ⓢ) in the Isabelle/HOL
+shallow embedding.** `to_isabelle_modal` / `isabelle_modal_theory` previously raised
+`NotImplementedError` on `Until` and did not handle `Since` at all; both are now
+emitted as **inductive least-fixpoint predicates** `muntil` / `msince` over the
+one-step successor relation `n`:
+
+- `muntil phi psi` is the least predicate closed under `psi w ⟹ muntil w` and
+  `phi w ∧ n w v ∧ muntil v ⟹ muntil w`, so it denotes exactly the finite forward
+  `n`-paths with `psi` at the endpoint and `phi` at every earlier point — the faithful
+  counterpart of `satisfies_modal`'s depth-first path search (`_until_holds`).
+  `msince` is the exact backward mirror over the converse of `n` (`_since_holds`). A
+  plain interval reading over the henceforth closure `t` would be **unfaithful on
+  branching / short-cut frames**; the least fixpoint is faithful on every frame.
+- Using `Until` / `Since` now declares `n` (as `Next` does); when `Always` /
+  `Eventually` co-occur, the `n_in_t` / `t_in_nstar` link axioms are emitted so the
+  henceforth `t` denotes the closure of the *same* one-step relation the path-search
+  operators read.
+
+The `muntil` / `msince` definitions are **Isabelle-verified**: the live `check_theory`
+gate loads a mixed-temporal theory and proves the strong-Until / Since fixpoint
+equation, the base clause `Q → (P U Q)`, and strong-until reachability. Note this is
+the HOL (Isabelle) embedding only — the first-order `qml_translate` still correctly
+rejects `Until` / `Since`, which are **not** first-order definable (they need a
+transitive-closure / fixpoint), and the `to_thf_modal` exporter remains the alethic
+□/◇ fragment.
+
 ## [0.13.1] - 2026-07-03
 
 Documentation correctness fix: the higher-order guide and the `hol/__init__`,
