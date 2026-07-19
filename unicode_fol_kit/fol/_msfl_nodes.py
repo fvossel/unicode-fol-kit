@@ -847,6 +847,36 @@ def _names_in(node: Node) -> set:
     return result
 
 
+def subst_slash_set(term: "SlashedExists", target: Node, replacement: Node) -> Node:
+    """Rewrite a slashed existential's SLASH SET under ``target := replacement``.
+
+    The slash set names variables (team columns) bound by ENCLOSING quantifiers, so a
+    mention of ``target`` there is rewritten *before* the binder's own shadowing check
+    — unlike the matrix, the annotation is not shadowed by ``term.variable``.
+    Substituting a slash entry transforms the annotation by what replaces it:
+
+    * another **Variable** ``z`` → rename the entry ``x ↦ z``; independence is now
+      from column ``z``. The constraint is preserved, never dropped.
+    * a **ground or compound term** → that column no longer exists, so "independent
+      of ``x``" is vacuous and the entry is dropped. Since
+      :class:`~unicode_fol_kit.fol._team_nodes.SlashedExists` requires a non-empty
+      slash set, an emptied one degrades to a plain existential — so the return type
+      is a general :class:`Node`, not necessarily a ``SlashedExists``.
+
+    The matrix is left untouched; callers substitute into it themselves.
+    """
+    slashed = term.slashed
+    if not (isinstance(target, Variable) and target.name in slashed):
+        return term
+    if isinstance(replacement, Variable):
+        return replace(term, slashed=tuple(replacement.name if n == target.name else n
+                                           for n in slashed))
+    slashed = tuple(n for n in slashed if n != target.name)
+    if not slashed:
+        return Quantifier("∃", term.variable, term.formula)
+    return replace(term, slashed=slashed)
+
+
 def _fresh_name(base: str, avoid: set) -> str:
     """Return the first name of the form base_N (N = 0, 1, …) not in {n.name for n in avoid}."""
     avoid_names = {n.name for n in avoid}
@@ -950,30 +980,11 @@ def _subst(term: Node, target: LambdaVar, replacement: Node, fv_repl: set) -> No
         return SortedQuantifier(term.type, term.variable, term.sort,
                                 _subst(term.formula, target, replacement, fv_repl))
     if isinstance(term, SlashedExists):
-        # The slash set names variables (team columns). Substituting one of them
-        # transforms the annotation according to what replaces it:
-        #   • another VARIABLE z  → rename the slash entry x↦z (independence is now
-        #     from the column z). This is the standard Variable-target substitution
-        #     and MUST preserve the constraint, not drop it.
-        #   • a ground/compound term → the column no longer exists, so "independent
-        #     of x" is vacuous and the entry is dropped; an emptied slash set
-        #     degrades to a plain existential.
-        # Substitution into a slash entry does NOT stop at the binder's own
-        # variable (the slash set refers to ENCLOSING binders), so it is handled
-        # before the shadowing check below.
-        slashed = term.slashed
-        if isinstance(target, Variable) and target.name in slashed:
-            if isinstance(replacement, Variable):
-                slashed = tuple(replacement.name if n == target.name else n
-                                for n in slashed)
-                term = replace(term, slashed=slashed)
-            else:
-                slashed = tuple(n for n in slashed if n != target.name)
-                if not slashed:
-                    # An emptied slash set degrades to a plain existential.
-                    inner: Node = Quantifier("∃", term.variable, term.formula)
-                    return _subst(inner, target, replacement, fv_repl)
-                term = replace(term, slashed=slashed)
+        rewritten = subst_slash_set(term, target, replacement)
+        if not isinstance(rewritten, SlashedExists):
+            # The slash set was emptied and degraded to a plain ∃; substitute there.
+            return _subst(rewritten, target, replacement, fv_repl)
+        term = rewritten
         if term.variable == target:
             return term  # target rebound here — substitution stops
         if term.variable in fv_repl:

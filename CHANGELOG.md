@@ -5,6 +5,75 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [0.16.0] - 2026-07-14
+
+Added — **CCG-style derivation trees with lambda-semantics (`CCGDerivation`).** A new
+`unicode_fol_kit.fol.derivation` module builds and renders combinatory categorial
+grammar derivations in the ccg2lambda / depccg idiom: a bottom-up composition tree
+whose nodes carry a surface word, a CCG category, a combinator rule (`fa` / `ba` /
+`bx` / `conj` / `lex` / `rp` / …), and the **lambda-term semantics** at that node.
+
+- The semantics is genuinely *composed*, not written by hand: `CCGDerivation.forward`
+  (`fa`) and `CCGDerivation.backward` (`ba`) apply one child's term to the other and
+  reduce it with the toolkit's own `beta_reduce` (or `beta_eta_normalize` with
+  `eta=True`), so a node's `term` is the real beta-normal form — checked in the tests
+  against the parsed target formula. `leaf` / `unary` / `combine` build the rest.
+- Three renderers mirror the `to_unicode_str` / `to_latex` / `tree_str` split:
+  `to_text()` draws a Unicode "prooftree" (premises over an inference bar with the
+  combinator at its right, then the category over the lambda-term) — a genuinely new
+  rendering style for the toolkit (neither the indented `render_sequent_proof` nor the
+  Fitch-bar `render_fitch` draws a Gentzen bar); `to_latex()` emits a `bussproofs`
+  proof tree; `to_html()` returns a self-contained, theme-aware HTML page in the
+  ccg2lambda idiom (category red, lambda-term blue, combinator at the bar).
+- `reduction_derivation(term)` turns a beta-reduction path (`reduce_trace`) into a
+  `CCGDerivation` chain, so a plain lambda reduction can be drawn with the same
+  renderers.
+
+New public names `CCGDerivation` and `reduction_derivation` (top level and
+`unicode_fol_kit.fol`); a new guide page `docs/guide/derivations.md`. CCG *parsing*
+(word → category → derivation) is out of scope — you supply the categories and
+combinator structure; the toolkit composes and renders the semantics.
+
+Added — **Tarskian evaluation of the counting, cardinality, and measure nodes.** The
+two-valued evaluator previously raised `unsupported node type Count`; it now decides
+`Count` / `SortedCount` (∃≥n / ∃≤n / ∃=n) and evaluates `Cardinality` /
+`SortedCardinality` (`|{v : φ}|`) and `Measure` (`μ(e, d)`) as terms. A sorted binder
+ranges over its sort's universe. `Measure` reads the binary function `measure`, the
+same symbol `Measure.to_z3` and `Measure.to_prover9` emit, so a structure found here
+interprets what the provers see. This makes the finite model finder work on counting
+formulas end to end (`find_model`, `find_countermodel`).
+
+An **order comparison with a cardinality operand is now numeric**: `|{v : φ}| > |{v :
+ψ}|` compares the counts. A cardinality is a natural number, not a domain individual,
+and the atom previously fell through to the (empty) extension lookup and was silently
+`False`. Ordinary terms are unaffected — `<` `>` `≤` `≥` over individuals keep their
+extension semantics, which a structure may define however it likes. A cardinality
+compared against a non-number now raises instead of quietly answering `False`.
+
+Fixed — **variable binders beyond ∀/∃ were walked structurally** by three peripheral
+passes, which recognised only `Quantifier` / `SortedQuantifier` as binders. `Count`,
+`Cardinality`, their sorted variants, and the IF-logic `SlashedExists` all bind a
+variable over a matrix, so the passes violated shadowing and captured free variables.
+
+- **Soundness (`atp/fitch.py`).** ∀E computed a capturing instance, so the checker
+  accepted `∀x ∃=2 y R(x, y) ⊢ ∃=2 y R(y, y)` — invalid, as the domain `{0, 1, 2}`
+  with `R(x, y) ⟺ y ≠ x` refutes it. Substituting into a re-binding `∃=n x` also
+  rewrote the binder slot itself, producing a malformed `∃=2 a Q(a)`.
+- **`atp/sequent.py`.** Second-order comprehension instantiation captured a free
+  object variable of the comprehension. Slash names are plain strings that
+  `free_variables` cannot see, so a freshly minted binder name could silently collide
+  with one and rewire the independence set; they are now avoided explicitly.
+- **`semantics/modelfinder.py`.** A binder's bound variable was reported as free (and
+  vacuously quantified by the universal closure), while a `SlashedExists` slash name —
+  which *is* free — was missed. A `Count`'s bound `n` was registered as a domain
+  constant, so a found structure carried a phantom constant and the enumerated space
+  grew by a factor of the domain size, which can push a size past `max_candidates` and
+  yield a spurious "no model". Sorted counting and cardinality binders never
+  registered their sort, so no universe was enumerated for it.
+
+The slash-set rewriting that `fol/_msfl_nodes.py` already specified is now the shared
+`subst_slash_set`, so the prover copies cannot drift from it.
+
 ## [0.15.0] - 2026-07-11
 
 Added — **non-ASCII (Greek) constant names.** A ground constant may now be written

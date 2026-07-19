@@ -31,7 +31,7 @@ from unicode_fol_kit.atp.fitch import (
     Proof, Subproof, Justification, Line, ProofResult,
     premise, assume, line, flag, FALSUM,
     check_proof, verify_proof, render_fitch, render_latex_fitch,
-    _classical_valid, _index, _open_assumptions, _subst_var,
+    _classical_valid, _index, _open_assumptions, _subst_var, _free_vars,
 )
 from unicode_fol_kit.atp.resolution import prove as res_prove
 
@@ -314,6 +314,67 @@ def test_subst_var_avoids_capture():
     captured = ALL(y, And(Atom("P", [x]), Atom("Q", [y])))
     result = _subst_var(captured, x, y)
     assert result != ALL(y, And(Atom("P", [y]), Atom("Q", [y])))
+
+
+def test_subst_var_respects_count_shadowing():
+    # Regression: ∃=n binds its variable exactly as ∀/∃ do. Substituting x:=a must
+    # stop at the ∃=2 x binder — walking into it structurally rewrote the bound
+    # occurrences AND the binder slot itself, yielding the malformed "∃=2 a Q(a)".
+    body = _FOL.parse("P(x) ∧ ∃=2 x (Q(x))")
+    result = _subst_var(body, Variable("x"), Constant("c_a"))
+    assert result == _FOL.parse("P(c_a) ∧ ∃=2 x (Q(x))")
+
+
+def test_subst_var_avoids_capture_under_count_and_cardinality():
+    # Regression: substituting x:=v must α-rename the binder of ∃=n / |{v : …}|,
+    # otherwise the replacement's free v is captured by the counting binder.
+    x, v = Variable("x"), Variable("v")
+    for src in ("∃=2 v (Votes(x, v))", "|{v : Votes(x, v)}| = 3"):
+        result = _subst_var(_FOL.parse(src), x, v)
+        assert result != _FOL.parse(src.replace("x", "v"))   # not captured
+        assert v in _free_vars(result)                       # the new v stayed free
+
+
+def test_subst_var_rewrites_slashed_existential_like_the_core():
+    # Regression: the IF-logic ∃x/{y} binds x AND carries a slash set naming ENCLOSING
+    # binders. The core substitution in fol._msfl_nodes already specifies the three
+    # cases; it is the oracle here, so the two implementations cannot drift apart.
+    from unicode_fol_kit.fol._msfl_nodes import _subst
+    f = MSFLParser(dependence=True).parse("∃x/{y} (R(x, y, z))")
+    cases = [
+        (Variable("y"), Variable("w")),      # slash name → variable: entry renamed
+        (Variable("y"), Constant("c_a")),    # slash name → ground term: entry dropped
+        (Variable("z"), Variable("x")),      # matrix var whose replacement the binder
+                                             # would capture: binder α-renamed
+    ]
+    for target, repl in cases:
+        fv = {repl} if isinstance(repl, Variable) else set()
+        assert _subst_var(f, target, repl) == _subst(f, target, repl, fv)
+
+
+def test_subst_var_slash_set_survives_shadowing_and_degrades_when_emptied():
+    # The slash set is NOT shadowed by the binder's own variable (it names enclosing
+    # binders), and SlashedExists requires a non-empty slash set — so emptying it must
+    # degrade the node to a plain ∃ rather than build an invalid one.
+    f = MSFLParser(dependence=True).parse("∃x/{y} (R(x, y))")
+    renamed = _subst_var(f, Variable("y"), Variable("w"))
+    assert renamed.slashed == ("w",)                      # rewritten, not shadowed
+    degraded = _subst_var(f, Variable("y"), Constant("c_a"))
+    assert isinstance(degraded, Quantifier) and degraded.type == "∃"
+    assert degraded == MSFLParser().parse("∃x (R(x, c_a))")
+
+
+def test_universal_elimination_rejects_capturing_instance_under_count():
+    # Soundness regression, end-to-end: ∀x ∃=2 y R(x, y) does NOT entail
+    # ∃=2 y R(y, y) — countermodel: domain {0,1,2} with R(x, y) iff y ≠ x, where
+    # every x has exactly two R-successors but the diagonal is empty. Before the
+    # binder fix ∀E computed the captured instance and licensed exactly this step.
+    proof = Proof(
+        premises=[premise(1, _FOL.parse("∀x (∃=2 y (R(x, y)))"))],
+        steps=[line(2, _FOL.parse("∃=2 y (R(y, y))"), "∀E", 1, extra=[Variable("y")])],
+    )
+    result = verify_proof(proof)
+    assert result.ok is False
 
 
 def test_socrates_universal_instantiation():

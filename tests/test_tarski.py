@@ -265,6 +265,83 @@ class TestOrderComparisons:
 
 
 # ---------------------------------------------------------------------------
+# Counting quantifiers, cardinality terms, and measure terms
+# ---------------------------------------------------------------------------
+
+class TestCountingAndCardinality:
+    # Domain {0,1,2} with P = {0,1}: exactly two P's, one non-P.
+    WORLD = Structure(domain=[0, 1, 2], predicates={("P", 1): {(0,), (1,)}})
+
+    @pytest.mark.parametrize("src,expected", [
+        ("∃=2 x (P(x))", True), ("∃=3 x (P(x))", False),
+        ("∃≥2 x (P(x))", True), ("∃≥3 x (P(x))", False),
+        ("∃≤2 x (P(x))", True), ("∃≤1 x (P(x))", False),
+        ("∃=0 x (Q(x))", True),               # an uninterpreted predicate is empty
+        ("∃≥1 x (Q(x))", False),
+    ])
+    def test_counting_quantifier(self, src, expected):
+        assert models(FOL.parse(src), self.WORLD) is expected
+
+    @pytest.mark.parametrize("src,expected", [
+        ("|{x : P(x)}| = 2", True), ("|{x : P(x)}| = 3", False),
+        ("|{x : ¬P(x)}| = 1", True),          # the complement within the domain
+        ("|{x : Q(x)}| = 0", True),           # empty extension counts to zero
+    ])
+    def test_cardinality_term(self, src, expected):
+        assert models(FOL.parse(src), self.WORLD) is expected
+
+    @pytest.mark.parametrize("src,expected", [
+        ("|{x : P(x)}| > |{x : ¬P(x)}|", True),      # 2 > 1
+        ("|{x : ¬P(x)}| > |{x : P(x)}|", False),
+        ("|{x : Q(x)}| < |{x : P(x)}|", True),       # 0 < 2
+        ("|{x : P(x)}| ≥ 2", True), ("|{x : P(x)}| < 2", False),
+        ("|{x : P(x)}| ≤ |{x : P(x)}|", True),
+    ])
+    def test_cardinality_comparison_is_numeric(self, src, expected):
+        # A cardinality is a NUMBER, not a domain individual, so < > ≤ ≥ compare the
+        # counts. Without this the atom would fall through to the (empty) extension
+        # lookup and every such comparison would silently be False.
+        assert models(FOL.parse(src), self.WORLD) is expected
+
+    def test_order_comparison_on_plain_terms_still_uses_the_extension(self):
+        # The numeric reading is triggered ONLY by a cardinality operand; ordinary
+        # terms keep the extension semantics a structure may define however it likes.
+        world = Structure(domain={0, 1, 2}, predicates={("<", 2): {(0, 1)}})
+        assert satisfies(FOL.parse("x < y"), world, {"x": 0, "y": 1}) is True
+        assert satisfies(FOL.parse("x < y"), world, {"x": 1, "y": 2}) is False  # absent
+
+    def test_sorted_variants_range_over_their_sort(self):
+        # Person = {0,1} but P holds of all three individuals: the sort must cut the
+        # third one away, so both the sorted count and the sorted cardinality see 2.
+        sorted_parser = MSFLParser(many_sorted=True)
+        world = Structure(domain=[0, 1, 2], sorts={"Person": {0, 1}},
+                          predicates={("P", 1): {(0,), (1,), (2,)}})
+        assert models(sorted_parser.parse("∃=2 x:Person (P(x))"), world) is True
+        assert models(sorted_parser.parse("∃=3 x:Person (P(x))"), world) is False
+        assert models(sorted_parser.parse("|{v:Person : P(v)}| = 2"), world) is True
+
+    def test_counting_binder_does_not_leak_its_variable(self):
+        # The bound x is local: an outer x keeps its assignment across the count.
+        world = Structure(domain=[0, 1, 2], predicates={("P", 1): {(0,), (1,)}})
+        f = FOL.parse("P(x) ∧ ∃=2 x (P(x))")
+        assert satisfies(f, world, {"x": 0}) is True     # outer x = 0 is a P
+        assert satisfies(f, world, {"x": 2}) is False    # outer x = 2 is not
+
+    def test_measure_is_the_binary_function_the_provers_see(self):
+        # μ(entity, dimension) reads the function ``measure``/2 — the same symbol
+        # Measure.to_z3 and Measure.to_prover9 emit.
+        world = Structure(domain=[0, 1, 5], constants={"alice": 0, "height": 1},
+                          functions={("measure", 2): {(0, 1): 5}})
+        assert models(FOL.parse("μ(alice, height) = 5"), world) is True
+        assert models(FOL.parse("μ(alice, height) = 1"), world) is False
+
+    def test_measure_without_an_interpretation_raises(self):
+        world = Structure(domain=[0, 1], constants={"alice": 0, "height": 1})
+        with pytest.raises(ValueError, match="measure"):
+            models(FOL.parse("μ(alice, height) = 1"), world)
+
+
+# ---------------------------------------------------------------------------
 # Error handling: fuzzy nodes and lambda nodes are rejected
 # ---------------------------------------------------------------------------
 

@@ -473,6 +473,36 @@ def test_so_comprehension_avoids_predicate_capture():
     assert "W" in _free_pred_vars(inst)  # the comprehension's free W stayed free
 
 
+def test_so_comprehension_avoids_capture_under_count_binder():
+    # Regression: a counting quantifier binds an object variable just as ∀/∃ does, so
+    # instantiating X in ∃=2 v X(v) with a comprehension whose body has a FREE v must
+    # α-rename that binder. Walking into ∃=n structurally captured the free v instead.
+    from unicode_fol_kit.atp.sequent import _subst_pred, _free_vars
+    from unicode_fol_kit.fol.msflparser import MSFLParser
+    v = Variable("v")
+    body = MSFLParser().parse("∃=2 v (X(v))")
+    inst = _subst_pred(body, "X", (Variable("z"),), Atom("R", [v, Variable("z")]))
+    assert v in _free_vars(inst)          # the comprehension's free v stayed free
+    assert inst.variable != v             # the counting binder was renamed away
+
+
+def test_so_comprehension_avoids_capture_under_slashed_existential():
+    # Regression, two guards at once. ∃v/{v_0} binds v, so instantiating X with a
+    # comprehension whose body has a free v must α-rename it (pre-fix: captured).
+    # And the fresh name must avoid the SLASH names too — they are plain strings that
+    # _free_vars cannot see, so minting "v_0" here would silently rewire the
+    # independence set instead of capturing anything visible.
+    from unicode_fol_kit.atp.sequent import _subst_pred, _free_vars
+    from unicode_fol_kit.fol.nodes import SlashedExists
+    v, z = Variable("v"), Variable("z")
+    body = SlashedExists(v, ("v_0",), Atom("X", [v]))
+    inst = _subst_pred(body, "X", (z,), Atom("R", [v, z]))
+    assert v in _free_vars(inst)              # the comprehension's free v stayed free
+    assert inst.variable.name != "v"          # the slashed binder was renamed
+    assert inst.variable.name != "v_0"        # ... and did not collide with the slash
+    assert inst.slashed == ("v_0",)           # the independence set is untouched
+
+
 def test_reject_so_comprehension_arity_mismatch():
     c, _ = _SO_consts()
     Xc = Atom("X", [c])

@@ -34,6 +34,7 @@ from .fol import (
     parse_prover9, parse_prover9_problem, load_prover9, Prover9Formula,
     sanitize_names, sanitize_all, NameMapping,
     to_english,
+    CCGDerivation, reduction_derivation,
     hybrid_is_valid,
     qml_translate, qml_is_valid, qml_equivalent,
     to_thf_modal, to_isabelle_modal, BARCAN, CONVERSE_BARCAN,
@@ -96,7 +97,7 @@ from .hol import (
 )
 from . import dl   # the ALC description-logic subpackage (dl.concept_satisfiable, …)
 
-__version__ = "0.15.0"
+__version__ = "0.16.0"
 
 __all__ = [
     "MSFLParser",
@@ -149,6 +150,7 @@ __all__ = [
     "tableau_closed", "is_valid_tableau", "prove_tableau", "tableau_model",
     "check_lj_proof", "verify_lj_proof",
     "to_english",
+    "CCGDerivation", "reduction_derivation",
     "truth_table", "TruthTable", "is_tautology", "is_contradiction", "is_satisfiable_tt",
     "find_model", "find_countermodel", "is_satisfiable_finite", "is_valid_finite",
     "IntKripkeModel", "int_valid", "int_countermodel",

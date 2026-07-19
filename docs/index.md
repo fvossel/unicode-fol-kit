@@ -50,6 +50,7 @@ guide/dependence
 guide/substructural
 guide/nonclassical
 guide/natural-language
+guide/derivations
 guide/syntax-reference
 ```
 

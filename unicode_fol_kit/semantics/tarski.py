@@ -16,6 +16,7 @@ quantifier ranges over the domain, the binding is added to a *copy* of the
 assignment for each candidate individual.
 """
 
+import operator
 from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Tuple, Union
 
 from ..fol.nodes import (
@@ -23,6 +24,7 @@ from ..fol.nodes import (
     Variable, Constant, Number, Function,
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
     SortedQuantifier, SortedConstant,
+    Count, Cardinality, SortedCount, SortedCardinality, Measure,
     LukNegation, WeakConjunction, WeakDisjunction,
     StrongConjunction, StrongDisjunction,
     LukImplication, LukEquivalence,
@@ -33,9 +35,20 @@ from ..fol.nodes import (
 _FORALL = ("∀", "forall")
 _EXISTS = ("∃", "exists")
 
+#: The function symbol a :class:`Measure` term denotes. Matches ``Measure.to_z3`` and
+#: ``Measure.to_prover9``, so a structure found here interprets the same symbol the
+#: provers see.
+_MEASURE_FUNC = ("measure", 2)
+
 # Infix comparison predicates that are NOT equality/disequality. Their
 # extensions live in Structure.predicates like any ordinary relation.
 _ORDER_COMPARISONS = frozenset({"<", ">", "≤", "≥"})
+
+#: Numeric readings of the order comparisons, used ONLY when an operand is a
+#: cardinality term (see :func:`_atom_value`).
+_ORDER_OPS = {
+    "<": operator.lt, ">": operator.gt, "≤": operator.le, "≥": operator.ge,
+}
 
 # Łukasiewicz node types: two-valued Tarski cannot interpret them.
 _FUZZY_TYPES = (
@@ -173,6 +186,33 @@ def term_value(term: Node, structure: Structure, assignment: Mapping[str, Any]) 
             )
         return interp[args]
 
+    if isinstance(term, (Cardinality, SortedCardinality)):
+        # |{v : φ}| counts the individuals satisfying φ. The count is a NATURAL
+        # NUMBER, not a domain individual — comparing it with a Number literal works
+        # because both evaluate to Python ints, but comparing it to a domain element
+        # is a category error the untyped evaluator cannot catch.
+        return sum(1 for _ in _witnesses(term, structure, assignment))
+
+    if isinstance(term, Measure):
+        # μ(entity, dimension) is the binary function ``measure``, matching the Z3 and
+        # Prover9 lowerings — a structure that interprets it agrees with the provers.
+        args = (term_value(term.entity, structure, assignment),
+                term_value(term.dimension, structure, assignment))
+        if _MEASURE_FUNC not in structure.functions:
+            raise ValueError(
+                "Measure term μ(…) needs an interpretation for the function "
+                f"{_MEASURE_FUNC[0]!r}/{_MEASURE_FUNC[1]} in the structure."
+            )
+        interp = structure.functions[_MEASURE_FUNC]
+        if callable(interp):
+            return interp(*args)
+        if args not in interp:
+            raise ValueError(
+                f"Function {_MEASURE_FUNC[0]!r}/{_MEASURE_FUNC[1]} is undefined for "
+                f"arguments {args!r}."
+            )
+        return interp[args]
+
     if isinstance(term, _LAMBDA_TYPES):
         raise ValueError(
             f"Cannot evaluate lambda node {type(term).__name__} as a term; "
@@ -182,6 +222,26 @@ def term_value(term: Node, structure: Structure, assignment: Mapping[str, Any]) 
     raise ValueError(
         f"term_value: {type(term).__name__} is not a term node."
     )
+
+
+def _witnesses(
+    binder: Node,
+    structure: Structure,
+    assignment: Mapping[str, Any],
+) -> Iterable[Any]:
+    """Yield the individuals in ``binder``'s range that satisfy its matrix.
+
+    Shared by the counting quantifiers and the cardinality terms: both bind one
+    variable over a matrix and differ only in what they do with the witnesses. A
+    sorted binder ranges over its sort's universe, an unsorted one over the domain.
+    """
+    universe = (structure.sort_universe(binder.sort)
+                if isinstance(binder, (SortedCount, SortedCardinality))
+                else structure.domain)
+    name = binder.variable.name
+    for d in universe:
+        if satisfies(binder.formula, structure, _extend(assignment, name, d)):
+            yield d
 
 
 def _atom_value(atom: Atom, structure: Structure, assignment: Mapping[str, Any]) -> bool:
@@ -202,6 +262,24 @@ def _atom_value(atom: Atom, structure: Structure, assignment: Mapping[str, Any])
 
     if not atom.args:
         return bool(structure.predicates.get((atom.predicate, 0), False))
+
+    if (atom.predicate in _ORDER_COMPARISONS and len(atom.args) == 2
+            and any(isinstance(a, (Cardinality, SortedCardinality))
+                    for a in atom.args)):
+        # A cardinality is a NATURAL NUMBER, not a domain individual, so an order
+        # comparison involving one is arithmetic — |{v : φ}| > |{v : ψ}| must compare
+        # the counts. Ordinary terms keep the extension-based reading above them
+        # (a structure may interpret < over its domain however it likes); only the
+        # presence of a cardinality operand switches to the numeric reading.
+        left, right = (term_value(a, structure, assignment) for a in atom.args)
+        for value in (left, right):
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(
+                    f"Cannot compare a cardinality with {value!r}: an order "
+                    f"comparison involving |{{v : φ}}| is numeric, so both operands "
+                    f"must evaluate to numbers."
+                )
+        return _ORDER_OPS[atom.predicate](left, right)
 
     values = tuple(term_value(a, structure, assignment) for a in atom.args)
     extension = structure.predicates.get((atom.predicate, len(atom.args)), ())
@@ -279,6 +357,20 @@ def satisfies(
             formula.type, formula.variable.name, universe,
             formula.formula, structure, assignment,
         )
+
+    if isinstance(formula, (Count, SortedCount)):
+        # ∃≥n / ∃≤n / ∃=n: count the witnesses, compare against the bound. The whole
+        # (finite) universe is walked — ``le`` and ``eq`` need the exact count anyway,
+        # and the universes here are the small ones the model search enumerates.
+        witnesses = sum(1 for _ in _witnesses(formula, structure, assignment))
+        n = formula.n.value
+        if formula.op == "ge":
+            return witnesses >= n
+        if formula.op == "le":
+            return witnesses <= n
+        if formula.op == "eq":
+            return witnesses == n
+        raise ValueError(f"Unknown counting-quantifier op: {formula.op!r}")
 
     if isinstance(formula, _FUZZY_TYPES):
         raise ValueError(

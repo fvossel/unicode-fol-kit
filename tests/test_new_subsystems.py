@@ -21,7 +21,9 @@ from unicode_fol_kit import (
     int_valid, int_countermodel, to_english,
 )
 from unicode_fol_kit.semantics.tarski import models
-from unicode_fol_kit.semantics.modelfinder import _universal_closure
+from unicode_fol_kit.semantics.modelfinder import (
+    _universal_closure, _free_var_names, _Signature,
+)
 
 _P = MSFLParser()
 P, Q, R, S = (Atom(n, ()) for n in "PQRS")
@@ -98,6 +100,83 @@ def test_find_model_satisfies_theory():
 def test_find_countermodel_for_invalid_entailment():
     cm = find_countermodel([_P.parse("P(tom)")], _P.parse("∀x P(x)"), max_size=3)
     assert cm is not None
+
+
+def test_find_model_with_counting_quantifiers():
+    # End-to-end: the binder fixes to the preparation passes only pay off once the
+    # evaluator can decide a Count, so the search is exercised through both.
+    model = find_model([_P.parse("∃=2 x (P(x))")], max_size=3)
+    assert model is not None
+    assert len(model.predicates[("P", 1)]) == 2          # exactly two witnesses
+    assert models(_universal_closure(_P.parse("∃=2 x (P(x))")), model)
+    # The counting bound is not a symbol of the language: a found structure must not
+    # report a phantom constant "2" (which also inflated the enumerated space by a
+    # factor of the domain size, so a large enough signature could push a size past
+    # max_candidates and yield a spurious "no model").
+    assert model.constants == {}
+    # Contradictory counts have no model at any size within the bound.
+    assert find_model([_P.parse("∃=2 x (P(x))"), _P.parse("∃=3 x (P(x))")],
+                      max_size=4) is None
+
+
+def test_counting_entailments_via_countermodel_search():
+    # ∃=2 x P(x) ⊨ ∃≥1 x P(x) is valid, so no countermodel exists ...
+    assert find_countermodel([_P.parse("∃=2 x (P(x))")], _P.parse("∃≥1 x (P(x))"),
+                             max_size=4) is None
+    # ... while the converse is invalid and a one-witness structure refutes it.
+    cm = find_countermodel([_P.parse("∃≥1 x (P(x))")], _P.parse("∃=2 x (P(x))"),
+                           max_size=3)
+    assert cm is not None
+    assert len(cm.predicates[("P", 1)]) == 1
+
+
+def test_counting_binders_bind_their_variable_in_the_closure():
+    # Regression: ∃=n and |{v : …}| bind their variable, so it is NOT free and the
+    # universal closure must not quantify it. The generic child walk reported the
+    # bound v as free and produced a vacuous ∀v around the formula.
+    for src in ("∃=2 v (Votes(x, v))", "|{v : Votes(x, v)}| = 3"):
+        f = _P.parse(src)
+        assert _free_var_names(f) == {"x"}
+        closed = _universal_closure(f)
+        assert closed == Quantifier("∀", Variable("x"), f)
+
+
+def test_counting_bound_is_not_a_signature_constant():
+    # Regression: a Count's n is a cardinality bound, not an individual. Walking the
+    # children generically registered "2" as a domain constant, inflating the
+    # interpretation space the search enumerates by a factor of the domain size.
+    sig = _Signature()
+    sig.scan(_P.parse("∃=2 x (P(x))"))
+    assert sig.constants == set()
+    assert ("P", 1) in sig.predicates
+
+
+def test_slashed_existential_binds_its_variable_but_not_its_slash_names():
+    # Regression, two independent defects in the generic child walk:
+    #   1. ∃x/{y} BINDS x, so x is not free — the walk reported it as free.
+    #   2. slash names refer to ENCLOSING binders and ARE free, but they are plain
+    #      strings, so a walk over child NODES cannot see them. The matrix here does
+    #      NOT mention y, so only the slash set can contribute it — which is what
+    #      makes this half of the test bite (with y in the matrix it would pass
+    #      either way).
+    dep = MSFLParser(dependence=True)
+    assert _free_var_names(dep.parse("∃x/{y} (R(x, z))")) == {"y", "z"}
+    # And the closure quantifies exactly those, leaving the bound x alone.
+    closed = _universal_closure(dep.parse("∃x/{y} (R(x, z))"))
+    assert closed.to_unicode_str() == "∀y ∀z ∃x/{y} R(x, z)"
+    sig = _Signature()
+    sig.scan(dep.parse("∃x/{y} (R(x, y, z))"))
+    assert sig.constants == set() and ("R", 3) in sig.predicates
+
+
+def test_sorted_counting_binders_register_their_sort():
+    # Regression: only SortedQuantifier registered its sort, so a sorted count or
+    # cardinality left its sort uninterpreted — no universe was enumerated for it.
+    sorted_parser = MSFLParser(many_sorted=True)
+    for src in ("∃=2 x:Person (P(x))", "|{v:Person : P(v)}| = 3"):
+        sig = _Signature()
+        sig.scan(sorted_parser.parse(src))
+        assert sig.sorts == {"Person"}
 
 
 def test_no_countermodel_for_valid_entailment():

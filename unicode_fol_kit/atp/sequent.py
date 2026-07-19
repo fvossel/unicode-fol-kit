@@ -37,16 +37,16 @@ helpers :func:`sequent`, :func:`derive`, :func:`axiom`, the comprehension wrappe
 """
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, Dict, List, Optional, Tuple
 
 from ..fol.nodes import (
     Node, Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
     Variable,
-    SortedQuantifier, SecondOrderQuantifier,
+    SortedQuantifier, SecondOrderQuantifier, SlashedExists,
 )
 from ..fol._msfl_nodes import _rename, _fresh_name
-from .fitch import _subst_var, _free_vars, _is_term, _q_kind
+from .fitch import _subst_var, _free_vars, _is_term, _q_kind, _VAR_BINDERS
 
 
 # ---------------------------------------------------------------------------
@@ -715,19 +715,23 @@ def _subst_pred_inner(node, x_name, params, psi, psi_fv, psi_pred_fv):
                 f"of {x_name} at arity {len(node.args)}"
             )
         return _subst_simultaneous(psi, params, node.args)
-    if isinstance(node, (Quantifier, SortedQuantifier)):
+    if isinstance(node, _VAR_BINDERS):
         y = node.variable
         body = node.formula
         if y in psi_fv:
-            # An object binder of A would capture a free object variable of ψ.
+            # An object binder of A would capture a free object variable of ψ. The
+            # target here is a PREDICATE, so a slash set is never itself substituted —
+            # but its names must still be avoided when minting the fresh binder.
             avoid = psi_fv | _free_vars(body) | {y}
+            if isinstance(node, SlashedExists):
+                avoid = avoid | {Variable(n) for n in node.slashed}
             fresh = Variable(_fresh_name(y.name, avoid))
             body = _rename(body, y, fresh)
             y = fresh
         inner = _subst_pred_inner(body, x_name, params, psi, psi_fv, psi_pred_fv)
-        if isinstance(node, Quantifier):
-            return Quantifier(node.type, y, inner)
-        return SortedQuantifier(node.type, y, node.sort, inner)
+        # Counting quantifiers and cardinality terms bind an object variable too;
+        # replace rebuilds each binder shape from its ``variable``/``formula`` pair.
+        return replace(node, variable=y, formula=inner)
     if isinstance(node, SecondOrderQuantifier):
         pred = node.predicate
         body = node.formula

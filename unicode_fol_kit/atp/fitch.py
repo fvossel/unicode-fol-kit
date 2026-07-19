@@ -49,7 +49,7 @@ constant :data:`FALSUM`, the checkers :func:`check_proof` / :func:`verify_proof`
 and the renderers :func:`render_fitch` / :func:`render_latex_fitch`.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import reduce
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
@@ -57,13 +57,14 @@ from ..fol.nodes import (
     Node, Atom, Not, And, Or, Implies, Iff, Quantifier,
     Variable, Constant, Number, Function,
     SortedQuantifier, SortedConstant, LambdaVar,
+    Count, Cardinality, SortedCount, SortedCardinality, SlashedExists,
     Box, Diamond, Knows, Believes,
     Always, Eventually, Next, Until,
     Historically, Once, Previous, Since,
     Obligatory, Permitted,
     free_variables,
 )
-from ..fol._msfl_nodes import _rename, _fresh_name
+from ..fol._msfl_nodes import _rename, _fresh_name, subst_slash_set
 
 
 # ---------------------------------------------------------------------------
@@ -765,6 +766,17 @@ def _free_vars(node: Node) -> set:
     return {v for v in free_variables(node) if isinstance(v, Variable)}
 
 
+#: Node types that bind a logical ``Variable`` over a ``formula`` scope. Besides the
+#: quantifiers this covers the counting quantifiers, the cardinality terms (and their
+#: sorted variants) and the IF-logic slashed existential — they bind their variable
+#: exactly as ∀/∃ do, so the shadowing and capture-avoidance rules below apply to them
+#: unchanged. ``SlashedExists`` additionally carries a slash set that is NOT shadowed
+#: by its own binder; :func:`subst_slash_set` rewrites it first. Kept in step with the
+#: binder tuple in :func:`unicode_fol_kit.fol._msfl_nodes.free_variables`.
+_VAR_BINDERS = (Quantifier, SortedQuantifier, Count, Cardinality,
+                SortedCount, SortedCardinality, SlashedExists)
+
+
 def _subst_var(formula: Node, var: Variable, replacement: Node) -> Node:
     """Capture-avoiding substitution of a *logical Variable* by a term.
 
@@ -785,21 +797,34 @@ def _subst_var_inner(t: Node, var: Variable, repl: Node, fv: set) -> Node:
         return repl
     if isinstance(t, (Variable, Constant, Number, LambdaVar, SortedConstant)):
         return t
-    if isinstance(t, (Quantifier, SortedQuantifier)):
+    if isinstance(t, _VAR_BINDERS):
+        if isinstance(t, SlashedExists):
+            # The slash set names ENCLOSING binders, so it is rewritten BEFORE the
+            # shadowing check — it is not shadowed by this binder's own variable.
+            # An emptied slash set degrades to a plain ∃, which re-enters below.
+            rewritten = subst_slash_set(t, var, repl)
+            if not isinstance(rewritten, SlashedExists):
+                return _subst_var_inner(rewritten, var, repl, fv)
+            t = rewritten
         if t.variable == var:
             return t  # var is re-bound here: occurrences below are shadowed
         bound = t.variable
         body = t.formula
         if bound in fv:
             # The binder would capture a free variable of the replacement; rename it.
+            # Slash names are plain strings, so they are added explicitly — a fresh
+            # name colliding with one would silently rewire the independence set.
             avoid = fv | _free_vars(body) | {var, bound}
+            if isinstance(t, SlashedExists):
+                avoid = avoid | {Variable(n) for n in t.slashed}
             fresh = Variable(_fresh_name(bound.name, avoid))
             body = _rename(body, bound, fresh)
             bound = fresh
         inner = _subst_var_inner(body, var, repl, fv)
-        if isinstance(t, Quantifier):
-            return Quantifier(t.type, bound, inner)
-        return SortedQuantifier(t.type, bound, t.sort, inner)
+        # Every binder in the family carries its binder in ``variable`` and its scope
+        # in ``formula``; the remaining fields (∀/∃ type, sort, count op and n) are
+        # untouched, so a field-wise replace rebuilds each shape uniformly.
+        return replace(t, variable=bound, formula=inner)
     return t.map_children(lambda c: _subst_var_inner(c, var, repl, fv))
 
 

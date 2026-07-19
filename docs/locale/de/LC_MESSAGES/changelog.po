@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: unicode-fol-kit 0.11.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-11 14:16+0200\n"
+"POT-Creation-Date: 2026-07-14 10:37+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: de <LL@li.org>\n"
@@ -37,10 +37,92 @@ msgstr ""
 " inkompatible Änderungen enthalten."
 
 #: ../../../CHANGELOG.md:9
+msgid "[0.16.0] - 2026-07-14"
+msgstr "[0.16.0] - 2026-07-14"
+
+#: ../../../CHANGELOG.md:11
+msgid ""
+"Added — **CCG-style derivation trees with lambda-semantics "
+"(`CCGDerivation`).** A new `unicode_fol_kit.fol.derivation` module builds "
+"and renders combinatory categorial grammar derivations in the ccg2lambda / "
+"depccg idiom: a bottom-up composition tree whose nodes carry a surface word,"
+" a CCG category, a combinator rule (`fa` / `ba` / `bx` / `conj` / `lex` / "
+"`rp` / …), and the **lambda-term semantics** at that node."
+msgstr ""
+"Hinzugefügt — **CCG-Herleitungsbäume mit Lambda-Semantik "
+"(`CCGDerivation`).** Ein neues Modul `unicode_fol_kit.fol.derivation` baut "
+"und rendert Herleitungen der kombinatorischen Kategorialgrammatik im "
+"ccg2lambda-/depccg-Stil: einen Bottom-up-Kompositionsbaum, dessen Knoten ein"
+" Oberflächenwort, eine CCG-Kategorie, eine Kombinator-Regel (`fa` / `ba` / "
+"`bx` / `conj` / `lex` / `rp` / …) und die **Lambda-Term-Semantik** an diesem"
+" Knoten tragen."
+
+#: ../../../CHANGELOG.md:17
+msgid ""
+"The semantics is genuinely *composed*, not written by hand: "
+"`CCGDerivation.forward` (`fa`) and `CCGDerivation.backward` (`ba`) apply one"
+" child's term to the other and reduce it with the toolkit's own "
+"`beta_reduce` (or `beta_eta_normalize` with `eta=True`), so a node's `term` "
+"is the real beta-normal form — checked in the tests against the parsed "
+"target formula. `leaf` / `unary` / `combine` build the rest."
+msgstr ""
+"Die Semantik wird echt *komponiert*, nicht von Hand geschrieben: "
+"`CCGDerivation.forward` (`fa`) und `CCGDerivation.backward` (`ba`) wenden "
+"den Term eines Kindes auf den des anderen an und reduzieren ihn mit dem kit-"
+"eigenen `beta_reduce` (bzw. `beta_eta_normalize` mit `eta=True`), sodass der"
+" `term` eines Knotens die echte Beta-Normalform ist — in den Tests gegen die"
+" geparste Zielformel geprüft. `leaf` / `unary` / `combine` bauen den Rest."
+
+#: ../../../CHANGELOG.md:22
+msgid ""
+"Three renderers mirror the `to_unicode_str` / `to_latex` / `tree_str` split:"
+" `to_text()` draws a Unicode \"prooftree\" (premises over an inference bar "
+"with the combinator at its right, then the category over the lambda-term) — "
+"a genuinely new rendering style for the toolkit (neither the indented "
+"`render_sequent_proof` nor the Fitch-bar `render_fitch` draws a Gentzen "
+"bar); `to_latex()` emits a `bussproofs` proof tree; `to_html()` returns a "
+"self-contained, theme-aware HTML page in the ccg2lambda idiom (category red,"
+" lambda-term blue, combinator at the bar)."
+msgstr ""
+"Drei Renderer spiegeln die Aufteilung `to_unicode_str` / `to_latex` / "
+"`tree_str`: `to_text()` zeichnet einen Unicode-„Prooftree“ (Prämissen über "
+"einem Inferenzbalken mit dem Kombinator an dessen rechtem Ende, dann die "
+"Kategorie über dem Lambda-Term) — ein für das Kit genuin neuer Rendering-"
+"Stil (weder das eingerückte `render_sequent_proof` noch das Fitch-"
+"Balken-`render_fitch` zeichnet einen Gentzen-Balken); `to_latex()` erzeugt "
+"einen `bussproofs`-Beweisbaum; `to_html()` liefert eine eigenständige, "
+"theme-fähige HTML-Seite im ccg2lambda-Stil (Kategorie rot, Lambda-Term blau,"
+" Kombinator am Balken)."
+
+#: ../../../CHANGELOG.md:29
+msgid ""
+"`reduction_derivation(term)` turns a beta-reduction path (`reduce_trace`) "
+"into a `CCGDerivation` chain, so a plain lambda reduction can be drawn with "
+"the same renderers."
+msgstr ""
+"`reduction_derivation(term)` verwandelt einen Beta-Reduktionspfad "
+"(`reduce_trace`) in eine `CCGDerivation`-Kette, sodass eine schlichte "
+"Lambda-Reduktion mit denselben Renderern gezeichnet werden kann."
+
+#: ../../../CHANGELOG.md:33
+msgid ""
+"New public names `CCGDerivation` and `reduction_derivation` (top level and "
+"`unicode_fol_kit.fol`); a new guide page `docs/guide/derivations.md`. CCG "
+"*parsing* (word → category → derivation) is out of scope — you supply the "
+"categories and combinator structure; the toolkit composes and renders the "
+"semantics."
+msgstr ""
+"Neue öffentliche Namen `CCGDerivation` und `reduction_derivation` (Top-Level"
+" und `unicode_fol_kit.fol`); eine neue Guide-Seite "
+"`docs/guide/derivations.md`. Das CCG-*Parsen* (Wort → Kategorie → "
+"Herleitung) ist nicht im Umfang enthalten — du lieferst die Kategorien und "
+"die Kombinatorstruktur, das Kit komponiert und rendert die Semantik."
+
+#: ../../../CHANGELOG.md:38
 msgid "[0.15.0] - 2026-07-11"
 msgstr "[0.15.0] - 2026-07-11"
 
-#: ../../../CHANGELOG.md:11
+#: ../../../CHANGELOG.md:40
 msgid ""
 "Added — **non-ASCII (Greek) constant names.** A ground constant may now be "
 "written with a Greek letter — e.g. a threshold `θ` in `μ(x, volume) > θ` "
@@ -58,7 +140,7 @@ msgstr ""
 "bewusst eng: **nur Konstanten** — Prädikate, Funktionsnamen und Variablen "
 "bleiben ASCII."
 
-#: ../../../CHANGELOG.md:18
+#: ../../../CHANGELOG.md:47
 msgid ""
 "The Kripke evaluator and the Z3 backend carry the raw unicode name directly."
 " The text-based, ASCII-only first-order back-ends (`to_prover9` / `to_tptp`)"
@@ -82,11 +164,11 @@ msgstr ""
 "Fall) exakt. Die Serialisierung (`to_dict` / `from_dict`) erhält den "
 "Unicode-Namen."
 
-#: ../../../CHANGELOG.md:27
+#: ../../../CHANGELOG.md:56
 msgid "[0.14.0] - 2026-07-10"
 msgstr "[0.14.0] - 2026-07-10"
 
-#: ../../../CHANGELOG.md:29
+#: ../../../CHANGELOG.md:58
 msgid ""
 "Added — **binary interval operators `Until` (Ⓤ) and `Since` (Ⓢ) in the "
 "Isabelle/HOL shallow embedding.** `to_isabelle_modal` / "
@@ -102,7 +184,7 @@ msgstr ""
 "Fixpoint-Prädikate** `muntil` / `msince` über der Ein-Schritt-"
 "Nachfolgerrelation `n` emittiert:"
 
-#: ../../../CHANGELOG.md:35
+#: ../../../CHANGELOG.md:64
 msgid ""
 "`muntil phi psi` is the least predicate closed under `psi w ⟹ muntil w` and "
 "`phi w ∧ n w v ∧ muntil v ⟹ muntil w`, so it denotes exactly the finite "
@@ -122,7 +204,7 @@ msgstr ""
 "über dem Henceforth-Abschluss `t` wäre **auf verzweigten / Short-Cut-Frames "
 "untreu**; der Least-Fixpoint ist auf jedem Frame treu."
 
-#: ../../../CHANGELOG.md:42
+#: ../../../CHANGELOG.md:71
 msgid ""
 "Using `Until` / `Since` now declares `n` (as `Next` does); when `Always` / "
 "`Eventually` co-occur, the `n_in_t` / `t_in_nstar` link axioms are emitted "
@@ -135,7 +217,7 @@ msgstr ""
 "*derselben* Ein-Schritt-Relation bezeichnet, die die Pfadsuch-Operatoren "
 "lesen."
 
-#: ../../../CHANGELOG.md:47
+#: ../../../CHANGELOG.md:76
 msgid ""
 "The `muntil` / `msince` definitions are **Isabelle-verified**: the live "
 "`check_theory` gate loads a mixed-temporal theory and proves the strong-"
@@ -154,11 +236,11 @@ msgstr ""
 "(sie benötigen einen transitiven Abschluss / Fixpunkt), und der "
 "`to_thf_modal`-Exporter bleibt das alethische □/◇-Fragment."
 
-#: ../../../CHANGELOG.md:55
+#: ../../../CHANGELOG.md:84
 msgid "[0.13.1] - 2026-07-03"
 msgstr "[0.13.1] - 2026-07-03"
 
-#: ../../../CHANGELOG.md:57
+#: ../../../CHANGELOG.md:86
 msgid ""
 "Documentation correctness fix: the higher-order guide and the "
 "`hol/__init__`, `isabelle_modal`, and `thf_modal` docstrings previously "
@@ -177,11 +259,11 @@ msgstr ""
 "Gültigkeit zweiter Stufe ist *nicht einmal semi-entscheidbar*. Im Quelltext "
 "und in der deutschen Übersetzung korrigiert. Keine Code-Änderungen."
 
-#: ../../../CHANGELOG.md:65
+#: ../../../CHANGELOG.md:94
 msgid "[0.13.0] - 2026-07-03"
 msgstr "[0.13.0] - 2026-07-03"
 
-#: ../../../CHANGELOG.md:67
+#: ../../../CHANGELOG.md:96
 msgid ""
 "Deep and shallow HOL embeddings with **machine-checked faithfulness "
 "proofs**, reproducing Benzmüller, *Faithful Logic Embeddings in HOL — Deep "
@@ -217,17 +299,17 @@ msgstr ""
 "Build bedeutet, dass der Kernel von Isabelle jeden Adäquatheitsbeweis "
 "erbracht hat."
 
-#: ../../../CHANGELOG.md:81
+#: ../../../CHANGELOG.md:110
 msgid "Added:"
 msgstr "Hinzugefügt:"
 
-#: ../../../CHANGELOG.md:83
+#: ../../../CHANGELOG.md:112
 msgid ""
 "`modal_faithfulness_theory` / `modal_to_deep` — propositional modal logic K."
 msgstr ""
 "`modal_faithfulness_theory` / `modal_to_deep` — propositionale Modallogik K."
 
-#: ../../../CHANGELOG.md:84
+#: ../../../CHANGELOG.md:113
 msgid ""
 "`intuitionistic_faithfulness_theory` / `int_to_deep` — intuitionistic "
 "propositional logic (Kripke semantics: preorder ≤, persistent valuation)."
@@ -235,7 +317,7 @@ msgstr ""
 "`intuitionistic_faithfulness_theory` / `int_to_deep` — intuitionistische "
 "Aussagenlogik (Kripke-Semantik: Präordnung ≤, persistente Bewertung)."
 
-#: ../../../CHANGELOG.md:86
+#: ../../../CHANGELOG.md:115
 msgid ""
 "`conditional_faithfulness_theory` / `counterfactual_to_deep` — Lewis "
 "counterfactual (sphere) logic, matching `semantics.conditional`."
@@ -243,7 +325,7 @@ msgstr ""
 "`conditional_faithfulness_theory` / `counterfactual_to_deep` — Lewissche "
 "kontrafaktische (Sphären-)Logik, passend zu `semantics.conditional`."
 
-#: ../../../CHANGELOG.md:88
+#: ../../../CHANGELOG.md:117
 msgid ""
 "`relevant_faithfulness_theory` / `rel_to_deep` — relevant logic B "
 "(simplified Routley–Meyer semantics: normal worlds, Routley star, ternary "
@@ -253,7 +335,7 @@ msgstr ""
 "(vereinfachte Routley-Meyer-Semantik: normale Welten, Routley-Stern, ternäre"
 " Relation), passend zu `semantics.relevant`."
 
-#: ../../../CHANGELOG.md:91
+#: ../../../CHANGELOG.md:120
 msgid ""
 "Isabelle-gated live tests that build each emitted theory and assert the "
 "kernel discharges the five faithfulness theorems, plus always-run structure "
@@ -263,7 +345,7 @@ msgstr ""
 "sicherstellen, dass der Kernel die fünf Adäquatheitstheoreme auflöst, plus "
 "immer ausgeführte Strukturtests."
 
-#: ../../../CHANGELOG.md:94
+#: ../../../CHANGELOG.md:123
 msgid ""
 "The stack targets the propositional/schematic fragment (where induction over"
 " the syntax datatype applies); the quantified decision path stays in "
@@ -273,11 +355,11 @@ msgstr ""
 " Induktion über den Syntax-Datentyp anwendbar ist); der quantifizierte "
 "Entscheidungspfad verbleibt in `unicode_fol_kit.hol.isabelle_modal`."
 
-#: ../../../CHANGELOG.md:98
+#: ../../../CHANGELOG.md:127
 msgid "[0.12.0] - 2026-07-03"
 msgstr "[0.12.0] - 2026-07-03"
 
-#: ../../../CHANGELOG.md:100
+#: ../../../CHANGELOG.md:129
 msgid ""
 "The four families the documentation used to list as deliberately out of "
 "scope are now first-class: relevant logic, hybrid logic, dependence / IF "
@@ -294,16 +376,16 @@ msgstr ""
 "manuell geprüfte Tests, die mit bestehenden Orakeln abgeglichen wurden, und "
 "eine eigene Dokumentationsseite."
 
-#: ../../../CHANGELOG.md:106 ../../../CHANGELOG.md:161
-#: ../../../CHANGELOG.md:221 ../../../CHANGELOG.md:274
-#: ../../../CHANGELOG.md:345 ../../../CHANGELOG.md:418
-#: ../../../CHANGELOG.md:560 ../../../CHANGELOG.md:677
-#: ../../../CHANGELOG.md:700 ../../../CHANGELOG.md:719
-#: ../../../CHANGELOG.md:796
+#: ../../../CHANGELOG.md:135 ../../../CHANGELOG.md:190
+#: ../../../CHANGELOG.md:250 ../../../CHANGELOG.md:303
+#: ../../../CHANGELOG.md:374 ../../../CHANGELOG.md:447
+#: ../../../CHANGELOG.md:589 ../../../CHANGELOG.md:706
+#: ../../../CHANGELOG.md:729 ../../../CHANGELOG.md:748
+#: ../../../CHANGELOG.md:825
 msgid "Added"
 msgstr "Hinzugefügt"
 
-#: ../../../CHANGELOG.md:108
+#: ../../../CHANGELOG.md:137
 msgid ""
 "**Relevant logic B** (`semantics.relevant`) — the Priest–Sylvan *simplified*"
 " Routley–Meyer semantics for the basic affixing system **B** over the "
@@ -332,7 +414,7 @@ msgstr ""
 "Basis; das vollständige System **R** ist unentscheidbar (Urquhart 1984) und "
 "bleibt außerhalb des Rahmens."
 
-#: ../../../CHANGELOG.md:119
+#: ../../../CHANGELOG.md:148
 msgid ""
 "**Hybrid logic H(@)** — nominals and the satisfaction operator inside the "
 "modal mode: `MSFLParser(modal=True)` now parses nominals (`i`, `here`) as "
@@ -355,7 +437,7 @@ msgstr ""
 "modale Tableau weist hybride Eingaben mit einer klaren Fehlermeldung zurück,"
 " statt zu raten."
 
-#: ../../../CHANGELOG.md:127
+#: ../../../CHANGELOG.md:156
 #, python-brace-format
 msgid ""
 "**Dependence / IF logic** (`MSFLParser(dependence=True)` + `semantics.team`)"
@@ -381,7 +463,7 @@ msgstr ""
 "mit Flachheits- und Abwärtsschließungs-Eigenschaftstests gegen den Tarski-"
 "Evaluator und die klassischen Signalisierungsfakten für `|dom| = 1`."
 
-#: ../../../CHANGELOG.md:137
+#: ../../../CHANGELOG.md:166
 msgid ""
 "**Substructural logics** — two new sequent provers in `atp`: "
 "`MSFLParser(linear=True)` parses propositional **intuitionistic linear "
@@ -409,7 +491,7 @@ msgstr ""
 "klassische Kollaps jeder ableitbaren Sequenz wird in der Testsuite als "
 "Z3-gültig verifiziert."
 
-#: ../../../CHANGELOG.md:148
+#: ../../../CHANGELOG.md:177
 msgid ""
 "The frontier constructs render, verbalize (`to_english`), serialise "
 "(dict/JSON), and round-trip like every other node family; `exact_match` / "
@@ -422,11 +504,11 @@ msgstr ""
 "geschlitzten Binder (Schlitzmengen folgen den Umbenennungen ihrer "
 "umschließenden Binder)."
 
-#: ../../../CHANGELOG.md:153
+#: ../../../CHANGELOG.md:182
 msgid "[0.11.0] - 2026-07-02"
 msgstr "[0.11.0] - 2026-07-02"
 
-#: ../../../CHANGELOG.md:155
+#: ../../../CHANGELOG.md:184
 msgid ""
 "Cross-logic parity for the natural-language / CCG translation-target "
 "constructs, plus a capture-safety fix in the canonical form. The guiding "
@@ -443,7 +525,7 @@ msgstr ""
 "mehrsortige Logik), sodass ein Konstrukt nicht länger willkürlich auf den "
 "reinen `fol`-Modus beschränkt bleibt."
 
-#: ../../../CHANGELOG.md:163
+#: ../../../CHANGELOG.md:192
 #, python-brace-format
 msgid ""
 "**Counting quantifier, concessive connective, and degree/cardinality terms "
@@ -467,7 +549,7 @@ msgstr ""
 "mindestens drei x bestehen\") — wird nun als einzelner String geparst und "
 "lässt sich verlustfrei zurückparsen, nicht nur als handgebauter AST."
 
-#: ../../../CHANGELOG.md:171
+#: ../../../CHANGELOG.md:200
 #, python-brace-format
 msgid ""
 "**MSFOL many-sorted parity: `SortedCount` and `SortedCardinality`.** The "
@@ -494,7 +576,7 @@ msgstr ""
 "ebenfalls in MSFOL verfügbar. Beide neuen Knotentypen werden von der "
 "Paketwurzel exportiert."
 
-#: ../../../CHANGELOG.md:180
+#: ../../../CHANGELOG.md:209
 msgid ""
 "The fuzzy modes (FL / MSFL) deliberately **do not** gain these constructs: "
 "fuzzy logic is not a conservative extension of classical FOL (it "
@@ -509,13 +591,13 @@ msgstr ""
 "Wahrheitssemantik besitzen. Dies ist eine beabsichtigte Grenze, keine "
 "Auslassung."
 
-#: ../../../CHANGELOG.md:185 ../../../CHANGELOG.md:203
-#: ../../../CHANGELOG.md:367 ../../../CHANGELOG.md:481
-#: ../../../CHANGELOG.md:837
+#: ../../../CHANGELOG.md:214 ../../../CHANGELOG.md:232
+#: ../../../CHANGELOG.md:396 ../../../CHANGELOG.md:510
+#: ../../../CHANGELOG.md:866
 msgid "Fixed"
 msgstr "Behoben"
 
-#: ../../../CHANGELOG.md:187
+#: ../../../CHANGELOG.md:216
 msgid ""
 "**`exact_match` / `canonicalize` now α-normalize the counting and "
 "cardinality binders.** `Count` and `Cardinality` (and their new sorted "
@@ -533,7 +615,7 @@ msgstr ""
 "ungleich verglichen. Sie werden nun identisch kanonisiert, während der "
 "Operator, das gebundene `n`, die Sorte und die Matrix relevant bleiben."
 
-#: ../../../CHANGELOG.md:193
+#: ../../../CHANGELOG.md:222
 msgid ""
 "**Capture-safety of the canonical bound-variable rename.** The rename to "
 "canonical names `q0, q1, …` did not avoid free variables that happen to be "
@@ -554,11 +636,11 @@ msgstr ""
 "Der Fehler betraf jeden Binder (einschließlich `Quantifier` / `Lambda`) und "
 "wurde durch die Zählbinder neu erreichbar; die Korrektur deckt sie alle ab."
 
-#: ../../../CHANGELOG.md:201
+#: ../../../CHANGELOG.md:230
 msgid "[0.10.1] - 2026-06-30"
 msgstr "[0.10.1] - 2026-06-30"
 
-#: ../../../CHANGELOG.md:205
+#: ../../../CHANGELOG.md:234
 msgid ""
 "`unicode_fol_kit.__version__` now reports the actual package version (it "
 "lagged at `\"0.9.0\"` in the 0.10.0 release). The Sphinx / Read the Docs "
@@ -570,11 +652,11 @@ msgstr ""
 "Docs-Konfiguration liest diesen String für die dokumentierte Version, sodass"
 " auch die Versionsanzeige der Dokumentation korrigiert wird."
 
-#: ../../../CHANGELOG.md:210
+#: ../../../CHANGELOG.md:239
 msgid "[0.10.0] - 2026-06-30"
 msgstr "[0.10.0] - 2026-06-30"
 
-#: ../../../CHANGELOG.md:212
+#: ../../../CHANGELOG.md:241
 msgid ""
 "Natural-language → logic front-end support: attitude operators, a counting "
 "quantifier, degree and cardinality terms, a concessive connective, a whole-"
@@ -596,7 +678,7 @@ msgstr ""
 "konzessiver Koordination benötigen — und die externe Problemdateien "
 "einlesen, deren Symbolnamen keine nativen MSFLParser-Token sind."
 
-#: ../../../CHANGELOG.md:223
+#: ../../../CHANGELOG.md:252
 msgid ""
 "**Assertive and bouletic attitude operators** — `Says` (`Say_a φ`, *a "
 "asserts that φ*) and `Wants` (`Want_a φ`, *a wants it to be that φ*), modal "
@@ -619,7 +701,7 @@ msgstr ""
 "(`MSFLParser(modal=True)`), `satisfies_modal`, das modale Tableau "
 "(`is_modal_valid`), `to_english` sowie die Dict-/Unicode-/LaTeX-Renderer."
 
-#: ../../../CHANGELOG.md:231
+#: ../../../CHANGELOG.md:260
 msgid ""
 "**Counting quantifier `Count`** — `∃≥n` / `∃≤n` / `∃=n` (at least / at most "
 "/ exactly *n*). The bound *n* is carried **symbolically** (a `Number`, never"
@@ -643,7 +725,7 @@ msgstr ""
 "jedes `n` round-trip-fähig bleibt). Wird vom Standard-`MSFLParser()` "
 "geparst."
 
-#: ../../../CHANGELOG.md:240
+#: ../../../CHANGELOG.md:269
 msgid ""
 "**Degree term `Measure`** — `μ(entity, dimension)`, a first-class measure-"
 "function term for bare quantity comparatives (`μ(x, height) > μ(y, "
@@ -655,7 +737,7 @@ msgstr ""
 "height)`); wird als uninterpretierte binäre Funktion `measure(entity, "
 "dimension)` exportiert."
 
-#: ../../../CHANGELOG.md:243
+#: ../../../CHANGELOG.md:272
 #, python-brace-format
 msgid ""
 "**Set-cardinality term `Cardinality`** — `|{v : φ}|`, the count of "
@@ -668,7 +750,7 @@ msgstr ""
 "v)}| > |{v : Votes(y, v)}|`). Er bindet `v`; Mengenkardinalität ist Logik "
 "zweiter Stufe und hat daher **keinen** Export erster Stufe."
 
-#: ../../../CHANGELOG.md:247
+#: ../../../CHANGELOG.md:276
 msgid ""
 "**Concessive connective `Contrast`** — `P Ⓒ Q` (whereas / although / but), "
 "truth-functionally identical to `∧` but kept distinct so a front-end can "
@@ -678,7 +760,7 @@ msgstr ""
 "wahrheitsfunktional identisch zu `∧`, aber als eigener Typ erhalten, damit "
 "ein Frontend die Konzession bewahren kann, statt sie einzuebnen."
 
-#: ../../../CHANGELOG.md:250
+#: ../../../CHANGELOG.md:279
 msgid ""
 "**Whole-file Prover9 reader** — `load_prover9(path)` / "
 "`parse_prover9_problem(text)` read a Prover9 / LADR input file: `set` / "
@@ -695,7 +777,7 @@ msgstr ""
 "Rolle). Vervollständigt das Dateien-Lese-Trio mit `load_tptp` und "
 "`load_smtlib`."
 
-#: ../../../CHANGELOG.md:255
+#: ../../../CHANGELOG.md:284
 msgid ""
 "**TPTP single-quoted atoms** — the TPTP reader now accepts single-quoted "
 "functor names (`'http___example_org_Thing'(X)`), the form OWL→FOL dumps use "
@@ -708,7 +790,7 @@ msgstr ""
 "die Escapes `\\'` / `\\\\` aufgelöst. Ein 2,3 MB / 7198-Formeln umfassender "
 "OWL-Ontologie-Dump lässt sich vollständig einlesen."
 
-#: ../../../CHANGELOG.md:259
+#: ../../../CHANGELOG.md:288
 msgid ""
 "**Name sanitisation for round-trippable rendering** — `sanitize_names(node)`"
 " / `sanitize_all(nodes)` rewrite imported symbol names to MSFLParser-legal "
@@ -730,11 +812,11 @@ msgstr ""
 "konsistent. (Verifiziert: alle 7198 Formeln des OWL-Dumps lassen sich nach "
 "der Bereinigung verlustfrei zurückparsen.)"
 
-#: ../../../CHANGELOG.md:267
+#: ../../../CHANGELOG.md:296
 msgid "[0.9.0] - 2026-06-29"
 msgstr "[0.9.0] - 2026-06-29"
 
-#: ../../../CHANGELOG.md:269
+#: ../../../CHANGELOG.md:298
 msgid ""
 "A broad non-classical expansion: a native modal tableau, past-tense temporal"
 " logic, more modal frames, four-valued FDE and a general matrix layer, fuzzy"
@@ -749,7 +831,7 @@ msgstr ""
 " ein Beschreibungslogik-Unterpaket sowie ein Cluster nicht-klassischer "
 "Nachbarlogiken."
 
-#: ../../../CHANGELOG.md:276
+#: ../../../CHANGELOG.md:305
 msgid ""
 "**Native modal tableaux — `unicode_fol_kit.atp.modal_tableau`.** A labelled,"
 " install-free tableau that decides the propositional box/diamond family "
@@ -772,7 +854,7 @@ msgstr ""
 "`prove_tableau` / `tableau_closed` leiten modale Eingaben nun hierher "
 "weiter, statt einen `ValueError` zu werfen."
 
-#: ../../../CHANGELOG.md:284
+#: ../../../CHANGELOG.md:313
 msgid ""
 "**Past-tense temporal operators** — Prior tense logic: `Historically` (⒣), "
 "`Once` (⒫), `Previous` (⒴) and binary `Since` (⒮), the duals of "
@@ -786,7 +868,7 @@ msgstr ""
 "Abgedeckt im Parser, in `satisfies_modal`, der Standardübersetzung, der qml-"
 "Einbettung und `to_english`."
 
-#: ../../../CHANGELOG.md:288
+#: ../../../CHANGELOG.md:317
 msgid ""
 "**More modal frames** — `B` (Brouwer), `S4.2` (convergent), `S4.3` (linear) "
 "decided by Z3 (`qml_is_valid`); `GL` (Gödel–Löb provability) via the Löb "
@@ -798,7 +880,7 @@ msgstr ""
 "Beweisbarkeit) über das Löb-Schema in den Isabelle-/THF-Exportern "
 "(verifiziert, dass Löbs Theorem in echtem Isabelle bewiesen wird)."
 
-#: ../../../CHANGELOG.md:291
+#: ../../../CHANGELOG.md:320
 msgid ""
 "**Finite-valued logical matrices + Belnap–Dunn FDE** — `semantics.matrix`: "
 "`TruthMatrix.from_functions` builds any finite matrix; ships `K3_MATRIX`, "
@@ -812,7 +894,7 @@ msgstr ""
 "reproduzierend) sowie die vierwertige `FDE_MATRIX` (paraconsistent *und* "
 "parakomplett, ohne logische Wahrheiten)."
 
-#: ../../../CHANGELOG.md:295
+#: ../../../CHANGELOG.md:324
 msgid ""
 "**Fuzzy t-norm selector + quantifier grounding** — `fuzzy_evaluate(…, "
 "tnorm=)` over **Łukasiewicz / Gödel / product** (new `semantics.tnorm`); "
@@ -826,7 +908,7 @@ msgstr ""
 "**grundiert Quantoren** über einer endlichen Domäne, sodass quantifizierte "
 "Fuzzy-Gültigkeit / -Erfüllbarkeit nun entscheidbar ist."
 
-#: ../../../CHANGELOG.md:299
+#: ../../../CHANGELOG.md:328
 msgid ""
 "**First-order intuitionistic Kripke search** — `int_valid` / "
 "`int_countermodel` search increasing-domain models for quantified formulas "
@@ -837,7 +919,7 @@ msgstr ""
 "quantifizierte Formeln (beschränkt; das propositionale Fragment bleibt eine "
 "exakte Entscheidung)."
 
-#: ../../../CHANGELOG.md:302
+#: ../../../CHANGELOG.md:331
 msgid ""
 "**Bounded second-order search** — `so_find_model` / `so_find_countermodel` /"
 " `so_is_satisfiable_finite` / `so_is_valid_finite` complement "
@@ -847,7 +929,7 @@ msgstr ""
 "`so_find_countermodel` / `so_is_satisfiable_finite` / `so_is_valid_finite` "
 "ergänzen `satisfies_so`."
 
-#: ../../../CHANGELOG.md:304
+#: ../../../CHANGELOG.md:333
 msgid ""
 "**Many-sorted (MSFOL) model finding** — `find_model` / `find_countermodel` "
 "enumerate sort universes and return sorted `Structure`s."
@@ -855,7 +937,7 @@ msgstr ""
 "**Mehrsortige (MSFOL) Modellsuche** — `find_model` / `find_countermodel` "
 "enumerieren Sortenuniversen und liefern sortierte `Structure`s."
 
-#: ../../../CHANGELOG.md:306
+#: ../../../CHANGELOG.md:335
 msgid ""
 "**Description logic ALC — `unicode_fol_kit.dl`.** Concept syntax (⊤ ⊥, ¬ ⊓ "
 "⊔, ∃r.C ∀r.C), and a tableau reasoner (`concept_satisfiable`, `subsumes`, "
@@ -869,7 +951,7 @@ msgstr ""
 "TBox-Internalisierung und Subset-Blocking; gegengeprüft gegen das modale "
 "Tableau."
 
-#: ../../../CHANGELOG.md:310
+#: ../../../CHANGELOG.md:339
 msgid ""
 "**Non-classical neighbours** — free logic (`semantics.free_logic`), public- "
 "announcement / dynamic epistemic logic (`semantics.dynamic_epistemic`), "
@@ -882,7 +964,7 @@ msgstr ""
 "(`semantics.conditional`, Lewis-Sphären) und zirkumskriptive nicht-monotone "
 "Folgerung (`semantics.nonmonotonic`)."
 
-#: ../../../CHANGELOG.md:314
+#: ../../../CHANGELOG.md:343
 msgid ""
 "**`isabelle_decide_fol` — decide classical FOL / MSFOL through Isabelle.** "
 "The counterpart of `isabelle_decide_modal` for the classical fragment: "
@@ -899,7 +981,7 @@ msgstr ""
 "**uninterpretierte** `feq` / `fneq` der Einbettung (keine Gleichheitsaxiome "
 "angenommen)."
 
-#: ../../../CHANGELOG.md:319
+#: ../../../CHANGELOG.md:348
 msgid ""
 "**Linux CI for the Isabelle-backed tests** (`.github/workflows/isabelle-"
 "tests.yml`). Installs a real Linux Isabelle (cached) and runs the gated live"
@@ -913,12 +995,12 @@ msgstr ""
 "dass der primäre (Linux-)Pfad funktioniert, da die Entwicklungsmaschine "
 "unter Windows läuft. Pfadbezogen + `workflow_dispatch`."
 
-#: ../../../CHANGELOG.md:324 ../../../CHANGELOG.md:383
-#: ../../../CHANGELOG.md:825
+#: ../../../CHANGELOG.md:353 ../../../CHANGELOG.md:412
+#: ../../../CHANGELOG.md:854
 msgid "Changed"
 msgstr "Geändert"
 
-#: ../../../CHANGELOG.md:326
+#: ../../../CHANGELOG.md:355
 msgid ""
 "**`to_english` paraphrases the non-classical operators** (modal / temporal /"
 " epistemic / deontic / second-order / fuzzy) instead of falling back to "
@@ -933,7 +1015,7 @@ msgstr ""
 "werden. `naming` erhielt explizite Hinweise auf modale / Second-Order-"
 "Mischfehler."
 
-#: ../../../CHANGELOG.md:331
+#: ../../../CHANGELOG.md:360
 msgid ""
 "**`isabelle_decide_modal` INVALID verdicts now carry a concrete counter-"
 "model.** For the propositional alethic fragment, `ModalVerdict.countermodel`"
@@ -950,7 +1032,7 @@ msgstr ""
 "Fragmente, die die beschränkte Suche nicht abdeckt — das zertifizierte "
 "Urteil bleibt unberührt."
 
-#: ../../../CHANGELOG.md:336
+#: ../../../CHANGELOG.md:365
 msgid ""
 "**Temporal `Always`/`Eventually` + `Next` refutation is sharp again.** The "
 "runner's *refute* theory now **defines** the henceforth relation as `t = "
@@ -969,11 +1051,11 @@ msgstr ""
 " benötigt sie); beide kodieren `t = n**`. (Neues `temporal_def`-Flag auf "
 "`isabelle_modal_theory`.)"
 
-#: ../../../CHANGELOG.md:343
+#: ../../../CHANGELOG.md:372
 msgid "[0.8.0] - 2026-06-28"
 msgstr "[0.8.0] - 2026-06-28"
 
-#: ../../../CHANGELOG.md:347
+#: ../../../CHANGELOG.md:376
 msgid ""
 "**Run a local Isabelle to actually *prove* the modal embeddings — "
 "`unicode_fol_kit.hol.isabelle_runner`.** The `hol` exporters only *emit*; "
@@ -1007,7 +1089,7 @@ msgstr ""
 "Force-Kripke-Orakel (`satisfies_modal`) über K/T/S4/S5 in der Testsuite "
 "validiert."
 
-#: ../../../CHANGELOG.md:357
+#: ../../../CHANGELOG.md:386
 msgid ""
 "`find_isabelle` / `isabelle_available` locate an install (explicit path → "
 "`UFK_ISABELLE_HOME` / `ISABELLE_HOME` → `isabelle` on `PATH` → a light "
@@ -1020,7 +1102,7 @@ msgstr ""
 "eigenständige Theorie; `ModalVerdict` / `BuildResult` / `IsabelleInstall` "
 "tragen die Ergebnisse."
 
-#: ../../../CHANGELOG.md:360
+#: ../../../CHANGELOG.md:389
 msgid ""
 "**Linux/macOS is the primary path** — `isabelle` is invoked directly. "
 "**Windows** is also supported: the build is additionally routed through "
@@ -1037,11 +1119,11 @@ msgstr ""
 "generisch entdeckt. Fehlendes Isabelle wirft ein klares "
 "`IsabelleNotAvailable`; die Live-Tests werden übersprungen."
 
-#: ../../../CHANGELOG.md:365
+#: ../../../CHANGELOG.md:394
 msgid "All re-exported at the package top level."
 msgstr "Alle auf der Paketwurzelebene re-exportiert."
 
-#: ../../../CHANGELOG.md:369
+#: ../../../CHANGELOG.md:398
 msgid ""
 "**`to_isabelle_modal` emitted proofs could not discharge axiom-dependent "
 "validities.** A bare `axiomatization where r_refl: …` fact is not in "
@@ -1066,7 +1148,7 @@ msgstr ""
 " Geltungsbereich befindlichen Axiome offen, und `isabelle_modal_theory(…, "
 "proof=…)` akzeptiert eine explizite Beweis-Überschreibung."
 
-#: ../../../CHANGELOG.md:376
+#: ../../../CHANGELOG.md:405
 msgid ""
 "**`to_isabelle_k3lp` / `to_isabelle_k3lp_entailment` emitted a non-"
 "discharging proof.** `by (simp add: des_def)` does **not** close the "
@@ -1087,7 +1169,7 @@ msgstr ""
 "der Gegenbewertung als zur Emissionszeit berechnete `rule exI`-Zeugen. Jede "
 "Form ist verifiziert, in echtem Isabelle zu bauen."
 
-#: ../../../CHANGELOG.md:385
+#: ../../../CHANGELOG.md:414
 msgid ""
 "**`to_isabelle_intuitionistic` now emits a real, Isabelle-checked proof for "
 "valid formulas.** The proof is verdict-dependent: an intuitionistically "
@@ -1112,11 +1194,11 @@ msgstr ""
 "Theorem wie `(p→q)∨(q→r)∨(r→p)` sonst fälschlich mit einem echten, nicht "
 "abschließbaren Beweis emittiert würde)."
 
-#: ../../../CHANGELOG.md:394
+#: ../../../CHANGELOG.md:423
 msgid "Audit hardening"
 msgstr "Audit-Härtung"
 
-#: ../../../CHANGELOG.md:396
+#: ../../../CHANGELOG.md:425
 msgid ""
 "A multi-agent adversarial soundness audit of the new subsystem confirmed "
 "five issues (no false *VALID* is possible — Isabelle's kernel rejects a "
@@ -1127,7 +1209,7 @@ msgstr ""
 " Kern weist den Beweis eines falschen Ziels zurück), alle behoben und erneut"
 " gegen ein echtes Isabelle geprüft:"
 
-#: ../../../CHANGELOG.md:400
+#: ../../../CHANGELOG.md:429
 msgid ""
 "**Intuitionistic proof gated on the decidable oracle** (above) — was a real "
 "proof emitted for an IPL-*invalid* formula (theory then failed to build)."
@@ -1136,7 +1218,7 @@ msgstr ""
 "(oben) — es wurde ein echter Beweis für eine IPL-*ungültige* Formel "
 "emittiert (die Theorie ließ sich dann nicht bauen)."
 
-#: ../../../CHANGELOG.md:402
+#: ../../../CHANGELOG.md:431
 msgid ""
 "**Atom-name collisions in the intuitionistic export.** An atom named `r` (or"
 " `w`/`v`/`u`) collided with the accessibility relation / frame-axiom "
@@ -1151,7 +1233,7 @@ msgstr ""
 "das gültige `r → r`. `_isa_atom_name` reserviert nun die strukturellen "
 "Bezeichner und löst Kollisionen auf (`r` → `p_r`)."
 
-#: ../../../CHANGELOG.md:406
+#: ../../../CHANGELOG.md:435
 msgid ""
 "**Temporal closure now pinned faithfully.** When `Always`/`Eventually` co-"
 "occur with `Next`, the emitted henceforth relation `t` is now forced to "
@@ -1173,7 +1255,7 @@ msgstr ""
 "widerlegt (UNKNOWN — das Hüllenfragment ist eine dokumentierte "
 "Approximation)."
 
-#: ../../../CHANGELOG.md:412
+#: ../../../CHANGELOG.md:441
 msgid ""
 "**`ModalVerdict.infra_error`.** An `UNKNOWN` whose build failed for an "
 "infrastructure reason (syntax / JVM / timeout / …) now carries a short "
@@ -1185,11 +1267,11 @@ msgstr ""
 "kurze Signatur, sodass eine defekte Theorie oder Umgebung nicht mehr von "
 "ehrlicher Unvollständigkeit zu unterscheiden ist. Ändert nie das Urteil."
 
-#: ../../../CHANGELOG.md:416
+#: ../../../CHANGELOG.md:445
 msgid "[0.7.0] - 2026-06-28"
 msgstr "[0.7.0] - 2026-06-28"
 
-#: ../../../CHANGELOG.md:420
+#: ../../../CHANGELOG.md:449
 #, python-brace-format
 msgid ""
 "**Epistemic / doxastic frame systems in the first-order embedding.** "
@@ -1207,7 +1289,7 @@ msgstr ""
 "gültig ist. Dies macht den FO-Pfad symmetrisch zum THF-Exporter (der "
 "`systems=` bereits hatte)."
 
-#: ../../../CHANGELOG.md:425
+#: ../../../CHANGELOG.md:454
 msgid ""
 "**Quantified modal logic (QML) via shallow embeddings.** Object quantifiers "
 "`∀x` / `∃x` under a modality, with the domain-regime semantics that decide "
@@ -1217,7 +1299,7 @@ msgstr ""
 "Objektquantoren `∀x` / `∃x` unter einer Modalität, mit der Domänenregime-"
 "Semantik, die die Barcan-Formeln entscheidet:"
 
-#: ../../../CHANGELOG.md:428
+#: ../../../CHANGELOG.md:457
 #, python-brace-format
 msgid ""
 "**Semantics** — `KripkeModel` now takes per-world object domains "
@@ -1235,7 +1317,7 @@ msgstr ""
 "entsprechend variieren. Abwärtskompatibel (Domänen weglassen für das "
 "propositionale Fragment)."
 
-#: ../../../CHANGELOG.md:433
+#: ../../../CHANGELOG.md:462
 msgid ""
 "**(A) First-order shallow embedding** (`unicode_fol_kit.fol.qml`): "
 "`qml_translate` (with the existence predicate `E!` relativising actualist "
@@ -1257,7 +1339,7 @@ msgstr ""
 "Korrespondenz (BF ⇔ decreasing, CBF ⇔ increasing, constant ⇔ beides) ist "
 "gegen erschöpfende Kripke-Modell-Enumeration über jedes Regime gegengeprüft."
 
-#: ../../../CHANGELOG.md:441
+#: ../../../CHANGELOG.md:470
 msgid ""
 "**(B) Higher-order shallow embedding** — `to_thf_modal` emits a Benzmüller-"
 "style TPTP **THF** problem (lifted "
@@ -1272,7 +1354,7 @@ msgstr ""
 "`to_isabelle_modal` emittiert ein Isabelle/HOL-Skelett. Alethisches "
 "□/◇-Fragment."
 
-#: ../../../CHANGELOG.md:445
+#: ../../../CHANGELOG.md:474
 msgid ""
 "All re-exported at the package top level; `BARCAN` / `CONVERSE_BARCAN` are "
 "provided as the standard litmus formulas."
@@ -1280,7 +1362,7 @@ msgstr ""
 "Alle auf der Paketwurzelebene re-exportiert; `BARCAN` / `CONVERSE_BARCAN` "
 "werden als Standard-Testformeln bereitgestellt."
 
-#: ../../../CHANGELOG.md:447
+#: ../../../CHANGELOG.md:476
 msgid ""
 "**`⊕L` / `⊕R` (exclusive-or) rules in the sequent calculus** (`A⊕B ≡ "
 "¬(A↔B)`), closing the one connective that had no inference rule in either "
@@ -1290,7 +1372,7 @@ msgstr ""
 "die den einen Konnektor abschließen, der in keinem der beiden Checker eine "
 "Inferenzregel hatte."
 
-#: ../../../CHANGELOG.md:449
+#: ../../../CHANGELOG.md:478
 msgid ""
 "**HOL / Isabelle / THF exporters for all non-fuzzy logics** (new "
 "`unicode_fol_kit.hol` subpackage) — Benzmüller-style shallow semantical "
@@ -1307,7 +1389,7 @@ msgstr ""
 "unentscheidbar, sodass Emission \"ein korrektes Problem, das ein Prover "
 "*möglicherweise* abschließen kann\" bedeutet, nie \"entschieden\"):"
 
-#: ../../../CHANGELOG.md:454
+#: ../../../CHANGELOG.md:483
 msgid ""
 "`hol.isabelle_modal.to_isabelle_modal` — a **real, loadable** Isabelle/HOL "
 "theory (`theory … imports Main begin … end`, all lifted operators, frame + "
@@ -1324,7 +1406,7 @@ msgstr ""
 "temporal. Ersetzt das alte, nur-alethische Skelett, das das Lemma in einem "
 "Kommentar emittierte."
 
-#: ../../../CHANGELOG.md:459
+#: ../../../CHANGELOG.md:488
 msgid ""
 "`hol.thf_modal.to_thf_modal_full` — the full-modal-family TPTP **THF** "
 "export (agent-indexed epistemic/doxastic, deontic, temporal), extending the "
@@ -1336,7 +1418,7 @@ msgstr ""
 "temporal), der das nur-alethische `qml.to_thf_modal` erweitert; eigenständig"
 " (jede vom Makroblock referenzierte Relation ist deklariert)."
 
-#: ../../../CHANGELOG.md:462
+#: ../../../CHANGELOG.md:491
 msgid ""
 "`hol.classical` (FOL + MSFOL), `hol.manyvalued` (K3 / LP, cross-checked "
 "against the three-valued evaluator), `hol.secondorder` (native HOL predicate"
@@ -1348,7 +1430,7 @@ msgstr ""
 "Prädikatsquantifizierung), `hol.intuitionistic` (Gödel-McKinsey-Tarski → S4 "
 "→ HOL, gegen `int_valid` gegengeprüft) — jeweils → THF und Isabelle."
 
-#: ../../../CHANGELOG.md:466
+#: ../../../CHANGELOG.md:495
 msgid ""
 "**First-class agent terms for epistemic/doxastic operators.** The `agent` of"
 " `Knows` / `Believes` is now a **term** (Variable or Constant), a structural"
@@ -1365,7 +1447,7 @@ msgstr ""
 "Student, der…\") funktioniert nun endlich: der Agent ist das gebundene `x`, "
 "kein fest eingebrannter Relationsnamen-Suffix."
 
-#: ../../../CHANGELOG.md:471
+#: ../../../CHANGELOG.md:500
 msgid ""
 "The Kripke evaluator uses **per-agent** accessibility relations (one agent "
 "can know what another does not); object quantifiers ground a bound agent "
@@ -1376,7 +1458,7 @@ msgstr ""
 "weiß); Objektquantoren grundieren einen gebundenen Agenten, bevor die "
 "Modalität erreicht wird."
 
-#: ../../../CHANGELOG.md:474
+#: ../../../CHANGELOG.md:503
 msgid ""
 "The first-order shallow embedding emits an **agent-indexed ternary** "
 "relation `Rk(agent, w, v)` / `Rb(agent, w, v)`, so a bound agent genuinely "
@@ -1388,7 +1470,7 @@ msgstr ""
 "gebundener Agent echt über Agenten quantifiziert (epistemische/doxastische "
 "Relationen sind schlicht `K` — noch keine Frame-Axiome)."
 
-#: ../../../CHANGELOG.md:477
+#: ../../../CHANGELOG.md:506
 msgid ""
 "Parser convention: a free `K_a` is a *named* agent (→ Constant); an agent "
 "bound by an enclosing quantifier (`K_x` under `∀x`) stays a Variable. A bare"
@@ -1400,7 +1482,7 @@ msgstr ""
 "`∀x`), bleibt eine Variable. Ein bloßer, an den Konstruktor übergebener "
 "String wird zu einer Konstante gezwungen (abwärtskompatibel)."
 
-#: ../../../CHANGELOG.md:483
+#: ../../../CHANGELOG.md:512
 msgid ""
 "**HOL/THF/Isabelle exporters: distinct symbols can no longer collapse to one"
 " name.** A de-colliding resolver (`_ThfNames` / `_IsaNames` / the second-"
@@ -1424,7 +1506,7 @@ msgstr ""
 "doppelten / fehlerhaft typisierten Deklarationen, die `to_isabelle_so` / die"
 " modalen Isabelle-Theorien nicht ladbar machten."
 
-#: ../../../CHANGELOG.md:491
+#: ../../../CHANGELOG.md:520
 msgid ""
 "**`to_isabelle_modal` is now the real exporter everywhere.** The top-level "
 "`to_isabelle_modal` (and `fol.qml.to_isabelle_modal`) delegate to the "
@@ -1438,7 +1520,7 @@ msgstr ""
 "ladbare Theorie mit einem echten `lemma`), statt an das alte, nur-alethische"
 " Skelett, das das Lemma in einem Kommentar emittierte."
 
-#: ../../../CHANGELOG.md:495
+#: ../../../CHANGELOG.md:524
 msgid ""
 "**`substitute` is now capture-avoiding for a re-binding quantifier.** "
 "Substituting a `Variable` (as `satisfies_modal` does when grounding an "
@@ -1460,7 +1542,7 @@ msgstr ""
 "erneut bindenden Binder an; die `Quantifier`-/`SortedQuantifier`-Zweige tun "
 "dies nun ebenfalls.)"
 
-#: ../../../CHANGELOG.md:502
+#: ../../../CHANGELOG.md:531
 msgid ""
 "**QML rejects an unknown `mode`.** `qml_translate` / `qml_is_valid` / "
 "`qml_equivalent` raise `ValueError` on an unrecognised domain regime (e.g. a"
@@ -1475,7 +1557,7 @@ msgstr ""
 "und ein falsches Gültigkeitsurteil zurückzugeben — passend zur bestehenden "
 "`frame`-Validierung."
 
-#: ../../../CHANGELOG.md:506
+#: ../../../CHANGELOG.md:535
 msgid ""
 "**THF export: `possibilist` now emits the `const_dom` axiom.** Since the FO "
 "embedding treats `possibilist` as a constant domain, the THF export does too"
@@ -1488,7 +1570,7 @@ msgstr ""
 "würden sonst eine variierende Domäne modellieren), sodass die beiden "
 "Einbettungen übereinstimmen."
 
-#: ../../../CHANGELOG.md:510
+#: ../../../CHANGELOG.md:539
 msgid ""
 "**THF export: `=` / `≠` are now uninterpreted predicates, not primitive HOL "
 "identity.** `to_thf_modal` previously rendered equality as rigid HOL `=`, "
@@ -1503,12 +1585,12 @@ msgstr ""
 "x=x` ein THF-Theorem, aber Kripke-falsifizierbar war. Alle drei Einbettungen"
 " stimmen nun überein."
 
-#: ../../../CHANGELOG.md:516 ../../../CHANGELOG.md:748
-#: ../../../CHANGELOG.md:862
+#: ../../../CHANGELOG.md:545 ../../../CHANGELOG.md:777
+#: ../../../CHANGELOG.md:891
 msgid "Internal"
 msgstr "Intern"
 
-#: ../../../CHANGELOG.md:518
+#: ../../../CHANGELOG.md:547
 msgid ""
 "**Retired the parser-equivalence oracle.** The registry-assembled parser was"
 " pinned during migration by a byte-for-byte equivalence test against the "
@@ -1530,7 +1612,7 @@ msgstr ""
 "Grammatikstruktur-Schutzmechanismen bleiben erhalten. Nur `terminals.lark` "
 "überlebt (zur Laufzeit von der generierten Grammatik importiert)."
 
-#: ../../../CHANGELOG.md:525
+#: ../../../CHANGELOG.md:554
 msgid ""
 "**Shared symbol-name de-collision** (`fol/_symbol_names.py`): the `dedupe` "
 "helper and the THF/Isabelle resolver, previously copy-pasted across the "
@@ -1543,7 +1625,7 @@ msgstr ""
 "`dedupe`, verwendet von den THF-, Isabelle-, klassischen und Second-Order-"
 "Exportern."
 
-#: ../../../CHANGELOG.md:529
+#: ../../../CHANGELOG.md:558
 msgid ""
 "**Agent token parsing reuses the scope pass.** The epistemic/doxastic agent "
 "is parsed as a Variable and resolved to bound-Variable / free-Constant by "
@@ -1556,7 +1638,7 @@ msgstr ""
 "Variable / freier Konstante aufgelöst, statt Variable-vs-Konstante erneut "
 "mit einem handkopierten Lexer-Regex zu entscheiden."
 
-#: ../../../CHANGELOG.md:533
+#: ../../../CHANGELOG.md:562
 msgid ""
 "**Adversarial audit of the proof checkers.** A multi-agent audit ran "
 "independent oracles against every accepted proof/derivation of the Fitch and"
@@ -1583,7 +1665,7 @@ msgstr ""
 "Mutations-/Z3-Audit nun auch `Cut`, Abschwächung, Kontraktion, `∨L`, "
 "`↔L`/`↔R`, `∃L` und `⊕L`/`⊕R` prüft."
 
-#: ../../../CHANGELOG.md:542
+#: ../../../CHANGELOG.md:571
 msgid ""
 "**Independent differential test harnesses promoted into the committed "
 "suite**, so the checkers are cross-checked against oracles *other* than the "
@@ -1593,7 +1675,7 @@ msgstr ""
 "überführt**, sodass die Checker gegen Orakel gegengeprüft werden, die "
 "*nicht* dieselben sind, die sie intern verwenden:"
 
-#: ../../../CHANGELOG.md:544
+#: ../../../CHANGELOG.md:573
 msgid ""
 "the alethic modal Fitch checker against brute-force Kripke-frame enumeration"
 " (`tests/test_modal_differential.py`) — independent of its standard-"
@@ -1604,7 +1686,7 @@ msgstr ""
 "Standardübersetzungs-/Z3-Pfad, deckt die K/T/S4/S5-Frame-Sensitivitätsfakten"
 " ab;"
 
-#: ../../../CHANGELOG.md:547
+#: ../../../CHANGELOG.md:576
 msgid ""
 "the second-order sequent rules against `satisfies_so` (`so_valid_tiny`) "
 "under a randomised mutation audit (Z3 cannot evaluate second-order nodes);"
@@ -1613,7 +1695,7 @@ msgstr ""
 "unter einem randomisierten Mutationsaudit (Z3 kann Second-Order-Knoten nicht"
 " auswerten);"
 
-#: ../../../CHANGELOG.md:549
+#: ../../../CHANGELOG.md:578
 msgid ""
 "the object-level eigenvariable freshness condition (`∀R`/`∃L`) under "
 "randomised fresh/non-fresh fuzzing."
@@ -1621,11 +1703,11 @@ msgstr ""
 "die Eigenvariablen-Frische-Bedingung auf Objektebene (`∀R`/`∃L`) unter "
 "randomisiertem Fresh-/Non-Fresh-Fuzzing."
 
-#: ../../../CHANGELOG.md:552
+#: ../../../CHANGELOG.md:581
 msgid "[0.6.0] - 2026-06-27"
 msgstr "[0.6.0] - 2026-06-27"
 
-#: ../../../CHANGELOG.md:554
+#: ../../../CHANGELOG.md:583
 msgid ""
 "A large reasoning-and-interoperability release: a Fitch natural-deduction "
 "checker and backtracking prover, a Gentzen **LK** sequent calculus (with "
@@ -1642,7 +1724,7 @@ msgstr ""
 "Z3-SMT-LIB, intuitionistische Kripke-Semantik und Formelverbalisierung. "
 "Alles additiv."
 
-#: ../../../CHANGELOG.md:562
+#: ../../../CHANGELOG.md:591
 msgid ""
 "**Fitch-style natural-deduction proof checker** "
 "(`unicode_fol_kit.atp.fitch`) — `Proof` / `Subproof` / `Line` / "
@@ -1662,7 +1744,7 @@ msgstr ""
 "Konklusion implizieren; `verify_proof` meldet die zertifizierte Sequenz und "
 "die erste fehlschlagende Zeile mit einem Grund."
 
-#: ../../../CHANGELOG.md:569
+#: ../../../CHANGELOG.md:598
 msgid ""
 "**Classical FOL / MSFOL** (`logic=\"fol\"`/`\"msfol\"`) is checked by a "
 "syntactic rule table: the connective rules (`∧I`/`∧E`, `∨I`/`∨E`, `→I`/`→E`,"
@@ -1685,7 +1767,7 @@ msgstr ""
 " Annahmen* des Beweises geprüft. `⊥` ist die reservierte logische Konstante "
 "`FALSUM`."
 
-#: ../../../CHANGELOG.md:577
+#: ../../../CHANGELOG.md:606
 msgid ""
 "**Three-valued K3 / LP** (`logic=\"K3\"`/`\"LP\"`) certify each step against"
 " the many-valued decision procedure (`semantics.manyvalued.entails`), so the"
@@ -1699,7 +1781,7 @@ msgstr ""
 "LP weist Modus Ponens, den disjunktiven Syllogismus und Explosion zurück; K3"
 " hat keine Nullprämissen-Theoreme. Propositionales Fragment."
 
-#: ../../../CHANGELOG.md:582
+#: ../../../CHANGELOG.md:611
 msgid ""
 "**Modal family** (`logic=\"K\"`/`\"T\"`/`\"S4\"`/`\"S5\"`) certifies each "
 "step by the standard translation to FOL plus the frame axioms, decided by "
@@ -1714,7 +1796,7 @@ msgstr ""
 "Fragment; temporale und quantifizierte modale Eingaben werden "
 "zurückgewiesen."
 
-#: ../../../CHANGELOG.md:587
+#: ../../../CHANGELOG.md:616
 msgid ""
 "**Rendering** — `render_fitch` (Unicode/ASCII scope bars, line-number "
 "gutter, justification column; also `proof.to_fitch()`) and "
@@ -1726,7 +1808,7 @@ msgstr ""
 "`render_latex_fitch` (eigenständiges LaTeX-`array`; auch "
 "`proof.to_latex_fitch()`)."
 
-#: ../../../CHANGELOG.md:590
+#: ../../../CHANGELOG.md:619
 msgid ""
 "Tested with hand-derived proofs per rule, soundness guards for the broken "
 "cases, and a randomised audit that checks every accepted proof line-by-line "
@@ -1736,7 +1818,7 @@ msgstr ""
 "für die fehlerhaften Fälle sowie einem randomisierten Audit, das jeden "
 "akzeptierten Beweis Zeile für Zeile gegen die Z3-/Resolutions-Orakel prüft."
 
-#: ../../../CHANGELOG.md:593
+#: ../../../CHANGELOG.md:622
 msgid ""
 "**Gentzen sequent-calculus checker** (`unicode_fol_kit.atp.sequent`) — a "
 "two-sided **LK** derivation checker re-exported at the package top level: "
@@ -1754,7 +1836,7 @@ msgstr ""
 "(Multimengen, gelesen als `⋀Γ → ⋁Δ`) wird durch einen Regelbaum abgeleitet; "
 "der Checker verifiziert jeden Schritt."
 
-#: ../../../CHANGELOG.md:599
+#: ../../../CHANGELOG.md:628
 msgid ""
 "Rules: `Ax`, structural `WL`/`WR`/`CL`/`CR`/`Cut`, the connective rules "
 "(`¬`, `∧`, `∨`, `→`, `↔`, each L and R), the first-order quantifier rules "
@@ -1775,7 +1857,7 @@ msgstr ""
 "das Second-Order-Fragment (`second_order=True`), das keine Kodierung erster "
 "Stufe / SMT hat."
 
-#: ../../../CHANGELOG.md:607
+#: ../../../CHANGELOG.md:636
 msgid ""
 "Sound but, for full second-order logic, necessarily **not a complete "
 "prover** (second-order validity is not r.e.). Tested with hand derivations "
@@ -1790,7 +1872,7 @@ msgstr ""
 "für Knoten gegen Z3 gegenprüft (Fragment erster Stufe), sowie Stichproben "
 "von `satisfies_so` über kleine endliche Modelle (Second-Order-Fragment)."
 
-#: ../../../CHANGELOG.md:612
+#: ../../../CHANGELOG.md:641
 msgid ""
 "**Analytic tableaux** (`unicode_fol_kit.atp.tableau`) — `is_valid_tableau`, "
 "`prove_tableau`, `tableau_closed`, and `tableau_model`, re-exported at the "
@@ -1809,7 +1891,7 @@ msgstr ""
 "Stufe ist beschränkt (`max_terms` / `max_steps`). Ein *offener* Zweig wird "
 "von `tableau_model` als Gegenmodell zurückgegeben."
 
-#: ../../../CHANGELOG.md:618
+#: ../../../CHANGELOG.md:647
 msgid ""
 "**Finite model finder** (`unicode_fol_kit.semantics.modelfinder`) — "
 "`find_model`, `find_countermodel`, `is_satisfiable_finite`, and "
@@ -1825,7 +1907,7 @@ msgstr ""
 "Partner der Prover (eine gültige Folgerung hat kein Gegenmodell; eine "
 "ungültige meist ein kleines endliches). Beschränkt durch `max_candidates`."
 
-#: ../../../CHANGELOG.md:624
+#: ../../../CHANGELOG.md:653
 msgid ""
 "**Truth tables** (`unicode_fol_kit.semantics.truthtable`) — `truth_table` "
 "returning a `TruthTable` (Markdown `render`, "
@@ -1840,7 +1922,7 @@ msgstr ""
 "Kleene-**K3**- und Priest-**LP**-Wertemengen (für klassisch gegen Z3 "
 "gegengeprüft)."
 
-#: ../../../CHANGELOG.md:628
+#: ../../../CHANGELOG.md:657
 msgid ""
 "**Intuitionistic propositional logic** "
 "(`unicode_fol_kit.semantics.intuitionistic`) — `IntKripkeModel` with "
@@ -1859,7 +1941,7 @@ msgstr ""
 "expliziten Gegenmodellen als ungültig gemeldet; jede intuitionistische "
 "Gültigkeit ist auch klassisch gültig (gegengeprüft)."
 
-#: ../../../CHANGELOG.md:634
+#: ../../../CHANGELOG.md:663
 msgid ""
 "**Intuitionistic sequent calculus LJ** (`unicode_fol_kit.atp.lj`) — "
 "`check_lj_proof` / `verify_lj_proof`, re-exported at the top level. Gentzen "
@@ -1884,7 +1966,7 @@ msgstr ""
 " das intuitionistische Kripke-Entscheidungsverfahren und klassische "
 "Z3-Gültigkeit gegengeprüft."
 
-#: ../../../CHANGELOG.md:642
+#: ../../../CHANGELOG.md:671
 msgid ""
 "**Verbalization** (`unicode_fol_kit.fol.verbalize`) — `to_english`, an "
 "English paraphrase of a formula (a readability aid, not a parse inverse)."
@@ -1893,7 +1975,7 @@ msgstr ""
 "englische Paraphrase einer Formel (eine Lesbarkeitshilfe, keine Parse-"
 "Umkehrung)."
 
-#: ../../../CHANGELOG.md:644
+#: ../../../CHANGELOG.md:673
 msgid ""
 "**Fitch proof *searcher*** (`unicode_fol_kit.atp.fitch_search`) — "
 "`find_fitch_proof`, `fitch_prove`, and `is_valid_fitch`, re-exported at the "
@@ -1925,7 +2007,7 @@ msgstr ""
 "gefunden\"). Getestet mit kuratierten Theoremen/Nicht-Theoremen und einer "
 "randomisierten Gegenprüfung, dass jeder gefundene Beweis Z3-gültig ist."
 
-#: ../../../CHANGELOG.md:656
+#: ../../../CHANGELOG.md:685
 msgid ""
 "**Reverse importers for TPTP, Prover9, and Z3/SMT-LIB** — the inverses of "
 "`to_tptp` / `to_prover9` / `to_z3`, all re-exported at the package top "
@@ -1935,7 +2017,7 @@ msgstr ""
 " `to_tptp` / `to_prover9` / `to_z3`, alle auf der Paketwurzelebene re-"
 "exportiert:"
 
-#: ../../../CHANGELOG.md:658
+#: ../../../CHANGELOG.md:687
 msgid ""
 "**TPTP** (`unicode_fol_kit.fol.tptp_input`): `parse_tptp_formula` (one bare "
 "FOF/CNF formula → `Node`), `parse_tptp` (a whole problem → a list of "
@@ -1952,7 +2034,7 @@ msgstr ""
 "ignoriert; Prädikate werden neu großgeschrieben (TPTP schreibt sie klein); "
 "typisiertes `tff`/`thf` und `include` liegen außerhalb des Umfangs."
 
-#: ../../../CHANGELOG.md:664
+#: ../../../CHANGELOG.md:693
 msgid ""
 "**Prover9/LADR** (`unicode_fol_kit.fol.prover9_input`): `parse_prover9`, "
 "following `set(prolog_style_variables)` to match `to_prover9`'s output (a "
@@ -1964,7 +2046,7 @@ msgstr ""
 "passen (ein abschließender `.` wird akzeptiert). `Xor` lässt sich "
 "verlustfrei zu seiner `(a|b) & -(a&b)`-Entzuckerung zurückparsen."
 
-#: ../../../CHANGELOG.md:667
+#: ../../../CHANGELOG.md:696
 msgid ""
 "**Z3** (`unicode_fol_kit.atp.z3_input`): `from_z3` (a `z3.ExprRef` → `Node`)"
 " and `parse_smtlib` / `load_smtlib` (SMT-LIB2 via Z3's own parser). "
@@ -1977,7 +2059,7 @@ msgstr ""
 "Variablen/Konstanten/Zahlen auf eine uninterpretierte Sorte, sodass eine "
 "freie Variable als `Constant` zurückkommt)."
 
-#: ../../../CHANGELOG.md:671
+#: ../../../CHANGELOG.md:700
 msgid ""
 "Tested by round-trip over random formulas (`parse(node.to_X()) == node`) for"
 " TPTP/Prover9 and by logical equivalence (`is_valid(Iff(node, "
@@ -1989,11 +2071,11 @@ msgstr ""
 "from_z3(node.to_z3())))`) für Z3, plus kuratierte Problemdatei- und SMT-LIB-"
 "Fälle."
 
-#: ../../../CHANGELOG.md:675
+#: ../../../CHANGELOG.md:704
 msgid "[0.5.2] - 2026-06-26"
 msgstr "[0.5.2] - 2026-06-26"
 
-#: ../../../CHANGELOG.md:679
+#: ../../../CHANGELOG.md:708
 msgid ""
 "**Predicate-aligned string match** (`unicode_fol_kit.eval.predicate_match`) "
 "— `match_predicates`, `formulas_are_matched_identical`, and "
@@ -2039,11 +2121,11 @@ msgstr ""
 "eingeführt wird; der Matcher ist parserunabhängig und gilt auch für rohe, "
 "noch nicht parsbare Modellausgaben."
 
-#: ../../../CHANGELOG.md:698
+#: ../../../CHANGELOG.md:727
 msgid "[0.5.1] - 2026-06-24"
 msgstr "[0.5.1] - 2026-06-24"
 
-#: ../../../CHANGELOG.md:702
+#: ../../../CHANGELOG.md:731
 msgid ""
 "**`check_logical_entailment_vampire`** — entailment checking via the "
 "[Vampire](https://vprover.github.io/) theorem prover, a TPTP-based companion"
@@ -2066,11 +2148,11 @@ msgstr ""
 "einem Windows-Host aus anzusteuern (Vampire wird über `wsl.exe` gestartet, "
 "mit automatischer `wslpath`-Übersetzung des Temp-Datei-Pfads)."
 
-#: ../../../CHANGELOG.md:712
+#: ../../../CHANGELOG.md:741
 msgid "[0.5.0] - 2026-06-24"
 msgstr "[0.5.0] - 2026-06-24"
 
-#: ../../../CHANGELOG.md:714
+#: ../../../CHANGELOG.md:743
 msgid ""
 "Adds an NL→FOL **evaluation** toolkit and broad **non-classical logic** "
 "coverage — modal/temporal/epistemic/deontic logic with Kripke semantics, "
@@ -2083,7 +2165,7 @@ msgstr ""
 "Stufe-Quantifizierung mit endlicher Modellsemantik. Alles additiv; keine "
 "inkompatiblen Änderungen."
 
-#: ../../../CHANGELOG.md:721
+#: ../../../CHANGELOG.md:750
 msgid ""
 "**`unicode_fol_kit.eval`** — `canonicalize` / `exact_match` (a fair "
 "\"canonical exact match\" that quotients out bound-variable renaming, "
@@ -2101,7 +2183,7 @@ msgstr ""
 "Variablen, inkonsistente Prädikats-/Funktionsstelligkeit, verbliebene "
 "Lambda-Knoten, Parsbarkeit roher Modellausgaben)."
 
-#: ../../../CHANGELOG.md:727
+#: ../../../CHANGELOG.md:756
 msgid ""
 "**Modal / temporal / epistemic / deontic logic** (`MSFLParser(modal=True)`):"
 " node classes `Box`, `Diamond`, `Knows`, `Believes`, `Always`, `Eventually`,"
@@ -2120,7 +2202,7 @@ msgstr ""
 "`standard_translation()` nach klassischer FOL, sodass Z3/Resolution modale "
 "Gültigkeit entscheiden kann. Propositional/grundiert (v1)."
 
-#: ../../../CHANGELOG.md:734
+#: ../../../CHANGELOG.md:763
 #, python-brace-format
 msgid ""
 "**Many-valued logic** (`unicode_fol_kit.semantics.manyvalued`): three-valued"
@@ -2136,7 +2218,7 @@ msgstr ""
 "`kleene_value` / `DESIGNATED` sind ebenfalls auf der Paketwurzelebene re-"
 "exportiert."
 
-#: ../../../CHANGELOG.md:739
+#: ../../../CHANGELOG.md:768
 msgid ""
 "**Second-order / monadic-second-order quantification** "
 "(`MSFLParser(second_order=True)`): `SecondOrderQuantifier` (`∀P` / `∃P`, "
@@ -2151,7 +2233,7 @@ msgstr ""
 "Terme höherer Ordnung bleiben über die bestehende Lambda-Schicht verfügbar; "
 "vollständige HOL-Typen liegen außerhalb des Umfangs."
 
-#: ../../../CHANGELOG.md:744
+#: ../../../CHANGELOG.md:773
 msgid ""
 "**LaTeX import** — `parse_latex()` reads a LaTeX-math formula (the inverse "
 "of `to_latex()`) and `latex_to_unicode()` does the LaTeX→Unicode translation"
@@ -2163,7 +2245,7 @@ msgstr ""
 "LaTeX→Unicode-Übersetzung durch; akzeptiert die exakte `to_latex()`-Ausgabe "
 "(round-trip-fähig) sowie gängige handgeschriebene Synonyme."
 
-#: ../../../CHANGELOG.md:750
+#: ../../../CHANGELOG.md:779
 msgid ""
 "**Operator registry** — operators are now fully self-describing, decoupling "
 "rendering *and* parsing from the central modules:"
@@ -2171,7 +2253,7 @@ msgstr ""
 "**Operator-Registry** — Operatoren sind nun vollständig selbstbeschreibend, "
 "wodurch Rendering *und* Parsen von den zentralen Modulen entkoppelt werden:"
 
-#: ../../../CHANGELOG.md:752
+#: ../../../CHANGELOG.md:781
 msgid ""
 "*Rendering:* each operator registers its glyph, LaTeX markup, precedence, "
 "and fixity via `register_operator()`; the Unicode and LaTeX renderers are "
@@ -2183,7 +2265,7 @@ msgstr ""
 "Renderer werden generisch von der Registry gesteuert (keine Operator-"
 "spezifischen Verzweigungen, keine handgepflegten Dispatch-Tabellen)."
 
-#: ../../../CHANGELOG.md:756
+#: ../../../CHANGELOG.md:785
 msgid ""
 "*Parsing:* each operator also registers its grammar fragment + transform via"
 " `register_parser_op()`. `MSFLParser` now assembles BOTH the Lark grammar "
@@ -2198,7 +2280,7 @@ msgstr ""
 "keinen handgeschriebenen modusspezifischen Transformer und keine "
 "handgeladene `.lark`-Grammatik mehr im Laufzeitpfad."
 
-#: ../../../CHANGELOG.md:761
+#: ../../../CHANGELOG.md:790
 msgid ""
 "Output and parsed ASTs are byte-identical to before (guarded by a legacy-vs-"
 "registry equivalence test across a 190-formula × 6-mode corpus). Adding an "
@@ -2213,11 +2295,11 @@ msgstr ""
 "ohne Änderung an den Renderern, dem Parser oder einer gemeinsamen "
 "Grammatikdatei."
 
-#: ../../../CHANGELOG.md:766
+#: ../../../CHANGELOG.md:795
 msgid "**Hardening of the new evaluators.**"
 msgstr "**Härtung der neuen Evaluatoren.**"
 
-#: ../../../CHANGELOG.md:767
+#: ../../../CHANGELOG.md:796
 msgid ""
 "The three-valued enumeration (`is_valid` / `is_satisfiable` / `entails`) now"
 " scores each assignment with a compiled evaluator built once from the "
@@ -2230,7 +2312,7 @@ msgstr ""
 "Belegung), und verweigert den Start einer Enumeration oberhalb von "
 "`manyvalued.MAX_MODELS`, statt sich aufzuhängen."
 
-#: ../../../CHANGELOG.md:771
+#: ../../../CHANGELOG.md:800
 msgid ""
 "Second-order `satisfies_so` refuses a `∀P` / `∃P` whose `2 ** (n ** k)` "
 "relation space exceeds `secondorder.MAX_RELATIONS`, with a clear error."
@@ -2239,7 +2321,7 @@ msgstr ""
 "Relationsraum `2 ** (n ** k)` `secondorder.MAX_RELATIONS` überschreitet, mit"
 " einem klaren Fehler."
 
-#: ../../../CHANGELOG.md:773
+#: ../../../CHANGELOG.md:802
 msgid ""
 "Added seeded, randomized cross-checks: the compiled three-valued path "
 "against the reference `kleene_value` on every assignment; strong-Kleene "
@@ -2258,7 +2340,7 @@ msgstr ""
 "und Second-Order-Formeln; sowie eine "
 "Ganzbaum-`tree_str`-/`to_dot`-Abdeckungsprüfung über jeden Knotentyp."
 
-#: ../../../CHANGELOG.md:780
+#: ../../../CHANGELOG.md:809
 msgid ""
 "Łukasiewicz-algebra cross-checks for the fuzzy evaluator (strong/weak De "
 "Morgan, double negation, the residuum `a → b ≡ ¬a ⊕ b`, and the defining "
@@ -2269,7 +2351,7 @@ msgstr ""
 " definierende Adjunktion `a ⊗ b ≤ c ⟺ a ≤ b → c`) über zufällige + "
 "Randgitter-Bewertungen."
 
-#: ../../../CHANGELOG.md:783
+#: ../../../CHANGELOG.md:812
 msgid ""
 "Eval cross-checks against the independent Z3 oracle: `canonicalize` is "
 "equivalence-preserving, `exact_match` absorbs the rewrites it should and "
@@ -2281,7 +2363,7 @@ msgstr ""
 " soll, und vereint nie Z3-nicht-äquivalente Formeln, und `validate` markiert"
 " freie Variablen, Stelligkeitskonflikte und verbliebene Lambdas."
 
-#: ../../../CHANGELOG.md:787
+#: ../../../CHANGELOG.md:816
 msgid ""
 "A README example runner executes every `python` block in the docs "
 "(cumulative namespace) so the documentation stays in lock-step with the "
@@ -2291,11 +2373,11 @@ msgstr ""
 "aus (kumulativer Namensraum), sodass die Dokumentation im Gleichschritt mit "
 "dem Code bleibt."
 
-#: ../../../CHANGELOG.md:790
+#: ../../../CHANGELOG.md:819
 msgid "[0.4.0] - 2026-06-23"
 msgstr "[0.4.0] - 2026-06-23"
 
-#: ../../../CHANGELOG.md:792
+#: ../../../CHANGELOG.md:821
 msgid ""
 "A large feature release adding model-theoretic and many-valued semantics, an"
 " in-process theorem prover, more solver back-ends, and lambda/normal-form "
@@ -2308,7 +2390,7 @@ msgstr ""
 "Korrektheitsbehebungen. **Enthält eine inkompatible Änderung** (siehe "
 "*Geändert*)."
 
-#: ../../../CHANGELOG.md:798
+#: ../../../CHANGELOG.md:827
 msgid ""
 "**Tarskian model theory** (`unicode_fol_kit.semantics.tarski`): define a "
 "`Structure` (a \"world\" with a domain of individuals and interpretations of"
@@ -2323,7 +2405,7 @@ msgstr ""
 "`term_value()` berechnen. Gleichheit ist eingebaut; sortierte Quantoren "
 "erstrecken sich über ihr Sortenuniversum."
 
-#: ../../../CHANGELOG.md:803
+#: ../../../CHANGELOG.md:832
 msgid ""
 "**Łukasiewicz fuzzy evaluator** (`fuzzy_evaluate`): the truth degree in [0, "
 "1] of an FL/MSFL formula under a valuation (`∀` = inf, `∃` = sup)."
@@ -2332,7 +2414,7 @@ msgstr ""
 " 1] einer FL-/MSFL-Formel unter einer Bewertung (`∀` = Infimum, `∃` = "
 "Supremum)."
 
-#: ../../../CHANGELOG.md:805
+#: ../../../CHANGELOG.md:834
 msgid ""
 "**Fuzzy satisfiability / validity** via Z3 reals: `fuzzy_is_satisfiable`, "
 "`fuzzy_is_valid`, `fuzzy_get_model`, `degree_expr`."
@@ -2340,7 +2422,7 @@ msgstr ""
 "**Fuzzy-Erfüllbarkeit / -Gültigkeit** über Z3-Reals: `fuzzy_is_satisfiable`,"
 " `fuzzy_is_valid`, `fuzzy_get_model`, `degree_expr`."
 
-#: ../../../CHANGELOG.md:807
+#: ../../../CHANGELOG.md:836
 msgid ""
 "**Arithmetic-aware Z3 translation**: `to_z3_arith`, `is_satisfiable_arith`, "
 "`is_valid_arith`, `get_model_arith` interpret `+ - * /` and the comparisons "
@@ -2351,7 +2433,7 @@ msgstr ""
 "`+ - * /` und die Vergleiche über Z3-Reals/-Integers (das Standard-`to_z3` "
 "behält sie uninterpretiert bei)."
 
-#: ../../../CHANGELOG.md:810
+#: ../../../CHANGELOG.md:839
 msgid ""
 "**Built-in first-order resolution prover** "
 "(`unicode_fol_kit.atp.resolution`): `prove`, `is_valid_resolution`, "
@@ -2367,7 +2449,7 @@ msgstr ""
 "Schrittbegrenzung (meldet nie ein Nicht-Theorem als bewiesen); `=` wird als "
 "uninterpretiertes Prädikat behandelt."
 
-#: ../../../CHANGELOG.md:815
+#: ../../../CHANGELOG.md:844
 msgid ""
 "**Lambda tooling**: `eliminate_lambdas` (beta-eta normalise and verify "
 "lambda-free), `reduce_trace`, `beta_reduce_step`, `has_lambdas`."
@@ -2376,7 +2458,7 @@ msgstr ""
 "Lambda-Freiheit verifizieren), `reduce_trace`, `beta_reduce_step`, "
 "`has_lambdas`."
 
-#: ../../../CHANGELOG.md:817
+#: ../../../CHANGELOG.md:846
 msgid ""
 "**Normal forms**: `to_dnf` (equivalence-preserving) and `to_tseitin_cnf` "
 "(equisatisfiable, avoids the distributive blow-up)."
@@ -2384,7 +2466,7 @@ msgstr ""
 "**Normalformen**: `to_dnf` (äquivalenzerhaltend) und `to_tseitin_cnf` "
 "(äquierfüllbar, vermeidet die distributive Explosion)."
 
-#: ../../../CHANGELOG.md:819
+#: ../../../CHANGELOG.md:848
 msgid ""
 "**Robinson unification**: `unify` (most general unifier with occurs-check) "
 "and `apply_subst`."
@@ -2392,7 +2474,7 @@ msgstr ""
 "**Robinson-Unifikation**: `unify` (allgemeinster Unifikator mit Occurs-"
 "Check) und `apply_subst`."
 
-#: ../../../CHANGELOG.md:821
+#: ../../../CHANGELOG.md:850
 msgid ""
 "**Command-line interface**: `python -m unicode_fol_kit \"<formula>\" --mode "
 "… --to …`."
@@ -2400,18 +2482,18 @@ msgstr ""
 "**Kommandozeilenschnittstelle**: `python -m unicode_fol_kit \"<formula>\" "
 "--mode … --to …`."
 
-#: ../../../CHANGELOG.md:822
+#: ../../../CHANGELOG.md:851
 msgid "**Typing**: a `py.typed` marker (PEP 561)."
 msgstr "**Typisierung**: ein `py.typed`-Marker (PEP 561)."
 
-#: ../../../CHANGELOG.md:823
+#: ../../../CHANGELOG.md:852
 msgid ""
 "**AST helper**: `Node.map_children`, the single structural-recursion engine."
 msgstr ""
 "**AST-Helfer**: `Node.map_children`, die einzige strukturelle Rekursions-"
 "Engine."
 
-#: ../../../CHANGELOG.md:827
+#: ../../../CHANGELOG.md:856
 msgid ""
 "**BREAKING — AST nodes are now frozen dataclasses.** Every node is immutable"
 " and **hashable**, so nodes can be put in sets, used as dict keys, and "
@@ -2421,7 +2503,7 @@ msgstr ""
 "unveränderlich und **hashbar**, sodass Knoten in Mengen abgelegt, als Dict-"
 "Schlüssel verwendet und dedupliziert werden können."
 
-#: ../../../CHANGELOG.md:830
+#: ../../../CHANGELOG.md:859
 msgid ""
 "**BREAKING — `Function.args` and `Atom.args` are now `tuple`s, not "
 "`list`s.** Construction stays lenient: a list passed to the constructor is "
@@ -2438,7 +2520,7 @@ msgstr ""
 "Mutation, `isinstance(node.args, list)`, oder ein Vergleich `node.args == "
 "[...]`), muss auf Tupel umgestellt werden."
 
-#: ../../../CHANGELOG.md:839
+#: ../../../CHANGELOG.md:868
 msgid ""
 "`Xor.to_tptp` emitted `~|` (TPTP **NOR**); now emits `<~>` (correct XOR / "
 "non-equivalence)."
@@ -2446,7 +2528,7 @@ msgstr ""
 "`Xor.to_tptp` emittierte `~|` (TPTP-**NOR**); emittiert nun `<~>` (korrektes"
 " XOR / Nicht-Äquivalenz)."
 
-#: ../../../CHANGELOG.md:841
+#: ../../../CHANGELOG.md:870
 msgid ""
 "TPTP arithmetic comparisons (`<`, `>`, `≤`, `≥`) are now emitted as prefix "
 "dollar-word predicates (`$less(a, b)`), not as invalid infix expressions."
@@ -2455,7 +2537,7 @@ msgstr ""
 "Dollarwort-Prädikate emittiert (`$less(a, b)`), nicht als ungültige Infix-"
 "Ausdrücke."
 
-#: ../../../CHANGELOG.md:843
+#: ../../../CHANGELOG.md:872
 msgid ""
 "Prover9 export: quantified variables are uppercased to match the emitted "
 "`set(prolog_style_variables)`; nullary predicates render as bare "
@@ -2465,7 +2547,7 @@ msgstr ""
 " emittierten `set(prolog_style_variables)`; nullstellige Prädikate werden "
 "als bloße propositionale Atome gerendert statt als ungültiges `P()`."
 
-#: ../../../CHANGELOG.md:846
+#: ../../../CHANGELOG.md:875
 msgid ""
 "`to_latex` escapes the underscore in `c_`-prefixed constants (otherwise read"
 " as a LaTeX subscript)."
@@ -2473,7 +2555,7 @@ msgstr ""
 "`to_latex` escaped den Unterstrich in mit `c_` präfixierten Konstanten "
 "(sonst als LaTeX-Tiefstellung gelesen)."
 
-#: ../../../CHANGELOG.md:848
+#: ../../../CHANGELOG.md:877
 msgid ""
 "Prover9 entailment: the temporary input file is no longer leaked when the "
 "`prover9_path` is invalid (now cleaned up in a `finally`)."
@@ -2482,7 +2564,7 @@ msgstr ""
 "durchgesickert, wenn `prover9_path` ungültig ist (nun in einem `finally` "
 "bereinigt)."
 
-#: ../../../CHANGELOG.md:850
+#: ../../../CHANGELOG.md:879
 msgid ""
 "Several README inaccuracies (clone URL, \"three\" vs \"four\" parser modes, "
 "the exception class raised on mixing same-level connectives, the "
@@ -2494,11 +2576,11 @@ msgstr ""
 "Klasse, die `Quantifier`-AST-Tabellenannotation), sowie die Docstrings von "
 "`formulas_are_equivalent` / `is_valid`."
 
-#: ../../../CHANGELOG.md:855
+#: ../../../CHANGELOG.md:884
 msgid "Documentation"
 msgstr "Dokumentation"
 
-#: ../../../CHANGELOG.md:857
+#: ../../../CHANGELOG.md:886
 msgid ""
 "Clarified that `to_fol` / `to_msfol` is a classical **Boolean projection** "
 "(the strong and weak Łukasiewicz connectives both collapse to `And`/`Or`), "
@@ -2510,7 +2592,7 @@ msgstr ""
 "kollabieren beide zu `And`/`Or`), keine fuzzy-erhaltende Übersetzung — "
 "`fuzzy_evaluate` / den Fuzzy-Z3-Solver für mehrwertige Grade verwenden."
 
-#: ../../../CHANGELOG.md:864
+#: ../../../CHANGELOG.md:893
 msgid ""
 "Refactored the duplicated structural recursions (`free_variables`, "
 "substitution, beta/eta reduction, scope resolution, "
@@ -2527,11 +2609,11 @@ msgstr ""
 "binderbewussten Sonderfälle und die öffentlichen `TypeError`-Verträge "
 "erhalten blieben."
 
-#: ../../../CHANGELOG.md:870
+#: ../../../CHANGELOG.md:899
 msgid "[0.3.1] - earlier"
 msgstr "[0.3.1] - früher"
 
-#: ../../../CHANGELOG.md:872
+#: ../../../CHANGELOG.md:901
 msgid ""
 "LaTeX export, normal forms, Horn check, Z3 models, traversal API, Graphviz "
 "export."
@@ -2539,18 +2621,18 @@ msgstr ""
 "LaTeX-Export, Normalformen, Horn-Prüfung, Z3-Modelle, Traversierungs-API, "
 "Graphviz-Export."
 
-#: ../../../CHANGELOG.md:874
+#: ../../../CHANGELOG.md:903
 msgid "[0.3.0] - earlier"
 msgstr "[0.3.0] - früher"
 
-#: ../../../CHANGELOG.md:876
+#: ../../../CHANGELOG.md:905
 msgid "`to_unicode_str()` with parser round-trip."
 msgstr "`to_unicode_str()` mit Parser-Round-Trip."
 
-#: ../../../CHANGELOG.md:878
+#: ../../../CHANGELOG.md:907
 msgid "[0.2.1] - earlier"
 msgstr "[0.2.1] - früher"
 
-#: ../../../CHANGELOG.md:880
+#: ../../../CHANGELOG.md:909
 msgid "README patch release."
 msgstr "README-Patch-Release."

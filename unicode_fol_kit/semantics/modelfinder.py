@@ -33,7 +33,19 @@ from typing import List, Optional
 
 from ..fol.nodes import Node, Atom, Not, Quantifier, Variable, Constant, Number, Function
 from ..fol.nodes import SortedConstant, SortedQuantifier
-from .tarski import Structure, models
+from ..fol.nodes import Count, Cardinality, SortedCount, SortedCardinality
+from ..fol.nodes import SlashedExists, Measure
+from .tarski import Structure, models, _MEASURE_FUNC
+
+
+#: Node types that bind a logical variable over a ``formula`` scope — the quantifiers,
+#: the counting quantifiers and cardinality terms (and their sorted variants), and the
+#: IF-logic slashed existential.
+_VAR_BINDERS = (Quantifier, SortedQuantifier, Count, Cardinality,
+                SortedCount, SortedCardinality, SlashedExists)
+
+#: The subset of the above that additionally names a sort the structures must interpret.
+_SORTED_BINDERS = (SortedQuantifier, SortedCount, SortedCardinality)
 
 
 MAX_CANDIDATES = 1 << 20  # ~1M structures per domain size before a size is skipped
@@ -47,7 +59,12 @@ def _free_var_names(node: Node, bound: frozenset = frozenset()) -> set:
     """Return the names of variables occurring free in ``node``."""
     if isinstance(node, Variable):
         return set() if node.name in bound else {node.name}
-    if isinstance(node, (Quantifier, SortedQuantifier)):
+    if isinstance(node, SlashedExists):
+        # The slash set names ENCLOSING binders, so those names are free here (and
+        # are not shadowed by this binder's own variable).
+        inner = _free_var_names(node.formula, bound | {node.variable.name})
+        return inner | {n for n in node.slashed if n not in bound}
+    if isinstance(node, _VAR_BINDERS):
         return _free_var_names(node.formula, bound | {node.variable.name})
     names: set = set()
     for child in node._child_nodes():
@@ -86,13 +103,24 @@ class _Signature:
             self.functions.add((node.name, len(node.args)))
             for a in node.args:
                 self.scan(a)
+        elif isinstance(node, Measure):
+            # μ(entity, dimension) denotes the binary function ``measure`` — the same
+            # symbol Measure.to_z3 / to_prover9 emit, so a structure found here
+            # interprets what the provers see. The dimension is an ordinary term.
+            self.functions.add(_MEASURE_FUNC)
+            self.scan(node.entity)
+            self.scan(node.dimension)
         elif isinstance(node, Atom):
             if node.predicate not in ("=", "≠"):     # identity is built in
                 self.predicates.add((node.predicate, len(node.args)))
             for a in node.args:
                 self.scan(a)
-        elif isinstance(node, SortedQuantifier):
-            self.sorts.add(node.sort)
+        elif isinstance(node, _VAR_BINDERS):
+            # Scan only the scope: a binder's ``variable`` is not a signature symbol,
+            # and a Count's ``n`` is a cardinality bound, not an individual — walking
+            # the children generically would register it as a domain constant.
+            if isinstance(node, _SORTED_BINDERS):
+                self.sorts.add(node.sort)
             self.scan(node.formula)
         else:
             for child in node._child_nodes():

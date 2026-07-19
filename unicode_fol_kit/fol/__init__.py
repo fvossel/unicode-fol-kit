@@ -36,6 +36,7 @@ from .prover9_input import (
 )
 from .sanitize import sanitize_names, sanitize_all, NameMapping
 from .verbalize import to_english
+from .derivation import CCGDerivation, reduction_derivation
 from .qml import (
     qml_translate, qml_axioms, qml_is_valid, qml_equivalent,
     to_thf_modal, to_isabelle_modal, BARCAN, CONVERSE_BARCAN,
@@ -78,6 +79,7 @@ __all__ = [
     "parse_prover9", "parse_prover9_problem", "load_prover9", "Prover9Formula",
     "sanitize_names", "sanitize_all", "NameMapping",
     "to_english",
+    "CCGDerivation", "reduction_derivation",
     "qml_translate", "qml_axioms", "qml_is_valid", "qml_equivalent",
     "to_thf_modal", "to_isabelle_modal", "BARCAN", "CONVERSE_BARCAN",
 ]
