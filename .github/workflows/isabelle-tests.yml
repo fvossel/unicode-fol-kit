@@ -16,6 +16,11 @@ on:
       - 'tests/test_isabelle_runner.py'
       - 'tests/test_isabelle_runner_live.py'
       - 'tests/test_hol_isabelle_nonmodal_live.py'
+      - 'tests/test_isabelle_conditional.py'
+      - 'tests/test_isabelle_relevant.py'
+      - 'tests/test_isabelle_substructural.py'
+      - 'tests/test_hol_matrix.py'
+      - 'tests/test_completeness.py'
       - '.github/workflows/isabelle-tests.yml'
   pull_request:
     paths:
@@ -23,13 +28,20 @@ on:
       - 'tests/test_isabelle_runner.py'
       - 'tests/test_isabelle_runner_live.py'
       - 'tests/test_hol_isabelle_nonmodal_live.py'
+      - 'tests/test_isabelle_conditional.py'
+      - 'tests/test_isabelle_relevant.py'
+      - 'tests/test_isabelle_substructural.py'
+      - 'tests/test_hol_matrix.py'
+      - 'tests/test_completeness.py'
       - '.github/workflows/isabelle-tests.yml'
   workflow_dispatch:
 
 jobs:
   live:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # The full isabelle_live selection is ~71 serial `isabelle build` sessions
+    # (~22 min on the dev box; CI runners are slower) — give it real headroom.
+    timeout-minutes: 120
     env:
       ISABELLE_VERSION: Isabelle2025-2
       ISABELLE_SHA256: a20a507bc7c1270d8be96a9f3fbec06345387789d2dc2c4d3df6260d47bfb33c
@@ -53,9 +65,25 @@ jobs:
         run: |
           set -euo pipefail
           cd "$HOME"
-          url="https://isabelle.in.tum.de/dist/${ISABELLE_VERSION}_linux.tar.gz"
-          echo "Downloading $url"
-          curl -fsSL -o isabelle.tar.gz "$url"
+          # The TUM server has real outages (a cache-miss run died with curl 28
+          # connecting to dist.isabelle.cit.tum.de), so try the official mirrors
+          # in order, with retries. The SHA256 pin below is the integrity gate,
+          # so every mirror is equally trustworthy.
+          urls=(
+            "https://isabelle.in.tum.de/dist/${ISABELLE_VERSION}_linux.tar.gz"
+            "https://www.cl.cam.ac.uk/research/hvg/Isabelle/dist/${ISABELLE_VERSION}_linux.tar.gz"
+          )
+          ok=""
+          for url in "${urls[@]}"; do
+            echo "Downloading $url"
+            if curl -fSL --connect-timeout 30 --retry 3 --retry-all-errors \
+                 -o isabelle.tar.gz "$url"; then
+              ok="$url"
+              break
+            fi
+            echo "::warning::download failed from $url - trying next mirror"
+          done
+          test -n "$ok" || { echo "::error::all Isabelle mirrors failed"; exit 28; }
           echo "${ISABELLE_SHA256}  isabelle.tar.gz" | sha256sum -c -
           tar xzf isabelle.tar.gz
           rm -f isabelle.tar.gz
@@ -77,7 +105,11 @@ jobs:
           export PATH="$HOME/${ISABELLE_VERSION}/bin:$PATH"
           export UFK_ISABELLE_HOME="$HOME/${ISABELLE_VERSION}"
           python -c "from unicode_fol_kit.hol.isabelle_runner import find_isabelle; print('discovered:', find_isabelle())"
-          pytest -v \
-            tests/test_isabelle_runner.py \
-            tests/test_isabelle_runner_live.py \
-            tests/test_hol_isabelle_nonmodal_live.py
+          # Runner unit tests first (fast, no Isabelle build), then EVERY
+          # isabelle_live test in the suite — the marker selection means a new
+          # live test file is covered without editing this list. SERIAL on
+          # purpose: concurrent `isabelle build` JVMs contend for CPU and push
+          # long proof batteries past their session timeouts (see the marker
+          # comment in pyproject.toml).
+          pytest -v tests/test_isabelle_runner.py
+          pytest -v -m isabelle_live tests/
