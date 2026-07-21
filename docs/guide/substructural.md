@@ -82,6 +82,24 @@ ill_derivable([p("A")], p("𝟙 ⊗ A"))           # → True   𝟙 ⊗ A is ju
 ill_derivable([p("A ⊗ B")], p("B ⊗ A"))       # → True   multisets: ⊗L then ⊗R
 ```
 
+## The additive units `⊤` and `𝟘`
+
+`⊗`/`𝟙` and `&`/`⊕` each has a unit; `&` (with) and `⊕` (plus) get theirs too: `⊤` is the **additive** top — provable from *any* antecedent, no matter what — and `𝟘` is the additive bottom — an antecedent containing it proves *anything*, vacuously, since it can never actually be produced. Neither consumes or contributes resources the way `𝟙` does; they are the additive units, dual to `𝟙`/`⊥` the same way `&`/`⊕` are dual to `⊗`/`⅋`-style choice:
+
+```python
+ill_derivable([p("A")], p("⊤"))              # → True    ⊤R: provable from anything
+ill_derivable([p("A"), p("𝟘")], p("B"))      # → True    0L: 𝟘 in the antecedent proves anything
+```
+
+`ill_prove` names the rules `⊤R` / `0L`:
+
+```python
+print(ill_prove([p("A")], p("⊤")).render())
+# → A ⊢ ⊤   [⊤R]
+print(ill_prove([p("𝟘")], p("A ⊗ B")).render())
+# → 𝟘 ⊢ (A ⊗ B)   [0L]
+```
+
 ## `!` as banking
 
 `!A` is an **account** holding `A`s rather than a single note: the exponential
@@ -191,6 +209,31 @@ The three fragments give three different guarantees:
 ill_derivable([p("!A")], p("!A ⊗ !A"), max_depth=1)   # → False  not found within depth 1
 ill_derivable([p("!A")], p("!A ⊗ !A"))                # → True   the default bound finds it
 ```
+
+## Isabelle export: replaying a derivation as a lemma
+
+`hol.isabelle_substructural` does not attempt the classical-collapse export the next section rules out. Instead it takes a derivation the toolkit's *own* cut-free search already found and **replays** it in Isabelle, one `intro` rule application per tree node — no automation searches for the proof, so a successful build is a genuine, independent re-check of the search. The sequent rules themselves become an Isabelle `inductive derivable` predicate over a deep-embedded `datatype`: a **list** antecedent with an explicit `Exch` (exchange) rule for ILL (whose sequents are really multisets — the module docstring explains why list-plus-`Exch` rather than a native Isabelle multiset type), and a plain **list**, with no `Exch` at all, for Lambek — the absence is the point, since order is exactly what L tracks.
+
+```python
+from unicode_fol_kit.hol.isabelle_substructural import to_isabelle_ill, to_isabelle_lambek
+
+thy = to_isabelle_ill([p("A"), p("A ⊸ B")], p("B"))
+"inductive derivable" in thy      # → True   the deep-embedded sequent calculus
+"theorem" in thy or "lemma" in thy.lower()  # → True   a real proof, not an oops hook
+```
+
+`to_isabelle_ill(premises, goal, ...)` / `to_isabelle_lambek(sequence, goal, ...)` run the toolkit's own prover internally and transcribe whatever derivation it finds; `ill_derivation_theory(derivation)` / `lambek_derivation_theory(derivation)` do the same starting from an already-computed `ILLDerivation` / `LambekDerivation` (e.g. one you inspected with `.render()` above), so you never pay for the search twice:
+
+```python
+from unicode_fol_kit import ill_prove
+from unicode_fol_kit.hol.isabelle_substructural import ill_derivation_theory
+
+d = ill_prove([p("A"), p("A ⊸ B")], p("B"))
+theory = ill_derivation_theory(d)
+theory == to_isabelle_ill([p("A"), p("A ⊸ B")], p("B"))   # → True   same replay either way
+```
+
+Building the theory needs a local Isabelle install (see {doc}`higher-order` for `check_theory` / `isabelle_available`); the exporter itself has no such dependency.
 
 ## The honest boundary: no classical export
 

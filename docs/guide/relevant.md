@@ -152,6 +152,23 @@ rel_valid(p("P ∨ ¬P"), max_worlds=1)    # → True    one world behaves class
 rel_valid(p("P ∨ ¬P"), max_worlds=2)    # → False   the star needs a second world
 ```
 
+### A certified positive counterpart: `isabelle_decide_relevant`
+
+`rel_valid`'s `True` is only "no countermodel within `max_worlds`" — bounded evidence, not a proof. With a local Isabelle installed, `hol.isabelle_relevant.to_isabelle_relevant` emits the *same* simplified Routley–Meyer semantics as a shallow Isabelle embedding — `N`, `star`, `R` as uninterpreted `consts`, the well-formedness conditions bundled as a `wellformed` **premise** of the goal (not an `axiomatization`, so nitpick can build the frame itself and certify a countermodel as *genuine* rather than downgrading to `quasi_genuine`) — and `isabelle_decide_relevant(φ)` runs it: prove-battery ⇒ `VALID` (true at every normal world of every wellformed interpretation, matching `rel_valid`'s "true at every normal world" contract), else `nitpick[expect = genuine]` over the world type ⇒ `INVALID`, else `UNKNOWN`.
+
+```python
+# doctest: +SKIP
+from unicode_fol_kit import MSFLParser, isabelle_decide_relevant
+
+p = MSFLParser().parse
+print(isabelle_decide_relevant(p("(P ∧ Q) → P")))
+# → FolVerdict[valid (by prove-battery)]
+print(isabelle_decide_relevant(p("(P → (P → Q)) → (P → Q)")))
+# → FolVerdict[invalid]     (contraction — a theorem of R, genuinely not of B)
+```
+
+Same restriction as `rel_satisfies`: only the propositional connectives `¬ ∧ ∨ → ↔` over nullary atoms — no quantifiers, modalities, or `Xor` (there is no B reading for it). `rel_valid`'s bounded `True` finally has a certified positive counterpart, checked live end-to-end against the headline B-facts above during development.
+
 ## Beyond B: why the toolkit ships B
 
 B is the *basic* affixing system: the stronger relevant logics (DW, TW, T, E, **R**, …) arise by imposing frame conditions on `R` — and each condition validates new implicational theorems. **Contraction**, for instance, holds in R but not in B, and the search exhibits the two-world reason:

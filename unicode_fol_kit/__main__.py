@@ -1,13 +1,14 @@
 """Command-line interface for unicode-fol-kit.
 
-Parse a Unicode first-order / many-sorted / Łukasiewicz formula and render it
-in one of several output formats. Run as::
+Parse a Unicode first-order / many-sorted / Łukasiewicz / modal / second-order
+/ dependence / linear / lambek formula and render it in one of several output
+formats. Run as::
 
     python -m unicode_fol_kit "∀x P(x)" --to latex
 
 The ``--mode`` flag selects the parser dialect (which maps onto the
-``many_sorted``/``fuzzy`` flags of :class:`MSFLParser`); ``--to`` selects the
-rendering applied to the parsed AST.
+constructor flags of :class:`MSFLParser`, table-driven via ``_MODE_KWARGS``);
+``--to`` selects the rendering applied to the parsed AST.
 """
 
 import argparse
@@ -18,12 +19,19 @@ from .fol.msflparser import MSFLParser
 from .fol.naming import NamingError, ParsingError
 
 
-# Map each --mode value to the (many_sorted, fuzzy) flags of MSFLParser.
-_MODE_FLAGS = {
-    "fol":   (False, False),
-    "msfol": (True, False),
-    "msfl":  (True, True),
-    "fl":    (False, True),
+# Map each --mode value to the MSFLParser constructor kwargs it selects. Every
+# entry here must be a legal (non-conflicting) combination on its own — see
+# MSFLParser's own mutual-exclusivity rules (module docstring / __init__).
+_MODE_KWARGS = {
+    "fol":          {},
+    "msfol":        {"many_sorted": True},
+    "msfl":         {"many_sorted": True, "fuzzy": True},
+    "fl":           {"fuzzy": True},
+    "modal":        {"modal": True},
+    "second_order": {"second_order": True},
+    "dependence":   {"dependence": True},
+    "linear":       {"linear": True},
+    "lambek":       {"lambek": True},
 }
 
 
@@ -64,9 +72,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--mode",
-        choices=["fol", "msfol", "msfl", "fl"],
+        choices=sorted(_MODE_KWARGS),
         default="fol",
-        help="parser dialect: fol (default), msfol, msfl, or fl",
+        help=(
+            "parser dialect: fol (default), msfol, msfl, fl, modal, "
+            "second_order, dependence, linear, or lambek"
+        ),
     )
     parser.add_argument(
         "--to",
@@ -89,8 +100,7 @@ def main(argv=None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    many_sorted, fuzzy = _MODE_FLAGS[args.mode]
-    formula_parser = MSFLParser(many_sorted=many_sorted, fuzzy=fuzzy)
+    formula_parser = MSFLParser(**_MODE_KWARGS[args.mode])
 
     try:
         ast = formula_parser.parse(args.formula)

@@ -26,7 +26,7 @@ from .tableau import tableau_closed, is_valid_tableau, prove_tableau, tableau_mo
 from .modal_tableau import (
     modal_tableau_closed, is_modal_valid, modal_prove, modal_decide, modal_countermodel,
 )
-from .lj import check_lj_proof, verify_lj_proof
+from .lj import check_lj_proof, verify_lj_proof, int_prove, int_decide
 from .linear import (
     ill_prove, ill_derivable, check_ill_proof, verify_ill_proof,
     render_ill_proof, ILLSequent, ILLDerivation,
@@ -56,7 +56,7 @@ __all__ = [
     "tableau_closed", "is_valid_tableau", "prove_tableau", "tableau_model",
     "modal_tableau_closed", "is_modal_valid", "modal_prove", "modal_decide",
     "modal_countermodel",
-    "check_lj_proof", "verify_lj_proof",
+    "check_lj_proof", "verify_lj_proof", "int_prove", "int_decide",
     "ill_prove", "ill_derivable", "check_ill_proof", "verify_ill_proof",
     "render_ill_proof", "ILLSequent", "ILLDerivation",
     "lambek_prove", "lambek_derivable", "check_lambek_proof",

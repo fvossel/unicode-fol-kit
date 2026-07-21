@@ -7,8 +7,13 @@ other modalities) to the **full modal family** the toolkit's AST can express:
 - alethic        ``□φ`` / ``◇φ``                         over relation ``r``;
 - epistemic      ``K_a φ``  (``Knows(agent, φ)``)        over an AGENT-INDEXED ``rk``;
 - doxastic       ``B_a φ``  (``Believes(agent, φ)``)     over an AGENT-INDEXED ``rb``;
+- assertive      ``Say_a φ`` (``Says(agent, φ)``)        over an AGENT-INDEXED ``rs``;
+- bouletic       ``Want_a φ`` (``Wants(agent, φ)``)      over an AGENT-INDEXED ``rw``;
 - deontic        ``Oφ`` / ``Pφ``                         over a SERIAL relation ``d``;
-- temporal       ``Gφ`` / ``Fφ`` / ``Xφ``               over a relation ``t``.
+- temporal       ``Gφ`` / ``Fφ`` / ``Xφ``               over ``t`` / ``tnext``, with the
+  past mirrors ``⒣`` / ``⒫`` / ``⒴`` over the CONVERSE relations and strong
+  ``Ⓤ`` / ``⒮`` as impredicative least fixpoints (``muntil`` / ``msince``);
+- hybrid         nominals ``i`` and ``@i φ``             as ``mu`` world constants.
 
 It is a genuine higher-order shallow embedding (SSE): a modal proposition is a
 function ``mu > $o`` (world → bool), the modalities are λ-lifted quantifiers over the
@@ -52,9 +57,10 @@ closure (it is not first-order definable). This module therefore embeds:
   general the embedding's ``G``/``F`` quantify over the *transitive closure of the
   emitted ``t``*, which is the standard SSE rendering of LTL ``G``/``F`` but is only an
   **approximation** of ``satisfies_modal``'s closure over the caller's raw temporal
-  edges. ``Until`` is **omitted** (raises): strong Until needs the transitive closure
-  and is not (higher-order) shallow-embeddable here — evaluate it with
-  ``satisfies_modal`` instead.
+  edges. ``Until`` / ``Since`` **are supported**: TH0 quantifies over predicates, so
+  strong Until/Since embed directly as the impredicative Knaster–Tarski least
+  fixpoints ``muntil`` / ``msince`` over the one-step ``tnext`` — the same least
+  fixpoint Isabelle's ``inductive muntil`` compiles to.
 
   The two temporal relations are **linked** by the emitted ``tnext_in_t`` inclusion
   axiom ``![W,V]: (tnext @ W @ V) => (t @ W @ V)``. In ``satisfies_modal`` ``X`` reads
@@ -83,9 +89,10 @@ from typing import Dict, List, Optional, Sequence
 
 from ..fol.nodes import (
     Node, Variable, Constant, Number, Function,
-    Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
-    Box, Diamond, Knows, Believes,
-    Obligatory, Permitted, Always, Eventually, Next, Until,
+    Atom, Not, And, Or, Xor, Implies, Iff, Quantifier, Contrast,
+    Box, Diamond, Knows, Believes, Says, Wants,
+    Obligatory, Permitted, Always, Eventually, Next, Until, Since,
+    Historically, Once, Previous, Nominal, At,
     SortedQuantifier,
 )
 
@@ -93,10 +100,11 @@ from ..fol.nodes import (
 # overlapping (alethic + object-quantifier + equality) fragment.
 from ..fol.qml import (
     _FRAMES, _CONSTANT_MODES, _ACTUALIST_MODES,
-    _THF_FRAME, _THF_DOMAIN, _THF_PRED_ALIAS,
+    _THF_FRAME, _THF_DOMAIN, _THF_PRED_ALIAS, _THF_RESERVED,
     _thf_name, _thf_term, _thf_signature, _ThfNames,
     _FORALL,
 )
+from ..fol._symbol_names import dedupe
 
 __all__ = ["to_thf_modal_full", "thf_full_definitions", "thf_full_frame_axioms"]
 
@@ -109,6 +117,18 @@ _R_BELIEVES = "rb"      # $i > mu > mu > $o   (AGENT-indexed)
 _R_DEONTIC = "d"        # mu > mu > $o        (serial)
 _R_TEMPORAL = "t"       # mu > mu > $o        (G/F)
 _R_NEXT = "tnext"       # mu > mu > $o        (X, one-step)
+_R_SAYS = "rs"          # $i > mu > mu > $o   (AGENT-indexed, Says, plain K)
+_R_WANTS = "rw"         # $i > mu > mu > $o   (AGENT-indexed, Wants, plain K)
+
+# Every fixed functor of the FULL export (qml's core set plus the extra relations
+# and lifted operators of this module). A user symbol sanitising onto one of
+# these is pushed to a suffixed variant by the resolver — a predicate literally
+# named "t" or "muntil" must not silently re-declare a built-in at another type.
+_THF_RESERVED_FULL = _THF_RESERVED | frozenset({
+    _R_KNOWS, _R_BELIEVES, _R_DEONTIC, _R_TEMPORAL, _R_NEXT, _R_SAYS, _R_WANTS,
+    "mknows", "mbelieves", "mobl", "mperm", "malways", "meventually", "mnext",
+    "msays", "mwants", "mhistorically", "monce", "mprevious", "muntil", "msince",
+})
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +160,13 @@ thf(mperm, definition, ( mperm = ( ^ [Phi: mu>$o, W: mu] : ? [V: mu] : ( ( d @ W
 thf(malways, definition, ( malways = ( ^ [Phi: mu>$o, W: mu] : ! [V: mu] : ( ( t @ W @ V ) => ( Phi @ V ) ) ) )).
 thf(meventually, definition, ( meventually = ( ^ [Phi: mu>$o, W: mu] : ? [V: mu] : ( ( t @ W @ V ) & ( Phi @ V ) ) ) )).
 thf(mnext, definition, ( mnext = ( ^ [Phi: mu>$o, W: mu] : ! [V: mu] : ( ( tnext @ W @ V ) => ( Phi @ V ) ) ) )).
+thf(msays, definition, ( msays = ( ^ [A: $i, Phi: mu>$o, W: mu] : ! [V: mu] : ( ( rs @ A @ W @ V ) => ( Phi @ V ) ) ) )).
+thf(mwants, definition, ( mwants = ( ^ [A: $i, Phi: mu>$o, W: mu] : ! [V: mu] : ( ( rw @ A @ W @ V ) => ( Phi @ V ) ) ) )).
+thf(mhistorically, definition, ( mhistorically = ( ^ [Phi: mu>$o, W: mu] : ! [V: mu] : ( ( t @ V @ W ) => ( Phi @ V ) ) ) )).
+thf(monce, definition, ( monce = ( ^ [Phi: mu>$o, W: mu] : ? [V: mu] : ( ( t @ V @ W ) & ( Phi @ V ) ) ) )).
+thf(mprevious, definition, ( mprevious = ( ^ [Phi: mu>$o, W: mu] : ! [V: mu] : ( ( tnext @ V @ W ) => ( Phi @ V ) ) ) )).
+thf(muntil, definition, ( muntil = ( ^ [Phi: mu>$o, Psi: mu>$o, W: mu] : ! [S: mu>$o] : ( ( ( ! [V: mu] : ( ( Psi @ V ) => ( S @ V ) ) ) & ( ! [V: mu, U: mu] : ( ( ( Phi @ V ) & ( tnext @ V @ U ) & ( S @ U ) ) => ( S @ V ) ) ) ) => ( S @ W ) ) ) )).
+thf(msince, definition, ( msince = ( ^ [Phi: mu>$o, Psi: mu>$o, W: mu] : ! [S: mu>$o] : ( ( ( ! [V: mu] : ( ( Psi @ V ) => ( S @ V ) ) ) & ( ! [V: mu, U: mu] : ( ( ( Phi @ V ) & ( tnext @ U @ V ) & ( S @ U ) ) => ( S @ V ) ) ) ) => ( S @ W ) ) ) )).
 thf(mforall, definition, ( mforall = ( ^ [Phi: $i>(mu>$o), W: mu] : ! [X: $i] : ( ( existsAt @ X @ W ) => ( Phi @ X @ W ) ) ) )).
 thf(mexists, definition, ( mexists = ( ^ [Phi: $i>(mu>$o), W: mu] : ? [X: $i] : ( ( existsAt @ X @ W ) & ( Phi @ X @ W ) ) ) )).
 thf(mvalid, definition, ( mvalid = ( ^ [Phi: mu>$o] : ! [W: mu] : ( Phi @ W ) ) )).\
@@ -173,7 +200,18 @@ _THF_DEONTIC_AXIOM = "thf(d_serial, axiom, ( ! [W: mu] : ? [V: mu] : ( d @ W @ V
 # "S5" (refl+trans+sym) is the usual logic of knowledge; "KD45" (serial+trans+eucl)
 # the usual logic of belief.
 def _agent_frame_axioms(rel: str, conds: Sequence[str], tag: str) -> List[str]:
-    """THF frame axioms for an agent-indexed relation ``rel`` (each ∀ over the agent A)."""
+    """THF frame axioms for an agent-indexed relation ``rel`` (each ∀ over the agent A).
+
+    Raises on a condition with no per-agent schema (Löb / directed / connected):
+    silently dropping one would emit a WEAKER logic than the caller requested.
+    """
+    unsupported = [c for c in conds
+                   if c not in ("refl", "trans", "sym", "serial", "eucl")]
+    if unsupported:
+        raise NotImplementedError(
+            f"to_thf_modal_full: the requested agent-indexed system needs the frame "
+            f"condition(s) {unsupported}, which have no per-agent axiom schema here; "
+            "use frame= on the alethic relation for those systems.")
     out: List[str] = []
     if "refl" in conds:
         out.append(f"thf({tag}_refl, axiom, ( ! [A: $i, W: mu] : ( {rel} @ A @ W @ W ) )).")
@@ -234,11 +272,20 @@ def _lift(node: Node, names: "_ThfNames") -> str:
     if isinstance(node, Diamond):
         return f"( mdia @ {_lift(node.formula, names)} )"
 
-    # Agent-indexed epistemic / doxastic: the agent is a real $i argument.
+    if isinstance(node, Contrast):
+        # Truth-functionally conjunction (Contrast's own contract).
+        return f"( mand @ {_lift(node.left, names)} @ {_lift(node.right, names)} )"
+
+    # Agent-indexed epistemic / doxastic / assertive / bouletic: the agent is a
+    # real $i argument.
     if isinstance(node, Knows):
         return f"( mknows @ {_thf_term(node.agent, names)} @ {_lift(node.formula, names)} )"
     if isinstance(node, Believes):
         return f"( mbelieves @ {_thf_term(node.agent, names)} @ {_lift(node.formula, names)} )"
+    if isinstance(node, Says):
+        return f"( msays @ {_thf_term(node.agent, names)} @ {_lift(node.formula, names)} )"
+    if isinstance(node, Wants):
+        return f"( mwants @ {_thf_term(node.agent, names)} @ {_lift(node.formula, names)} )"
 
     if isinstance(node, Obligatory):
         return f"( mobl @ {_lift(node.formula, names)} )"
@@ -257,17 +304,70 @@ def _lift(node: Node, names: "_ThfNames") -> str:
         binder = "mforall" if node.type in (_FORALL, "forall") else "mexists"
         return f"( {binder} @ ( ^ [{x}: $i] : {_lift(node.formula, names)} ) )"
 
+    if isinstance(node, Historically):
+        # Box over the CONVERSE of t (faithful to satisfies_modal's past reading).
+        return f"( mhistorically @ {_lift(node.formula, names)} )"
+    if isinstance(node, Once):
+        return f"( monce @ {_lift(node.formula, names)} )"
+    if isinstance(node, Previous):
+        return f"( mprevious @ {_lift(node.formula, names)} )"
+
     if isinstance(node, Until):
-        raise NotImplementedError(
-            "to_thf_modal_full: Until is not (higher-order) shallow-embeddable "
-            "(strong Until needs the transitive closure of the temporal relation); "
-            "evaluate it with satisfies_modal instead."
-        )
+        # Strong Until as the impredicative Knaster–Tarski least fixpoint over
+        # the one-step tnext — TH0 quantifies over predicates, so the same least
+        # fixpoint Isabelle's `inductive muntil` compiles to is directly shallow-
+        # embeddable (the earlier claim that it is not was simply wrong).
+        return f"( muntil @ {_lift(node.left, names)} @ {_lift(node.right, names)} )"
+    if isinstance(node, Since):
+        # The converse-relation mirror of muntil (backward one-step paths).
+        return f"( msince @ {_lift(node.left, names)} @ {_lift(node.right, names)} )"
+
+    if isinstance(node, Nominal):
+        # True at exactly the named world: the reserved nom_ world constant, the
+        # same convention as standard_translation and isabelle_modal. The functor
+        # comes from the resolver's per-formula nominal map, so two DISTINCT
+        # nominals whose names sanitise alike ('A' / 'a') stay distinct worlds.
+        return f"( ^ [W: mu] : ( W = {names.nominal[node.name]} ) )"
+    if isinstance(node, At):
+        return (f"( ^ [W: mu] : ( {_lift(node.formula, names)} "
+                f"@ {names.nominal[node.nominal.name]} ) )")
+
     if isinstance(node, SortedQuantifier):
         raise NotImplementedError(
             "to_thf_modal_full: SortedQuantifier is not supported; use a plain ∀x/∃x.")
+    if type(node).__name__ in ("Would", "Might"):
+        raise NotImplementedError(
+            "to_thf_modal_full: the counterfactuals □→/◇→ read a similarity "
+            "ordering (Lewis spheres), not an accessibility relation — use "
+            "hol.isabelle_conditional / isabelle_decide_counterfactual.")
     raise NotImplementedError(
         f"to_thf_modal_full: unsupported node type {type(node).__name__}.")
+
+
+def _nominal_names(formula: Node):
+    """All nominal names occurring in ``formula`` (Nominal and At sites), sorted."""
+    return sorted({n.name for n in formula.walk() if isinstance(n, Nominal)})
+
+
+def _resolve_names(formula: Node) -> "_ThfNames":
+    """Build the per-formula functor resolver, including a de-colliding nominal map.
+
+    User symbols are resolved against the full export's reserved functor set;
+    then each nominal name gets a ``nom_``-prefixed ``mu`` constant deduped
+    against BOTH the user functors and the other nominals. Without this, two
+    distinct nominals sanitising alike (``'A'`` / ``'a'``) would silently
+    collapse to the SAME world constant — the emitted problem would load but no
+    longer mean what the source formula meant (and a user constant literally
+    named ``nom_a`` would conflate with the nominal ``a``'s world).
+    """
+    names = _ThfNames(formula, reserved=_THF_RESERVED_FULL)
+    taken = (set(_THF_RESERVED_FULL)
+             | set(names.pred.values()) | set(names.const.values())
+             | set(names.func.values()))
+    names.nominal = {}
+    for raw in _nominal_names(formula):
+        names.nominal[raw] = dedupe("nom_" + _thf_name(raw), taken)
+    return names
 
 
 # ---------------------------------------------------------------------------
@@ -276,6 +376,7 @@ def _lift(node: Node, names: "_ThfNames") -> str:
 def _families_used(formula: Node) -> Dict[str, bool]:
     """Scan ``formula`` for which modal families occur (controls what gets emitted)."""
     used = {"alethic": False, "epistemic": False, "doxastic": False,
+            "assertive": False, "bouletic": False,
             "deontic": False, "temporal": False, "tnext": False}
     for n in formula.walk():
         if isinstance(n, (Box, Diamond)):
@@ -284,11 +385,19 @@ def _families_used(formula: Node) -> Dict[str, bool]:
             used["epistemic"] = True
         elif isinstance(n, Believes):
             used["doxastic"] = True
+        elif isinstance(n, Says):
+            used["assertive"] = True
+        elif isinstance(n, Wants):
+            used["bouletic"] = True
         elif isinstance(n, (Obligatory, Permitted)):
             used["deontic"] = True
-        elif isinstance(n, (Always, Eventually)):
+        elif isinstance(n, (Always, Eventually, Historically, Once)):
+            # ⒣/⒫ read the CONVERSE of the same henceforth t, whose refl/trans
+            # axioms constrain the past readings equally.
             used["temporal"] = True
-        elif isinstance(n, Next):
+        elif isinstance(n, (Next, Previous, Until, Since)):
+            # ⒴ reads the converse of tnext; the muntil/msince fixpoints step
+            # over tnext — all need the one-step relation's link into t.
             used["tnext"] = True
     return used
 
@@ -298,20 +407,33 @@ def thf_full_definitions() -> str:
     return _THF_DEFS_FULL
 
 
+# Agent-indexed families that systems= may constrain, with their relation + tag.
+_AGENT_SYSTEM_FAMILIES = (
+    ("epistemic", _R_KNOWS, "rk"),
+    ("doxastic", _R_BELIEVES, "rb"),
+    ("assertive", _R_SAYS, "rs"),
+    ("bouletic", _R_WANTS, "rw"),
+)
+
+
 def thf_full_frame_axioms(frame: str = "K",
-                          systems: Optional[Dict[str, str]] = None) -> List[str]:
+                          systems: Optional[Dict[str, str]] = None,
+                          temporal_closure: bool = True) -> List[str]:
     """Return the frame axioms the full export would emit (for inspection / testing).
 
     ``frame`` constrains the alethic relation ``r`` (K/T/S4/S5/KD/KD45); ``systems`` is
-    an optional mapping that constrains the agent-indexed epistemic/doxastic relations,
-    e.g. ``{"epistemic": "S5", "doxastic": "KD45"}``. The deontic relation ``d`` is
-    always serial; the temporal relation ``t`` is always reflexive-transitive.
+    an optional mapping that constrains the agent-indexed epistemic / doxastic /
+    assertive / bouletic relations, e.g. ``{"epistemic": "S5", "doxastic": "KD45"}``.
+    The deontic relation ``d`` is always serial; the temporal relation ``t`` is
+    reflexive-transitive unless ``temporal_closure=False`` (which keeps only the
+    ``tnext ⊆ t`` inclusion, leaving ``t`` an arbitrary relation — mirroring
+    ``isabelle_modal_theory``'s parameter of the same name).
     """
     if frame not in _FRAMES:
         raise ValueError(f"to_thf_modal_full: unknown frame {frame!r}.")
     systems = systems or {}
     axioms: List[str] = [_THF_FRAME[c] for c in _FRAMES[frame]]
-    for fam, rel, tag in (("epistemic", _R_KNOWS, "rk"), ("doxastic", _R_BELIEVES, "rb")):
+    for fam, rel, tag in _AGENT_SYSTEM_FAMILIES:
         sys = systems.get(fam)
         if sys is not None:
             if sys not in _FRAMES:
@@ -320,12 +442,13 @@ def thf_full_frame_axioms(frame: str = "K",
                     f"(use one of {sorted(_FRAMES)}).")
             axioms += _agent_frame_axioms(rel, _FRAMES[sys], tag)
     axioms.append(_THF_DEONTIC_AXIOM)
-    axioms += _THF_TEMPORAL_AXIOMS
+    axioms += _THF_TEMPORAL_AXIOMS if temporal_closure else _THF_TEMPORAL_AXIOMS[-1:]
     return axioms
 
 
 def to_thf_modal_full(formula: Node, mode: str = "constant", frame: str = "K",
-                      systems: Optional[Dict[str, str]] = None) -> str:
+                      systems: Optional[Dict[str, str]] = None,
+                      temporal_closure: bool = True) -> str:
     """Emit a complete Benzmüller-style **THF** shallow embedding of a full-family modal formula.
 
     Unlike :func:`unicode_fol_kit.fol.qml.to_thf_modal` (alethic-only), this covers the
@@ -343,21 +466,30 @@ def to_thf_modal_full(formula: Node, mode: str = "constant", frame: str = "K",
             ``"decreasing"`` (actualist, ``existsAt``-guarded).
         frame: constrains the ALETHIC relation ``r`` (K/T/S4/S5/KD/KD45).
         systems: optional per-family system selection for the AGENT-INDEXED epistemic /
-            doxastic relations, e.g. ``{"epistemic": "S5", "doxastic": "KD45"}``. Each
-            value is a frame name from ``{K,T,S4,S5,KD,KD45}``; the property is asserted
-            ``∀A`` over the agent, so it holds per agent.
+            doxastic / assertive / bouletic relations, e.g. ``{"epistemic": "S5",
+            "doxastic": "KD45"}``. Each value is a frame name from
+            ``{K,T,S4,S5,KD,KD45}``; the property is asserted ``∀A`` over the agent, so
+            it holds per agent.
+        temporal_closure: emit the ``t_refl`` / ``t_trans`` axioms making ``t``
+            reflexive-transitive (default). ``False`` keeps only the ``tnext ⊆ t``
+            inclusion, so ``t`` denotes an arbitrary relation — mirroring
+            ``isabelle_modal_theory``'s parameter of the same name.
 
     Agent-indexedness (faithful to ``satisfies_modal``): the agent of ``Knows`` /
-    ``Believes`` is a first-class TERM and is carried into ``rk`` / ``rb`` as a real
-    ``$i`` argument, so a bound object variable in agent position quantifies over agents
+    ``Believes`` / ``Says`` / ``Wants`` is a first-class TERM and is carried into
+    ``rk`` / ``rb`` / ``rs`` / ``rw`` as a real ``$i`` argument, so a bound object
+    variable in agent position quantifies over agents
     (``∀x (Student(x) → K_x φ)``). A named agent becomes an ordinary ``$i`` constant.
 
-    Caveats: ``Until`` raises (needs transitive closure); temporal ``G``/``F`` are read
-    over a reflexive-transitive ``t`` and only approximate ``satisfies_modal``'s closure
-    over the caller's raw temporal edges (see the module docstring). Equality ``=`` /
-    ``≠`` is an uninterpreted world-relativized predicate (``feq`` / ``fneq``), not
-    primitive HOL identity. First-order/higher-order modal logic is undecidable, so a
-    ``Theorem`` verdict requires an external HOL ATP and is not guaranteed to terminate.
+    Caveats: ``Until`` / ``Since`` ARE supported — as the impredicative
+    Knaster–Tarski least-fixpoint macros ``muntil`` / ``msince`` over the one-step
+    ``tnext`` (TH0 quantifies over predicates, so the least fixpoint is directly
+    expressible). Temporal ``G``/``F`` are read over a reflexive-transitive ``t`` and
+    only approximate ``satisfies_modal``'s closure over the caller's raw temporal
+    edges (see the module docstring). Equality ``=`` / ``≠`` is an uninterpreted
+    world-relativized predicate (``feq`` / ``fneq``), not primitive HOL identity.
+    First-order/higher-order modal logic is undecidable, so a ``Theorem`` verdict
+    requires an external HOL ATP and is not guaranteed to terminate.
     """
     if frame not in _FRAMES:
         raise ValueError(f"to_thf_modal_full: unknown frame {frame!r}.")
@@ -392,13 +524,23 @@ def to_thf_modal_full(formula: Node, mode: str = "constant", frame: str = "K",
     lines.append("thf(d_decl, type, ( d : ( mu > mu > $o ) )).")
     lines.append("thf(t_decl, type, ( t : ( mu > mu > $o ) )).")
     lines.append("thf(tnext_decl, type, ( tnext : ( mu > mu > $o ) )).")
+    lines.append("thf(rs_decl, type, ( rs : ( $i > mu > mu > $o ) )).")
+    lines.append("thf(rw_decl, type, ( rw : ( $i > mu > mu > $o ) )).")
     lines.append("thf(existsAt_decl, type, ( existsAt : ( $i > mu > $o ) )).")
 
     # --- signature of the object-level predicates / constants / functions ---
     # (named agents fall out here as ordinary $i constants, matching rk/rb's $i slot).
     # The de-colliding resolver guarantees distinct source symbols never share a functor
-    # (e.g. Ab / ab), so a non-valid formula like □Ab→□ab cannot collapse to a tautology.
-    names = _ThfNames(formula)
+    # (e.g. Ab / ab) and never shadow a built-in (a predicate named "r"/"mbox" is pushed
+    # to r_2/mbox_2), so a non-valid formula can neither collapse to a tautology nor
+    # re-declare an export-internal relation at a conflicting type.
+    names = _resolve_names(formula)
+    # One mu constant per nominal (reserved nom_ prefix; true at exactly the
+    # world it names — matching standard_translation / isabelle_modal). The map
+    # is deduped, so nominals 'A'/'a' get distinct constants (nom_a / nom_a_2).
+    for raw in _nominal_names(formula):
+        f = names.nominal[raw]
+        lines.append(f"thf({f}_decl, type, ( {f} : mu )).")
     lines += _thf_signature(formula, names)
 
     # --- the lifted-operator definitions (one self-contained block) ---
@@ -412,9 +554,8 @@ def to_thf_modal_full(formula: Node, mode: str = "constant", frame: str = "K",
     for cond in _FRAMES[frame]:
         lines.append(_THF_FRAME[cond])
 
-    # --- agent-indexed epistemic / doxastic system axioms (systems=...) ---
-    for fam, rel, tag in (("epistemic", _R_KNOWS, "rk"),
-                          ("doxastic", _R_BELIEVES, "rb")):
+    # --- agent-indexed epistemic/doxastic/assertive/bouletic system axioms ---
+    for fam, rel, tag in _AGENT_SYSTEM_FAMILIES:
         if not used[fam]:
             continue
         sys = systems.get(fam)
@@ -438,7 +579,7 @@ def to_thf_modal_full(formula: Node, mode: str = "constant", frame: str = "K",
     # satisfies_modal — a theorem of the embedding. (t and tnext are declared
     # unconditionally, so the axiom is always well-formed.)
     if used["temporal"] or used["tnext"]:
-        lines += _THF_TEMPORAL_AXIOMS
+        lines += _THF_TEMPORAL_AXIOMS if temporal_closure else _THF_TEMPORAL_AXIOMS[-1:]
 
     # --- object-quantifier domain regime ---
     if mode in _THF_DOMAIN:

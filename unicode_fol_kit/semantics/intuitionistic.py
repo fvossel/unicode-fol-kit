@@ -278,12 +278,33 @@ def int_countermodel(formula: Node, max_worlds: int = 3,
 
 def int_valid(formula: Node, max_worlds: int = 3,
               domain_elements: int = 2, max_steps: int = 300000) -> bool:
-    """Return True iff no intuitionistic counter-model to ``formula`` is found.
+    """Return True iff ``formula`` is intuitionistically valid.
 
-    **Propositional**: a genuine decision procedure up to ``max_worlds`` worlds (the
-    finite-model property), so ``True`` means intuitionistically valid. **First-order**:
-    a sound but *incomplete* check — ``True`` means "no counter-model within the bounds"
-    (not a proof, since first-order intuitionistic validity is undecidable), while
-    ``False`` is always backed by a real counter-model from :func:`int_countermodel`.
+    **Split contract** — the two fragments are decided differently, and honestly:
+
+    - **Propositional**: a genuine decision procedure, full stop, REGARDLESS of
+      ``max_worlds``. The bounded Kripke search (:func:`int_countermodel`) is tried
+      first as a fast path — a countermodel it finds within ``max_worlds`` worlds is a
+      real witness, so a quick ``False`` is returned without going further. But
+      propositional IPL's finite-model-property bound *grows with the formula* (e.g.
+      ``(p→q)∨(q→r)∨(r→p)`` needs 4 worlds — 3, the default, finds nothing), so
+      "no countermodel within the bound" is NOT by itself proof of validity. When the
+      bounded search comes up empty, the verdict is instead handed to
+      :func:`~unicode_fol_kit.atp.lj.int_prove` (Dyckhoff's contraction-free G4ip, a
+      terminating decision procedure with no bound to exhaust) for a DEFINITIVE
+      True-or-False answer. Net effect: both the ``True`` and the ``False`` verdicts on
+      a propositional formula are exact, at every ``max_worlds`` — including the
+      default. (Before this delegation, ``int_valid`` of the formula above wrongly
+      returned ``True`` at ``max_worlds=3``; see ``tests/test_lj_search.py`` for the
+      pinned regression.)
+    - **First-order**: unchanged — a sound but *incomplete* check. ``True`` means "no
+      counter-model within the bounds" (not a proof, since first-order intuitionistic
+      validity is undecidable), while ``False`` is always backed by a real counter-model
+      from :func:`int_countermodel`.
     """
-    return int_countermodel(formula, max_worlds, domain_elements, max_steps) is None
+    if not _is_propositional(formula):
+        return int_countermodel(formula, max_worlds, domain_elements, max_steps) is None
+    if int_countermodel(formula, max_worlds, domain_elements, max_steps) is not None:
+        return False
+    from ..atp.lj import int_prove   # lazy: avoids a semantics<->atp import cycle
+    return int_prove([], formula)

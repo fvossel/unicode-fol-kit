@@ -20,7 +20,15 @@ The `c_` form exists so that **single-letter constants** can be written without 
 
 Greek letters (except the reserved operators `λ` Lambda and `μ` Measure) name constants directly — handy for symbolic thresholds and parameters, e.g. `μ(x, volume) > θ` (“too much”). This is **constants only**: predicates, function names, and variables stay ASCII. The Kripke evaluator and Z3 carry the raw unicode name; the ASCII-only Prover9 / TPTP exporters transliterate it deterministically and reversibly (`θ` → `theta`, other non-ASCII → a `uXXXX` codepoint escape), so an emitted problem is always valid ASCII.
 
-A function or predicate is recognised by being immediately followed by a parenthesised argument list, e.g. `distance(x, y)` or `Human(socrates)`. The same token class (Name) serves both as a bare constant and, when applied, as a function symbol.
+A function or predicate is recognised by being immediately followed by a parenthesised argument list, e.g. `distance(x, y)` or `Human(socrates)`. The same token class (Name) serves both as a bare constant and, when applied, as a function symbol. **A single lowercase letter is the one exception to "Variable, always"**: standing alone it is a variable (`f` in `∀f P(f)`), but immediately followed by `(` it is read as a one-letter function symbol instead — `f(x)` is `Function("f", [x])`, not a variable applied to something:
+
+```python
+from unicode_fol_kit import MSFLParser
+
+p = MSFLParser()
+p.parse("P(x)")        # → Atom(P, [Variable(x)])              bare x: a variable
+p.parse("P(f(x))")     # → Atom(P, [Function(f, [Variable(x)])])  f(...): a function
+```
 
 The sort annotation token always begins with `:`, which makes it lexically disjoint from all other tokens. **Whitespace before the colon is optional**: `∀x:Human P(x)` and `∀x :Human P(x)` are both valid and produce identical parse trees.
 
@@ -205,6 +213,8 @@ The **modal mode** (`MSFLParser(modal=True)`) adds `□` `◇` (alethic), `K_a` 
 | `⒫` | `Once` | `⒫φ` | was once the case (now or at some **past** point) |
 | `⒴` | `Previous` | `⒴φ` | at every immediate **past** point (yesterday) |
 | `⒮` | `Since` | `φ ⒮ ψ` | φ has held since ψ was last true (binary) |
+| `□→` | `Would` | `φ □→ ψ` | counterfactual: if φ *were* so, ψ *would* be (binary) |
+| `◇→` | `Might` | `φ ◇→ ψ` | counterfactual: if φ were so, ψ *might* be (binary) |
 
 The four past-tense duals `⒣` / `⒫` / `⒴` / `⒮` (Prior tense logic) run over the **converse** of the one-step `"temporal"` relation: `⒣`/`⒫`/`⒴` are the backward mirrors of `Ⓖ`/`Ⓕ`/`Ⓝ`, and `⒮` is the backward mirror of `Ⓤ`. They are recognised throughout the toolkit — parser, `satisfies_modal`, `standard_translation`, and the QML embedding. The prefix temporal operators (`Ⓖ Ⓕ Ⓝ ⒣ ⒫ ⒴`) bind as tightly as `¬`; the binary `Ⓤ` and `⒮` bind looser than `∧`/`∨` but tighter than `→`, right-associative.
 
@@ -217,6 +227,22 @@ p.parse("P ⒮ Q").to_unicode_str()           # → 'P ⒮ Q'       (Since, bina
 p.parse("⒣(Rain → ⒫ Sun)").to_unicode_str() # → '⒣(Rain → ⒫Sun)'
 p.parse("⒣P ∧ Q").to_unicode_str()          # → '⒣P ∧ Q'   (⒣ binds like ¬)
 ```
+
+### Public announcement operators (modal mode)
+
+| Glyph | Operator | Surface syntax | Meaning |
+|---|---|---|---|
+| `[…!]` | `Announce` | `[φ!]ψ` | after truthfully announcing φ, ψ holds (box) |
+| `⟨…!⟩` | `AnnounceDiamond` | `⟨φ!⟩ψ` | φ is truthful, and after announcing it ψ holds (diamond) |
+
+The announcement itself is bracketed, so it needs no separate precedence rule — `[φ!]` reads as one prefix unit, exactly like `□` or `K_a`, and binds its formula the same tight way:
+
+```python
+p.parse("[P!]Q ∧ R").to_unicode_str()    # → '[P!]Q ∧ R'   ([P!] binds tighter than ∧)
+p.parse("[P → Q!]R").to_unicode_str()    # → '[P → Q!]R'   (the announcement can be any formula)
+```
+
+See {doc}`nonclassical` for `reduce_announcements` and how the modal tableau decides PAL through it.
 
 ## Lambda abstraction and application (all modes)
 
@@ -373,8 +399,12 @@ The prefix temporal duals are the past-tense mirrors of the forward operators.
 | `Once` | `formula` | `⒫` | past dual of `Eventually` |
 | `Previous` | `formula` | `⒴` | past dual of `Next` |
 | `Since` | `left`, `right` | `⒮` | past dual of `Until` (binary) |
+| `Would` | `left`, `right` | `□→` | Lewis counterfactual; no first-order export |
+| `Might` | `left`, `right` | `◇→` | dual `¬(A □→ ¬B)`; no first-order export |
+| `Announce` | `announcement`, `formula` | `[…!]` | PAL box: after truthfully announcing `announcement`, `formula` holds |
+| `AnnounceDiamond` | `announcement`, `formula` | `⟨…!⟩` | PAL diamond: `announcement` is truthful and `formula` then holds |
 
-The alethic (`Box`, `Diamond`), epistemic/doxastic (`Knows`, `Believes`), assertive/bouletic (`Says`, `Wants` — agent-prefix attitude operators `Say_a` / `Want_a`; see {doc}`natural-language`), and deontic (`Obligatory`, `Permitted`) nodes round out the modal family; see the modal-logic page. All modal nodes reject `to_z3` / `to_prover9` / `to_tptp` directly — translate first with `standard_translation()`.
+The alethic (`Box`, `Diamond`), epistemic/doxastic (`Knows`, `Believes`), assertive/bouletic (`Says`, `Wants` — agent-prefix attitude operators `Say_a` / `Want_a`; see {doc}`natural-language`), and deontic (`Obligatory`, `Permitted`) nodes round out the modal family; see the modal-logic page. All modal nodes reject `to_z3` / `to_prover9` / `to_tptp` directly — translate first with `standard_translation()` (or, for `Announce`/`AnnounceDiamond`, reduce first with `reduce_announcements` — see {doc}`nonclassical`).
 
 ### Lambda-calculus nodes (all modes)
 

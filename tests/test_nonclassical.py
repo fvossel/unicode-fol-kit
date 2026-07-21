@@ -10,13 +10,18 @@ conclusion when premises are strengthened.
 
 import pytest
 
+from unicode_fol_kit import is_modal_valid, is_valid_tableau, to_english
+from unicode_fol_kit.fol.msflparser import MSFLParser
 from unicode_fol_kit.fol.nodes import (
-    Atom, Not, And, Or, Implies, Quantifier, Variable, Constant, Knows,
+    Node, Atom, Not, And, Or, Implies, Quantifier, Variable, Constant, Knows,
+    Would, Might, Contrast,
 )
 from unicode_fol_kit.semantics.free_logic import FreeModel, free_holds
 from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
 from unicode_fol_kit.semantics.dynamic_epistemic import announce, box_announce, diamond_announce
-from unicode_fol_kit.semantics.conditional import CounterfactualModel, would, might
+from unicode_fol_kit.semantics.conditional import (
+    CounterfactualModel, cf_satisfies, would, might,
+)
 from unicode_fol_kit.semantics.nonmonotonic import minimal_entails, minimal_models
 
 
@@ -112,6 +117,118 @@ def test_counterfactual_antecedent_strengthening_fails():
 
 def test_counterfactual_vacuously_true_with_impossible_antecedent():
     assert would(_CF, 0, And(A, Not(A)), B) is True  # no antecedent-world anywhere
+
+
+# --------------------------------------------------------------------------- #
+# The counterfactuals as PARSED operators: □→ (Would) and ◇→ (Might).
+# --------------------------------------------------------------------------- #
+
+_MODAL = MSFLParser(modal=True)
+
+
+class TestCounterfactualOperators:
+    def test_the_glyphs_parse_and_round_trip(self):
+        for src, cls in [("A □→ B", Would), ("A ◇→ B", Might)]:
+            f = _MODAL.parse(src)
+            assert isinstance(f, cls)
+            assert f.to_unicode_str() == src
+            assert _MODAL.parse(f.to_unicode_str()) == f
+            assert Node.from_dict(f.to_dict()) == f
+
+    def test_the_glyph_is_not_lexed_as_a_box_plus_an_arrow(self):
+        # □→ starts with the box glyph, so without terminal priority "□→" would lex
+        # as BOX followed by →, silently parsing the counterfactual as a modalised
+        # MATERIAL conditional — the very confusion the connective exists to avoid.
+        assert isinstance(_MODAL.parse("A □→ B"), Would)
+        assert isinstance(_MODAL.parse("□A → B"), Implies)      # genuinely material
+        assert isinstance(_MODAL.parse("□A □→ ◇B"), Would)      # both glyphs, one line
+        assert _MODAL.parse("A □→ B") != _MODAL.parse("□A → B")
+
+    def test_it_binds_tighter_than_the_material_arrow_but_looser_than_and(self):
+        # `A ∧ B □→ C` must group as `(A ∧ B) □→ C` — the reading the English has.
+        f = _MODAL.parse("A ∧ B □→ C")
+        assert isinstance(f, Would) and f.left == And(A, B)
+        # ... and → is looser still, so it stays on the outside.
+        g = _MODAL.parse("A → B □→ C")
+        assert isinstance(g, Implies) and isinstance(g.right, Would)
+
+    def test_evaluation_agrees_with_the_would_might_api(self):
+        # The parsed node and the function API must be the same semantics, not two.
+        assert cf_satisfies(_MODAL.parse("A □→ B"), _CF, 0) == would(_CF, 0, A, B)
+        assert cf_satisfies(_MODAL.parse("A ◇→ C"), _CF, 0) == might(_CF, 0, A, C)
+        assert cf_satisfies(_MODAL.parse("A □→ B"), _CF, 0) is True
+        assert cf_satisfies(_MODAL.parse("A ◇→ C"), _CF, 0) is False
+
+    def test_antecedent_strengthening_fails_through_the_parser_too(self):
+        assert cf_satisfies(_MODAL.parse("A □→ B"), _CF, 0) is True
+        assert cf_satisfies(_MODAL.parse("A ∧ C □→ B"), _CF, 0) is False
+
+    def test_counterfactuals_nest(self):
+        # A conditional inside a conditional is evaluated at the world under
+        # consideration with THAT world's spheres — not expressible before, since
+        # the old evaluator took antecedent/consequent as propositional formulas.
+        f = _MODAL.parse("A □→ (C □→ A)")
+        assert cf_satisfies(f, _CF, 0) is True
+        assert cf_satisfies(_MODAL.parse("(A □→ B) ∧ (A □→ ¬B)"), _CF, 0) is False
+
+    def test_might_is_the_dual_of_would(self):
+        for src_w, src_m in [("A □→ ¬B", "A ◇→ B"), ("A □→ ¬C", "A ◇→ C")]:
+            assert (cf_satisfies(_MODAL.parse(src_w), _CF, 0)
+                    is not cf_satisfies(_MODAL.parse(src_m), _CF, 0))
+
+    def test_might_is_vacuously_FALSE_where_would_is_vacuously_true(self):
+        # The duality inverts the vacuous case — worth pinning, since "vacuously
+        # true" is the intuition people carry over from the material conditional.
+        impossible = "A ∧ ¬A"
+        assert cf_satisfies(_MODAL.parse(f"({impossible}) □→ B"), _CF, 0) is True
+        assert cf_satisfies(_MODAL.parse(f"({impossible}) ◇→ B"), _CF, 0) is False
+
+    def test_the_sphere_ordering_is_not_an_accessibility_relation(self):
+        # Two honest boundaries. The Kripke evaluator must REJECT a counterfactual
+        # rather than guess, and the sphere evaluator must reject a modal operator.
+        km = KripkeModel(worlds=["w"], relations={}, valuation={"w": ["A", "B"]})
+        with pytest.raises(NotImplementedError):
+            satisfies_modal(_MODAL.parse("A □→ B"), km, "w")
+        with pytest.raises(TypeError):
+            cf_satisfies(_MODAL.parse("□A □→ B"), _CF, 0)
+
+    def test_the_tableaux_refuse_rather_than_answer_wrongly(self):
+        # A □→ A is a Lewis validity, but the accessibility-relation tableaux have
+        # no sphere rule for it. They must RAISE with a pointer at the sphere
+        # tools — a silent False here would be a wrong validity verdict, and a
+        # silent True an unproved one. has_modal now counts Would/Might as modal,
+        # so the classical tableau routes here and gets the same clean guard.
+        identity = _MODAL.parse("A □→ A")
+        with pytest.raises(NotImplementedError, match="cf_valid|cf_satisfies"):
+            is_modal_valid(identity, frame="T")
+        with pytest.raises(NotImplementedError, match="cf_valid|cf_satisfies"):
+            is_valid_tableau(identity)
+
+    @pytest.mark.parametrize("method", ["to_z3", "to_prover9", "to_tptp"])
+    def test_no_first_order_export(self, method):
+        # Collapsing □→ to the material → is exactly the mistake the connective
+        # exists to avoid, so the exporters refuse instead of silently lowering.
+        for src in ["A □→ B", "A ◇→ B"]:
+            with pytest.raises(NotImplementedError, match="ounterfactual"):
+                getattr(_MODAL.parse(src), method)()
+
+    def test_verbalization_marks_the_subjunctive(self):
+        assert to_english(_MODAL.parse("A □→ B")) == \
+            "if A were the case, B would be"
+        assert to_english(_MODAL.parse("A ◇→ B")) == \
+            "if A were the case, B might be"
+
+    def test_lewis_identity_holds_everywhere(self):
+        # A □→ A: either some sphere holds an A-world — and then it witnesses the
+        # conditional, every A-world in it being trivially an A-world — or none
+        # does and the vacuous disjunct applies. Machine-checked in Isabelle by
+        # tests/test_isabelle_conditional.py.
+        identity = _MODAL.parse("A □→ A")
+        for model in (_CF, CounterfactualModel(
+                (0, 1), {0: frozenset({"A"}), 1: frozenset()},
+                {0: [frozenset({0, 1})], 1: [frozenset({0, 1})]})):
+            for w in model.worlds:
+                assert cf_satisfies(identity, model, w) is True
 
 
 # --------------------------------------------------------------------------- #

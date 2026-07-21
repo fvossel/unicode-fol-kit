@@ -80,8 +80,10 @@ def test_thf_exporters_carry_new_frame_axioms():
 
 _isa = pytest.mark.skipif(not isabelle_available(),
                           reason="no Isabelle installation found")
+_isa_live = pytest.mark.isabelle_live
 
 
+@_isa_live
 @_isa
 @pytest.mark.parametrize("formula, frame", [
     (_LOEB, "GL"), (_G2, "S4.2"), (_G3, "S4.3"), (_B_AX, "B"),
@@ -93,6 +95,7 @@ def test_characteristic_theorems_discharge_in_isabelle(formula, frame):
     assert r.ok, f"[{frame}] blast did not discharge (exit {r.exit_code}):\n{r.output[-1000:]}"
 
 
+@_isa_live
 @_isa
 def test_gl_does_not_prove_the_t_axiom():
     # T (□p → p) is NOT a GL theorem (GL is irreflexive). The prove battery must not

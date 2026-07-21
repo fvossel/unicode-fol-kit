@@ -25,6 +25,10 @@ who passes ``world="w0"`` keeps a distinct, uncaptured free variable):
 - ``Diamond φ``  → ``∃w' (R(w, w') ∧ ST(φ, w'))``.
 - ``Knows(a, φ)``    → ``∀w' (Rk_a(w, w') → ST(φ, w'))``.
 - ``Believes(a, φ)`` → ``∀w' (Rb_a(w, w') → ST(φ, w'))``.
+- ``Says(a, φ)``     → ``∀w' (Rs_a(w, w') → ST(φ, w'))`` (assertive: box over
+  a per-agent "compatible with what a says" relation).
+- ``Wants(a, φ)``    → ``∀w' (Rw_a(w, w') → ST(φ, w'))`` (bouletic: box over
+  a per-agent desire relation).
 - ``Always φ``     → ``∀w' (T(w, w') → ST(φ, w'))`` (box over a temporal
   accessibility predicate ``T``).
 - ``Eventually φ`` → ``∃w' (T(w, w') ∧ ST(φ, w'))`` (diamond over ``T``).
@@ -59,8 +63,8 @@ Scope / caveats (v1):
 
 The accessibility-predicate names are fixed so the matching Tarski structure can
 be built mechanically: ``"R"`` (alethic), ``"Rk_" + agent`` (epistemic),
-``"Rb_" + agent`` (doxastic), ``"T"`` (temporal), ``"N"`` (next), ``"D"``
-(deontic).
+``"Rb_" + agent`` (doxastic), ``"Rs_" + agent`` (assertive), ``"Rw_" + agent``
+(bouletic), ``"T"`` (temporal), ``"N"`` (next), ``"D"`` (deontic).
 """
 
 from typing import List, NoReturn
@@ -70,7 +74,7 @@ from .nodes import (
     Variable, Constant, Function,
     Atom, Not, And, Or, Xor, Implies, Iff,
     Quantifier, SortedQuantifier,
-    Box, Diamond, Knows, Believes,
+    Box, Diamond, Knows, Believes, Says, Wants,
     Always, Eventually, Next, Until,
     Historically, Once, Previous, Since,
     Obligatory, Permitted,
@@ -86,6 +90,8 @@ from ..semantics._modal_reject import (
 _R_ALETHIC = "R"
 _R_KNOWS_PREFIX = "Rk_"
 _R_BELIEVES_PREFIX = "Rb_"
+_R_SAYS_PREFIX = "Rs_"
+_R_WANTS_PREFIX = "Rw_"
 
 
 def _agent_key(agent: Node) -> str:
@@ -201,6 +207,12 @@ def _translate(formula: Node, world: Node, fresh: _FreshWorlds) -> Node:
     if isinstance(formula, Believes):
         return _box_like(_R_BELIEVES_PREFIX + _agent_key(formula.agent), world, formula.formula, fresh)
 
+    # --- assertive / bouletic (both box-like, per-agent relations) ---
+    if isinstance(formula, Says):
+        return _box_like(_R_SAYS_PREFIX + _agent_key(formula.agent), world, formula.formula, fresh)
+    if isinstance(formula, Wants):
+        return _box_like(_R_WANTS_PREFIX + _agent_key(formula.agent), world, formula.formula, fresh)
+
     # --- deontic (box/diamond over a deontic accessibility predicate D) ---
     if isinstance(formula, Obligatory):
         return _box_like(_R_DEONTIC, world, formula.formula, fresh)
@@ -254,8 +266,11 @@ def _reject_quantifier(formula: Node) -> NoReturn:
     """Reject an object-level quantifier: FO-modal domains are out of scope."""
     raise NotImplementedError(
         f"standard_translation: {type(formula).__name__} is not supported — the "
-        "standard translation here covers the propositional modal fragment only; "
-        "quantified (first-order) modal logic with object domains is future work."
+        "standard translation here covers the propositional modal fragment only. "
+        "For quantified (first-order) modal logic with object domains use "
+        "unicode_fol_kit.fol.qml (qml_translate / qml_is_valid, the FO shallow "
+        "embedding with explicit constant/varying/increasing/decreasing domain "
+        "regimes)."
     )
 
 

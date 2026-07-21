@@ -5,6 +5,314 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [0.17.0] - 2026-07-21
+
+Added — **every logic in the kit now has an automated proof-theory route, and
+every remaining Isabelle-export gap is closed.** Nine capabilities, each with
+hand-checked tests and a differential battery against an existing oracle:
+
+- **Intuitionistic proof search** (`int_prove` / `int_decide`,
+  `atp.lj`): Dyckhoff's contraction-free **G4ip** calculus — a genuine,
+  terminating decision procedure for propositional intuitionistic logic. The
+  kit previously had only a proof *checker* plus the bounded Kripke search.
+  Verified against 34 hand-checked textbook facts, the S4/GMT oracle and 250
+  seeded random formulas. This also **fixes `int_valid`'s soundness gap at the
+  root**: for propositional input the positive verdict now comes from G4ip, so
+  `int_valid((p→q)∨(q→r)∨(r→p))` is correctly `False` at DEFAULT arguments
+  (its smallest countermodel needs 4 worlds; the old 3-world default said
+  "valid"). First-order input keeps the honest bounded contract.
+- **Relevant logic B, Isabelle-certified** (`hol.isabelle_relevant` +
+  `isabelle_decide_relevant`): a Routley–Meyer shallow embedding following
+  `isabelle_conditional`'s premise-not-axiomatization design, so nitpick can
+  certify countermodels as *genuine*; `rel_valid`'s bounded `True` finally has
+  a certified positive counterpart (9/10 hand-checked B-facts certified live
+  end-to-end during development).
+- **ILL and Lambek derivations exported to Isabelle**
+  (`hol.isabelle_substructural`): the sequent rules become an
+  `inductive derivable` predicate (multiset antecedent for ILL,
+  *list* antecedent for Lambek — order is the point), and the concrete
+  Python-found derivation is replayed as a machine-checked lemma
+  (`to_isabelle_ill` / `to_isabelle_lambek` + `*_derivation_theory`).
+  Plus the ILL **additive units ⊤ and 𝟘** (nodes, parser glyphs, ⊤R/0L rules
+  in search and checker).
+- **Public announcement logic (PAL)** — `[φ!]ψ` / `⟨φ!⟩ψ` are now real,
+  parseable operators (`Announce` / `AnnounceDiamond`, modal mode) with the
+  full node contract (round-trip printing incl. LaTeX, serialisation).
+  `reduce_announcements` implements the standard reduction axioms by syntactic
+  relativization, so the modal tableau **decides** PAL (the reduction axiom
+  `[φ!]K_aψ ↔ (φ → K_a[φ!]ψ)` is valid, the famous `[φ!]K_aψ → K_a[φ!]ψ` is
+  not); `satisfies_modal` evaluates announcements directly via the restricted
+  model — the oracle a 100-formula random differential pins the reduction
+  against. Temporal operators under an announcement are rejected with the
+  reason (restriction of a closure ≠ closure of the restriction).
+- **Arbitrary finite truth-matrix export** (`to_thf_matrix` /
+  `to_isabelle_matrix` + entailment variants): the K3/LP reification is now
+  data-driven over ANY `TruthMatrix` — including Belnap–Dunn **FDE** and
+  user-built matrices; the K3/LP exporters delegate to it.
+- **ALC ↔ the rest of the kit** (`dl.translate`, `dl.parser`): the standard
+  translation `concept_to_fol` (multi-role, capture-avoiding) plus
+  TBox/ABox/GCI forms and single-role `concept_to_modal`, differentially
+  validated against the ALC tableau on 80 concepts — so ALC reasoning can
+  reuse the FOL provers and Isabelle/THF exports. And ALC concepts finally
+  **parse from strings** (`parse_concept` / `parse_gci`, the `⊤ ⊥ ¬ ⊓ ⊔
+  ∃r.C ∀r.C ⊑` glyph syntax the renderer emits, round-trip-pinned).
+- **Free-logic decision procedures** (`free_is_valid`, `free_countermodel`,
+  `free_find_model`, `free_entails`): bounded exhaustive search over
+  inner/outer-domain splits and partial denotation, with the same honest
+  contract as `rel_valid`/`cf_valid` (False = verified countermodel).
+- **Dependence logic → ESO** (`dependence_to_eso`): the Skolem-function
+  translation for the guarded/slashed sentence fragment, emitting a
+  `SecondOrderQuantifier` formula ready for `satisfies_so` /
+  `hol.secondorder`; faithfulness pinned by exhaustive structure-enumeration
+  differentials against `team_models` (which caught and fixed a real
+  slashed-∃ scoping subtlety during development). And **circumscription → SO**
+  (`circumscription_formula` / `circumscription_entails_so`): McCarthy's
+  second-order axiom as a Node, differentially validated against
+  `minimal_entails`.
+- **Parser/LaTeX surface completeness**: all 11 broken LaTeX round-trips fixed
+  (incl. the two SILENT mis-parses — `\mathsf{i}` nominals and `\mu` measures)
+  with a registry-driven 41-operator round-trip battery;
+  `parse_latex` gained `dependence`/`linear`/`lambek` modes; the CLI's
+  `--mode` now accepts `modal` / `second_order` / `dependence` / `linear` /
+  `lambek`; and single-letter function names (`f(x)`) now parse as functions
+  in term position (previously they crashed the re-parse of the kit's own
+  output).
+
+Fixed — **five soundness/faithfulness bugs found by the proof-theory
+completeness sweep** (each with a pinned regression test):
+
+- **Łukasiewicz formulas no longer collapse silently to classical logic.**
+  `is_valid` / `is_valid_resolution` on a fuzzy-parsed formula quietly applied
+  the classical reduction and returned verdicts for the WRONG logic —
+  `is_valid(MSFLParser(fuzzy=True).parse("P ∨ ¬P"))` came back `True` while
+  `fuzzy_is_valid` correctly says `False` (weak min/max disjunction has no
+  excluded middle). The Łukasiewicz nodes now refuse `to_z3` / `to_prover9` /
+  `to_tptp`, and the normal forms (and the resolution prover on top of them)
+  refuse fuzzy input, each pointing at `fuzzy_is_valid` /
+  `semantics.fuzzy.evaluate`; the collapse itself remains available as the
+  explicit, documented opt-in `to_fol(node)`. *(Breaking for callers who relied
+  on the silent collapse: insert `to_fol(...)` to keep the old reading.)*
+- **`to_thf_modal_full` conflated distinct nominals that sanitise alike.**
+  `@A P ∧ @a Q` emitted ONE world constant `nom_a` for both nominals — a
+  loadable file that meant a different formula. Nominal names are now resolved
+  through a per-formula deduplicating map (`nom_a` / `nom_a_2`), and a user
+  constant literally named `nom_i` can no longer capture a nominal's world.
+- **Reserved-name collisions in the THF/Isabelle exporters.** A user predicate
+  named like a built-in functor (`r`, `t`, `mbox`, `muntil`, `says`, `rs`, …)
+  silently re-declared the built-in at a conflicting type (THF) or emitted
+  duplicate `consts`/`abbreviation` names Isabelle rejects. Both exporters'
+  name resolvers now pre-claim their full built-in vocabulary
+  (`SymbolNames(reserved=…)`), pushing user symbols to suffixed variants; the
+  `isabelle_modal` reserved set gained the identifiers introduced with the
+  Says/Wants/past-temporal/Until/Since support.
+- **The qml embedding left constants untyped.** In the World/Object-guarded
+  first-order embedding nothing forced a constant into `Object`, so
+  `qml_is_valid(∀x P(x) → P(c))` was spuriously `False` — and an
+  Object-guarded agent frame axiom (`systems=`) could never fire for a *named*
+  agent (`K_alice P → P` stayed invalid under `{"epistemic": "T"}`).
+  `_validity_formula` now emits Object-typing facts for every constant, number
+  and function of the formula (functions map objects to objects).
+- **The resolution prover's verdicts were hash-seed-dependent.** Saturation
+  iterated Python sets, so clause processing order — and hence whether a goal
+  closed within `max_steps` — varied between runs of the same call. The loop
+  now orders everything by clause content (variables renamed in sorted order,
+  literals visited by surface form, seed clauses smallest-first). Reproducible,
+  and dramatically faster on quantified-modal images: the Barcan formula now
+  closes in ~1 000 steps instead of ~200 000.
+- Also fixed: `cf_satisfies` / `cf_valid` silently accepted first-order atoms
+  (`P(x) □→ P(x)` returned a definite verdict for an out-of-contract formula,
+  where `to_isabelle_conditional` rejects the identical input); they now raise
+  the same propositional/ground contract error. And `thf_modal`'s docstrings
+  still claimed "`Until` is omitted (raises)" — stale since the impredicative
+  `muntil`/`msince` fixpoints landed; corrected.
+
+Added — **the assertive/bouletic family in every first-order route, and
+first-order modal input in the resolution prover**:
+
+- `standard_translation` translates `Say_a` / `Want_a` as per-agent box
+  relations `Rs_a` / `Rw_a` (mirroring `Rk_a`/`Rb_a`), so `resolution.prove`
+  decides the propositional Say/Want fragment (the K axiom for `Say_a` was the
+  inventory's crash repro). `qml` gained agent-indexed `Rs`/`Rw` branches plus
+  `assertive`/`bouletic` entries for `systems=` — `Say_a P → P` is decidable
+  as factive-on-demand across qml, the THF export and the Isabelle export.
+- `resolution.prove` no longer raises the stale "future work" error on
+  quantified modal input: it lowers the folded consequence through the qml
+  first-order embedding (constant domains, frame K — `qml_is_valid`'s
+  defaults) and saturates the image, with the step budget scaled to the larger
+  translation. Both Barcan directions are provable; `False` still means "not
+  proved within the bound".
+- `isabelle_modal_theory` / `to_isabelle_modal` / `isabelle_decide_modal`
+  gained the `systems=` parameter `to_thf_modal_full` already had (per-agent
+  frame axioms for `rk`/`rb`/`rs`/`rw`, the agent schematic). Systems whose
+  conditions have no per-agent schema (GL's Löb, S4.2/S4.3) are rejected
+  loudly in BOTH exporters instead of being silently weakened.
+- `to_thf_modal_full` gained `temporal_closure=` for parity with the Isabelle
+  emitter (opt out of `t_refl`/`t_trans`, keeping the `tnext ⊆ t` link).
+
+Changed — **every generic proof-theory entry point now answers or points,
+across ALL of the kit's logics.** The classical tableau, Fitch search,
+resolution/normal forms and the modal tableau reject substructural
+(ILL/Lambek), team-semantic (dependence/IF), second-order and Łukasiewicz
+input with one clean `NotImplementedError` naming the right decision procedure
+(`ill_prove` / `lambek_prove` / `team_satisfies` / SO sequent rules /
+`fuzzy_is_valid`) — previously these surfaced as bare `ValueError: no rule for
+Tensor` from inside the rule dispatcher, an unhinted `TypeError` from `to_nnf`,
+or (worst) a silent `False` from the Fitch search on the genuine ILL theorem
+`A ⊸ A`. `modal_tableau` explains the GL frame's converse-well-foundedness
+instead of listing it as an unknown name, the deep-embedding fallback points at
+the full-family Isabelle/THF exporters, and `qml.to_thf_modal` points at
+`to_thf_modal_full`.
+
+Added — **the counterfactual conditionals `□→` and `◇→` are now parseable
+operators.** Lewis's "would" and "might" conditionals existed only as the API
+functions `would(model, world, antecedent, consequent)` / `might(…)`; they now also
+parse in **modal mode** (`MSFLParser(modal=True)`) as the new `Would` / `Might`
+nodes, so a counterfactual can be written as a formula string, rendered, serialised
+and round-tripped like any other connective.
+
+- **Why modal mode rather than a mode of its own:** indicative modals and
+  subjunctive conditionals co-occur in ordinary prose, so a sentence mixing `◇`
+  and `□→` must parse as a single formula; a standalone mode could not express it.
+- **Precedence** is the `Ⓤ` / `⒮` level: tighter than `→` and `↔`, looser than `∧`
+  and `∨`, so `A ∧ B □→ C` groups as `(A ∧ B) □→ C`. The glyphs *begin with* `□`
+  and `◇`, so their terminals carry explicit priority — without it `A □→ B` would
+  lex as a box followed by a material arrow and silently parse as a modalised
+  material conditional, precisely the confusion the connective exists to avoid.
+- **`cf_satisfies(formula, model, world)`** evaluates a whole parsed formula against
+  a `CounterfactualModel`, and counterfactuals may now **nest** (`A □→ (C □→ A)`) —
+  not expressible through the argument-passing form, which took propositional
+  antecedents and consequents. `would` / `might` keep their signatures and share the
+  one sphere condition, so the two entry points cannot drift apart.
+- **Two boundaries are enforced, not guessed.** There is no first-order export
+  (`to_z3` / `to_prover9` / `to_tptp` raise): collapsing `□→` to the material `→` is
+  the mistake the connective exists to avoid. And a similarity ordering is not an
+  accessibility relation, so `satisfies_modal` rejects a counterfactual, `cf_satisfies`
+  rejects `□`/`◇`, and the modal and classical tableaux raise rather than return a
+  validity verdict they have no sphere rule to justify.
+
+`to_english` marks the subjunctive ("if A were the case, B would be"), keeping the
+counterfactual distinct from the material reading in the verbalization too.
+
+Added — **Isabelle/HOL export and decision for the counterfactuals:
+`hol.isabelle_conditional` + `isabelle_decide_counterfactual`.** The modal exporter
+embeds `□`/`◇` over an accessibility relation, which is the wrong structure for a
+counterfactual, so the sphere semantics gets its own shallow embedding: a formula
+becomes a predicate on worlds, the sphere system is the uninterpreted constant
+`Sel`, and validity is `nested Sel ⟹ ∀x. φ x`. The `CondC` clause is the same
+truth condition `cf_satisfies` evaluates and the same as `CondM` in the verified
+`deepshallow.conditional` faithfulness theory, so what Isabelle certifies is what
+the toolkit computes. `◇→` is emitted as the dual `¬(A □→ ¬B)` rather than given a
+constant of its own, so the theory cannot drift from the evaluator's derivation.
+
+`isabelle_decide_counterfactual(φ)` follows the `isabelle_decide_fol` scheme:
+proof battery ⇒ VALID, else `nitpick[expect = genuine]` over the world type ⇒
+INVALID, else UNKNOWN. Two empirically-forced design points, both pinned by tests:
+
+- **Nesting is a premise of the goal, not an `axiomatization`.** nitpick cannot
+  certify a counter-model as *genuine* while axiomatised constants are in play (it
+  downgrades to `quasi_genuine`, losing the refutation half of the procedure); as a
+  premise, nitpick constructs the sphere system itself.
+- **The proof battery is verit-first.** The `|` combinator has no per-method
+  timeout and `blast` does not terminate on agglomeration
+  `(A □→ B) ∧ (A □→ C) → (A □→ (B ∧ C))` — the validity whose proof actually uses
+  the nesting premise — so a blast-first battery hangs before reaching verit
+  (measured: 97 s and fails vs. ~9 s).
+
+Isabelle-gated live tests certify the headline Lewis facts (identity,
+agglomeration, weakened consequent, the would/might duality VALID; antecedent
+strengthening and contraposition INVALID) and check the INVALID verdicts
+differentially against a brute-force sweep of small sphere models through
+`cf_satisfies`.
+
+### Completeness: every entry point answers or points, never crashes
+
+An exhaustive, empirically-verified inventory of every "unsupported node type"
+raise across the exporters and internal provers, then closed: each gap either
+**works now** (verified against an oracle) or raises **one clean error naming
+the right tool**. `tests/test_completeness.py` pins every closed gap with the
+inventory's exact repro.
+
+**Isabelle/THF export — the full modal family emits.**
+
+- `to_isabelle_modal` / `isabelle_modal_theory` now embed `Historically` (⒣) /
+  `Once` (⒫) as box/diamond over the **converse** of the henceforth `t` (whose
+  refl+trans axioms constrain the past readings identically — the converse of a
+  refl+trans relation is refl+trans), `Previous` (⒴) as box over the converse of
+  the one-step `n`, `Says`/`Wants` as agent-indexed K-boxes over `rs`/`rw` (no
+  frame axioms — non-factive, non-veridical), and the hybrid `Nominal`/`@` via
+  world constants `nom_<name> :: i` (the standard translation's reserved prefix).
+- **Soundness fix found by the live differential:** the embedding's entity type
+  was the *polymorphic* `'a`, and Isabelle gives every occurrence of a
+  polymorphic constant its own type instance — so the two `says a` in
+  `Say_a(P→Q) → (Say_a P → Say_a Q)` denoted two INDEPENDENT relation instances
+  and nitpick "genuinely" refuted the valid agent-K axiom (a certified-looking
+  **false INVALID**; `Knows`/`Believes` were equally affected). The embedding now
+  declares one monomorphic `typedecl e`. A 10-fact live battery (valid ⇒ kernel
+  proof, invalid ⇒ genuine countermodel) certifies the completed operators.
+- The runner's refute step now defines `t = rtranclp n` whenever the closure
+  relation is in use at all (previously only when `Next` co-occurred), so
+  nitpick can construct the closure and genuinely refute non-theorems of the
+  pure closure fragment — `⒫P → P` is now `INVALID` instead of `unknown`.
+- `to_thf_modal_full` gains the same seven operators, plus `Until`/`Since` as
+  **impredicative Knaster–Tarski least fixpoints** over `tnext` (TH0 quantifies
+  over predicates, so the fixpoint Isabelle's `inductive` compiles to is
+  directly shallow-embeddable — the previous rejection's "not (higher-order)
+  shallow-embeddable" claim was factually wrong and is corrected).
+- `to_thf_fol` / `to_isabelle_fol` accept `Count` (distinct-witnesses
+  expansion), `Measure` (the uninterpreted `measure/2` the other exports emit),
+  and `Contrast`; the msfol variants inherit them through `to_fol`.
+- `to_isabelle_so` embeds `Cardinality` / `SortedCardinality` as HOL's native
+  `card {v. φ}` (sort-guarded for the sorted variant); comparisons with a
+  cardinality operand are numeric over `nat`, mirroring the Tarskian rule, and
+  a category-error operand raises with an explanation. `to_thf_so` keeps
+  rejecting (TH0 has no finite-set theory) but points at `to_isabelle_so`.
+- `qml_translate` rejects `Since` with the same explanatory pointer `Until`
+  already had (msince / the HOL embeddings), instead of the generic error.
+
+**Internal provers — answers instead of raises.**
+
+- `to_fol` now honours its own "classical FOL constructs only" contract:
+  `Contrast` collapses to `∧` and `Count` expands via distinct witnesses (a
+  relativized `SortedCount` keeps its sort guard inside the witness matrix).
+  This fixes `to_nnf`/`to_cnf`/`skolemize`/resolution in one place.
+- The classical tableau handles `Contrast` and `Count` directly, and — a
+  pre-existing completeness gap — now seeds its γ-instantiation pool with the
+  input's **free variables** read as constants (the universal-closure validity
+  convention Z3 and resolution already used), so `¬∃x P(x) → ¬P(a)` proves
+  instead of silently returning False. The three classical engines now agree on
+  a shared battery.
+- `unify` / `apply_subst` / resolution's standardize-apart handle `Measure`
+  terms (slot-wise, purely syntactic — a `Measure` never unifies with a
+  `Function` named "measure"; that spelling is an export convention).
+- **Resolution decides the propositional-modal fragment**: modal input is
+  folded into one local-consequence implication and lowered by
+  `standard_translation` — sound + complete for K for free, cross-checked
+  against the modal tableau. `fitch_prove` / `is_valid_fitch` route modal input
+  to the modal tableau (previously the valid `□(P→Q), □P ⊢ □Q` silently
+  returned **False** — a wrong answer, the worst failure mode of the lot);
+  `find_fitch_proof` refuses modal input with a pointer, since it cannot
+  fabricate a Fitch proof object.
+- The modal tableau leaves temporal-closure operators **inert** instead of
+  raising: branch closure stays sound (monotone), open models reach callers
+  only after `satisfies_modal` verification, so `modal_decide` finally honours
+  its documented valid/invalid/unknown contract — `ⒼP` is now a verified
+  "invalid" with a countermodel, `ⒼP → P` an honest "unknown", and nothing
+  crashes. Quantified constructs under a modal operator are treated as opaque
+  literals under the same verified-or-unknown regime.
+- `cf_valid` / `cf_countermodel`: a **bounded exhaustive sphere-model search**
+  (the `rel_valid` contract: False is definitive and verified, True is
+  no-countermodel-within-bound) gives the counterfactuals an in-process
+  decision path that agrees with all six Isabelle-certified Lewis facts.
+- The residual, genuinely-impossible cases (`Cardinality` in first-order
+  provers, `SecondOrderQuantifier` in resolution, `□→`/`◇→` anywhere
+  accessibility-relational) keep raising — but every message now names its
+  reason and the right alternative tool.
+
+**Developer loop.** The ~115 Isabelle-live tests carry a registered
+`isabelle_live` marker; `pytest -n auto -m "not isabelle_live"` runs the other
+~3100 tests in **~45 s** (previously the full serial suite took ~17 min).
+CI/pre-release keep the live coverage via `-m isabelle_live`.
+
 ## [0.16.0] - 2026-07-14
 
 Added — **CCG-style derivation trees with lambda-semantics (`CCGDerivation`).** A new
@@ -43,12 +351,32 @@ same symbol `Measure.to_z3` and `Measure.to_prover9` emit, so a structure found 
 interprets what the provers see. This makes the finite model finder work on counting
 formulas end to end (`find_model`, `find_countermodel`).
 
-An **order comparison with a cardinality operand is now numeric**: `|{v : φ}| > |{v :
-ψ}|` compares the counts. A cardinality is a natural number, not a domain individual,
-and the atom previously fell through to the (empty) extension lookup and was silently
-`False`. Ordinary terms are unaffected — `<` `>` `≤` `≥` over individuals keep their
-extension semantics, which a structure may define however it likes. A cardinality
-compared against a non-number now raises instead of quietly answering `False`.
+**An order comparison `<` `>` `≤` `≥` now has three readings, in precedence order.**
+Previously it had one — the extension lookup — which made every comparison over a
+computed number silently `False`.
+
+1. A **cardinality operand forces the numeric reading**: `|{v : φ}| > |{v : ψ}|`
+   compares the counts. A cardinality is a natural number the evaluator computes
+   itself, so no structure may reinterpret it; a declared extension does not override
+   this, and a cardinality compared against a non-number raises instead of quietly
+   answering `False`.
+2. Otherwise a **declared extension wins**. The order symbols are ordinary relation
+   symbols and a structure may interpret `<` over its domain however it likes — the
+   reading `to_z3` / `to_prover9` assume, where the comparison is uninterpreted.
+   Declared-but-*empty* still means the empty relation, so the model finder (which
+   declares every scanned predicate and enumerates the empty extension among the
+   candidates) is unaffected.
+3. Otherwise, if **both operands evaluate to numbers**, arithmetic applies. This is
+   what makes a `Measure` threshold work: `μ` is an uninterpreted function, so a
+   structure may map it to numbers without also axiomatising `≥` over them, and
+   `μ(x, temperament) ≥ μ(y, temperament)` no longer requires the user to spell out
+   an order extension by hand. `bool` is deliberately not a number here — `True ≥
+   False` must not quietly succeed as `1 ≥ 0`.
+
+Anything else remains the empty relation, hence `False`; an absent extension is not
+an error. The asymmetry between (1) and (2) is deliberate rather than an
+inconsistency: a cardinality *is* a number, whereas a measure's values are whatever
+the structure says they are.
 
 Fixed — **variable binders beyond ∀/∃ were walked structurally** by three peripheral
 passes, which recognised only `Quantifier` / `SortedQuantifier` as binders. `Count`,

@@ -37,12 +37,21 @@ from .matrix import (
     TruthMatrix, matrix_value, matrix_is_valid, matrix_is_satisfiable, matrix_entails,
     K3_MATRIX, LP_MATRIX, FDE_MATRIX, MATRICES,
 )
-from .free_logic import FreeModel, free_satisfies, free_holds, NONDENOTING
+from .free_logic import (
+    FreeModel, free_satisfies, free_holds, NONDENOTING,
+    free_find_model, free_countermodel, free_is_valid, free_entails,
+)
 from .dynamic_epistemic import announce, box_announce, diamond_announce
-from .conditional import CounterfactualModel, would, might
-from .nonmonotonic import minimal_models, minimal_entails
+from .conditional import (
+    CounterfactualModel, cf_satisfies, cf_countermodel, cf_valid, would, might,
+)
+from .nonmonotonic import (
+    minimal_models, minimal_entails,
+    circumscription_formula, circumscription_entails_so,
+)
 from .relevant import RelevantModel, rel_satisfies, rel_countermodel, rel_valid
 from .team import team_satisfies, team_models, MAX_TEAM_SEARCH
+from .team_translation import dependence_to_eso
 
 __all__ = [
     "Structure", "term_value", "satisfies", "models",
@@ -67,9 +76,13 @@ __all__ = [
     "matrix_entails", "K3_MATRIX", "LP_MATRIX", "FDE_MATRIX", "MATRICES",
     # Free logic, dynamic epistemic (PAL), counterfactuals, circumscription.
     "FreeModel", "free_satisfies", "free_holds", "NONDENOTING",
+    "free_find_model", "free_countermodel", "free_is_valid", "free_entails",
     "announce", "box_announce", "diamond_announce",
-    "CounterfactualModel", "would", "might",
+    "CounterfactualModel", "cf_satisfies", "cf_countermodel", "cf_valid",
+    "would", "might",
     "minimal_models", "minimal_entails",
+    "circumscription_formula", "circumscription_entails_so",
     "RelevantModel", "rel_satisfies", "rel_countermodel", "rel_valid",
     "team_satisfies", "team_models", "MAX_TEAM_SEARCH",
+    "dependence_to_eso",
 ]

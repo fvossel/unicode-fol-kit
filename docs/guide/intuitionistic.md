@@ -1,22 +1,23 @@
 # Intuitionistic logic
 
-Intuitionistic propositional validity is **decided** by Kripke-model search; the first-order fragment (0.9.0) is a sound, bounded counter-model search over increasing-domain Kripke models. The same (in)validities are confirmed by the **LJ** sequent-calculus checker and by the Gödel–McKinsey–Tarski embedding into S4.
+Intuitionistic propositional validity is **decided**, at every `max_worlds` including the default: a bounded Kripke-model search is tried first as a fast path, and whenever it comes up empty the verdict is handed to Dyckhoff's contraction-free **G4ip** calculus (`int_prove` / `int_decide`, `unicode_fol_kit.atp.lj`) for a definitive answer with no bound to exhaust. The first-order fragment (0.9.0) stays a sound, bounded counter-model search over increasing-domain Kripke models. The same (in)validities are confirmed by the **LJ** sequent-calculus checker and by the Gödel–McKinsey–Tarski embedding into S4.
 
 Intuitionistic logic drops the law of excluded middle and double-negation elimination. Its models are **Kripke models**: a partial order of *worlds* (stages of knowledge) with a monotone forcing relation (once an atom is forced at a world it stays forced at every later world). The connectives `→` and `¬` quantify over future worlds, which is exactly what makes `P ∨ ¬P` and `¬¬P → P` fail.
 
-The toolkit gives you three independent, cross-checking views of the same logic:
+The toolkit gives you four independent, cross-checking views of the same logic:
 
 | View | Function(s) | Module |
 | --- | --- | --- |
 | Kripke-model search (decides propositional; bounded FO) | `int_valid`, `int_countermodel`, `IntKripkeModel` | `unicode_fol_kit.semantics.intuitionistic` |
+| G4ip proof search — terminating decision procedure (propositional) | `int_prove`, `int_decide` | `unicode_fol_kit.atp.lj` |
 | LJ sequent-calculus proof checker | `check_lj_proof`, `verify_lj_proof` | `unicode_fol_kit.atp.lj` |
 | Gödel–McKinsey–Tarski embedding into S4 | `gmt_translate` | `unicode_fol_kit.hol` |
 
-All three are exercised below against the same battery of formulas.
+All four are exercised below against the same battery of formulas.
 
 ## Propositional validity and counter-models
 
-`int_valid(formula)` returns a bool; `int_countermodel(formula)` returns either `None` (when the formula is valid) or a pair `(model, world)` — an `IntKripkeModel` and the index of a world that fails to force the formula. For a propositional formula the search is a genuine **decision procedure**: intuitionistic propositional logic has the finite-model property, so the search over Kripke models up to `max_worlds` worlds (default 3) is exhaustive, and `None` proves validity.
+`int_valid(formula)` returns a bool; `int_countermodel(formula)` returns either `None` (when the formula is valid) or a pair `(model, world)` — an `IntKripkeModel` and the index of a world that fails to force the formula. For a propositional formula `int_valid` is a genuine **decision procedure**, full stop, regardless of `max_worlds`: the bounded Kripke search is tried first as a fast path (a countermodel it finds is a real witness, so a quick `False` short-circuits), but propositional IPL's finite-model-property bound *grows with the formula* — `(p→q)∨(q→r)∨(r→p)` needs 4 worlds, more than the `max_worlds=3` default — so "no countermodel within the bound" is not by itself proof of validity. When the bounded search comes up empty, `int_valid` hands the formula to `int_prove` (G4ip, no bound to exhaust) for the definitive verdict. Net effect: both `True` and `False` are exact for propositional input, at every `max_worlds`.
 
 ```python
 from unicode_fol_kit import MSFLParser, int_valid, int_countermodel, IntKripkeModel
@@ -88,39 +89,85 @@ This is also a fast sanity check on `int_valid`: any formula for which `int_vali
 
 ### Exploring the role of `max_worlds`: when is a refutation possible?
 
-The number of worlds a refutation needs is informative. A **single** world behaves
-classically (the future is empty), so every counter-model must grow past it. LEM, DNE and
-Peirce fall in **two** worlds, while Dummett's `(P → Q) ∨ (Q → P)` and the failing De
-Morgan need a genuine **fork** of three — hence the default `max_worlds=3`:
+The number of worlds a refutation needs is informative — but since `int_valid`'s
+propositional verdict is now backstopped by G4ip (see above), probing it means calling
+`int_countermodel` directly rather than `int_valid`: `int_countermodel(φ, max_worlds=n)`
+answers "is there a countermodel with **at most** `n` worlds?", independently of whether
+G4ip could find a larger one. A **single** world behaves classically (the future is
+empty), so every counter-model must grow past it. LEM, DNE and Peirce fall in **two**
+worlds, while Dummett's `(P → Q) ∨ (Q → P)` and the failing De Morgan need a genuine
+**fork** of three — hence the default `max_worlds=3`:
 
 ```python
-int_valid(p("P ∨ ¬P"), max_worlds=1)            # → True   one world is classical
-int_valid(p("P ∨ ¬P"), max_worlds=2)            # → False  two-world chain refutes it
+int_countermodel(p("P ∨ ¬P"), max_worlds=1) is None            # → True   one world is classical
+int_countermodel(p("P ∨ ¬P"), max_worlds=2) is None            # → False  two-world chain refutes it
 
-int_valid(p("(P → Q) ∨ (Q → P)"), max_worlds=2) # → True   no 2-world counter-model
-int_valid(p("(P → Q) ∨ (Q → P)"), max_worlds=3) # → False  a 3-world fork refutes it
+int_countermodel(p("(P → Q) ∨ (Q → P)"), max_worlds=2) is None # → True   no 2-world counter-model
+int_countermodel(p("(P → Q) ∨ (Q → P)"), max_worlds=3) is None # → False  a 3-world fork refutes it
 ```
 
-This parameter lets you probe *exactly* what frame shapes a refutation needs. Formulas that
-become invalid at `max_worlds=2` but pass every 1-world model require a **chain**; formulas
-that survive `max_worlds=2` and only fall at `max_worlds=3` require **branching**.
+This parameter lets you probe *exactly* what frame shapes a refutation needs. Formulas
+whose countermodel appears at `max_worlds=2` but not at `max_worlds=1` require a
+**chain**; formulas that need `max_worlds=3` require **branching**.
 
 ```python
 # Need exactly a 2-world chain (classical in one world, refuted in two)
-int_valid(p("¬¬P → P"), max_worlds=1)           # → True
-int_valid(p("¬¬P → P"), max_worlds=2)           # → False  needs growth beyond the root
-int_valid(p("((P → Q) → P) → P"), max_worlds=1) # → True   Peirce survives one world
-int_valid(p("((P → Q) → P) → P"), max_worlds=2) # → False  refuted by a 2-world chain
+int_countermodel(p("¬¬P → P"), max_worlds=1) is None            # → True
+int_countermodel(p("¬¬P → P"), max_worlds=2) is None            # → False  needs growth beyond the root
+int_countermodel(p("((P → Q) → P) → P"), max_worlds=1) is None  # → True   Peirce survives one world
+int_countermodel(p("((P → Q) → P) → P"), max_worlds=2) is None  # → False  refuted by a 2-world chain
 
 # Need a 3-world fork (a chain is not enough)
-int_valid(p("¬(P ∧ Q) → (¬P ∨ ¬Q)"), max_worlds=2) # → True   no chain counter-model
-int_valid(p("¬(P ∧ Q) → (¬P ∨ ¬Q)"), max_worlds=3) # → False  a fork separates ¬P from ¬Q
+int_countermodel(p("¬(P ∧ Q) → (¬P ∨ ¬Q)"), max_worlds=2) is None  # → True   no chain counter-model
+int_countermodel(p("¬(P ∧ Q) → (¬P ∨ ¬Q)"), max_worlds=3) is None  # → False  a fork separates ¬P from ¬Q
 ```
 
 Because intuitionistic propositional logic has the finite-model property, *every*
-non-theorem eventually falls for a large enough `max_worlds`; raising the bound never turns
-a `False` back into `True`. Lowering it below what a refutation needs is the only thing that
-yields a (spurious) `True` for a propositional non-theorem.
+non-theorem eventually has a countermodel at a large enough `max_worlds`; raising the
+bound never turns a found countermodel back into `None`. But — unlike before G4ip
+existed — lowering `max_worlds` below what a refutation needs no longer produces a
+spurious `True` from `int_valid` itself: it only means `int_countermodel` cannot
+*exhibit* the countermodel within the bound, while `int_valid` still answers correctly
+by falling through to G4ip.
+
+```python
+# int_valid's own verdict no longer depends on max_worlds for propositional input:
+int_valid(p("¬¬P → P"), max_worlds=1)   # → False  (G4ip backstops the too-small bound)
+int_valid(p("¬¬P → P"), max_worlds=3)   # → False  (same answer, larger bound)
+```
+
+### The G4ip decision procedure directly: `int_prove` / `int_decide`
+
+`int_prove(premises, conclusion)` decides `premises ⊢ conclusion` in propositional
+intuitionistic logic via Dyckhoff's **G4ip**: a contraction-free reformulation of LJ
+whose rules strictly shrink the sequent, so backward proof search always terminates —
+a genuine decision procedure, not a bounded search. `int_decide(formula)` is the
+`int_prove([], formula)` special case. Both cover `∧` `∨` `→` `↔` `⊕` `¬` and atoms
+(`↔` expands to two implications, `⊕` to `(A∨B)∧¬(A∧B)` — exactly the clauses
+`IntKripkeModel.forces` uses, so `int_prove` decides exactly what `int_valid` checks):
+
+```python
+from unicode_fol_kit import int_prove, int_decide
+
+int_decide(p("P → P"))                              # → True
+int_decide(p("P ∨ ¬P"))                              # → False   excluded middle, again
+int_prove([p("A"), p("A → B")], p("B"))              # → True    modus ponens
+int_prove([p("A")], p("B"))                          # → False   A alone does not give B
+```
+
+This is exactly the engine `int_valid` now falls back on for its definitive
+propositional verdict — the formula that motivated it needs 4 worlds to refute, past
+the `max_worlds=3` default, but G4ip decides it directly with no bound at all:
+
+```python
+tricky = p("(P → Q) ∨ (Q → R) ∨ (R → P)")
+int_decide(tricky)              # → False   (a genuine G4ip refutation, not a guess)
+int_valid(tricky)               # → False   (int_valid delegates here and agrees)
+```
+
+Quantified input is out of scope here — `int_prove` raises `NotImplementedError`
+pointing at the bounded first-order Kripke search (`int_valid` / `int_countermodel`)
+or the propositional GMT/S4 route below.
 
 ### Unpacking a counter-model: why a formula fails
 

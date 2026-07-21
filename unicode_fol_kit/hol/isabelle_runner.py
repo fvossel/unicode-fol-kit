@@ -83,6 +83,7 @@ __all__ = [
     "ModalVerdict", "FolVerdict",
     "find_isabelle", "isabelle_available",
     "check_theory", "isabelle_decide_modal", "isabelle_decide_fol",
+    "isabelle_decide_relevant",
     "DEFAULT_METHODS",
 ]
 
@@ -544,6 +545,7 @@ def isabelle_decide_modal(
     frame: str = "K",
     mode: str = "constant",
     temporal_closure: bool = True,
+    systems: Optional[dict] = None,
     methods: Sequence[str] = DEFAULT_METHODS,
     refute: bool = True,
     card: str = "1-4",
@@ -569,6 +571,10 @@ def isabelle_decide_modal(
         frame: alethic frame system (K/T/S4/S5/KD/KD45) — fixes the axioms on ``r``.
         mode: object-quantifier domain regime (constant/possibilist/varying/…).
         temporal_closure: constrain the temporal relation to refl+trans (henceforth).
+        systems: optional per-family frame systems for the agent-indexed relations
+            (``{"epistemic": "S5", "doxastic": "KD45", "assertive"/"bouletic": …}``),
+            passed through to the emitter — so e.g. factivity ``K_a P → P`` is
+            provable under ``{"epistemic": "T"}``.
         methods: proof methods tried, in order, as a ``by (… | …)`` battery.
         refute: also run nitpick to certify INVALID when the proof battery fails.
         card: nitpick cardinality range for the world type ``i`` (e.g. ``"1-4"``).
@@ -591,14 +597,14 @@ def isabelle_decide_modal(
             "to the install directory, or put `isabelle` on PATH.")
 
     axiom_ids = modal_axiom_names(formula, mode=mode, frame=frame,
-                                  temporal_closure=temporal_closure)
+                                  temporal_closure=temporal_closure, systems=systems)
 
     # --- step 1: prove ---------------------------------------------------- #
     tok = "G" + uuid.uuid4().hex[:8]
     prove_proof = _battery_proof(axiom_ids, methods)
     prove_thy = isabelle_modal_theory(
         formula, mode=mode, frame=frame, tactic="oops", theory_name=tok,
-        temporal_closure=temporal_closure, proof=prove_proof)
+        temporal_closure=temporal_closure, proof=prove_proof, systems=systems)
     r1 = check_theory(prove_thy, tok, install=install,
                       session_timeout=prove_timeout)
     if r1.ok:
@@ -619,7 +625,8 @@ def isabelle_decide_modal(
         # axiom form, which the battery needs — both encode t = n**).
         nit_thy = isabelle_modal_theory(
             formula, mode=mode, frame=frame, tactic="oops", theory_name=tok2,
-            temporal_closure=temporal_closure, proof=nit_proof, temporal_def=True)
+            temporal_closure=temporal_closure, proof=nit_proof, temporal_def=True,
+            systems=systems)
         # nitpick can use most of the session budget; give the wall clock headroom.
         r2 = check_theory(nit_thy, tok2, install=install,
                           session_timeout=refute_timeout + 30,
@@ -749,6 +756,187 @@ def isabelle_decide_fol(
         nit_proof = (f"nitpick[card i = {card}, timeout = {int(refute_timeout)}, "
                      f"expect = genuine]\n  oops")
         nit_thy = emit(formula, theory_name=tok2, proof=nit_proof)
+        r2 = check_theory(nit_thy, tok2, install=install,
+                          session_timeout=refute_timeout + 30,
+                          wall_timeout=float(refute_timeout) + 240.0)
+        refute_output = r2.output
+        refute_elapsed = r2.elapsed
+        if r2.ok:
+            m = _NITPICK_CTEX_RE.search(r2.output)
+            return FolVerdict(status=INVALID,
+                              countermodel=(m.group(0).strip() if m else None),
+                              prove_output=r1.output, refute_output=refute_output,
+                              prove_elapsed=r1.elapsed, refute_elapsed=refute_elapsed)
+
+    return FolVerdict(status=UNKNOWN, prove_output=r1.output,
+                      refute_output=refute_output, prove_elapsed=r1.elapsed,
+                      refute_elapsed=refute_elapsed,
+                      infra_error=_infra_error(r1.output, refute_output))
+
+
+# --------------------------------------------------------------------------- #
+# Deciding counterfactual (Lewis sphere) validity through Isabelle.
+# --------------------------------------------------------------------------- #
+
+def isabelle_decide_counterfactual(
+    formula: Node, *,
+    methods: Optional[Sequence[str]] = None,
+    refute: bool = True,
+    card: str = "1-3",
+    prove_timeout: int = 60,
+    refute_timeout: int = 60,
+    install: Optional[IsabelleInstall] = None,
+) -> FolVerdict:
+    """Decide a counterfactual formula's validity by running a local Isabelle.
+
+    Emits the Lewis sphere embedding
+    (:func:`~unicode_fol_kit.hol.isabelle_conditional.isabelle_conditional_theory`,
+    the same truth condition
+    :func:`~unicode_fol_kit.semantics.conditional.cf_satisfies` evaluates) and,
+    exactly like :func:`isabelle_decide_fol`:
+
+    1. tries a proof battery — exit 0 ⇒ :data:`VALID` over every **nested** sphere
+       system;
+    2. otherwise (``refute``) runs ``nitpick[expect = genuine]`` over the world
+       type ``w`` — exit 0 ⇒ :data:`INVALID` (nesting is a *premise* of the goal,
+       so nitpick constructs the sphere system itself and certifies the model as
+       genuine);
+    3. otherwise :data:`UNKNOWN`.
+
+    Args:
+        formula: the AST node — the propositional connectives plus ``□→`` / ``◇→``
+            (``Would`` / ``Might``).
+        methods: proof battery; defaults to the embedding's own
+            :data:`~unicode_fol_kit.hol.isabelle_conditional.DEFAULT_METHODS`
+            (verit-first — see there for why the order matters).
+        refute / card / prove_timeout / refute_timeout / install: as for
+            :func:`isabelle_decide_fol` (``card`` bounds the world type ``w``).
+
+    Raises:
+        IsabelleNotAvailable: if no Isabelle installation can be located.
+        NotImplementedError: propagated from the emitter on a quantifier or a
+            modal operator (□/◇ range over an accessibility relation, not a
+            similarity ordering).
+    """
+    install = install or find_isabelle()
+    if install is None:
+        raise IsabelleNotAvailable(
+            "No Isabelle installation found. Set UFK_ISABELLE_HOME (or ISABELLE_HOME) "
+            "to the install directory, or put `isabelle` on PATH.")
+    from unicode_fol_kit.hol.isabelle_conditional import (
+        isabelle_conditional_theory, battery_proof, nitpick_proof,
+        DEFAULT_METHODS as _CF_METHODS)
+
+    # --- step 1: prove ---------------------------------------------------- #
+    tok = "G" + uuid.uuid4().hex[:8]
+    prove_thy = isabelle_conditional_theory(
+        formula, theory_name=tok,
+        proof=battery_proof(methods if methods is not None else _CF_METHODS))
+    r1 = check_theory(prove_thy, tok, install=install, session_timeout=prove_timeout)
+    if r1.ok:
+        return FolVerdict(status=VALID, method="prove-battery",
+                          prove_output=r1.output, prove_elapsed=r1.elapsed)
+
+    # --- step 2: refute (nitpick) ----------------------------------------- #
+    refute_output = ""
+    refute_elapsed = 0.0
+    if refute:
+        tok2 = "G" + uuid.uuid4().hex[:8]
+        nit_thy = isabelle_conditional_theory(
+            formula, theory_name=tok2,
+            proof=nitpick_proof(card=card, timeout=refute_timeout))
+        r2 = check_theory(nit_thy, tok2, install=install,
+                          session_timeout=refute_timeout + 30,
+                          wall_timeout=float(refute_timeout) + 240.0)
+        refute_output = r2.output
+        refute_elapsed = r2.elapsed
+        if r2.ok:
+            m = _NITPICK_CTEX_RE.search(r2.output)
+            return FolVerdict(status=INVALID,
+                              countermodel=(m.group(0).strip() if m else None),
+                              prove_output=r1.output, refute_output=refute_output,
+                              prove_elapsed=r1.elapsed, refute_elapsed=refute_elapsed)
+
+    return FolVerdict(status=UNKNOWN, prove_output=r1.output,
+                      refute_output=refute_output, prove_elapsed=r1.elapsed,
+                      refute_elapsed=refute_elapsed,
+                      infra_error=_infra_error(r1.output, refute_output))
+
+
+# --------------------------------------------------------------------------- #
+# Deciding relevant logic B (simplified Routley-Meyer) validity through Isabelle.
+# --------------------------------------------------------------------------- #
+
+def isabelle_decide_relevant(
+    formula: Node, *,
+    methods: Optional[Sequence[str]] = None,
+    refute: bool = True,
+    card: str = "1-3",
+    prove_timeout: int = 60,
+    refute_timeout: int = 60,
+    install: Optional[IsabelleInstall] = None,
+) -> FolVerdict:
+    """Decide a relevant-logic-B formula's validity by running a local Isabelle.
+
+    Emits the simplified Routley-Meyer shallow embedding
+    (:func:`~unicode_fol_kit.hol.isabelle_relevant.to_isabelle_relevant`, the same
+    truth conditions
+    :func:`~unicode_fol_kit.semantics.relevant.rel_satisfies` evaluates) and,
+    exactly like :func:`isabelle_decide_counterfactual`:
+
+    1. tries a proof battery -- exit 0 => :data:`VALID` over every interpretation
+       satisfying the ``wellformed`` frame conditions (N nonempty, ``star`` a
+       total involution, ``R`` sourced only at non-normal worlds);
+    2. otherwise (``refute``) runs ``nitpick[expect = genuine]`` over the world
+       type ``w`` -- exit 0 => :data:`INVALID` (``wellformed`` is a *premise* of
+       the goal, so nitpick constructs ``N``/``star``/``R`` itself and certifies
+       the model as genuine);
+    3. otherwise :data:`UNKNOWN`.
+
+    Args:
+        formula: the AST node -- the propositional connectives
+            not/and/or/implies/iff over nullary atoms (no quantifiers,
+            modalities, lambda terms, or ``Xor`` -- there is no B reading for
+            them, matching
+            :func:`unicode_fol_kit.semantics.relevant._reject_non_propositional`).
+        methods: proof battery; defaults to the embedding's own
+            :data:`~unicode_fol_kit.hol.isabelle_relevant.DEFAULT_METHODS`.
+        refute / card / prove_timeout / refute_timeout / install: as for
+            :func:`isabelle_decide_counterfactual` (``card`` bounds the world
+            type ``w``).
+
+    Raises:
+        IsabelleNotAvailable: if no Isabelle installation can be located.
+        TypeError: propagated from the emitter on a quantifier, modality, lambda
+            term, ``Xor``, or non-nullary atom.
+    """
+    install = install or find_isabelle()
+    if install is None:
+        raise IsabelleNotAvailable(
+            "No Isabelle installation found. Set UFK_ISABELLE_HOME (or ISABELLE_HOME) "
+            "to the install directory, or put `isabelle` on PATH.")
+    from unicode_fol_kit.hol.isabelle_relevant import (
+        to_isabelle_relevant, battery_proof, nitpick_proof,
+        DEFAULT_METHODS as _REL_METHODS)
+
+    # --- step 1: prove ---------------------------------------------------- #
+    tok = "G" + uuid.uuid4().hex[:8]
+    prove_thy = to_isabelle_relevant(
+        formula, theory_name=tok,
+        proof=battery_proof(methods if methods is not None else _REL_METHODS))
+    r1 = check_theory(prove_thy, tok, install=install, session_timeout=prove_timeout)
+    if r1.ok:
+        return FolVerdict(status=VALID, method="prove-battery",
+                          prove_output=r1.output, prove_elapsed=r1.elapsed)
+
+    # --- step 2: refute (nitpick) ----------------------------------------- #
+    refute_output = ""
+    refute_elapsed = 0.0
+    if refute:
+        tok2 = "G" + uuid.uuid4().hex[:8]
+        nit_thy = to_isabelle_relevant(
+            formula, theory_name=tok2,
+            proof=nitpick_proof(card=card, timeout=refute_timeout))
         r2 = check_theory(nit_thy, tok2, install=install,
                           session_timeout=refute_timeout + 30,
                           wall_timeout=float(refute_timeout) + 240.0)

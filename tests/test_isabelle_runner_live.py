@@ -31,9 +31,12 @@ from unicode_fol_kit.hol.isabelle_runner import (
     isabelle_available, isabelle_decide_modal, VALID, INVALID,
 )
 
-pytestmark = pytest.mark.skipif(
-    not isabelle_available(),
-    reason="no Isabelle installation found (set UFK_ISABELLE_HOME / ISABELLE_HOME)")
+pytestmark = [
+    pytest.mark.isabelle_live,
+    pytest.mark.skipif(
+        not isabelle_available(),
+        reason="no Isabelle installation found (set UFK_ISABELLE_HOME / ISABELLE_HOME)"),
+]
 
 
 # --------------------------------------------------------------------------- #

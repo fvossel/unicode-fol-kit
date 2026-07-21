@@ -44,8 +44,7 @@ _MEASURE_FUNC = ("measure", 2)
 # extensions live in Structure.predicates like any ordinary relation.
 _ORDER_COMPARISONS = frozenset({"<", ">", "≤", "≥"})
 
-#: Numeric readings of the order comparisons, used ONLY when an operand is a
-#: cardinality term (see :func:`_atom_value`).
+#: Numeric readings of the order comparisons (see :func:`_order_value`).
 _ORDER_OPS = {
     "<": operator.lt, ">": operator.gt, "≤": operator.le, "≥": operator.ge,
 }
@@ -78,7 +77,9 @@ class Structure:
         predicates: maps ``(name, arity)`` to the relation's extension — a set
             (or any container) of argument tuples of individuals. A nullary
             predicate maps ``(name, 0)`` to a bool. A missing predicate denotes
-            the empty relation (always false).
+            the empty relation (always false), except for the order comparisons
+            ``< > ≤ ≥``, which fall back to arithmetic when both operands
+            evaluate to numbers — see :func:`_order_value`.
         sorts: maps a sort name (str) to its universe — a subset of the domain.
             Used by :class:`SortedQuantifier` to restrict the quantifier range.
 
@@ -244,14 +245,71 @@ def _witnesses(
             yield d
 
 
+def _is_number(value: Any) -> bool:
+    """Whether a term value counts as a number for an order comparison.
+
+    ``bool`` is excluded even though Python makes it an ``int`` subclass: a truth
+    value is not a position on a scale, and letting ``True ≥ False`` quietly
+    succeed would hide a modelling error rather than surface it.
+    """
+    return not isinstance(value, bool) and isinstance(value, (int, float))
+
+
+def _order_value(atom: Atom, structure: Structure, assignment: Mapping[str, Any]) -> bool:
+    """Truth value of a binary order comparison ``< > ≤ ≥``.
+
+    Three readings apply, in this order of precedence:
+
+    1. A :class:`Cardinality` operand forces the **numeric** reading. A cardinality
+       is a natural number this evaluator computes itself, so there is no freedom
+       left to a structure; routing it through a relation extension would be a
+       category error. A cardinality compared against a non-number raises.
+    2. Otherwise a **declared** extension wins. The order symbols are ordinary
+       relation symbols of the language, and a structure may interpret ``<`` over
+       its domain however it likes — that is also the reading ``to_z3`` /
+       ``to_prover9`` export, where the comparison is an uninterpreted relation.
+    3. Otherwise, if both operands evaluate to numbers, the **numeric** reading
+       applies. This is what makes an undeclared order over :class:`Measure` values
+       behave: ``μ`` is an uninterpreted function, so a structure that maps it to
+       numbers without also declaring ``≥`` would otherwise fall through to the
+       empty relation and be silently false — the same failure mode (1) exists to
+       prevent for cardinalities.
+
+    Anything else is the empty relation, hence false, like any uninterpreted
+    predicate. Note the asymmetry between (1) and (2) is deliberate and not an
+    inconsistency: a cardinality *is* a number, whereas a measure's values are
+    whatever the structure says they are.
+    """
+    left, right = (term_value(a, structure, assignment) for a in atom.args)
+
+    if any(isinstance(a, (Cardinality, SortedCardinality)) for a in atom.args):
+        for value in (left, right):
+            if not _is_number(value):
+                raise ValueError(
+                    f"Cannot compare a cardinality with {value!r}: an order "
+                    f"comparison involving |{{v : φ}}| is numeric, so both operands "
+                    f"must evaluate to numbers."
+                )
+        return _ORDER_OPS[atom.predicate](left, right)
+
+    key = (atom.predicate, 2)
+    if key in structure.predicates:
+        return (left, right) in structure.predicates[key]
+
+    if _is_number(left) and _is_number(right):
+        return _ORDER_OPS[atom.predicate](left, right)
+
+    return False
+
+
 def _atom_value(atom: Atom, structure: Structure, assignment: Mapping[str, Any]) -> bool:
     """Compute the truth value of an atomic formula.
 
     Equality ``=`` is identity of the two term values; ``≠`` is non-identity.
-    A nullary predicate reads its bool from ``predicates[(name, 0)]``. Every
-    other predicate (including the order comparisons ``< > ≤ ≥``) is true iff
-    the tuple of argument values lies in its extension; a missing extension is
-    the empty relation, hence false.
+    A nullary predicate reads its bool from ``predicates[(name, 0)]``. A binary
+    order comparison ``< > ≤ ≥`` is delegated to :func:`_order_value`. Every other
+    predicate is true iff the tuple of argument values lies in its extension; a
+    missing extension is the empty relation, hence false.
     """
     if atom.predicate == "=" and len(atom.args) == 2:
         return term_value(atom.args[0], structure, assignment) == \
@@ -263,23 +321,8 @@ def _atom_value(atom: Atom, structure: Structure, assignment: Mapping[str, Any])
     if not atom.args:
         return bool(structure.predicates.get((atom.predicate, 0), False))
 
-    if (atom.predicate in _ORDER_COMPARISONS and len(atom.args) == 2
-            and any(isinstance(a, (Cardinality, SortedCardinality))
-                    for a in atom.args)):
-        # A cardinality is a NATURAL NUMBER, not a domain individual, so an order
-        # comparison involving one is arithmetic — |{v : φ}| > |{v : ψ}| must compare
-        # the counts. Ordinary terms keep the extension-based reading above them
-        # (a structure may interpret < over its domain however it likes); only the
-        # presence of a cardinality operand switches to the numeric reading.
-        left, right = (term_value(a, structure, assignment) for a in atom.args)
-        for value in (left, right):
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
-                raise ValueError(
-                    f"Cannot compare a cardinality with {value!r}: an order "
-                    f"comparison involving |{{v : φ}}| is numeric, so both operands "
-                    f"must evaluate to numbers."
-                )
-        return _ORDER_OPS[atom.predicate](left, right)
+    if atom.predicate in _ORDER_COMPARISONS and len(atom.args) == 2:
+        return _order_value(atom, structure, assignment)
 
     values = tuple(term_value(a, structure, assignment) for a in atom.args)
     extension = structure.predicates.get((atom.predicate, len(atom.args)), ())

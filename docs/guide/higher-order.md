@@ -26,11 +26,11 @@ thf = to_thf_modal_full(f, frame="S5")
 print("thf(" in thf, "mvalid" in thf, "mknows" in thf)   # → True True True
 ```
 
-The **runner** entry points (`find_isabelle`, `isabelle_available`, `isabelle_decide_modal`, `isabelle_decide_fol`, `check_theory`, and the verdict dataclasses) *are* exposed both top-level and under `unicode_fol_kit.hol`. The pure exporters above are `unicode_fol_kit.hol`-only.
+The **runner** entry points (`find_isabelle`, `isabelle_available`, `isabelle_decide_modal`, `isabelle_decide_fol`, `isabelle_decide_counterfactual`, `check_theory`, and the verdict dataclasses) *are* exposed both top-level and under `unicode_fol_kit.hol`. The pure exporters above are `unicode_fol_kit.hol`-only.
 
-- **Full modal family.** `to_isabelle_modal(φ, mode="constant", frame="K", …)` emits a real, loadable Isabelle theory (`theory … imports Main begin … end`, every lifted operator as an abbreviation, frame + domain axioms, the formula lifted into the embedding, and a genuine `lemma`). `to_thf_modal_full(φ, mode, frame, systems=…)` is the THF counterpart. Both cover alethic □/◇, **epistemic** `K_a` / **doxastic** `B_a`, **deontic** `Ⓞ`/`Ⓟ`, and **temporal** `Ⓖ`/`Ⓕ`/`Ⓝ`. Epistemic/doxastic accessibility is **agent-indexed**: the agent of `Knows` / `Believes` is a first-class *term*, so a bound `K_x` (as in the example) genuinely quantifies over agents, exactly as the per-agent Kripke relations do. The Isabelle emitter additionally covers the **binary interval operators** `Until` (Ⓤ) and `Since` (Ⓢ): these are emitted as **inductive least-fixpoint predicates** `muntil` / `msince` over the one-step relation `n`, matching `satisfies_modal`'s finite forward / backward path search faithfully on every frame (temporal `Ⓖ`/`Ⓕ`/`Ⓝ` over the henceforth `t` remain the reflexive-transitive-closure reading, linked to `n` by an inclusion axiom — see the `isabelle_modal` module docstring). `Until` / `Since` are **not** first-order definable, so `qml_translate` still rejects them.
+- **Full modal family.** `to_isabelle_modal(φ, mode="constant", frame="K", …)` emits a real, loadable Isabelle theory (`theory … imports Main begin … end`, every lifted operator as an abbreviation, frame + domain axioms, the formula lifted into the embedding, and a genuine `lemma`). `to_thf_modal_full(φ, mode, frame, systems=…)` is the THF counterpart. Both cover **the whole modal family the AST expresses**: alethic □/◇, **epistemic** `K_a` / **doxastic** `B_a` / **assertive** `Say_a` / **bouletic** `Want_a` (all agent-indexed — the agent is a first-class *term*, so a bound `K_x` genuinely quantifies over agents; `Say`/`Want` are plain K-boxes over their own relations, with no frame axioms), **deontic** `Ⓞ`/`Ⓟ`, **temporal** `Ⓖ`/`Ⓕ`/`Ⓝ` and the **past-tense** `⒣`/`⒫`/`⒴` (box/diamond over the *converse* of the henceforth `t`, resp. the converse of the one-step `n` — the converse of a refl+trans relation is refl+trans, so the same axioms constrain both directions), and the **hybrid** `Nominal`/`@` (world constants `nom_<name>`). The entity type is the **monomorphic** `typedecl e` — a polymorphic `'a` would give every agent-constant occurrence its own type instance and falsify the agent-K axiom (a false INVALID nitpick would "certify"). Both emitters also cover the **binary interval operators** `Until` (Ⓤ) and `Since` (⒮): Isabelle as **inductive least-fixpoint predicates** `muntil` / `msince` over the one-step relation `n`, THF as the equivalent **impredicative Knaster–Tarski fixpoints** (TH0 quantifies over predicates), both matching `satisfies_modal`'s finite forward / backward path search faithfully on every frame. `Until` / `Since` are **not** first-order definable, so `qml_translate` still rejects them with a pointer here.
 - **Classical FOL / MSFOL.** `to_thf_fol` / `to_isabelle_fol` (and the `to_thf_msfol` / `to_isabelle_msfol` variants, which relativise each sort to a guard predicate) emit the formula as a HOL conjecture / lemma.
-- **Three-valued K3 / LP.** `to_thf_k3lp(φ, system="K3")` / `to_isabelle_k3lp` (also the `…_entailment` variants) encode the truth-value type, the strong-Kleene connective functions, and the designated set (`{1}` for K3, `{½, 1}` for LP), so emitted theorem-hood matches K3 / LP validity. The Isabelle lemma carries a real proof that discharges — case-exhaustion over the three truth values for a valid formula, an `exI` witness for a refutation. Cross-checked against `kleene_value`.
+- **Three-valued K3 / LP, and any finite matrix.** `to_thf_k3lp(φ, system="K3")` / `to_isabelle_k3lp` (also the `…_entailment` variants) encode the truth-value type, the strong-Kleene connective functions, and the designated set (`{1}` for K3, `{½, 1}` for LP), so emitted theorem-hood matches K3 / LP validity. The Isabelle lemma carries a real proof that discharges — case-exhaustion over the three truth values for a valid formula, an `exI` witness for a refutation. Cross-checked against `kleene_value`. `to_thf_matrix` / `to_isabelle_matrix` (+ `…_entailment` variants) generalise this to **any** `semantics.matrix.TruthMatrix` — the K3/LP exporters above are now the specialisation of this data-driven encoding to those two matrices, so any custom matrix, or the shipped four-valued Belnap–Dunn **FDE**, gets the same export for free.
 - **Second-order.** `to_thf_so` / `to_isabelle_so` map `∀P` / `∃P` to native higher-order predicate quantifiers (standard semantics). Cross-checked against `satisfies_so` on finite structures.
 - **Intuitionistic.** `to_thf_intuitionistic` / `to_isabelle_intuitionistic` apply the **Gödel–McKinsey–Tarski** box-translation into S4 then the alethic SSE, so emitted theorem-hood matches intuitionistic validity — `p ∨ ¬p`, `¬¬p → p`, and Peirce's law come out as **non-theorems**. For a valid formula the Isabelle theory carries a real, Isabelle-checked proof (gated on the decidable `gmt_is_s4_valid` oracle); a non-theorem is left `oops`. Cross-checked against `int_valid`.
 
@@ -336,6 +336,16 @@ thf_next = to_thf_modal_full(nxt, frame="K")
 print("tnext" in thf_next)          # → True
 ```
 
+`to_thf_modal_full` also takes `temporal_closure=` (default `True`) for parity with the Isabelle emitter's own temporal treatment: opt out with `temporal_closure=False` to drop the `t_refl` / `t_trans` closure axioms while keeping the `tnext ⊆ t` link between the one-step and henceforth relations:
+
+```python
+default_closure = to_thf_modal_full(temporal, frame="K")
+no_closure = to_thf_modal_full(temporal, frame="K", temporal_closure=False)
+print("t_refl" in default_closure, "t_trans" in default_closure)   # → True True
+print("t_refl" in no_closure, "t_trans" in no_closure)              # → False False
+print("tnext" in no_closure)                                        # → True   (the inclusion axiom stays)
+```
+
 ### Per-family system selection with `systems=`
 
 `to_thf_modal_full(φ, systems={...})` lets you give the **epistemic / doxastic** families their own modal strength independently of the alethic `frame`. Mapping `epistemic → "S5"` emits reflexivity, transitivity and symmetry axioms for `rk`:
@@ -346,6 +356,22 @@ thf_s5 = to_thf_modal_full(introspective, frame="K", systems={"epistemic": "S5"}
 print("rk_refl" in thf_s5)     # → True
 print("rk_trans" in thf_s5)    # → True
 print("rk_sym" in thf_s5)      # → True   (S5 ⇒ symmetric accessibility)
+```
+
+`isabelle_modal_theory` / `to_isabelle_modal` / `isabelle_decide_modal` accept the same `systems=` parameter — per-agent frame axioms for `rk`/`rb`/`rs`/`rw`, the agent schematic quantified over just like the accessibility relation itself:
+
+```python
+isa_s5 = to_isabelle_modal(introspective, frame="K", systems={"epistemic": "S5"})
+print("rk_refl" in isa_s5, "rk_trans" in isa_s5, "rk_sym" in isa_s5)   # → True True True
+```
+
+A system whose frame condition has **no per-agent schema** — GL's Löb axiom, or the S4.2/S4.3 directedness conditions — cannot be expressed agent-indexed, and both exporters reject it loudly (pointing at `frame=` on the alethic relation instead) rather than silently weakening it to something that agent-indexes but does not actually mean GL:
+
+```python
+to_isabelle_modal(pm("K_alice P"), systems={"epistemic": "GL"})
+# raises ValueError: to_isabelle_modal: system 'GL' for epistemic needs the frame
+# condition(s) ['loeb'], which have no per-agent axiom schema here; use frame= on
+# the alethic relation for those systems.
 ```
 
 ## A sample emitted Isabelle theory
@@ -429,6 +455,26 @@ print("kor" in thf_k3)               # → True   (the strong-Kleene disjunction
 print("des" in thf_k3)               # → True   (the designated-set predicate)
 print(thf_k3 != thf_lp)              # → True   (different designated sets)
 ```
+
+### Any finite matrix: `to_thf_matrix` / `to_isabelle_matrix`
+
+`to_thf_k3lp` / `to_isabelle_k3lp` are the K3/LP specialisation of a data-driven encoding that works for **any** `TruthMatrix` — `to_thf_matrix(φ, matrix)` / `to_isabelle_matrix(φ, matrix)` (plus `to_thf_matrix_entailment` / `to_isabelle_matrix_entailment` for a premises-conclusion goal) read the value set, the per-connective tables, and the designated subset straight off the matrix object, so the four-valued Belnap–Dunn **FDE** — or any matrix you build yourself with `TruthMatrix.from_functions` — exports exactly like K3/LP do:
+
+```python
+from unicode_fol_kit.semantics.matrix import FDE_MATRIX
+from unicode_fol_kit.hol import to_thf_matrix, to_isabelle_matrix
+
+lem = p("P ∨ ¬P")
+thf_fde = to_thf_matrix(lem, FDE_MATRIX)
+print("tv_type" in thf_fde)          # → True   (the value type, named from matrix.values)
+print("tT" in thf_fde and "tB" in thf_fde)   # → True   (all four FDE values declared)
+print("des" in thf_fde)              # → True   (the designated-set predicate, {T, B} here)
+
+isa_fde = to_isabelle_matrix(lem, FDE_MATRIX)
+print("theory Matrix_Validity" in isa_fde)   # → True
+```
+
+`value_names=` / `conn_names=` override the generated identifiers when the matrix's own value labels or a connective's default name would collide or read poorly; `type_name=` / `predicate_name=` rename the value type and the designated-set predicate. Emitted theorem-hood matches `matrix_is_valid(φ, matrix)` for every matrix, exactly as the K3/LP exporters match `kleene_value`.
 
 ## Actually running it: the Isabelle runner
 
@@ -521,6 +567,63 @@ print(list(FolVerdict.__dataclass_fields__.keys()))
 # → ['status', 'method', 'countermodel', 'prove_output', 'refute_output',
 #    'prove_elapsed', 'refute_elapsed', 'infra_error']
 ```
+
+### Deciding counterfactual validity: `isabelle_decide_counterfactual`
+
+`isabelle_decide_counterfactual(φ)` decides validity for formulas built from the propositional connectives plus the counterfactuals `□→` / `◇→` (`Would` / `Might`, parsed in modal mode). The modal exporter's accessibility relation is the wrong structure here — a counterfactual reads a **similarity ordering** — so `hol.isabelle_conditional` emits its own shallow sphere embedding: the sphere system is the uninterpreted constant `Sel`, and the goal is `nested Sel ⟹ ∀x. φ x`. The sphere condition is the same one `cf_satisfies` evaluates, so what Isabelle certifies is what the toolkit computes. Same scheme as `isabelle_decide_fol`: prove-battery ⇒ `VALID`, else `nitpick[expect = genuine]` over the world type ⇒ `INVALID`, else `UNKNOWN`; returns a `FolVerdict`.
+
+```python
+# doctest: +SKIP
+from unicode_fol_kit import MSFLParser, isabelle_decide_counterfactual
+
+p = MSFLParser(modal=True).parse
+print(isabelle_decide_counterfactual(p("A □→ A")))
+# → FolVerdict[valid (by prove-battery)]
+print(isabelle_decide_counterfactual(p("((A □→ B) ∧ (A □→ C)) → (A □→ (B ∧ C))")))
+# → FolVerdict[valid (by prove-battery)]     (agglomeration — needs the nesting premise)
+print(isabelle_decide_counterfactual(p("(A □→ B) → ((A ∧ C) □→ B)")))
+# → FolVerdict[invalid]                      (antecedent strengthening fails)
+```
+
+Two design points worth knowing when you write your own sphere theories: nesting is a **premise of the goal**, never an `axiomatization` (nitpick cannot certify a counter-model as genuine while axiomatised constants are in play — it downgrades to `quasi_genuine`); and the default proof battery is **verit-first**, because the `|` combinator has no per-method timeout and `blast` does not terminate on agglomeration, so a blast-first battery hangs before reaching the method that closes it.
+
+A modal operator under a counterfactual is **rejected** (`NotImplementedError`), matching `cf_satisfies`: `□`/`◇` belong to the accessibility-relation embedding, not the sphere one.
+
+### Deciding relevant-logic-B validity: `isabelle_decide_relevant`
+
+`isabelle_decide_relevant(φ)` decides validity in the simplified Routley–Meyer semantics for relevant logic B — the propositional connectives `¬ ∧ ∨ → ↔` over nullary atoms, matching `semantics.relevant.rel_satisfies`'s own restriction. `hol.isabelle_relevant.to_isabelle_relevant` emits the embedding: worlds `N`/`star`/`R` as uninterpreted `consts`, and — following `isabelle_conditional`'s design — the three well-formedness conditions (`N` nonempty, `star` a total involution, `R` sourced only at non-normal worlds) bundled as a `wellformed` **premise** of the goal rather than an `axiomatization`, so nitpick can construct a frame itself and certify a countermodel as *genuine*. Same scheme as `isabelle_decide_fol`: prove-battery ⇒ `VALID`, else `nitpick[expect = genuine]` over the world type ⇒ `INVALID`, else `UNKNOWN`; returns a `FolVerdict`.
+
+```python
+# doctest: +SKIP
+from unicode_fol_kit import MSFLParser, isabelle_decide_relevant
+
+p = MSFLParser().parse
+print(isabelle_decide_relevant(p("(P ∧ Q) → P")))
+# → FolVerdict[valid (by prove-battery)]
+print(isabelle_decide_relevant(p("(P → (P → Q)) → (P → Q)")))
+# → FolVerdict[invalid]     (contraction — valid in R, genuinely not in B)
+```
+
+This gives `rel_valid`'s bounded `True` a certified positive counterpart: where `rel_valid` only means "no countermodel with at most `max_worlds` worlds", a `VALID` from `isabelle_decide_relevant` is a real Isabelle proof over every wellformed interpretation. See {doc}`relevant` for the semantics itself.
+
+### Substructural derivations, replayed: `to_isabelle_ill` / `to_isabelle_lambek`
+
+`hol.isabelle_substructural` takes a different shape from the exporters above: rather than asking Isabelle to *decide* a formula, it **replays** a derivation the toolkit's own cut-free search (`ill_prove` / `lambek_prove`) already found, as a machine-checked lemma. The sequent rules become an Isabelle `inductive derivable` predicate over a deep-embedded `datatype` — a **multiset-via-list-plus-`Exch`** antecedent for ILL, and a plain **list** (no `Exch` — order is exactly what Lambek tracks) for the Lambek calculus — and the concrete derivation tree is transcribed one `intro` rule per node, so a successful build is Isabelle independently re-checking a proof the toolkit already has, not searching for one itself.
+
+```python
+from unicode_fol_kit import MSFLParser, ill_prove
+from unicode_fol_kit.hol.isabelle_substructural import to_isabelle_ill, ill_derivation_theory
+
+lp = MSFLParser(linear=True).parse
+theory = to_isabelle_ill([lp("A"), lp("A ⊸ B")], lp("B"))
+print("inductive derivable" in theory)   # → True
+
+# Or start from a derivation you already computed (no re-searching):
+d = ill_prove([lp("A"), lp("A ⊸ B")], lp("B"))
+ill_derivation_theory(d) == theory       # → True
+```
+
+`to_isabelle_lambek(sequence, goal, ...)` / `lambek_derivation_theory(derivation)` are the Lambek counterparts. See {doc}`substructural` for the `⊤`/`𝟘` additive units these theories also cover (`⊤R` / `0L` in the search and the replayed proof alike).
 
 ### Building an arbitrary theory: `check_theory`
 

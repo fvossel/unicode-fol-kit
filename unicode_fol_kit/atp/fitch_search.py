@@ -459,7 +459,35 @@ def find_fitch_proof(premises, conclusion: Node, max_depth: int = 8) -> Optional
     so the result is always a genuinely valid proof (or ``None``). ``None`` means "no
     proof found within ``max_depth``", never "not a theorem" — the search is sound
     but, under its depth bound, incomplete (first-order provability is undecidable).
+
+    ``Contrast`` and ``Count`` are reduced to their classical readings up front
+    (∧ and the distinct-witnesses expansion), so the returned proof derives the
+    reduced formula. A MODAL input is rejected with a pointer — this search has
+    no modal rules, and silently treating a modal operator as an opaque atom
+    used to return a misleading ``None`` for valid entailments like
+    ``□(P→Q), □P ⊢ □Q``; :func:`fitch_prove` / :func:`is_valid_fitch` instead
+    route modal input to the modal tableau automatically.
+
+    Raises:
+        NotImplementedError: on modal/temporal/hybrid/counterfactual input, and on
+            substructural (ILL/Lambek), team-semantic, second-order, or Łukasiewicz
+            input — each with a pointer at its own decision procedure (an opaque-atom
+            treatment would silently return None for genuine theorems like the
+            ILL axiom ``A ⊸ A``).
     """
+    from ..fol._msfl_nodes import _reduce_nl_nodes
+    from .modal_tableau import has_modal
+    from .tableau import _reject_exotic
+    _reject_exotic(list(premises) + [conclusion], "find_fitch_proof")
+    premises = [_reduce_nl_nodes(p) for p in premises]
+    conclusion = _reduce_nl_nodes(conclusion)
+    if any(has_modal(f) for f in premises + [conclusion]):
+        raise NotImplementedError(
+            "find_fitch_proof: no proof search over the modal natural-deduction "
+            "rules (a modal operator treated as an opaque atom would silently "
+            "yield None for valid modal entailments). Decide validity with "
+            "fitch_prove / is_valid_fitch (which route to the modal tableau), or "
+            "check a hand-written modal Fitch proof with check_proof.")
     premises = [_canon_q(p) for p in premises]
     goal = _canon_q(conclusion)
     base = {p: ("ref", p) for p in premises}
@@ -477,10 +505,31 @@ def find_fitch_proof(premises, conclusion: Node, max_depth: int = 8) -> Optional
 
 
 def fitch_prove(premises, conclusion: Node, max_depth: int = 8) -> bool:
-    """Return True iff a Fitch proof of ``premises ⊢ conclusion`` is found (sound, bounded)."""
+    """Return True iff ``premises ⊢ conclusion`` is established (sound, bounded).
+
+    Classical input is decided by the Fitch proof search. MODAL input is routed
+    to the modal tableau's local consequence over the system **K**
+    (:func:`~unicode_fol_kit.atp.modal_tableau.modal_prove`) — previously a
+    modal operator was treated as an opaque atom and e.g. the K-axiom instance
+    ``□(P→Q), □P ⊢ □Q`` silently came back False. Either path is sound: a True
+    is a verified Fitch proof or a closed modal tableau.
+    """
+    from .modal_tableau import has_modal, modal_prove
+    from .tableau import _reject_exotic
+    premises = list(premises)
+    # Substructural / team / SO / fuzzy input must not degrade to "opaque atom →
+    # silent False" (the exact bug class the modal routing below already fixed:
+    # is_valid_fitch(A ⊸ A) returned False for a genuine ILL theorem).
+    _reject_exotic(premises + [conclusion], "fitch_prove")
+    if any(has_modal(f) for f in premises + [conclusion]):
+        return modal_prove(premises, conclusion)
     return find_fitch_proof(premises, conclusion, max_depth) is not None
 
 
 def is_valid_fitch(formula: Node, max_depth: int = 8) -> bool:
-    """Return True iff ``formula`` is provable from no premises (a found-theorem check)."""
+    """Return True iff ``formula`` is provable from no premises (a found-theorem check).
+
+    Modal input is decided by the modal tableau over **K** (see
+    :func:`fitch_prove`); classical input by the Fitch search.
+    """
     return fitch_prove([], formula, max_depth)

@@ -148,6 +148,37 @@ fo = MSFLParser().parse("∃y ∀x Edge(x, y)")
 
 In general, though, dependence atoms take you strictly beyond first-order logic: dependence logic has the full expressive power of existential second-order logic (Σ¹₁), so on finite structures it captures every NP graph property.
 
+## Translating to existential second-order logic: `dependence_to_eso`
+
+Väänänen's Σ¹₁ theorem is constructive: `dependence_to_eso(sentence)` realises the half that matters here, translating a dependence-logic sentence into a **classical** formula headed by existential second-order quantifiers — one `∃F` per Skolemised existential, `F` a fresh graph predicate playing the role of the witness function, plus the two first-order axioms making it total and functional. The result is an ordinary `Node` for `satisfies_so` / `hol.secondorder`, not a team-semantic object, so it is a genuine *alternative* evaluator to `team_models` rather than a wrapper around it:
+
+```python
+from unicode_fol_kit import MSFLParser, dependence_to_eso, Structure
+from unicode_fol_kit.semantics.secondorder import holds
+from unicode_fol_kit.semantics.team import team_models
+
+dp = MSFLParser(dependence=True).parse
+sink = dp("∀x ∃y (=(y) ∧ Edge(x, y))")        # the universal-sink sentence from above
+
+eso = dependence_to_eso(sink)
+eso.to_unicode_str()[:16]              # → '∃F_y (∃_F_y_y0 F'   (∃F, then its totality/functionality axioms, then the body)
+
+# The two independent oracles agree on both structures from above:
+holds(eso, SINK), team_models(SINK, sink)      # → (True, True)
+holds(eso, CYCLE), team_models(CYCLE, sink)    # → (False, False)
+```
+
+**Only a documented fragment is covered** — this is a translation, not a general dependence-logic decision procedure. It faithfully handles plain first-order `∃` anywhere (ordinary Skolemisation), and a dependence-atom-guarded or slashed `∃` (the canonical Väänänen normal form `∃u(=(t̄,u) ∧ φ)`) **provided the sentence contains no `∨`** — team-semantic disjunction lets the team split into any partition, and once a dependence atom or slash is in play that split is exactly the source of dependence logic's extra power, so establishing a Skolem-normal-form equivalence for `∨` mixed with non-flat constructs is out of scope by design (the conservative choice: soundness over coverage). A "loose" dependence atom — one not a top-level conjunct of its own `∃`'s immediate body — and a shadowed variable name are both rejected too:
+
+```python
+loose = dp("∀x∃z(=(x,z) ∧ ∃y/{x}(=(z,y)))")    # the dependence atom guards z, not y
+dependence_to_eso(loose)
+# raises NotImplementedError: dependence_to_eso: the dependence atom '=(z, y)' does not
+# guard its own existential. ... evaluate with team_satisfies / team_models instead.
+```
+
+Faithfulness is pinned by exhaustive structure-enumeration differentials against `team_models` over the covered fragment (the development process caught and fixed a real slashed-∃ scoping subtlety this way). Once translated, the sentence also feeds `hol.secondorder`'s Isabelle/THF exporters — a route to an unbounded proof attempt that `team_models`'s brute-force search cannot offer.
+
 ## The honest boundary
 
 **Evaluation over finite structures only.** That Σ¹₁ expressive power has a hard flip side: the set of *valid* dependence-logic sentences is not recursively enumerable — not even arithmetical (Väänänen 2007, Ch. 6). No prover, tableau, or SMT export can exist for it, so the toolkit offers exactly what is decidable: brute-force model checking over finite structures. The witness searches are exponential; above a documented bound (`MAX_TEAM_SEARCH = 65536` candidates, i.e. domains up to 4 with teams up to 8 rows) they raise `ValueError` rather than hang.

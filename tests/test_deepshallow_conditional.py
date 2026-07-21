@@ -57,6 +57,7 @@ def test_theory_requires_both_or_neither():
         conditional_faithfulness_theory("X", antecedent=p)
 
 
+@pytest.mark.isabelle_live
 @pytest.mark.skipif(not isabelle_available(),
                     reason="no Isabelle installation found")
 def test_faithfulness_theory_verifies_in_isabelle():
@@ -66,6 +67,7 @@ def test_faithfulness_theory_verifies_in_isabelle():
                   + r.output[-2000:])
 
 
+@pytest.mark.isabelle_live
 @pytest.mark.skipif(not isabelle_available(),
                     reason="no Isabelle installation found")
 def test_faithfulness_theory_with_counterfactual_verifies_in_isabelle():

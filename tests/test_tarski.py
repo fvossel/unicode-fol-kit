@@ -304,8 +304,9 @@ class TestCountingAndCardinality:
         assert models(FOL.parse(src), self.WORLD) is expected
 
     def test_order_comparison_on_plain_terms_still_uses_the_extension(self):
-        # The numeric reading is triggered ONLY by a cardinality operand; ordinary
-        # terms keep the extension semantics a structure may define however it likes.
+        # A DECLARED extension is the interpretation of the order symbol, and it wins
+        # over any numeric reading — a structure may interpret < over its domain
+        # however it likes, which is also what the first-order exports assume.
         world = Structure(domain={0, 1, 2}, predicates={("<", 2): {(0, 1)}})
         assert satisfies(FOL.parse("x < y"), world, {"x": 0, "y": 1}) is True
         assert satisfies(FOL.parse("x < y"), world, {"x": 1, "y": 2}) is False  # absent
@@ -339,6 +340,112 @@ class TestCountingAndCardinality:
         world = Structure(domain=[0, 1], constants={"alice": 0, "height": 1})
         with pytest.raises(ValueError, match="measure"):
             models(FOL.parse("μ(alice, height) = 1"), world)
+
+
+# ---------------------------------------------------------------------------
+# The three readings of an order comparison < > ≤ ≥
+# ---------------------------------------------------------------------------
+
+class TestOrderComparisonReadings:
+    """Precedence: a cardinality operand forces numeric > a declared extension
+    wins > numeric operands fall back to arithmetic > empty relation."""
+
+    # rex measures 10 on height, fido 5. ``measure``/2 is the symbol the provers see.
+    MEASURED = dict(
+        domain=[5, 10, "rex", "fido", "height"],
+        constants={"rex": "rex", "fido": "fido", "height": "height"},
+        functions={("measure", 2): {("rex", "height"): 10, ("fido", "height"): 5}},
+    )
+
+    def test_measure_comparison_is_numeric_when_no_extension_is_declared(self):
+        # μ is an uninterpreted function, so a structure is free to map it to
+        # numbers without also axiomatising ≥ over them. Before the fallback such a
+        # comparison fell through to the empty relation and was SILENTLY False —
+        # the same failure mode the cardinality reading exists to prevent.
+        world = Structure(predicates={}, **self.MEASURED)
+        assert models(FOL.parse("μ(rex, height) ≥ μ(fido, height)"), world) is True
+        assert models(FOL.parse("μ(fido, height) ≥ μ(rex, height)"), world) is False
+        assert models(FOL.parse("μ(rex, height) > μ(fido, height)"), world) is True
+        assert models(FOL.parse("μ(rex, height) ≤ μ(fido, height)"), world) is False
+
+    def test_a_declared_extension_wins_over_the_numeric_reading(self):
+        # The extension deliberately CONTRADICTS arithmetic (it holds of (5, 10) but
+        # not of (10, 5)), so these assertions can only pass if the declared
+        # interpretation takes precedence — the first-order reading is preserved.
+        world = Structure(predicates={("≥", 2): {(5, 10)}}, **self.MEASURED)
+        assert models(FOL.parse("μ(fido, height) ≥ μ(rex, height)"), world) is True
+        assert models(FOL.parse("μ(rex, height) ≥ μ(fido, height)"), world) is False
+
+    def test_a_declared_but_empty_extension_is_still_the_empty_relation(self):
+        # This is the model finder's path: it declares EVERY scanned predicate, with
+        # the empty set among the enumerated extensions. Declared-but-empty must
+        # therefore stay false, or the fallback would silently rewrite the search
+        # space and make enumerated structures disagree with the evaluator.
+        world = Structure(predicates={("≥", 2): set()}, **self.MEASURED)
+        assert models(FOL.parse("μ(rex, height) ≥ μ(fido, height)"), world) is False
+
+    def test_non_numeric_operands_without_an_extension_stay_false(self):
+        # Nothing to compare arithmetically and no interpretation given: the order
+        # symbol is just an uninterpreted predicate, hence the empty relation. This
+        # stays FALSE rather than raising — an absent extension is not an error.
+        world = Structure(
+            domain=["rex", "fido", "height", "tall"],
+            constants={"rex": "rex", "fido": "fido", "height": "height"},
+            functions={("measure", 2): {("rex", "height"): "tall",
+                                        ("fido", "height"): "tall"}},
+        )
+        assert models(FOL.parse("μ(rex, height) ≥ μ(fido, height)"), world) is False
+
+    def test_booleans_do_not_count_as_numbers(self):
+        # bool is an int subclass in Python, but a truth value is not a position on
+        # a scale: True ≥ False must NOT quietly succeed as 1 ≥ 0.
+        world = Structure(
+            domain=[True, False, "rex", "fido", "height"],
+            constants={"rex": "rex", "fido": "fido", "height": "height"},
+            functions={("measure", 2): {("rex", "height"): True,
+                                        ("fido", "height"): False}},
+        )
+        assert models(FOL.parse("μ(rex, height) ≥ μ(fido, height)"), world) is False
+
+    def test_a_cardinality_ignores_a_declared_extension(self):
+        # The asymmetry with the measure case is deliberate: a cardinality IS a
+        # number this evaluator computes, so no structure may reinterpret it. Here
+        # the declared extension is empty and the comparison is still true.
+        world = Structure(domain=[0, 1, 2],
+                          predicates={("P", 1): {(0,), (1,)}, (">", 2): set()})
+        assert models(FOL.parse("|{x : P(x)}| > |{x : ¬P(x)}|"), world) is True
+
+    def test_the_suitability_rule_runs_without_a_hand_built_order(self):
+        # End-to-end payoff: a threshold rule comparing what a breed brings against
+        # what a service demands on the same dimension. Collie clears both services,
+        # pug only the lapdog one — and no ≥ extension has to be spelled out.
+        rule = MSFOL.parse(
+            "∀x:Breed ∀y:Service ("
+            "(μ(x, temperament:Attribute) ≥ μ(y, temperament:Attribute) "
+            "∧ μ(x, physique:Attribute) ≥ μ(y, physique:Attribute)) "
+            "→ Suitable(x, y))"
+        )
+        measure = {
+            ("collie", "temperament"): 9, ("collie", "physique"): 8,
+            ("pug", "temperament"): 4, ("pug", "physique"): 2,
+            ("herding", "temperament"): 7, ("herding", "physique"): 6,
+            ("lapdog", "temperament"): 2, ("lapdog", "physique"): 1,
+        }
+        base = dict(
+            domain=["collie", "pug", "herding", "lapdog",
+                    "temperament", "physique", 1, 2, 4, 6, 7, 8, 9],
+            sorts={"Breed": ["collie", "pug"], "Service": ["herding", "lapdog"],
+                   "Attribute": ["temperament", "physique"]},
+            constants={"temperament": "temperament", "physique": "physique"},
+            functions={("measure", 2): measure},
+        )
+        qualifying = {("collie", "herding"), ("collie", "lapdog"), ("pug", "lapdog")}
+        assert models(rule, Structure(predicates={("Suitable", 2): qualifying},
+                                      **base)) is True
+        # Drop the one pair the thresholds force, and the rule fails.
+        assert models(rule, Structure(
+            predicates={("Suitable", 2): qualifying - {("collie", "herding")}},
+            **base)) is False
 
 
 # ---------------------------------------------------------------------------

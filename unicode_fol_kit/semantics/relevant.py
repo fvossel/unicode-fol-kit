@@ -311,8 +311,13 @@ def rel_valid(formula: Node, max_worlds: int = 2) -> bool:
     so the formula is certainly not a theorem of B. ``True`` means only "no
     countermodel with at most ``max_worlds`` worlds": B is decidable, but this
     search is *bounded*, so a non-theorem whose smallest refuting interpretation
-    needs more worlds than the bound is (spuriously) reported valid. Raising
-    ``max_worlds`` never turns a ``False`` into a ``True``; it is exponentially
-    more expensive (see :func:`rel_countermodel`).
+    needs more worlds than the bound is (spuriously) reported valid — for a
+    certified positive verdict use
+    :func:`~unicode_fol_kit.hol.isabelle_runner.isabelle_decide_relevant`, whose
+    proof battery is a real validity proof over EVERY interpretation satisfying
+    B's frame conditions (N nonempty, the Routley star a total involution, R
+    sourced only at non-normal worlds) — not just those with at most
+    ``max_worlds`` worlds. Raising ``max_worlds`` never turns a ``False`` into a
+    ``True``; it is exponentially more expensive (see :func:`rel_countermodel`).
     """
     return rel_countermodel(formula, max_worlds) is None

@@ -19,7 +19,7 @@ Unification rules:
 
 from typing import Dict, Optional
 
-from .nodes import Variable, Constant, Number, Function, Atom, Node
+from .nodes import Variable, Constant, Number, Function, Atom, Node, Measure
 
 
 def apply_subst(node: Node, subst: Dict[str, Node]) -> Node:
@@ -39,6 +39,11 @@ def apply_subst(node: Node, subst: Dict[str, Node]) -> Node:
         return node
     if isinstance(node, Function):
         return Function(node.name, [apply_subst(a, subst) for a in node.args])
+    if isinstance(node, Measure):
+        # μ(entity, dimension) is an ordinary binary term (lowered to the
+        # function measure/2 by the exports): substitute into both slots.
+        return Measure(apply_subst(node.entity, subst),
+                       apply_subst(node.dimension, subst))
     if isinstance(node, Atom):
         return Atom(node.predicate, [apply_subst(a, subst) for a in node.args])
     raise TypeError(f"apply_subst: unsupported node type {type(node).__name__}")
@@ -55,6 +60,9 @@ def _occurs(name: str, term: Node, subst: Dict[str, Node]) -> bool:
         return term.name == name
     if isinstance(term, (Function, Atom)):
         return any(_occurs(name, a, subst) for a in term.args)
+    if isinstance(term, Measure):
+        return (_occurs(name, term.entity, subst)
+                or _occurs(name, term.dimension, subst))
     return False
 
 
@@ -110,6 +118,14 @@ def unify(t1: Node, t2: Node, subst: Optional[Dict[str, Node]] = None) -> Option
         if t1.name != t2.name or len(t1.args) != len(t2.args):
             return None
         return _unify_args(t1.args, t2.args, subst)
+
+    # Measure terms: a fixed binary function symbol — unify slot-wise. Purely
+    # syntactic: a Measure never unifies with a Function (even one literally
+    # named "measure"); the measure/2 spelling is an EXPORT convention, not an
+    # AST identity.
+    if isinstance(t1, Measure) and isinstance(t2, Measure):
+        return _unify_args((t1.entity, t1.dimension),
+                           (t2.entity, t2.dimension), subst)
 
     # Atoms (literal-level unification): same predicate + arity, then args.
     if isinstance(t1, Atom) and isinstance(t2, Atom):

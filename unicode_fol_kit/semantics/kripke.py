@@ -36,6 +36,15 @@ currently stands. A nominal without an assignment raises a ValueError naming
 it (rather than silently defaulting), since a nominal must name exactly one
 world for the hybrid semantics to make sense.
 
+Public announcement logic (PAL) is interpreted directly — ``Announce`` (``[φ!]ψ``)
+and ``AnnounceDiamond`` (``⟨φ!⟩ψ``) are the only two constructs here that do NOT
+just recurse at a fixed world or along a fixed relation: they build the
+φ-restricted model ``M|φ`` (:func:`unicode_fol_kit.semantics.dynamic_epistemic.announce`)
+and evaluate ``ψ`` there. This is the ORACLE that
+:func:`unicode_fol_kit.fol.pal.reduce_announcements` (a purely SYNTACTIC
+elimination of Announce/AnnounceDiamond, sound only for the propositional-modal
+fragment interpreted here) is differentially tested against.
+
 Documented temporal semantics:
 
 - ``Next φ``: φ holds at **all** immediate ``"temporal"``-successors of the
@@ -67,6 +76,7 @@ from ..fol.nodes import (
     Nominal, At,
     Constant, substitute,
 )
+from ..fol._modal_nodes import Announce, AnnounceDiamond
 from ._modal_reject import (
     FUZZY_TYPES, LAMBDA_TYPES,
     reject_fuzzy, reject_lambda,
@@ -339,6 +349,11 @@ def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
     - ``Always φ`` / ``Eventually φ`` — φ holds at all / some worlds in the
       reflexive-transitive closure of ``"temporal"`` from ``world``.
     - ``Until(φ, ψ)`` — see :func:`_until_holds` (finite-path strong Until).
+    - ``Announce(φ, ψ)`` (``[φ!]ψ``) — ``φ`` false at ``world`` makes this
+      vacuously true; otherwise ``ψ`` must hold at ``world`` in the model
+      restricted to the ``φ``-worlds (:func:`~unicode_fol_kit.semantics.dynamic_epistemic.announce`).
+    - ``AnnounceDiamond(φ, ψ)`` (``⟨φ!⟩ψ``) — the dual: ``φ`` true at ``world``
+      AND ``ψ`` holds at ``world`` in the ``φ``-restricted model.
 
     Raises:
         NotImplementedError: on a Quantifier / SortedQuantifier (first-order
@@ -459,6 +474,25 @@ def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
         return any(satisfies_modal(formula.formula, model, w2) for w2 in reachable)
     if isinstance(formula, Since):
         return _since_holds(formula.left, formula.right, model, world)
+
+    # --- public announcement logic (PAL): a genuine MODEL UPDATE, not a fixed
+    # accessibility relation — this is the ORACLE unicode_fol_kit.fol.pal
+    # .reduce_announcements is differentially tested against (see that module's
+    # docstring for the correctness argument relating the two). Both build the
+    # restricted model M|announcement via
+    # unicode_fol_kit.semantics.dynamic_epistemic.announce (imported lazily to
+    # avoid a circular import: dynamic_epistemic imports THIS module at load
+    # time) and recurse into ``formula.formula`` there, at the SAME world. ---
+    if isinstance(formula, Announce):
+        if not satisfies_modal(formula.announcement, model, world):
+            return True  # untruthful announcement is not made: vacuously true
+        from .dynamic_epistemic import announce  # lazy: avoid import cycle
+        return satisfies_modal(formula.formula, announce(model, formula.announcement), world)
+    if isinstance(formula, AnnounceDiamond):
+        if not satisfies_modal(formula.announcement, model, world):
+            return False  # dual of Announce: false whenever the announcement is
+        from .dynamic_epistemic import announce  # lazy: avoid import cycle
+        return satisfies_modal(formula.formula, announce(model, formula.announcement), world)
 
     # --- object quantifiers (actualist: range over the CURRENT world's domain D_w) ---
     if isinstance(formula, Quantifier):

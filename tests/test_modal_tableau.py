@@ -174,16 +174,45 @@ def test_has_modal():
 
 
 # --------------------------------------------------------------------------- #
-# Temporal-closure operators are explicitly out of scope (pointer, not crash).
+# Temporal-closure operators: sound verdicts, never a crash.
+#
+# The tableau has no rule for G/F/U/H/P/Y/S, so it leaves them INERT: a branch
+# may still close on other grounds (sound — closure is monotone), and an open
+# branch's model reaches a caller only after satisfies_modal verification. The
+# result is valid / invalid-with-verified-countermodel / honest unknown — the
+# earlier behaviour (raising NotImplementedError) violated modal_decide's own
+# documented three-way contract.
 # --------------------------------------------------------------------------- #
 
 @pytest.mark.parametrize("formula", [
     Always(p), Eventually(p), Until(p, q),
     Implies(Always(p), p), Not(Eventually(p)),
 ])
-def test_temporal_closure_operators_rejected_with_pointer(formula):
-    with pytest.raises(NotImplementedError, match="satisfies_modal|isabelle_decide_modal"):
-        is_modal_valid(formula)
+def test_temporal_closure_operators_never_raise(formula):
+    verdict = modal_decide(formula)
+    assert verdict in ("valid", "invalid", "unknown")
+
+
+def test_temporal_closure_verdicts_are_sound():
+    # Ⓖp alone is refutable, and the countermodel is VERIFIED by satisfies_modal
+    # before being handed back — a genuine "invalid", not a guess.
+    assert modal_decide(Always(p)) == "invalid"
+    assert modal_countermodel(Always(p)) is not None
+    # Ⓖp → p (the T reading over the reflexive closure) is beyond the inert
+    # treatment: neither provable nor refutable here, so honestly unknown.
+    assert modal_decide(Implies(Always(p), p)) == "unknown"
+    # is_modal_valid stays sound: False (= not proved), never a crash.
+    assert is_modal_valid(Implies(Always(p), p)) is False
+
+
+def test_quantified_constructs_are_opaque_literals_not_crashes():
+    # A quantified construct under a modal operator has no rule either, but a
+    # syntactic-complement closure is still sound — the identity is provable.
+    from unicode_fol_kit.fol.msflparser import MSFLParser
+    m = MSFLParser(modal=True)
+    assert modal_decide(m.parse("◇(∃≥1 x P(x)) → ◇(∃≥1 x P(x))")) == "valid"
+    # No closure and no verifiable countermodel → honest unknown, no crash.
+    assert modal_decide(m.parse("¬◇(∃≥1 x P(x))")) == "unknown"
 
 
 # --------------------------------------------------------------------------- #

@@ -271,14 +271,16 @@ def test_isabelle_invalid_formula_left_as_oops():
 
 
 def test_isabelle_proof_gating_uses_decidable_oracle_not_bounded_int_valid():
-    # (p→q)∨(q→r)∨(r→p) is IPL-INVALID but needs 4 worlds to refute, so int_valid's
-    # DEFAULT 3-world bound wrongly calls it valid. Proof emission must follow the
-    # DECIDABLE gmt_is_s4_valid (False) and leave `oops`, never emit a real proof for a
-    # non-theorem (which would fail to build). Regression for the audit finding.
+    # (p→q)∨(q→r)∨(r→p) is IPL-INVALID but needs 4 worlds to refute. int_valid's
+    # 3-world DEFAULT bound used to call it valid; since the G4ip proof search
+    # became the propositional positive oracle, int_valid is correct at default
+    # arguments too (see tests/test_lj_search.py). Proof emission follows the
+    # DECIDABLE gmt_is_s4_valid (False) and leaves `oops`, never emitting a real
+    # proof for a non-theorem (which would fail to build).
     f = Or(Or(Implies(p, q), Implies(q, r)), Implies(r, p))
-    assert int_valid(f) is True                      # bounded oracle is WRONG here
+    assert int_valid(f) is False                     # G4ip fallback: fixed
     assert int_valid(f, max_worlds=4) is False       # genuine refutation at 4 worlds
-    assert gmt_is_s4_valid(f) is False               # decidable oracle is right
+    assert gmt_is_s4_valid(f) is False               # decidable oracle agrees
     out = to_isabelle_intuitionistic(f)
     assert "\n  oops" in out
     assert "by (metis" not in out

@@ -1,7 +1,11 @@
 """Classical-FOL normal forms: NNF, PNF, CNF, Skolemization, and a Horn check.
 
-All entry points first call ``to_fol`` to eliminate sort annotations and
-Łukasiewicz operators, so they accept FOL, MSFOL, MSFL, and FL inputs. Lambda
+All entry points first call ``to_fol`` to eliminate sort annotations, so they
+accept FOL and MSFOL inputs. Łukasiewicz (fuzzy) connectives are REJECTED with a
+pointer instead of being silently collapsed: the collapse changes the logic (the
+classical image of fuzzy ``P ∨ ¬P`` is valid, the fuzzy original is not), and it
+used to leak wrong verdicts into ``is_valid_resolution``. Collapse explicitly
+with ``to_fol(node)`` first if the classical skeleton is really wanted. Lambda
 terms must be beta-reduced and lambda-eliminated first (``to_fol`` will raise
 otherwise).
 
@@ -32,12 +36,89 @@ _FORALL = ("∀", "forall")
 _EXISTS = ("∃", "exists")
 
 
+def _unsupported_hint(n: Node) -> str:
+    """A pointer at the right tool for a node the classical normal forms reject."""
+    from .nodes import (
+        Box, Diamond, Knows, Believes, Says, Wants, Obligatory, Permitted,
+        Next, Always, Eventually, Until, Historically, Once, Previous, Since,
+        Nominal, At, Would, Might, Cardinality, SortedCardinality,
+        SecondOrderQuantifier,
+    )
+    if isinstance(n, (Would, Might)):
+        return (" — the counterfactuals □→/◇→ have no first-order reading; use "
+                "cf_valid / cf_satisfies (sphere semantics) or "
+                "isabelle_decide_counterfactual.")
+    if isinstance(n, (Until, Since)):
+        return (" — Until/Since are not first-order definable (they need a "
+                "transitive-closure fixpoint); evaluate with satisfies_modal or "
+                "decide with isabelle_decide_modal.")
+    if isinstance(n, (Box, Diamond, Knows, Believes, Says, Wants, Obligatory,
+                      Permitted, Next, Always, Eventually, Historically, Once,
+                      Previous, Nominal, At)):
+        return (" — modal/temporal/hybrid operators have no classical rule here; "
+                "lower the propositional-modal fragment with "
+                "standard_translation, or use the modal tableau / "
+                "isabelle_decide_modal (is_valid_resolution and the Fitch/tableau "
+                "entry points route automatically).")
+    if isinstance(n, (Cardinality, SortedCardinality)):
+        return (" — set cardinality is second-order; evaluate with "
+                "semantics.tarski.satisfies or export to HOL via hol.secondorder.")
+    if isinstance(n, SecondOrderQuantifier):
+        return (" — second-order quantification has no sound classical "
+                "Skolemization; use the sequent calculus's SO rules, "
+                "satisfies_so, or hol.secondorder.")
+    from ._linear_nodes import Tensor, With, OPlus, LinearImplies, OfCourse, One
+    if isinstance(n, (Tensor, With, OPlus, LinearImplies, OfCourse, One)):
+        return (" — substructural (linear-logic) connectives have no classical "
+                "normal form: weakening/contraction are exactly what the collapse "
+                "would smuggle back in; decide derivability with atp.linear "
+                "(ill_prove / ill_derivable).")
+    from ._lambek_nodes import Product, Under, Over
+    if isinstance(n, (Product, Under, Over)):
+        return (" — Lambek-calculus connectives are order-sensitive; a classical "
+                "normal form would erase exactly that; decide derivability with "
+                "atp.lambek (lambek_prove / lambek_derivable).")
+    from ._team_nodes import Dependence, SlashedExists
+    if isinstance(n, (Dependence, SlashedExists)):
+        return (" — dependence/IF constructs are team-semantic (existential "
+                "second-order strength); evaluate with team_satisfies / "
+                "team_models.")
+    return ""
+
+
 # ---------------------------------------------------------------------------
 # Negation normal form
 # ---------------------------------------------------------------------------
 
+def _reject_fuzzy(node: Node, entry: str) -> None:
+    """Raise on Łukasiewicz input: the classical collapse changes the LOGIC.
+
+    The fuzzy connectives' ``to_msfol`` image (min/max/t-norm → And/Or/…) is a
+    different logic — classical ``P ∨ ¬P`` is valid, the fuzzy original is not —
+    so collapsing silently here leaked wrong verdicts into
+    ``is_valid_resolution``. The collapse stays available, explicitly:
+    ``to_fol(node)`` first.
+    """
+    from ..semantics._modal_reject import FUZZY_TYPES
+    for sub in node.walk():
+        if isinstance(sub, FUZZY_TYPES):
+            raise TypeError(
+                f"{entry}: {type(sub).__name__} is a Łukasiewicz connective — "
+                "classical normal forms (and the resolution prover on top of "
+                "them) would silently decide the WRONG logic. Evaluate with "
+                "semantics.fuzzy.evaluate or decide with "
+                "atp.z3_fuzzy.fuzzy_is_valid; collapse explicitly with "
+                "to_fol(node) first if the classical skeleton is wanted.")
+
+
 def to_nnf(node: Node) -> Node:
-    """Return the negation normal form of node (after reducing to classical FOL)."""
+    """Return the negation normal form of node (after reducing to classical FOL).
+
+    Raises:
+        TypeError: on Łukasiewicz (fuzzy) input — the classical collapse changes
+            the logic, so it must be requested explicitly via ``to_fol(node)``.
+    """
+    _reject_fuzzy(node, "to_nnf")
     return _nnf(to_fol(node))
 
 
@@ -59,7 +140,8 @@ def _nnf(n: Node) -> Node:
                   And(_nnf(Not(n.left)), _nnf(n.right)))
     if isinstance(n, Quantifier):
         return Quantifier(n.type, n.variable, _nnf(n.formula))
-    raise TypeError(f"to_nnf: unexpected node type {type(n).__name__}")
+    raise TypeError(
+        f"to_nnf: unexpected node type {type(n).__name__}{_unsupported_hint(n)}")
 
 
 def _nnf_neg(n: Node) -> Node:
@@ -82,7 +164,8 @@ def _nnf_neg(n: Node) -> Node:
     if isinstance(n, Quantifier):
         dual = "∃" if n.type in _FORALL else "∀"
         return Quantifier(dual, n.variable, _nnf_neg(n.formula))
-    raise TypeError(f"to_nnf: unexpected node type {type(n).__name__}")
+    raise TypeError(
+        f"to_nnf: unexpected node type {type(n).__name__}{_unsupported_hint(n)}")
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +203,7 @@ def _gensym(base: str, counter: list, used: set) -> str:
 def to_pnf(node: Node) -> Node:
     """Return the prenex normal form: quantifier prefix over a quantifier-free
     NNF matrix, with all bound variables standardised apart."""
+    _reject_fuzzy(node, "to_pnf")
     nnf = _nnf(to_fol(node))
     std = _standardize(nnf, [0], _all_names(nnf))
     prefix, matrix = _prenex_split(std)

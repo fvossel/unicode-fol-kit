@@ -4,7 +4,7 @@ Every AST node carries a uniform set of transformations: normal forms and Horn c
 
 ## Normal forms
 
-`to_nnf()`, `to_pnf()`, `to_cnf()`, and `skolemize()` operate on classical FOL. They accept FOL, MSFOL, MSFL, and FL inputs — sorts and Łukasiewicz operators are reduced via `to_fol()` first. (Lambda terms must be beta-reduced and lambda-eliminated beforehand; see below.)
+`to_nnf()`, `to_pnf()`, `to_cnf()`, and `skolemize()` operate on classical FOL. They accept FOL and MSFOL directly — sorts are reduced via `to_fol()` internally. **Łukasiewicz (MSFL/FL) input is refused**, not silently classicalised: a Łukasiewicz connective is not classical, and treating `P ∨ ¬P` as excluded middle would decide the wrong logic (weak disjunction has no excluded middle). Evaluate fuzzy input with `semantics.fuzzy.evaluate` / `fuzzy_is_valid`, or collapse it explicitly first with `to_fol(node)` if the classical skeleton is really what you want. (Lambda terms must be beta-reduced and lambda-eliminated beforehand; see below.)
 
 ```python
 from unicode_fol_kit import MSFLParser, to_nnf, to_pnf, to_cnf, to_dnf, skolemize
@@ -201,13 +201,23 @@ to_fol(knows, include_sort_facts=True).to_unicode_str()
 This is a classical (Boolean) projection, not a fuzzy-preserving translation. `to_msfol()` maps *both* the strong (`⊗`/`⊕`) and the weak (`∧`/`∨`) Łukasiewicz connectives to the same classical `And`/`Or`. On crisp truth values {0, 1} the operators coincide, so the reduction is sound as the two-valued projection — but the genuinely many-valued content is discarded. To compute the real-valued Łukasiewicz degree, use `fuzzy_evaluate()` or the fuzzy Z3 solver instead.
 ```
 
-The normal-form functions above call `to_fol()` internally, so they accept sorted and fuzzy input directly — e.g. you can `skolemize` a sorted formula:
+The normal-form functions above call `to_fol()` internally for **sorts**, so they accept sorted input directly — e.g. you can `skolemize` a sorted formula. Fuzzy input still needs the explicit `to_fol()` call first (see above); passing it straight to `skolemize`/`to_nnf`/etc. raises:
 
 ```python
 from unicode_fol_kit import skolemize
 
 skolemize(p.parse("∀x:Human ∃y:Human Loves(x, y)")).to_unicode_str()
 # → '∀v0 (Human(v0) → Human(sk0(v0)) ∧ Loves(v0, sk0(v0)))'
+
+fuzzy = MSFLParser(fuzzy=True).parse("P ⊗ Q")
+skolemize(fuzzy)
+# raises NotImplementedError: StrongConjunction is a Łukasiewicz connective — classical
+# normal forms (and the resolution prover on top of them) would silently decide the
+# WRONG logic. Evaluate with semantics.fuzzy.evaluate or decide with
+# atp.z3_fuzzy.fuzzy_is_valid; collapse explicitly with to_fol(node) first if the
+# classical skeleton is wanted.
+
+skolemize(to_fol(fuzzy)).to_unicode_str()   # → 'P ∧ Q'   (the explicit, documented opt-in)
 ```
 
 ## Lambda-calculus operations
@@ -505,7 +515,7 @@ print(f.to_dot())
 
 ## Import
 
-The exporters have inverses, so formulas written for the standard tools can be read back into the AST. **The importers cover classical FOL** — the format the external tools speak. Modal, second-order, and fuzzy formulas round-trip instead through **LaTeX or JSON**, which preserve every node family.
+The exporters have inverses, so formulas written for the standard tools can be read back into the AST. **The importers cover classical FOL** — the format the external tools speak. Modal, second-order, fuzzy, dependence, linear (ILL), and Lambek formulas round-trip instead through **LaTeX or JSON**, which preserve every node family.
 
 ### LaTeX
 
@@ -530,6 +540,16 @@ parse_latex(m.to_latex(), modal=True) == m                  # → True
 
 s = MSFLParser(second_order=True).parse("∀P P(x)")
 parse_latex(s.to_latex(), second_order=True) == s           # → True
+
+# Dependence, linear (ILL), and Lambek round-trip via LaTeX too:
+d = MSFLParser(dependence=True).parse("∀x ∃y (=(y) ∧ Edge(x, y))")
+parse_latex(d.to_latex(), dependence=True) == d              # → True
+
+lin = MSFLParser(linear=True).parse("A ⊸ B")
+parse_latex(lin.to_latex(), linear=True) == lin              # → True
+
+lam = MSFLParser(lambek=True).parse("NP \\ S")
+parse_latex(lam.to_latex(), lambek=True) == lam              # → True
 ```
 
 Hand-written `c_`-constants need an escaped underscore (`c\_zero` or `c_{zero}`), since a bare `_` is LaTeX subscript.

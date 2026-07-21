@@ -4,7 +4,8 @@ The single-succedent two-sided sequent calculus for propositional ILL: a sequent
 ``Γ ⊢ C`` with ``Γ`` a **multiset** of formulas (exchange is implicit; weakening and
 contraction are NOT available on plain formulas — that is the whole point) and ``C``
 a single formula. The connectives are the ``linear`` parser mode's
-(:mod:`unicode_fol_kit.fol._linear_nodes`): ``⊗`` / ``&`` / ``⊕`` / ``⊸`` / ``!`` / ``𝟙``.
+(:mod:`unicode_fol_kit.fol._linear_nodes`): ``⊗`` / ``&`` / ``⊕`` / ``⊸`` / ``!`` / ``𝟙``
+plus the additive units ``⊤`` (top) and ``𝟘`` (zero).
 
 Rules (Girard's ILL, cut-free)::
 
@@ -22,6 +23,11 @@ Rules (Girard's ILL, cut-free)::
     !C:  Γ, !A, !A ⊢ C          ⇒  Γ, !A ⊢ C     (contraction — only under !)
     !D:  Γ, A ⊢ C               ⇒  Γ, !A ⊢ C     (dereliction)
     !P:  !Γ ⊢ A                 ⇒  !Γ ⊢ !A       (promotion: every antecedent !-prefixed)
+    ⊤R:  Γ ⊢ ⊤                  always            (no premise, no ⊤L — the additive
+                                                    unit of &; ⊤ carries no information,
+                                                    so e.g. ⊤⊸A is NOT in general derivable)
+    0L:  Γ, 𝟘 ⊢ C                always            (no premise, no 0R — the additive
+                                                    unit of ⊕; ILL's ex falso)
 
 **Decidability status.** For the **!-free fragment** every rule's premises have
 strictly smaller total size (node count) than its conclusion, so the backward search
@@ -49,6 +55,14 @@ from itertools import product as _iproduct
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 from ..fol.nodes import Node, Tensor, With, OPlus, LinearImplies, OfCourse, One
+# Top/Zero are not yet re-exported by fol.nodes / the package __init__ (that
+# wiring lands centrally alongside the rest of the in-flight changes to those
+# files); the classes themselves — and the registrations that make ⊤/𝟘 parse
+# in "linear" mode — are fully live in _linear_nodes, so we import them
+# straight from there. render_ill_formula is _linear_nodes' safe substitute
+# for Node.to_unicode_str(), which cannot yet render a formula containing
+# Top/Zero (see that module's comment above its register_operator calls).
+from ..fol._linear_nodes import Top, Zero, render_ill_formula, _ill_sort_key
 from .sequent import SequentResult
 
 
@@ -73,9 +87,15 @@ class ILLSequent:
         object.__setattr__(self, "antecedent", tuple(self.antecedent))
 
     def __str__(self) -> str:
-        """Render as ``A, B ⊢ C`` using each formula's Unicode form."""
-        left = ", ".join(f.to_unicode_str() for f in self.antecedent)
-        return f"{left} ⊢ {self.succedent.to_unicode_str()}".strip()
+        """Render as ``A, B ⊢ C`` using each formula's Unicode form.
+
+        Uses :func:`~unicode_fol_kit.fol._linear_nodes.render_ill_formula`
+        rather than ``Node.to_unicode_str()`` directly, since a formula built
+        from ``Top``/``Zero`` cannot yet go through the latter (see that
+        module's comment); for every other formula the two agree.
+        """
+        left = ", ".join(render_ill_formula(f) for f in self.antecedent)
+        return f"{left} ⊢ {render_ill_formula(self.succedent)}".strip()
 
 
 @dataclass(frozen=True)
@@ -141,7 +161,7 @@ def _plus(cnt: Counter, *fs: Node) -> Counter:
 def _tuple_of(cnt: Counter) -> Tuple[Node, ...]:
     """Expand a multiset to a deterministic tuple (sorted by Unicode rendering)."""
     out: List[Node] = []
-    for f in sorted(cnt.keys(), key=lambda n: (n.to_unicode_str(), repr(n))):
+    for f in sorted(cnt.keys(), key=_ill_sort_key):
         out.extend([f] * cnt[f])
     return tuple(out)
 
@@ -153,7 +173,7 @@ def _key(cnt: Counter, goal: Node):
 
 def _splits(cnt: Counter):
     """Yield every split ``(Γ, Δ)`` of a multiset with ``Γ ⊎ Δ = cnt`` (both may be empty)."""
-    items = sorted(cnt.items(), key=lambda kv: (kv[0].to_unicode_str(), repr(kv[0])))
+    items = sorted(cnt.items(), key=lambda kv: _ill_sort_key(kv[0]))
     ranges = [range(c + 1) for _, c in items]
     for take in _iproduct(*ranges):
         left = Counter({f: k for (f, _), k in zip(items, take) if k > 0})
@@ -201,7 +221,7 @@ def _attempts(cnt: Counter, goal: Node):
     the sequent-growing ``!C`` last), which is a heuristic only — the search
     tries them all.
     """
-    distinct = sorted(cnt.keys(), key=lambda n: (n.to_unicode_str(), repr(n)))
+    distinct = sorted(cnt.keys(), key=_ill_sort_key)
 
     # Non-branching left rules that strictly shrink the sequent.
     for f in distinct:
@@ -269,6 +289,17 @@ def _prove(cnt: Counter, goal: Node, depth: int, search: _IllSearch) -> Optional
         return d
     if not cnt and isinstance(goal, One):
         d = ILLDerivation(ILLSequent((), goal), "1R")
+        search.proven[key] = d
+        return d
+    # ⊤R and 0L are unconditional (no premise, any context/goal), exactly like
+    # Ax/1R above — checked here rather than via _attempts so they fire even
+    # at depth 0 (they can never be the reason a proof is missed).
+    if isinstance(goal, Top):
+        d = ILLDerivation(ILLSequent(_tuple_of(cnt), goal), "⊤R")
+        search.proven[key] = d
+        return d
+    if any(isinstance(f, Zero) for f in cnt):
+        d = ILLDerivation(ILLSequent(_tuple_of(cnt), goal), "0L")
         search.proven[key] = d
         return d
 
@@ -582,6 +613,24 @@ def _r_bang_p(concl, prems):
     return "!P: the premise must be !Γ ⊢ A with the same antecedent"
 
 
+def _r_top_r(concl, prems):
+    """⊤R: ``Γ ⊢ ⊤`` — no premises, any context, succedent must be ⊤."""
+    if prems:
+        return "⊤R takes no premises"
+    if not isinstance(concl.succedent, Top):
+        return "⊤R: the succedent must be ⊤"
+    return None
+
+
+def _r_zero_l(concl, prems):
+    """0L: ``Γ, 𝟘 ⊢ C`` — no premises, needs 𝟘 in the antecedent, any succedent."""
+    if prems:
+        return "0L takes no premises"
+    if not any(isinstance(f, Zero) for f in concl.antecedent):
+        return "0L: needs 𝟘 in the antecedent"
+    return None
+
+
 _ILL_RULES: Dict[str, Callable] = {
     "Ax": _r_ax, "1R": _r_one_r, "1L": _r_one_l,
     "⊗L": _r_tensor_l, "⊗R": _r_tensor_r,
@@ -589,6 +638,7 @@ _ILL_RULES: Dict[str, Callable] = {
     "&L1": _r_with_l1, "&L2": _r_with_l2, "&R": _r_with_r,
     "⊕L": _r_oplus_l, "⊕R1": _r_oplus_r1, "⊕R2": _r_oplus_r2,
     "!W": _r_bang_w, "!C": _r_bang_c, "!D": _r_bang_d, "!P": _r_bang_p,
+    "⊤R": _r_top_r, "0L": _r_zero_l,
 }
 
 

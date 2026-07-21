@@ -74,9 +74,15 @@ class AtomConsts:
         self._used.add(cand)
         return cand
 
-    def decls(self) -> List[str]:
-        """``consts`` lines for every atom constant handed out (sorted, stable)."""
-        return [f'consts {c} :: "s"' for c in sorted(self._by_label.values())]
+    def decls(self, typ: str = "s") -> List[str]:
+        """``consts`` lines for every atom constant handed out (sorted, stable).
+
+        ``typ`` is the Isabelle type ascribed to each constant. It defaults to the
+        signature type ``s`` the deep embeddings index their valuation by; a shallow
+        decision theory that has no separate valuation passes the world-predicate
+        type instead.
+        """
+        return [f'consts {c} :: "{typ}"' for c in sorted(self._by_label.values())]
 
 
 def theory_name_ok(name: str) -> bool:
@@ -127,7 +133,11 @@ def encode_deep(formula: Node, atoms: AtomConsts,
                 "(e.g. P()) or build Atom nodes directly.")
         raise NotImplementedError(
             f"{logic}: unsupported node type {type(formula).__name__} "
-            "(propositional fragment only).")
+            "(the deep embedding covers the propositional fragment only). For "
+            "the full modal family — epistemic/doxastic/assertive/bouletic, "
+            "deontic, temporal incl. Until/Since, hybrid — use "
+            "hol.isabelle_modal.to_isabelle_modal / isabelle_decide_modal or "
+            "hol.thf_modal.to_thf_modal_full instead.")
     name, arity = spec
     if arity == 1:
         inner = encode_deep(formula.formula, atoms, ctors, logic=logic, allow_xor=allow_xor)

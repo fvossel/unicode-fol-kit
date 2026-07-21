@@ -9,7 +9,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: unicode-fol-kit 0.11.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-02 22:46+0200\n"
+"POT-Creation-Date: 2026-07-21 20:59+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: de\n"
@@ -44,10 +44,10 @@ msgstr ""
 
 #: ../../guide/quantified-modal.md:5
 msgid ""
-"The kit gives you three views of the same logic, and they are designed to"
-" agree:"
+"The kit gives you four views of the same logic, and they are designed to "
+"agree:"
 msgstr ""
-"Das Kit liefert drei Sichten auf dieselbe Logik, die so konzipiert sind, "
+"Das Kit liefert vier Sichten auf dieselbe Logik, die so konzipiert sind, "
 "dass sie übereinstimmen:"
 
 #: ../../guide/quantified-modal.md
@@ -87,6 +87,14 @@ msgid "sound, bounded-incomplete"
 msgstr "korrekt (sound), beschränkt unvollständig"
 
 #: ../../guide/quantified-modal.md
+msgid "`resolution.prove`"
+msgstr "`resolution.prove`"
+
+#: ../../guide/quantified-modal.md
+msgid "the qml embedding lowered further and saturated in-process"
+msgstr "das qml-Embedding, weiter abgesenkt und prozessintern saturiert"
+
+#: ../../guide/quantified-modal.md
 msgid "`to_thf_modal` / `to_isabelle_modal`"
 msgstr "`to_thf_modal` / `to_isabelle_modal`"
 
@@ -98,11 +106,11 @@ msgstr "Shallow Embedding höherer Stufe → externer Prover"
 msgid "sound (you run the prover)"
 msgstr "korrekt (sound) (Sie führen den Prover selbst aus)"
 
-#: ../../guide/quantified-modal.md:13
+#: ../../guide/quantified-modal.md:14
 msgid "Building modal formulas as nodes"
 msgstr "Modale Formeln als Knoten aufbauen"
 
-#: ../../guide/quantified-modal.md:15
+#: ../../guide/quantified-modal.md:16
 msgid ""
 "Every example below builds the AST directly from `unicode_fol_kit`, so no"
 " parser is involved. A modal formula mixes the modal nodes `Box` / "
@@ -113,13 +121,13 @@ msgid ""
 msgstr ""
 "Jedes der folgenden Beispiele baut den AST direkt aus `unicode_fol_kit` "
 "auf, es ist also kein Parser beteiligt. Eine modale Formel mischt die "
-"modalen Knoten `Box` / `Diamond` mit den gewöhnlichen "
-"Erststufen-Knoten `Quantifier` / `Atom` / `Variable`. Die Barcan-Formel "
-"`◇∃x A(x) → ∃x ◇A(x)` und ihre Konverse sind die klassischen Lackmustests "
-"für das Domänenregime, und das Kit exportiert sie fertig als `BARCAN` / "
+"modalen Knoten `Box` / `Diamond` mit den gewöhnlichen Erststufen-Knoten "
+"`Quantifier` / `Atom` / `Variable`. Die Barcan-Formel `◇∃x A(x) → ∃x "
+"◇A(x)` und ihre Konverse sind die klassischen Lackmustests für das "
+"Domänenregime, und das Kit exportiert sie fertig als `BARCAN` / "
 "`CONVERSE_BARCAN`:"
 
-#: ../../guide/quantified-modal.md:37
+#: ../../guide/quantified-modal.md:38
 msgid ""
 "`Quantifier(type, variable, formula)` takes `\"∃\"` / `\"exists\"` (or "
 "`\"∀\"` / `\"forall\"`) as its type; the bound variable is a `Variable`. "
@@ -130,7 +138,7 @@ msgstr ""
 "`Variable`. `Box` und `Diamond` umschließen jeweils eine einzelne "
 "Teilformel."
 
-#: ../../guide/quantified-modal.md:39
+#: ../../guide/quantified-modal.md:40
 msgid ""
 "You rarely have to spell the AST out by hand: `MSFLParser(modal=True)` "
 "parses the Unicode surface form, quantifiers and modalities together, and"
@@ -138,15 +146,15 @@ msgid ""
 "validity checker:"
 msgstr ""
 "Nur selten muss der AST von Hand ausgeschrieben werden: "
-"`MSFLParser(modal=True)` parst die Unicode-Oberflächenform, Quantoren und "
-"Modalitäten zusammen, und erzeugt genau denselben Knoten. Parsen Sie sie "
-"und geben Sie sie direkt an den Gültigkeitsprüfer weiter:"
+"`MSFLParser(modal=True)` parst die Unicode-Oberflächenform, Quantoren und"
+" Modalitäten zusammen, und erzeugt genau denselben Knoten. Parsen Sie sie"
+" und geben Sie sie direkt an den Gültigkeitsprüfer weiter:"
 
-#: ../../guide/quantified-modal.md:51
+#: ../../guide/quantified-modal.md:52
 msgid "Parsing real-world scenarios"
 msgstr "Praxisnahe Szenarien parsen"
 
-#: ../../guide/quantified-modal.md:53
+#: ../../guide/quantified-modal.md:54
 msgid ""
 "Beyond the canonical Barcan tests, you can parse natural multi-quantifier"
 " and multi-predicate formulas:"
@@ -154,11 +162,11 @@ msgstr ""
 "Über die kanonischen Barcan-Tests hinaus lassen sich natürliche Formeln "
 "mit mehreren Quantoren und mehreren Prädikaten parsen:"
 
-#: ../../guide/quantified-modal.md:77
+#: ../../guide/quantified-modal.md:78
 msgid "Comparing modal quantifier orders"
 msgstr "Vergleich modaler Quantorenreihenfolgen"
 
-#: ../../guide/quantified-modal.md:79
+#: ../../guide/quantified-modal.md:80
 msgid ""
 "The **order** of quantifiers matters crucially. Swapping `∃x` and `□` can"
 " change validity:"
@@ -166,7 +174,7 @@ msgstr ""
 "Die **Reihenfolge** der Quantoren ist entscheidend. Das Vertauschen von "
 "`∃x` und `□` kann die Gültigkeit ändern:"
 
-#: ../../guide/quantified-modal.md:100
+#: ../../guide/quantified-modal.md:101
 msgid ""
 "There is a *second* Barcan pair phrased with `□`/`∀` rather than `◇`/`∃` "
 "— the **box Barcan** `∀x □A(x) → □∀x A(x)` and **box Converse Barcan** "
@@ -174,18 +182,18 @@ msgid ""
 "`CONVERSE_BARCAN`, so the regime correspondence is mirrored (box-BF ⇔ "
 "decreasing, box-CBF ⇔ increasing). You build them the same way:"
 msgstr ""
-"Es gibt ein *zweites* Barcan-Paar, formuliert mit `□`/`∀` statt `◇`/`∃` "
-"— die **Box-Barcan-Formel** `∀x □A(x) → □∀x A(x)` und die **Konverse "
-"Box-Barcan-Formel** `□∀x A(x) → ∀x □A(x)`. Sie sind die kontrapositiven "
-"Duale von `BARCAN` / `CONVERSE_BARCAN`, sodass sich die Regime-"
-"Korrespondenz spiegelt (Box-BF ⇔ decreasing, Box-CBF ⇔ increasing). Sie "
-"werden auf dieselbe Weise aufgebaut:"
+"Es gibt ein *zweites* Barcan-Paar, formuliert mit `□`/`∀` statt `◇`/`∃` —"
+" die **Box-Barcan-Formel** `∀x □A(x) → □∀x A(x)` und die **Konverse Box-"
+"Barcan-Formel** `□∀x A(x) → ∀x □A(x)`. Sie sind die kontrapositiven Duale"
+" von `BARCAN` / `CONVERSE_BARCAN`, sodass sich die Regime-Korrespondenz "
+"spiegelt (Box-BF ⇔ decreasing, Box-CBF ⇔ increasing). Sie werden auf "
+"dieselbe Weise aufgebaut:"
 
-#: ../../guide/quantified-modal.md:118
+#: ../../guide/quantified-modal.md:119
 msgid "Semantics: per-world domains and actualist quantifiers"
 msgstr "Semantik: weltrelative Domänen und aktualistische Quantoren"
 
-#: ../../guide/quantified-modal.md:120
+#: ../../guide/quantified-modal.md:121
 #, python-brace-format
 msgid ""
 "Build a `KripkeModel` with per-world object domains — `domains={w: "
@@ -199,11 +207,11 @@ msgstr ""
 "`domains={w: {...}}` für eine variierende Domäne oder `domain={...}` für "
 "eine einzige konstante Domäne, die von jeder Welt geteilt wird. "
 "`satisfies_modal(φ, model, world)` interpretiert `∀x` / `∃x` dann "
-"**aktualistisch**: an einer Welt `w` reichen sie über `D_w`, die "
-"Objekte, die *an dieser Welt* existieren. Dies ist die Referenzwahrheit, "
-"gegen die die Embeddings gegengeprüft werden."
+"**aktualistisch**: an einer Welt `w` reichen sie über `D_w`, die Objekte,"
+" die *an dieser Welt* existieren. Dies ist die Referenzwahrheit, gegen "
+"die die Embeddings gegengeprüft werden."
 
-#: ../../guide/quantified-modal.md:122
+#: ../../guide/quantified-modal.md:123
 #, python-brace-format
 msgid ""
 "`model.domain_at(w)` shows the live domain of a world; the constant-"
@@ -214,29 +222,29 @@ msgstr ""
 "Kurzschreibweise `domain={...}` für die konstante Domäne weist einfach "
 "dieselbe Menge jeder Welt zu:"
 
-#: ../../guide/quantified-modal.md:136
+#: ../../guide/quantified-modal.md:137
 msgid "Building models with valuations"
 msgstr "Modelle mit Belegungen aufbauen"
 
-#: ../../guide/quantified-modal.md:138
+#: ../../guide/quantified-modal.md:139
 msgid ""
 "Attach a valuation (truth assignment for atoms) to make concrete "
 "evaluations:"
 msgstr ""
-"Fügen Sie eine Belegung (Wahrheitszuweisung für Atome) hinzu, um "
-"konkrete Auswertungen vorzunehmen:"
+"Fügen Sie eine Belegung (Wahrheitszuweisung für Atome) hinzu, um konkrete"
+" Auswertungen vorzunehmen:"
 
-#: ../../guide/quantified-modal.md:171
+#: ../../guide/quantified-modal.md:172
 msgid "Multi-world, multi-predicate models"
 msgstr "Modelle mit mehreren Welten und mehreren Prädikaten"
 
-#: ../../guide/quantified-modal.md:173
+#: ../../guide/quantified-modal.md:174
 msgid "Build realistic scenarios with multiple predicates and connectivity:"
 msgstr ""
 "Bauen Sie realistische Szenarien mit mehreren Prädikaten und "
 "Konnektivität auf:"
 
-#: ../../guide/quantified-modal.md:213
+#: ../../guide/quantified-modal.md:214
 #, python-brace-format
 msgid ""
 "A model built **without** domains is the purely propositional fragment of"
@@ -248,11 +256,11 @@ msgstr ""
 "Objektquantors aufzufordern, ist ein Fehler und kein stiller "
 "Standardfall:"
 
-#: ../../guide/quantified-modal.md:224
+#: ../../guide/quantified-modal.md:225
 msgid "Barcan fails when domains grow"
 msgstr "Barcan schlägt fehl, wenn Domänen wachsen"
 
-#: ../../guide/quantified-modal.md:226
+#: ../../guide/quantified-modal.md:227
 msgid ""
 "The Barcan formula is valid under constant domains but **fails when "
 "domains grow**, because an object can appear only in a successor world:"
@@ -261,19 +269,20 @@ msgstr ""
 "fehl, wenn Domänen wachsen**, weil ein Objekt erst in einer "
 "Nachfolgerwelt auftauchen kann:"
 
-#: ../../guide/quantified-modal.md:247
+#: ../../guide/quantified-modal.md:248
 msgid ""
 "Under `increasing`, `b` exists only at world 1: `◇∃x A(x)` holds at world"
 " 0 (a `b` with `A(b)` is reachable), but `∃x ◇A(x)` fails because no "
 "object *in `D_0`* possibly satisfies `A`. You can watch the two "
 "antecedent/consequent halves come apart directly:"
 msgstr ""
-"Unter `increasing` existiert `b` nur an Welt 1: `◇∃x A(x)` gilt an Welt "
-"0 (ein `b` mit `A(b)` ist erreichbar), aber `∃x ◇A(x)` schlägt fehl, "
-"weil kein Objekt *in `D_0`* möglicherweise `A` erfüllt. Man kann direkt "
-"beobachten, wie die beiden Hälften Antezedens/Konsequens auseinanderfallen:"
+"Unter `increasing` existiert `b` nur an Welt 1: `◇∃x A(x)` gilt an Welt 0"
+" (ein `b` mit `A(b)` ist erreichbar), aber `∃x ◇A(x)` schlägt fehl, weil "
+"kein Objekt *in `D_0`* möglicherweise `A` erfüllt. Man kann direkt "
+"beobachten, wie die beiden Hälften Antezedens/Konsequens "
+"auseinanderfallen:"
 
-#: ../../guide/quantified-modal.md:257
+#: ../../guide/quantified-modal.md:258
 msgid ""
 "This asymmetry shows why Barcan breaks: the antecedent escapes the domain"
 " restriction by quantifying within the modal operator, while the "
@@ -283,7 +292,7 @@ msgstr ""
 "Domänenbeschränkung, indem es innerhalb des modalen Operators "
 "quantifiziert, während das Konsequens über D_0 quantifizieren muss."
 
-#: ../../guide/quantified-modal.md:259
+#: ../../guide/quantified-modal.md:260
 msgid ""
 "`satisfies_modal` is also the way to obtain a definite countermodel — it "
 "is a complete brute-force oracle over the explicit model."
@@ -292,23 +301,23 @@ msgstr ""
 "erhalten — es ist ein vollständiges Brute-Force-Orakel über dem "
 "expliziten Modell."
 
-#: ../../guide/quantified-modal.md:261
+#: ../../guide/quantified-modal.md:262
 msgid "Converse Barcan fails when domains shrink"
 msgstr "Die Konverse Barcan-Formel schlägt fehl, wenn Domänen schrumpfen"
 
-#: ../../guide/quantified-modal.md:263
+#: ../../guide/quantified-modal.md:264
 msgid ""
 "The Converse Barcan is the mirror image: it holds under constant domains "
 "but **fails when domains shrink** along the accessibility relation. Put "
 "`b` in `D_0` with `A(b)` true at the successor world 1, but drop `b` from"
 " `D_1`:"
 msgstr ""
-"Die Konverse Barcan-Formel ist das Spiegelbild: Sie gilt unter "
-"konstanten Domänen, **schlägt aber fehl, wenn Domänen entlang der "
+"Die Konverse Barcan-Formel ist das Spiegelbild: Sie gilt unter konstanten"
+" Domänen, **schlägt aber fehl, wenn Domänen entlang der "
 "Erreichbarkeitsrelation schrumpfen**. Setzen Sie `b` in `D_0` mit `A(b)` "
 "wahr an der Nachfolgerwelt 1, lassen Sie `b` jedoch aus `D_1` weg:"
 
-#: ../../guide/quantified-modal.md:277
+#: ../../guide/quantified-modal.md:278
 #, python-brace-format
 msgid ""
 "Here `∃x ◇A(x)` is true at world 0 (the object `b`, which exists at 0, "
@@ -321,22 +330,22 @@ msgstr ""
 "einzige Nachfolger ist Welt 1, deren aktualistische Domäne `D_1 = {a}` "
 "keinen `A`-Zeugen enthält, weil `b` dort nicht mehr existiert."
 
-#: ../../guide/quantified-modal.md:287
+#: ../../guide/quantified-modal.md:288
 msgid ""
 "So `satisfies_modal` gives you both halves of the correspondence by hand-"
 "built example: **BF breaks on growth, CBF breaks on shrinkage**, and a "
 "constant domain (neither growing nor shrinking) validates both."
 msgstr ""
-"Somit liefert `satisfies_modal` durch handgebaute Beispiele beide "
-"Hälften der Korrespondenz: **BF bricht bei Wachstum, CBF bricht bei "
+"Somit liefert `satisfies_modal` durch handgebaute Beispiele beide Hälften"
+" der Korrespondenz: **BF bricht bei Wachstum, CBF bricht bei "
 "Schrumpfung**, und eine konstante Domäne (weder wachsend noch "
 "schrumpfend) validiert beide."
 
-#: ../../guide/quantified-modal.md:289
+#: ../../guide/quantified-modal.md:290
 msgid "Varying domains: BF and CBF both fail"
 msgstr "Variierende Domänen: BF und CBF schlagen beide fehl"
 
-#: ../../guide/quantified-modal.md:291
+#: ../../guide/quantified-modal.md:292
 msgid ""
 "When domains can move arbitrarily (neither growing nor shrinking), "
 "neither Barcan formula holds:"
@@ -344,11 +353,11 @@ msgstr ""
 "Wenn sich Domänen beliebig ändern können (weder wachsend noch "
 "schrumpfend), gilt keine der beiden Barcan-Formeln:"
 
-#: ../../guide/quantified-modal.md:305
+#: ../../guide/quantified-modal.md:306
 msgid "(A) First-order shallow embedding → Z3"
 msgstr "(A) Shallow Embedding erster Stufe → Z3"
 
-#: ../../guide/quantified-modal.md:307
+#: ../../guide/quantified-modal.md:308
 #, python-brace-format
 msgid ""
 "`qml_translate` rewrites a modal formula into classical FOL — quantifiers"
@@ -362,16 +371,16 @@ msgstr ""
 "`qml_translate` schreibt eine modale Formel in klassische FOL um — "
 "Quantoren über Welten für die Modalitäten und ein Existenzprädikat `E`, "
 "das die aktualistischen Objektquantoren relativiert — und "
-"`qml_is_valid(φ, mode, frame)` entscheidet die Gültigkeit mit **Z3**. "
-"Der `mode` ist das Domänenregime (`\"constant\"`, `\"increasing\"` / "
-"`\"cumulative\"`, `\"decreasing\"`, `\"varying\"`, `\"possibilist\"`) "
-"und `frame` ∈ {`K`, `T`, `S4`, `S5`, `KD`, `KD45`, `B`, `S4.2`, `S4.3`}."
+"`qml_is_valid(φ, mode, frame)` entscheidet die Gültigkeit mit **Z3**. Der"
+" `mode` ist das Domänenregime (`\"constant\"`, `\"increasing\"` / "
+"`\"cumulative\"`, `\"decreasing\"`, `\"varying\"`, `\"possibilist\"`) und"
+" `frame` ∈ {`K`, `T`, `S4`, `S5`, `KD`, `KD45`, `B`, `S4.2`, `S4.3`}."
 
-#: ../../guide/quantified-modal.md:309
+#: ../../guide/quantified-modal.md:310
 msgid "Seeing the translation"
 msgstr "Die Übersetzung betrachten"
 
-#: ../../guide/quantified-modal.md:311
+#: ../../guide/quantified-modal.md:312
 msgid ""
 "`qml_translate(φ, mode, world=\"w\")` is the rewrite itself — a plain "
 "classical-FOL `Node` you can render. Each atom gets the current world "
@@ -384,11 +393,11 @@ msgstr ""
 "einem geschützten `∃` über erreichbare Welten, und `□` zu einem "
 "geschützten `∀`:"
 
-#: ../../guide/quantified-modal.md:323
+#: ../../guide/quantified-modal.md:324
 msgid "More complex formulas show how structure is preserved:"
 msgstr "Komplexere Formeln zeigen, wie die Struktur erhalten bleibt:"
 
-#: ../../guide/quantified-modal.md:337
+#: ../../guide/quantified-modal.md:338
 msgid ""
 "The domain regime shows up in how the *object* quantifiers are guarded. "
 "Under a **constant / possibilist** mode `∀x` is unrelativised (just typed"
@@ -396,18 +405,17 @@ msgid ""
 " `varying`) it is additionally guarded by the existence predicate `E(x, "
 "w)` (\"`x` exists at world `w`\"):"
 msgstr ""
-"Das Domänenregime zeigt sich darin, wie die *Objekt*-Quantoren "
-"geschützt werden. Unter einem **konstanten / possibilistischen** Modus "
-"ist `∀x` unrelativiert (nur getypt `Object(x)`); unter einem "
-"**aktualistischen** Modus (`increasing` / `decreasing` / `varying`) "
-"wird es zusätzlich durch das Existenzprädikat `E(x, w)` geschützt "
-"(„`x` existiert an Welt `w`“):"
+"Das Domänenregime zeigt sich darin, wie die *Objekt*-Quantoren geschützt "
+"werden. Unter einem **konstanten / possibilistischen** Modus ist `∀x` "
+"unrelativiert (nur getypt `Object(x)`); unter einem **aktualistischen** "
+"Modus (`increasing` / `decreasing` / `varying`) wird es zusätzlich durch "
+"das Existenzprädikat `E(x, w)` geschützt („`x` existiert an Welt `w`“):"
 
-#: ../../guide/quantified-modal.md:349
+#: ../../guide/quantified-modal.md:350
 msgid "Compare existential quantifiers:"
 msgstr "Vergleich der Existenzquantoren:"
 
-#: ../../guide/quantified-modal.md:361
+#: ../../guide/quantified-modal.md:362
 msgid ""
 "The background axioms (sort typing, frame conditions, the existence-axiom"
 " that *defines* the regime) are exposed separately as `qml_axioms(mode, "
@@ -415,20 +423,20 @@ msgid ""
 msgstr ""
 "Die Hintergrundaxiome (Sortentypisierung, Rahmenbedingungen, das "
 "Existenzaxiom, das das Regime *definiert*) werden separat als "
-"`qml_axioms(mode, frame)` bereitgestellt; `qml_is_valid` prüft "
-"`⋀axioms → ∀w (World(w) → ST(φ, w))`:"
+"`qml_axioms(mode, frame)` bereitgestellt; `qml_is_valid` prüft `⋀axioms →"
+" ∀w (World(w) → ST(φ, w))`:"
 
-#: ../../guide/quantified-modal.md:382
+#: ../../guide/quantified-modal.md:383
 msgid "Deciding validity per regime"
 msgstr "Gültigkeit pro Regime entscheiden"
 
-#: ../../guide/quantified-modal.md:384
+#: ../../guide/quantified-modal.md:385
 msgid "The core decision procedure: test a formula under all domain regimes:"
 msgstr ""
 "Das zentrale Entscheidungsverfahren: eine Formel unter allen "
 "Domänenregimen testen:"
 
-#: ../../guide/quantified-modal.md:398
+#: ../../guide/quantified-modal.md:399
 msgid ""
 "The full correspondence (verified against the Kripke enumerator) is: **BF"
 " ⇔ decreasing** domains, **CBF ⇔ increasing**, **constant ⇔ both**, and "
@@ -436,12 +444,12 @@ msgid ""
 "`possibilist` is `constant` (every individual exists everywhere):"
 msgstr ""
 "Die vollständige Korrespondenz (gegen den Kripke-Enumerator verifiziert) "
-"lautet: **BF ⇔ decreasing**-Domänen, **CBF ⇔ increasing**, "
-"**constant ⇔ beide**, und **varying ⇔ keine**. Der Alias `cumulative` "
-"steht für `increasing`, und `possibilist` steht für `constant` (jedes "
-"Individuum existiert überall):"
+"lautet: **BF ⇔ decreasing**-Domänen, **CBF ⇔ increasing**, **constant ⇔ "
+"beide**, und **varying ⇔ keine**. Der Alias `cumulative` steht für "
+"`increasing`, und `possibilist` steht für `constant` (jedes Individuum "
+"existiert überall):"
 
-#: ../../guide/quantified-modal.md:408
+#: ../../guide/quantified-modal.md:409
 msgid ""
 "This reproduces, decision-procedure-style, exactly the by-hand verdicts "
 "from `satisfies_modal` above."
@@ -449,32 +457,31 @@ msgstr ""
 "Dies reproduziert im Stil eines Entscheidungsverfahrens genau die "
 "handverifizierten Urteile von `satisfies_modal` oben."
 
-#: ../../guide/quantified-modal.md:410
+#: ../../guide/quantified-modal.md:411
 msgid "Testing mixed quantifiers"
 msgstr "Gemischte Quantoren testen"
 
-#: ../../guide/quantified-modal.md:412
+#: ../../guide/quantified-modal.md:413
 msgid "Quantifier nesting shows regime-dependent effects:"
 msgstr "Verschachtelung von Quantoren zeigt regimeabhängige Effekte:"
 
-#: ../../guide/quantified-modal.md:432
+#: ../../guide/quantified-modal.md:433
 msgid "Adding a frame system"
 msgstr "Ein Rahmensystem (Frame) hinzufügen"
 
-#: ../../guide/quantified-modal.md:434
+#: ../../guide/quantified-modal.md:435
 msgid ""
 "The `frame` argument fixes the **alethic** accessibility relation "
 "(defaulting to the minimal `K`). The Barcan correspondence is a *domain* "
 "phenomenon, so it is robust across frames — BF stays valid under constant"
 " domains whether the frame is `K`, `S4`, or `S5`:"
 msgstr ""
-"Das Argument `frame` legt die **alethische** Erreichbarkeitsrelation "
-"fest (standardmäßig das minimale `K`). Die Barcan-Korrespondenz ist ein "
-"*Domänen*-Phänomen und daher robust über Frames hinweg — BF bleibt "
-"unter konstanten Domänen gültig, gleich ob der Frame `K`, `S4` oder `S5` "
-"ist:"
+"Das Argument `frame` legt die **alethische** Erreichbarkeitsrelation fest"
+" (standardmäßig das minimale `K`). Die Barcan-Korrespondenz ist ein "
+"*Domänen*-Phänomen und daher robust über Frames hinweg — BF bleibt unter "
+"konstanten Domänen gültig, gleich ob der Frame `K`, `S4` oder `S5` ist:"
 
-#: ../../guide/quantified-modal.md:444
+#: ../../guide/quantified-modal.md:445
 msgid ""
 "Frame *schemata* (as opposed to domain effects) do depend on the system. "
 "The classic propositional ones decide through this embedding too, because"
@@ -482,37 +489,36 @@ msgid ""
 msgstr ""
 "Frame-*Schemata* (im Gegensatz zu Domäneneffekten) hängen sehr wohl vom "
 "System ab. Die klassischen aussagenlogischen entscheiden sich ebenfalls "
-"über dieses Embedding, weil Z3 ihre erststufigen Rahmenbedingungen "
-"sieht:"
+"über dieses Embedding, weil Z3 ihre erststufigen Rahmenbedingungen sieht:"
 
-#: ../../guide/quantified-modal.md:456
+#: ../../guide/quantified-modal.md:457
 msgid "Test the deontic frame (seriality):"
 msgstr "Test des deontischen Frames (Serialität):"
 
-#: ../../guide/quantified-modal.md:463
+#: ../../guide/quantified-modal.md:464
 msgid "`qml_equivalent`"
 msgstr "`qml_equivalent`"
 
-#: ../../guide/quantified-modal.md:465
+#: ../../guide/quantified-modal.md:466
 msgid ""
 "`qml_equivalent(left, right, mode, frame)` is just `qml_is_valid` of the "
 "biconditional. Since both BF and CBF are valid under constant domains, "
 "they are QML-equivalent there — but not under a one-sided regime:"
 msgstr ""
-"`qml_equivalent(left, right, mode, frame)` ist einfach `qml_is_valid` "
-"des Bikonditionals. Da sowohl BF als auch CBF unter konstanten Domänen "
+"`qml_equivalent(left, right, mode, frame)` ist einfach `qml_is_valid` des"
+" Bikonditionals. Da sowohl BF als auch CBF unter konstanten Domänen "
 "gültig sind, sind sie dort QML-äquivalent — jedoch nicht unter einem "
 "einseitigen Regime:"
 
-#: ../../guide/quantified-modal.md:474
+#: ../../guide/quantified-modal.md:475
 msgid "Test complex equivalences:"
 msgstr "Test komplexer Äquivalenzen:"
 
-#: ../../guide/quantified-modal.md:495
+#: ../../guide/quantified-modal.md:496
 msgid "Soundness caveat and error modes"
 msgstr "Vorbehalt zur Korrektheit und Fehlermodi"
 
-#: ../../guide/quantified-modal.md:497
+#: ../../guide/quantified-modal.md:498
 msgid ""
 "This embedding is **sound but bounded-incomplete**: first-order modal "
 "logic is undecidable, so a `False` may mean \"Z3 did not prove validity "
@@ -527,26 +533,63 @@ msgstr ""
 "expliziten Modell für ein garantiertes Gegenmodell. Die API schlägt bei "
 "fehlerhaften Eingaben zudem laut fehl, statt zu raten:"
 
-#: ../../guide/quantified-modal.md:505
+#: ../../guide/quantified-modal.md:506
 msgid ""
 "`GL` (Gödel–Löb provability) is transitive + converse-well-founded, which"
 " is **not** first-order definable, so the Z3 path rejects it; reach it "
 "only through the higher-order exporters below."
 msgstr ""
-"`GL` (Gödel-Löb-Beweisbarkeitslogik) ist transitiv + konvers-"
-"fundiert, was erststufig **nicht** definierbar ist, sodass der Z3-Pfad "
-"es ablehnt; erreichbar ist es nur über die Exporter höherer Stufe weiter "
-"unten."
+"`GL` (Gödel-Löb-Beweisbarkeitslogik) ist transitiv + konvers-fundiert, "
+"was erststufig **nicht** definierbar ist, sodass der Z3-Pfad es ablehnt; "
+"erreichbar ist es nur über die Exporter höherer Stufe weiter unten."
 
-#: ../../guide/quantified-modal.md:507
+#: ../../guide/quantified-modal.md:508
 msgid "Inspect error messages closely:"
 msgstr "Fehlermeldungen genauer betrachten:"
 
-#: ../../guide/quantified-modal.md:518
+#: ../../guide/quantified-modal.md:519
+msgid "A fourth view: `resolution.prove` over the qml embedding"
+msgstr "Eine vierte Sicht: `resolution.prove` über dem qml-Embedding"
+
+#: ../../guide/quantified-modal.md:521
+msgid ""
+"`resolution.prove(premises, conclusion)` also accepts quantified-modal "
+"input directly: it lowers the folded consequence `premises ⊢ conclusion` "
+"through the same first-order embedding `qml_is_valid` uses (constant "
+"domains, frame **K**), scales the saturation step budget to the larger "
+"translated clause set, and runs the resolution loop in-process — no Z3 "
+"dependency for this path. Both Barcan directions are provable:"
+msgstr ""
+"`resolution.prove(premises, conclusion)` akzeptiert auch quantifizierte "
+"modale Eingaben direkt: Es senkt die gefaltete Konsequenz `premises ⊢ "
+"conclusion` über dasselbe erststufige Embedding ab, das auch "
+"`qml_is_valid` verwendet (konstante Domänen, Rahmen **K**), skaliert das "
+"Schrittbudget der Saturierung auf die größere übersetzte Klauselmenge und"
+" führt die Resolutionsschleife prozessintern aus — für diesen Pfad ist "
+"keine Z3-Abhängigkeit nötig. Beide Barcan-Richtungen sind beweisbar:"
+
+#: ../../guide/quantified-modal.md:530
+msgid ""
+"Like `qml_is_valid`, this is **sound but bounded-incomplete**: `False` "
+"means \"not proved within `max_steps`\", never \"definitely invalid\" — "
+"reach for `satisfies_modal` on an explicit model when you need a "
+"guaranteed countermodel. Unlike `qml_is_valid`, there is no "
+"`mode=`/`frame=` choice here; it is fixed to constant-domain K, matching "
+"`qml_is_valid`'s own defaults."
+msgstr ""
+"Wie `qml_is_valid` ist dies **korrekt (sound), aber beschränkt "
+"unvollständig**: `False` bedeutet „nicht innerhalb von `max_steps` "
+"bewiesen“, niemals „definitiv ungültig“ — greifen Sie zu `satisfies_modal`"
+" über einem expliziten Modell, wenn Sie ein garantiertes Gegenmodell "
+"benötigen. Anders als bei `qml_is_valid` gibt es hier keine Wahl von "
+"`mode=`/`frame=`; sie ist fest auf konstante Domänen und den Rahmen K "
+"eingestellt, entsprechend den eigenen Standardwerten von `qml_is_valid`."
+
+#: ../../guide/quantified-modal.md:532
 msgid "(B) Higher-order shallow embedding → TPTP THF"
 msgstr "(B) Shallow Embedding höherer Stufe → TPTP THF"
 
-#: ../../guide/quantified-modal.md:520
+#: ../../guide/quantified-modal.md:534
 msgid ""
 "`to_thf_modal(φ, mode, frame)` emits a complete Benzmüller-style **TPTP "
 "THF** problem for an external higher-order prover (Leo-III, Satallax). A "
@@ -555,15 +598,15 @@ msgid ""
 "quantifiers are `existsAt`-guarded (actualist). The frame and domain "
 "regime are encoded as axioms."
 msgstr ""
-"`to_thf_modal(φ, mode, frame)` erzeugt ein vollständiges **TPTP-THF**-"
-"Problem im Stil von Benzmüller für einen externen Prover höherer Stufe "
-"(Leo-III, Satallax). Eine modale Proposition ist eine Funktion "
-"`mu > $o` (Welt → Bool); die Modalitäten sind λ-gelifteter Quantoren "
-"über der Erreichbarkeitsrelation `r`, und Objektquantoren sind "
+"`to_thf_modal(φ, mode, frame)` erzeugt ein vollständiges **TPTP-"
+"THF**-Problem im Stil von Benzmüller für einen externen Prover höherer "
+"Stufe (Leo-III, Satallax). Eine modale Proposition ist eine Funktion `mu "
+"> $o` (Welt → Bool); die Modalitäten sind λ-gelifteter Quantoren über der"
+" Erreichbarkeitsrelation `r`, und Objektquantoren sind "
 "`existsAt`-geschützt (aktualistisch). Der Frame und das Domänenregime "
 "werden als Axiome kodiert."
 
-#: ../../guide/quantified-modal.md:532
+#: ../../guide/quantified-modal.md:546
 msgid ""
 "The emitted file is a full, self-contained problem: the type of worlds "
 "`mu`, the lifted operator definitions, the frame axioms, the `existsAt` "
@@ -571,25 +614,25 @@ msgid ""
 " can see those pieces by grepping the lines:"
 msgstr ""
 "Die erzeugte Datei ist ein vollständiges, in sich geschlossenes Problem: "
-"der Typ der Welten `mu`, die gelifteten Operatordefinitionen, die "
-"Frame-Axiome, das `existsAt`-Domänenaxiom für das Regime und die "
-"Vermutung (Konjektur) `mvalid @ ⟨formula⟩`. Diese Bestandteile lassen "
-"sich durch Greppen der Zeilen einsehen:"
+"der Typ der Welten `mu`, die gelifteten Operatordefinitionen, die Frame-"
+"Axiome, das `existsAt`-Domänenaxiom für das Regime und die Vermutung "
+"(Konjektur) `mvalid @ ⟨formula⟩`. Diese Bestandteile lassen sich durch "
+"Greppen der Zeilen einsehen:"
 
-#: ../../guide/quantified-modal.md:545
+#: ../../guide/quantified-modal.md:559
 msgid "Inspecting domain axioms"
 msgstr "Domänenaxiome untersuchen"
 
-#: ../../guide/quantified-modal.md:547
+#: ../../guide/quantified-modal.md:561
 msgid ""
 "Different regimes emit different existsAt constraints. Check what axiom "
 "is in a THF problem:"
 msgstr ""
 "Unterschiedliche Regime erzeugen unterschiedliche existsAt-"
-"Beschränkungen. Prüfen Sie, welches Axiom in einem THF-Problem "
-"enthalten ist:"
+"Beschränkungen. Prüfen Sie, welches Axiom in einem THF-Problem enthalten "
+"ist:"
 
-#: ../../guide/quantified-modal.md:567
+#: ../../guide/quantified-modal.md:581
 msgid ""
 "The domain regime selects which `existsAt` axiom is emitted. `constant` "
 "(and its alias `possibilist`) asserts every individual exists at every "
@@ -598,26 +641,25 @@ msgid ""
 msgstr ""
 "Das Domänenregime bestimmt, welches `existsAt`-Axiom erzeugt wird. "
 "`constant` (und sein Alias `possibilist`) behauptet, dass jedes "
-"Individuum an jeder Welt existiert; `increasing` / `decreasing` "
-"behaupten die monotonen Existenzaxiome; `varying` erzeugt **keines** "
-"davon (keine Beschränkung, wie sich die Domäne ändert):"
+"Individuum an jeder Welt existiert; `increasing` / `decreasing` behaupten"
+" die monotonen Existenzaxiome; `varying` erzeugt **keines** davon (keine "
+"Beschränkung, wie sich die Domäne ändert):"
 
-#: ../../guide/quantified-modal.md:577
+#: ../../guide/quantified-modal.md:591
 msgid ""
 "Unlike the Z3 path, the THF exporter **accepts** `frame=\"GL\"`: it emits"
 " the Löb schema as a higher-order axiom for the prover (HOL can express "
 "converse-well-foundedness where first-order logic cannot):"
 msgstr ""
-"Anders als der Z3-Pfad **akzeptiert** der THF-Exporter `frame=\"GL\"`: "
-"Er erzeugt das Löb-Schema als Axiom höherer Stufe für den Prover (HOL "
-"kann Konvers-Fundiertheit ausdrücken, wo erststufige Logik dies nicht "
-"kann):"
+"Anders als der Z3-Pfad **akzeptiert** der THF-Exporter `frame=\"GL\"`: Er"
+" erzeugt das Löb-Schema als Axiom höherer Stufe für den Prover (HOL kann "
+"Konvers-Fundiertheit ausdrücken, wo erststufige Logik dies nicht kann):"
 
-#: ../../guide/quantified-modal.md:584
+#: ../../guide/quantified-modal.md:598
 msgid "Generate THF for more complex formulas:"
 msgstr "THF für komplexere Formeln erzeugen:"
 
-#: ../../guide/quantified-modal.md:596
+#: ../../guide/quantified-modal.md:610
 msgid ""
 "The function **emits** the problem (like the other `to_*` exporters); it "
 "does not run a prover in-process. The conjecture comes out a `Theorem` "
@@ -625,15 +667,15 @@ msgid ""
 "regime."
 msgstr ""
 "Die Funktion **erzeugt** das Problem (wie die anderen `to_*`-Exporter); "
-"sie führt keinen Prover im eigenen Prozess aus. Die Vermutung (Konjektur) "
-"kommt für den Prover genau dann als `Theorem` heraus, wenn die Formel "
+"sie führt keinen Prover im eigenen Prozess aus. Die Vermutung (Konjektur)"
+" kommt für den Prover genau dann als `Theorem` heraus, wenn die Formel "
 "unter dem gegebenen Regime QML-gültig ist."
 
-#: ../../guide/quantified-modal.md:598
+#: ../../guide/quantified-modal.md:612
 msgid "A loadable Isabelle/HOL theory"
 msgstr "Eine ladbare Isabelle/HOL-Theorie"
 
-#: ../../guide/quantified-modal.md:600
+#: ../../guide/quantified-modal.md:614
 msgid ""
 "`to_isabelle_modal(φ, mode, frame)` is the Isabelle counterpart — a "
 "complete, loadable `theory … begin … end` with every lifted operator "
@@ -643,11 +685,11 @@ msgstr ""
 "vollständige, ladbare `theory … begin … end` mit jedem gelifteten "
 "Operator definiert und einem echten `lemma` zum Beweisen:"
 
-#: ../../guide/quantified-modal.md:610
+#: ../../guide/quantified-modal.md:624
 msgid "Inspect the Isabelle output structure:"
 msgstr "Struktur der Isabelle-Ausgabe untersuchen:"
 
-#: ../../guide/quantified-modal.md:619
+#: ../../guide/quantified-modal.md:633
 #, python-brace-format
 msgid ""
 "This covers the alethic □/◇ fragment; for the full modal family "
@@ -658,11 +700,11 @@ msgstr ""
 "Familie (epistemisch / doxastisch / deontisch / temporal) und die "
 "zusätzlichen Exporter-Optionen siehe {doc}`higher-order`."
 
-#: ../../guide/quantified-modal.md:621
+#: ../../guide/quantified-modal.md:635
 msgid "End-to-end: parse → decide → cross-check → export"
 msgstr "End-to-End: Parsen → Entscheiden → Gegenprüfen → Exportieren"
 
-#: ../../guide/quantified-modal.md:623
+#: ../../guide/quantified-modal.md:637
 msgid ""
 "A complete pass over one formula, exercising all three views. Take the "
 "box Converse Barcan `□∀x A(x) → ∀x □A(x)`, decide it under each regime "
@@ -670,12 +712,12 @@ msgid ""
 " export a prover problem:"
 msgstr ""
 "Ein vollständiger Durchlauf über eine Formel, der alle drei Sichten "
-"beansprucht. Nehmen Sie die Konverse Box-Barcan-Formel "
-"`□∀x A(x) → ∀x □A(x)`, entscheiden Sie sie unter jedem Regime mit Z3, "
-"bestätigen Sie das Urteil für wachsende Domänen an einem expliziten "
-"Modell und exportieren Sie dann ein Prover-Problem:"
+"beansprucht. Nehmen Sie die Konverse Box-Barcan-Formel `□∀x A(x) → ∀x "
+"□A(x)`, entscheiden Sie sie unter jedem Regime mit Z3, bestätigen Sie das"
+" Urteil für wachsende Domänen an einem expliziten Modell und exportieren "
+"Sie dann ein Prover-Problem:"
 
-#: ../../guide/quantified-modal.md:652
+#: ../../guide/quantified-modal.md:666
 msgid ""
 "The three steps agree by construction — that triangulation between the "
 "brute-force evaluator, the Z3 embedding, and the exported HOL problem is "
@@ -686,10 +728,11 @@ msgstr ""
 "dem exportierten HOL-Problem ist der ganze Sinn, drei Sichten auf QML "
 "mitzuführen."
 
-#: ../../guide/quantified-modal.md:654
+#: ../../guide/quantified-modal.md:668
 msgid "Comparing all three approaches on a custom formula"
 msgstr "Vergleich aller drei Ansätze an einer eigenen Formel"
 
-#: ../../guide/quantified-modal.md:656
+#: ../../guide/quantified-modal.md:670
 msgid "Test a non-canonical formula across all pathways:"
 msgstr "Test einer nicht-kanonischen Formel über alle Pfade hinweg:"
+

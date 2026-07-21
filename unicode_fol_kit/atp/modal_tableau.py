@@ -26,6 +26,17 @@ to :func:`~unicode_fol_kit.semantics.kripke.satisfies_modal` /
 constraint has no rule here; use ``hybrid_is_valid`` (the standard translation + Z3)
 or evaluate in a ``KripkeModel`` with a ``nominals=`` assignment.
 
+**Public announcement logic (PAL)** — the ``Announce``/``AnnounceDiamond`` nodes
+(``[φ!]ψ`` / ``⟨φ!⟩ψ``, :mod:`unicode_fol_kit.fol._modal_nodes`) — is decided too,
+via a PRE-PASS: every public entry point below runs its formula(s) through
+:func:`unicode_fol_kit.fol.pal.reduce_announcements` first (see :func:`_run`),
+which eliminates every announcement using the standard PAL reduction axioms
+before this tableau ever sees the formula. So ``modal_decide``/``modal_prove``/
+``is_modal_valid``/``modal_countermodel`` all decide genuine PAL formulas — e.g.
+the reduction axiom ``[φ!]K_aψ ↔ (φ → K_a[φ!]ψ)`` is K-valid, while the famous
+NON-theorem ``[φ!]K_aψ → K_a[φ!]ψ`` is not (see ``tests/test_pal.py``) — with no
+PAL-specific rule in this module at all.
+
 **Frame conditions** are realised as structural rules over the edge set: reflexivity
 adds ``w → w`` for every world, symmetry mirrors each edge, transitivity takes the
 closure, the euclidean rule closes ``w→v, w→u ⊢ v→u``, and seriality manufactures a
@@ -49,12 +60,16 @@ Public API: :func:`modal_tableau_closed`, :func:`is_modal_valid`, :func:`modal_p
 from typing import List, Optional, Tuple
 
 from ..fol.nodes import (
-    Node, Atom, Not, And, Or, Xor, Implies, Iff,
+    Node, Atom, Not, And, Or, Xor, Implies, Iff, Contrast,
     Box, Diamond, Knows, Believes, Says, Wants, Obligatory, Permitted,
     Next, Always, Eventually, Until,
     Historically, Once, Previous, Since,
-    Nominal, At,
+    Nominal, At, Would, Might,
+    Quantifier, SortedQuantifier, Count, SortedCount,
+    Cardinality, SortedCardinality, SecondOrderQuantifier,
 )
+from ..fol._modal_nodes import Announce, AnnounceDiamond
+from ..fol.pal import reduce_announcements
 from ..semantics.kripke import KripkeModel, satisfies_modal
 from .fitch import is_falsum
 
@@ -100,22 +115,40 @@ def _neg(f: Node) -> Node:
 
 
 def has_modal(node: Node) -> bool:
-    """True iff ``node`` contains any modal/temporal/epistemic/deontic/hybrid operator.
+    """True iff ``node`` contains any modal/temporal/epistemic/deontic/hybrid
+    operator — or a counterfactual — or a public-announcement operator.
 
-    Hybrid constructs (Nominal / At) count as modal so the classical tableau
-    routes them here, where they get the clean hybrid rejection instead of a
-    generic no-rule error.
+    Hybrid constructs (Nominal / At), the Lewis counterfactuals (Would / Might),
+    and the PAL announcement operators (Announce / AnnounceDiamond) count as
+    modal so the classical tableau routes them here, where each gets its clean,
+    specific rejection (or, for Announce/AnnounceDiamond, its pal.reduce_announcements
+    pre-pass — see :func:`_run`) instead of a generic no-rule error.
     """
     modal = (Box, Diamond, Knows, Believes, Says, Wants, Obligatory, Permitted,
              Next, Always, Eventually, Until,
              Historically, Once, Previous, Since,
-             Nominal, At)
+             Nominal, At, Would, Might, Announce, AnnounceDiamond)
     return any(isinstance(n, modal) for n in node.walk())
 
 
 def _contains_hybrid(node: Node) -> bool:
     """True iff ``node`` contains a hybrid construct (a Nominal or an At)."""
     return any(isinstance(n, (Nominal, At)) for n in node.walk())
+
+
+def _contains_counterfactual(node: Node) -> bool:
+    """True iff ``node`` contains a Lewis counterfactual (Would / Might)."""
+    return any(isinstance(n, (Would, Might)) for n in node.walk())
+
+
+#: Constructs that bind an object/predicate variable. The modal tableau is a
+#: ground (propositional-modal) engine with no quantifier rules, so these are
+#: treated as OPAQUE literals: a branch may still close on a syntactic
+#: complement (sound — φ and ¬φ at one world are contradictory whatever φ
+#: means), while an open branch's model must pass satisfies_modal verification
+#: before any caller sees it, so no wrong verdict can arise from the opacity.
+_QUANTIFIED = (Quantifier, SortedQuantifier, Count, SortedCount,
+               Cardinality, SortedCardinality, SecondOrderQuantifier)
 
 
 def _decompose(f: Node):
@@ -133,6 +166,10 @@ def _decompose(f: Node):
     if is_falsum(f):
         return ("lit",)
     if isinstance(f, Atom):
+        return ("lit",)
+    if isinstance(f, _QUANTIFIED):
+        # Opaque literal: no quantifier rules here, but syntactic-complement
+        # closure stays sound and open models are verified before release.
         return ("lit",)
 
     # --- positive modal operators ---
@@ -160,6 +197,9 @@ def _decompose(f: Node):
     # --- positive connectives ---
     if isinstance(f, And):
         return ("alpha", [f.left, f.right])
+    if isinstance(f, Contrast):
+        # Concession is truth-functionally conjunction (Contrast's own contract).
+        return ("alpha", [f.left, f.right])
     if isinstance(f, Or):
         return ("beta", [[f.left], [f.right]])
     if isinstance(f, Implies):
@@ -176,9 +216,13 @@ def _decompose(f: Node):
             return ("true",)
         if isinstance(g, Atom):
             return ("lit",)
+        if isinstance(g, _QUANTIFIED):
+            return ("lit",)
         if isinstance(g, Not):
             return ("alpha", [g.formula])
         if isinstance(g, And):
+            return ("beta", [[Not(g.left)], [Not(g.right)]])
+        if isinstance(g, Contrast):
             return ("beta", [[Not(g.left)], [Not(g.right)]])
         if isinstance(g, Or):
             return ("alpha", [Not(g.left), Not(g.right)])
@@ -350,7 +394,8 @@ def _apply_boxes(b: _Branch) -> bool:
 def _expand_simple(b: _Branch) -> bool:
     """Apply double-negation / α / box-record rules; return True if anything changed.
 
-    Raises NotImplementedError on a temporal-closure operator.
+    A temporal-closure operator is marked inert (see the ``unsupported`` branch)
+    rather than raising, keeping every verdict sound and every crash impossible.
     """
     changed = False
     for w in list(b.tv):
@@ -374,12 +419,17 @@ def _expand_simple(b: _Branch) -> bool:
                     changed = True
                 b.expanded.add((w, f))
             elif tag == "unsupported":
-                raise NotImplementedError(
-                    "modal_tableau: the temporal-closure operator "
-                    f"{type(kind[1]).__name__} (G/F/Until over the reflexive-"
-                    "transitive temporal relation) is not handled by this tableau; "
-                    "evaluate it with semantics.kripke.satisfies_modal, or decide it "
-                    "with hol.isabelle_runner.isabelle_decide_modal.")
+                # A temporal-closure operator (G/F/U/H/P/Y/S over the closure of
+                # the temporal relation) has no rule here. Leave it INERT rather
+                # than raising: closure of a branch is monotone (a contradiction
+                # among the expanded formulas makes the full set unsatisfiable
+                # regardless of the inert ones), so "closed" verdicts stay sound;
+                # and an open branch's model only ever reaches a caller after
+                # satisfies_modal — which evaluates these operators exactly —
+                # verifies it, so no spurious countermodel can leak. The price is
+                # honest incompleteness: a branch kept open only by an inert
+                # formula yields "unknown", never a wrong verdict.
+                b.expanded.add((w, f))
             # beta / dia handled by the search loop
     return changed
 
@@ -519,6 +569,16 @@ def _solve(b: _Branch, ctx: _Ctx):
 
 
 def _check_frame(frame: str, systems) -> None:
+    if frame == "GL":
+        # Not a typo the user made — a genuine scope boundary, explained like
+        # qml.py's GL rejection rather than lumped into "unknown frame".
+        raise NotImplementedError(
+            "modal_tableau: the GL (Gödel–Löb provability) frame is transitive + "
+            "converse-well-founded; converse-well-foundedness is not expressible "
+            "by this tableau's finite relational frame rules. Use the "
+            "higher-order embeddings — hol.isabelle_modal.to_isabelle_modal / "
+            "isabelle_decide_modal or hol.thf_modal.to_thf_modal_full with "
+            "frame='GL' — which emit the Löb schema directly.")
     if frame not in _FRAMES:
         raise ValueError(
             f"modal_tableau: unknown frame {frame!r} (use one of {sorted(_FRAMES)}).")
@@ -536,17 +596,37 @@ def _check_frame(frame: str, systems) -> None:
 def _run(formulas, frame: str, systems, max_worlds: int, max_steps: int):
     """Build the root branch from ``formulas`` at world 0 and search it.
 
+    ``formulas`` is first run through :func:`~unicode_fol_kit.fol.pal.reduce_announcements`
+    (a no-op on a formula with no Announce/AnnounceDiamond node), so every public
+    entry point of this module DECIDES public-announcement formulas — no
+    modal-tableau rule for Announce/AnnounceDiamond exists or is needed, since the
+    reduction eliminates them into the ordinary modal fragment this tableau
+    already handles, BEFORE tableau search ever begins. A temporal operator (or
+    Would/Might/Nominal/At/a quantifier) found INSIDE an announcement's scope
+    still raises — that is pal.reduce_announcements's own clean, precise
+    NotImplementedError (unsound/undefined relativization, not this module's
+    concern), propagated unchanged; see that module's docstring for why each
+    case is rejected.
+
     Hybrid constructs are rejected up front — a nominal names ONE world, a
     constraint this labelled tableau has no rule for, and treating it as an
     ordinary atom would produce wrong verdicts (e.g. it would refute ``@i i``).
     Every public entry point funnels through here, so the guard covers them all.
     """
+    formulas = [reduce_announcements(f) for f in formulas]
     _check_frame(frame, systems)
     for f in formulas:
         if _contains_hybrid(f):
             raise NotImplementedError(
                 "modal_tableau: hybrid constructs (nominals/@) are not supported "
                 "by the modal tableau; use hybrid_is_valid or a KripkeModel.")
+        if _contains_counterfactual(f):
+            raise NotImplementedError(
+                "modal_tableau: the counterfactuals □→/◇→ are evaluated over a "
+                "similarity ordering (Lewis spheres), not an accessibility "
+                "relation, so this tableau cannot decide them. Use cf_valid / "
+                "cf_countermodel (bounded sphere-model search), cf_satisfies "
+                "over a CounterfactualModel, or isabelle_decide_counterfactual.")
     ctx = _Ctx(frame, systems, max_worlds, max_steps)
     root = _Branch()
     for f in formulas:
@@ -604,9 +684,14 @@ def modal_countermodel(formula: Node, frame: str = "K", systems=None,
     res, model = _run([Not(formula)], frame, systems, max_worlds, max_steps)
     if res != "open" or model is None:
         return None
-    if satisfies_modal(formula, model, 0):
-        return None
-    return model
+    try:
+        refuted = not satisfies_modal(formula, model, 0)
+    except (NotImplementedError, ValueError, TypeError, KeyError):
+        # The verifier cannot evaluate the formula in this model (e.g. an opaque
+        # quantified construct with no domain information) — the candidate is
+        # unverifiable, so it must not be handed back as a counter-model.
+        refuted = False
+    return model if refuted else None
 
 
 def modal_decide(formula: Node, frame: str = "K", systems=None,
@@ -626,6 +711,10 @@ def modal_decide(formula: Node, frame: str = "K", systems=None,
     res, model = _run([Not(formula)], frame, systems, max_worlds, max_steps)
     if res == "closed":
         return "valid"
-    if res == "open" and model is not None and not satisfies_modal(formula, model, 0):
-        return "invalid"
+    if res == "open" and model is not None:
+        try:
+            if not satisfies_modal(formula, model, 0):
+                return "invalid"
+        except (NotImplementedError, ValueError, TypeError, KeyError):
+            pass                      # unverifiable candidate → honest "unknown"
     return "unknown"

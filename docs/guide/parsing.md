@@ -1,10 +1,10 @@
 # Parsing and the AST
 
-`MSFLParser` turns a Unicode formula string into a typed AST of Python dataclasses. One parser class covers six modes — classical FOL, many-sorted FOL (MSFOL), many-sorted fuzzy logic (MSFL), single-sorted fuzzy logic (FL), modal/temporal/epistemic/deontic logic, and second-order logic — each selected by constructor flags.
+`MSFLParser` turns a Unicode formula string into a typed AST of Python dataclasses. One parser class covers nine modes — classical FOL, many-sorted FOL (MSFOL), many-sorted fuzzy logic (MSFL), single-sorted fuzzy logic (FL), modal/temporal/epistemic/deontic/hybrid/counterfactual/PAL logic, second-order logic, dependence/IF logic, intuitionistic linear logic, and the Lambek calculus — each selected by constructor flags.
 
 ## Parser modes
 
-The four core modes form the `many_sorted` × `fuzzy` matrix; two further modes — modal and second-order — are each enabled by their own flag and are mutually exclusive with the others.
+The four core modes form the `many_sorted` × `fuzzy` matrix; five further modes — modal, second-order, dependence, linear and Lambek — are each enabled by their own flag and are mutually exclusive with the others.
 
 ```python
 from unicode_fol_kit import MSFLParser
@@ -13,8 +13,11 @@ MSFLParser(many_sorted=False, fuzzy=False)   # FOL   (default)
 MSFLParser(many_sorted=True,  fuzzy=False)   # MSFOL
 MSFLParser(many_sorted=True,  fuzzy=True)    # MSFL
 MSFLParser(many_sorted=False, fuzzy=True)    # FL
-MSFLParser(modal=True)                       # modal / temporal / epistemic / deontic
+MSFLParser(modal=True)                       # modal / temporal / epistemic / deontic / hybrid / □→ / [φ!]ψ
 MSFLParser(second_order=True)                # second-order (∀P / ∃P)
+MSFLParser(dependence=True)                  # dependence/IF logic (=(x,y), ∃x/{y})
+MSFLParser(linear=True)                      # intuitionistic linear logic (⊗ ⊸ & ⊕ ! 𝟙 ⊤ 𝟘)
+MSFLParser(lambek=True)                      # Lambek calculus (• \ /)
 ```
 
 | `many_sorted` | `fuzzy` | Mode | Quantifiers | Constants | Connectives |
@@ -24,12 +27,15 @@ MSFLParser(second_order=True)                # second-order (∀P / ∃P)
 | `True` | `True` | **MSFL** | sorted `∀x:Sort` | sorted `alice:Sort` | weak ∧ ∨, strong ⊗ ⊕, Łuk ¬ → ↔ |
 | `False` | `True` | **FL** | unsorted `∀x` | unsorted | weak ∧ ∨, strong ⊗ ⊕, Łuk ¬ → ↔ |
 
-The two extension modes are classical unsorted FOL plus their own operators:
+The modal and second-order extension modes are classical unsorted FOL plus their own operators; the remaining three are standalone fragments with their own connective sets:
 
-- **modal** (`modal=True`) — adds `□ ◇` (alethic), `K_a B_a` (epistemic/doxastic), `Ⓖ Ⓕ Ⓝ Ⓤ` (temporal), and `Ⓞ Ⓟ` (deontic). The agent of `K_a`/`B_a` is a first-class term, so a bound `K_x` quantifies over agents.
+- **modal** (`modal=True`) — adds `□ ◇` (alethic), `K_a B_a Say_a Want_a` (epistemic/doxastic/assertive/bouletic), `Ⓖ Ⓕ Ⓝ Ⓤ ⒣ ⒫ ⒴ ⒮` (temporal, future and past), `Ⓞ Ⓟ` (deontic), nominals and `@i` (hybrid), the counterfactuals `□→ ◇→`, and the public announcements `[φ!]ψ / ⟨φ!⟩ψ`. The agent of `K_a`/`B_a` is a first-class term, so a bound `K_x` quantifies over agents.
 - **second-order** (`second_order=True`) — adds `∀P / ∃P` over predicate variables (arity inferred from use).
+- **dependence** (`dependence=True`) — the team-semantic fragment `¬ ∧ ∨ ∀ ∃` with dependence atoms `=(x, y)` and slashed existentials `∃x/{y}`.
+- **linear** (`linear=True`) — intuitionistic linear logic `⊗ ⊸ & ⊕ !` with the units `𝟙 ⊤ 𝟘`.
+- **lambek** (`lambek=True`) — the Lambek calculus `• \ /` over atomic categories.
 
-The constructor rejects an unsupported combination with a clear `ValueError`. The two extension modes are classical unsorted FOL plus their own operators, so neither can be sorted or fuzzy:
+The constructor rejects an unsupported combination with a clear `ValueError`. The extension modes cannot be combined with each other or with the sorted/fuzzy flags:
 
 ```python
 from unicode_fol_kit import MSFLParser

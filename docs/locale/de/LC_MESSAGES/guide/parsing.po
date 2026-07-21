@@ -26,18 +26,9 @@ msgstr "Parsen und der AST"
 
 #: ../../guide/parsing.md:3
 msgid ""
-"`MSFLParser` turns a Unicode formula string into a typed AST of Python "
-"dataclasses. One parser class covers six modes — classical FOL, many-"
-"sorted FOL (MSFOL), many-sorted fuzzy logic (MSFL), single-sorted fuzzy "
-"logic (FL), modal/temporal/epistemic/deontic logic, and second-order "
-"logic — each selected by constructor flags."
+"`MSFLParser` turns a Unicode formula string into a typed AST of Python dataclasses. One parser class covers nine modes — classical FOL, many-sorted FOL (MSFOL), many-sorted fuzzy logic (MSFL), single-sorted fuzzy logic (FL), modal/temporal/epistemic/deontic/hybrid/counterfactual/PAL logic, second-order logic, dependence/IF logic, intuitionistic linear logic, and the Lambek calculus — each selected by constructor flags."
 msgstr ""
-"`MSFLParser` wandelt eine Unicode-Formelzeichenkette in einen typisierten "
-"AST aus Python-Dataclasses um. Eine einzige Parser-Klasse deckt sechs "
-"Modi ab — klassische Prädikatenlogik erster Stufe (FOL), mehrsortige FOL "
-"(MSFOL), mehrsortige Fuzzy-Logik (MSFL), einsortige Fuzzy-Logik (FL), "
-"Modal-/Temporal-/Epistemische/Deontische Logik sowie Logik zweiter Stufe "
-"— jeweils ausgewählt über Konstruktor-Flags."
+"`MSFLParser` wandelt eine Unicode-Formelzeichenkette in einen typisierten AST aus Python-Dataclasses um. Eine einzige Parser-Klasse deckt neun Modi ab — klassische Prädikatenlogik erster Stufe (FOL), mehrsortige FOL (MSFOL), mehrsortige Fuzzy-Logik (MSFL), einsortige Fuzzy-Logik (FL), Modal-/Temporal-/Epistemische/Deontische/Hybrid-/Kontrafaktische/PAL-Logik, Logik zweiter Stufe, Dependenz-/IF-Logik, intuitionistische lineare Logik und den Lambek-Kalkül — jeweils ausgewählt über Konstruktor-Flags."
 
 #: ../../guide/parsing.md:5
 msgid "Parser modes"
@@ -45,13 +36,9 @@ msgstr "Parser-Modi"
 
 #: ../../guide/parsing.md:7
 msgid ""
-"The four core modes form the `many_sorted` × `fuzzy` matrix; two further "
-"modes — modal and second-order — are each enabled by their own flag and "
-"are mutually exclusive with the others."
+"The four core modes form the `many_sorted` × `fuzzy` matrix; five further modes — modal, second-order, dependence, linear and Lambek — are each enabled by their own flag and are mutually exclusive with the others."
 msgstr ""
-"Die vier Kernmodi bilden die `many_sorted` × `fuzzy`-Matrix; zwei weitere "
-"Modi — modal und second-order — werden jeweils über ein eigenes Flag "
-"aktiviert und schließen sich gegenseitig mit den anderen Modi aus."
+"Die vier Kernmodi bilden die `many_sorted` × `fuzzy`-Matrix; fünf weitere Modi — modal, second-order, dependence, linear und Lambek — werden jeweils über ein eigenes Flag aktiviert und schließen sich gegenseitig mit den anderen Modi aus."
 
 #: ../../guide/parsing.md
 msgid "`many_sorted`"
@@ -131,23 +118,15 @@ msgstr "**FL**"
 
 #: ../../guide/parsing.md:27
 msgid ""
-"The two extension modes are classical unsorted FOL plus their own "
-"operators:"
+"The modal and second-order extension modes are classical unsorted FOL plus their own operators; the remaining three are standalone fragments with their own connective sets:"
 msgstr ""
-"Die beiden Erweiterungsmodi sind klassische unsortierte FOL zuzüglich "
-"ihrer eigenen Operatoren:"
+"Die Erweiterungsmodi modal und second-order sind klassische unsortierte FOL zuzüglich ihrer eigenen Operatoren; die übrigen drei sind eigenständige Fragmente mit eigenen Junktorenmengen:"
 
 #: ../../guide/parsing.md:29
 msgid ""
-"**modal** (`modal=True`) — adds `□ ◇` (alethic), `K_a B_a` "
-"(epistemic/doxastic), `Ⓖ Ⓕ Ⓝ Ⓤ` (temporal), and `Ⓞ Ⓟ` (deontic). The "
-"agent of `K_a`/`B_a` is a first-class term, so a bound `K_x` quantifies "
-"over agents."
+"**modal** (`modal=True`) — adds `□ ◇` (alethic), `K_a B_a Say_a Want_a` (epistemic/doxastic/assertive/bouletic), `Ⓖ Ⓕ Ⓝ Ⓤ ⒣ ⒫ ⒴ ⒮` (temporal, future and past), `Ⓞ Ⓟ` (deontic), nominals and `@i` (hybrid), the counterfactuals `□→ ◇→`, and the public announcements `[φ!]ψ / ⟨φ!⟩ψ`. The agent of `K_a`/`B_a` is a first-class term, so a bound `K_x` quantifies over agents."
 msgstr ""
-"**modal** (`modal=True`) — fügt `□ ◇` (alethisch), `K_a B_a` "
-"(epistemisch/doxastisch), `Ⓖ Ⓕ Ⓝ Ⓤ` (temporal) und `Ⓞ Ⓟ` (deontisch) "
-"hinzu. Der Agent von `K_a`/`B_a` ist ein vollwertiger Term, sodass ein "
-"gebundenes `K_x` über Agenten quantifiziert."
+"**modal** (`modal=True`) — fügt `□ ◇` (alethisch), `K_a B_a Say_a Want_a` (epistemisch/doxastisch/assertiv/bouletisch), `Ⓖ Ⓕ Ⓝ Ⓤ ⒣ ⒫ ⒴ ⒮` (temporal, Zukunft und Vergangenheit), `Ⓞ Ⓟ` (deontisch), Nominale und `@i` (hybrid), die Kontrafaktale `□→ ◇→` sowie die öffentlichen Ankündigungen `[φ!]ψ / ⟨φ!⟩ψ` hinzu. Der Agent von `K_a`/`B_a` ist ein vollwertiger Term, sodass ein gebundenes `K_x` über Agenten quantifiziert."
 
 #: ../../guide/parsing.md:30
 msgid ""
@@ -158,16 +137,29 @@ msgstr ""
 "Prädikatvariablen hinzu (die Stelligkeit wird aus der Verwendung "
 "abgeleitet)."
 
+#: ../../guide/parsing.md:34
+msgid ""
+"**dependence** (`dependence=True`) — the team-semantic fragment `¬ ∧ ∨ ∀ ∃` with dependence atoms `=(x, y)` and slashed existentials `∃x/{y}`."
+msgstr ""
+"**dependence** (`dependence=True`) — das teamsemantische Fragment `¬ ∧ ∨ ∀ ∃` mit Dependenzatomen `=(x, y)` und geslashten Existenzquantoren `∃x/{y}`."
+
+#: ../../guide/parsing.md:35
+msgid ""
+"**linear** (`linear=True`) — intuitionistic linear logic `⊗ ⊸ & ⊕ !` with the units `𝟙 ⊤ 𝟘`."
+msgstr ""
+"**linear** (`linear=True`) — intuitionistische lineare Logik `⊗ ⊸ & ⊕ !` mit den Einheiten `𝟙 ⊤ 𝟘`."
+
+#: ../../guide/parsing.md:36
+msgid ""
+"**lambek** (`lambek=True`) — the Lambek calculus `• \\ /` over atomic categories."
+msgstr ""
+"**lambek** (`lambek=True`) — der Lambek-Kalkül `• \\ /` über atomaren Kategorien."
+
 #: ../../guide/parsing.md:32
 msgid ""
-"The constructor rejects an unsupported combination with a clear "
-"`ValueError`. The two extension modes are classical unsorted FOL plus "
-"their own operators, so neither can be sorted or fuzzy:"
+"The constructor rejects an unsupported combination with a clear `ValueError`. The extension modes cannot be combined with each other or with the sorted/fuzzy flags:"
 msgstr ""
-"Der Konstruktor weist eine nicht unterstützte Kombination mit einem "
-"eindeutigen `ValueError` zurück. Die beiden Erweiterungsmodi sind "
-"klassische unsortierte FOL zuzüglich ihrer eigenen Operatoren, sodass "
-"keiner der beiden sortenbehaftet oder fuzzy sein kann:"
+"Der Konstruktor weist eine nicht unterstützte Kombination mit einem eindeutigen `ValueError` zurück. Die Erweiterungsmodi lassen sich weder untereinander noch mit den Sorten-/Fuzzy-Flags kombinieren:"
 
 #: ../../guide/parsing.md:49
 msgid "Unicode surface syntax"

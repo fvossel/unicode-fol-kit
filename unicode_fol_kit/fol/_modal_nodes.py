@@ -470,6 +470,99 @@ class Until(Node):
         raise NotImplementedError(_NO_EXPORT)
 
 
+#: Why the counterfactual conditionals have no first-order (or Kripke) export.
+_NO_COUNTERFACTUAL_EXPORT = (
+    "Counterfactual conditionals (□→ / ◇→) are evaluated over a similarity "
+    "ordering of worlds (Lewis spheres), not over an accessibility relation, and "
+    "are not first-order definable — collapsing □→ to the material → is exactly "
+    "the mistake the connective exists to avoid. Evaluate with "
+    "unicode_fol_kit.cf_satisfies / would / might over a CounterfactualModel."
+)
+
+
+@dataclass(frozen=True)
+class Would(Node):
+    """Lewis counterfactual ``left □→ right`` — "if left WERE the case, right WOULD be".
+
+    True at ``w`` iff no sphere around ``w`` contains a ``left``-world (vacuous), or
+    else, in the SMALLEST sphere that does, every ``left``-world is a ``right``-world.
+    Distinct from the material :class:`Implies`: "if kangaroos had no tails they would
+    topple over" is not made true merely by kangaroos having tails.
+
+    The similarity ordering is not an accessibility relation, so this node belongs to
+    the sphere semantics (:mod:`unicode_fol_kit.semantics.conditional`) rather than to
+    the Kripke evaluator, and it has no first-order export.
+    """
+
+    left: Node
+    right: Node
+
+    def _tree_parts(self):
+        """Return the □→ label and the antecedent/consequent children."""
+        return "□→", [self.left, self.right]
+
+    def to_dict(self):
+        """Serialise to dict with type tag and recursively serialised operands."""
+        return {"_type": "Would", "left": self.left.to_dict(),
+                "right": self.right.to_dict()}
+
+    @staticmethod
+    def from_dict(d):
+        """Deserialise a Would from a dict produced by to_dict."""
+        return Would(Node.from_dict(d["left"]), Node.from_dict(d["right"]))
+
+    def to_z3(self, env: Z3Env = None):
+        """Reject Z3 export: the counterfactual is not first-order definable."""
+        raise NotImplementedError(_NO_COUNTERFACTUAL_EXPORT)
+
+    def to_prover9(self) -> str:
+        """Reject Prover9 export: the counterfactual is not first-order definable."""
+        raise NotImplementedError(_NO_COUNTERFACTUAL_EXPORT)
+
+    def to_tptp(self) -> str:
+        """Reject TPTP export: the counterfactual is not first-order definable."""
+        raise NotImplementedError(_NO_COUNTERFACTUAL_EXPORT)
+
+
+@dataclass(frozen=True)
+class Might(Node):
+    """Lewis "might" counterfactual ``left ◇→ right`` — the dual ``¬(left □→ ¬right)``.
+
+    "If left were the case, right MIGHT be": some closest ``left``-world is a
+    ``right``-world. Note the duality makes it **vacuously false** exactly where
+    :class:`Would` is vacuously true (no ``left``-world in any sphere).
+    """
+
+    left: Node
+    right: Node
+
+    def _tree_parts(self):
+        """Return the ◇→ label and the antecedent/consequent children."""
+        return "◇→", [self.left, self.right]
+
+    def to_dict(self):
+        """Serialise to dict with type tag and recursively serialised operands."""
+        return {"_type": "Might", "left": self.left.to_dict(),
+                "right": self.right.to_dict()}
+
+    @staticmethod
+    def from_dict(d):
+        """Deserialise a Might from a dict produced by to_dict."""
+        return Might(Node.from_dict(d["left"]), Node.from_dict(d["right"]))
+
+    def to_z3(self, env: Z3Env = None):
+        """Reject Z3 export: the counterfactual is not first-order definable."""
+        raise NotImplementedError(_NO_COUNTERFACTUAL_EXPORT)
+
+    def to_prover9(self) -> str:
+        """Reject Prover9 export: the counterfactual is not first-order definable."""
+        raise NotImplementedError(_NO_COUNTERFACTUAL_EXPORT)
+
+    def to_tptp(self) -> str:
+        """Reject TPTP export: the counterfactual is not first-order definable."""
+        raise NotImplementedError(_NO_COUNTERFACTUAL_EXPORT)
+
+
 @dataclass(frozen=True)
 class Obligatory(Node):
     """Deontic necessity Oφ: φ holds in every deontically accessible world.
@@ -658,6 +751,172 @@ class Previous(Node):
         raise NotImplementedError(_NO_EXPORT)
 
 
+#: Why the PAL announcement operators have no direct first-order (or classical
+#: Kripke) export: they denote a MODEL UPDATE, not a static accessibility relation.
+_NO_PAL_EXPORT = (
+    "Public-announcement operators ([φ!]ψ / ⟨φ!⟩ψ) denote a MODEL UPDATE (restrict "
+    "the Kripke model to the worlds where the announcement is true), not a static "
+    "accessibility relation, so they have no direct first-order (or classical "
+    "Kripke) export. Eliminate them first with "
+    "unicode_fol_kit.fol.pal.reduce_announcements (the standard PAL reduction "
+    "axioms, producing an announcement-free modal formula), or evaluate them "
+    "directly with semantics.kripke.satisfies_modal / "
+    "semantics.dynamic_epistemic.announce."
+)
+
+
+def _pal_wrap(node: Node, min_prec: float, render) -> str:
+    """Parenthesise ``render(node)`` when ``node`` binds looser than ``min_prec``.
+
+    Mirrors ``_msfl_nodes._uni_wrap`` / ``_latex_wrap``'s parenthesisation rule
+    (reusing the SAME precedence table, via the read-only helper ``_uni_prec``)
+    but recurses through the CHILD's own ``to_unicode_str`` / ``to_latex`` method
+    rather than the module-level ``_uni`` / ``_latex`` dispatcher — the
+    announcements' bracket-delimited two-argument shape fits none of the six
+    registered operator fixities, so they render via these overrides; the
+    central dispatcher delegates back here for announcement CHILDREN (see the
+    "RENDERING" paragraph on :class:`Announce`).
+    """
+    from ._msfl_nodes import _uni_prec  # lazy: avoid a module-load-order cycle
+    text = render(node)
+    return f"({text})" if _uni_prec(node) < min_prec else text
+
+
+@dataclass(frozen=True)
+class Announce(Node):
+    """Public-announcement box ``[announcement!]formula`` (PAL): after a truthful
+    public announcement of ``announcement``, ``formula`` holds.
+
+    ``M, w ⊨ [φ!]ψ`` iff ``M, w ⊨ φ`` implies ``M|φ, w ⊨ ψ``, where ``M|φ`` is the
+    model restricted to the worlds satisfying ``φ``
+    (:func:`unicode_fol_kit.semantics.dynamic_epistemic.announce`), which
+    :func:`unicode_fol_kit.semantics.kripke.satisfies_modal` calls directly for
+    this node — the ORACLE that
+    :func:`unicode_fol_kit.fol.pal.reduce_announcements` (the syntactic
+    reduction to an announcement-free modal formula) is differentially tested
+    against. Vacuously true when ``announcement`` is false at the evaluation
+    world (an untruthful announcement is not made).
+
+    Both fields are formulas. ``announcement`` (φ) is delimited by the surface
+    brackets ``[ … !]`` and so parses at FULL formula precedence — exactly like
+    the base grammar's own ``"(" formula ")"`` grouping or Cardinality's
+    ``"|{" v ":" φ "}|"``. ``formula`` (ψ), the post-condition following the
+    closing bracket, parses at the PREFIX level (as tightly as ¬ / □ / K_a): a
+    deliberate design choice mirroring how every other modal operator in this
+    module binds, so ``[p!]q ∧ r`` groups as ``([p!]q) ∧ r``, not
+    ``[p!](q ∧ r)`` — see the parser-registration comment below.
+
+    RENDERING: ``to_unicode_str`` / ``to_latex`` are direct method overrides on
+    this class, NOT driven by ``register_operator``'s central registry. Each of
+    the registry's six fixities (prefix, agent_prefix, binary_iff,
+    binary_implies, binary_until, level2) is a single FIXED template string, and
+    none can express "bracket, formula, delimiter, bracket, ANOTHER formula" —
+    two independent operands with the second one OUTSIDE the delimiters. The
+    override recurses via each child's own ``to_unicode_str`` / ``to_latex``,
+    and the MODULE-LEVEL ``_msfl_nodes._uni`` / ``_latex`` dispatchers carry a
+    matching delegation case (plus prefix-level precedence entries in
+    ``_UNI_BASE_PREC``), so an Announce/AnnounceDiamond renders — and
+    round-trips — both as the outer node and nested at any depth under any
+    registry-driven operator (∧ / → / ¬ / □ / K_a / …); see
+    ``tests/test_pal.py``.
+    """
+
+    announcement: Node
+    formula: Node
+
+    def _tree_parts(self):
+        """Return the "[!]" label and the [announcement, formula] children."""
+        return "[!]", [self.announcement, self.formula]
+
+    def to_dict(self):
+        """Serialise to dict with type tag and both serialised operands."""
+        return {"_type": "Announce", "announcement": self.announcement.to_dict(),
+                "formula": self.formula.to_dict()}
+
+    @staticmethod
+    def from_dict(d):
+        """Deserialise an Announce from a dict produced by to_dict."""
+        return Announce(Node.from_dict(d["announcement"]), Node.from_dict(d["formula"]))
+
+    def to_unicode_str(self) -> str:
+        """Render as ``[announcement!]formula`` (see the class docstring)."""
+        post = _pal_wrap(self.formula, 4, lambda n: n.to_unicode_str())
+        return f"[{self.announcement.to_unicode_str()}!]{post}"
+
+    def to_latex(self) -> str:
+        """Render as LaTeX ``[announcement\\mathbin{!}]formula``."""
+        post = _pal_wrap(self.formula, 4, lambda n: n.to_latex())
+        return f"[{self.announcement.to_latex()}\\mathbin{{!}}]{post}"
+
+    def to_z3(self, env: Z3Env = None):
+        """Reject Z3 export: a model update has no static first-order encoding."""
+        raise NotImplementedError(_NO_PAL_EXPORT)
+
+    def to_prover9(self) -> str:
+        """Reject Prover9 export: a model update has no static first-order encoding."""
+        raise NotImplementedError(_NO_PAL_EXPORT)
+
+    def to_tptp(self) -> str:
+        """Reject TPTP export: a model update has no static first-order encoding."""
+        raise NotImplementedError(_NO_PAL_EXPORT)
+
+
+@dataclass(frozen=True)
+class AnnounceDiamond(Node):
+    """Public-announcement diamond ``⟨announcement!⟩formula`` (PAL): the truthful
+    dual of :class:`Announce` — ``announcement`` is (actually) true AND, after
+    announcing it, ``formula`` holds.
+
+    ``M, w ⊨ ⟨φ!⟩ψ`` iff ``M, w ⊨ φ`` AND ``M|φ, w ⊨ ψ``. See :class:`Announce`
+    for the shared oracle / precedence / rendering contract; the surface syntax
+    swaps square brackets for angle brackets (``⟨ … !⟩``, U+27E8/U+27E9) — a
+    glyph pair unused elsewhere in the grammar, so unlike ``Announce``'s ``[``/``]``
+    it needs no disambiguation against another rule at all.
+    """
+
+    announcement: Node
+    formula: Node
+
+    def _tree_parts(self):
+        """Return the "⟨!⟩" label and the [announcement, formula] children."""
+        return "⟨!⟩", [self.announcement, self.formula]
+
+    def to_dict(self):
+        """Serialise to dict with type tag and both serialised operands."""
+        return {"_type": "AnnounceDiamond", "announcement": self.announcement.to_dict(),
+                "formula": self.formula.to_dict()}
+
+    @staticmethod
+    def from_dict(d):
+        """Deserialise an AnnounceDiamond from a dict produced by to_dict."""
+        return AnnounceDiamond(Node.from_dict(d["announcement"]), Node.from_dict(d["formula"]))
+
+    def to_unicode_str(self) -> str:
+        """Render as ``⟨announcement!⟩formula`` (see :class:`Announce`)."""
+        post = _pal_wrap(self.formula, 4, lambda n: n.to_unicode_str())
+        return f"⟨{self.announcement.to_unicode_str()}!⟩{post}"
+
+    def to_latex(self) -> str:
+        """Render as LaTeX ``\\langle announcement\\mathbin{!}\\rangle formula``."""
+        post = _pal_wrap(self.formula, 4, lambda n: n.to_latex())
+        return f"\\langle {self.announcement.to_latex()}\\mathbin{{!}}\\rangle {post}"
+
+    def to_z3(self, env: Z3Env = None):
+        """Reject Z3 export: a model update has no static first-order encoding."""
+        raise NotImplementedError(_NO_PAL_EXPORT)
+
+    def to_prover9(self) -> str:
+        """Reject Prover9 export: a model update has no static first-order encoding."""
+        raise NotImplementedError(_NO_PAL_EXPORT)
+
+    def to_tptp(self) -> str:
+        """Reject TPTP export: a model update has no static first-order encoding."""
+        raise NotImplementedError(_NO_PAL_EXPORT)
+
+
+NODE_CLASSES.update({"Announce": Announce, "AnnounceDiamond": AnnounceDiamond})
+
+
 @dataclass(frozen=True)
 class Since(Node):
     """Past-tense "left since right" (left S right): the mirror of :class:`Until`.
@@ -725,6 +984,10 @@ register_operator(Historically, "prefix", "⒣", "\\overline{\\mathsf{H}} ", 4)
 register_operator(Once, "prefix", "⒫", "\\overline{\\mathsf{P}} ", 4)
 register_operator(Previous, "prefix", "⒴", "\\overline{\\mathsf{Y}} ", 4)
 register_operator(Since, "binary_until", "⒮", "\\mathbin{\\overline{\\mathsf{S}}}", 2.5)
+# Counterfactuals sit at the Until level (2.5): tighter than → and ↔, looser than
+# ∧/∨, so `P ∧ Q □→ R` groups as `(P ∧ Q) □→ R` — the reading the English has.
+register_operator(Would, "binary_until", "□→", "\\mathbin{\\Box\\!\\rightarrow}", 2.5)
+register_operator(Might, "binary_until", "◇→", "\\mathbin{\\Diamond\\!\\rightarrow}", 2.5)
 
 
 # =========================
@@ -810,3 +1073,58 @@ register_parser_op(Previous, "modal", "prefix", "previous_", "PAST_Y prefix",
 register_parser_op(Since, "modal", "until", "since_", "TSINCE",
                    lambda items: Since(items[0], items[2]),
                    terminal_name="TSINCE", terminal_def='TSINCE: "⒮"')
+
+# --- counterfactual conditionals (□→ / ◇→) --------------------------------
+# Explicit terminal priority: the glyphs START with the box/diamond glyphs, so
+# without it "□→" could lex as BOX followed by the implication arrow and the
+# counterfactual would silently parse as a modalised material conditional.
+register_parser_op(Would, "modal", "until", "would_", "CFWOULD",
+                   lambda items: Would(items[0], items[2]),
+                   terminal_name="CFWOULD", terminal_def='CFWOULD.5: "□→"')
+register_parser_op(Might, "modal", "until", "might_", "CFMIGHT",
+                   lambda items: Might(items[0], items[2]),
+                   terminal_name="CFMIGHT", terminal_def='CFMIGHT.5: "◇→"')
+
+# --- Public Announcement Logic (PAL): [φ!]ψ / ⟨φ!⟩ψ -----------------------
+#
+# Parser-ONLY registration: unlike every other operator in this module,
+# Announce/AnnounceDiamond are NOT passed to register_operator, because none of
+# its six fixities (prefix, agent_prefix, binary_iff, binary_implies,
+# binary_until, level2) can express a construct with a formula BETWEEN two
+# delimiters and a SECOND, independent formula after the closing delimiter. They
+# render via their own to_unicode_str/to_latex overrides instead (see the
+# "RENDERING" paragraph on the Announce class) and are added to NODE_CLASSES
+# directly above — mirroring how Nominal (also outside the registry, for the
+# same reason: an atomic construct the six fixities cannot express) is handled
+# in _hybrid_nodes.py.
+#
+# Both operators sit at the "prefix" level: the announcement (φ) is parsed as a
+# full `formula` — it is fully delimited by its own brackets, exactly like the
+# base grammar's `"(" formula ")"` grouping or Cardinality's `"|{" v ":" φ "}|"`
+# — while the post-condition (ψ) is parsed as `prefix`, binding as tightly as
+# ¬ / □ / K_a (the convention every other operator in this module follows), so
+# `[p!]q ∧ r` groups as `([p!]q) ∧ r`, not `[p!](q ∧ r)`.
+#
+# Terminal design / collision note: the base grammar TEMPLATE already has a
+# `"[" formula "]"` alternative (plain bracket-grouping, equivalent to parens) at
+# this same `prefix` level (see _fol_nodes._BASE_GRAMMAR_TEMPLATE). Reusing
+# "["/"]" for the PAL box syntax is therefore the LEAST-INTRUSIVE choice: it
+# shares the SAME anonymous terminal with that existing rule instead of
+# introducing a new bracket glyph, and Lark's Earley parser accepts two
+# alternatives with a common leading literal with no special priority
+# annotation needed (unlike the lexer-priority fix CFWOULD/CFMIGHT need above,
+# this is a grammar-RULE-level, not a terminal-level, ambiguity question). The
+# two rules cannot actually collide on any input: bracket-grouping requires "]"
+# to close the bracketed formula immediately, whereas this rule requires a
+# literal "!" first — a character that occurs in NO other terminal or rule in
+# the grammar — so a given "[...]" span parses under at most one of the two
+# alternatives (round-tripped in tests/test_pal.py: "[p]" parses as plain
+# grouping, "[p!]q" as Announce, and nothing straddles the two readings). The
+# diamond form's "⟨"/"⟩" (U+27E8/U+27E9) are not used ANYWHERE else in the
+# grammar, so it has no collision to document at all.
+register_parser_op(Announce, "modal", "prefix", "announce_",
+                   '"[" formula "!" "]" prefix',
+                   lambda items: Announce(items[0], items[1]))
+register_parser_op(AnnounceDiamond, "modal", "prefix", "announce_diamond_",
+                   '"⟨" formula "!" "⟩" prefix',
+                   lambda items: AnnounceDiamond(items[0], items[1]))

@@ -49,12 +49,15 @@ _EXPECTED_ALIASES = {
               "knows_", "believes_", "says_", "wants_",
               "obligatory_", "permitted_", "until_",
               "historically_", "once_", "previous_", "since_",
+              "would_", "might_",
+              "announce_", "announce_diamond_",
               "nominal_", "at_"},
     "second_order": {"not_", "and_", "or_", "xor_", "implies_", "iff_",
                      "quantifier_", "second_order_quantifier_",
                      "count_", "contrast_"},
     "dependence": {"not_", "and_", "or_", "quantifier_", "dep_", "slashed_"},
-    "linear": {"tensor_", "with_", "oplus_", "limp_", "ofcourse_", "one_"},
+    "linear": {"tensor_", "with_", "oplus_", "limp_", "ofcourse_", "one_",
+               "top_", "zero_"},
     "lambek": {"product_", "under_", "over_"},
 }
 

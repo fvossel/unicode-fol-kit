@@ -301,9 +301,18 @@ def test_equality_is_uninterpreted_feq_fneq():
     assert "( feq @ a @ b )" in conj
 
 
-def test_until_raises():
-    with pytest.raises(NotImplementedError):
-        to_thf_modal_full(Until(Atom("p", []), Atom("q", [])))
+def test_until_and_since_embed_as_impredicative_fixpoints():
+    # TH0 quantifies over predicates, so strong Until IS shallow-embeddable as
+    # the Knaster–Tarski least fixpoint over tnext (the earlier rejection's
+    # "not (higher-order) shallow-embeddable" claim was factually wrong).
+    from unicode_fol_kit.fol.nodes import Since
+    out = to_thf_modal_full(Until(Atom("p", []), Atom("q", [])))
+    assert "( muntil @ p @ q )" in out
+    assert "thf(muntil, definition" in out and "! [S: mu>$o]" in out
+    out2 = to_thf_modal_full(Since(Atom("p", []), Atom("q", [])))
+    assert "( msince @ p @ q )" in out2
+    # msince steps over the CONVERSE of tnext (tnext @ U @ V, not V @ U).
+    assert "tnext @ U @ V" in out2
 
 
 def test_unknown_frame_and_mode_raise():

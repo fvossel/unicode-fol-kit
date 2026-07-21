@@ -159,6 +159,42 @@ print(dl.Exists("r", dl.Not(A)).to_unicode())           # → ∃r.¬A
 print(str(dl.And(A, B)))                     # → A ⊓ B
 ```
 
+## Parsing concepts from strings
+
+`dl.parse_concept(text)` is the inverse of `to_unicode()`: it reads the same glyph syntax the renderer emits (`⊤ ⊥ ¬ ⊓ ⊔ ∃r.C ∀r.C`, plus parentheses for grouping) and returns a `Concept`. `dl.parse_gci(text)` parses a **general concept inclusion** `C ⊑ D` and returns the `(sub, sup)` pair ready for `dl.subsumes(sub, sup)` or a `TBox`.
+
+```python
+import unicode_fol_kit.dl as dl
+
+c = dl.parse_concept("∃hasChild.Person ⊓ ∀hasPet.Dog")
+c.to_unicode()                          # → '∃hasChild.Person ⊓ ∀hasPet.Dog'
+c == dl.And(dl.Exists("hasChild", dl.Atomic("Person")),
+            dl.ForAll("hasPet", dl.Atomic("Dog")))     # → True
+
+# ⊤ / ⊥ parse too:
+dl.parse_concept("∃hasPet.⊤")           # → Exists(role='hasPet', concept=Top())
+dl.parse_concept("∀hasPet.⊥")           # → ForAll(role='hasPet', concept=Bottom())
+
+sub, sup = dl.parse_gci("Dog ⊑ Mammal")
+(sub, sup)                              # → (Atomic('Dog'), Atomic('Mammal'))
+dl.subsumes(sub, sup)                   # → False   (no TBox axiom says so — yet)
+```
+
+Round-trips both ways — `to_unicode()` output re-parses, and the parsed tree renders back to the same string:
+
+```python
+c2 = dl.And(dl.Or(dl.Atomic("A"), dl.Atomic("B")), dl.Not(dl.Atomic("C")))
+dl.parse_concept(c2.to_unicode()) == c2     # → True
+```
+
+A malformed concept raises `dl.ConceptSyntaxError` with the offending position, rather than a bare parser exception:
+
+```python
+dl.parse_concept("Person ⊓")
+# raises ConceptSyntaxError: parse_concept: unexpected end of input at position 8;
+# expected '⊤', '⊥', a concept name, '¬', '∃', '∀', or '(' in 'Person ⊓'
+```
+
 ## Negation normal form
 
 `dl.nnf(C)` pushes ¬ inward so that negation occurs only on atomic concepts, using the De Morgan and modal dualities (`¬⊤=⊥`, `¬¬C=C`, `¬(C⊓D)=¬C⊔¬D`, `¬∃r.C=∀r.¬C`, `¬∀r.C=∃r.¬C`). This is the shape the tableau consumes.
@@ -414,6 +450,54 @@ print(dl.equivalent(
     dl.ForAll("r", dl.Exists("s", dl.Not(A)))
 ))  # → True
 ```
+
+## Translating to FOL and modal logic
+
+The tableau above is a purpose-built ALC reasoner. `dl.translate` gives you the other route: the **standard translation** of ALC into classical FOL — `∃r.C` becomes `∃y (r(x, y) ∧ C(y))`, `∀r.C` becomes `∀y (r(x, y) → C(y))`, and the propositional connectives pass through unchanged — so ALC reasoning can reuse every FOL-facing tool in the kit: `is_valid`, the resolution prover, the finite model finder, and the Isabelle/THF exporters.
+
+```python
+import unicode_fol_kit.dl as dl
+from unicode_fol_kit import is_valid
+
+c = dl.And(dl.Exists("hasPet", dl.Atomic("Dog")), dl.ForAll("hasPet", dl.Atomic("Mammal")))
+fol = dl.concept_to_fol(c, "x")               # concept membership, one free variable
+fol.to_unicode_str()
+# → '∃x_1 (hasPet(x, x_1) ∧ Dog(x_1)) ∧ ∀x_2 (hasPet(x, x_2) → Mammal(x_2))'
+```
+
+`dl.subsumption_to_fol(sub, sup, var="x")` is the standard reduction `∀x (sub(x) → sup(x))` — decide it with any FOL prover, and it agrees with the tableau's `dl.subsumes`:
+
+```python
+sub, sup = dl.Atomic("Dog"), dl.Atomic("Mammal")
+fol_sub = dl.subsumption_to_fol(sub, sup)
+fol_sub.to_unicode_str()               # → '∀x (Dog(x) → Mammal(x))'
+is_valid(fol_sub)                      # → False   (no TBox axiom asserts it)
+```
+
+`dl.tbox_to_fol(tbox, var="x")` and `dl.abox_to_fol(abox)` translate a whole knowledge base — a TBox becomes the conjunction of its internalised GCIs (universally closed), an ABox the conjunction of its concept- and role-assertions — so `dl.concept_satisfiable` / `dl.abox_consistent` have an independent FOL-level cross-check via `is_valid` / the model finder.
+
+### One role only: `concept_to_modal`
+
+ALC is exactly the multi-modal logic K, with one modality *per role* — so a **single-role** concept also translates directly to propositional modal logic: `∃r.C` becomes `◇C`, `∀r.C` becomes `□C`.
+
+```python
+single_role = dl.And(dl.Exists("hasPet", dl.Atomic("Dog")), dl.ForAll("hasPet", dl.Atomic("Mammal")))
+modal = dl.concept_to_modal(single_role)
+modal.to_unicode_str()                 # → '◇Dog ∧ □Mammal'
+```
+
+A concept using **more than one** role has no faithful rendering here — propositional modal K has exactly one accessibility relation, so there is no honest way to recover which role a given `□`/`◇` came from — and `concept_to_modal` raises rather than guess:
+
+```python
+two_roles = dl.And(dl.Exists("hasChild", dl.Atomic("Person")), dl.Exists("hasPet", dl.Atomic("Dog")))
+dl.concept_to_modal(two_roles)
+# raises NotImplementedError: concept_to_modal: concept uses 2 distinct roles
+# ['hasChild', 'hasPet']; ... Use concept_to_fol instead: it has no such limitation,
+# since a role is just another binary FOL predicate r(x, y) and FOL scales to any
+# number of them.
+```
+
+Both translations are differentially validated against the ALC tableau across a battery of concepts, so `concept_to_fol` / `concept_to_modal` and `dl.concept_satisfiable` / `dl.subsumes` agree by construction — pick whichever entry point fits the rest of your pipeline.
 
 ## General TBoxes
 

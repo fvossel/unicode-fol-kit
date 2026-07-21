@@ -46,6 +46,17 @@ Everything is evaluated over FINITE structures only. This is not a stopgap:
 dependence logic has the expressive power of existential second-order logic,
 so its validity problem is not even arithmetical (Väänänen 2007) — finite
 model checking is the honest thing a library can offer.
+
+For the classically-translatable fragment of this module's syntax (prenex-
+reachable ``∀``/``∃``/``∃x/{…}`` over literals and dependence atoms, with the
+dependence atom guarding its own ``∃`` in the canonical Väänänen pattern), see
+:func:`unicode_fol_kit.semantics.team_translation.dependence_to_eso`: it builds
+the equivalent existential-second-order (Skolem-function) formula, checkable
+with :func:`unicode_fol_kit.semantics.secondorder.satisfies_so` instead of this
+module's brute-force team search — a bridge in the spirit of the ESO
+equivalence this docstring already advertises, not a replacement for it (the
+translation is conservative and rejects anything outside its proven-faithful
+fragment).
 """
 
 from itertools import product

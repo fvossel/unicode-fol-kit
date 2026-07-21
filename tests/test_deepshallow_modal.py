@@ -105,6 +105,7 @@ def test_illegal_theory_name_rejected():
 # LIVE: Isabelle machine-checks the faithfulness proofs.
 # --------------------------------------------------------------------------- #
 
+@pytest.mark.isabelle_live
 @pytest.mark.skipif(not isabelle_available(),
                     reason="no Isabelle installation found")
 def test_faithfulness_theory_verifies_in_isabelle():
@@ -115,6 +116,7 @@ def test_faithfulness_theory_verifies_in_isabelle():
         + r.output[-2000:])
 
 
+@pytest.mark.isabelle_live
 @pytest.mark.skipif(not isabelle_available(),
                     reason="no Isabelle installation found")
 def test_faithfulness_theory_with_formula_verifies_in_isabelle():

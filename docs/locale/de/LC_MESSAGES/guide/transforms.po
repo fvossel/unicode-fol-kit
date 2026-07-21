@@ -9,7 +9,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: unicode-fol-kit 0.11.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-02 22:46+0200\n"
+"POT-Creation-Date: 2026-07-21 20:59+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: de\n"
@@ -48,15 +48,27 @@ msgstr "Normalformen"
 #: ../../guide/transforms.md:7
 msgid ""
 "`to_nnf()`, `to_pnf()`, `to_cnf()`, and `skolemize()` operate on "
-"classical FOL. They accept FOL, MSFOL, MSFL, and FL inputs — sorts and "
-"Łukasiewicz operators are reduced via `to_fol()` first. (Lambda terms "
-"must be beta-reduced and lambda-eliminated beforehand; see below.)"
+"classical FOL. They accept FOL and MSFOL directly — sorts are reduced via"
+" `to_fol()` internally. **Łukasiewicz (MSFL/FL) input is refused**, not "
+"silently classicalised: a Łukasiewicz connective is not classical, and "
+"treating `P ∨ ¬P` as excluded middle would decide the wrong logic (weak "
+"disjunction has no excluded middle). Evaluate fuzzy input with "
+"`semantics.fuzzy.evaluate` / `fuzzy_is_valid`, or collapse it explicitly "
+"first with `to_fol(node)` if the classical skeleton is really what you "
+"want. (Lambda terms must be beta-reduced and lambda-eliminated "
+"beforehand; see below.)"
 msgstr ""
 "`to_nnf()`, `to_pnf()`, `to_cnf()` und `skolemize()` arbeiten auf "
-"klassischer FOL. Sie akzeptieren FOL-, MSFOL-, MSFL- und FL-Eingaben — "
-"Sorten und Łukasiewicz-Operatoren werden zunächst über `to_fol()` "
-"reduziert. (Lambda-Terme müssen vorher betareduziert und "
-"lambda-eliminiert werden; siehe unten.)"
+"klassischer FOL. Sie akzeptieren FOL und MSFOL direkt — Sorten werden "
+"intern über `to_fol()` reduziert. **Łukasiewicz-Eingaben (MSFL/FL) werden "
+"zurückgewiesen**, nicht stillschweigend klassifiziert: Ein Łukasiewicz-"
+"Junktor ist nicht klassisch, und `P ∨ ¬P` als Satz vom ausgeschlossenen "
+"Dritten zu behandeln würde die falsche Logik entscheiden (die schwache "
+"Disjunktion kennt keinen Satz vom ausgeschlossenen Dritten). Werten Sie "
+"Fuzzy-Eingaben mit `semantics.fuzzy.evaluate` / `fuzzy_is_valid` aus, "
+"oder kollabieren Sie sie explizit zuerst mit `to_fol(node)`, wenn "
+"wirklich das klassische Skelett gewünscht ist. (Lambda-Terme müssen vorab"
+" beta-reduziert und lambda-eliminiert werden; siehe unten.)"
 
 #: ../../guide/transforms.md:30
 msgid ""
@@ -108,8 +120,8 @@ msgid ""
 "Bound variables are renamed to fresh `v0, v1, …` first, so quantifiers "
 "can hoist freely even when the source reuses a name across scopes."
 msgstr ""
-"`to_pnf` liefert einen Quantorenpräfix über einer quantorenfreien "
-"NNF-Matrix. Gebundene Variablen werden zunächst in frische `v0, v1, …` "
+"`to_pnf` liefert einen Quantorenpräfix über einer quantorenfreien NNF-"
+"Matrix. Gebundene Variablen werden zunächst in frische `v0, v1, …` "
 "umbenannt, sodass Quantoren frei nach vorne gezogen werden können, auch "
 "wenn die Quelle einen Namen über mehrere Geltungsbereiche hinweg "
 "wiederverwendet."
@@ -161,9 +173,9 @@ msgstr ""
 "wächst, statt die exponentielle Explosion der distributiven `to_cnf` zu "
 "riskieren. Sie ist **nicht** logisch äquivalent zur Eingabe (die "
 "Hilfsatome sind existenziell frisch), aber die Eingabe ist genau dann "
-"erfüllbar, wenn ihre Tseitin-KNF es ist. Sie arbeitet auf "
-"quantorenfreien (aussagenlogischen / grundierten) Formeln und wirft bei "
-"quantifizierter Eingabe `ValueError`."
+"erfüllbar, wenn ihre Tseitin-KNF es ist. Sie arbeitet auf quantorenfreien"
+" (aussagenlogischen / grundierten) Formeln und wirft bei quantifizierter "
+"Eingabe `ValueError`."
 
 #: ../../guide/transforms.md:130
 msgid ""
@@ -187,8 +199,8 @@ msgid ""
 msgstr ""
 "`is_horn()` gibt an, ob die Klauselform einer Formel aus Hornklauseln "
 "besteht — jede Klausel enthält höchstens ein positives Literal. Die "
-"Formel wird skolemisiert, ihr Allquantoren-Präfix entfernt und die "
-"Matrix in KNF überführt, bevor die Klauseln geprüft werden."
+"Formel wird skolemisiert, ihr Allquantoren-Präfix entfernt und die Matrix"
+" in KNF überführt, bevor die Klauseln geprüft werden."
 
 #: ../../guide/transforms.md:156
 msgid "Sort relativisation: `to_fol()`"
@@ -224,10 +236,9 @@ msgid ""
 msgstr ""
 "Eine **sortierte Konstante** wird als `alice:Human` geschrieben (der "
 "Konstantenname benötigt mindestens zwei Buchstaben, andernfalls wird er "
-"als Variable gelext). `to_fol` reduziert die Annotation auf eine "
-"einfache Konstante; übergeben Sie `include_sort_facts=True`, um die "
-"dadurch implizierten Zugehörigkeitsatome auf oberster Ebene "
-"anzukonjungieren:"
+"als Variable gelext). `to_fol` reduziert die Annotation auf eine einfache"
+" Konstante; übergeben Sie `include_sort_facts=True`, um die dadurch "
+"implizierten Zugehörigkeitsatome auf oberster Ebene anzukonjungieren:"
 
 #: ../../guide/transforms.md:201
 #, python-brace-format
@@ -243,27 +254,31 @@ msgstr ""
 "Dies ist eine klassische (Boolesche) Projektion, keine fuzzy-erhaltende "
 "Übersetzung. `to_msfol()` bildet *sowohl* die starken (`⊗`/`⊕`) als auch "
 "die schwachen (`∧`/`∨`) Łukasiewicz-Junktoren auf dasselbe klassische "
-"`And`/`Or` ab. Bei scharfen Wahrheitswerten {0, 1} stimmen die "
-"Operatoren überein, sodass die Reduktion als zweiwertige Projektion "
-"korrekt ist — der genuin mehrwertige Gehalt geht dabei jedoch verloren. "
-"Um den reellwertigen Łukasiewicz-Grad zu berechnen, verwenden Sie "
-"stattdessen `fuzzy_evaluate()` oder den Fuzzy-Z3-Solver."
+"`And`/`Or` ab. Bei scharfen Wahrheitswerten {0, 1} stimmen die Operatoren"
+" überein, sodass die Reduktion als zweiwertige Projektion korrekt ist — "
+"der genuin mehrwertige Gehalt geht dabei jedoch verloren. Um den "
+"reellwertigen Łukasiewicz-Grad zu berechnen, verwenden Sie stattdessen "
+"`fuzzy_evaluate()` oder den Fuzzy-Z3-Solver."
 
 #: ../../guide/transforms.md:204
 msgid ""
-"The normal-form functions above call `to_fol()` internally, so they "
-"accept sorted and fuzzy input directly — e.g. you can `skolemize` a "
-"sorted formula:"
+"The normal-form functions above call `to_fol()` internally for **sorts**,"
+" so they accept sorted input directly — e.g. you can `skolemize` a sorted"
+" formula. Fuzzy input still needs the explicit `to_fol()` call first (see"
+" above); passing it straight to `skolemize`/`to_nnf`/etc. raises:"
 msgstr ""
-"Die oben genannten Normalform-Funktionen rufen intern `to_fol()` auf und"
-" akzeptieren daher sortierte und fuzzy Eingaben direkt — Sie können "
-"beispielsweise eine sortierte Formel mit `skolemize` skolemisieren:"
+"Die oben genannten Normalform-Funktionen rufen intern `to_fol()` für "
+"**Sorten** auf und akzeptieren daher sortierte Eingaben direkt — Sie "
+"können beispielsweise eine sortierte Formel mit `skolemize` "
+"skolemisieren. Fuzzy-Eingaben benötigen weiterhin zuerst den expliziten "
+"Aufruf von `to_fol()` (siehe oben); sie direkt an `skolemize`/`to_nnf`/"
+"usw. zu übergeben, wirft eine Ausnahme:"
 
-#: ../../guide/transforms.md:213
+#: ../../guide/transforms.md:223
 msgid "Lambda-calculus operations"
 msgstr "Lambda-Kalkül-Operationen"
 
-#: ../../guide/transforms.md:215
+#: ../../guide/transforms.md:225
 msgid ""
 "Every parser mode supports lambda abstraction and application, and "
 "`parse()` applies scope resolution automatically. The reduction functions"
@@ -273,11 +288,11 @@ msgstr ""
 "`parse()` wendet die Geltungsbereichsauflösung automatisch an. Die "
 "Reduktionsfunktionen sind freie Funktionen auf dem AST."
 
-#: ../../guide/transforms.md:217
+#: ../../guide/transforms.md:227
 msgid "Free variables and substitution"
 msgstr "Freie Variablen und Substitution"
 
-#: ../../guide/transforms.md:219
+#: ../../guide/transforms.md:229
 msgid ""
 "`free_variables(term)` returns the set of variables free in a term; the "
 "result is a mixed set that may contain both `Variable` (logical) and "
@@ -285,12 +300,12 @@ msgid ""
 "performs a capture-avoiding substitution."
 msgstr ""
 "`free_variables(term)` liefert die Menge der in einem Term freien "
-"Variablen; das Ergebnis ist eine gemischte Menge, die sowohl `Variable`-"
-"Objekte (logisch) als auch `LambdaVar`-Objekte (lambda-gebunden) "
-"enthalten kann. `substitute(term, var, replacement)` führt eine "
-"capture-vermeidende Substitution durch."
+"Variablen; das Ergebnis ist eine gemischte Menge, die sowohl "
+"`Variable`-Objekte (logisch) als auch `LambdaVar`-Objekte (lambda-"
+"gebunden) enthalten kann. `substitute(term, var, replacement)` führt eine"
+" capture-vermeidende Substitution durch."
 
-#: ../../guide/transforms.md:236
+#: ../../guide/transforms.md:246
 msgid ""
 "Substitution is **capture-avoiding**: replacing into a formula whose "
 "binder would capture the incoming variable renames the binder first."
@@ -299,11 +314,11 @@ msgstr ""
 "eingesetzt, deren Binder die eingehende Variable einfangen würde, wird "
 "zunächst der Binder umbenannt."
 
-#: ../../guide/transforms.md:243
+#: ../../guide/transforms.md:253
 msgid "Beta-, eta-, and beta-eta-reduction"
 msgstr "Beta-, Eta- und Beta-Eta-Reduktion"
 
-#: ../../guide/transforms.md:245
+#: ../../guide/transforms.md:255
 msgid ""
 "`beta_reduce` reduces to beta-normal form using a normal-order (leftmost-"
 "outermost) strategy with full capture-avoiding substitution; it raises "
@@ -320,30 +335,30 @@ msgstr ""
 "frei in `f` ist. `beta_eta_normalize` wechselt zwischen beiden bis zum "
 "Fixpunkt (Eta-Reduktion kann neue Beta-Redexe freilegen)."
 
-#: ../../guide/transforms.md:278
+#: ../../guide/transforms.md:288
 msgid ""
 "A **curried** application reduces one argument at a time; spell currying "
 "with nested parentheses, `((g)(c))(d)`:"
 msgstr ""
-"Eine **currysierte** Applikation reduziert jeweils ein Argument nach dem"
-" anderen; Currying wird mit verschachtelten Klammern geschrieben, "
+"Eine **currysierte** Applikation reduziert jeweils ein Argument nach dem "
+"anderen; Currying wird mit verschachtelten Klammern geschrieben, "
 "`((g)(c))(d)`:"
 
-#: ../../guide/transforms.md:288
+#: ../../guide/transforms.md:298
 msgid ""
 "A non-normalising term (e.g. the classic Ω = `(λx. x x)(λx. x x)`, built "
 "directly since the parser rejects self-application) raises "
 "`ReductionLimitError` rather than looping forever:"
 msgstr ""
-"Ein nicht normalisierender Term (z. B. das klassische Ω = `(λx. x "
-"x)(λx. x x)`, direkt konstruiert, da der Parser Selbstapplikation "
-"ablehnt) wirft `ReductionLimitError`, statt endlos zu schleifen:"
+"Ein nicht normalisierender Term (z. B. das klassische Ω = `(λx. x x)(λx. "
+"x x)`, direkt konstruiert, da der Parser Selbstapplikation ablehnt) wirft"
+" `ReductionLimitError`, statt endlos zu schleifen:"
 
-#: ../../guide/transforms.md:298
+#: ../../guide/transforms.md:308
 msgid "Single-step reduction"
 msgstr "Einzelschritt-Reduktion"
 
-#: ../../guide/transforms.md:300
+#: ../../guide/transforms.md:310
 msgid ""
 "`beta_reduce_step(node)` contracts exactly **one** leftmost-outermost "
 "redex and returns `(new_node, reduced)`; `reduced` is `False` (and the "
@@ -351,14 +366,13 @@ msgid ""
 msgstr ""
 "`beta_reduce_step(node)` kontrahiert genau **einen** leftmost-outermost "
 "Redex und liefert `(new_node, reduced)`; `reduced` ist `False` (und der "
-"Knoten wird unverändert zurückgegeben), sobald er in Beta-Normalform "
-"ist."
+"Knoten wird unverändert zurückgegeben), sobald er in Beta-Normalform ist."
 
-#: ../../guide/transforms.md:314
+#: ../../guide/transforms.md:324
 msgid "Lambda elimination and reduction trace"
 msgstr "Lambda-Elimination und Reduktions-Trace"
 
-#: ../../guide/transforms.md:316
+#: ../../guide/transforms.md:326
 msgid ""
 "`eliminate_lambdas()` beta-eta-normalises a term **and** verifies the "
 "result is lambda-free, so it can be fed to the exporters or the normal-"
@@ -368,15 +382,15 @@ msgid ""
 "sequence, and `has_lambdas()` tests for residual lambda nodes."
 msgstr ""
 "`eliminate_lambdas()` beta-eta-normalisiert einen Term **und** "
-"verifiziert, dass das Ergebnis lambda-frei ist, sodass er an die "
-"Exporter oder die Normalform-Funktionen übergeben werden kann (die "
-"Lambda-Knoten andernfalls ablehnen). Ein Term, der feststeckt oder nur "
-"teilweise appliziert ist (kein weiterer Redex, aber Lambdas verbleiben),"
-" wirft `ValueError`. `reduce_trace()` liefert die schrittweise "
+"verifiziert, dass das Ergebnis lambda-frei ist, sodass er an die Exporter"
+" oder die Normalform-Funktionen übergeben werden kann (die Lambda-Knoten "
+"andernfalls ablehnen). Ein Term, der feststeckt oder nur teilweise "
+"appliziert ist (kein weiterer Redex, aber Lambdas verbleiben), wirft "
+"`ValueError`. `reduce_trace()` liefert die schrittweise "
 "Reduktionssequenz, und `has_lambdas()` prüft auf verbleibende Lambda-"
 "Knoten."
 
-#: ../../guide/transforms.md:336
+#: ../../guide/transforms.md:346
 msgid ""
 "A term with a free higher-order variable applied to arguments is "
 "**stuck** — no redex remains, yet a lambda construct survives — so "
@@ -387,16 +401,15 @@ msgstr ""
 "überlebt ein Lambda-Konstrukt — daher wirft `eliminate_lambdas` "
 "`ValueError`:"
 
-#: ../../guide/transforms.md:344
+#: ../../guide/transforms.md:354
 msgid ""
 "`reduce_trace` honours a `limit` and raises `ReductionLimitError` for a "
 "non-normalising term (the Ω from above):"
 msgstr ""
-"`reduce_trace` berücksichtigt ein `limit` und wirft "
-"`ReductionLimitError` für einen nicht normalisierenden Term (das Ω von "
-"oben):"
+"`reduce_trace` berücksichtigt ein `limit` und wirft `ReductionLimitError`"
+" für einen nicht normalisierenden Term (das Ω von oben):"
 
-#: ../../guide/transforms.md:353
+#: ../../guide/transforms.md:363
 msgid ""
 "`eliminate_lambdas` fully resolves an `Application` of an atom to a term "
 "(yielding `Q(x)`); the raw `beta_eta_normalize` leaves it as an "
@@ -406,18 +419,18 @@ msgstr ""
 "`eliminate_lambdas` löst eine `Application` eines Atoms auf einen Term "
 "vollständig auf (ergibt `Q(x)`); das rohe `beta_eta_normalize` belässt "
 "sie als unaufgelöste `Application`, dargestellt als `(Q)(x)`. Verwenden "
-"Sie `eliminate_lambdas`, wenn Sie einen lambda-freien AST benötigen, der"
-" für Export oder Normalformen bereit ist."
+"Sie `eliminate_lambdas`, wenn Sie einen lambda-freien AST benötigen, der "
+"für Export oder Normalformen bereit ist."
 
-#: ../../guide/transforms.md:356
+#: ../../guide/transforms.md:366
 msgid "Traversal and inspection"
 msgstr "Traversierung und Inspektion"
 
-#: ../../guide/transforms.md:358
+#: ../../guide/transforms.md:368
 msgid "Every node exposes a small traversal API."
 msgstr "Jeder Knoten stellt eine kleine Traversierungs-API bereit."
 
-#: ../../guide/transforms.md:374
+#: ../../guide/transforms.md:384
 msgid ""
 "`subformulas()` excludes atomic terms (`Variable`, `Constant`, `Number`, "
 "`Function`, …) — only the formula-valued nodes are returned, in pre-"
@@ -427,24 +440,24 @@ msgstr ""
 "`Number`, `Function`, …) — es werden nur formelwertige Knoten "
 "zurückgegeben, in Präorder-Reihenfolge:"
 
-#: ../../guide/transforms.md:384
+#: ../../guide/transforms.md:394
 msgid ""
 "`map_children(fn)` is the single point of structural recursion: it "
 "rebuilds a node, applying `fn` to each immediate child. The identity "
 "rebuild is a deep copy; substituting a child is how the reduction passes "
 "are built."
 msgstr ""
-"`map_children(fn)` ist der einzige Punkt struktureller Rekursion: Es "
-"baut einen Knoten neu auf, indem `fn` auf jedes unmittelbare Kind "
-"angewendet wird. Der Identitäts-Rebuild ist eine Tiefenkopie; das "
-"Substituieren eines Kindes ist die Grundlage, auf der die "
-"Reduktionsdurchläufe aufgebaut sind."
+"`map_children(fn)` ist der einzige Punkt struktureller Rekursion: Es baut"
+" einen Knoten neu auf, indem `fn` auf jedes unmittelbare Kind angewendet "
+"wird. Der Identitäts-Rebuild ist eine Tiefenkopie; das Substituieren "
+"eines Kindes ist die Grundlage, auf der die Reduktionsdurchläufe "
+"aufgebaut sind."
 
-#: ../../guide/transforms.md:408
+#: ../../guide/transforms.md:418
 msgid "from unicode_fol_kit import Not"
 msgstr "from unicode_fol_kit import Not"
 
-#: ../../guide/transforms.md:410
+#: ../../guide/transforms.md:420
 msgid ""
 "g = MSFLParser().parse(\"¬(P ∧ Q)\") g.map_children(lambda c: "
 "c).to_unicode_str()    # → '¬(P ∧ Q)'   (structural copy)"
@@ -452,7 +465,7 @@ msgstr ""
 "g = MSFLParser().parse(\"¬(P ∧ Q)\") g.map_children(lambda c: "
 "c).to_unicode_str()    # → '¬(P ∧ Q)'   (structural copy)"
 
-#: ../../guide/transforms.md:439
+#: ../../guide/transforms.md:449
 #, python-brace-format
 msgid ""
 "`to_latex()` renders sorts as `\\forall x{:}\\mathrm{Human}\\,` and the "
@@ -465,24 +478,24 @@ msgstr ""
 "`to_latex()` rendert Sorten als `\\forall x{:}\\mathrm{Human}\\,` und die"
 " starken Łukasiewicz-Operatoren als `\\otimes` / `\\oplus`; Symbol- und "
 "Prädikatsnamen werden unverändert ausgegeben. TPTP schreibt Prädikate "
-"klein und Variablen groß gemäß seiner Konvention. Formeln zweiter "
-"Ordnung lehnen `to_z3` / `to_prover9` / `to_tptp` ab — führen Sie deren "
-"Round-Trip (sowie den von modalen / fuzzy Formeln) stattdessen über "
-"LaTeX oder JSON durch."
+"klein und Variablen groß gemäß seiner Konvention. Formeln zweiter Ordnung"
+" lehnen `to_z3` / `to_prover9` / `to_tptp` ab — führen Sie deren Round-"
+"Trip (sowie den von modalen / fuzzy Formeln) stattdessen über LaTeX oder "
+"JSON durch."
 
-#: ../../guide/transforms.md:453
+#: ../../guide/transforms.md:463
 msgid ""
 "A second-order formula has no TPTP/Prover9/Z3 image and raises "
 "`NotImplementedError` (use LaTeX or JSON for it):"
 msgstr ""
-"Eine Formel zweiter Ordnung besitzt kein TPTP-/Prover9-/Z3-Bild und "
-"wirft `NotImplementedError` (verwenden Sie dafür LaTeX oder JSON):"
+"Eine Formel zweiter Ordnung besitzt kein TPTP-/Prover9-/Z3-Bild und wirft"
+" `NotImplementedError` (verwenden Sie dafür LaTeX oder JSON):"
 
-#: ../../guide/transforms.md:460
+#: ../../guide/transforms.md:470
 msgid "JSON round-trip"
 msgstr "JSON-Round-Trip"
 
-#: ../../guide/transforms.md:462
+#: ../../guide/transforms.md:472
 msgid ""
 "`to_dict()` produces a JSON-serialisable dict tagged with `_type`; the "
 "static `Node.from_dict()` reconstructs the AST. This preserves **every** "
@@ -495,22 +508,22 @@ msgstr ""
 "zweiter Ordnung, fuzzy, Lambda), weshalb es die portable Serialisierung "
 "der Wahl ist."
 
-#: ../../guide/transforms.md:473
+#: ../../guide/transforms.md:483
 msgid "Graphviz"
 msgstr "Graphviz"
 
-#: ../../guide/transforms.md:475
+#: ../../guide/transforms.md:485
 msgid ""
 "`to_dot()` renders the AST as a Graphviz DOT digraph, mirroring the "
 "`tree_str()` view (the quantifier's bound variable is folded into its "
 "node label). Pipe the output to `dot -Tpng` to render an image."
 msgstr ""
-"`to_dot()` rendert den AST als Graphviz-DOT-Digraphen und spiegelt "
-"dabei die `tree_str()`-Ansicht wider (die gebundene Variable des "
-"Quantors wird in dessen Knotenbeschriftung eingefaltet). Leiten Sie die "
-"Ausgabe an `dot -Tpng` weiter, um ein Bild zu rendern."
+"`to_dot()` rendert den AST als Graphviz-DOT-Digraphen und spiegelt dabei "
+"die `tree_str()`-Ansicht wider (die gebundene Variable des Quantors wird "
+"in dessen Knotenbeschriftung eingefaltet). Leiten Sie die Ausgabe an `dot"
+" -Tpng` weiter, um ein Bild zu rendern."
 
-#: ../../guide/transforms.md:486
+#: ../../guide/transforms.md:496
 msgid ""
 "The full output for the formula above (every node and edge, terms "
 "included) is:"
@@ -518,30 +531,31 @@ msgstr ""
 "Die vollständige Ausgabe für die obige Formel (jeder Knoten und jede "
 "Kante, Terme eingeschlossen) lautet:"
 
-#: ../../guide/transforms.md:506
+#: ../../guide/transforms.md:516
 msgid "Import"
 msgstr "Import"
 
-#: ../../guide/transforms.md:508
+#: ../../guide/transforms.md:518
 msgid ""
 "The exporters have inverses, so formulas written for the standard tools "
 "can be read back into the AST. **The importers cover classical FOL** — "
-"the format the external tools speak. Modal, second-order, and fuzzy "
-"formulas round-trip instead through **LaTeX or JSON**, which preserve "
-"every node family."
+"the format the external tools speak. Modal, second-order, fuzzy, "
+"dependence, linear (ILL), and Lambek formulas round-trip instead through "
+"**LaTeX or JSON**, which preserve every node family."
 msgstr ""
 "Die Exporter besitzen Umkehrfunktionen, sodass Formeln, die für die "
-"Standardwerkzeuge geschrieben wurden, wieder in den AST eingelesen "
-"werden können. **Die Importer decken klassische FOL ab** — das Format, "
-"das die externen Werkzeuge sprechen. Modale, Formeln zweiter Ordnung "
-"sowie fuzzy Formeln durchlaufen ihren Round-Trip stattdessen über "
-"**LaTeX oder JSON**, die jede Knotenfamilie bewahren."
+"Standardwerkzeuge geschrieben wurden, wieder in den AST eingelesen werden"
+" können. **Die Importer decken klassische FOL ab** — das Format, das die "
+"externen Werkzeuge sprechen. Modale, Formeln zweiter Stufe, fuzzy, "
+"abhängigkeitslogische, lineare (ILL) und Lambek-Formeln durchlaufen ihren"
+" Round-Trip stattdessen über **LaTeX oder JSON**, die jede Knotenfamilie "
+"bewahren."
 
-#: ../../guide/transforms.md:510
+#: ../../guide/transforms.md:520
 msgid "LaTeX"
 msgstr "LaTeX"
 
-#: ../../guide/transforms.md:512
+#: ../../guide/transforms.md:522
 msgid ""
 "`parse_latex()` is the inverse of `to_latex()`: it translates LaTeX "
 "commands to the Unicode surface syntax (`latex_to_unicode()`), then "
@@ -551,14 +565,13 @@ msgid ""
 "as `MSFLParser`."
 msgstr ""
 "`parse_latex()` ist die Umkehrfunktion von `to_latex()`: Sie übersetzt "
-"LaTeX-Befehle in die Unicode-Oberflächensyntax (`latex_to_unicode()`) "
-"und parst anschließend. Sie akzeptiert die exakte Ausgabe von "
-"`to_latex()` ebenso wie gängige handgeschriebene Synonyme "
-"(`\\neg`/`\\lnot`, `\\wedge`/`\\land`, `\\vee`/`\\lor`, "
-"`\\to`/`\\rightarrow`, …). Sie verwendet dieselben Modus-Flags wie "
-"`MSFLParser`."
+"LaTeX-Befehle in die Unicode-Oberflächensyntax (`latex_to_unicode()`) und"
+" parst anschließend. Sie akzeptiert die exakte Ausgabe von `to_latex()` "
+"ebenso wie gängige handgeschriebene Synonyme (`\\neg`/`\\lnot`, "
+"`\\wedge`/`\\land`, `\\vee`/`\\lor`, `\\to`/`\\rightarrow`, …). Sie "
+"verwendet dieselben Modus-Flags wie `MSFLParser`."
 
-#: ../../guide/transforms.md:535
+#: ../../guide/transforms.md:555
 #, python-brace-format
 msgid ""
 "Hand-written `c_`-constants need an escaped underscore (`c\\_zero` or "
@@ -568,11 +581,11 @@ msgstr ""
 "(`c\\_zero` oder `c_{zero}`), da ein bloßer `_` in LaTeX ein Subskript "
 "ist."
 
-#: ../../guide/transforms.md:537
+#: ../../guide/transforms.md:557
 msgid "TPTP, Prover9, SMT-LIB"
 msgstr "TPTP, Prover9, SMT-LIB"
 
-#: ../../guide/transforms.md:578
+#: ../../guide/transforms.md:598
 msgid ""
 "**TPTP** — `parse_tptp_formula(s)` reads one FOF/CNF formula; "
 "`parse_tptp(text)` reads a whole problem into a list of "
@@ -590,13 +603,13 @@ msgstr ""
 "liest eine `.p`-/`.tptp`-Datei. `%`- und `/* */`-Kommentare werden "
 "ignoriert. TPTP schreibt Prädikate klein, daher wird ein Prädikat beim "
 "Import großgeschrieben (`man` → `Man`); **einfach in Anführungszeichen "
-"gesetzte Atome** (`'http___example_org_Thing'`, die Form, in der "
-"OWL→FOL-Dumps IRIs darstellen) werden mit entfernten Anführungszeichen "
-"und entfernten Escapes `\\'` / `\\\\` gelesen; `$true`/`$false` werden "
-"als opake Atome importiert; die typisierten Dialekte `tff`/`thf` sowie "
+"gesetzte Atome** (`'http___example_org_Thing'`, die Form, in der OWL→FOL-"
+"Dumps IRIs darstellen) werden mit entfernten Anführungszeichen und "
+"entfernten Escapes `\\'` / `\\\\` gelesen; `$true`/`$false` werden als "
+"opake Atome importiert; die typisierten Dialekte `tff`/`thf` sowie "
 "`include`-Direktiven liegen außerhalb des Funktionsumfangs."
 
-#: ../../guide/transforms.md:579
+#: ../../guide/transforms.md:599
 msgid ""
 "**Prover9** — `parse_prover9(s)` reads a single Prover9/LADR formula (a "
 "trailing `.` is accepted); `parse_prover9_problem(text)` / "
@@ -609,19 +622,19 @@ msgid ""
 "names are variables — matching `to_prover9()`'s output, and is case-"
 "preserving."
 msgstr ""
-"**Prover9** — `parse_prover9(s)` liest eine einzelne Prover9-/LADR-"
-"Formel (ein abschließender `.` wird akzeptiert); "
-"`parse_prover9_problem(text)` / `load_prover9(path)` lesen eine ganze "
-"Eingabedatei ein — `set`-/`clear`-/`assign`-Direktiven (erkannt und "
-"übersprungen), `formulas(LIST). … end_of_list.`-Blöcke sowie nackte "
-"Top-Level-Formeln — in eine Liste von `Prover9Formula(role, "
-"formula)`-Datensätzen (der Listenname ist die Rolle; `\"\"` für eine "
-"nackte Formel; `op(...)`-Deklarationen liegen außerhalb des "
-"Funktionsumfangs). Es folgt `set(prolog_style_variables)` — Namen, die "
-"mit Großbuchstaben oder Unterstrich beginnen, sind Variablen — passend "
-"zur Ausgabe von `to_prover9()`, und ist groß-/kleinschreibungserhaltend."
+"**Prover9** — `parse_prover9(s)` liest eine einzelne Prover9-/LADR-Formel"
+" (ein abschließender `.` wird akzeptiert); `parse_prover9_problem(text)` "
+"/ `load_prover9(path)` lesen eine ganze Eingabedatei ein — "
+"`set`-/`clear`-/`assign`-Direktiven (erkannt und übersprungen), "
+"`formulas(LIST). … end_of_list.`-Blöcke sowie nackte Top-Level-Formeln — "
+"in eine Liste von `Prover9Formula(role, formula)`-Datensätzen (der "
+"Listenname ist die Rolle; `\"\"` für eine nackte Formel; "
+"`op(...)`-Deklarationen liegen außerhalb des Funktionsumfangs). Es folgt "
+"`set(prolog_style_variables)` — Namen, die mit Großbuchstaben oder "
+"Unterstrich beginnen, sind Variablen — passend zur Ausgabe von "
+"`to_prover9()`, und ist groß-/kleinschreibungserhaltend."
 
-#: ../../guide/transforms.md:580
+#: ../../guide/transforms.md:600
 msgid ""
 "**Z3 / SMT-LIB** — `from_z3(expr)` turns a `z3.ExprRef` back into the "
 "AST; `parse_smtlib(text)` / `load_smtlib(path)` parse SMT-LIB2 and "
@@ -636,32 +649,32 @@ msgstr ""
 "und konvertieren jede Assertion. Die Konvertierung ist "
 "**bedeutungserhaltend, nicht strukturerhaltend**: Z3 bildet "
 "Variablen/Konstanten/Zahlen auf eine uninterpretierte Sorte ab, sodass "
-"eine *freie* Variable als `Constant` zurückkommt (nur gebundene "
-"Variablen überleben als `Variable`); `A == B` wird bei Booleschen "
-"Werten als `Iff` und bei Individuen als `=` gelesen."
+"eine *freie* Variable als `Constant` zurückkommt (nur gebundene Variablen"
+" überleben als `Variable`); `A == B` wird bei Booleschen Werten als `Iff`"
+" und bei Individuen als `=` gelesen."
 
-#: ../../guide/transforms.md:582
+#: ../../guide/transforms.md:602
 msgid ""
 "The TPTP and Prover9 readers map the comparison and arithmetic operators "
 "back to their glyph atoms/functions, and TPTP's `=` / `!=` / dollar-words"
 " too:"
 msgstr ""
-"Die TPTP- und Prover9-Leser bilden die Vergleichs- und "
-"Rechenoperatoren zurück auf ihre Glyphen-Atome/-Funktionen ab, ebenso "
-"TPTPs `=` / `!=` / Dollar-Wörter:"
+"Die TPTP- und Prover9-Leser bilden die Vergleichs- und Rechenoperatoren "
+"zurück auf ihre Glyphen-Atome/-Funktionen ab, ebenso TPTPs `=` / `!=` / "
+"Dollar-Wörter:"
 
-#: ../../guide/transforms.md:594
+#: ../../guide/transforms.md:614
 msgid ""
 "A single-quoted TPTP atom (an IRI) imports with the quotes stripped; the "
 "resulting name is **not** a legal `MSFLParser` token, so sanitize it "
 "before re-parsing (see below):"
 msgstr ""
-"Ein einfach in Anführungszeichen gesetztes TPTP-Atom (eine IRI) wird mit"
-" entfernten Anführungszeichen importiert; der resultierende Name ist "
+"Ein einfach in Anführungszeichen gesetztes TPTP-Atom (eine IRI) wird mit "
+"entfernten Anführungszeichen importiert; der resultierende Name ist "
 "**kein** gültiges `MSFLParser`-Token, daher muss er vor dem erneuten "
 "Parsen bereinigt werden (siehe unten):"
 
-#: ../../guide/transforms.md:602
+#: ../../guide/transforms.md:622
 msgid ""
 "On the SMT-LIB / Z3 side, `=` over Booleans reads as `Iff`, and a free Z3"
 " symbol comes back as a `Constant`:"
@@ -669,20 +682,20 @@ msgstr ""
 "Auf der SMT-LIB-/Z3-Seite wird `=` über Booleschen Werten als `Iff` "
 "gelesen, und ein freies Z3-Symbol kommt als `Constant` zurück:"
 
-#: ../../guide/transforms.md:618
+#: ../../guide/transforms.md:638
 msgid ""
 "A classical formula survives a full **export → re-import** through TPTP "
 "unchanged (modulo the predicate-case convention):"
 msgstr ""
-"Eine klassische Formel übersteht einen vollständigen **Export → "
-"Re-Import** über TPTP unverändert (bis auf die Groß-/Kleinschreibungs-"
+"Eine klassische Formel übersteht einen vollständigen **Export → Re-"
+"Import** über TPTP unverändert (bis auf die Groß-/Kleinschreibungs-"
 "Konvention bei Prädikaten):"
 
-#: ../../guide/transforms.md:626
+#: ../../guide/transforms.md:646
 msgid "Round-trippable names for imported formulas"
 msgstr "Round-Trip-fähige Namen für importierte Formeln"
 
-#: ../../guide/transforms.md:628
+#: ../../guide/transforms.md:648
 msgid ""
 "An external problem file can carry symbol names that the AST accepts but "
 "the `MSFLParser` *lexer* does not — IRIs with underscores and mixed case "
@@ -696,17 +709,17 @@ msgid ""
 msgstr ""
 "Eine externe Problemdatei kann Symbolnamen enthalten, die der AST "
 "akzeptiert, der `MSFLParser`-*Lexer* jedoch nicht — IRIs mit "
-"Unterstrichen und gemischter Groß-/Kleinschreibung (ein "
-"OWL→FOL-TPTP-Dump rendert `'http___example_org_Thing'` als Prädikat "
+"Unterstrichen und gemischter Groß-/Kleinschreibung (ein OWL→FOL-TPTP-Dump"
+" rendert `'http___example_org_Thing'` als Prädikat "
 "`Http___example_org_Thing`), einbuchstabige oder ziffernhaltige "
 "Konstanten und Ähnliches. Das Rendern eines solchen Knotens ergibt dann "
 "eine Zeichenkette, die sich nicht erneut parsen lässt. "
-"`sanitize_names(node)` (und `sanitize_all(nodes)` für ein ganzes "
-"Problem) schreibt jedes Symbol in ein gültiges Token um, sodass das "
-"Rendering round-trip-fähig wird, lässt bereits gültige Namen unangetastet"
-" und liefert ein `NameMapping`, das die Originale wiederherstellt:"
+"`sanitize_names(node)` (und `sanitize_all(nodes)` für ein ganzes Problem)"
+" schreibt jedes Symbol in ein gültiges Token um, sodass das Rendering "
+"round-trip-fähig wird, lässt bereits gültige Namen unangetastet und "
+"liefert ein `NameMapping`, das die Originale wiederherstellt:"
 
-#: ../../guide/transforms.md:650
+#: ../../guide/transforms.md:670
 msgid ""
 "Pass the returned `NameMapping` back in (`sanitize_names(node, names)`) —"
 " or use `sanitize_all` — to keep the same IRI mapped to the same token "
@@ -715,14 +728,14 @@ msgid ""
 "`c_…` form, and variables keep `[a-z][0-9]*` or map to `v0`/`v1`/…."
 msgstr ""
 "Übergeben Sie das zurückgegebene `NameMapping` erneut "
-"(`sanitize_names(node, names)`) — oder verwenden Sie `sanitize_all` —, "
-"um dieselbe IRI über alle Formeln eines Problems hinweg auf dasselbe "
-"Token abzubilden. Prädikate werden zu `[A-Z]…`, Funktionen zu "
-"mehrbuchstabigem Kleinbuchstaben-Text, Konstanten behalten einen "
-"gültigen bloßen Namen oder nehmen die Form `c_…` an, und Variablen "
-"behalten `[a-z][0-9]*` oder werden auf `v0`/`v1`/… abgebildet."
+"(`sanitize_names(node, names)`) — oder verwenden Sie `sanitize_all` —, um"
+" dieselbe IRI über alle Formeln eines Problems hinweg auf dasselbe Token "
+"abzubilden. Prädikate werden zu `[A-Z]…`, Funktionen zu mehrbuchstabigem "
+"Kleinbuchstaben-Text, Konstanten behalten einen gültigen bloßen Namen "
+"oder nehmen die Form `c_…` an, und Variablen behalten `[a-z][0-9]*` oder "
+"werden auf `v0`/`v1`/… abgebildet."
 
-#: ../../guide/transforms.md:656
+#: ../../guide/transforms.md:676
 msgid ""
 "Each symbol class is rewritten to its own legal shape. A single-letter "
 "constant takes the explicit `c_…` form (so it does not collapse to a "
@@ -734,19 +747,19 @@ msgstr ""
 "beim erneuten Parsen nicht zu einer Variablen kollabiert), und eine "
 "Funktion, die zu kurz für ein `NAME` ist, wird aufgefüllt:"
 
-#: ../../guide/transforms.md:670
+#: ../../guide/transforms.md:690
 msgid ""
 "A clean classical formula already uses legal tokens, so it passes through"
 " unchanged:"
 msgstr ""
-"Eine saubere klassische Formel verwendet bereits gültige Token und "
-"bleibt daher unverändert:"
+"Eine saubere klassische Formel verwendet bereits gültige Token und bleibt"
+" daher unverändert:"
 
-#: ../../guide/transforms.md:677
+#: ../../guide/transforms.md:697
 msgid "End-to-end: import → sanitize → render → re-parse"
 msgstr "End-to-End: Import → Bereinigung → Rendern → erneutes Parsen"
 
-#: ../../guide/transforms.md:679
+#: ../../guide/transforms.md:699
 msgid ""
 "A complete pipeline for an OWL→FOL TPTP dump: read the problem, sanitize "
 "the whole batch with one shared `NameMapping` (so each IRI maps to the "
@@ -755,7 +768,26 @@ msgid ""
 msgstr ""
 "Eine vollständige Pipeline für einen OWL→FOL-TPTP-Dump: das Problem "
 "einlesen, den gesamten Stapel mit einem gemeinsamen `NameMapping` "
-"bereinigen (sodass jede IRI überall auf dasselbe Token abgebildet wird),"
-" nach Unicode rendern und erneut parsen — jede Formel durchläuft einen "
+"bereinigen (sodass jede IRI überall auf dasselbe Token abgebildet wird), "
+"nach Unicode rendern und erneut parsen — jede Formel durchläuft einen "
 "Round-Trip, und das Mapping stellt die IRIs wieder her."
+
+#~ msgid ""
+#~ "`to_nnf()`, `to_pnf()`, `to_cnf()`, and "
+#~ "`skolemize()` operate on classical FOL. "
+#~ "They accept FOL, MSFOL, MSFL, and "
+#~ "FL inputs — sorts and Łukasiewicz "
+#~ "operators are reduced via `to_fol()` "
+#~ "first. (Lambda terms must be beta-"
+#~ "reduced and lambda-eliminated beforehand; "
+#~ "see below.)"
+#~ msgstr ""
+#~ "`to_nnf()`, `to_pnf()`, `to_cnf()` und "
+#~ "`skolemize()` arbeiten auf klassischer FOL."
+#~ " Sie akzeptieren FOL-, MSFOL-, MSFL- "
+#~ "und FL-Eingaben — Sorten und "
+#~ "Łukasiewicz-Operatoren werden zunächst über "
+#~ "`to_fol()` reduziert. (Lambda-Terme müssen "
+#~ "vorher betareduziert und lambda-eliminiert "
+#~ "werden; siehe unten.)"
 

@@ -142,10 +142,21 @@ class TestModeReduction:
         for node in nnf.walk():
             assert not isinstance(node, Implies)
 
-    def test_fuzzy_input_cnf_equivalent_to_reduced(self):
+    def test_fuzzy_input_rejected_with_pointer(self):
+        # The classical collapse changes the LOGIC (fuzzy P ∨ ¬P is not
+        # Łukasiewicz-valid, its classical image is), so the normal forms
+        # refuse fuzzy input instead of silently deciding the wrong logic.
+        f = MSFL.parse("P(x) → Q(x)")
+        with pytest.raises(TypeError, match="fuzzy_is_valid"):
+            to_cnf(f)
+        with pytest.raises(TypeError, match="Łukasiewicz"):
+            to_nnf(f)
+
+    def test_fuzzy_explicit_collapse_still_works(self):
         from unicode_fol_kit.fol import to_fol
         f = MSFL.parse("P(x) → Q(x)")
-        assert formulas_are_equivalent(to_fol(f), to_cnf(f))
+        collapsed = to_fol(f)                # the explicit, documented opt-in
+        assert formulas_are_equivalent(collapsed, to_cnf(collapsed))
 
 
 # ---------------------------------------------------------------------------
@@ -170,9 +181,10 @@ class TestHorn:
     def test_is_horn(self, formula, expected):
         assert is_horn(FOL.parse(formula)) is expected
 
-    def test_horn_accepts_sorted_and_fuzzy(self):
+    def test_horn_accepts_sorted_rejects_fuzzy(self):
         assert is_horn(MSFOL.parse("∀x:Human (Body(x) → Head(x))")) is True
-        assert is_horn(MSFL.parse("P(x) → Q(x)")) is True
+        with pytest.raises(TypeError, match="Łukasiewicz"):
+            is_horn(MSFL.parse("P(x) → Q(x)"))
 
 
 # ---------------------------------------------------------------------------

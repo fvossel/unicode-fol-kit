@@ -128,8 +128,10 @@ def test_alethic_block():
 
 def test_agent_indexed_epistemic_relation():
     thy = to_isabelle_modal(STUDENT_KNOWS)
-    # Agent-indexed relation rk : 'a => i => i => bool must be present.
-    assert re.search(r"consts rk :: \"'a \\<Rightarrow> i \\<Rightarrow> i \\<Rightarrow> bool\"", thy), thy
+    # Agent-indexed relation rk : e => i => i => bool must be present (the
+    # entity type is MONOMORPHIC: a polymorphic 'a would give every occurrence
+    # its own type instance and falsify the agent-K axiom).
+    assert re.search(r"consts rk :: \"e \\<Rightarrow> i \\<Rightarrow> i \\<Rightarrow> bool\"", thy), thy
     assert "abbreviation knows" in thy
     # knows is applied with the agent term x in the lifted body.
     assert "(knows x " in thy
@@ -140,7 +142,7 @@ def test_agent_indexed_epistemic_relation():
 
 def test_doxastic_agent_indexed():
     thy = to_isabelle_modal(Believes(alice, P))
-    assert re.search(r"consts rb :: \"'a \\<Rightarrow> i \\<Rightarrow> i \\<Rightarrow> bool\"", thy), thy
+    assert re.search(r"consts rb :: \"e \\<Rightarrow> i \\<Rightarrow> i \\<Rightarrow> bool\"", thy), thy
     assert "abbreviation believes" in thy
     assert "(believes alice " in thy
 
@@ -214,10 +216,10 @@ def test_decreasing_domain_axiom():
 
 def test_predicate_signature_typing():
     thy = to_isabelle_modal(Atom("Likes", [alice, Variable("y")]))
-    # binary predicate -> 'a => 'a => i => bool
-    assert re.search(r"consts likes :: \"'a \\<Rightarrow> 'a \\<Rightarrow> i \\<Rightarrow> bool\"", thy), thy
-    # the constant alice is typed 'a
-    assert re.search(r"consts alice :: \"'a\"", thy), thy
+    # binary predicate -> e => e => i => bool
+    assert re.search(r"consts likes :: \"e \\<Rightarrow> e \\<Rightarrow> i \\<Rightarrow> bool\"", thy), thy
+    # the constant alice is typed e
+    assert re.search(r"consts alice :: \"e\"", thy), thy
 
 
 def test_equality_uninterpreted_alias():
@@ -297,6 +299,7 @@ def test_until_no_longer_rejected():
     to_isabelle_modal(And(Until(P, Q), Next(Since(Q, P))))
 
 
+@pytest.mark.isabelle_live
 @pytest.mark.skipif(
     not isabelle_available(),
     reason="no Isabelle installation found (set UFK_ISABELLE_HOME / ISABELLE_HOME)")

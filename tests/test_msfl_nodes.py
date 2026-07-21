@@ -1,4 +1,5 @@
 """Tests for MSFL AST nodes (unicode_fol_kit/fol/nodes.py)."""
+import pytest
 from unicode_fol_kit.fol.nodes import (
     Node, Variable, Atom,
     SortedQuantifier, SortedConstant,
@@ -96,8 +97,11 @@ class TestWeakConjunction:
     def test_tree_str_glyph(self):
         assert "∧" in WeakConjunction(_P, _Q).tree_str()
 
-    def test_to_z3_auto_reduces(self):
-        assert WeakConjunction(_P, _Q).to_z3() is not None
+    def test_to_z3_raises_with_pointer(self):
+        # The silent classical collapse decided the WRONG logic; the classical
+        # exports now refuse and point at the fuzzy tools (to_fol = the opt-in).
+        with pytest.raises(NotImplementedError, match='fuzzy_is_valid'):
+            WeakConjunction(_P, _Q).to_z3()
 
 
 # ---------------------------------------------------------------------------
@@ -115,8 +119,11 @@ class TestWeakDisjunction:
     def test_tree_str_glyph(self):
         assert "∨" in WeakDisjunction(_P, _Q).tree_str()
 
-    def test_to_z3_auto_reduces(self):
-        assert WeakDisjunction(_P, _Q).to_z3() is not None
+    def test_to_z3_raises_with_pointer(self):
+        # The silent classical collapse decided the WRONG logic; the classical
+        # exports now refuse and point at the fuzzy tools (to_fol = the opt-in).
+        with pytest.raises(NotImplementedError, match='fuzzy_is_valid'):
+            WeakDisjunction(_P, _Q).to_z3()
 
 
 # ---------------------------------------------------------------------------
@@ -134,8 +141,11 @@ class TestStrongConjunction:
     def test_tree_str_glyph(self):
         assert "⊗" in StrongConjunction(_P, _Q).tree_str()
 
-    def test_to_z3_auto_reduces(self):
-        assert StrongConjunction(_P, _Q).to_z3() is not None
+    def test_to_z3_raises_with_pointer(self):
+        # The silent classical collapse decided the WRONG logic; the classical
+        # exports now refuse and point at the fuzzy tools (to_fol = the opt-in).
+        with pytest.raises(NotImplementedError, match='fuzzy_is_valid'):
+            StrongConjunction(_P, _Q).to_z3()
 
 
 # ---------------------------------------------------------------------------
@@ -153,8 +163,11 @@ class TestStrongDisjunction:
     def test_tree_str_glyph(self):
         assert "⊕" in StrongDisjunction(_P, _Q).tree_str()
 
-    def test_to_z3_auto_reduces(self):
-        assert StrongDisjunction(_P, _Q).to_z3() is not None
+    def test_to_z3_raises_with_pointer(self):
+        # The silent classical collapse decided the WRONG logic; the classical
+        # exports now refuse and point at the fuzzy tools (to_fol = the opt-in).
+        with pytest.raises(NotImplementedError, match='fuzzy_is_valid'):
+            StrongDisjunction(_P, _Q).to_z3()
 
 
 # ---------------------------------------------------------------------------
@@ -172,8 +185,11 @@ class TestLukNegation:
     def test_tree_str_glyph(self):
         assert "¬" in LukNegation(_P).tree_str()
 
-    def test_to_z3_auto_reduces(self):
-        assert LukNegation(_P).to_z3() is not None
+    def test_to_z3_raises_with_pointer(self):
+        # The silent classical collapse decided the WRONG logic; the classical
+        # exports now refuse and point at the fuzzy tools (to_fol = the opt-in).
+        with pytest.raises(NotImplementedError, match='fuzzy_is_valid'):
+            LukNegation(_P).to_z3()
 
 
 # ---------------------------------------------------------------------------
@@ -191,8 +207,11 @@ class TestLukImplication:
     def test_tree_str_glyph(self):
         assert "→" in LukImplication(_P, _Q).tree_str()
 
-    def test_to_z3_auto_reduces(self):
-        assert LukImplication(_P, _Q).to_z3() is not None
+    def test_to_z3_raises_with_pointer(self):
+        # The silent classical collapse decided the WRONG logic; the classical
+        # exports now refuse and point at the fuzzy tools (to_fol = the opt-in).
+        with pytest.raises(NotImplementedError, match='fuzzy_is_valid'):
+            LukImplication(_P, _Q).to_z3()
 
 
 # ---------------------------------------------------------------------------
@@ -210,5 +229,8 @@ class TestLukEquivalence:
     def test_tree_str_glyph(self):
         assert "↔" in LukEquivalence(_P, _Q).tree_str()
 
-    def test_to_z3_auto_reduces(self):
-        assert LukEquivalence(_P, _Q).to_z3() is not None
+    def test_to_z3_raises_with_pointer(self):
+        # The silent classical collapse decided the WRONG logic; the classical
+        # exports now refuse and point at the fuzzy tools (to_fol = the opt-in).
+        with pytest.raises(NotImplementedError, match='fuzzy_is_valid'):
+            LukEquivalence(_P, _Q).to_z3()

@@ -17,6 +17,31 @@ fall straight out.
 Built on :func:`unicode_fol_kit.semantics.kripke.satisfies_modal`; the announced and
 post formulas are ordinary (propositional, epistemic, …) modal formulas.
 
+``[φ!]ψ`` / ``⟨φ!⟩ψ`` ALSO exist as first-class AST nodes —
+:class:`~unicode_fol_kit.fol._modal_nodes.Announce` /
+:class:`~unicode_fol_kit.fol._modal_nodes.AnnounceDiamond` (parsed by
+``MSFLParser(modal=True)`` from exactly this surface syntax). Two independent, and
+independently useful, routes evaluate them:
+
+* :func:`~unicode_fol_kit.semantics.kripke.satisfies_modal` interprets an
+  ``Announce``/``AnnounceDiamond`` node DIRECTLY, by calling :func:`announce` (this
+  module) internally to build ``M|φ`` — i.e. this module is satisfies_modal's own
+  implementation of the PAL case, not a separate parallel semantics.
+* :func:`unicode_fol_kit.fol.pal.reduce_announcements` ELIMINATES an
+  ``Announce``/``AnnounceDiamond`` node SYNTACTICALLY, rewriting it to an
+  announcement-free modal formula via the standard PAL reduction axioms — the
+  route into every other reasoning tool in the kit (:mod:`unicode_fol_kit.atp.modal_tableau`,
+  the Isabelle/THF embeddings, …), none of which know about Announce/AnnounceDiamond
+  directly. ``satisfies_modal`` (hence this module's :func:`announce` /
+  :func:`box_announce` / :func:`diamond_announce`) is the ORACLE
+  ``fol.pal.reduce_announcements`` is differentially tested against — see that
+  module's docstring for the correctness argument connecting the two.
+
+:func:`box_announce` / :func:`diamond_announce` remain useful on their own for
+MODEL-level (rather than AST-level) PAL reasoning — e.g. stepping an existing
+:class:`~unicode_fol_kit.semantics.kripke.KripkeModel` through a sequence of
+announcements programmatically, with no ``Announce`` node ever constructed.
+
 Public API: :func:`announce`, :func:`box_announce`, :func:`diamond_announce`.
 """
 

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "unicode-fol-kit"
-version = "0.16.0"
+version = "0.17.0"
 description = "Parser and toolkit for first-order logic formulas using Unicode operators"
 readme = "README.md"
 license = { text = "MIT" }
@@ -44,6 +44,18 @@ test = [
 Documentation = "https://unicode-fol-kit.readthedocs.io/"
 Repository = "https://github.com/fvossel/unicode-fol-kit"
 Issues = "https://github.com/fvossel/unicode-fol-kit/issues"
+
+[tool.pytest.ini_options]
+markers = [
+    # The everyday developer loop is `pytest -n auto -m "not isabelle_live"`:
+    # the live tests each spawn a fresh `isabelle build` subprocess (minutes of
+    # wall time on a machine with Isabelle installed) and dominate the serial
+    # suite time. CI and pre-release runs cover them with a SERIAL
+    # `pytest -m isabelle_live` — even `-n 4` makes concurrent JVM builds
+    # contend for CPU and push long proof batteries (S4.3 ~70 s) past their
+    # session timeouts, producing flaky failures. Never put `-n` in addopts.
+    "isabelle_live: exercises a real Isabelle/HOL installation via isabelle_runner (slow subprocess builds; skipped automatically when isabelle_available() is False)",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["unicode_fol_kit"]

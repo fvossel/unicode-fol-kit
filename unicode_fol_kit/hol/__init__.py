@@ -25,7 +25,15 @@ Modules:
   (agent-indexed epistemic/doxastic, deontic, temporal), extending the alethic-only
   ``qml.to_thf_modal``.
 - :mod:`~unicode_fol_kit.hol.classical` — FOL and MSFOL → THF / Isabelle.
-- :mod:`~unicode_fol_kit.hol.manyvalued` — three-valued K3 / LP → THF / Isabelle.
+- :mod:`~unicode_fol_kit.hol.isabelle_relevant` — relevant logic B (Routley–Meyer
+  shallow embedding, frame conditions as lemma premises) + the runner's
+  ``isabelle_decide_relevant``.
+- :mod:`~unicode_fol_kit.hol.isabelle_substructural` — ILL / Lambek **derivation
+  replay**: the sequent rules as an ``inductive`` derivability predicate and the
+  concrete Python-found derivation replayed as a machine-checked lemma.
+- :mod:`~unicode_fol_kit.hol.manyvalued` — three-valued K3 / LP → THF / Isabelle,
+  generalised to ANY finite :class:`~unicode_fol_kit.semantics.matrix.TruthMatrix`
+  (including Belnap–Dunn FDE) via ``to_thf_matrix`` / ``to_isabelle_matrix``.
 - :mod:`~unicode_fol_kit.hol.secondorder` — second-order logic → THF / Isabelle
   (native higher-order predicate quantification; standard semantics).
 - :mod:`~unicode_fol_kit.hol.intuitionistic` — intuitionistic propositional logic → HOL
@@ -41,14 +49,22 @@ from .isabelle_modal import (
 )
 from .isabelle_runner import (
     find_isabelle, isabelle_available, isabelle_decide_modal, isabelle_decide_fol,
+    isabelle_decide_counterfactual, isabelle_decide_relevant,
     check_theory, IsabelleInstall, IsabelleNotAvailable, BuildResult,
     ModalVerdict, FolVerdict, DEFAULT_METHODS,
+)
+from .isabelle_relevant import to_isabelle_relevant
+from .isabelle_substructural import (
+    to_isabelle_ill, ill_derivation_theory,
+    to_isabelle_lambek, lambek_derivation_theory,
 )
 from .thf_modal import to_thf_modal_full, thf_full_definitions, thf_full_frame_axioms
 from .classical import to_thf_fol, to_isabelle_fol, to_thf_msfol, to_isabelle_msfol
 from .manyvalued import (
     to_thf_k3lp, to_isabelle_k3lp,
     to_thf_k3lp_entailment, to_isabelle_k3lp_entailment, SYSTEMS,
+    to_thf_matrix, to_isabelle_matrix,
+    to_thf_matrix_entailment, to_isabelle_matrix_entailment,
 )
 from .secondorder import to_thf_so, to_isabelle_so
 from .intuitionistic import (
@@ -66,13 +82,19 @@ __all__ = [
     "to_isabelle_modal", "isabelle_modal_theory", "ISABELLE_TACTICS",
     "modal_axiom_names",
     "find_isabelle", "isabelle_available", "isabelle_decide_modal",
-    "isabelle_decide_fol", "check_theory",
+    "isabelle_decide_fol", "isabelle_decide_counterfactual",
+    "isabelle_decide_relevant", "check_theory",
     "IsabelleInstall", "IsabelleNotAvailable", "BuildResult",
     "ModalVerdict", "FolVerdict", "DEFAULT_METHODS",
+    "to_isabelle_relevant",
+    "to_isabelle_ill", "ill_derivation_theory",
+    "to_isabelle_lambek", "lambek_derivation_theory",
     "to_thf_modal_full", "thf_full_definitions", "thf_full_frame_axioms",
     "to_thf_fol", "to_isabelle_fol", "to_thf_msfol", "to_isabelle_msfol",
     "to_thf_k3lp", "to_isabelle_k3lp",
     "to_thf_k3lp_entailment", "to_isabelle_k3lp_entailment", "SYSTEMS",
+    "to_thf_matrix", "to_isabelle_matrix",
+    "to_thf_matrix_entailment", "to_isabelle_matrix_entailment",
     "to_thf_so", "to_isabelle_so",
     "gmt_translate", "to_thf_intuitionistic", "to_isabelle_intuitionistic",
     "gmt_is_s4_valid", "gmt_validity_matches_int_valid",

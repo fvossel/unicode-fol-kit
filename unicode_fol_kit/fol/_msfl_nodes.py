@@ -6,13 +6,27 @@ from dataclasses import dataclass, is_dataclass, replace
 from ._fol_nodes import (
     Node, Z3Env, Variable, Constant, Number, Function,
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
-    Count, Cardinality, _COUNT_OPS, _COUNT_TOKEN_TO_OP,
+    Count, Cardinality, Contrast, _COUNT_OPS, _COUNT_TOKEN_TO_OP,
     NODE_CLASSES, OPERATORS, register_operator,
     register_parser_op, _fold_binary,
 )
 from ._team_nodes import SlashedExists
 
 _logger = logging.getLogger(__name__)
+
+# Why the Łukasiewicz nodes REFUSE the classical exports below: their to_msfol
+# collapse (min/max/t-norm -> And/Or/...) changes the LOGIC, not just the syntax
+# — fuzzy weak-disjunction excluded middle P ∨ ¬P is not Łukasiewicz-valid but
+# its classical image is, so a silent collapse inside is_valid /
+# is_valid_resolution returned wrong verdicts. The collapse stays available, but
+# only explicitly: to_fol(node) first.
+_LUK_NO_CLASSICAL_EXPORT = (
+    "Łukasiewicz connectives are not classical — a silent classical collapse "
+    "would decide the WRONG logic (fuzzy P ∨ ¬P is not Łukasiewicz-valid, its "
+    "classical image is). Evaluate with semantics.fuzzy.evaluate or decide with "
+    "atp.z3_fuzzy.fuzzy_is_valid / fuzzy_is_satisfiable; if the classical "
+    "skeleton is really wanted, collapse explicitly with to_fol(node) first."
+)
 
 
 # =========================
@@ -289,16 +303,16 @@ class WeakConjunction(Node):
         raise RuntimeError("WeakConjunction._relativize called; call to_msfol() before _relativize.")
 
     def to_z3(self, env: Z3Env = None):
-        _logger.info("Auto-reducing %s to FOL for Z3 export.", type(self).__name__)
-        return to_fol(self).to_z3(env)
+        """Reject Z3 export: the classical collapse must be explicit (to_fol first)."""
+        raise NotImplementedError(f"to_z3: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
     def to_prover9(self) -> str:
-        _logger.info("Auto-reducing %s to FOL for Prover9 export.", type(self).__name__)
-        return to_fol(self).to_prover9()
+        """Reject Prover9 export: the classical collapse must be explicit (to_fol first)."""
+        raise NotImplementedError(f"to_prover9: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
     def to_tptp(self) -> str:
-        _logger.info("Auto-reducing %s to FOL for TPTP export.", type(self).__name__)
-        return to_fol(self).to_tptp()
+        """Reject TPTP export: the classical collapse must be explicit (to_fol first)."""
+        raise NotImplementedError(f"to_tptp: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
 
 @dataclass(frozen=True)
@@ -328,16 +342,16 @@ class WeakDisjunction(Node):
         raise RuntimeError("WeakDisjunction._relativize called; call to_msfol() before _relativize.")
 
     def to_z3(self, env: Z3Env = None):
-        _logger.info("Auto-reducing %s to FOL for Z3 export.", type(self).__name__)
-        return to_fol(self).to_z3(env)
+        """Reject Z3 export: the classical collapse must be explicit (to_fol first)."""
+        raise NotImplementedError(f"to_z3: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
     def to_prover9(self) -> str:
-        _logger.info("Auto-reducing %s to FOL for Prover9 export.", type(self).__name__)
-        return to_fol(self).to_prover9()
+        """Reject Prover9 export: the classical collapse must be explicit (to_fol first)."""
+        raise NotImplementedError(f"to_prover9: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
     def to_tptp(self) -> str:
-        _logger.info("Auto-reducing %s to FOL for TPTP export.", type(self).__name__)
-        return to_fol(self).to_tptp()
+        """Reject TPTP export: the classical collapse must be explicit (to_fol first)."""
+        raise NotImplementedError(f"to_tptp: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
 
 @dataclass(frozen=True)
@@ -364,16 +378,16 @@ class StrongConjunction(Node):
         raise RuntimeError("StrongConjunction._relativize called; call to_msfol() before _relativize.")
 
     def to_z3(self, env: Z3Env = None):
-        _logger.info("Auto-reducing %s to FOL for Z3 export.", type(self).__name__)
-        return to_fol(self).to_z3(env)
+        """Reject Z3 export: the classical collapse must be explicit (to_fol first)."""
+        raise NotImplementedError(f"to_z3: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
     def to_prover9(self) -> str:
-        _logger.info("Auto-reducing %s to FOL for Prover9 export.", type(self).__name__)
-        return to_fol(self).to_prover9()
+        """Reject Prover9 export: the classical collapse must be explicit (to_fol first)."""
+        raise NotImplementedError(f"to_prover9: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
     def to_tptp(self) -> str:
-        _logger.info("Auto-reducing %s to FOL for TPTP export.", type(self).__name__)
-        return to_fol(self).to_tptp()
+        """Reject TPTP export: the classical collapse must be explicit (to_fol first)."""
+        raise NotImplementedError(f"to_tptp: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
 
 @dataclass(frozen=True)
@@ -400,16 +414,16 @@ class StrongDisjunction(Node):
         raise RuntimeError("StrongDisjunction._relativize called; call to_msfol() before _relativize.")
 
     def to_z3(self, env: Z3Env = None):
-        _logger.info("Auto-reducing %s to FOL for Z3 export.", type(self).__name__)
-        return to_fol(self).to_z3(env)
+        """Reject Z3 export: the classical collapse must be explicit (to_fol first)."""
+        raise NotImplementedError(f"to_z3: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
     def to_prover9(self) -> str:
-        _logger.info("Auto-reducing %s to FOL for Prover9 export.", type(self).__name__)
-        return to_fol(self).to_prover9()
+        """Reject Prover9 export: the classical collapse must be explicit (to_fol first)."""
+        raise NotImplementedError(f"to_prover9: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
     def to_tptp(self) -> str:
-        _logger.info("Auto-reducing %s to FOL for TPTP export.", type(self).__name__)
-        return to_fol(self).to_tptp()
+        """Reject TPTP export: the classical collapse must be explicit (to_fol first)."""
+        raise NotImplementedError(f"to_tptp: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
 
 @dataclass(frozen=True)
@@ -438,16 +452,16 @@ class LukNegation(Node):
         raise RuntimeError("LukNegation._relativize called; call to_msfol() before _relativize.")
 
     def to_z3(self, env: Z3Env = None):
-        _logger.info("Auto-reducing %s to FOL for Z3 export.", type(self).__name__)
-        return to_fol(self).to_z3(env)
+        """Reject Z3 export: the classical collapse must be explicit (to_fol first)."""
+        raise NotImplementedError(f"to_z3: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
     def to_prover9(self) -> str:
-        _logger.info("Auto-reducing %s to FOL for Prover9 export.", type(self).__name__)
-        return to_fol(self).to_prover9()
+        """Reject Prover9 export: the classical collapse must be explicit (to_fol first)."""
+        raise NotImplementedError(f"to_prover9: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
     def to_tptp(self) -> str:
-        _logger.info("Auto-reducing %s to FOL for TPTP export.", type(self).__name__)
-        return to_fol(self).to_tptp()
+        """Reject TPTP export: the classical collapse must be explicit (to_fol first)."""
+        raise NotImplementedError(f"to_tptp: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
 
 @dataclass(frozen=True)
@@ -477,16 +491,16 @@ class LukImplication(Node):
         raise RuntimeError("LukImplication._relativize called; call to_msfol() before _relativize.")
 
     def to_z3(self, env: Z3Env = None):
-        _logger.info("Auto-reducing %s to FOL for Z3 export.", type(self).__name__)
-        return to_fol(self).to_z3(env)
+        """Reject Z3 export: the classical collapse must be explicit (to_fol first)."""
+        raise NotImplementedError(f"to_z3: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
     def to_prover9(self) -> str:
-        _logger.info("Auto-reducing %s to FOL for Prover9 export.", type(self).__name__)
-        return to_fol(self).to_prover9()
+        """Reject Prover9 export: the classical collapse must be explicit (to_fol first)."""
+        raise NotImplementedError(f"to_prover9: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
     def to_tptp(self) -> str:
-        _logger.info("Auto-reducing %s to FOL for TPTP export.", type(self).__name__)
-        return to_fol(self).to_tptp()
+        """Reject TPTP export: the classical collapse must be explicit (to_fol first)."""
+        raise NotImplementedError(f"to_tptp: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
 
 @dataclass(frozen=True)
@@ -516,16 +530,16 @@ class LukEquivalence(Node):
         raise RuntimeError("LukEquivalence._relativize called; call to_msfol() before _relativize.")
 
     def to_z3(self, env: Z3Env = None):
-        _logger.info("Auto-reducing %s to FOL for Z3 export.", type(self).__name__)
-        return to_fol(self).to_z3(env)
+        """Reject Z3 export: the classical collapse must be explicit (to_fol first)."""
+        raise NotImplementedError(f"to_z3: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
     def to_prover9(self) -> str:
-        _logger.info("Auto-reducing %s to FOL for Prover9 export.", type(self).__name__)
-        return to_fol(self).to_prover9()
+        """Reject Prover9 export: the classical collapse must be explicit (to_fol first)."""
+        raise NotImplementedError(f"to_prover9: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
     def to_tptp(self) -> str:
-        _logger.info("Auto-reducing %s to FOL for TPTP export.", type(self).__name__)
-        return to_fol(self).to_tptp()
+        """Reject TPTP export: the classical collapse must be explicit (to_fol first)."""
+        raise NotImplementedError(f"to_tptp: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
 
 # =========================
@@ -1220,6 +1234,10 @@ _UNI_BASE_PREC = {
     "Lambda": 0, "Application": 0,
     "Quantifier": 4, "SortedQuantifier": 4, "SecondOrderQuantifier": 4,
     "Count": 4, "SortedCount": 4, "SlashedExists": 4,
+    # PAL announcements bind like a prefix operator (their post-formula slot is
+    # a prefix-level operand); they are not in the operator registry because no
+    # registered fixity can express the bracket-delimited two-argument shape.
+    "Announce": 4, "AnnounceDiamond": 4,
 }
 
 # The same-level binary group (∧ ∨ ⊗ ⊕, grammar precedence 3) is identified by
@@ -1404,6 +1422,17 @@ def _uni(node) -> str:
     if cls == "One":
         # The multiplicative unit of the linear mode.
         return "𝟙"
+    if cls == "Top":
+        # The additive truth of the linear mode.
+        return "⊤"
+    if cls == "Zero":
+        # The additive falsity of the linear mode.
+        return "𝟘"
+    if cls in ("Announce", "AnnounceDiamond"):
+        # PAL announcements render via their own bracket-delimited form
+        # ([φ!]ψ / ⟨φ!⟩ψ); precedence for the enclosing slot comes from
+        # _UNI_BASE_PREC above.
+        return node.to_unicode_str()
     if cls == "Dependence":
         # The dependence atom =(t1, …, tn); terms render at the term level.
         return "=(" + ", ".join(_uni_term(a) for a in node.args) + ")"
@@ -1571,6 +1600,13 @@ def _latex(node) -> str:
         return f"\\mathsf{{{_latex_escape(node.name)}}}"
     if cls == "One":
         return "\\mathbf{1}"
+    if cls == "Top":
+        return "\\top"
+    if cls == "Zero":
+        return "\\mathbf{0}"
+    if cls in ("Announce", "AnnounceDiamond"):
+        # PAL announcements render via their own bracket-delimited LaTeX form.
+        return node.to_latex()
     if cls == "Dependence":
         return "{=}(" + ", ".join(_latex_term(a) for a in node.args) + ")"
     if cls == "SortedQuantifier":
@@ -1614,15 +1650,39 @@ NODE_CLASSES.update({
 # MSFL Reductions
 # =========================
 
+def _reduce_nl_nodes(n: Node) -> Node:
+    """Reduce the natural-language nodes with a classical reading to plain FOL.
+
+    ``Contrast`` is truth-functionally conjunction (its own contract; the Z3 /
+    Prover9 / TPTP exports already lower it as ``And``), and ``Count`` carries the
+    standard distinct-witnesses expansion (:meth:`Count._expand`, the same one its
+    first-order exports use). ``Cardinality`` is deliberately NOT reduced here —
+    set cardinality has no first-order counterpart, so it must keep raising at the
+    first-order boundary rather than being silently mistranslated.
+    """
+    n = n.map_children(_reduce_nl_nodes)
+    if isinstance(n, Contrast):
+        return And(n.left, n.right)
+    if isinstance(n, Count):
+        # The expansion is built from the already-reduced matrix, but it wraps it
+        # in fresh classical structure only, so one more pass is not needed.
+        return n._expand()
+    return n
+
+
 def to_fol(node: Node, include_sort_facts: bool = False) -> Node:
     """Reduce an MSFL (or plain FOL) node to a purely classical FOL node.
 
-    Two-phase reduction:
+    Three-phase reduction:
     1. to_msfol() — replaces Łukasiewicz operators with classical boolean
        counterparts (And/Or/Not/Implies/Iff); sort annotations are preserved.
     2. _relativize() — replaces SortedQuantifier with a guarded plain
        Quantifier; replaces SortedConstant with a plain Constant and collects
        sort-membership atoms as a side-effect.
+    3. _reduce_nl_nodes() — collapses ``Contrast`` to ``And`` and expands
+       ``Count`` (including a relativized ``SortedCount``) via the
+       distinct-witnesses encoding, so the returned node honours the
+       "classical FOL constructs only" contract for those inputs too.
 
     Args:
         node: any Node (MSFL or classical FOL).
@@ -1635,7 +1695,7 @@ def to_fol(node: Node, include_sort_facts: bool = False) -> Node:
     """
     msfol = node.to_msfol()
     facts: list = []
-    fol = msfol._relativize(facts)
+    fol = _reduce_nl_nodes(msfol._relativize(facts))
     if include_sort_facts and facts:
         seen: set = set()
         dedup = []

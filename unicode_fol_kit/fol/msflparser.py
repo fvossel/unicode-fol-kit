@@ -7,7 +7,7 @@ from lark.exceptions import VisitError
 from .nodes import Node, FOLTransformer
 from ._msfl_nodes import LambdaVar, Lambda, Application, resolve_lambda_scope
 from ._fol_nodes import (
-    Variable, Constant,
+    Variable, Constant, Function,
     build_grammar, build_transform_handlers, PARSER_OPS,
 )
 from ._modal_nodes import resolve_agent_variables
@@ -15,6 +15,69 @@ from ._so_nodes import ConflictingArityError  # re-exported for callers/tests
 from .naming import NamingError, ParsingError
 
 _GRAMMARS_DIR = pathlib.Path(__file__).parent / "grammars"
+
+
+# =========================
+# Single-letter function-call patch
+# =========================
+#
+# The shared (non-registry) term layer in _fol_nodes.py's grammar template only
+# ever lets a NAME (>= 2 letters) head a function call: ``NAME "(" termlist
+# ")" -> function_``. A single lowercase letter lexes as VARIABLE instead of
+# NAME, and ``?atom_term: VARIABLE`` has no continuation into "(", so
+# ``f(x)`` fails at the LEXER level (a NamingError: '(' is not a valid
+# continuation after VARIABLE in that grammar position) even though
+# ``Function('f', [...])`` is a perfectly legal AST node — e.g.
+# ``Function('f', [...]).to_unicode_str()`` prints ``f(x)``, which then FAILS
+# to re-parse. Verified unambiguous (no Earley ambiguity against lambda
+# application or the atom/atom_term rules: VARIABLE-as-bare-term and
+# VARIABLE-as-function-head are distinguished purely by whether "(" follows,
+# and a bare term can never itself reduce to a formula, so there is no
+# competing derivation for e.g. "(f)(y)" or "(λx. P(x))(f(y))") by building the
+# patched grammar for every mode and cross-checking against an
+# ``ambiguity="explicit"`` Earley parser, plus running the full parser test
+# suite (test_msfl_parser.py, test_lambda_tools.py, test_resolve_lambda_scope.py).
+#
+# The fix belongs at the shared-template level (_fol_nodes.py's
+# _BASE_GRAMMAR_TEMPLATE), but that module is out of scope for this change,
+# so it is applied here as a targeted, self-checking patch to the ASSEMBLED
+# grammar string: splice in a ``VARIABLE "(" termlist ")" -> function_``
+# alternative right next to the existing bare-VARIABLE one. The patch is
+# applied identically to every mode, since the term layer is verbatim-shared
+# across all of them (build_grammar's per-mode variation is entirely in the
+# formula-operator layers, not atom_term).
+_ATOM_TERM_VARIABLE_MARKER = '?atom_term: VARIABLE\n'
+_ATOM_TERM_FUNCTION_PATCH = (
+    _ATOM_TERM_VARIABLE_MARKER
+    + '    | VARIABLE "(" termlist ")"          -> function_\n'
+)
+
+
+def _allow_single_letter_function_calls(grammar_text: str) -> str:
+    """Splice a VARIABLE-headed function-call alternative into atom_term.
+
+    Returns ``grammar_text`` with exactly one occurrence of the bare
+    ``?atom_term: VARIABLE`` line followed by a new
+    ``VARIABLE "(" termlist ")" -> function_`` alternative (same rule alias as
+    the existing NAME-headed case, so no new Transformer method name is
+    needed — only ``function_`` itself is extended, see
+    :meth:`LambdaTransformer.function_`).
+
+    Raises RuntimeError if the marker is not found exactly once: a template
+    change in ``_fol_nodes.py`` would otherwise make this patch silently a
+    no-op and quietly resurrect the single-letter-function bug.
+    """
+    count = grammar_text.count(_ATOM_TERM_VARIABLE_MARKER)
+    if count != 1:
+        raise RuntimeError(
+            "MSFLParser: expected exactly one '?atom_term: VARIABLE' line in "
+            f"the generated grammar, found {count}. The shared term layer in "
+            "_fol_nodes.py's grammar template has changed shape; update "
+            "_allow_single_letter_function_calls (msflparser.py) to match, or "
+            "the single-letter function-call fix silently stops applying."
+        )
+    return grammar_text.replace(
+        _ATOM_TERM_VARIABLE_MARKER, _ATOM_TERM_FUNCTION_PATCH, 1)
 
 
 class LambdaTransformer(FOLTransformer):
@@ -46,6 +109,29 @@ class LambdaTransformer(FOLTransformer):
 
     def application_(self, items):
         return Application(items[0], items[1])
+
+    def function_(self, items):
+        """Transform a function application into a Function node.
+
+        Extends ``FOLTransformer.function_`` to also accept a single-letter
+        VARIABLE head, not just a multi-letter NAME: the
+        ``VARIABLE "(" termlist ")" -> function_`` alternative spliced into
+        atom_term by :func:`_allow_single_letter_function_calls` reduces to
+        this SAME rule alias, so both cases arrive here. Lark transforms
+        bottom-up, so by the time this fires the head token has already been
+        turned into a node by its terminal handler: a Constant (NAME) or a
+        Variable (VARIABLE) — never a raw Token — so both are unwrapped via
+        ``.name``.
+        """
+        head = items[0]
+        if isinstance(head, (Constant, Variable)):
+            name = head.name
+        else:
+            name = str(head)
+        args = items[1:]
+        if args and isinstance(args[0], list):
+            args = args[0]
+        return Function(name, args)
 
 
 # The per-mode hand-written transformers (Modal/SecondOrder/MSFOL/MSFL/FL +
@@ -175,12 +261,16 @@ class MSFLParser:
         # The grammar string and the matching Transformer are both assembled from
         # the operator registry for this mode — no per-mode .lark file or
         # hand-written Transformer subclass. The relative ``%import .terminals`` in
-        # the generated grammar resolves against the grammars directory.
+        # the generated grammar resolves against the grammars directory. The
+        # registry grammar is further patched to allow single-letter
+        # (VARIABLE-headed) function calls — see
+        # _allow_single_letter_function_calls above.
         registry_mode = _REGISTRY_MODE[self._mode]
         cache_key = (registry_mode, len(PARSER_OPS))
         parser = _PARSER_CACHE.get(cache_key)
         if parser is None:
-            parser = Lark(build_grammar(registry_mode), parser="earley",
+            grammar_text = _allow_single_letter_function_calls(build_grammar(registry_mode))
+            parser = Lark(grammar_text, parser="earley",
                           import_paths=[str(_GRAMMARS_DIR)])
             _PARSER_CACHE[cache_key] = parser
         # self.parser is public: NamingError/ParsingError use parser.terminals and parser.lex()

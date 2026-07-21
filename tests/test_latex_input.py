@@ -35,6 +35,9 @@ _MSFOL = {"many_sorted": True}
 _MSFL = {"many_sorted": True, "fuzzy": True}
 _MODAL = {"modal": True}
 _SO = {"second_order": True}
+_DEP = {"dependence": True}
+_LIN = {"linear": True}
+_LAM = {"lambek": True}
 
 _ROUND_TRIP = [
     # FOL.
@@ -84,6 +87,29 @@ _ROUND_TRIP = [
     ("x * y + z = w", _FOL),
     ("(x + y) * z = w", _FOL),
     ("x - (y - z) = w", _FOL),
+    # Previously-broken LaTeX round trips (see tests/test_latex_roundtrip.py for
+    # the exhaustive per-operator battery — these are a few representative
+    # spot checks, curated the way the rest of this table is).
+    ("Say_alice P → Want_bob Q", _MODAL),          # \mathsf{Say}_{alice} / \mathsf{Want}_{bob}
+    ("(P ∧ Q) □→ R", _MODAL),                       # \mathbin{\Box\!\rightarrow}
+    ("(P ∧ Q) ◇→ R", _MODAL),                       # \mathbin{\Diamond\!\rightarrow}
+    ("(P Ⓒ Q) ∧ R", _FOL),                          # \mathbin{\mathsf{C}}
+    ("@i (P ∧ Q)", _MODAL),                         # @_{i} (underscore must drop)
+    ("∃≥3 x P(x) → ∃≤5 y Q(y)", _FOL),               # \exists^{\geq n} exponent form
+    ("∃=0 x P(x)", _FOL),
+    ("P(|{v : Votes(v)}|, |{w : Q(w)}|)", _FOL),      # escaped \{ \} through the pipeline
+    ("∀x:Human (P(|{v:Human : Votes(v)}|) → Q(x))", _MSFOL),
+    ("i ∧ @j P", _MODAL),                            # bare nominal + satisfaction operator
+    ("μ(x, height) > μ(y, height)", _FOL),
+    # Dependence / linear / lambek modes.
+    ("=(x, y) ∧ P(x)", _DEP),
+    ("∃x/{y} R(x, y)", _DEP),
+    ("A ⊗ B", _LIN),
+    ("A ⊸ (B & C)", _LIN),
+    ("!A ⊗ !A", _LIN),
+    ("𝟙", _LIN),
+    ("(A • B) \\ C", _LAM),
+    ("A / (B • C)", _LAM),
 ]
 
 
@@ -172,6 +198,46 @@ def test_hand_written_latex(latex, unicode_src, mode):
     # the grammar's SORT terminal admits no surrounding whitespace.
     (r"x {:} \mathrm{Human}", "x:Human"),
     (r"alice : Human", "alice:Human"),
+    # --- New fixes ---
+    # \mathsf{Say} / \mathsf{Want} multi-token forms (agent_prefix operators).
+    (r"\mathsf{Say}", "Say"),
+    (r"\mathsf{Want}", "Want"),
+    (r"\mathsf{Say}_{alice}", "Say_alice"),
+    # Contrast and the counterfactual arrows.
+    (r"\mathbin{\mathsf{C}}", "Ⓒ"),
+    (r"\mathbin{\Box\!\rightarrow}", "□→"),
+    (r"\mathbin{\Diamond\!\rightarrow}", "◇→"),
+    # Hybrid satisfaction operator: the underscore is a renderer artefact and
+    # must be dropped, unlike K_a/B_a/Say_a/Want_a where it's part of the token.
+    (r"@_{i}", "@i"),
+    (r"@_i", "@i"),
+    (r"K_{alice}", "K_alice"),      # unaffected: agent operators KEEP their underscore
+    # A bare \mathsf{name} left after every known operator form is consumed is
+    # a hybrid-logic nominal (the generic catch-all unwrap).
+    (r"\mathsf{i}", "i"),
+    (r"\mathsf{j1}", "j1"),
+    # Counting quantifier exponent forms.
+    (r"\exists^{\geq 3}", "∃≥3"),
+    (r"\exists^{\leq 5}", "∃≤5"),
+    (r"\exists^{= 0}", "∃=0"),
+    # Cardinality's escaped literal braces survive the generic brace strip.
+    # (The ':' separator is tightened like a sort colon by the final pass —
+    # harmless here, since the grammar ignores whitespace around it too; see
+    # test_round_trip_latex's Cardinality/SortedCardinality cases, which
+    # confirm the tightened form still parses back to the identical AST.)
+    (r"\lvert\{v : \phi\}\rvert".replace(r"\phi", "P"), "|{v:P}|"),
+    (r"\lvert\{v{:}\mathrm{Human} : P\}\rvert", "|{v:Human:P}|"),
+    # Slashed existential's escaped literal braces (the slash set).
+    (r"\exists x / \{y, z\}\, P", "∃ x / {y, z} P"),
+    # Linear-logic multi-token forms.
+    (r"\mathord{!}", "!"),
+    (r"\mathbin{\&}", "&"),
+    (r"\mathbf{1}", "𝟙"),
+    # New control-sequence entries.
+    (r"\mu(x, y)", "μ(x, y)"),
+    (r"\multimap", "⊸"),
+    (r"\bullet", "•"),
+    (r"A \backslash B", "A \\ B"),
 ])
 def test_latex_to_unicode_fragments(latex, expected):
     """Individual construct translations and spacing/brace handling."""
@@ -186,3 +252,29 @@ def test_spacing_removed():
 def test_grouping_braces_stripped():
     """Bare LaTeX grouping braces are dropped (precedence is explicit elsewhere)."""
     assert latex_to_unicode(r"{P \land Q}") == "P ∧ Q"
+
+
+def test_backslash_control_sequence_not_eaten_by_spacing_cleanup():
+    """The 'backslash' control sequence (Lambek's \\ connective) must survive.
+
+    Regression pin: mapping \\backslash to a literal backslash BEFORE the
+    non-letter spacing-macro cleanup ran used to make that cleanup mistake the
+    freshly-produced "\\ " (backslash + space) for a backslash-space spacing
+    macro and delete it, silently dropping the connective. See the ordering
+    note in latex_to_unicode's docstring (step 7 before step 8).
+    """
+    assert latex_to_unicode(r"A \backslash B") == "A \\ B"
+
+
+def test_escaped_braces_protected_through_full_pipeline():
+    """Cardinality's escaped \\{ \\} survive control-sequence + brace-strip."""
+    assert latex_to_unicode(r"\lvert\{v : Votes(v)\}\rvert") == "|{v:Votes(v)}|"
+
+
+def test_mathsf_nominal_unwrap_does_not_shadow_known_operators():
+    """The generic \\mathsf unwrap only fires on names no specific rule claimed."""
+    # Known operator forms still resolve to their glyphs, not to bare names.
+    assert latex_to_unicode(r"\mathsf{G}") == "Ⓖ"
+    assert latex_to_unicode(r"\mathsf{Say}_{alice}") == "Say_alice"
+    # Anything else \mathsf-wrapped is unwrapped as a bare (nominal) name.
+    assert latex_to_unicode(r"\mathsf{k}") == "k"

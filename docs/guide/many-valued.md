@@ -407,6 +407,8 @@ matrix_entails([P], p.parse("Q ∨ ¬Q"), FDE_MATRIX)   # → False   paracomple
 matrix_is_satisfiable(p.parse("P ∧ ¬P"), FDE_MATRIX) # → True    designated at B
 ```
 
+`FDE_MATRIX` — or any matrix you build with `TruthMatrix.from_functions` — also exports to TPTP THF and Isabelle/HOL: `hol.to_thf_matrix` / `hol.to_isabelle_matrix` generalise the K3/LP exporters to work data-driven over any `TruthMatrix`. See {doc}`higher-order`.
+
 ### Comparing the three shipped logics side by side
 
 Iterating `MATRICES` shows where the four classic inferences land in each logic — and that K3 alone is explosive while only LP has logical truths from `∨`/`¬`:

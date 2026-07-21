@@ -180,6 +180,31 @@ free_holds(Atom("=", [k, k]), m_k, policy="negative")    # → False  (nothing i
 free_holds(Atom("=", [k, k]), m_k, policy="positive")    # → True   (self-identity preserved)
 ```
 
+### Deciding free-logic validity: bounded search
+
+Everything above evaluates a formula against one hand-built `FreeModel`. `free_is_valid` / `free_countermodel` / `free_find_model` / `free_entails` add the missing **decision-procedure** layer on top: a bounded exhaustive search over inner/outer-domain splits and partial denotations, with the same honest contract as `rel_valid` / `cf_valid` — `False` is *definitive*, backed by an explicit `free_satisfies`-verified countermodel; `True` means only "no countermodel with outer domain size ≤ `max_size`" (free FOL is as undecidable as classical FOL, so raising `max_size` can turn a `True` into `False` but never the reverse).
+
+```python
+from unicode_fol_kit import free_is_valid, free_countermodel, free_entails
+
+Ec = Atom("E!", [c])
+
+# The guarded rules from above are genuinely valid — no countermodel exists at all:
+free_is_valid(guarded_ui)                          # → True    (∀x P(x) ∧ E!(c)) → P(c)
+free_is_valid(guarded_eg)                          # → True    (P(c) ∧ E!(c)) → ∃x P(x)
+
+# The UNguarded classical rule is not — free_countermodel exhibits the witness:
+unguarded_ui = Implies(all_P, Px(c))
+free_is_valid(unguarded_ui)                        # → False
+m = free_countermodel(unguarded_ui)
+"c" in m.constants, m.constants["c"] in m.existing  # → (True, False)  c denotes a non-existing object
+
+free_entails([all_P], Px(c))                       # → False   unguarded UI fails as entailment too
+free_entails([all_P, Ec], Px(c))                   # → True    the guard restores it
+```
+
+`policy=` (`"negative"` default / `"positive"`) and `domain_split=` (`"any"` by default, restricting how the outer domain may exceed the existing one) are threaded through exactly as on `FreeModel`; `free_find_model` is the satisfiability-witness counterpart of `free_countermodel` for a formula you expect to hold somewhere.
+
 ## Public announcement / dynamic epistemic logic
 
 Static epistemic logic (`Knows` over a `KripkeModel`) describes what agents know; public announcement logic (PAL) adds the dynamics. A truthful public announcement of `φ` removes every world where `φ` is false, so knowledge changes. `announce(model, φ)` returns that updated model — `M|φ`, with relations and valuation cut down to the surviving worlds — and the box / diamond operators evaluate `[φ!]ψ` and `⟨φ!⟩ψ` at a world:
@@ -317,6 +342,46 @@ diamond_announce(M2, 1, q, Knows("a", q))       # → False
 box_announce(M2, 1, Not(q), Knows("a", Not(q))) # → True (after dropping p-worlds)
 ```
 
+### The parsed operators `[φ!]ψ` and `⟨φ!⟩ψ`
+
+`[φ!]ψ` and `⟨φ!⟩ψ` also parse in **modal mode**, as the `Announce` / `AnnounceDiamond` nodes, so an announcement can be written as a formula string instead of assembled from `box_announce` / `diamond_announce` arguments — and `satisfies_modal` evaluates it directly, via the same restricted-model semantics as `announce`:
+
+```python
+from unicode_fol_kit import MSFLParser, satisfies_modal
+from unicode_fol_kit.semantics.kripke import KripkeModel
+
+mp = MSFLParser(modal=True)
+M3 = KripkeModel([0, 1], {"K:a": {(0, 0), (0, 1), (1, 0), (1, 1)}}, {0: {"P"}})
+
+satisfies_modal(mp.parse("[P!]K_a P"), M3, 0)     # → True   ([P!] K_a P, same fact as box_announce above)
+satisfies_modal(mp.parse("⟨P!⟩P"), M3, 0)          # → True   (P is truthful at 0, and holds after)
+```
+
+`reduce_announcements(formula)` implements the standard PAL reduction axioms by syntactic relativization, rewriting an announcement-free-of-announcements formula that is classically/modally equivalent — which is what lets the **modal tableau** decide PAL: `modal_decide` / `is_modal_valid` / `modal_countermodel` run this reduction as a pre-pass, so the famous asymmetry between the two reduction directions for knowledge comes out correctly:
+
+```python
+from unicode_fol_kit import reduce_announcements, modal_decide
+
+f = mp.parse("[P!]K_a P")
+reduce_announcements(f).to_unicode_str()          # → 'P → K_a (P → P)'   (atomic case: [φ!]p ↔ (φ → p))
+
+# the reduction axiom [φ!]K_aψ ↔ (φ → K_a[φ!]ψ) is valid...
+modal_decide(mp.parse("[P!]K_a Q ↔ (P → K_a [P!]Q)"))   # → 'valid'
+# ...but its converse-looking cousin [φ!]K_aψ → K_a[φ!]ψ is famously NOT:
+modal_decide(mp.parse("[P!]K_a Q → K_a [P!]Q"))          # → 'invalid'
+```
+
+`reduce_announcements` refuses a **temporal** operator under an announcement (`Always`/`Eventually`/`Until` and their past duals, `Next`) rather than silently mis-reducing it: those quantify over the reflexive-transitive closure of the temporal relation, and the restriction of a closure is not the closure of the restriction — the box/diamond reduction axiom this module relies on is unsound there. Evaluate an announcement over a temporal formula directly with `satisfies_modal` instead, which has no such restriction:
+
+```python
+reduce_announcements(mp.parse("[P!]ⒼQ"))
+# raises NotImplementedError: ... restriction of a CLOSURE relation is not the closure
+# of the restriction ... Evaluate the announcement directly instead:
+# unicode_fol_kit.semantics.kripke.satisfies_modal ...
+```
+
+A **hybrid-logic nominal** under an announcement is refused for the same reason, in the other direction: a nominal names exactly one world, and the announcement might delete that very world — `satisfies_modal` again has no such restriction, since it evaluates the announcement against the model directly rather than rewriting the formula.
+
 ## Counterfactual conditionals
 
 The material conditional gets counterfactuals wrong. `A □→ B` ("if A were the case, B would be") is evaluated over Lewis's system of spheres: each world carries a nested sequence of world-sets ordered innermost (closest) first, and `A □→ B` holds iff, in the smallest sphere that contains an `A`-world, every `A`-world is a `B`-world (vacuously true if no sphere holds an `A`-world). The "might" counterfactual `A ◇→ B` is the dual `¬(A □→ ¬B)`.
@@ -339,6 +404,30 @@ would(CF, 0, A, B)                               # → True   (if A were, B woul
 would(CF, 0, A, Not(B))                          # → False
 might(CF, 0, A, C)                               # → False  (the closest A-world, 1, is not C)
 ```
+
+### The parsed operators `□→` and `◇→`
+
+Both connectives also parse in **modal mode**, as the `Would` and `Might` nodes, so a counterfactual can be written as a formula string instead of assembled from antecedent/consequent arguments. `cf_satisfies(formula, model, world)` evaluates a whole parsed formula — and counterfactuals may **nest**, which the `would` / `might` argument form cannot express:
+
+```python
+from unicode_fol_kit import MSFLParser, cf_satisfies
+
+p = MSFLParser(modal=True)
+
+cf_satisfies(p.parse("A □→ B"), CF, 0)           # → True   (same semantics as would(...))
+cf_satisfies(p.parse("A ◇→ C"), CF, 0)           # → False
+cf_satisfies(p.parse("A ∧ C □→ B"), CF, 0)       # → False  (antecedent strengthening fails)
+cf_satisfies(p.parse("A □→ (C □→ A)"), CF, 0)    # → True   (nested)
+```
+
+They sit at the `Ⓤ`/`⒮` precedence level — tighter than `→` and `↔`, looser than `∧`/`∨` — so `A ∧ B □→ C` groups as `(A ∧ B) □→ C`, the reading the English has. The glyphs begin with `□` and `◇`, and their terminals carry explicit priority so `A □→ B` never lexes as a box followed by a material arrow.
+
+Two boundaries are enforced rather than guessed:
+
+- **No first-order export.** `to_z3` / `to_prover9` / `to_tptp` raise. Collapsing `□→` to the material `→` is exactly the mistake the connective exists to avoid.
+- **Spheres are not an accessibility relation.** `satisfies_modal` rejects a counterfactual and `cf_satisfies` rejects `□`/`◇`; the modal and classical tableaux raise rather than return a verdict they cannot justify. Similarity ordering and accessibility are different structures, so the two evaluators stay apart.
+
+With a local Isabelle/HOL, `isabelle_decide_counterfactual` decides a parsed counterfactual against the same sphere semantics — see [Higher-order logic](higher-order.md).
 
 ### Complex sphere systems and multi-layer counterfactuals
 
@@ -590,6 +679,24 @@ minimal_entails(theory, Not(Ab(tweety)), circumscribed={"Ab"}, max_size=2)   # �
 ```{note}
 This is **parallel** circumscription: every named predicate is minimised on an equal footing, and the *non*-circumscribed predicates are held fixed (models are compared only when their fixed parts agree). It is **not** prioritised circumscription with *varied* predicates, so the textbook "Tweety the bird flies by default" pattern — which lets a derived `Flies` predicate float while `Ab` is minimised — is **not** captured: circumscribe the abnormality predicate(s) and reason about *them*, as above, rather than expecting a separate consequence predicate to be pinned for free.
 ```
+
+### An unbounded route: `circumscription_formula` / `circumscription_entails_so`
+
+`minimal_entails` decides circumscriptive entailment by *searching* bounded finite models; `circumscription_formula(premises, circumscribed)` instead *builds* McCarthy's second-order circumscription axiom itself — `T(P̄) ∧ ∀P̄'((T(P̄') ∧ P̄'⊆P̄) → P̄⊆P̄')`, "the premises hold, and no strictly-smaller `P̄'` also satisfies them" — as a plain `Node` headed by universal second-order quantifiers over fresh predicates. Every *other* predicate in `premises` is automatically held fixed, because it occurs as the same free symbol in both copies of the theory. `circumscription_entails_so(premises, circumscribed, conclusion)` wraps the axiom into the implication `axiom → conclusion`, universally closed — a genuine second-order *sentence* you can hand to any second-order route: `so_is_valid_finite` (the same bounded finite oracle `minimal_entails` uses internally, but now visible as an ordinary SO validity check) or `hol.secondorder`'s Isabelle/THF export, for an unbounded proof attempt.
+
+```python
+from unicode_fol_kit import circumscription_entails_so
+from unicode_fol_kit.semantics.secondorder import so_is_valid_finite
+
+# The same Pa → Qa example from above, now built as an SO sentence:
+ent = circumscription_entails_so([Implies(Pa, Qa)], {"P", "Q"}, Not(Qa))
+so_is_valid_finite(ent, max_size=2)          # → True   agrees with minimal_entails
+
+ent2 = circumscription_entails_so([Implies(Pa, Qa), Pa], {"P", "Q"}, Not(Qa))
+so_is_valid_finite(ent2, max_size=2)         # → False  agrees: asserting P(a) retracts it
+```
+
+`so_is_valid_finite` is still a *bounded* oracle (full second-order validity is not even semi-decidable), so this by itself buys nothing over `minimal_entails` directly — the payoff is that `circumscription_formula`'s output is an ordinary SO `Node`, so it also feeds `hol.secondorder`'s exporters for an attempted Isabelle/HOL proof beyond any finite bound. Only `varied=()` (the default — every non-circumscribed predicate fixed) is implemented; a non-empty `varied` (predicates that float freely, neither minimised nor fixed) raises `NotImplementedError`.
 
 ## Further non-classical families
 

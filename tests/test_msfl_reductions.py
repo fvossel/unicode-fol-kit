@@ -190,26 +190,31 @@ class TestEndToEnd:
         expected = Quantifier("∃", _X, And(Atom("Human", [_X]), _P))
         assert formulas_are_equivalent(to_fol(msfl), expected)
 
-    def test_auto_reduce_to_z3_succeeds(self):
+    def test_luk_z3_export_raises_with_pointer(self):
+        # The silent classical collapse decided the WRONG logic (fuzzy P ∨ ¬P is
+        # not Łukasiewicz-valid; its classical image is), so the Łukasiewicz
+        # nodes now refuse the classical exports and point at the fuzzy tools.
         n = WeakConjunction(_P, _Q)
-        z3_expr = n.to_z3()
-        assert z3_expr is not None
+        with pytest.raises(NotImplementedError, match="fuzzy_is_valid"):
+            n.to_z3()
 
-    def test_auto_reduce_z3_equivalent_to_and(self):
+    def test_explicit_collapse_z3_equivalent_to_and(self):
+        # The collapse itself stays available — explicitly, via to_fol.
         n = WeakConjunction(_P, _Q)
         assert formulas_are_equivalent(to_fol(n), And(_P, _Q))
+        assert to_fol(n).to_z3() is not None
 
-    def test_auto_reduce_to_prover9_succeeds(self):
+    def test_luk_prover9_export_raises_with_pointer(self):
         n = LukNegation(_P)
-        result = n.to_prover9()
-        assert isinstance(result, str)
-        assert result  # non-empty
+        with pytest.raises(NotImplementedError, match="to_fol"):
+            n.to_prover9()
+        assert isinstance(to_fol(n).to_prover9(), str)
 
-    def test_auto_reduce_to_tptp_succeeds(self):
+    def test_luk_tptp_export_raises_with_pointer(self):
         n = LukImplication(_P, _Q)
-        result = n.to_tptp()
-        assert isinstance(result, str)
-        assert result
+        with pytest.raises(NotImplementedError, match="Łukasiewicz"):
+            n.to_tptp()
+        assert isinstance(to_fol(n).to_tptp(), str)
 
     def test_sort_facts_with_z3(self):
         n = Atom("P", [SortedConstant("alice", "Human")])

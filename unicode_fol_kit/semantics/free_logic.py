@@ -18,12 +18,21 @@ outer domain. Two policies for an atom that contains a **non-denoting** term:
   atom with a non-denoting term is false (the common positive-free-logic convention
   for identity).
 
+Beyond single-model checking, :func:`free_find_model`, :func:`free_countermodel`,
+:func:`free_is_valid` and :func:`free_entails` add a Mace4-style **bounded exhaustive
+search** over ``FreeModel``s, in the style of
+:mod:`~unicode_fol_kit.semantics.modelfinder`: every outer domain size up to a bound,
+every existing/outer split, every partial constant/function assignment, and every
+predicate extension. See their docstrings for the honest bounded-search contract.
+
 Public API: :class:`FreeModel`, :data:`NONDENOTING`, :func:`free_satisfies`,
-:func:`free_holds`.
+:func:`free_holds`, :func:`free_find_model`, :func:`free_countermodel`,
+:func:`free_is_valid`, :func:`free_entails`.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, FrozenSet, Mapping, Optional, Tuple
+from itertools import product
+from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Sequence, Tuple
 
 from ..fol.nodes import (
     Node, Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
@@ -144,3 +153,324 @@ def _atom(atom: Atom, model: FreeModel, assignment: Mapping[str, Any], policy: s
 def free_holds(formula: Node, model: FreeModel, policy: str = "negative") -> bool:
     """Convenience: ``free_satisfies`` of a closed ``formula`` (empty assignment)."""
     return free_satisfies(formula, model, {}, policy)
+
+
+# ---------------------------------------------------------------------------
+# Bounded model search — the Mace4-style partner of free_satisfies, in the
+# style of semantics/modelfinder.py (read it first: _Signature, _candidate_count,
+# _interpretations, find_model / find_countermodel / is_valid_finite).
+# ---------------------------------------------------------------------------
+
+#: A partial function's table has, per argument tuple, (n+1) choices (one of the n
+#: domain elements, or "undefined"/non-denoting — see _term_value) and n**arity
+#: argument tuples, so the table space is (n+1)**(n**arity): already ~4·10^7 at
+#: n=3, arity=3. Rather than let max_candidates silently starve every domain size
+#: for a function this shape (see _search's "every size skipped" check), functions
+#: above this arity are rejected outright, up front, with a clean message.
+MAX_FUNCTION_ARITY = 2
+
+#: Interpretations visited per domain size before that size is skipped (mirrors
+#: modelfinder.MAX_CANDIDATES). Free logic multiplies further by the number of
+#: existing/outer splits tried (2**k under domain_split="any", 1 under "total"), so
+#: a signature that modelfinder would happily search at some k can cost more here.
+MAX_CANDIDATES = 1 << 20
+
+
+def _free_var_names(node: Node, bound: FrozenSet[str] = frozenset()) -> set:
+    """Return the names of variables occurring free in ``node`` (Quantifier binds).
+
+    Mirrors modelfinder._free_var_names, restricted to the node types free_satisfies
+    supports (no Count/Cardinality/SlashedExists binders exist in this fragment).
+    """
+    if isinstance(node, Variable):
+        return set() if node.name in bound else {node.name}
+    if isinstance(node, Quantifier):
+        return _free_var_names(node.formula, bound | {node.variable.name})
+    names: set = set()
+    for child in node._child_nodes():
+        names |= _free_var_names(child, bound)
+    return names
+
+
+def _universal_closure(node: Node) -> Node:
+    """Wrap ``node`` in ∀ for each free variable (deterministic order).
+
+    ∀ ranges over ``existing`` under free-logic semantics (see the module
+    docstring), so a free variable in a formula handed to the search functions is
+    read as ranging over whatever ``existing`` domain a candidate model has — the
+    free-logic-flavoured analogue of modelfinder's classical ∀-closure.
+    """
+    result = node
+    for name in sorted(_free_var_names(node), reverse=True):
+        result = Quantifier("∀", Variable(name), result)
+    return result
+
+
+def _signature(node: Node) -> Tuple[set, set, set]:
+    """Return ``(constant names, {(name, arity)} functions, {(name, arity)} predicates)``.
+
+    Mirrors modelfinder._Signature.scan for the node types free_satisfies supports.
+    ``=``, ``≠`` and the existence predicate ``E!`` are handled natively by
+    free_satisfies / _atom and are never collected as ordinary predicates to
+    interpret (interpreting ``E!`` would be incoherent: it is defined FROM
+    ``existing``, not a free table).
+    """
+    constants: set = set()
+    functions: set = set()
+    predicates: set = set()
+
+    def scan(n: Node) -> None:
+        if isinstance(n, Constant):
+            constants.add(n.name)
+        elif isinstance(n, Number):
+            constants.add(str(n.value))
+        elif isinstance(n, Function):
+            functions.add((n.name, len(n.args)))
+            for a in n.args:
+                scan(a)
+        elif isinstance(n, Atom):
+            if n.predicate not in ("=", "≠", _EXISTS_PRED):
+                predicates.add((n.predicate, len(n.args)))
+            for a in n.args:
+                scan(a)
+        else:
+            for child in n._child_nodes():
+                scan(child)
+
+    scan(node)
+    return constants, functions, predicates
+
+
+def _candidate_count(n_constants: int, functions: set, predicates: set,
+                     k: int, domain_split: str) -> int:
+    """The number of distinct FreeModel candidates of outer-domain size ``k``.
+
+    Existing/outer splits (``2**k`` under ``"any"`` — every subset, INCLUDING the
+    empty set: free logic, unlike classical FOL, does not require an existing
+    object, so an empty inner domain is a legitimate model, see
+    :func:`_existing_subsets`; exactly ``1`` under ``"total"``) times
+    ``(k+1)**n_constants`` partial constant assignments (k denoting choices +
+    non-denoting) times, per function of arity a, ``(k+1)**(k**a)`` partial tables,
+    times, per predicate of arity a, ``2**(k**a)`` extensional choices over the
+    OUTER domain (predicates apply to outer elements whether or not they exist —
+    see ``_atom``).
+    """
+    splits = (1 << k) if domain_split == "any" else 1
+    total = splits * ((k + 1) ** n_constants)
+    for _, arity in functions:
+        total *= (k + 1) ** (k ** arity)
+    for _, arity in predicates:
+        total *= 1 << (k ** arity)
+    return total
+
+
+def _existing_subsets(domain: Tuple[Any, ...], domain_split: str):
+    """Yield every candidate ``existing`` set for ``domain`` under ``domain_split``.
+
+    ``"any"`` — every subset of the outer domain, INCLUDING the empty set (an
+    empty inner domain is a legitimate free-logic model — ∀ vacuously true, ∃
+    always false there, per free_satisfies). ``"total"`` — only
+    ``existing == outer`` (everything denotable exists), the classical-FOL-
+    equivalent reading; with no constants/functions in the formula this makes the
+    search coincide with :mod:`~unicode_fol_kit.semantics.modelfinder` exactly
+    (see the differential test in tests/test_free_logic_search.py).
+    """
+    if domain_split == "total":
+        yield frozenset(domain)
+        return
+    if domain_split != "any":
+        raise ValueError(
+            f"free_logic model search: unknown domain_split {domain_split!r} "
+            '("any" / "total").')
+    n = len(domain)
+    for mask in range(1 << n):
+        yield frozenset(domain[i] for i in range(n) if (mask >> i) & 1)
+
+
+def _constant_assignments(domain: Tuple[Any, ...], const_names: List[str]):
+    """Yield every partial constant assignment: each name to a domain element, or omitted."""
+    options = list(domain) + [None]          # None = "omit" = non-denoting
+    for choice in product(options, repeat=len(const_names)):
+        yield {name: val for name, val in zip(const_names, choice) if val is not None}
+
+
+def _function_interpretations(domain: Tuple[Any, ...], func_sig: List[Tuple[str, int]]):
+    """Yield every partial function-table dict for ``func_sig`` over ``domain``.
+
+    Each argument tuple maps to a domain element, or is omitted (the application is
+    non-denoting on that tuple — see ``_term_value``).
+    """
+    if not func_sig:
+        yield {}
+        return
+    per_function = []
+    for _, arity in func_sig:
+        arg_tuples = list(product(domain, repeat=arity))
+        value_options = list(domain) + [None]
+        per_function.append(list(product(value_options, repeat=len(arg_tuples))))
+    for combo in product(*per_function):
+        functions = {}
+        for (name, arity), values in zip(func_sig, combo):
+            arg_tuples = list(product(domain, repeat=arity))
+            functions[(name, arity)] = {
+                at: v for at, v in zip(arg_tuples, values) if v is not None
+            }
+        yield functions
+
+
+def _predicate_interpretations(domain: Tuple[Any, ...], pred_sig: List[Tuple[str, int]]):
+    """Yield every predicate-table dict for ``pred_sig``: a subset of outer**arity each."""
+    if not pred_sig:
+        yield {}
+        return
+    per_predicate = []
+    for _, arity in pred_sig:
+        arg_tuples = list(product(domain, repeat=arity))
+        per_predicate.append(list(product((False, True), repeat=len(arg_tuples))))
+    for combo in product(*per_predicate):
+        predicates = {}
+        for (name, arity), mask in zip(pred_sig, combo):
+            arg_tuples = list(product(domain, repeat=arity))
+            predicates[(name, arity)] = frozenset(t for t, inc in zip(arg_tuples, mask) if inc)
+        yield predicates
+
+
+def _candidate_models(domain, const_names, func_sig, pred_sig, domain_split):
+    """Yield every FreeModel candidate over ``domain`` for the given signature."""
+    for existing in _existing_subsets(domain, domain_split):
+        for constants in _constant_assignments(domain, const_names):
+            for functions in _function_interpretations(domain, func_sig):
+                for predicates in _predicate_interpretations(domain, pred_sig):
+                    yield FreeModel(outer=domain, existing=existing, constants=constants,
+                                    functions=functions, predicates=predicates)
+
+
+def _search(formulas: Sequence[Node], max_size: int, policy: str, domain_split: str,
+           max_candidates: int) -> Optional[FreeModel]:
+    """Return the first FreeModel making every one of ``formulas`` true, or None.
+
+    Each formula is closed with :func:`_universal_closure` independently (mirrors
+    modelfinder.find_model), the signature (constants/functions/predicates) is
+    collected from the closed formulas jointly, and every domain size ``1..max_size``
+    is tried in turn, skipping sizes whose candidate count exceeds
+    ``max_candidates``. If EVERY size in range is skipped, nothing was actually
+    searched, so a bare ``None`` would misleadingly look like a completed bounded
+    search — this raises instead (see the arity/message in the ValueError).
+    """
+    if policy not in ("negative", "positive"):
+        raise ValueError(f"free_logic model search: unknown policy {policy!r} (negative / positive).")
+    closed = [_universal_closure(f) for f in formulas]
+
+    constants: set = set()
+    functions: set = set()
+    predicates: set = set()
+    for f in closed:
+        c, fn, p = _signature(f)
+        constants |= c
+        functions |= fn
+        predicates |= p
+
+    for name, arity in functions:
+        if arity > MAX_FUNCTION_ARITY:
+            raise ValueError(
+                f"free_logic model search: function {name}/{arity} exceeds "
+                f"MAX_FUNCTION_ARITY = {MAX_FUNCTION_ARITY}. A partial function table over "
+                f"an n-element domain has (n+1)**(n**arity) entries — arity {arity} blows up "
+                "too fast to enumerate at any useful domain size. Reformulate with "
+                "lower-arity functions/predicates, or curry the function.")
+
+    const_names = sorted(constants)
+    func_sig = sorted(functions)
+    pred_sig = sorted(predicates)
+
+    tried_any_size = False
+    for k in range(1, max_size + 1):
+        if _candidate_count(len(const_names), functions, predicates, k, domain_split) > max_candidates:
+            continue
+        tried_any_size = True
+        domain = tuple(range(k))
+        for model in _candidate_models(domain, const_names, func_sig, pred_sig, domain_split):
+            if all(free_satisfies(f, model, {}, policy) for f in closed):
+                return model
+    if not tried_any_size:
+        raise ValueError(
+            f"free_logic model search: every domain size 1..{max_size} exceeds "
+            f"max_candidates = {max_candidates} for this signature "
+            f"({len(const_names)} constant(s), {len(func_sig)} function(s), "
+            f"{len(pred_sig)} predicate(s)). Raise max_candidates, lower max_size, or "
+            "simplify the formula.")
+    return None
+
+
+def free_find_model(formula: Node, max_size: int = 3, *, policy: str = "negative",
+                    domain_split: str = "any",
+                    max_candidates: int = MAX_CANDIDATES) -> Optional[FreeModel]:
+    """Return a FreeModel satisfying ``formula``, or None.
+
+    EXHAUSTIVE, Mace4-style search (see
+    :func:`~unicode_fol_kit.semantics.modelfinder.find_model`) over outer domain
+    sizes ``1..max_size``: for each size, every existing/outer split (``domain_split``
+    — ``"any"`` tries every subset including empty ``existing``; ``"total"`` forces
+    ``existing == outer``), every partial constant/function assignment (a symbol may
+    be non-denoting), and every predicate extension over the OUTER domain (predicates
+    apply regardless of existence — see ``_atom``). ``formula``'s free variables are
+    closed with ∀, so they range over the model's ``existing`` domain. A domain size
+    whose candidate count exceeds ``max_candidates`` is skipped; a function whose
+    arity exceeds :data:`MAX_FUNCTION_ARITY` is rejected outright (see :func:`_search`).
+    ``None`` means "none found within the bounds", not "unsatisfiable" — free FOL is
+    exactly as undecidable as classical FOL.
+    """
+    return _search([formula], max_size, policy, domain_split, max_candidates)
+
+
+def free_countermodel(formula: Node, max_size: int = 3, *, policy: str = "negative",
+                      domain_split: str = "any",
+                      max_candidates: int = MAX_CANDIDATES) -> Optional[FreeModel]:
+    """Return a FreeModel where ``formula`` is FALSE (a witness against its validity), or None.
+
+    Searches for a model of ``¬formula`` exactly like :func:`free_find_model`; the
+    search's success check (``free_satisfies`` of the negation) already verifies the
+    returned model, so a non-None result is a definitive refutation of validity — the
+    same verify-before-return discipline as
+    :func:`~unicode_fol_kit.semantics.relevant.rel_countermodel` /
+    :func:`~unicode_fol_kit.semantics.conditional.cf_countermodel`.
+    """
+    return _search([Not(formula)], max_size, policy, domain_split, max_candidates)
+
+
+def free_is_valid(formula: Node, max_size: int = 3, *, policy: str = "negative",
+                  domain_split: str = "any",
+                  max_candidates: int = MAX_CANDIDATES) -> bool:
+    """Return True iff no free-logic countermodel to ``formula`` is found within the bound.
+
+    HONEST CONTRACT (mirroring
+    :func:`~unicode_fol_kit.semantics.relevant.rel_valid` /
+    :func:`~unicode_fol_kit.semantics.conditional.cf_valid`): ``False`` is
+    *definitive* — it is backed by an explicit, :func:`free_satisfies`-verified
+    countermodel from :func:`free_countermodel`, so ``formula`` is certainly not
+    valid under this free-logic semantics (for this ``policy``). ``True`` means only
+    "no countermodel with outer domain size ≤ ``max_size``" — free FOL is as
+    undecidable as classical FOL, so this is bounded evidence, not a proof; raising
+    ``max_size`` never turns a ``False`` into a ``True``, only ever the reverse.
+    """
+    return free_countermodel(formula, max_size, policy=policy, domain_split=domain_split,
+                             max_candidates=max_candidates) is None
+
+
+def free_entails(premises: Sequence[Node], conclusion: Node, max_size: int = 3, *,
+                 policy: str = "negative", domain_split: str = "any",
+                 max_candidates: int = MAX_CANDIDATES) -> bool:
+    """Return True iff no bounded FreeModel satisfies every premise but not ``conclusion``.
+
+    Same honest contract as :func:`free_is_valid`: a ``False`` is backed by a
+    verified countermodel (every premise closed-and-true there, ``conclusion``
+    closed-and-false there); ``True`` means only "none found within the bounds".
+    Each premise and the conclusion are closed with ∀ INDEPENDENTLY, mirroring
+    :func:`~unicode_fol_kit.semantics.modelfinder.find_countermodel`: a variable
+    name shared between a premise and the conclusion is NOT read as the same
+    witness across both (each gets its own ∀-closure) — pass a single implication
+    formula instead (``Implies(And(p1, p2), conclusion)``) if a shared witness is
+    the intended reading.
+    """
+    return _search(list(premises) + [Not(conclusion)], max_size, policy, domain_split,
+                   max_candidates) is None

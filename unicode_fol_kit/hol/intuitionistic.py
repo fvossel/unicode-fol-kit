@@ -320,8 +320,14 @@ def gmt_is_s4_valid(formula: Node, timeout: int = 10000) -> bool:
     embedding is decidable here). By the GMT theorem this is True iff ``formula`` is
     intuitionistically valid; :func:`gmt_validity_matches_int_valid` uses it as an
     independent check of :func:`int_valid` that does not need an external HOL prover.
-    Note ``qml_is_valid`` is sound but bounded-incomplete in general; on this
-    propositional S4 fragment it is decisive, which the test battery pins down.
+
+    TIMEOUT CAVEAT: the problem class is decidable, but Z3 still runs under
+    ``timeout`` (ms) — on a large/deeply-nested formula it can answer *unknown*,
+    which the Z3 validity oracle conservatively maps to False. So ``True`` is
+    always a proof, while ``False`` on a very large formula may mean "timed out",
+    not "refuted" — raise ``timeout`` for such inputs, or use
+    :func:`unicode_fol_kit.atp.lj.int_prove` (the G4ip proof search), which is a
+    terminating decision procedure with no solver timeout in play.
     """
     from unicode_fol_kit.fol.qml import qml_is_valid
     return qml_is_valid(gmt_translate(formula), mode="constant", frame="S4", timeout=timeout)

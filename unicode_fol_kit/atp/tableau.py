@@ -25,6 +25,7 @@ from typing import List, Optional, Tuple
 
 from ..fol.nodes import (
     Node, Atom, Not, And, Or, Xor, Implies, Iff, Quantifier, Variable, Constant, Number, Function,
+    Contrast, Count, Cardinality,
 )
 from .fitch import FALSUM, is_falsum, _subst_var, _q_kind, _free_vars
 
@@ -42,6 +43,45 @@ def _any_modal(formulas) -> bool:
     """
     from .modal_tableau import has_modal
     return any(has_modal(f) for f in formulas)
+
+
+def _reject_exotic(formulas, entry: str) -> None:
+    """Reject non-classical node families with a pointer at the right tool.
+
+    Without this pre-dispatch check these nodes surfaced as a bare
+    ``ValueError: tableau: no rule for X`` from deep inside the rule dispatcher —
+    the same class of gap the modal routing above already closes. Each family has
+    its own decision procedure; none has a sound classical tableau rule.
+    """
+    from ..fol._linear_nodes import Tensor, With, OPlus, LinearImplies, OfCourse, One
+    from ..fol._lambek_nodes import Product, Under, Over
+    from ..fol._team_nodes import Dependence, SlashedExists
+    from ..fol._so_nodes import SecondOrderQuantifier
+    from ..semantics._modal_reject import FUZZY_TYPES
+    hints = (
+        ((Tensor, With, OPlus, LinearImplies, OfCourse, One),
+         "a linear-logic (ILL) connective; decide derivability with "
+         "atp.linear.ill_prove / ill_derivable"),
+        ((Product, Under, Over),
+         "a Lambek-calculus connective; decide derivability with "
+         "atp.lambek.lambek_prove / lambek_derivable"),
+        ((Dependence, SlashedExists),
+         "team-semantic (dependence/IF logic); evaluate with team_satisfies / "
+         "team_models"),
+        ((SecondOrderQuantifier,),
+         "second-order; use the sequent calculus's SO rules, satisfies_so, or "
+         "hol.secondorder"),
+        (FUZZY_TYPES,
+         "a Łukasiewicz connective; evaluate with semantics.fuzzy.evaluate or "
+         "decide with atp.z3_fuzzy.fuzzy_is_valid"),
+    )
+    for f in formulas:
+        for sub in f.walk():
+            for types, hint in hints:
+                if isinstance(sub, types):
+                    raise NotImplementedError(
+                        f"{entry}: {type(sub).__name__} is {hint}. No sound "
+                        "classical proof rule exists for it here.")
 
 
 def _ground_terms(node: Node, acc: set) -> None:
@@ -113,6 +153,9 @@ def _rule(f: Node):
     """
     if isinstance(f, And):
         return ("alpha", [f.left, f.right])
+    if isinstance(f, Contrast):
+        # Concession is truth-functionally conjunction (Contrast's own contract).
+        return ("alpha", [f.left, f.right])
     if isinstance(f, Or):
         return ("beta", [[f.left], [f.right]])
     if isinstance(f, Implies):
@@ -121,6 +164,10 @@ def _rule(f: Node):
         return ("beta", [[f.left, f.right], [Not(f.left), Not(f.right)]])
     if isinstance(f, Xor):
         return ("beta", [[f.left, Not(f.right)], [Not(f.left), f.right]])
+    if isinstance(f, Count):
+        # The distinct-witnesses expansion is plain FOL, which this tableau's
+        # quantifier rules handle — the same lowering to_z3/to_prover9 use.
+        return ("alpha", [f._expand()])
     if _q_kind(f) == "∃":
         return ("delta", f.variable, f.formula, False)
     if _q_kind(f) == "∀":
@@ -131,6 +178,8 @@ def _rule(f: Node):
             return ("alpha", [g.formula])
         if isinstance(g, And):
             return ("beta", [[Not(g.left)], [Not(g.right)]])
+        if isinstance(g, Contrast):
+            return ("beta", [[Not(g.left)], [Not(g.right)]])
         if isinstance(g, Or):
             return ("alpha", [Not(g.left), Not(g.right)])
         if isinstance(g, Implies):
@@ -139,10 +188,19 @@ def _rule(f: Node):
             return ("beta", [[g.left, Not(g.right)], [Not(g.left), g.right]])
         if isinstance(g, Xor):
             return ("beta", [[g.left, g.right], [Not(g.left), Not(g.right)]])
+        if isinstance(g, Count):
+            return ("alpha", [Not(g._expand())])
         if _q_kind(g) == "∀":
             return ("delta", g.variable, g.formula, True)
         if _q_kind(g) == "∃":
             return ("gamma", g.variable, g.formula, True)
+    if isinstance(f, (Cardinality,)) or (
+            isinstance(f, Not) and isinstance(f.formula, Cardinality)):
+        raise NotImplementedError(
+            "tableau: a bare Cardinality term is not a formula, and cardinality "
+            "comparisons are not first-order — evaluate them with "
+            "semantics.tarski.satisfies / the finite model finder, or export to "
+            "HOL via hol.secondorder.")
     raise ValueError(f"tableau: no rule for {type(f).__name__} {f.to_unicode_str()}")
 
 
@@ -214,10 +272,28 @@ def _close(work: Tuple[Node, ...], lits: frozenset,
 
 
 def _initial_terms(formulas, cap: int) -> Tuple[Node, ...]:
-    """The ground terms occurring in the initial formula set (the γ-instantiation seed)."""
+    """The γ-instantiation seed: initial ground terms plus the input's free variables.
+
+    A FREE variable of the input is treated as a constant — the standard reading
+    under which validity of a formula with free variables is validity of its
+    universal closure (``valid ∀a.φ  ⟺  unsat ¬φ[a := fresh constant]``), which is
+    also how the Z3 and resolution back-ends read free variables. Without this a
+    γ-formula was never instantiated at a free variable and e.g.
+    ``¬∃x P(x) → ¬P(a)`` (free ``a``) was silently left unproved.
+    Bound occurrences never reach this seed: it runs on the top-level input only,
+    and the free-variable set excludes them by definition.
+    """
     terms: Tuple[Node, ...] = ()
     for f in formulas:
         terms = _terms_of(f, terms, cap)
+    free: set = set()
+    for f in formulas:
+        free |= _free_vars(f)                    # a set of Variable NODES
+    for v in sorted(free, key=lambda n: n.name):
+        if len(terms) >= cap:
+            break
+        if v not in terms:
+            terms = terms + (v,)
     return terms
 
 
@@ -234,6 +310,7 @@ def tableau_closed(formulas, max_steps: int = 20000, max_terms: int = 8) -> bool
     call :mod:`unicode_fol_kit.atp.modal_tableau` directly).
     """
     formulas = list(formulas)
+    _reject_exotic(formulas, "tableau_closed")
     if _any_modal(formulas):
         from .modal_tableau import modal_tableau_closed
         return modal_tableau_closed(formulas)
@@ -248,6 +325,7 @@ def is_valid_tableau(formula: Node, max_steps: int = 20000, max_terms: int = 8) 
     A modal formula is decided over the system **K** by the labelled modal tableau;
     use :func:`unicode_fol_kit.atp.modal_tableau.is_modal_valid` for other frames.
     """
+    _reject_exotic([formula], "is_valid_tableau")
     if _any_modal([formula]):
         from .modal_tableau import is_modal_valid
         return is_modal_valid(formula)
@@ -275,6 +353,8 @@ def tableau_model(formulas, max_steps: int = 20000, max_terms: int = 8) -> Optio
     :func:`unicode_fol_kit.atp.modal_tableau.modal_countermodel`, which returns a
     verified :class:`~unicode_fol_kit.semantics.kripke.KripkeModel`.
     """
+    formulas = list(formulas)
+    _reject_exotic(formulas, "tableau_model")
     if _any_modal(formulas):
         raise NotImplementedError(
             "tableau_model: a modal formula's model is a Kripke structure, not a flat "

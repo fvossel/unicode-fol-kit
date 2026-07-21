@@ -42,8 +42,9 @@ Public API: :func:`to_thf_fol`, :func:`to_isabelle_fol`, :func:`to_thf_msfol`,
 from typing import Dict, List, Tuple
 
 from ..fol._symbol_names import dedupe
+from ..fol._msfl_nodes import _reduce_nl_nodes
 from ..fol.nodes import (
-    Node, Variable, Constant, Number, Function,
+    Node, Variable, Constant, Number, Function, Measure,
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
     SortedQuantifier, to_fol,
 )
@@ -103,6 +104,10 @@ def _signature(formula: Node):
             preds.add((n.predicate, len(n.args)))
         elif isinstance(n, Function):
             funcs.add((n.name, len(n.args)))
+        elif isinstance(n, Measure):
+            # μ(entity, dimension) is the binary function ``measure`` — the same
+            # symbol Measure.to_z3 / to_prover9 / to_tptp emit.
+            funcs.add(("measure", 2))
         elif isinstance(n, Constant):
             consts.add(n.name)
         elif isinstance(n, Number):
@@ -237,6 +242,10 @@ def _thf_term(node: Node, syms: "_SymbolResolver", vars_: "_VarResolver") -> str
     if isinstance(node, Function):
         head = syms.name(_CAT_FUNC, node.name, len(node.args))
         return "( " + " @ ".join([head] + [_thf_term(a, syms, vars_) for a in node.args]) + " )"
+    if isinstance(node, Measure):
+        head = syms.name(_CAT_FUNC, "measure", 2)
+        return ("( " + " @ ".join([head, _thf_term(node.entity, syms, vars_),
+                                   _thf_term(node.dimension, syms, vars_)]) + " )")
     raise NotImplementedError(
         f"to_thf_fol: unsupported term {type(node).__name__} (classical FOL terms only)."
     )
@@ -277,7 +286,10 @@ def _thf_formula(node: Node, syms: "_SymbolResolver", vars_: "_VarResolver") -> 
         return f"( {binder} [{x}: $i] : {f(node.formula)} )"
     raise NotImplementedError(
         f"to_thf_fol: {type(node).__name__} is outside the classical FOL fragment "
-        "supported by the THF export (no modal / second-order / Łukasiewicz / lambda)."
+        "supported by the THF export (no modal / second-order / Łukasiewicz / "
+        "substructural / lambda). Modal family → hol.thf_modal.to_thf_modal_full; "
+        "second-order → hol.secondorder.to_thf_so; K3/LP → hol.manyvalued; "
+        "ILL/Lambek derivations → hol.isabelle_substructural."
     )
 
 
@@ -323,6 +335,7 @@ def to_thf_fol(formula: Node, conjecture: bool = True) -> str:
     but is not guaranteed to terminate otherwise. This function only emits the
     problem; it does not run any prover.
     """
+    formula = _reduce_nl_nodes(formula)   # Contrast → ∧, Count → witnesses
     closed = formula
     for name in reversed(_free_variables(formula)):
         closed = Quantifier(_FORALL, Variable(name), closed)
@@ -375,6 +388,10 @@ def _isa_term(node: Node, syms: "_SymbolResolver", vars_: "_VarResolver") -> str
     if isinstance(node, Function):
         head = syms.name(_CAT_FUNC, node.name, len(node.args))
         return "(" + " ".join([head] + [_isa_term(a, syms, vars_) for a in node.args]) + ")"
+    if isinstance(node, Measure):
+        head = syms.name(_CAT_FUNC, "measure", 2)
+        return ("(" + " ".join([head, _isa_term(node.entity, syms, vars_),
+                                _isa_term(node.dimension, syms, vars_)]) + ")")
     raise NotImplementedError(
         f"to_isabelle_fol: unsupported term {type(node).__name__} (classical FOL terms only)."
     )
@@ -409,7 +426,10 @@ def _isa_formula(node: Node, syms: "_SymbolResolver", vars_: "_VarResolver") -> 
         return f"({binder} {vars_.token(node.variable.name)}. {g(node.formula)})"
     raise NotImplementedError(
         f"to_isabelle_fol: {type(node).__name__} is outside the classical FOL fragment "
-        "supported by the Isabelle export (no modal / second-order / Łukasiewicz / lambda)."
+        "supported by the Isabelle export (no modal / second-order / Łukasiewicz / "
+        "substructural / lambda). Modal family → hol.isabelle_modal.to_isabelle_modal; "
+        "second-order → hol.secondorder.to_isabelle_so; K3/LP → hol.manyvalued; "
+        "ILL/Lambek derivations → hol.isabelle_substructural."
     )
 
 
@@ -468,6 +488,7 @@ def to_isabelle_fol(formula: Node, theory_name: str = "FOL_Export",
         "",
         "typedecl i  \\<comment> \\<open>uninterpreted individuals\\<close>",
     ]
+    formula = _reduce_nl_nodes(formula)   # Contrast → ∧, Count → witnesses
     syms = _SymbolResolver(formula)
     vars_ = _VarResolver(_sanitize)
     lines += _isa_consts_block(formula, syms)

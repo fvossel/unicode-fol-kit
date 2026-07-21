@@ -9,7 +9,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: unicode-fol-kit 0.11.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-03 14:38+0200\n"
+"POT-Creation-Date: 2026-07-21 20:59+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: de\n"
@@ -221,10 +221,53 @@ msgstr ""
 "fehlt):"
 
 #: ../../guide/nonclassical.md:183
+msgid "Deciding free-logic validity: bounded search"
+msgstr "Gültigkeit der freien Logik entscheiden: beschränkte Suche"
+
+#: ../../guide/nonclassical.md:185
+msgid ""
+"Everything above evaluates a formula against one hand-built `FreeModel`. "
+"`free_is_valid` / `free_countermodel` / `free_find_model` / "
+"`free_entails` add the missing **decision-procedure** layer on top: a "
+"bounded exhaustive search over inner/outer-domain splits and partial "
+"denotations, with the same honest contract as `rel_valid` / `cf_valid` — "
+"`False` is *definitive*, backed by an explicit `free_satisfies`-verified "
+"countermodel; `True` means only \"no countermodel with outer domain size "
+"≤ `max_size`\" (free FOL is as undecidable as classical FOL, so raising "
+"`max_size` can turn a `True` into `False` but never the reverse)."
+msgstr ""
+"Alles oben Beschriebene wertet eine Formel gegen ein einziges, von Hand "
+"gebautes `FreeModel` aus. `free_is_valid` / `free_countermodel` / "
+"`free_find_model` / `free_entails` fügen die fehlende Schicht des "
+"**Entscheidungsverfahrens** hinzu: eine beschränkte erschöpfende Suche "
+"über Aufteilungen der inneren/äußeren Domäne und partielle Denotationen, "
+"mit demselben ehrlichen Vertrag wie `rel_valid` / `cf_valid` — `False` "
+"ist *definitiv*, belegt durch ein explizites, mit `free_satisfies` "
+"verifiziertes Gegenmodell; `True` bedeutet nur „kein Gegenmodell mit "
+"äußerer Domänengröße ≤ `max_size`“ (freie FOL ist ebenso unentscheidbar "
+"wie klassische FOL, sodass ein Anheben von `max_size` ein `True` in ein "
+"`False` verwandeln kann, aber niemals umgekehrt)."
+
+#: ../../guide/nonclassical.md:206
+msgid ""
+"`policy=` (`\"negative\"` default / `\"positive\"`) and `domain_split=` "
+"(`\"any\"` by default, restricting how the outer domain may exceed the "
+"existing one) are threaded through exactly as on `FreeModel`; "
+"`free_find_model` is the satisfiability-witness counterpart of "
+"`free_countermodel` for a formula you expect to hold somewhere."
+msgstr ""
+"`policy=` (Standard `\"negative\"` / `\"positive\"`) und `domain_split=` "
+"(standardmäßig `\"any\"`, das einschränkt, wie die äußere Domäne die "
+"existierende übersteigen darf) werden genau wie bei `FreeModel` "
+"durchgereicht; `free_find_model` ist das Erfüllbarkeits-Zeuge-Gegenstück "
+"zu `free_countermodel` für eine Formel, von der Sie erwarten, dass sie "
+"irgendwo gilt."
+
+#: ../../guide/nonclassical.md:208
 msgid "Public announcement / dynamic epistemic logic"
 msgstr "Öffentliche Bekanntgabe / dynamische epistemische Logik"
 
-#: ../../guide/nonclassical.md:185
+#: ../../guide/nonclassical.md:210
 msgid ""
 "Static epistemic logic (`Knows` over a `KripkeModel`) describes what "
 "agents know; public announcement logic (PAL) adds the dynamics. A "
@@ -243,7 +286,7 @@ msgstr ""
 "Bewertung — und die Box-/Diamant-Operatoren werten `[φ!]ψ` und `⟨φ!⟩ψ` an"
 " einer Welt aus:"
 
-#: ../../guide/nonclassical.md:205
+#: ../../guide/nonclassical.md:230
 msgid ""
 "`box_announce` is vacuously true when the announcement is false at the "
 "world (an untruthful announcement is not made); `diamond_announce` is its"
@@ -258,11 +301,11 @@ msgstr ""
 "¬K_a p` ist die klassische selbstwiderlegende Bekanntgabe: vorher wahr, "
 "aber ihre Bekanntgabe macht ihn falsch."
 
-#: ../../guide/nonclassical.md:214
+#: ../../guide/nonclassical.md:239
 msgid "Inspecting the updated model"
 msgstr "Das aktualisierte Modell untersuchen"
 
-#: ../../guide/nonclassical.md:216
+#: ../../guide/nonclassical.md:241
 msgid ""
 "`announce` returns a brand-new `KripkeModel` (the inputs are never "
 "mutated); every relation and the valuation are cut down to the survivors,"
@@ -273,7 +316,7 @@ msgstr ""
 "verbliebenen Welten reduziert, sodass Sie das Ergebnis mit den üblichen "
 "`KripkeModel`-Zugriffsmethoden untersuchen können:"
 
-#: ../../guide/nonclassical.md:226
+#: ../../guide/nonclassical.md:251
 msgid ""
 "Announcing a formula that is already established is idempotent — re-"
 "announcing `p` after `M|p` changes nothing:"
@@ -281,11 +324,11 @@ msgstr ""
 "Die Bekanntgabe einer bereits etablierten Formel ist idempotent — die "
 "erneute Bekanntgabe von `p` nach `M|p` ändert nichts:"
 
-#: ../../guide/nonclassical.md:233
+#: ../../guide/nonclassical.md:258
 msgid "Box vs diamond: vacuity and duality"
 msgstr "Box vs. Diamant: Vakuität und Dualität"
 
-#: ../../guide/nonclassical.md:235
+#: ../../guide/nonclassical.md:260
 msgid ""
 "`box_announce` is the PAL box `[φ!]ψ`; `diamond_announce` is its dual "
 "`⟨φ!⟩ψ`. At a world where the announcement is **false**, an untruthful "
@@ -297,15 +340,15 @@ msgstr ""
 "unwahrhaftige Bekanntgabe einfach nicht gemacht: Die Box ist vakuos wahr "
 "und der Diamant ist falsch. Welt 1 oben ist eine `¬p`-Welt:"
 
-#: ../../guide/nonclassical.md:243
+#: ../../guide/nonclassical.md:268
 msgid "The duality `⟨φ!⟩ψ ≡ φ ∧ ¬[φ!]¬ψ` holds pointwise:"
 msgstr "Die Dualität `⟨φ!⟩ψ ≡ φ ∧ ¬[φ!]¬ψ` gilt punktweise:"
 
-#: ../../guide/nonclassical.md:251
+#: ../../guide/nonclassical.md:276
 msgid "A two-agent scenario"
 msgstr "Ein Zwei-Agenten-Szenario"
 
-#: ../../guide/nonclassical.md:253
+#: ../../guide/nonclassical.md:278
 msgid ""
 "With two agents who each see a different fact, a public announcement can "
 "teach one agent something the other already knew. Four worlds enumerate "
@@ -320,7 +363,7 @@ msgstr ""
 "`q` gilt) und Agent `b` kann den Wert von `p` unterscheiden (also weiß "
 "`b`, dass `p` gilt):"
 
-#: ../../guide/nonclassical.md:269
+#: ../../guide/nonclassical.md:294
 #, python-brace-format
 msgid ""
 "The relation key `\"K:a\"` is the epistemic accessibility relation for "
@@ -330,11 +373,11 @@ msgstr ""
 "relation für Agent `a`; die vollständige Namenskonvention für Relationen "
 "finden Sie unter {doc}`modal`."
 
-#: ../../guide/nonclassical.md:271
+#: ../../guide/nonclassical.md:296
 msgid "Multi-agent knowledge updates and chain announcements"
 msgstr "Wissensaktualisierungen mit mehreren Agenten und verkettete Bekanntgaben"
 
-#: ../../guide/nonclassical.md:273
+#: ../../guide/nonclassical.md:298
 msgid ""
 "Public announcements compose: announcing one fact, then another, "
 "progressively constrains the shared model. A classic puzzle involves "
@@ -345,11 +388,11 @@ msgstr ""
 "schrittweise ein. Ein klassisches Rätsel betrifft geheime Informationen, "
 "die schrittweise aufgedeckt werden:"
 
-#: ../../guide/nonclassical.md:304
+#: ../../guide/nonclassical.md:329
 msgid "Vacuous announcements and untruthful scenarios"
 msgstr "Vakuose Bekanntgaben und unwahrhaftige Szenarien"
 
-#: ../../guide/nonclassical.md:306
+#: ../../guide/nonclassical.md:331
 msgid ""
 "An announcement that is false at the current world does not occur; the "
 "model is unchanged in the PAL semantics. This is distinct from announcing"
@@ -359,11 +402,84 @@ msgstr ""
 "statt; das Modell bleibt in der PAL-Semantik unverändert. Dies "
 "unterscheidet sich von der Bekanntgabe ihrer Negation:"
 
-#: ../../guide/nonclassical.md:320
+#: ../../guide/nonclassical.md:345
+msgid "The parsed operators `[φ!]ψ` and `⟨φ!⟩ψ`"
+msgstr "Die parsbaren Operatoren `[φ!]ψ` und `⟨φ!⟩ψ`"
+
+#: ../../guide/nonclassical.md:347
+msgid ""
+"`[φ!]ψ` and `⟨φ!⟩ψ` also parse in **modal mode**, as the `Announce` / "
+"`AnnounceDiamond` nodes, so an announcement can be written as a formula "
+"string instead of assembled from `box_announce` / `diamond_announce` "
+"arguments — and `satisfies_modal` evaluates it directly, via the same "
+"restricted-model semantics as `announce`:"
+msgstr ""
+"`[φ!]ψ` und `⟨φ!⟩ψ` parsen auch im **modalen Modus** als die Knoten "
+"`Announce` / `AnnounceDiamond`, sodass eine Bekanntgabe als Formel-String "
+"geschrieben werden kann, statt aus `box_announce` / `diamond_announce`-"
+"Argumenten zusammengesetzt zu werden — und `satisfies_modal` wertet sie "
+"direkt aus, über dieselbe Semantik des restringierten Modells wie "
+"`announce`:"
+
+#: ../../guide/nonclassical.md:360
+msgid ""
+"`reduce_announcements(formula)` implements the standard PAL reduction "
+"axioms by syntactic relativization, rewriting an announcement-free-of-"
+"announcements formula that is classically/modally equivalent — which is "
+"what lets the **modal tableau** decide PAL: `modal_decide` / "
+"`is_modal_valid` / `modal_countermodel` run this reduction as a pre-pass,"
+" so the famous asymmetry between the two reduction directions for "
+"knowledge comes out correctly:"
+msgstr ""
+"`reduce_announcements(formula)` implementiert die üblichen PAL-"
+"Reduktionsaxiome durch syntaktische Relativierung und schreibt sie in "
+"eine bekanntgabefreie, klassisch/modal äquivalente Formel um — genau das "
+"lässt das **modale Tableau** PAL entscheiden: `modal_decide` / "
+"`is_modal_valid` / `modal_countermodel` führen diese Reduktion als "
+"Vorverarbeitung aus, sodass die berühmte Asymmetrie zwischen den beiden "
+"Reduktionsrichtungen für Wissen korrekt herauskommt:"
+
+#: ../../guide/nonclassical.md:374
+msgid ""
+"`reduce_announcements` refuses a **temporal** operator under an "
+"announcement (`Always`/`Eventually`/`Until` and their past duals, `Next`)"
+" rather than silently mis-reducing it: those quantify over the reflexive-"
+"transitive closure of the temporal relation, and the restriction of a "
+"closure is not the closure of the restriction — the box/diamond reduction"
+" axiom this module relies on is unsound there. Evaluate an announcement "
+"over a temporal formula directly with `satisfies_modal` instead, which "
+"has no such restriction:"
+msgstr ""
+"`reduce_announcements` weist einen **temporalen** Operator unter einer "
+"Bekanntgabe zurück (`Always`/`Eventually`/`Until` und ihre "
+"Vergangenheitsduale, `Next`), statt ihn stillschweigend falsch zu "
+"reduzieren: Diese quantifizieren über die reflexiv-transitive Hülle der "
+"temporalen Relation, und die Einschränkung einer Hülle ist nicht die "
+"Hülle der Einschränkung — das Box/Diamond-Reduktionsaxiom, auf das sich "
+"dieses Modul stützt, ist dort nicht korrekt. Werten Sie eine Bekanntgabe "
+"über einer temporalen Formel stattdessen direkt mit `satisfies_modal` "
+"aus, das keine solche Einschränkung hat:"
+
+#: ../../guide/nonclassical.md:383
+msgid ""
+"A **hybrid-logic nominal** under an announcement is refused for the same "
+"reason, in the other direction: a nominal names exactly one world, and "
+"the announcement might delete that very world — `satisfies_modal` again "
+"has no such restriction, since it evaluates the announcement against the "
+"model directly rather than rewriting the formula."
+msgstr ""
+"Ein **hybridlogisches Nominal** unter einer Bekanntgabe wird aus "
+"demselben Grund, in der jeweils anderen Richtung, zurückgewiesen: Ein "
+"Nominal benennt genau eine Welt, und die Bekanntgabe könnte genau diese "
+"Welt löschen — `satisfies_modal` hat wiederum keine solche Einschränkung,"
+" da es die Bekanntgabe direkt gegen das Modell auswertet, statt die "
+"Formel umzuschreiben."
+
+#: ../../guide/nonclassical.md:385
 msgid "Counterfactual conditionals"
 msgstr "Kontrafaktische Konditionale"
 
-#: ../../guide/nonclassical.md:322
+#: ../../guide/nonclassical.md:387
 msgid ""
 "The material conditional gets counterfactuals wrong. `A □→ B` (\"if A "
 "were the case, B would be\") is evaluated over Lewis's system of spheres:"
@@ -381,7 +497,7 @@ msgstr ""
 "`B`-Welt ist (vakuos wahr, wenn keine Sphäre eine `A`-Welt enthält). Das "
 "„könnte“-Kontrafaktikum `A ◇→ B` ist das Dual `¬(A □→ ¬B)`."
 
-#: ../../guide/nonclassical.md:324
+#: ../../guide/nonclassical.md:389
 #, python-brace-format
 msgid ""
 "A `CounterfactualModel` takes the worlds, a `valuation` mapping each "
@@ -395,11 +511,83 @@ msgstr ""
 "ihre verschachtelte Liste von Frozensets abbildet. Eine in `spheres` "
 "fehlende Welt hat standard-mäßig die einzelne Sphäre `{w}`."
 
-#: ../../guide/nonclassical.md:343
+#: ../../guide/nonclassical.md:408
+msgid "The parsed operators `□→` and `◇→`"
+msgstr "Die parsbaren Operatoren `□→` und `◇→`"
+
+#: ../../guide/nonclassical.md:410
+msgid ""
+"Both connectives also parse in **modal mode**, as the `Would` and `Might`"
+" nodes, so a counterfactual can be written as a formula string instead of"
+" assembled from antecedent/consequent arguments. `cf_satisfies(formula, "
+"model, world)` evaluates a whole parsed formula — and counterfactuals may"
+" **nest**, which the `would` / `might` argument form cannot express:"
+msgstr ""
+"Beide Konnektoren parsen auch im **modalen Modus** als die Knoten `Would`"
+" und `Might`, sodass ein Kontrafaktisches als Formel-String geschrieben "
+"werden kann, statt aus Antezedens-/Konsequens-Argumenten zusammengesetzt "
+"zu werden. `cf_satisfies(formula, model, world)` wertet eine ganze "
+"geparste Formel aus — und Kontrafaktische dürfen **schachteln**, was die "
+"Argumentform `would` / `might` nicht ausdrücken kann:"
+
+#: ../../guide/nonclassical.md:423
+msgid ""
+"They sit at the `Ⓤ`/`⒮` precedence level — tighter than `→` and `↔`, "
+"looser than `∧`/`∨` — so `A ∧ B □→ C` groups as `(A ∧ B) □→ C`, the "
+"reading the English has. The glyphs begin with `□` and `◇`, and their "
+"terminals carry explicit priority so `A □→ B` never lexes as a box "
+"followed by a material arrow."
+msgstr ""
+"Sie liegen auf der Bindungsebene von `Ⓤ`/`⒮` — stärker als `→` und `↔`, "
+"schwächer als `∧`/`∨` —, sodass `A ∧ B □→ C` als `(A ∧ B) □→ C` "
+"gruppiert, die Lesart, die das Englische hat. Die Glyphen beginnen mit "
+"`□` und `◇`, und ihre Terminale tragen eine explizite Priorität, sodass "
+"`A □→ B` nie als Box gefolgt von einem materialen Pfeil gelext wird."
+
+#: ../../guide/nonclassical.md:425
+msgid "Two boundaries are enforced rather than guessed:"
+msgstr "Zwei Grenzen werden erzwungen statt erraten:"
+
+#: ../../guide/nonclassical.md:427
+msgid ""
+"**No first-order export.** `to_z3` / `to_prover9` / `to_tptp` raise. "
+"Collapsing `□→` to the material `→` is exactly the mistake the connective"
+" exists to avoid."
+msgstr ""
+"**Kein erststufiger Export.** `to_z3` / `to_prover9` / `to_tptp` werfen. "
+"`□→` auf das materiale `→` zusammenfallen zu lassen ist genau der Fehler,"
+" zu dessen Vermeidung es den Konnektor gibt."
+
+#: ../../guide/nonclassical.md:428
+msgid ""
+"**Spheres are not an accessibility relation.** `satisfies_modal` rejects "
+"a counterfactual and `cf_satisfies` rejects `□`/`◇`; the modal and "
+"classical tableaux raise rather than return a verdict they cannot "
+"justify. Similarity ordering and accessibility are different structures, "
+"so the two evaluators stay apart."
+msgstr ""
+"**Sphären sind keine Erreichbarkeitsrelation.** `satisfies_modal` weist "
+"ein Kontrafaktisches zurück und `cf_satisfies` weist `□`/`◇` zurück; das "
+"modale wie das klassische Tableau werfen, statt ein Urteil zu liefern, "
+"das sie nicht begründen können. Ähnlichkeitsordnung und Erreichbarkeit "
+"sind verschiedene Strukturen, daher bleiben die beiden Evaluatoren "
+"getrennt."
+
+#: ../../guide/nonclassical.md:430
+msgid ""
+"With a local Isabelle/HOL, `isabelle_decide_counterfactual` decides a "
+"parsed counterfactual against the same sphere semantics — see [Higher-"
+"order logic](higher-order.md)."
+msgstr ""
+"Mit einem lokalen Isabelle/HOL entscheidet "
+"`isabelle_decide_counterfactual` ein geparstes Kontrafaktisches gegen "
+"dieselbe Sphärensemantik — siehe [Logik höherer Stufe](higher-order.md)."
+
+#: ../../guide/nonclassical.md:432
 msgid "Complex sphere systems and multi-layer counterfactuals"
 msgstr "Komplexe Sphärensysteme und mehrschichtige Kontrafaktika"
 
-#: ../../guide/nonclassical.md:345
+#: ../../guide/nonclassical.md:434
 msgid ""
 "More intricate models can represent graded similarity. A world\\s sphere "
 "system is a nested list, so you can express \"closest\", \"next-"
@@ -409,11 +597,11 @@ msgstr ""
 "Sphärensystem einer Welt ist eine verschachtelte Liste, sodass Sie "
 "„nächste“, „zweitnächste“ usw. ausdrücken können:"
 
-#: ../../guide/nonclassical.md:377
+#: ../../guide/nonclassical.md:466
 msgid "Disjunctive antecedents and complex consequents"
 msgstr "Disjunktive Antezedenzien und komplexe Konsequenzen"
 
-#: ../../guide/nonclassical.md:379
+#: ../../guide/nonclassical.md:468
 msgid ""
 "Counterfactuals work with propositional formulas of arbitrary complexity "
 "(¬, ∧, ∨, →, ↔). Test complex reasoning chains:"
@@ -421,7 +609,7 @@ msgstr ""
 "Kontrafaktika funktionieren mit aussagenlogischen Formeln beliebiger "
 "Komplexität (¬, ∧, ∨, →, ↔). Testen Sie komplexe Schlussfolgerungsketten:"
 
-#: ../../guide/nonclassical.md:391
+#: ../../guide/nonclassical.md:480
 msgid ""
 "Antecedent strengthening fails — the hallmark non-monotonicity of "
 "counterfactuals. `A □→ B` can hold while `(A ∧ C) □→ B` does not, because"
@@ -432,11 +620,11 @@ msgstr ""
 "gilt, weil die Einengung des Antezedens in eine entferntere Sphäre "
 "reicht:"
 
-#: ../../guide/nonclassical.md:398
+#: ../../guide/nonclassical.md:487
 msgid "\"Would\" vs \"might\""
 msgstr "„Würde“ vs. „könnte“"
 
-#: ../../guide/nonclassical.md:400
+#: ../../guide/nonclassical.md:489
 msgid ""
 "`might` is defined as the dual `A ◇→ B ≡ ¬(A □→ ¬B)`. On the model above,"
 " the closest `A`-world (world 1) is a `B`-world but not a `C`-world, so "
@@ -447,7 +635,7 @@ msgstr ""
 "„wäre A, könnte B gelten“ zutrifft, aber „wäre A, könnte C gelten“ "
 "scheitert:"
 
-#: ../../guide/nonclassical.md:408
+#: ../../guide/nonclassical.md:497
 msgid ""
 "A genuine tie inside one sphere — two equally-close `A`-worlds, one `B` "
 "and one not — separates \"would\" from \"might\": neither all nor none of"
@@ -457,11 +645,11 @@ msgstr ""
 "`A`-Welten, eine `B` und eine nicht — trennt „würde“ von „könnte“: weder "
 "alle noch keine der nächsten `A`-Welten sind `B`:"
 
-#: ../../guide/nonclassical.md:420
+#: ../../guide/nonclassical.md:509
 msgid "Vacuous truth and the default sphere"
 msgstr "Vakuose Wahrheit und die Standardsphäre"
 
-#: ../../guide/nonclassical.md:422
+#: ../../guide/nonclassical.md:511
 msgid ""
 "If **no** sphere of the world contains an `A`-world, `A □→ B` is "
 "vacuously true for *any* `B`, and the matching \"might\" is false:"
@@ -469,7 +657,7 @@ msgstr ""
 "Enthält **keine** Sphäre der Welt eine `A`-Welt, so ist `A □→ B` für "
 "*jedes* `B` vakuos wahr, und das entsprechende „könnte“ ist falsch:"
 
-#: ../../guide/nonclassical.md:435
+#: ../../guide/nonclassical.md:524
 #, python-brace-format
 msgid ""
 "A world omitted from `spheres` defaults to the single sphere `{w}`, so a "
@@ -479,7 +667,7 @@ msgstr ""
 "`{w}`, sodass ein Ein-Welt-Modell das Kontrafaktikum an der Welt selbst "
 "auswertet:"
 
-#: ../../guide/nonclassical.md:442
+#: ../../guide/nonclassical.md:531
 msgid ""
 "Antecedents and consequents must be propositional (atoms and `¬ ∧ ∨ → "
 "↔`); a quantifier or modal node raises `TypeError`:"
@@ -487,11 +675,11 @@ msgstr ""
 "Antezedenzien und Konsequenzen müssen aussagenlogisch sein (Atome und `¬ "
 "∧ ∨ → ↔`); ein Quantor- oder Modal-Knoten löst `TypeError` aus:"
 
-#: ../../guide/nonclassical.md:449
+#: ../../guide/nonclassical.md:538
 msgid "Circumscription / non-monotonic entailment"
 msgstr "Zirkumskription / nichtmonotone Folgerung"
 
-#: ../../guide/nonclassical.md:451
+#: ../../guide/nonclassical.md:540
 msgid ""
 "Classical entailment is monotonic: adding premises never retracts a "
 "conclusion. Circumscription (McCarthy) captures defeasible reasoning by "
@@ -511,7 +699,7 @@ msgstr ""
 "`circumscribed=None` werden *alle* Prädikate minimiert, was eine Semantik"
 " nach Art der Closed-World-Annahme ergibt."
 
-#: ../../guide/nonclassical.md:453
+#: ../../guide/nonclassical.md:542
 msgid ""
 "The search reuses the finite model finder, so it is **bounded** (domains "
 "up to `max_size`): `True` means minimal-model entailment over models "
@@ -522,7 +710,7 @@ msgstr ""
 "Folgerung über Modelle innerhalb der Schranke, nicht einen Beweis über "
 "alle Modelle."
 
-#: ../../guide/nonclassical.md:466
+#: ../../guide/nonclassical.md:555
 msgid ""
 "The relation is genuinely non-monotonic — strengthening the premises can "
 "flip a `True` to `False`:"
@@ -530,11 +718,11 @@ msgstr ""
 "Die Relation ist tatsächlich nichtmonoton — das Verstärken der Prämissen "
 "kann ein `True` in `False` verwandeln:"
 
-#: ../../guide/nonclassical.md:477
+#: ../../guide/nonclassical.md:566
 msgid "Inspecting the minimal models"
 msgstr "Die Minimalmodelle untersuchen"
 
-#: ../../guide/nonclassical.md:479
+#: ../../guide/nonclassical.md:568
 #, python-brace-format
 msgid ""
 "`minimal_models(premises, circumscribed=…)` returns the underlying "
@@ -550,11 +738,11 @@ msgstr ""
 "beide Prädikate leer (was die Implikation vakuos erfüllt), weshalb genau "
 "deswegen `¬Q(a)` gefolgert wird:"
 
-#: ../../guide/nonclassical.md:490
+#: ../../guide/nonclassical.md:579
 msgid "Closed-world reasoning (and the unique-names caveat)"
 msgstr "Closed-World-Schließen (und der Vorbehalt der Unique-Names-Annahme)"
 
-#: ../../guide/nonclassical.md:492
+#: ../../guide/nonclassical.md:581
 msgid ""
 "Circumscribing a predicate makes it false of everything not forced true —"
 " the closed-world assumption. Assert `P(a)` and circumscribe `P`; then "
@@ -569,7 +757,7 @@ msgstr ""
 "`circumscribed=None` wird *jedes* Prädikat minimiert, sodass eine leere "
 "Theorie `¬P(a)` folgert:"
 
-#: ../../guide/nonclassical.md:501
+#: ../../guide/nonclassical.md:590
 msgid ""
 "A subtlety worth internalising: the search is over **bounded finite "
 "models with no unique-names assumption**, so two constants may denote the"
@@ -582,11 +770,11 @@ msgstr ""
 "folgert für sich genommen **nicht** `¬P(b)` — es gibt ein Minimalmodell, "
 "in dem `a` und `b` zu einem `P`-Objekt zusammenfallen:"
 
-#: ../../guide/nonclassical.md:512
+#: ../../guide/nonclassical.md:601
 msgid "Disjunction splits into incomparable minima"
 msgstr "Disjunktion spaltet sich in unvergleichbare Minima auf"
 
-#: ../../guide/nonclassical.md:514
+#: ../../guide/nonclassical.md:603
 msgid ""
 "A disjunctive premise has two minimal models (one for each disjunct), so "
 "neither disjunct is entailed on its own — but the disjunction is:"
@@ -595,11 +783,11 @@ msgstr ""
 "Disjunkt), sodass keines der Disjunkte für sich allein gefolgert wird — "
 "die Disjunktion jedoch schon:"
 
-#: ../../guide/nonclassical.md:521
+#: ../../guide/nonclassical.md:610
 msgid "Comparing minimal models across domain sizes"
 msgstr "Minimalmodelle über verschiedene Bereichsgrößen hinweg vergleichen"
 
-#: ../../guide/nonclassical.md:523
+#: ../../guide/nonclassical.md:612
 msgid ""
 "Minimal models are found independently at each domain size (1, 2, 3, …). "
 "Models are grouped by their \"fixed part\" — shared constants, functions,"
@@ -613,11 +801,11 @@ msgstr ""
 "Modelle, die *innerhalb ihrer Gruppe* minimal sind, werden zurückgegeben."
 " Dies erlaubt Schließen mit einer engen Bereichsschranke:"
 
-#: ../../guide/nonclassical.md:540
+#: ../../guide/nonclassical.md:629
 msgid "Quantified rules and existential bases"
 msgstr "Quantifizierte Regeln und existenzielle Basen"
 
-#: ../../guide/nonclassical.md:542
+#: ../../guide/nonclassical.md:631
 msgid ""
 "Theories with quantified rules combine non-monotonicity with first-order "
 "quantification. A rule \"all Ps are Qs\" with P minimised can express "
@@ -628,11 +816,11 @@ msgstr ""
 "minimiertem P kann Standardannahmen ausdrücken, die widerrufen werden, "
 "sobald sich Gegenbeispiele häufen:"
 
-#: ../../guide/nonclassical.md:568
+#: ../../guide/nonclassical.md:657
 msgid "Default reasoning: assume-normal, then retract"
 msgstr "Standardschließen: Normalität annehmen, dann widerrufen"
 
-#: ../../guide/nonclassical.md:570
+#: ../../guide/nonclassical.md:659
 msgid ""
 "The canonical use is an *abnormality* predicate `Ab`: circumscribe it to "
 "assume nothing is abnormal by default, and let new facts force "
@@ -647,7 +835,7 @@ msgstr ""
 "Kenntnisnahme, dass es abnormal ist — direkt oder über eine Regel wie "
 "„Pinguine sind abnormal“ — widerruft diese Schlussfolgerung:"
 
-#: ../../guide/nonclassical.md:591
+#: ../../guide/nonclassical.md:680
 msgid ""
 "This is **parallel** circumscription: every named predicate is minimised "
 "on an equal footing, and the *non*-circumscribed predicates are held "
@@ -671,23 +859,97 @@ msgstr ""
 "gezeigt, anstatt zu erwarten, dass ein separates Konsequenzprädikat "
 "kostenlos festgelegt wird."
 
-#: ../../guide/nonclassical.md:594
+#: ../../guide/nonclassical.md:683
+msgid ""
+"An unbounded route: `circumscription_formula` / "
+"`circumscription_entails_so`"
+msgstr ""
+"Ein unbeschränkter Weg: `circumscription_formula` / "
+"`circumscription_entails_so`"
+
+#: ../../guide/nonclassical.md:685
+msgid ""
+"`minimal_entails` decides circumscriptive entailment by *searching* "
+"bounded finite models; `circumscription_formula(premises, circumscribed)`"
+" instead *builds* McCarthy's second-order circumscription axiom itself — "
+"`T(P̄) ∧ ∀P̄'((T(P̄') ∧ P̄'⊆P̄) → P̄⊆P̄')`, \"the premises hold, and no "
+"strictly-smaller `P̄'` also satisfies them\" — as a plain `Node` headed "
+"by universal second-order quantifiers over fresh predicates. Every "
+"*other* predicate in `premises` is automatically held fixed, because it "
+"occurs as the same free symbol in both copies of the theory. "
+"`circumscription_entails_so(premises, circumscribed, conclusion)` wraps "
+"the axiom into the implication `axiom → conclusion`, universally closed —"
+" a genuine second-order *sentence* you can hand to any second-order "
+"route: `so_is_valid_finite` (the same bounded finite oracle "
+"`minimal_entails` uses internally, but now visible as an ordinary SO "
+"validity check) or `hol.secondorder`'s Isabelle/THF export, for an "
+"unbounded proof attempt."
+msgstr ""
+"`minimal_entails` entscheidet zirkumskriptive Folgerung, indem es "
+"beschränkte endliche Modelle *durchsucht*; `circumscription_formula"
+"(premises, circumscribed)` *baut* stattdessen McCarthys "
+"Zirkumskriptionsaxiom zweiter Stufe selbst — `T(P̄) ∧ ∀P̄'((T(P̄') ∧ "
+"P̄'⊆P̄) → P̄⊆P̄')`, „die Prämissen gelten, und kein echt kleineres `P̄'` "
+"erfüllt sie ebenfalls“ — als schlichten `Node`, angeführt von "
+"allquantifizierten Quantoren zweiter Stufe über frischen Prädikaten. "
+"Jedes *andere* Prädikat in `premises` wird automatisch festgehalten, da "
+"es in beiden Kopien der Theorie als dasselbe freie Symbol auftritt. "
+"`circumscription_entails_so(premises, circumscribed, conclusion)` "
+"verpackt das Axiom in die allquantifiziert abgeschlossene Implikation "
+"`axiom → conclusion` — einen echten *Satz* zweiter Stufe, den Sie jeder "
+"Route zweiter Stufe übergeben können: `so_is_valid_finite` (dasselbe "
+"beschränkte endliche Orakel, das `minimal_entails` intern verwendet, nun "
+"aber als gewöhnliche SO-Gültigkeitsprüfung sichtbar) oder dem Isabelle/"
+"THF-Export von `hol.secondorder`, für einen unbeschränkten "
+"Beweisversuch."
+
+#: ../../guide/nonclassical.md:699
+msgid ""
+"`so_is_valid_finite` is still a *bounded* oracle (full second-order "
+"validity is not even semi-decidable), so this by itself buys nothing over"
+" `minimal_entails` directly — the payoff is that "
+"`circumscription_formula`'s output is an ordinary SO `Node`, so it also "
+"feeds `hol.secondorder`'s exporters for an attempted Isabelle/HOL proof "
+"beyond any finite bound. Only `varied=()` (the default — every non-"
+"circumscribed predicate fixed) is implemented; a non-empty `varied` "
+"(predicates that float freely, neither minimised nor fixed) raises "
+"`NotImplementedError`."
+msgstr ""
+"`so_is_valid_finite` ist weiterhin ein *beschränktes* Orakel (volle "
+"Gültigkeit zweiter Stufe ist nicht einmal semi-entscheidbar), sodass dies"
+" für sich genommen nichts gegenüber `minimal_entails` direkt gewinnt — "
+"der Vorteil ist, dass die Ausgabe von `circumscription_formula` ein "
+"gewöhnlicher SO-`Node` ist und somit auch die Exporter von "
+"`hol.secondorder` für einen Isabelle/HOL-Beweisversuch jenseits jeder "
+"endlichen Schranke speist. Nur `varied=()` (der Standard — jedes nicht "
+"zirkumskribierte Prädikat festgehalten) ist implementiert; ein nicht "
+"leeres `varied` (Prädikate, die frei schweben, weder minimiert noch "
+"festgehalten) wirft `NotImplementedError`."
+
+#: ../../guide/nonclassical.md:701
 msgid "Further non-classical families"
 msgstr "Weitere nichtklassische Logikfamilien"
 
-#: ../../guide/nonclassical.md:596
+#: ../../guide/nonclassical.md:703
 #, python-brace-format
 msgid ""
 "These four evaluators cover one cluster of non-classical neighbours. The "
 "families that used to be listed here as out of scope now have first-class"
-" support of their own: {doc}relevant logic <relevant> (Routley–Meyer "
-"semantics for the basic system B), {doc}hybrid logic <hybrid> (nominals"
-" and @ in the modal mode), {doc}dependence / IF logic <dependence> "
-"(team semantics), and {doc}substructural logics <substructural> "
+" support of their own: {doc}`relevant logic <relevant>` (Routley–Meyer "
+"semantics for the basic system B), {doc}`hybrid logic <hybrid>` (nominals"
+" and `@` in the modal mode), {doc}`dependence / IF logic <dependence>` "
+"(team semantics), and {doc}`substructural logics <substructural>` "
 "(intuitionistic linear logic and the Lambek calculus, each with a sequent"
 " prover)."
 msgstr ""
-"Diese vier Auswertungsmodule decken ein Cluster nichtklassischer Nachbarlogiken ab. Die Familien, die hier früher als „außerhalb des Umfangs“ gelistet waren, besitzen nun eine erstklassige Unterstützung: {doc}Relevanzlogik <relevant> (Routley–Meyer-Semantik für das Basissystem B), {doc}Hybridlogik <hybrid> (Nominale und @ im modalen Modus), {doc}Abhängigkeits- / IF-Logik <dependence> (Team-Semantik) und {doc}substrukturelle Logiken <substructural> (intuitionistische lineare Logik und der Lambek-Kalkül, jeweils mit einem Sequenzen-Prover)."
+"Diese vier Auswertungsmodule decken ein Cluster nichtklassischer "
+"Nachbarlogiken ab. Die Familien, die hier früher als „außerhalb des "
+"Umfangs“ gelistet waren, besitzen nun eine erstklassige Unterstützung: "
+"{doc}Relevanzlogik <relevant> (Routley–Meyer-Semantik für das Basissystem"
+" B), {doc}Hybridlogik <hybrid> (Nominale und @ im modalen Modus), "
+"{doc}Abhängigkeits- / IF-Logik <dependence> (Team-Semantik) und "
+"{doc}substrukturelle Logiken <substructural> (intuitionistische lineare "
+"Logik und der Lambek-Kalkül, jeweils mit einem Sequenzen-Prover)."
 
 #~ msgid "Out of scope"
 #~ msgstr "Nicht im Funktionsumfang"

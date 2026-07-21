@@ -38,7 +38,10 @@ Public API: :func:`to_clauses`, :func:`refute`, :func:`prove`,
 :func:`is_valid_resolution`.
 """
 
-from ..fol.nodes import Node, Atom, Not, Quantifier, Variable, Constant, Number, Function
+from ..fol.nodes import (
+    Node, Atom, Not, Implies, Quantifier, Variable, Constant, Number, Function,
+    Measure,
+)
 from ..fol.normalforms import skolemize, _prenex_split, _cnf, _clauses
 from ..fol.unification import unify, apply_subst
 
@@ -204,6 +207,12 @@ def _rename_term(node: Node, mapping: dict) -> Node:
         return node
     if isinstance(node, Function):
         return Function(node.name, [_rename_term(a, mapping) for a in node.args])
+    if isinstance(node, Measure):
+        # μ(entity, dimension) is an ordinary binary term (the exports lower it
+        # to the uninterpreted function measure/2), so renaming recurses into
+        # both argument slots exactly as for Function.
+        return Measure(_rename_term(node.entity, mapping),
+                       _rename_term(node.dimension, mapping))
     if isinstance(node, Atom):
         return Atom(node.predicate, [_rename_term(a, mapping) for a in node.args])
     if isinstance(node, Not):
@@ -214,6 +223,13 @@ def _rename_term(node: Node, mapping: dict) -> Node:
 # ---------------------------------------------------------------------------
 # Standardizing variables apart
 # ---------------------------------------------------------------------------
+
+def _lit_key(literal) -> str:
+    """Canonical sort key for a literal (its surface form): the saturation loop
+    must visit literals and clauses in a content-determined order so a proof
+    search is reproducible run to run (frozenset iteration is hash-randomised)."""
+    return literal.to_unicode_str()
+
 
 def _clause_vars(clause: frozenset) -> set:
     """Return the set of variable names occurring anywhere in a clause."""
@@ -234,7 +250,12 @@ def _rename_clause(clause: frozenset, counter: list) -> frozenset:
     occurrences of the same variable stay shared.
     """
     mapping = {}
-    for name in _clause_vars(clause):
+    # Sorted: variable numbering must be a function of the clause CONTENT, not
+    # of set iteration order — otherwise two runs of the same proof search build
+    # alpha-variant (differently named) clauses, the kept-set dedup stops
+    # recognising repeats, and whether a goal closes within max_steps becomes
+    # hash-seed-dependent (an irreproducible verdict).
+    for name in sorted(_clause_vars(clause)):
         mapping[name] = Variable(f"_r{counter[0]}")
         counter[0] += 1
     if not mapping:
@@ -255,8 +276,10 @@ def _resolvents(clause1: frozenset, clause2: frozenset) -> list:
     resolvent is σ applied to ``(clause1 ∖ L) ∪ (clause2 ∖ M)``, as a frozenset.
     """
     results = []
-    for lit1 in clause1:
-        for lit2 in clause2:
+    # Deterministic literal order (see _rename_clause): resolvent GENERATION
+    # order feeds the agenda, so it must not depend on frozenset hash order.
+    for lit1 in sorted(clause1, key=_lit_key):
+        for lit2 in sorted(clause2, key=_lit_key):
             if _is_positive(lit1) == _is_positive(lit2):
                 continue  # need complementary polarity
             atom1 = _atom_of(lit1)
@@ -287,7 +310,7 @@ def _factors(clause: frozenset) -> list:
     where two literals must be identified before the empty clause can appear.
     """
     results = []
-    literals = list(clause)
+    literals = sorted(clause, key=_lit_key)
     for i in range(len(literals)):
         for j in range(i + 1, len(literals)):
             lit_i, lit_j = literals[i], literals[j]
@@ -319,13 +342,24 @@ def refute(clauses, max_steps: int = 10000) -> bool:
 
     ``clauses`` is any iterable of frozensets of literals; it is not mutated.
     """
-    kept = set(clauses)
+    # Insertion-ordered working structures (kept_list mirrors the kept set):
+    # processing order must be a function of the INPUT, not of hash seeds, or
+    # "proved within max_steps" varies between runs of the same call.
+    seed = sorted(dict.fromkeys(clauses),
+                  key=lambda c: (len(c), sorted(_lit_key(l) for l in c)))
+    kept = set(seed)
     if frozenset() in kept:
         return True
 
     counter = [0]
-    agenda = list(kept)
+    kept_list = list(seed)
+    agenda = list(seed)
     steps = 0
+
+    def _keep(clause):
+        kept.add(clause)
+        kept_list.append(clause)
+        agenda.append(clause)
 
     while agenda:
         given = agenda.pop(0)
@@ -335,13 +369,12 @@ def refute(clauses, max_steps: int = 10000) -> bool:
             if factor == frozenset():
                 return True
             if factor not in kept:
-                kept.add(factor)
-                agenda.append(factor)
+                _keep(factor)
             if steps >= max_steps:
                 return False
 
         # Resolve the given clause against every kept clause (including itself).
-        for other in list(kept):
+        for other in list(kept_list):
             r_given = _rename_clause(given, counter)
             r_other = _rename_clause(other, counter)
             for resolvent in _resolvents(r_given, r_other):
@@ -349,8 +382,7 @@ def refute(clauses, max_steps: int = 10000) -> bool:
                 if resolvent == frozenset():
                     return True
                 if resolvent not in kept:
-                    kept.add(resolvent)
-                    agenda.append(resolvent)
+                    _keep(resolvent)
                 if steps >= max_steps:
                     return False
 
@@ -360,6 +392,62 @@ def refute(clauses, max_steps: int = 10000) -> bool:
 # ---------------------------------------------------------------------------
 # Entailment and validity
 # ---------------------------------------------------------------------------
+
+def _translate_modal_inputs(premises, conclusion: Node):
+    """Return ``(lowered, first_order)`` for a modal entailment, or None.
+
+    ``lowered`` is the classical FOL image; ``first_order`` says the quantified
+    (qml) route produced it, so :func:`prove` can scale its step budget to the
+    larger image. ``None`` means the input was classical all along.
+
+    When any input carries a modal/temporal/hybrid operator, the whole LOCAL
+    consequence ``premises ⊢ conclusion`` is folded into one implication sharing
+    a single free world variable and lowered with ``standard_translation`` — the
+    same local reading :func:`~unicode_fol_kit.atp.modal_tableau.modal_prove`
+    decides. The universal closure that :func:`prove` applies afterwards then
+    quantifies that ONE world over the implication as a whole, which is exactly
+    K-validity of the local consequence. Returns ``None`` for classical input.
+
+    A QUANTIFIED modal input (object quantifiers mixed with modalities) is
+    lowered with the first-order shallow embedding instead
+    (:func:`unicode_fol_kit.fol.qml.qml_translate` via its validity formula),
+    under the same K frame and the ``constant``-domain regime — the FO-modal
+    default of ``qml_is_valid``. For other frames or domain regimes
+    (varying/increasing/decreasing) call ``qml_is_valid`` directly.
+
+    Counterfactuals are guarded first: ``standard_translation`` predates them and
+    its generic error would not name the sphere tools.
+
+    Raises:
+        NotImplementedError: from ``standard_translation`` / ``qml`` on the
+            genuinely non-first-order residue (Until/Since, hybrid nominals
+            under quantifiers), with their documented reasons; or here for
+            ``□→``/``◇→`` with a pointer at the sphere semantics.
+    """
+    from .modal_tableau import has_modal, _contains_counterfactual
+    inputs = list(premises) + [conclusion]
+    if not any(has_modal(f) for f in inputs):
+        return None
+    for f in inputs:
+        if _contains_counterfactual(f):
+            raise NotImplementedError(
+                "resolution: the counterfactuals □→/◇→ have no first-order "
+                "standard translation (they read a similarity ordering, not an "
+                "accessibility relation); use cf_valid / cf_satisfies or "
+                "isabelle_decide_counterfactual.")
+    combined = conclusion
+    for p in reversed(list(premises)):
+        combined = Implies(p, combined)
+    from ..fol.nodes import Quantifier, SortedQuantifier
+    if any(isinstance(n, (Quantifier, SortedQuantifier)) for n in combined.walk()):
+        # First-order modal logic: the propositional standard translation cannot
+        # express object domains, but the FO shallow embedding can — same K
+        # reading, constant domains (qml_is_valid's default).
+        from ..fol.qml import _validity_formula
+        return (_validity_formula(combined, "constant", "K"), True)
+    from ..fol.modal_translation import standard_translation
+    return (standard_translation(combined), False)
+
 
 def prove(premises, conclusion: Node, max_steps: int = 10000) -> bool:
     """Return True iff ``premises`` entail ``conclusion`` (premises ⊨ conclusion).
@@ -378,6 +466,18 @@ def prove(premises, conclusion: Node, max_steps: int = 10000) -> bool:
     "not proved within the bound") if ``max_steps`` is reached first — never
     reporting a non-theorem as proved.
     """
+    premises = list(premises)
+    translated = _translate_modal_inputs(premises, conclusion)
+    if translated is not None:
+        lowered, first_order = translated
+        # The FO shallow embedding's image (guard predicates + domain/frame
+        # axioms as hypotheses) is an order of magnitude larger than the
+        # propositional ST image; scale the step budget so the textbook
+        # quantified-modal validities (Barcan / converse Barcan under constant
+        # domains, ~200k steps) close under the default budget. False remains
+        # "not proved within the bound", as everywhere in this module.
+        return prove([], lowered, max_steps=max_steps * (20 if first_order else 1))
+
     counter = [0]
     sk_counter = [0]
     clause_set = set()

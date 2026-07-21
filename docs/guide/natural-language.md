@@ -123,6 +123,27 @@ isinstance(cmp.args[0], Measure)               # True
 cmp.to_prover9()                               # uses the function measure(x, height)
 ```
 
+To *evaluate* a degree comparison, interpret `measure`/2 — the same symbol the
+exports emit — in a `Structure`. When the measure values are numbers and the
+structure declares no extension for the comparison, the comparison is arithmetic:
+
+```python
+from unicode_fol_kit.semantics.tarski import Structure, models
+
+world = Structure(
+    domain=["rex", "fido", "height", 5, 10],
+    constants={"rex": "rex", "fido": "fido", "height": "height"},
+    functions={("measure", 2): {("rex", "height"): 10, ("fido", "height"): 5}},
+)
+models(p.parse("μ(rex, height) > μ(fido, height)"), world)     # → True
+```
+
+A *declared* extension takes precedence, since `<` `>` `≤` `≥` are ordinary relation
+symbols that a structure may interpret however it likes — that is the reading the
+first-order exports assume, where both `measure` and the comparison are
+uninterpreted. The arithmetic fallback only fills the gap when no interpretation is
+given.
+
 ## Cardinality term — `Cardinality` (|{v : φ}|)
 
 `Cardinality` is the set-cardinality term `|{v : φ}|` — the number of individuals `v`
@@ -227,6 +248,32 @@ to_english(m.parse("Want_bob Win(bob)"))   # → 'agent bob wants it to be that 
 They plug into the Kripke evaluator and the modal tableau, verbalize with `to_english`,
 and (being modal) reject the first-order exporters — round-trip them through Unicode or
 JSON, as with the other modal operators.
+
+### Deciding Say/Want validity: `standard_translation`, `systems=`, and `resolution.prove`
+
+`standard_translation` lowers `Say_a` / `Want_a` to per-agent box relations `Rs_a` / `Rw_a`, mirroring how `Knows`/`Believes` become `Rk_a`/`Rb_a` — so `resolution.prove` decides the propositional Say/Want fragment the same way it decides `Knows`/`Believes`:
+
+```python
+from unicode_fol_kit import standard_translation
+from unicode_fol_kit.atp import resolution
+
+k_axiom = m.parse("(Say_a (P → Q)) → ((Say_a P) → (Say_a Q))")
+standard_translation(k_axiom).to_unicode_str()
+# → '∀w0 (Rs_a(w, w0) → P(w0) → Q(w0)) → ∀w1 (Rs_a(w, w1) → P(w1)) → ∀w2 (Rs_a(w, w2) → Q(w2))'
+resolution.prove([], k_axiom)          # → True   (the K axiom, sound + complete for K)
+```
+
+Both `Says` and `Wants` are non-factive/non-veridical *by default*, but `qml`'s `systems=` (the same mechanism {doc}`quantified-modal` uses for the alethic/epistemic families) gained `assertive` / `bouletic` entries, so factiveness can be turned on **for the purposes of a specific check** without changing what the operators mean elsewhere:
+
+```python
+from unicode_fol_kit import qml_is_valid
+
+factive_claim = m.parse("Say_a P → P")
+qml_is_valid(factive_claim)                                   # → False  (non-factive by default)
+qml_is_valid(factive_claim, systems={"assertive": "T"})       # → True   (factive-on-demand)
+```
+
+The same `systems={"assertive": ...}` / `{"bouletic": ...}` keys work across `qml_is_valid`, the THF export (`to_thf_modal_full`), and the Isabelle export (`to_isabelle_modal`) — see {doc}`higher-order`.
 
 ## Reading Prover9 files
 

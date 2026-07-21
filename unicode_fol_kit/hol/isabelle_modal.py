@@ -89,9 +89,10 @@ from typing import List, Optional
 
 from unicode_fol_kit.fol.nodes import (
     Node, Variable, Constant, Number, Function,
-    Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
-    Box, Diamond, Knows, Believes,
+    Atom, Not, And, Or, Xor, Implies, Iff, Quantifier, Contrast,
+    Box, Diamond, Knows, Believes, Says, Wants,
     Always, Eventually, Next, Until, Since,
+    Historically, Once, Previous, Nominal, At,
     Obligatory, Permitted, SortedQuantifier,
 )
 from unicode_fol_kit.fol._symbol_names import SymbolNames
@@ -173,10 +174,12 @@ _PRED_ALIAS = {"=": "feq", "≠": "fneq", "<": "flt", ">": "fgt", "≤": "fle", 
 # predicate / constant / function whose sanitised name lands here would shadow the
 # embedding and break loadability, so _safe_name disambiguates it with a trailing "_".
 _RESERVED = frozenset({
-    "i", "existsAt",
-    "r", "rk", "rb", "d", "t", "n",
+    "i", "e", "existsAt",
+    "r", "rk", "rb", "rs", "rw", "d", "t", "n",
     "mnot", "mand", "mor", "mimp", "miff", "mvalid", "mbox", "mdia",
-    "knows", "believes", "obl", "perm", "malways", "meventually", "mnext",
+    "knows", "believes", "says", "wants", "obl", "perm",
+    "malways", "meventually", "mnext",
+    "mhistorically", "monce", "mprevious", "muntil", "msince",
     "mforall", "mexists",
 })
 
@@ -219,6 +222,26 @@ class _IsaNames(SymbolNames):
 
     def __init__(self, formula: Node):
         super().__init__(formula, _safe_name, _PRED_ALIAS)
+        # Nominals become world constants ``nom_<name> :: i`` — the same reserved
+        # ``nom_`` prefix the standard translation uses, deduped against every
+        # other emitted constant. _safe_name may append "_" to dodge reserved
+        # single letters (e.g. the world type "i"), but Isabelle REJECTS
+        # identifiers with a trailing underscore — the "nom_" prefix already
+        # dodges those names, so strip it; dedupe with digit suffixes (legal).
+        taken = (set(self.pred.values()) | set(self.const.values())
+                 | set(self.func.values()))
+        self.nom = {}
+        for n in formula.walk():
+            if isinstance(n, Nominal) and n.name not in self.nom:
+                cand = "nom_" + (_safe_name(n.name).rstrip("_") or "x")
+                while cand in taken:
+                    cand += "0"
+                taken.add(cand)
+                self.nom[n.name] = cand
+
+    def nominal(self, name: str) -> str:
+        """The world constant naming nominal ``name``."""
+        return self.nom[name]
 
 
 # --------------------------------------------------------------------------- #
@@ -282,10 +305,17 @@ def _lift(node: Node, names: "_IsaNames") -> str:
     if isinstance(node, Diamond):
         return f"(mdia {_lift(node.formula, names)})"
 
+    if isinstance(node, Contrast):
+        # Truth-functionally conjunction (Contrast's own contract).
+        return f"(mand {_lift(node.left, names)} {_lift(node.right, names)})"
     if isinstance(node, Knows):
         return f"(knows {_term(node.agent, names)} {_lift(node.formula, names)})"
     if isinstance(node, Believes):
         return f"(believes {_term(node.agent, names)} {_lift(node.formula, names)})"
+    if isinstance(node, Says):
+        return f"(says {_term(node.agent, names)} {_lift(node.formula, names)})"
+    if isinstance(node, Wants):
+        return f"(wants {_term(node.agent, names)} {_lift(node.formula, names)})"
 
     if isinstance(node, Obligatory):
         return f"(obl {_lift(node.formula, names)})"
@@ -298,6 +328,26 @@ def _lift(node: Node, names: "_IsaNames") -> str:
         return f"(meventually {_lift(node.formula, names)})"
     if isinstance(node, Next):
         return f"(mnext {_lift(node.formula, names)})"
+    if isinstance(node, Historically):
+        # "now and at every past point": box over the CONVERSE of the henceforth
+        # closure t — matching satisfies_modal's converse-relation reading.
+        return f"(mhistorically {_lift(node.formula, names)})"
+    if isinstance(node, Once):
+        # "now or at some past point": diamond over the converse of t.
+        return f"(monce {_lift(node.formula, names)})"
+    if isinstance(node, Previous):
+        # "at every immediate past point": box over the converse of one-step n.
+        return f"(mprevious {_lift(node.formula, names)})"
+
+    if isinstance(node, Nominal):
+        # A nominal is true at exactly the world it names: the world constant
+        # nom_<name>, mirroring standard_translation's reserved nom_ prefix and
+        # KripkeModel's nominals= assignment.
+        return f"(\\<lambda>w. w = {names.nominal(node.name)})"
+    if isinstance(node, At):
+        # @i φ: evaluate φ AT the named world, regardless of the current one.
+        return (f"(\\<lambda>w. {_lift(node.formula, names)} "
+                f"{names.nominal(node.nominal.name)})")
 
     if isinstance(node, Quantifier):
         x = _var_name(node.variable.name)
@@ -317,6 +367,11 @@ def _lift(node: Node, names: "_IsaNames") -> str:
     if isinstance(node, SortedQuantifier):
         raise NotImplementedError(
             "to_isabelle_modal: SortedQuantifier is not supported; use a plain ∀x/∃x.")
+    if type(node).__name__ in ("Would", "Might"):
+        raise NotImplementedError(
+            "to_isabelle_modal: the counterfactuals □→/◇→ read a similarity "
+            "ordering (Lewis spheres), not an accessibility relation — use "
+            "hol.isabelle_conditional / isabelle_decide_counterfactual.")
     raise NotImplementedError(
         f"to_isabelle_modal: unsupported node type {type(node).__name__}.")
 
@@ -335,21 +390,28 @@ class _Sig:
         self.uses_alethic = False
         self.uses_epistemic = False
         self.uses_doxastic = False
+        self.uses_assertive = False  # Says  (agent-indexed relation rs, plain K)
+        self.uses_bouletic = False   # Wants (agent-indexed relation rw, plain K)
         self.uses_deontic = False
-        self.uses_temporal = False   # Always / Eventually  (relation t)
+        self.uses_temporal = False   # Always / Eventually / Historically / Once (t)
+        self.uses_past = False       # Historically / Once (converse-of-t readers)
         self.uses_next = False       # Next                 (relation n)
+        self.uses_previous = False   # Previous (converse-of-n reader)
         self.uses_until = False      # Until (inductive muntil over n)
         self.uses_since = False      # Since (inductive msince over converse n)
+        self.uses_hybrid = False     # Nominal / At (world constants nom_*)
         self.has_quant = False
 
     @property
     def needs_next_rel(self) -> bool:
         """Whether the one-step relation ``n`` must be declared.
 
-        ``n`` is needed by ``Next`` (mnext) and by the inductive ``muntil`` / ``msince``
-        (which do a one-step forward / backward path search over it).
+        ``n`` is needed by ``Next`` (mnext), ``Previous`` (mprevious — its
+        converse), and the inductive ``muntil`` / ``msince`` (one-step forward /
+        backward path search).
         """
-        return self.uses_next or self.uses_until or self.uses_since
+        return (self.uses_next or self.uses_previous
+                or self.uses_until or self.uses_since)
 
 
 def _scan_term(node: Node, sig: _Sig) -> None:
@@ -374,7 +436,7 @@ def _scan(node: Node, sig: _Sig) -> None:
     if isinstance(node, (Not,)):
         _scan(node.formula, sig)
         return
-    if isinstance(node, (And, Or, Xor, Implies, Iff)):
+    if isinstance(node, (And, Or, Xor, Implies, Iff, Contrast)):
         _scan(node.left, sig)
         _scan(node.right, sig)
         return
@@ -396,6 +458,16 @@ def _scan(node: Node, sig: _Sig) -> None:
         _scan_term(node.agent, sig)
         _scan(node.formula, sig)
         return
+    if isinstance(node, Says):
+        sig.uses_assertive = True
+        _scan_term(node.agent, sig)
+        _scan(node.formula, sig)
+        return
+    if isinstance(node, Wants):
+        sig.uses_bouletic = True
+        _scan_term(node.agent, sig)
+        _scan(node.formula, sig)
+        return
     if isinstance(node, (Obligatory, Permitted)):
         sig.uses_deontic = True
         _scan(node.formula, sig)
@@ -404,8 +476,25 @@ def _scan(node: Node, sig: _Sig) -> None:
         sig.uses_temporal = True
         _scan(node.formula, sig)
         return
+    if isinstance(node, (Historically, Once)):
+        # Past closure operators read the CONVERSE of the same henceforth t.
+        sig.uses_temporal = True
+        sig.uses_past = True
+        _scan(node.formula, sig)
+        return
     if isinstance(node, Next):
         sig.uses_next = True
+        _scan(node.formula, sig)
+        return
+    if isinstance(node, Previous):
+        sig.uses_previous = True
+        _scan(node.formula, sig)
+        return
+    if isinstance(node, Nominal):
+        sig.uses_hybrid = True
+        return
+    if isinstance(node, At):
+        sig.uses_hybrid = True
         _scan(node.formula, sig)
         return
     if isinstance(node, Quantifier):
@@ -425,6 +514,11 @@ def _scan(node: Node, sig: _Sig) -> None:
     if isinstance(node, SortedQuantifier):
         raise NotImplementedError(
             "to_isabelle_modal: SortedQuantifier is not supported; use a plain ∀x/∃x.")
+    if type(node).__name__ in ("Would", "Might"):
+        raise NotImplementedError(
+            "to_isabelle_modal: the counterfactuals □→/◇→ read a similarity "
+            "ordering (Lewis spheres), not an accessibility relation — use "
+            "hol.isabelle_conditional / isabelle_decide_counterfactual.")
     raise NotImplementedError(
         f"to_isabelle_modal: unsupported node type {type(node).__name__}.")
 
@@ -466,17 +560,33 @@ def _alethic_block() -> List[str]:
 
 def _epistemic_block() -> List[str]:
     return [
-        'consts rk :: "\'a \\<Rightarrow> i \\<Rightarrow> i \\<Rightarrow> bool"  \\<comment> \\<open>agent-indexed epistemic accessibility\\<close>',
-        'abbreviation knows :: "\'a \\<Rightarrow> (i \\<Rightarrow> bool) \\<Rightarrow> (i \\<Rightarrow> bool)" where',
+        'consts rk :: "e \\<Rightarrow> i \\<Rightarrow> i \\<Rightarrow> bool"  \\<comment> \\<open>agent-indexed epistemic accessibility\\<close>',
+        'abbreviation knows :: "e \\<Rightarrow> (i \\<Rightarrow> bool) \\<Rightarrow> (i \\<Rightarrow> bool)" where',
         '  "knows a \\<phi> \\<equiv> \\<lambda>w. \\<forall>v. rk a w v \\<longrightarrow> \\<phi> v"',
     ]
 
 
 def _doxastic_block() -> List[str]:
     return [
-        'consts rb :: "\'a \\<Rightarrow> i \\<Rightarrow> i \\<Rightarrow> bool"  \\<comment> \\<open>agent-indexed doxastic accessibility\\<close>',
-        'abbreviation believes :: "\'a \\<Rightarrow> (i \\<Rightarrow> bool) \\<Rightarrow> (i \\<Rightarrow> bool)" where',
+        'consts rb :: "e \\<Rightarrow> i \\<Rightarrow> i \\<Rightarrow> bool"  \\<comment> \\<open>agent-indexed doxastic accessibility\\<close>',
+        'abbreviation believes :: "e \\<Rightarrow> (i \\<Rightarrow> bool) \\<Rightarrow> (i \\<Rightarrow> bool)" where',
         '  "believes a \\<phi> \\<equiv> \\<lambda>w. \\<forall>v. rb a w v \\<longrightarrow> \\<phi> v"',
+    ]
+
+
+def _assertive_block() -> List[str]:
+    return [
+        'consts rs :: "e \\<Rightarrow> i \\<Rightarrow> i \\<Rightarrow> bool"  \\<comment> \\<open>agent-indexed assertive accessibility (Says)\\<close>',
+        'abbreviation says :: "e \\<Rightarrow> (i \\<Rightarrow> bool) \\<Rightarrow> (i \\<Rightarrow> bool)" where',
+        '  "says a \\<phi> \\<equiv> \\<lambda>w. \\<forall>v. rs a w v \\<longrightarrow> \\<phi> v"',
+    ]
+
+
+def _bouletic_block() -> List[str]:
+    return [
+        'consts rw :: "e \\<Rightarrow> i \\<Rightarrow> i \\<Rightarrow> bool"  \\<comment> \\<open>agent-indexed bouletic accessibility (Wants)\\<close>',
+        'abbreviation wants :: "e \\<Rightarrow> (i \\<Rightarrow> bool) \\<Rightarrow> (i \\<Rightarrow> bool)" where',
+        '  "wants a \\<phi> \\<equiv> \\<lambda>w. \\<forall>v. rw a w v \\<longrightarrow> \\<phi> v"',
     ]
 
 
@@ -535,6 +645,44 @@ def _next_abbrev_block() -> List[str]:
     ]
 
 
+def _previous_abbrev_block() -> List[str]:
+    r"""``mprevious`` — box over the CONVERSE of the one-step ``n`` (⒴).
+
+    Faithful to :func:`satisfies_modal`'s Previous: "at every immediate PAST
+    point", i.e. every ``v`` with ``n v w``. Requires ``n`` to be declared.
+    """
+    return [
+        'abbreviation mprevious :: "(i \\<Rightarrow> bool) \\<Rightarrow> (i \\<Rightarrow> bool)" where',
+        '  "mprevious \\<phi> \\<equiv> \\<lambda>w. \\<forall>v. n v w \\<longrightarrow> \\<phi> v"',
+    ]
+
+
+def _past_temporal_block() -> List[str]:
+    r"""``mhistorically`` / ``monce`` — box/diamond over the CONVERSE of ``t``.
+
+    Faithful to :func:`satisfies_modal`'s converse-closure readings: ``t`` is
+    reflexive, so ``mhistorically`` covers "now and every past point" and
+    ``monce`` "now or some past point". The converse of a reflexive+transitive
+    relation is reflexive+transitive, so the ``t_refl`` / ``t_trans`` axioms
+    constrain the past readings exactly as the future ones — no extra axioms.
+    Requires ``t`` to be declared.
+    """
+    return [
+        'abbreviation mhistorically :: "(i \\<Rightarrow> bool) \\<Rightarrow> (i \\<Rightarrow> bool)" where',
+        '  "mhistorically \\<phi> \\<equiv> \\<lambda>w. \\<forall>v. t v w \\<longrightarrow> \\<phi> v"',
+        'abbreviation monce :: "(i \\<Rightarrow> bool) \\<Rightarrow> (i \\<Rightarrow> bool)" where',
+        '  "monce \\<phi> \\<equiv> \\<lambda>w. \\<exists>v. t v w \\<and> \\<phi> v"',
+    ]
+
+
+def _hybrid_block(names: "_IsaNames") -> List[str]:
+    """``consts nom_<name> :: i`` — one world constant per nominal (H(@))."""
+    out = []
+    for name, c in sorted(names.nom.items(), key=lambda kv: kv[1]):
+        out.append(f'consts {c} :: "i"  \\<comment> \\<open>the world named by nominal {name}\\<close>')
+    return out
+
+
 def _until_block() -> List[str]:
     r"""``muntil`` — strong "left until right" as a least fixpoint over ``n``.
 
@@ -576,10 +724,10 @@ def _since_block() -> List[str]:
 def _quant_block(mode: str) -> List[str]:
     """existsAt + actualist mforall/mexists (constant mode makes existsAt total)."""
     return [
-        'consts existsAt :: "\'a \\<Rightarrow> i \\<Rightarrow> bool"  \\<comment> \\<open>object x exists at world w\\<close>',
-        'abbreviation mforall :: "(\'a \\<Rightarrow> (i \\<Rightarrow> bool)) \\<Rightarrow> (i \\<Rightarrow> bool)" where',
+        'consts existsAt :: "e \\<Rightarrow> i \\<Rightarrow> bool"  \\<comment> \\<open>object x exists at world w\\<close>',
+        'abbreviation mforall :: "(e \\<Rightarrow> (i \\<Rightarrow> bool)) \\<Rightarrow> (i \\<Rightarrow> bool)" where',
         '  "mforall \\<Phi> \\<equiv> \\<lambda>w. \\<forall>x. existsAt x w \\<longrightarrow> \\<Phi> x w"',
-        'abbreviation mexists :: "(\'a \\<Rightarrow> (i \\<Rightarrow> bool)) \\<Rightarrow> (i \\<Rightarrow> bool)" where',
+        'abbreviation mexists :: "(e \\<Rightarrow> (i \\<Rightarrow> bool)) \\<Rightarrow> (i \\<Rightarrow> bool)" where',
         '  "mexists \\<Phi> \\<equiv> \\<lambda>w. \\<exists>x. existsAt x w \\<and> \\<Phi> x w"',
     ]
 
@@ -617,6 +765,51 @@ def _frame_axioms(frame: str) -> List[str]:
                    '(\\<forall>u. r v u \\<longrightarrow> P u) \\<longrightarrow> P v) '
                    '\\<Longrightarrow> (\\<forall>v. r w v \\<longrightarrow> P v)"')
     return out
+
+
+# Conditions expressible as per-agent axiomatization schemas (free vars are
+# schematic, i.e. universally generalised — including the agent a).
+_AGENT_CONDS = {
+    "refl": '{tag}_refl: "{rel} a w w"',
+    "trans": '{tag}_trans: "{rel} a w v \\<Longrightarrow> {rel} a v u \\<Longrightarrow> {rel} a w u"',
+    "sym": '{tag}_sym: "{rel} a w v \\<Longrightarrow> {rel} a v w"',
+    "serial": '{tag}_serial: "\\<exists>v. {rel} a w v"',
+    "eucl": '{tag}_eucl: "{rel} a w v \\<Longrightarrow> {rel} a w u \\<Longrightarrow> {rel} a v u"',
+}
+
+# The agent-indexed families systems= may constrain: family → (relation const, _Sig flag).
+_AGENT_SYSTEM_FAMILIES = {
+    "epistemic": ("rk", "uses_epistemic"),
+    "doxastic": ("rb", "uses_doxastic"),
+    "assertive": ("rs", "uses_assertive"),
+    "bouletic": ("rw", "uses_bouletic"),
+}
+
+
+def _agent_system_axioms(rel: str, system: str, family: str) -> List[str]:
+    """Per-agent frame axioms constraining an agent-indexed relation (rk/rb/rs/rw).
+
+    Each axiom leaves the agent ``a`` schematic, so the property holds for EVERY
+    agent — matching the ``∀A``-quantified axioms of ``to_thf_modal_full``'s
+    ``systems=`` and the per-agent relations of ``satisfies_modal``. Only systems
+    whose conditions are plain Horn frame properties are accepted; ``GL`` /
+    ``S4.2`` / ``S4.3`` need conditions (Löb / directedness / connectedness) that
+    this schema set does not express, and silently dropping one would emit a
+    WEAKER logic than requested.
+    """
+    if system not in _FRAMES:
+        raise ValueError(
+            f"to_isabelle_modal: unknown system {system!r} for {family} "
+            f"(use one of {sorted(_FRAMES)}).")
+    conds = _FRAMES[system]
+    unsupported = [c for c in conds if c not in _AGENT_CONDS]
+    if unsupported:
+        raise NotImplementedError(
+            f"to_isabelle_modal: system {system!r} for {family} needs the frame "
+            f"condition(s) {unsupported}, which have no per-agent axiom schema "
+            "here; use frame= on the alethic relation for those systems.")
+    return ["axiomatization where "
+            + _AGENT_CONDS[c].format(rel=rel, tag=rel) for c in conds]
 
 
 def _temporal_axioms() -> List[str]:
@@ -675,19 +868,34 @@ def _domain_axioms(mode: str) -> List[str]:
 
 
 def _collect_axioms(sig: "_Sig", frame: str, mode: str,
-                    temporal_closure: bool, temporal_def: bool = False) -> List[str]:
+                    temporal_closure: bool, temporal_def: bool = False,
+                    systems: Optional[dict] = None) -> List[str]:
     """All ``axiomatization where ...`` lines the theory emits, in emission order.
 
     Centralised so the proof emitter and :func:`modal_axiom_names` agree on exactly
     which axioms are in scope (the proof must ``using`` precisely these to discharge
     an axiom-dependent validity). When ``temporal_def`` makes ``t = rtranclp n`` a
     definition (Always/Eventually + Next), the temporal/next closure axioms become
-    theorems and are omitted.
+    theorems and are omitted. ``systems`` optionally constrains the agent-indexed
+    relations (see :func:`isabelle_modal_theory`); a family whose operators do not
+    occur in the formula is skipped (its relation is not even declared).
     """
-    use_temporal_def = temporal_def and sig.uses_temporal and sig.needs_next_rel
+    # t = rtranclp n needs only t to be IN USE: for a formula without Next/
+    # Until/Since the one-step n is simply unconstrained and nitpick constructs
+    # the closure itself — exactly what lets it refute non-theorems of the
+    # pure closure fragment (④/Ⓘ included) instead of quasi_genuine failure.
+    use_temporal_def = temporal_def and sig.uses_temporal
     axioms: List[str] = []
     if sig.uses_alethic:
         axioms += _frame_axioms(frame)
+    for family, system in sorted((systems or {}).items()):
+        if family not in _AGENT_SYSTEM_FAMILIES:
+            raise ValueError(
+                f"to_isabelle_modal: unknown systems family {family!r} "
+                f"(use one of {sorted(_AGENT_SYSTEM_FAMILIES)}).")
+        rel, flag = _AGENT_SYSTEM_FAMILIES[family]
+        if getattr(sig, flag):
+            axioms += _agent_system_axioms(rel, system, family)
     if sig.uses_deontic:
         axioms += _deontic_axioms()
     if not use_temporal_def:
@@ -735,12 +943,12 @@ def _signature_decls(names: "_IsaNames") -> List[str]:
     """
     out = []
     for (name, arity), c in sorted(names.pred.items(), key=lambda kv: kv[1]):
-        typ = " \\<Rightarrow> ".join(["'a"] * arity + ["i \\<Rightarrow> bool"])
+        typ = " \\<Rightarrow> ".join(["e"] * arity + ["i \\<Rightarrow> bool"])
         out.append(f'consts {c} :: "{typ}"')
     for name, c in sorted(names.const.items(), key=lambda kv: kv[1]):
-        out.append(f'consts {c} :: "\'a"')
+        out.append(f'consts {c} :: "e"')
     for (name, arity), c in sorted(names.func.items(), key=lambda kv: kv[1]):
-        typ = " \\<Rightarrow> ".join(["'a"] * (arity + 1))
+        typ = " \\<Rightarrow> ".join(["e"] * (arity + 1))
         out.append(f'consts {c} :: "{typ}"')
     return out
 
@@ -772,6 +980,7 @@ def isabelle_modal_theory(
     temporal_closure: bool = True,
     proof: Optional[str] = None,
     temporal_def: bool = False,
+    systems: Optional[dict] = None,
 ) -> str:
     """Emit a complete, loadable Isabelle/HOL theory shallow-embedding ``formula``.
 
@@ -815,6 +1024,13 @@ def isabelle_modal_theory(
             ``Always`` / ``Eventually`` denote the henceforth (refl-trans-closure)
             reading of :func:`satisfies_modal`. ``Next`` always uses the one-step
             relation ``n`` regardless.
+        systems: optional per-family frame systems for the AGENT-INDEXED relations,
+            e.g. ``{"epistemic": "S5", "doxastic": "KD45"}`` (families:
+            ``epistemic`` rk, ``doxastic`` rb, ``assertive`` rs, ``bouletic`` rw;
+            values from {K, T, B, S4, S5, KD, KD45}). Each axiom leaves the agent
+            schematic, so the property holds per agent — mirroring
+            ``to_thf_modal_full``'s parameter of the same name. A family whose
+            operators do not occur in the formula is skipped.
 
     Returns:
         The theory text (newline-terminated).
@@ -844,6 +1060,12 @@ def isabelle_modal_theory(
     lines.append("(* predicate (feq/fneq), NOT primitive HOL identity.                      *)")
     lines.append("")
     lines.append("typedecl i  \\<comment> \\<open>the type of worlds\\<close>")
+    lines.append("typedecl e  \\<comment> \\<open>the type of entities (objects and agents)\\<close>")
+    # NOTE the fixed entity type: with a POLYMORPHIC 'a, Isabelle gives every
+    # occurrence of an agent constant its own type instance, so the two
+    # ``says a`` in ``Say_a(P→Q) → (Say_a P → Say_a Q)`` would read two
+    # INDEPENDENT relation instances and nitpick could "genuinely" refute the
+    # K axiom — a false INVALID observed live. One monomorphic e removes it.
     lines.append("")
 
     # Relations + lifted operators for the modalities that actually occur.
@@ -856,6 +1078,12 @@ def isabelle_modal_theory(
     if sig.uses_doxastic:
         lines += _doxastic_block()
         lines.append("")
+    if sig.uses_assertive:
+        lines += _assertive_block()
+        lines.append("")
+    if sig.uses_bouletic:
+        lines += _bouletic_block()
+        lines.append("")
     if sig.uses_deontic:
         lines += _deontic_block()
         lines.append("")
@@ -864,16 +1092,24 @@ def isabelle_modal_theory(
     # (``t = rtranclp n``) rather than a ``consts`` constrained by axioms — so nitpick
     # can determine t from a candidate n and actually refute non-theorems of the
     # closure fragment. n must be declared before t's definition references it.
-    use_temporal_def = temporal_def and sig.uses_temporal and sig.needs_next_rel
-    # The one-step relation n is declared once when Next, Until, or Since needs it;
-    # the mnext abbreviation only when Next actually occurs.
-    if sig.needs_next_rel:
+    use_temporal_def = temporal_def and sig.uses_temporal
+    # The one-step relation n is declared once when Next/Previous/Until/Since
+    # needs it — or when the temporal definition t = rtranclp n references it;
+    # the mnext/mprevious abbreviations only when their operator occurs.
+    if sig.needs_next_rel or use_temporal_def:
         lines += _next_consts_block()
         if sig.uses_next:
             lines += _next_abbrev_block()
+        if sig.uses_previous:
+            lines += _previous_abbrev_block()
         lines.append("")
     if sig.uses_temporal:
         lines += _temporal_def_block() if use_temporal_def else _temporal_block()
+        if sig.uses_past:
+            lines += _past_temporal_block()
+        lines.append("")
+    if sig.uses_hybrid:
+        lines += _hybrid_block(names)
         lines.append("")
     # Inductive least-fixpoint definitions for the binary interval operators; they
     # step over n (declared above), so they follow it.
@@ -900,7 +1136,7 @@ def isabelle_modal_theory(
         lines.append("")
 
     # Axioms.
-    axioms = _collect_axioms(sig, frame, mode, temporal_closure, temporal_def)
+    axioms = _collect_axioms(sig, frame, mode, temporal_closure, temporal_def, systems)
     if axioms:
         lines += axioms
         lines.append("")
@@ -923,18 +1159,20 @@ def modal_axiom_names(
     mode: str = "constant",
     frame: str = "K",
     temporal_closure: bool = True,
+    systems: Optional[dict] = None,
 ) -> List[str]:
     """The names of the ``axiomatization`` facts the emitted theory would declare.
 
-    These are exactly the frame / domain / temporal-link axioms in scope for the
-    proof of ``modal_goal``. The Isabelle runner needs them to build a ``using
-    <axioms> by <method>`` proof (or to know none are required), so this exposes the
-    same computation :func:`isabelle_modal_theory` uses internally.
+    These are exactly the frame / domain / temporal-link / agent-system axioms in
+    scope for the proof of ``modal_goal``. The Isabelle runner needs them to build
+    a ``using <axioms> by <method>`` proof (or to know none are required), so this
+    exposes the same computation :func:`isabelle_modal_theory` uses internally.
     """
     _validate(mode, frame, "oops")
     sig = _Sig()
     _scan(formula, sig)
-    return _axiom_names(_collect_axioms(sig, frame, mode, temporal_closure))
+    return _axiom_names(_collect_axioms(sig, frame, mode, temporal_closure,
+                                        systems=systems))
 
 
 def to_isabelle_modal(
@@ -944,6 +1182,7 @@ def to_isabelle_modal(
     tactic: str = "sledgehammer",
     temporal_closure: bool = True,
     proof: Optional[str] = None,
+    systems: Optional[dict] = None,
 ) -> str:
     """Emit a complete, loadable Isabelle/HOL theory embedding ``formula`` (real lemma).
 
@@ -961,4 +1200,5 @@ def to_isabelle_modal(
     """
     return isabelle_modal_theory(
         formula, mode=mode, frame=frame, tactic=tactic,
-        theory_name="ModalEmbedding", temporal_closure=temporal_closure, proof=proof)
+        theory_name="ModalEmbedding", temporal_closure=temporal_closure, proof=proof,
+        systems=systems)

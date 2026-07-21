@@ -2,12 +2,13 @@
 
 Combining the modalities with `∀x` / `∃x` gives **quantified modal logic** (QML), where validity turns on how the individual domain varies between worlds. `unicode-fol-kit` handles QML both *semantically* (a `KripkeModel` with per-world domains and an actualist `satisfies_modal`) and via two **shallow embeddings** in the Benzmüller style — a first-order one decided by Z3, and a higher-order one exported as TPTP THF.
 
-The kit gives you three views of the same logic, and they are designed to agree:
+The kit gives you four views of the same logic, and they are designed to agree:
 
 | Tool | What it is | Verdict |
 | --- | --- | --- |
 | `satisfies_modal` | brute-force evaluator over an *explicit* finite model | ground truth + countermodels |
 | `qml_is_valid` | first-order shallow embedding → **Z3** | sound, bounded-incomplete |
+| `resolution.prove` | the qml embedding lowered further and saturated in-process | sound, bounded-incomplete |
 | `to_thf_modal` / `to_isabelle_modal` | higher-order shallow embedding → external prover | sound (you run the prover) |
 
 ## Building modal formulas as nodes
@@ -514,6 +515,19 @@ try:
 except ValueError as e:
     print(f"Error: {e}")  # Shows the allowed modes
 ```
+
+### A fourth view: `resolution.prove` over the qml embedding
+
+`resolution.prove(premises, conclusion)` also accepts quantified-modal input directly: it lowers the folded consequence `premises ⊢ conclusion` through the same first-order embedding `qml_is_valid` uses (constant domains, frame **K**), scales the saturation step budget to the larger translated clause set, and runs the resolution loop in-process — no Z3 dependency for this path. Both Barcan directions are provable:
+
+```python
+from unicode_fol_kit.atp import resolution
+
+resolution.prove([], BARCAN)              # → True
+resolution.prove([], CONVERSE_BARCAN)     # → True
+```
+
+Like `qml_is_valid`, this is **sound but bounded-incomplete**: `False` means "not proved within `max_steps`", never "definitely invalid" — reach for `satisfies_modal` on an explicit model when you need a guaranteed countermodel. Unlike `qml_is_valid`, there is no `mode=`/`frame=` choice here; it is fixed to constant-domain K, matching `qml_is_valid`'s own defaults.
 
 ## (B) Higher-order shallow embedding → TPTP THF
 

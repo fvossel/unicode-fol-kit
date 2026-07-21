@@ -24,10 +24,15 @@ import pytest
 
 from unicode_fol_kit import (
     MSFLParser, is_valid,
-    Atom, And, Or, Implies, Iff,
+    Atom, Not, And, Or, Implies, Iff,
     Tensor, With, OPlus, LinearImplies, OfCourse, One,
     Product, Under, Over,
 )
+# Top/Zero are not yet re-exported by the top-level package / fol.nodes (that
+# wiring lands centrally); render_ill_formula is _linear_nodes' safe
+# substitute for Node.to_unicode_str() on a formula that may contain them
+# (see that module's comment above its register_operator calls).
+from unicode_fol_kit.fol._linear_nodes import Top, Zero, render_ill_formula
 from unicode_fol_kit.atp.linear import (
     ILLDerivation, ILLSequent, check_ill_proof, ill_derivable, ill_prove,
     render_ill_proof, verify_ill_proof,
@@ -47,10 +52,17 @@ _pk = MSFLParser(lambek=True).parse
 # ---------------------------------------------------------------------------
 
 _TOP = Iff(Atom("_unit", ()), Atom("_unit", ()))  # a classically true closed formula
+_BOTTOM = Not(_TOP)                               # a classically false closed formula
 
 
 def _ill_collapse(f):
-    """ILL → classical: ⊗,& → ∧; ⊕ → ∨; ⊸ → →; !A → A; 𝟙 → ⊤."""
+    """ILL → classical: ⊗,& → ∧; ⊕ → ∨; ⊸ → →; !A → A; 𝟙,⊤ → ⊤; 𝟘 → ⊥.
+
+    ⊤ → classical True and 𝟘 → classical False keep the collapse sound: ⊤R's
+    ``Γ ⊢ ⊤`` becomes ``... → ⊤`` (always valid) and 0L's ``Γ, 𝟘 ⊢ C`` becomes
+    ``(... ∧ ⊥) → ...`` (vacuously valid) — exactly mirroring why 𝟙 → ⊤ is
+    sound for 1R's ``⊢ 𝟙``.
+    """
     if isinstance(f, (Tensor, With)):
         return And(_ill_collapse(f.left), _ill_collapse(f.right))
     if isinstance(f, OPlus):
@@ -59,8 +71,10 @@ def _ill_collapse(f):
         return Implies(_ill_collapse(f.left), _ill_collapse(f.right))
     if isinstance(f, OfCourse):
         return _ill_collapse(f.formula)
-    if isinstance(f, One):
+    if isinstance(f, (One, Top)):
         return _TOP
+    if isinstance(f, Zero):
+        return _BOTTOM
     return f  # atomic
 
 
@@ -112,6 +126,8 @@ ILL_DERIVABLE = [
     (["A ⊗ B"], "B ⊗ A"),               # ⊗ commutes: ⊗L then ⊗R (exchange)
     ([], "A ⊸ A"),                      # ⊸R then Ax
     (["A ⊗ (B ⊗ C)"], "(A ⊗ B) ⊗ C"),   # ⊗ reassociates via ⊗L, ⊗L, ⊗R, ⊗R
+    (["A", "B"], "⊤"),                  # ⊤R: holds for ANY context, no premise
+    (["A ⊗ 𝟘"], "B"),                   # ⊗L exposes 𝟘, then 0L (ex falso) for any B
 ]
 
 ILL_NOT_DERIVABLE = [
@@ -123,6 +139,7 @@ ILL_NOT_DERIVABLE = [
     (["A ⊕ B"], "A"),      # the provider chooses, not you
     ([], "A"),             # nothing comes from nothing
     (["A ⊸ B"], "B"),      # the lollipop alone: no A to feed it
+    (["⊤"], "A"),          # ⊤ carries no information: no ⊤L to consume it
 ]
 
 
@@ -424,3 +441,113 @@ def test_linear_and_lambek_have_no_classical_export():
         _pk("A \\ B").to_z3()
     with pytest.raises(NotImplementedError):
         _pk("A • B").to_tptp()
+
+
+# ---------------------------------------------------------------------------
+# The ILL additive units ⊤ (Top) and 𝟘 (Zero) — hand-checked.
+# ---------------------------------------------------------------------------
+
+def _ill_tree(d):
+    """Yield every node of an ILLDerivation tree (pre-order)."""
+    yield d
+    for p in d.premises:
+        yield from _ill_tree(p)
+
+
+def test_top_derivable_for_several_contexts():
+    # ⊤R holds unconditionally: Γ ⊢ ⊤ for ANY Γ — no premise, so it carries no
+    # information about how Γ was built (contrast with 𝟙, which must be
+    # consumed exactly).
+    for ants in ([], ["A"], ["A", "B"], ["!C"], ["A ⊗ B"], ["A & B"], ["𝟙"]):
+        a = [_pl(x) for x in ants]
+        d = ill_prove(a, _pl("⊤"))
+        assert d is not None, f"expected {ants} ⊢ ⊤ derivable"
+        assert d.rule == "⊤R"
+        assert not d.premises
+        result = verify_ill_proof(d)
+        assert result.ok, result.error
+        assert Counter(d.conclusion.antecedent) == Counter(a)
+
+
+def test_tensor_zero_derivable():
+    # A ⊗ 𝟘 ⊢ B: ⊗L exposes the 𝟘, then 0L (ex falso quodlibet) closes it for
+    # an ARBITRARY B — the proof must genuinely route through both rules.
+    d = ill_prove([_pl("A ⊗ 𝟘")], _pl("B"))
+    assert d is not None
+    result = verify_ill_proof(d)
+    assert result.ok, result.error
+    rules = {n.rule for n in _ill_tree(d)}
+    assert "0L" in rules and "⊗L" in rules
+
+
+def test_top_implies_a_not_derivable():
+    # ⊤ carries no information: there is no ⊤L rule to consume a ⊤ hypothesis,
+    # and Ax needs the antecedent to equal the goal exactly — so ⊤ ⊸ A is NOT
+    # derivable in general (for a genuinely distinct atom A), unlike ⊤ ⊸ ⊤.
+    assert ill_prove([_pl("⊤")], _pl("A")) is None
+    assert not ill_derivable([_pl("⊤")], _pl("A"))
+    assert ill_prove([], _pl("⊤ ⊸ A")) is None
+    # But ⊤ ⊸ ⊤ IS derivable (⊤R needs no hypothesis about ⊤ at all).
+    assert ill_derivable([_pl("⊤")], _pl("⊤"))
+
+
+def test_zero_alone_derives_anything():
+    # 𝟘 ⊢ C for an arbitrary C — ILL's ex falso quodlibet. (For C = ⊤, ⊤R is
+    # checked before 0L in the search and fires first — either rule proves the
+    # sequent, so only the "⊤R or 0L" disjunction is asserted for that case.)
+    for goal in ["Q", "A ⊗ B", "A ⊸ B", "!A", "⊤", "𝟙", "A & B", "A ⊕ B"]:
+        d = ill_prove([_pl("𝟘")], _pl(goal))
+        assert d is not None, f"expected 𝟘 ⊢ {goal} derivable"
+        assert d.rule in ("0L", "⊤R") if goal == "⊤" else d.rule == "0L"
+        result = verify_ill_proof(d)
+        assert result.ok, result.error
+
+
+def test_top_zero_checker_rejects_malformed_steps():
+    # ⊤R's succedent must actually be ⊤.
+    a = _pl("A")
+    bad_top = ILLDerivation(ILLSequent((a,), a), "⊤R")
+    result = verify_ill_proof(bad_top)
+    assert not result.ok
+    assert result.error_rule == "⊤R"
+    assert not check_ill_proof(bad_top)
+    # ⊤R takes no premises.
+    ax = ILLDerivation(ILLSequent((a,), a), "Ax")
+    bad_top_prem = ILLDerivation(ILLSequent((a,), _pl("⊤")), "⊤R", (ax,))
+    assert not check_ill_proof(bad_top_prem)
+    # 0L needs 𝟘 somewhere in the antecedent.
+    bad_zero = ILLDerivation(ILLSequent((a,), _pl("Q")), "0L")
+    result = verify_ill_proof(bad_zero)
+    assert not result.ok
+    assert result.error_rule == "0L"
+    assert not check_ill_proof(bad_zero)
+
+
+def test_top_zero_parse_round_trip():
+    # render_ill_formula(parse(text)) re-parses to a structurally equal AST
+    # (Node.to_unicode_str() cannot render Top/Zero yet — see the import
+    # comment above; MSFLParser accepts the fully-parenthesised output either
+    # way, since redundant parens are always legal).
+    for text in ["⊤", "𝟘", "A ⊗ 𝟘 ⊸ B"]:
+        node = _pl(text)
+        rendered = render_ill_formula(node)
+        again = _pl(rendered)
+        assert again == node, f"{text!r} round-trip failed via {rendered!r}"
+
+    assert isinstance(_pl("⊤"), Top)
+    assert isinstance(_pl("𝟘"), Zero)
+    mix = _pl("A ⊗ 𝟘 ⊸ B")
+    assert isinstance(mix, LinearImplies)
+    assert isinstance(mix.left, Tensor)
+    assert isinstance(mix.left.left, Atom) and mix.left.left.predicate == "A"
+    assert isinstance(mix.left.right, Zero)
+    assert isinstance(mix.right, Atom) and mix.right.predicate == "B"
+
+
+def test_top_zero_have_no_classical_export():
+    with pytest.raises(NotImplementedError):
+        _pl("⊤").to_z3()
+    with pytest.raises(NotImplementedError):
+        _pl("𝟘").to_prover9()
+    with pytest.raises(NotImplementedError):
+        _pl("A ⊗ 𝟘").to_tptp()

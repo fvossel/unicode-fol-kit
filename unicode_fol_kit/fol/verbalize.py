@@ -23,10 +23,12 @@ from ..fol.nodes import (
     Box, Diamond, Knows, Believes, Says, Wants, Obligatory, Permitted,
     Always, Eventually, Next, Until,
     Historically, Once, Previous, Since,
+    Would, Might,
     WeakConjunction, WeakDisjunction, StrongConjunction, StrongDisjunction,
     LukNegation, LukImplication, LukEquivalence,
 )
 from ._so_nodes import SecondOrderQuantifier
+from ._modal_nodes import Announce, AnnounceDiamond
 
 
 # Counting-quantifier op codes → English determiner phrases.
@@ -173,6 +175,20 @@ def to_english(node: Node) -> str:
         return f"at the previous moment, {_sub(node.formula)}"
     if isinstance(node, Since):
         return f"{_sub(node.left)} since {_sub(node.right)}"
+
+    # --- public announcement logic (PAL) ---
+    if isinstance(node, Announce):
+        return (f"after it is truthfully announced that {to_english(node.announcement)}, "
+                f"{_sub(node.formula)}")
+    if isinstance(node, AnnounceDiamond):
+        return (f"{to_english(node.announcement)}, and after it is truthfully "
+                f"announced, {_sub(node.formula)}")
+
+    # --- counterfactual conditionals (subjunctive, not material) ---
+    if isinstance(node, Would):
+        return f"if {_sub(node.left)} were the case, {_sub(node.right)} would be"
+    if isinstance(node, Might):
+        return f"if {_sub(node.left)} were the case, {_sub(node.right)} might be"
 
     # --- hybrid (nominals and @) ---
     if isinstance(node, Nominal):

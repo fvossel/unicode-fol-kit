@@ -174,13 +174,16 @@ def test_past_future_duality_over_converse():
 
 
 # --------------------------------------------------------------------------- #
-# Sound rejection where the past operators are not (yet) handled.
+# Sound verdicts where the past operators have no tableau rule.
 # --------------------------------------------------------------------------- #
 
-def test_modal_tableau_points_elsewhere_for_past():
-    from unicode_fol_kit.atp.modal_tableau import is_modal_valid
-    with pytest.raises(NotImplementedError, match="satisfies_modal|isabelle_decide_modal"):
-        is_modal_valid(Historically(P_))
+def test_modal_tableau_gives_sound_verdicts_for_past():
+    # No rule for ⒣/⒫/⒴ — the tableau leaves them inert instead of raising:
+    # verdicts are sound (countermodels verified by satisfies_modal) or an
+    # honest "unknown", never a crash.
+    from unicode_fol_kit.atp.modal_tableau import is_modal_valid, modal_decide
+    assert modal_decide(Historically(P_)) == "invalid"     # refutable, verified
+    assert is_modal_valid(Historically(P_)) is False       # sound: not proved
 
 
 def test_kleene_value_rejects_past_operators():

@@ -38,7 +38,8 @@ from typing import List, Optional
 
 from .nodes import (
     Node, Variable, Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
-    Box, Diamond, Knows, Believes, Always, Eventually, Next, Until,
+    Box, Diamond, Knows, Believes, Says, Wants,
+    Always, Eventually, Next, Until,
     Historically, Once, Previous, Since,
     Obligatory, Permitted, SortedQuantifier,
 )
@@ -54,11 +55,14 @@ _R_ALETHIC = "R"
 _R_TEMPORAL = "T"
 _R_NEXT = "N"
 _R_DEONTIC = "D"
-# Epistemic / doxastic accessibility relations are AGENT-INDEXED ternary predicates
-# Rk(agent, w, v) / Rb(agent, w, v), so the agent can be a quantified object variable
-# (``∀x (Student(x) → K_x φ)``) rather than baked into the relation name.
+# Epistemic / doxastic / assertive / bouletic accessibility relations are
+# AGENT-INDEXED ternary predicates Rk(agent, w, v) / Rb(agent, w, v) /
+# Rs(agent, w, v) / Rw(agent, w, v), so the agent can be a quantified object
+# variable (``∀x (Student(x) → K_x φ)``) rather than baked into the relation name.
 _R_KNOWS = "Rk"
 _R_BELIEVES = "Rb"
+_R_SAYS = "Rs"
+_R_WANTS = "Rw"
 
 _FORALL = "∀"
 _EXISTS = "∃"
@@ -183,6 +187,10 @@ def _st(formula: Node, w: Variable, fresh: _Fresh, mode: str) -> Node:
         return _box_agent(_R_KNOWS, formula.agent, w, formula.formula, fresh, mode)
     if isinstance(formula, Believes):
         return _box_agent(_R_BELIEVES, formula.agent, w, formula.formula, fresh, mode)
+    if isinstance(formula, Says):
+        return _box_agent(_R_SAYS, formula.agent, w, formula.formula, fresh, mode)
+    if isinstance(formula, Wants):
+        return _box_agent(_R_WANTS, formula.agent, w, formula.formula, fresh, mode)
     if isinstance(formula, Obligatory):
         return _box(_R_DEONTIC, w, formula.formula, fresh, mode)
     if isinstance(formula, Permitted):
@@ -220,6 +228,13 @@ def _st(formula: Node, w: Variable, fresh: _Fresh, mode: str) -> Node:
             "evaluate it with satisfies_modal, or emit the HOL embedding with "
             "to_isabelle_modal (inductive least-fixpoint muntil)."
         )
+    if isinstance(formula, Since):
+        raise NotImplementedError(
+            "qml: Since is not first-order definable (the backward mirror of "
+            "Until — it needs a transitive-closure fixpoint); evaluate it with "
+            "satisfies_modal, or emit the HOL embedding with to_isabelle_modal "
+            "(inductive least-fixpoint msince) / to_thf_modal_full."
+        )
     if isinstance(formula, SortedQuantifier):
         raise NotImplementedError("qml: SortedQuantifier is not supported; use a plain ∀x/∃x.")
     raise NotImplementedError(f"qml: unsupported node type {type(formula).__name__}.")
@@ -248,7 +263,8 @@ def _v(*names):
     return [Variable(n) for n in names]
 
 
-_AGENT_FAMILIES = {"epistemic": _R_KNOWS, "doxastic": _R_BELIEVES}
+_AGENT_FAMILIES = {"epistemic": _R_KNOWS, "doxastic": _R_BELIEVES,
+                   "assertive": _R_SAYS, "bouletic": _R_WANTS}
 
 
 def _agent_frame_axioms(rel_name: str, conds) -> List[Node]:
@@ -391,9 +407,39 @@ def qml_axioms(mode: str = "constant", frame: str = "K", systems=None) -> List[N
     return axioms
 
 
+def _signature_typing_facts(formula: Node) -> List[Node]:
+    """Object-typing facts for the constants and functions of ``formula``.
+
+    The guarded embedding sorts the universe into Worlds and Objects. A bare
+    constant is otherwise UNTYPED: no model is forced to put it in Object, so
+    an Object-guarded quantifier could never instantiate it — ``∀x P(x) →
+    P(c)`` came out spuriously invalid, and an Object-guarded agent frame
+    axiom (``systems=``) never fired for a NAMED agent. Constants (including
+    numbers and agent names) denote objects rigidly, matching
+    ``satisfies_modal``; a function maps objects to objects.
+    """
+    from .nodes import Constant as _C, Number as _N, Function as _F
+    consts, funcs = {}, {}
+    for n in formula.walk():
+        if isinstance(n, (_C, _N)):
+            consts[n.to_unicode_str()] = n
+        elif isinstance(n, _F):
+            funcs[(n.name, len(n.args))] = n
+    facts: List[Node] = [Atom(_OBJECT, [t])
+                         for _, t in sorted(consts.items())]
+    for (name, arity), fn in sorted(funcs.items()):
+        xs = [Variable(f"_a{i}") for i in range(arity)]
+        guard = reduce(And, [Atom(_OBJECT, [x]) for x in xs])
+        body = Implies(guard, Atom(_OBJECT, [type(fn)(name, xs)]))
+        for x in reversed(xs):
+            body = Quantifier(_FORALL, x, body)
+        facts.append(body)
+    return facts
+
+
 def _validity_formula(formula: Node, mode: str, frame: str, systems=None) -> Node:
-    """Build ``⋀axioms → ∀w (World(w) → ST(formula, w))``."""
-    axioms = qml_axioms(mode, frame, systems)
+    """Build ``⋀axioms ∧ ⋀typing-facts → ∀w (World(w) → ST(formula, w))``."""
+    axioms = qml_axioms(mode, frame, systems) + _signature_typing_facts(formula)
     w = _pick_world_name(formula, "w")
     body = Implies(Atom(_WORLD, [Variable(w)]), qml_translate(formula, mode, world=w))
     closed = Quantifier(_FORALL, Variable(w), body)
@@ -496,6 +542,17 @@ _THF_DOMAIN["possibilist"] = _THF_DOMAIN["constant"]
 # embeddings agree; these aliases give them valid, distinct THF functors.
 _THF_PRED_ALIAS = {"=": "feq", "≠": "fneq", "⊥": "bottom", "⊤": "top"}
 
+# The THF export's own fixed functors. A user symbol that sanitises onto one of
+# these (a predicate literally named ``r`` or ``mbox``) must NOT claim it — it
+# would re-declare a built-in at a conflicting type, so the emitted problem would
+# be rejected by a strict THF parser (or, worse, silently change meaning).
+# :class:`_ThfNames` pre-claims them, pushing such symbols to ``r_2`` etc.
+_THF_RESERVED = frozenset({
+    "mu", "r", "existsAt",
+    "mnot", "mand", "mor", "mimplies", "mequiv", "mbox", "mdia",
+    "mforall", "mexists", "mvalid",
+})
+
 
 def _thf_name(name: str) -> str:
     """Lower-case a predicate/constant/function name for a THF functor (NOT injective).
@@ -514,10 +571,12 @@ class _ThfNames(SymbolNames):
     ``_thf_name`` + the equality/inequality aliases), so distinct source symbols that
     sanitise alike — ``Ab`` / ``ab`` — or a predicate used at two arities get DISTINCT
     functors. Without it ``□Ab → □ab`` could collapse to the tautology ``□ab → □ab``.
+    The export's own built-in functors (``reserved``, default :data:`_THF_RESERVED`)
+    are pre-claimed so no user symbol can shadow them.
     """
 
-    def __init__(self, formula: Node):
-        super().__init__(formula, _thf_name, _THF_PRED_ALIAS)
+    def __init__(self, formula: Node, reserved=_THF_RESERVED):
+        super().__init__(formula, _thf_name, _THF_PRED_ALIAS, reserved=reserved)
 
 
 def _thf_term(node: Node, names: "_ThfNames") -> str:
@@ -564,7 +623,10 @@ def _thf_lift(node: Node, names: "_ThfNames") -> str:
         return f"( {binder} @ ( ^ [{x}: $i] : {_thf_lift(node.formula, names)} ) )"
     raise NotImplementedError(
         f"to_thf_modal: {type(node).__name__} is outside the alethic □/◇ fragment "
-        "supported by the THF export.")
+        "supported by this THF export — use "
+        "unicode_fol_kit.hol.thf_modal.to_thf_modal_full, which covers the full "
+        "modal family (epistemic/doxastic/assertive/bouletic/deontic/temporal "
+        "incl. Until/Since, and hybrid nominals/@).")
 
 
 def _thf_signature(formula: Node, names: "_ThfNames" = None) -> List[str]:

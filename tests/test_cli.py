@@ -135,3 +135,55 @@ def test_msfol_mode_rejects_strong_conjunction(capsys):
     assert rc == 1
     captured = capsys.readouterr()
     assert captured.err.strip() != ""
+
+
+# ---------------------------------------------------------------------------
+# New --mode choices: modal, second_order, dependence, linear, lambek.
+# ---------------------------------------------------------------------------
+
+def test_modal_mode_parses_box(capsys):
+    """--mode modal parses the modal operator □ and round-trips it in unicode."""
+    rc = main(["□P → ◇Q", "--mode", "modal", "--to", "unicode"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "□P → ◇Q"
+
+
+def test_second_order_mode_parses_predicate_quantifier(capsys):
+    """--mode second_order parses ∀P (a second-order predicate quantifier)."""
+    rc = main(["∀P P(x)", "--mode", "second_order", "--to", "json"])
+    assert rc == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["_type"] == "SecondOrderQuantifier"
+
+
+def test_dependence_mode_parses_dependence_atom(capsys):
+    """--mode dependence parses the =(...) dependence atom."""
+    rc = main(["=(x, y)", "--mode", "dependence", "--to", "json"])
+    assert rc == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["_type"] == "Dependence"
+
+
+def test_linear_mode_parses_tensor(capsys):
+    """--mode linear parses ⊗ as the linear-logic Tensor, and round-trips it."""
+    rc = main(["A ⊗ B", "--mode", "linear", "--to", "unicode"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "A ⊗ B"
+
+
+def test_lambek_mode_parses_product(capsys):
+    """--mode lambek parses • as the Lambek product, and round-trips it."""
+    rc = main(["A • B", "--mode", "lambek", "--to", "unicode"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "A • B"
+
+
+def test_modal_mode_latex_output(capsys):
+    """--mode modal --to latex renders the □ operator as \\Box."""
+    rc = main(["□P", "--mode", "modal", "--to", "latex"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "\\Box" in out

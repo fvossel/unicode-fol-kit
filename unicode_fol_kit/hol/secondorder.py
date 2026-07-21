@@ -61,7 +61,7 @@ from typing import Dict, FrozenSet, List
 from ..fol.nodes import (
     Node, Variable, Constant, Number, Function,
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
-    SecondOrderQuantifier,
+    SecondOrderQuantifier, Cardinality, SortedCardinality,
 )
 from ..fol._symbol_names import dedupe as _dedupe  # shared de-collision helper
 
@@ -206,6 +206,10 @@ def _free_object_vars(formula: Node, bound=frozenset()) -> FrozenSet[str]:
         return frozenset() if formula.name in bound else frozenset({formula.name})
     if isinstance(formula, Quantifier):
         return _free_object_vars(formula.formula, bound | {formula.variable.name})
+    if isinstance(formula, (Cardinality, SortedCardinality)):
+        # |{v : φ}| BINDS v over its matrix — a generic child walk would report
+        # the bound v as free (the binder-blind defect class fixed in 0.16.0).
+        return _free_object_vars(formula.formula, bound | {formula.variable.name})
     free = set()
     for child in formula._child_nodes():
         free |= _free_object_vars(child, bound)
@@ -233,6 +237,9 @@ def _signature(formula: Node):
             if n.predicate in so_names:
                 continue
             pred_arity[n.predicate] = len(n.args)
+        elif isinstance(n, SortedCardinality):
+            # The sort guard becomes a free unary predicate over the matrix.
+            pred_arity.setdefault(n.sort, 1)
         elif isinstance(n, Constant):
             const_names.add(n.name)
         elif isinstance(n, Number):
@@ -275,6 +282,11 @@ def _thf_term(node: Node, scope: "_Scope", free: "_FreeNames") -> str:
     if isinstance(node, Function):
         head = free.func[node.name]
         return "( " + " @ ".join([head] + [_thf_term(a, scope, free) for a in node.args]) + " )"
+    if isinstance(node, (Cardinality, SortedCardinality)):
+        raise NotImplementedError(
+            "to_thf_so: TH0 has no built-in finite-set theory, so a faithful "
+            "cardinality encoding is not available here — use to_isabelle_so, "
+            "which embeds |{v : φ}| as HOL's ``card {v. φ}``.")
     raise NotImplementedError(
         f"to_thf_so: unsupported term {type(node).__name__}.")
 
@@ -430,13 +442,62 @@ def _isa_term(node: Node, bvars: FrozenSet[str], free: "_FreeNames") -> str:
     if isinstance(node, Function):
         head = free.func[node.name]
         return "(" + " ".join([head] + [_isa_term(a, bvars, free) for a in node.args]) + ")"
+    if isinstance(node, (Cardinality, SortedCardinality)):
+        raise NotImplementedError(
+            "to_isabelle_so: a cardinality term is supported only as an operand "
+            "of a comparison (= ≠ < > ≤ ≥), where it embeds as HOL's "
+            "``card {v. φ}``; as an argument of an uninterpreted predicate or "
+            "function it would need type nat where individuals are expected.")
     raise NotImplementedError(
         f"to_isabelle_so: unsupported term {type(node).__name__}.")
+
+
+#: HOL spellings of the numeric comparison operators used for cardinalities.
+_CARD_COMPARE = {"=": "=", "<": "<", ">": ">",
+                 "≤": "\\<le>", "≥": "\\<ge>"}
+
+
+def _isa_card_operand(node: Node, bpreds: FrozenSet[str], bvars: FrozenSet[str],
+                      free: "_FreeNames") -> str:
+    """Render one operand of a numeric cardinality comparison (type ``nat``).
+
+    A cardinality embeds as HOL's native finite-set cardinality
+    ``card {v. φ}`` (``Finite_Set.card``, available from ``Main``); the sorted
+    variant guards the matrix with its sort predicate. A number is a ``nat``
+    literal. Anything else is a category error — the comparison is numeric, so
+    an individual-typed operand cannot appear (the same rule the Tarskian
+    evaluator enforces).
+    """
+    if isinstance(node, (Cardinality, SortedCardinality)):
+        v = node.variable.name
+        matrix = _isa(node.formula, bpreds, bvars | {v}, free)
+        if isinstance(node, SortedCardinality):
+            guard = free.pred[node.sort]
+            matrix = f"(({guard} {v}) \\<and> {matrix})"
+        return f"(card {{{v}. {matrix}}})"
+    if isinstance(node, Number):
+        return str(node.value)
+    raise NotImplementedError(
+        "to_isabelle_so: a comparison with a cardinality operand is NUMERIC — "
+        "the other operand must be a Number or another cardinality term, not an "
+        f"individual ({type(node).__name__}).")
 
 
 def _isa(node: Node, bpreds: FrozenSet[str], bvars: FrozenSet[str], free: "_FreeNames") -> str:
     """Render a second-order formula as an Isabelle/HOL boolean term."""
     if isinstance(node, Atom):
+        if (node.predicate in ("=", "≠") or node.predicate in _CARD_COMPARE) \
+                and len(node.args) == 2 \
+                and any(isinstance(a, (Cardinality, SortedCardinality))
+                        for a in node.args):
+            # Numeric reading: a cardinality IS a natural number (HOL's card),
+            # so the comparison is arithmetic over nat, not an uninterpreted
+            # relation over individuals — mirroring semantics.tarski.
+            left = _isa_card_operand(node.args[0], bpreds, bvars, free)
+            right = _isa_card_operand(node.args[1], bpreds, bvars, free)
+            if node.predicate == "≠":
+                return f"(\\<not> ({left} = {right}))"
+            return f"({left} {_CARD_COMPARE[node.predicate]} {right})"
         head = node.predicate if node.predicate in bpreds else free.pred[node.predicate]
         if not node.args:
             return head

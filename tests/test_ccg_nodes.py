@@ -510,9 +510,21 @@ def test_sorted_count_reduces_and_z3_agrees():
 
 
 def test_sorted_count_sort_guard_is_inside_the_count():
-    from unicode_fol_kit import to_fol
-    reduced = to_fol(_MSFOL.parse("∃≥1 x:S P(x)")).to_unicode_str()
-    assert reduced == "∃≥1 x (S(x) ∧ P(x))"
+    # to_fol now honours its "classical FOL constructs only" contract: the
+    # relativized Count is ALSO expanded (distinct witnesses), with the sort
+    # guard inside the witness matrix — so the guard restricts the counting,
+    # not the whole formula.
+    from unicode_fol_kit import to_fol, formulas_are_equivalent
+    reduced = to_fol(_MSFOL.parse("∃≥1 x:S P(x)"))
+    assert reduced.to_unicode_str() == "∃x_0 (S(x_0) ∧ P(x_0))"
+    # And a two-witness count keeps the guard on EACH witness.
+    reduced2 = to_fol(_MSFOL.parse("∃≥2 x:S P(x)"))
+    assert "S(x_0) ∧ P(x_0)" in reduced2.to_unicode_str()
+    assert "S(x_1) ∧ P(x_1)" in reduced2.to_unicode_str()
+    assert "≠" in reduced2.to_unicode_str()
+    # Semantics unchanged: the reduction is Z3-equivalent to the original
+    # (SortedCount.to_z3 auto-reduces through the same guarded encoding).
+    assert formulas_are_equivalent(reduced, _MSFOL.parse("∃≥1 x:S P(x)"))
 
 
 def test_sorted_cardinality_has_no_first_order_export():

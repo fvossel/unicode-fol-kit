@@ -9,7 +9,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: unicode-fol-kit 0.11.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-02 22:46+0200\n"
+"POT-Creation-Date: 2026-07-21 20:59+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: de\n"
@@ -43,12 +43,12 @@ msgstr ""
 "Prädikatenlogik erster Stufe: Kardinaldeterminatoren (*at least three*), "
 "Gradkomparative (*more water*, *taller*), Zählvergleiche (*more votes "
 "than*), berichtende und bouletische Einstellungen (*says that*, *wants "
-"to*) sowie konzessive Koordination (*whereas*, *although*). Das Kit stellt"
-" für jede dieser Konstruktionen einen bestimmten, **Round-Trip-fähigen** "
-"AST-Knoten bereit, sodass eine Pipeline sie als originalgetreue logische "
-"Formen *ausgeben* kann (nur Übersetzung — es handelt sich um "
-"Repräsentationen, keine neuen Inferenz-Backends, wenngleich mehrere davon "
-"in die vorhandenen Evaluatoren eingebunden sind)."
+"to*) sowie konzessive Koordination (*whereas*, *although*). Das Kit "
+"stellt für jede dieser Konstruktionen einen bestimmten, **Round-Trip-"
+"fähigen** AST-Knoten bereit, sodass eine Pipeline sie als originalgetreue"
+" logische Formen *ausgeben* kann (nur Übersetzung — es handelt sich um "
+"Repräsentationen, keine neuen Inferenz-Backends, wenngleich mehrere davon"
+" in die vorhandenen Evaluatoren eingebunden sind)."
 
 #: ../../guide/natural-language.md:13
 msgid ""
@@ -58,9 +58,9 @@ msgid ""
 "(`MSFLParser(modal=True)`), like `Knows`/`Believes`."
 msgstr ""
 "Alle diese Konstrukte sind über `MSFLParser` erreichbar: `Count`, "
-"`Measure`, `Cardinality` und `Contrast` werden mit dem **Standard**-Parser"
-" geparst; die Einstellungsoperatoren `Says`/`Wants` sind **modal** "
-"(`MSFLParser(modal=True)`), ebenso wie `Knows`/`Believes`."
+"`Measure`, `Cardinality` und `Contrast` werden mit dem "
+"**Standard**-Parser geparst; die Einstellungsoperatoren `Says`/`Wants` "
+"sind **modal** (`MSFLParser(modal=True)`), ebenso wie `Knows`/`Believes`."
 
 #: ../../guide/natural-language.md:17
 #, python-brace-format
@@ -72,14 +72,15 @@ msgid ""
 "availability` at the end of this page for the full matrix and the sorted "
 "`SortedCount` / `SortedCardinality` variants used in many-sorted mode)."
 msgstr ""
-"`Count`, `Measure`, `Cardinality` und `Contrast` sind nicht auf den reinen"
-" `fol`-Modus beschränkt — sie werden in jedem klassischen Modus geparst, "
-"der die Prädikatenlogik erster Stufe erweitert, sodass eine CCG-Form, die "
-"sie unter einem modalen oder Operator zweiter Stufe verschachtelt, als "
-"**eine einzige Zeichenkette** einen Round-Trip durchläuft (siehe {ref}`"
-"cross-mode-availability` am Ende dieser Seite für die vollständige Matrix "
-"sowie die sortenbehafteten Varianten `SortedCount` / `SortedCardinality`, "
-"die im mehrsortigen Modus verwendet werden)."
+"`Count`, `Measure`, `Cardinality` und `Contrast` sind nicht auf den "
+"reinen `fol`-Modus beschränkt — sie werden in jedem klassischen Modus "
+"geparst, der die Prädikatenlogik erster Stufe erweitert, sodass eine CCG-"
+"Form, die sie unter einem modalen oder Operator zweiter Stufe "
+"verschachtelt, als **eine einzige Zeichenkette** einen Round-Trip "
+"durchläuft (siehe {ref}`cross-mode-availability` am Ende dieser Seite für"
+" die vollständige Matrix sowie die sortenbehafteten Varianten "
+"`SortedCount` / `SortedCardinality`, die im mehrsortigen Modus verwendet "
+"werden)."
 
 #: ../../guide/natural-language.md:23
 msgid "Counting quantifier — `Count` (∃≥n / ∃≤n / ∃=n)"
@@ -94,9 +95,9 @@ msgid ""
 " pages`, `a million`, `180 degrees` all work."
 msgstr ""
 "`Count` ist ein Kardinalitäts-Quantor: *mindestens*, *höchstens* oder "
-"*genau* `n` verschiedene Individuen erfüllen die Matrix. Die Zahl `n` wird"
-" **symbolisch** geführt (als `Number`) und niemals zu einbuchstabigen "
-"Variablen expandiert, sodass ein beliebig großes `n` exakt dargestellt "
+"*genau* `n` verschiedene Individuen erfüllen die Matrix. Die Zahl `n` "
+"wird **symbolisch** geführt (als `Number`) und niemals zu einbuchstabigen"
+" Variablen expandiert, sodass ein beliebig großes `n` exakt dargestellt "
 "wird — `over 500 pages`, `a million`, `180 degrees` funktionieren "
 "allesamt."
 
@@ -106,8 +107,8 @@ msgid ""
 "`free_variables` excludes it but keeps any free variable of the matrix:"
 msgstr ""
 "Die gebundene Variable wird direkt aus dem Knoten ausgelesen, und der "
-"Zählquantor selbst bindet sie — `free_variables` schließt sie aus, "
-"behält jedoch jede freie Variable der Matrix bei:"
+"Zählquantor selbst bindet sie — `free_variables` schließt sie aus, behält"
+" jedoch jede freie Variable der Matrix bei:"
 
 #: ../../guide/natural-language.md:54
 msgid ""
@@ -136,13 +137,12 @@ msgid ""
 "matrix is capture-avoiding:"
 msgstr ""
 "`Count` lässt sich sowohl über Unicode als auch über JSON verlustfrei "
-"zurückparsen, und die Substitution in die Matrix ist "
-"einfangvermeidend:"
+"zurückparsen, und die Substitution in die Matrix ist einfangvermeidend:"
 
 #: ../../guide/natural-language.md:86
 msgid ""
-"It is first-order expressible, so the exporters lower it to the standard"
-" distinct-witnesses encoding, and the usual cardinality entailments all "
+"It is first-order expressible, so the exporters lower it to the standard "
+"distinct-witnesses encoding, and the usual cardinality entailments all "
 "check out:"
 msgstr ""
 "Es ist in der Prädikatenlogik erster Stufe ausdrückbar, sodass die "
@@ -166,16 +166,43 @@ msgid ""
 "degrees with `>` / `<`:"
 msgstr ""
 "`Measure` ist ein Term für eine Maßfunktion `μ(entity, dimension)` — der "
-"Grad, in dem eine Entität eine graduierbare Eigenschaft besitzt —, sodass "
-"ein bloßer Komparativ ein bestimmtes Argument erhält, statt einer dünnen "
-"relationalen Paraphrase. Grade werden mit `>` / `<` verglichen:"
+"Grad, in dem eine Entität eine graduierbare Eigenschaft besitzt —, sodass"
+" ein bloßer Komparativ ein bestimmtes Argument erhält, statt einer dünnen"
+" relationalen Paraphrase. Grade werden mit `>` / `<` verglichen:"
 
 #: ../../guide/natural-language.md:126
+msgid ""
+"To *evaluate* a degree comparison, interpret `measure`/2 — the same "
+"symbol the exports emit — in a `Structure`. When the measure values are "
+"numbers and the structure declares no extension for the comparison, the "
+"comparison is arithmetic:"
+msgstr ""
+"Um einen Gradvergleich *auszuwerten*, interpretiert man `measure`/2 — "
+"dasselbe Symbol, das die Exporter emittieren — in einer `Structure`. Sind"
+" die Maßwerte Zahlen und deklariert die Struktur keine Extension für den "
+"Vergleich, so ist der Vergleich arithmetisch:"
+
+#: ../../guide/natural-language.md:141
+msgid ""
+"A *declared* extension takes precedence, since `<` `>` `≤` `≥` are "
+"ordinary relation symbols that a structure may interpret however it likes"
+" — that is the reading the first-order exports assume, where both "
+"`measure` and the comparison are uninterpreted. The arithmetic fallback "
+"only fills the gap when no interpretation is given."
+msgstr ""
+"Eine *deklarierte* Extension hat Vorrang, denn `<` `>` `≤` `≥` sind "
+"gewöhnliche Relationssymbole, die eine Struktur interpretieren darf, wie "
+"sie möchte — das ist die Lesart, die die erststufigen Exporter annehmen, "
+"wo sowohl `measure` als auch der Vergleich uninterpretiert sind. Der "
+"arithmetische Rückfall füllt die Lücke nur dann, wenn keine "
+"Interpretation angegeben ist."
+
+#: ../../guide/natural-language.md:147
 #, python-brace-format
 msgid "Cardinality term — `Cardinality` (|{v : φ}|)"
 msgstr "Kardinalitätsterm — `Cardinality` (|{v : φ}|)"
 
-#: ../../guide/natural-language.md:128
+#: ../../guide/natural-language.md:149
 #, python-brace-format
 msgid ""
 "`Cardinality` is the set-cardinality term `|{v : φ}|` — the number of "
@@ -185,22 +212,22 @@ msgstr ""
 "Anzahl der Individuen `v`, die `φ` erfüllen — für originalgetreue "
 "Zählvergleiche:"
 
-#: ../../guide/natural-language.md:138
+#: ../../guide/natural-language.md:159
 msgid ""
-"Any comparison or equality works on the two cardinality terms — *as many"
-" … as* (`=`), *at least as many* (`≥`), *fewer* (`<`):"
+"Any comparison or equality works on the two cardinality terms — *as many "
+"… as* (`=`), *at least as many* (`≥`), *fewer* (`<`):"
 msgstr ""
 "Jeder Vergleich oder jede Gleichheit funktioniert auf den beiden "
 "Kardinalitätstermen — *as many … as* (`=`), *at least as many* (`≥`), "
 "*fewer* (`<`):"
 
-#: ../../guide/natural-language.md:148
+#: ../../guide/natural-language.md:169
 msgid "It binds its variable (so the outer `x`, `y` stay free) and round-trips:"
 msgstr ""
 "Es bindet seine Variable (sodass die äußeren `x`, `y` frei bleiben) und "
 "lässt sich verlustfrei zurückparsen:"
 
-#: ../../guide/natural-language.md:155
+#: ../../guide/natural-language.md:176
 msgid ""
 "Set cardinality is a *second-order* notion, so `Cardinality` has **no** "
 "first-order export — `to_z3` / `to_prover9` / `to_tptp` raise "
@@ -213,11 +240,11 @@ msgstr ""
 "`NotImplementedError`; belassen Sie es auf AST-Ebene, oder verwenden Sie "
 "einen `Count`-Zählquantor, wenn eine feste numerische Schranke genügt:"
 
-#: ../../guide/natural-language.md:163
+#: ../../guide/natural-language.md:184
 msgid "Concessive connective — `Contrast` (Ⓒ)"
 msgstr "Konzessiver Konnektor — `Contrast` (Ⓒ)"
 
-#: ../../guide/natural-language.md:165
+#: ../../guide/natural-language.md:186
 msgid ""
 "`Contrast` (`P Ⓒ Q`) renders *whereas* / *although* / *but*. Concession "
 "is a discourse relation, not a truth-functional one, so `Contrast` is "
@@ -229,7 +256,7 @@ msgstr ""
 "`Contrast` wahrheitsfunktional identisch zu `∧` ist — es wird jedoch als "
 "eigener Knoten geführt, damit der Kontrast die Übersetzung übersteht:"
 
-#: ../../guide/natural-language.md:176
+#: ../../guide/natural-language.md:197
 msgid ""
 "Like `∧` / `∨` / `⊕`, it sits in the no-mixing same-level group, so "
 "mixing it with another connective needs parentheses: `(P Ⓒ Q) ∧ R`."
@@ -238,11 +265,11 @@ msgstr ""
 "sodass die Kombination mit einem anderen Konnektor Klammern erfordert: "
 "`(P Ⓒ Q) ∧ R`."
 
-#: ../../guide/natural-language.md:179
+#: ../../guide/natural-language.md:200
 msgid "Attitude operators — `Says` / `Wants`"
 msgstr "Einstellungsoperatoren — `Says` / `Wants`"
 
-#: ../../guide/natural-language.md:181
+#: ../../guide/natural-language.md:202
 msgid ""
 "`Says` (`Say_a φ`, *a asserts that φ*) and `Wants` (`Want_a φ`, *a wants "
 "it to be that φ*) are modal `agent_prefix` operators alongside "
@@ -254,7 +281,7 @@ msgstr ""
 "`Knows`/`Believes`. Der Agent ist ein β-bindbarer Term, sodass auch ein "
 "gebundener Agent funktioniert (`∀x (Speaker(x) → Say_x φ)`)."
 
-#: ../../guide/natural-language.md:192
+#: ../../guide/natural-language.md:213
 msgid ""
 "Each is a minimal normal modality **K** over its own per-agent "
 "accessibility relation (`\"Say:\"+a`, `\"Want:\"+a`), with **no** frame "
@@ -266,7 +293,7 @@ msgstr ""
 "`\"Want:\"+a`), ohne jegliche Rahmenbedingungen. Der Sinn der "
 "Unterscheidung von `Knows`/`Believes` liegt genau in diesem Gewinn:"
 
-#: ../../guide/natural-language.md:196
+#: ../../guide/natural-language.md:217
 msgid ""
 "`Says` is **non-factive** (`Say_a φ ⊭ φ` — an assertion can be false) and"
 " **non-doxastic** (`Say_a φ ⊭ Believes_a φ`)."
@@ -274,7 +301,7 @@ msgstr ""
 "`Says` ist **nicht-faktiv** (`Say_a φ ⊭ φ` — eine Behauptung kann falsch "
 "sein) und **nicht-doxastisch** (`Say_a φ ⊭ Believes_a φ`)."
 
-#: ../../guide/natural-language.md:198
+#: ../../guide/natural-language.md:219
 msgid ""
 "`Wants` is **non-veridical** (`Want_a φ ⊭ φ` — wanting does not make it "
 "so)."
@@ -282,7 +309,7 @@ msgstr ""
 "`Wants` ist **nicht-veridisch** (`Want_a φ ⊭ φ` — Wollen macht es nicht "
 "wahr)."
 
-#: ../../guide/natural-language.md:211
+#: ../../guide/natural-language.md:232
 msgid ""
 "The agent is a structural term, so a quantifier can bind it — *every "
 "speaker says they are honest* is a single closed formula with a bound "
@@ -293,7 +320,7 @@ msgstr ""
 "Formel mit einem gebundenen `Say_x`, die sich sowohl verlustfrei "
 "zurückparsen als auch verbalisieren lässt:"
 
-#: ../../guide/natural-language.md:227
+#: ../../guide/natural-language.md:248
 msgid ""
 "They plug into the Kripke evaluator and the modal tableau, verbalize with"
 " `to_english`, and (being modal) reject the first-order exporters — "
@@ -306,11 +333,59 @@ msgstr ""
 "den Round-Trip wie bei den anderen modalen Operatoren über Unicode oder "
 "JSON durch."
 
-#: ../../guide/natural-language.md:231
+#: ../../guide/natural-language.md:252
+msgid ""
+"Deciding Say/Want validity: `standard_translation`, `systems=`, and "
+"`resolution.prove`"
+msgstr ""
+"Say/Want-Gültigkeit entscheiden: `standard_translation`, `systems=` und "
+"`resolution.prove`"
+
+#: ../../guide/natural-language.md:254
+msgid ""
+"`standard_translation` lowers `Say_a` / `Want_a` to per-agent box "
+"relations `Rs_a` / `Rw_a`, mirroring how `Knows`/`Believes` become "
+"`Rk_a`/`Rb_a` — so `resolution.prove` decides the propositional Say/Want "
+"fragment the same way it decides `Knows`/`Believes`:"
+msgstr ""
+"`standard_translation` senkt `Say_a` / `Want_a` zu Box-Relationen `Rs_a` /"
+" `Rw_a` je Agent ab, analog dazu, wie `Knows`/`Believes` zu `Rk_a`/`Rb_a` "
+"werden — sodass `resolution.prove` das aussagenlogische Say/Want-Fragment "
+"genauso entscheidet wie `Knows`/`Believes`:"
+
+#: ../../guide/natural-language.md:266
+#, python-brace-format
+msgid ""
+"Both `Says` and `Wants` are non-factive/non-veridical *by default*, but "
+"`qml`'s `systems=` (the same mechanism {doc}`quantified-modal` uses for "
+"the alethic/epistemic families) gained `assertive` / `bouletic` entries, "
+"so factiveness can be turned on **for the purposes of a specific check** "
+"without changing what the operators mean elsewhere:"
+msgstr ""
+"Sowohl `Says` als auch `Wants` sind *standardmäßig* nicht-faktiv/nicht-"
+"veridisch, doch `qml`s `systems=` (derselbe Mechanismus, den "
+"{doc}`quantified-modal` für die alethische/epistemische Familie "
+"verwendet) hat die Einträge `assertive` / `bouletic` erhalten, sodass "
+"Faktivität **für die Zwecke einer bestimmten Prüfung** eingeschaltet "
+"werden kann, ohne die Bedeutung der Operatoren anderswo zu verändern:"
+
+#: ../../guide/natural-language.md:276
+#, python-brace-format
+msgid ""
+"The same `systems={\"assertive\": ...}` / `{\"bouletic\": ...}` keys work"
+" across `qml_is_valid`, the THF export (`to_thf_modal_full`), and the "
+"Isabelle export (`to_isabelle_modal`) — see {doc}`higher-order`."
+msgstr ""
+"Dieselben Schlüssel `systems={\"assertive\": ...}` / `{\"bouletic\": "
+"...}` funktionieren einheitlich in `qml_is_valid`, dem THF-Export "
+"(`to_thf_modal_full`) und dem Isabelle-Export (`to_isabelle_modal`) — "
+"siehe {doc}`higher-order`."
+
+#: ../../guide/natural-language.md:278
 msgid "Reading Prover9 files"
 msgstr "Prover9-Dateien einlesen"
 
-#: ../../guide/natural-language.md:233
+#: ../../guide/natural-language.md:280
 #, python-brace-format
 msgid ""
 "The Prover9 reader complements `load_tptp` and `load_smtlib`: "
@@ -323,14 +398,14 @@ msgid ""
 msgstr ""
 "Der Prover9-Reader ergänzt `load_tptp` und `load_smtlib`: "
 "`load_prover9(path)` und `parse_prover9_problem(text)` lesen eine "
-"vollständige Prover9/LADR-Eingabedatei — `set`/`clear`/`assign`-"
-"Direktiven (übersprungen), Blöcke der Form `formulas(LIST). … "
-"end_of_list.` sowie bloße Top-Level-Formeln — in "
+"vollständige Prover9/LADR-Eingabedatei — "
+"`set`/`clear`/`assign`-Direktiven (übersprungen), Blöcke der Form "
+"`formulas(LIST). … end_of_list.` sowie bloße Top-Level-Formeln — in "
 "`Prover9Formula(role, formula)`-Datensätze ein, wobei der Listenname die "
 "Rolle jeder Formel bildet. Siehe {doc}`transforms` für die vollständige "
 "Referenz zu Import und Export."
 
-#: ../../guide/natural-language.md:239
+#: ../../guide/natural-language.md:286
 msgid ""
 "`parse_prover9_problem` takes the file text directly. Directives are "
 "dropped, `%` comments are ignored, and each formula's `role` is the name "
@@ -340,25 +415,25 @@ msgstr ""
 "werden verworfen, `%`-Kommentare werden ignoriert, und die `role` jeder "
 "Formel ist der Name der `formulas(...)`-Liste, aus der sie stammt:"
 
-#: ../../guide/natural-language.md:265
+#: ../../guide/natural-language.md:312
 msgid ""
 "A formula written outside any `formulas(...)` block (a bare top-level "
 "formula) is kept with an empty role `''`:"
 msgstr ""
-"Eine Formel, die außerhalb jedes `formulas(...)`-Blocks steht (eine "
-"bloße Top-Level-Formel), wird mit leerer Rolle `''` beibehalten:"
+"Eine Formel, die außerhalb jedes `formulas(...)`-Blocks steht (eine bloße"
+" Top-Level-Formel), wird mit leerer Rolle `''` beibehalten:"
 
-#: ../../guide/natural-language.md:273
+#: ../../guide/natural-language.md:320
 msgid "`load_prover9(path)` is the same reader over a file on disk:"
 msgstr ""
 "`load_prover9(path)` ist derselbe Reader, angewendet auf eine Datei auf "
 "der Festplatte:"
 
-#: ../../guide/natural-language.md:288
+#: ../../guide/natural-language.md:335
 msgid "Making imported names re-parseable — `sanitize_names`"
 msgstr "Importierte Namen wieder parsbar machen — `sanitize_names`"
 
-#: ../../guide/natural-language.md:290
+#: ../../guide/natural-language.md:337
 msgid ""
 "A formula imported from TPTP, SMT-LIB, or Prover9 can carry symbol names "
 "the AST accepts but the `MSFLParser` *lexer* does not — IRIs with "
@@ -369,16 +444,16 @@ msgid ""
 "mapping)`:"
 msgstr ""
 "Eine aus TPTP, SMT-LIB oder Prover9 importierte Formel kann Symbolnamen "
-"tragen, die der AST akzeptiert, der *Lexer* des `MSFLParser` jedoch "
-"nicht — IRIs mit Unterstrichen und gemischter Groß-/Kleinschreibung, "
+"tragen, die der AST akzeptiert, der *Lexer* des `MSFLParser` jedoch nicht"
+" — IRIs mit Unterstrichen und gemischter Groß-/Kleinschreibung, "
 "einbuchstabige oder mit einer Ziffer beginnende Konstanten und "
 "dergleichen. Das Rendern eines solchen Knotens mit `to_unicode_str` "
 "liefert dann eine Zeichenkette, die sich **nicht** zurückparsen lässt. "
 "`sanitize_names(node)` schreibt jedes Symbol in ein Token um, das sich zu"
-" seiner beabsichtigten Klasse zurückparsen lässt, und gibt "
-"`(clean_node, mapping)` zurück:"
+" seiner beabsichtigten Klasse zurückparsen lässt, und gibt `(clean_node, "
+"mapping)` zurück:"
 
-#: ../../guide/natural-language.md:307
+#: ../../guide/natural-language.md:354
 msgid ""
 "Predicates become `[A-Z][a-zA-Z0-9]*`, functions a multi-letter lowercase"
 " name, and a single-letter or digit-bearing constant takes the explicit "
@@ -393,30 +468,30 @@ msgstr ""
 "`NameMapping` verzeichnet jede Umbenennung, und `reverse()` stellt die "
 "Originale wieder her:"
 
-#: ../../guide/natural-language.md:318
+#: ../../guide/natural-language.md:365
 msgid ""
-"Already-legal names pass through untouched, so a clean classical formula"
-" is unchanged:"
+"Already-legal names pass through untouched, so a clean classical formula "
+"is unchanged:"
 msgstr ""
 "Bereits zulässige Namen werden unverändert durchgereicht, sodass eine "
 "saubere klassische Formel unverändert bleibt:"
 
-#: ../../guide/natural-language.md:326
+#: ../../guide/natural-language.md:373
 msgid ""
 "Across a whole problem, reuse one mapping so the same original symbol "
 "maps to the same token in every formula — `sanitize_all` does exactly "
 "that with one shared `NameMapping`:"
 msgstr ""
-"Verwenden Sie über ein gesamtes Problem hinweg dieselbe Zuordnung, "
-"sodass dasselbe ursprüngliche Symbol in jeder Formel auf dasselbe Token "
+"Verwenden Sie über ein gesamtes Problem hinweg dieselbe Zuordnung, sodass"
+" dasselbe ursprüngliche Symbol in jeder Formel auf dasselbe Token "
 "abgebildet wird — genau das leistet `sanitize_all` mit einer einzigen, "
 "gemeinsam genutzten `NameMapping`:"
 
-#: ../../guide/natural-language.md:340
+#: ../../guide/natural-language.md:387
 msgid "Cross-mode availability"
 msgstr "Verfügbarkeit über die Modi hinweg"
 
-#: ../../guide/natural-language.md:342
+#: ../../guide/natural-language.md:389
 msgid ""
 "The counting quantifier, the concessive connective, and the degree / "
 "cardinality terms are first-order constructs, so they are available in "
@@ -427,17 +502,17 @@ msgid ""
 msgstr ""
 "Der Zählquantor, der konzessive Konnektor sowie die Grad- und "
 "Kardinalitätsterme sind Konstrukte der Prädikatenlogik erster Stufe und "
-"daher in **jedem klassischen Modus, der die Prädikatenlogik erster Stufe"
-" erweitert**, verfügbar — nicht nur im reinen `fol`-Modus. Das bedeutet, "
+"daher in **jedem klassischen Modus, der die Prädikatenlogik erster Stufe "
+"erweitert**, verfügbar — nicht nur im reinen `fol`-Modus. Das bedeutet, "
 "dass eine aus CCG abgeleitete logische Form, die eines dieser Konstrukte "
 "unter einem modalen oder Operator zweiter Stufe verschachtelt, geparst "
 "werden kann und als einzige Zeichenkette einen *Round-Trip* durchläuft:"
 
-#: ../../guide/natural-language.md:367
+#: ../../guide/natural-language.md:414
 msgid "Many-sorted mode — `SortedCount` and `SortedCardinality`"
 msgstr "Mehrsortiger Modus — `SortedCount` und `SortedCardinality`"
 
-#: ../../guide/natural-language.md:369
+#: ../../guide/natural-language.md:416
 #, python-brace-format
 msgid ""
 "In the many-sorted mode every binder carries a sort, so the counting "
@@ -447,13 +522,13 @@ msgid ""
 "(`⊕`) are available in many-sorted mode as well."
 msgstr ""
 "Im mehrsortigen Modus trägt jeder Binder eine Sorte, sodass der "
-"Zählquantor und der Mengen-Kardinalitätsterm **sortenannotierte** Formen"
-" annehmen — `∃≥n x:S φ` (`SortedCount`) und `|{v:S : φ}|` "
+"Zählquantor und der Mengen-Kardinalitätsterm **sortenannotierte** Formen "
+"annehmen — `∃≥n x:S φ` (`SortedCount`) und `|{v:S : φ}|` "
 "(`SortedCardinality`) —, analog zu `SortedQuantifier`. `Contrast`, der "
 "`Measure`-Term und `Xor` (`⊕`) sind ebenfalls im mehrsortigen Modus "
 "verfügbar."
 
-#: ../../guide/natural-language.md:388
+#: ../../guide/natural-language.md:435
 msgid ""
 "`SortedCount` is first-order expressible: it reduces to plain FOL by "
 "guarding the matrix with the sort predicate and reusing the distinct-"
@@ -462,26 +537,26 @@ msgid ""
 msgstr ""
 "`SortedCount` ist in der Prädikatenlogik erster Stufe ausdrückbar: Es "
 "wird auf reine FOL reduziert, indem die Matrix mit dem Sortenprädikat "
-"geschützt und die Zählkodierung mit verschiedenen Zeugen "
-"wiederverwendet wird, sodass seine Logik ebenso wie beim unsortierten "
-"`Count` vom Z3-Backend entschieden wird:"
+"geschützt und die Zählkodierung mit verschiedenen Zeugen wiederverwendet "
+"wird, sodass seine Logik ebenso wie beim unsortierten `Count` vom "
+"Z3-Backend entschieden wird:"
 
-#: ../../guide/natural-language.md:399
+#: ../../guide/natural-language.md:446
 msgid ""
 "`SortedCardinality`, like the unsorted `Cardinality`, denotes a second-"
-"order notion and has **no** first-order export (`to_z3` / `to_prover9` /"
-" `to_tptp` raise)."
+"order notion and has **no** first-order export (`to_z3` / `to_prover9` / "
+"`to_tptp` raise)."
 msgstr ""
 "`SortedCardinality` bezeichnet, ebenso wie das unsortierte `Cardinality`,"
 " einen Begriff der Logik zweiter Stufe und besitzt **keinen** Export in "
 "die Prädikatenlogik erster Stufe (`to_z3` / `to_prover9` / `to_tptp` "
 "werfen einen Fehler)."
 
-#: ../../guide/natural-language.md:402
+#: ../../guide/natural-language.md:449
 msgid "Why not the fuzzy modes?"
 msgstr "Warum nicht die Fuzzy-Modi?"
 
-#: ../../guide/natural-language.md:404
+#: ../../guide/natural-language.md:451
 msgid ""
 "The fuzzy modes (`fuzzy=True`, and `many_sorted=True, fuzzy=True`) "
 "deliberately **do not** accept these constructs. Fuzzy logic here is a "
@@ -495,9 +570,10 @@ msgstr ""
 "Die Fuzzy-Modi (`fuzzy=True` sowie `many_sorted=True, fuzzy=True`) "
 "akzeptieren diese Konstrukte bewusst **nicht**. Fuzzy-Logik ist hier eine"
 " mehrwertige (Łukasiewicz-)Logik und keine konservative Erweiterung der "
-"klassischen FOL: Sie interpretiert die Konnektoren neu, und ihr "
-"Evaluator weist die Vergleichsatome (`μ(x,d) > μ(y,d)`, `|…| > …`) sowie "
-"die klassische Konjunktion zurück, auf die sich `Contrast` und die "
-"Zählkodierung stützen. Sie dort zuzulassen würde nur parsbare Knoten "
-"ohne Wahrheitssemantik erzeugen, sodass eine klare Zurückweisung die "
-"ehrliche Grenze darstellt."
+"klassischen FOL: Sie interpretiert die Konnektoren neu, und ihr Evaluator"
+" weist die Vergleichsatome (`μ(x,d) > μ(y,d)`, `|…| > …`) sowie die "
+"klassische Konjunktion zurück, auf die sich `Contrast` und die "
+"Zählkodierung stützen. Sie dort zuzulassen würde nur parsbare Knoten ohne"
+" Wahrheitssemantik erzeugen, sodass eine klare Zurückweisung die ehrliche"
+" Grenze darstellt."
+

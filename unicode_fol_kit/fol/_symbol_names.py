@@ -35,9 +35,16 @@ class SymbolNames:
     first (e.g. ``=`` → ``feq``), so a user symbol that sanitises to the same stem is
     pushed off it rather than the other way round. Predicates are keyed by
     ``(name, arity)`` so a predicate used at two arities yields two distinct symbols.
+
+    ``reserved`` pre-claims the target's OWN fixed identifiers (built-in functors,
+    relation names, defined operators), so a user symbol that sanitises onto one of
+    them is pushed to a suffixed variant instead of silently colliding with — and
+    re-typing — a built-in (e.g. a user predicate named ``r`` colliding with the THF
+    accessibility relation ``r``, which would emit two conflicting declarations).
     """
 
-    def __init__(self, formula: Node, sanitize: Callable[[str], str], alias=frozenset()):
+    def __init__(self, formula: Node, sanitize: Callable[[str], str], alias=frozenset(),
+                 reserved=frozenset()):
         preds, consts, funcs = set(), set(), set()
         for n in formula.walk():
             if isinstance(n, Atom):
@@ -48,7 +55,7 @@ class SymbolNames:
                 consts.add("n" + str(n.value))
             elif isinstance(n, Function):
                 funcs.add((n.name, len(n.args)))
-        used: set = set()
+        used: set = set(reserved)
         self.pred, self.const, self.func = {}, {}, {}
         for key in sorted(preds, key=lambda k: (k[0] not in alias, k)):
             self.pred[key] = dedupe(sanitize(key[0]), used)
