@@ -25,8 +25,11 @@ resolution prover, Fitch natural deduction with checker *and* searcher, the Gent
 sequent calculi **LK**/**LJ** — the latter backed by Dyckhoff's **G4ip**, a genuine
 terminating decision procedure for propositional intuitionistic logic — and analytic
 tableaux), a **finite model finder**, SMT (Z3) and external-prover (Prover9 / Vampire)
-backends, truth tables, and dedicated semantics for every logic. Formulas import/export
-to TPTP, Prover9, SMT-LIB, LaTeX, and JSON.
+backends, truth tables, and dedicated semantics for every logic. Every proof method has
+an **independent checker** — including `check_resolution_proof`, which certifies
+externally produced resolution derivations with its own from-scratch unification.
+Formulas import/export to TPTP (incl. header `Status`/`Rating` metadata via
+`parse_tptp_problem`), Prover9, SMT-LIB, LaTeX, and JSON.
 
 ## 📖 Documentation
 

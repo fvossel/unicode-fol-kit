@@ -33,7 +33,10 @@ from .unification import unify, apply_subst
 from .modal_translation import standard_translation, hybrid_is_valid
 from .pal import reduce_announcements
 from .latex_input import latex_to_unicode, parse_latex
-from .tptp_input import parse_tptp, parse_tptp_formula, load_tptp, TptpFormula
+from .tptp_input import (
+    parse_tptp, parse_tptp_formula, load_tptp, TptpFormula,
+    parse_tptp_problem, load_tptp_problem, TptpProblem, TptpHeader,
+)
 from .prover9_input import (
     parse_prover9, parse_prover9_problem, load_prover9, Prover9Formula,
 )
@@ -82,6 +85,7 @@ __all__ = [
     "reduce_announcements",
     "latex_to_unicode", "parse_latex",
     "parse_tptp", "parse_tptp_formula", "load_tptp", "TptpFormula",
+    "parse_tptp_problem", "load_tptp_problem", "TptpProblem", "TptpHeader",
     "parse_prover9", "parse_prover9_problem", "load_prover9", "Prover9Formula",
     "sanitize_names", "sanitize_all", "NameMapping",
     "to_english",

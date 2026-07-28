@@ -9,6 +9,10 @@ from .z3_arith import (
     to_z3_arith, is_satisfiable_arith, is_valid_arith, get_model_arith, ArithEnv,
 )
 from .resolution import to_clauses, refute, prove, is_valid_resolution
+from .resolution_check import (
+    ResolutionStep, ResolutionDerivation, ResolutionCheckResult,
+    check_resolution_proof, verify_resolution_proof, render_resolution_proof,
+)
 from .fitch import (
     Proof, Line, Subproof, Justification, ProofResult,
     premise, assume, line, flag, FALSUM,
@@ -44,6 +48,8 @@ __all__ = [
     "fuzzy_is_satisfiable", "fuzzy_is_valid", "fuzzy_get_model", "degree_expr",
     "to_z3_arith", "is_satisfiable_arith", "is_valid_arith", "get_model_arith", "ArithEnv",
     "to_clauses", "refute", "prove", "is_valid_resolution",
+    "ResolutionStep", "ResolutionDerivation", "ResolutionCheckResult",
+    "check_resolution_proof", "verify_resolution_proof", "render_resolution_proof",
     "Proof", "Line", "Subproof", "Justification", "ProofResult",
     "premise", "assume", "line", "flag", "FALSUM",
     "check_proof", "verify_proof",

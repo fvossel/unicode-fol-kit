@@ -5,6 +5,35 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [0.18.0] - 2026-07-28
+
+Added — two checker-side capabilities for certifying external provers (built for,
+but not limited to, the FitchAsATP calculus-comparison engine):
+
+- **Independent resolution-proof checker** (`atp.resolution_check`):
+  `ResolutionStep` / `ResolutionDerivation` / `ResolutionCheckResult`,
+  `verify_resolution_proof` (step-level errors, `refuted` flag),
+  `check_resolution_proof`, `render_resolution_proof` (□ for the empty clause).
+  A derivation lists clauses justified as `input` / `resolve` / `factor`; the
+  checker re-derives each step's licence itself. Deliberately shares **no
+  inference code** with any searcher: unification (Robinson, occurs check) is
+  reimplemented in-module and differential-tested against `fol.unification`,
+  and clause comparison is an **exact** alpha-equivalence backtracking search
+  (variable bijection + literal bijection), not a canonical-form shortcut —
+  `{P(x,y), P(y,x)}` matches `{P(u,v), P(v,u)}`, `{P(x,x)}` never matches
+  `{P(x,y)}`. Hand-checked battery includes the classic soundness traps:
+  simultaneous double-cut to □ is rejected, Robinson's factoring-required
+  refutation verifies, over-general resolvents and instance-as-input restates
+  are rejected.
+- **TPTP header metadata** (`parse_tptp_problem` / `load_tptp_problem`,
+  `TptpProblem`, `TptpHeader`): the standardized `%` header block (`File`,
+  `Domain`, `Problem`, `Status`, `Rating`) is recovered by a raw-text line
+  scan that runs independently of the Lark grammar — `Status` (ground-truth
+  verdict) as its first token, `Rating` as the first float (`?` → `None`),
+  every raw `%` line preserved verbatim in `comments`. The existing
+  `parse_tptp` / `load_tptp` / `TptpFormula` API is byte-for-byte unchanged
+  and regression-pinned.
+
 ## [0.17.0] - 2026-07-21
 
 Added — **every logic in the kit now has an automated proof-theory route, and

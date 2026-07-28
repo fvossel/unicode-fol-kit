@@ -33,6 +33,7 @@ from .fol import (
     standard_translation, reduce_announcements,
     latex_to_unicode, parse_latex,
     parse_tptp, parse_tptp_formula, load_tptp, TptpFormula,
+    parse_tptp_problem, load_tptp_problem, TptpProblem, TptpHeader,
     parse_prover9, parse_prover9_problem, load_prover9, Prover9Formula,
     sanitize_names, sanitize_all, NameMapping,
     to_english,
@@ -48,6 +49,8 @@ from .atp import (
     fuzzy_is_satisfiable, fuzzy_is_valid, fuzzy_get_model,
     to_z3_arith, is_satisfiable_arith, is_valid_arith, get_model_arith,
     to_clauses, refute, prove, is_valid_resolution,
+    ResolutionStep, ResolutionDerivation, ResolutionCheckResult,
+    check_resolution_proof, verify_resolution_proof, render_resolution_proof,
     Proof, Line, Subproof, Justification, ProofResult,
     premise, assume, line, flag, FALSUM,
     check_proof, verify_proof,
@@ -108,7 +111,7 @@ from .hol import (
 )
 from . import dl   # the ALC description-logic subpackage (dl.concept_satisfiable, …)
 
-__version__ = "0.17.0"
+__version__ = "0.18.0"
 
 __all__ = [
     "MSFLParser",
@@ -147,6 +150,7 @@ __all__ = [
     "standard_translation", "reduce_announcements",
     "latex_to_unicode", "parse_latex",
     "parse_tptp", "parse_tptp_formula", "load_tptp", "TptpFormula",
+    "parse_tptp_problem", "load_tptp_problem", "TptpProblem", "TptpHeader",
     "parse_prover9", "parse_prover9_problem", "load_prover9", "Prover9Formula",
     "sanitize_names", "sanitize_all", "NameMapping",
     "qml_translate", "qml_is_valid", "qml_equivalent",
@@ -195,6 +199,8 @@ __all__ = [
     "fuzzy_is_satisfiable", "fuzzy_is_valid", "fuzzy_get_model",
     "to_z3_arith", "is_satisfiable_arith", "is_valid_arith", "get_model_arith",
     "to_clauses", "refute", "prove", "is_valid_resolution",
+    "ResolutionStep", "ResolutionDerivation", "ResolutionCheckResult",
+    "check_resolution_proof", "verify_resolution_proof", "render_resolution_proof",
     "Proof", "Line", "Subproof", "Justification", "ProofResult",
     "premise", "assume", "line", "flag", "FALSUM",
     "check_proof", "verify_proof",

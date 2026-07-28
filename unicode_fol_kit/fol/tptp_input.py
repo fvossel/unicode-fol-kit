@@ -37,6 +37,7 @@ statement are out of scope.
 
 import re
 from dataclasses import dataclass
+from typing import Optional, Tuple
 
 from lark import Lark, Transformer
 from lark.exceptions import VisitError
@@ -341,3 +342,174 @@ def load_tptp(path: str) -> list:
     """
     with open(path, "r", encoding="utf-8") as handle:
         return parse_tptp(handle.read())
+
+
+# ---------------------------------------------------------------------------
+# TPTP header metadata
+# ---------------------------------------------------------------------------
+#
+# TPTP problem files carry a standardised block of '%' comment lines near the top
+# recording the file's provenance and, for problems drawn from the TPTP library,
+# its ground-truth verdict and empirical difficulty rating, e.g.:
+#
+#     % File     : PUZ001-1 : TPTP v8.1.0. Released v1.0.0.
+#     % Domain   : Puzzles
+#     % Problem  : Dreadbury Mansion
+#     % Status   : Theorem
+#     % Rating   : 0.43 v8.1.0, 0.36 v7.4.0
+#
+# _GRAMMAR above ``%``-ignores every comment, so none of this ever reaches the Lark
+# parser or the TptpFormula records built from it. The functions below recover it by
+# a separate, deterministic line scan of the *raw* text, run independently of (and
+# before) the grammar-based formula parse, then hand formula parsing off unchanged to
+# :func:`parse_tptp` — this extends the module's contract rather than altering it (see
+# the regression tests pinning parse_tptp / parse_tptp_formula / load_tptp / TptpFormula
+# unchanged, in tests/test_tptp_header.py).
+
+# A header field line: optional leading whitespace, '%', optional whitespace, one of
+# the five recognised TPTP field names (matched case-sensitively, per the TPTP
+# standard — a lowercase "% status : ..." line is not a field line), optional
+# whitespace, ':', optional whitespace, then the rest of the line as the raw value.
+_HEADER_FIELD_RE = re.compile(
+    r"^\s*%\s*(File|Domain|Problem|Status|Rating)\s*:\s*(.*)$"
+)
+# The first float-looking token anywhere in a Rating value, e.g. "0.43" out of
+# "0.43 v8.1.0, 0.36 v7.4.0" (a version tag like "v8.1.0" is not itself a match
+# candidate since it lacks a leading digit, but even if it were, "0.43" still wins
+# because re.search returns the leftmost match and it appears first in the string).
+_RATING_RE = re.compile(r"[-+]?[0-9]+\.[0-9]+")
+
+
+@dataclass(frozen=True)
+class TptpHeader:
+    """Metadata recovered from a TPTP problem file's ``%`` comment header.
+
+    ``status`` / ``rating`` / ``domain`` / ``problem`` / ``file`` are ``None`` when
+    the corresponding ``% <Field> : ...`` line is absent (or, for ``status``/
+    ``rating``, present but unparseable — see :func:`_parse_tptp_header`).
+    ``comments`` always holds *every* raw ``%`` line verbatim (stripped only of its
+    trailing newline), in source order, so nothing is lost even for header lines this
+    reader does not specifically interpret (``% Version``, ``% Refs``, banner lines
+    of dashes, ...).
+    """
+
+    status: Optional[str]
+    rating: Optional[float]
+    domain: Optional[str]
+    problem: Optional[str]
+    file: Optional[str]
+    comments: Tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class TptpProblem:
+    """A whole TPTP problem: its parsed ``formulas`` plus the recovered ``header``."""
+
+    formulas: Tuple[TptpFormula, ...]
+    header: TptpHeader
+
+
+def _parse_tptp_header(text: str) -> TptpHeader:
+    """Scan raw TPTP text for its ``%`` header block, independent of the grammar.
+
+    Every line whose first non-whitespace character is ``%`` is collected verbatim
+    (trailing newline stripped) into ``comments``, in source order. Among those, a
+    line matching :data:`_HEADER_FIELD_RE` (``% <Field> : <value>``, field names
+    matched case-sensitively, whitespace around ``%``/the field name/``:``
+    unconstrained) populates the matching :class:`TptpHeader` attribute — the
+    *first* occurrence of each field wins; later repeats of the same field are still
+    recorded in ``comments`` but do not overwrite it.
+
+    Field values are interpreted as follows:
+
+    - ``Status``: the first whitespace-delimited token of the value (e.g.
+      ``"Theorem"`` out of ``"Theorem"``, or ``"CounterSatisfiable"``), kept as a
+      plain string — not validated against a fixed vocabulary. ``None`` if the value
+      has no token (e.g. it is empty).
+    - ``Rating``: the first float literal found anywhere in the value (e.g. ``0.43``
+      out of ``"0.43 v8.1.0, 0.36 v7.4.0"``); ``None`` if none is found (e.g. the
+      value is ``"?"``).
+    - ``File`` / ``Domain`` / ``Problem``: the value, whitespace-trimmed, verbatim
+      (further ``:`` characters inside the value, e.g. a ``File`` value's own
+      ``name : version`` sub-structure, are kept as literal text).
+
+    Args:
+        text: the raw contents of a TPTP problem file (or any TPTP text).
+
+    Returns:
+        A :class:`TptpHeader`; every field is ``None`` and ``comments`` is ``()`` if
+        the text has no ``%`` lines at all.
+    """
+    comments = []
+    fields = {}
+    for line in text.splitlines():
+        if not line.lstrip().startswith("%"):
+            continue
+        comments.append(line)
+        match = _HEADER_FIELD_RE.match(line)
+        if not match:
+            continue
+        field, value = match.group(1), match.group(2)
+        if field not in fields:
+            fields[field] = value
+
+    status_raw = fields.get("Status")
+    status_tokens = status_raw.split() if status_raw is not None else []
+    status = status_tokens[0] if status_tokens else None
+
+    rating_raw = fields.get("Rating")
+    rating_match = _RATING_RE.search(rating_raw) if rating_raw is not None else None
+    rating = float(rating_match.group(0)) if rating_match else None
+
+    domain = fields.get("Domain")
+    problem = fields.get("Problem")
+    file_ = fields.get("File")
+
+    return TptpHeader(
+        status=status,
+        rating=rating,
+        domain=domain.strip() if domain is not None else None,
+        problem=problem.strip() if problem is not None else None,
+        file=file_.strip() if file_ is not None else None,
+        comments=tuple(comments),
+    )
+
+
+def parse_tptp_problem(text: str) -> TptpProblem:
+    """Parse a whole TPTP problem into its formulas *and* its header metadata.
+
+    Combines :func:`parse_tptp` (formula parsing, delegated to unchanged) with an
+    independent raw-text scan for the standard ``%`` header block (see
+    :func:`_parse_tptp_header`) — the two do not interact, so ``formulas`` here is
+    exactly what :func:`parse_tptp` returns for the same ``text`` (same order, same
+    :class:`TptpFormula` records), just wrapped in a tuple alongside the header.
+
+    Args:
+        text: the contents of a TPTP problem file.
+
+    Returns:
+        A :class:`TptpProblem` with ``formulas`` (in source order) and ``header``.
+
+    Raises:
+        ParsingError: if the text is not a well-formed TPTP problem (same conditions
+            as :func:`parse_tptp`; the header scan alone never raises).
+    """
+    return TptpProblem(
+        formulas=tuple(parse_tptp(text)),
+        header=_parse_tptp_header(text),
+    )
+
+
+def load_tptp_problem(path: str) -> TptpProblem:
+    """Read a TPTP problem file and :func:`parse_tptp_problem` its contents.
+
+    Mirrors :func:`load_tptp`'s file handling (whole-file read, UTF-8).
+
+    Args:
+        path: path to a ``.p`` / ``.tptp`` file.
+
+    Returns:
+        A :class:`TptpProblem`.
+    """
+    with open(path, "r", encoding="utf-8") as handle:
+        return parse_tptp_problem(handle.read())
