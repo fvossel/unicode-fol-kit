@@ -429,6 +429,74 @@ Two boundaries are enforced rather than guessed:
 
 With a local Isabelle/HOL, `isabelle_decide_counterfactual` decides a parsed counterfactual against the same sphere semantics — see [Higher-order logic](higher-order.md).
 
+### Deciding validity: `cf_valid` / `cf_countermodel`
+
+`cf_satisfies` evaluates a formula in **one** hand-built model. `cf_valid(φ, max_worlds)` quantifies over a *class*: it enumerates every valuation and every nested sphere system on up to `max_worlds` worlds and returns `False` the moment one of them refutes `φ`. `cf_countermodel` returns that refuting `(model, world)` pair instead of the verdict, so a `False` is never a bare claim — you can re-check it with `cf_satisfies`.
+
+The honest contract is the same as `rel_valid` / `free_is_valid`: **`False` is definitive** (an explicit countermodel exists), while `True` means "no countermodel with at most `max_worlds` worlds".
+
+**The default bound is level-dependent**, because two worlds is *structurally* too few at the centered levels. `DEFAULT_MAX_WORLDS` is `{"none": 2, "weak": 3, "strong": 3}`:
+
+- at **VC** the innermost sphere is pinned to `{w}`, so refuting a disjunction of two counterfactuals needs `w` to falsify the antecedent plus two antecedent-worlds that disagree — three worlds. Stalnaker's conditional excluded middle `(A □→ B) ∨ (A □→ ¬B)`, which VC leaves open, is reported *valid* at `|W| ≤ 2`;
+- at **VW** the plain schemas are settled at two worlds, but a *nested* counterfactual is not: importation `(A □→ (B □→ C)) → ((A ∧ B) □→ C)` is reported *valid* at `|W| ≤ 2` and refuted at `|W| ≤ 3`;
+- `"none"` stays at 2 because its enumeration is 26 sphere systems per world against VW's 11 and VC's 6 — the same three-atom schema is seconds at VW and minutes at V.
+
+One consequence to keep in mind: because the levels are searched to different depths by default, the class inclusion `strong ⊆ weak ⊆ none` need not show up in the *default* verdicts. Pass the same explicit `max_worlds` to every call when comparing levels.
+
+### Centering: which sphere systems count
+
+"Nested" alone does not pin down a logic — it is Lewis's weakest system **V**. `CENTERING_LEVELS` names the three classes `cf_valid` / `cf_countermodel` can quantify over, chosen with the keyword-only `centering=` argument:
+
+| `centering` | Lewis | Condition on each world `w` | Separating schema |
+| --- | --- | --- | --- |
+| `"none"` | **V** | nesting only — `w` need not lie in any of its own spheres, and may have no sphere at all | — |
+| `"weak"` (default) | **VW** | some sphere of `w` contains `w`, and every *non-empty* sphere of `w` contains `w` | `(P □→ Q) → (P → Q)` |
+| `"strong"` | **VC** | `{w}` is itself a sphere of `w` (with nesting: the innermost non-empty one) | `(P ∧ Q) → (P □→ Q)` |
+
+The default is `"weak"` because it is what makes `□→` behave like a *conditional*. Under `"none"`, a world whose sphere system is **empty** makes `A □→ B` vacuously true even where `A` actually holds — so **modus ponens fails**:
+
+```python
+from unicode_fol_kit import MSFLParser, cf_valid, cf_countermodel, CENTERING_LEVELS
+
+mp = MSFLParser(modal=True)
+CENTERING_LEVELS                                       # → ('none', 'weak', 'strong')
+
+modus_ponens = mp.parse("(P ∧ (P □→ Q)) → Q")
+cf_valid(modus_ponens)                                 # → True   (default: weak)
+cf_valid(modus_ponens, centering="none")               # → False  (Lewis V)
+
+model, world = cf_countermodel(modus_ponens, centering="none")
+model.spheres                                          # → {0: []}   the empty sphere system
+```
+
+The three classes are strictly nested — `strong ⊆ weak ⊆ none` as sets of models — so a validity propagates `none ⇒ weak ⇒ strong` and a refutation propagates the other way. What that buys (measured at the default bounds; no row below changes between two and three worlds, which is exactly why the two bound-sensitive schemas above need naming separately):
+
+| Schema | `"none"` (V) | `"weak"` (VW) | `"strong"` (VC) |
+| --- | --- | --- | --- |
+| `P □→ P` (identity) | valid | valid | valid |
+| `((P □→ Q) ∧ (P □→ R)) → (P □→ (Q ∧ R))` (agglomeration) | valid | valid | valid |
+| `(P ∧ (P □→ Q)) → Q` (modus ponens) | **invalid** | valid | valid |
+| `(P □→ Q) → (P → Q)` (weak centering) | **invalid** | valid | valid |
+| `(P ∧ Q) → (P □→ Q)` (strong centering) | invalid | **invalid** | valid |
+| `(P □→ Q) → ((P ∧ R) □→ Q)` (antecedent strengthening) | invalid | invalid | invalid |
+| `(P □→ Q) → (¬Q □→ ¬P)` (contraposition) | invalid | invalid | invalid |
+| `((P □→ Q) ∧ (Q □→ R)) → (P □→ R)` (transitivity) | invalid | invalid | invalid |
+
+The bottom three stay invalid at every level — that non-monotonicity is the whole point of the connective, and no amount of centering restores it.
+
+```python
+strong_centering = mp.parse("(P ∧ Q) → (P □→ Q)")
+cf_valid(strong_centering)                             # → False  (VW: Q may fail at the closest world)
+cf_valid(strong_centering, centering="strong")         # → True   (VC)
+
+strengthening = mp.parse("(P □→ Q) → ((P ∧ R) □→ Q)")
+cf_valid(strengthening, centering="strong")            # → False  (invalid even in VC)
+```
+
+Centering is a property of a *class* of models, never of one model, so it is an argument of `cf_valid` / `cf_countermodel` only — `cf_satisfies`, `would` and `might` evaluate in the model you handed them and take no `centering=`. Note also that a `CounterfactualModel` you build yourself is unconstrained (it must be able to represent all three classes); the `[{w}]` default for a world omitted from `spheres` is a *strongly centered* choice.
+
+The Isabelle route takes the same argument with the same default, so `isabelle_decide_counterfactual(φ)` and `cf_valid(φ)` decide the same logic (VW) unless told otherwise — and at the centered levels the same *bound* too, three worlds here against that route's `card="1-3"`. See [Higher-order logic](higher-order.md).
+
 ### Complex sphere systems and multi-layer counterfactuals
 
 More intricate models can represent graded similarity. A world\s sphere system is a nested list, so you can express "closest", "next-closest", and so on:

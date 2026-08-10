@@ -45,7 +45,7 @@ from .verbalize import to_english
 from .derivation import CCGDerivation, reduction_derivation
 from .qml import (
     qml_translate, qml_axioms, qml_is_valid, qml_equivalent,
-    to_thf_modal, to_isabelle_modal, BARCAN, CONVERSE_BARCAN,
+    to_thf_modal, to_isabelle_modal, BARCAN, CONVERSE_BARCAN, QML_BRIDGES,
 )
 from .naming import NamingError, ParsingError
 
@@ -92,4 +92,5 @@ __all__ = [
     "CCGDerivation", "reduction_derivation",
     "qml_translate", "qml_axioms", "qml_is_valid", "qml_equivalent",
     "to_thf_modal", "to_isabelle_modal", "BARCAN", "CONVERSE_BARCAN",
+    "QML_BRIDGES",
 ]

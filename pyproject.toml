@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "unicode-fol-kit"
-version = "0.18.0"
+version = "0.19.0"
 description = "Parser and toolkit for first-order logic formulas using Unicode operators"
 readme = "README.md"
 license = { text = "MIT" }

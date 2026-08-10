@@ -72,6 +72,22 @@ closure (it is not first-order definable). This module therefore embeds:
   it ``Gφ→Xφ`` (and ``Xφ→Fφ`` wherever the evaluator agrees) is now a theorem of the
   embedding.
 
+Cross-family bridges (``bridges=``). ``frame=`` and ``systems=`` each constrain ONE
+relation; a *bridge* relates two relations of different families and is therefore a
+separate, opt-in option — ``knowledge_implies_belief`` (``K_a φ → B_a φ``, condition
+``rb ⊆ rk``, axiom ``rb_in_rk``), ``sincerity`` (``Say_a φ → B_a φ``, ``rb ⊆ rs``,
+``rb_in_rs``) and ``ought_implies_can`` (``Oφ → ◇φ``, ``∀W ∃V. d W V ∧ r W V``,
+``d_meets_r``). The names, the required families and the axiom names are
+single-sourced from :mod:`unicode_fol_kit.hol.isabelle_modal`, so the two HOL routes
+cannot drift apart. Each condition is the *exact* correspondent of its schema,
+measured against :func:`satisfies_modal` over every frame on ≤ 2 worlds — in
+particular ``ought_implies_can`` is deliberately NOT the folklore inclusion
+``d ⊆ r``, which on its own does not validate ``Oφ → ◇φ`` at all and which, with
+seriality, additionally validates the strictly stronger ``□φ → Oφ``. Requesting a
+bridge whose partner family does not occur in the formula raises ``ValueError``
+here too — see :func:`_thf_bridge_axioms` for why this route refuses even though
+its relations are all declared unconditionally.
+
 UNDECIDABILITY / honesty. First-order modal logic is **undecidable** — though the
 standard systems emitted here (K/T/S4/S5, deontic KD) are still *semi-decidable*:
 validity is recursively enumerable. (Higher-order modal logic and full second-order
@@ -106,7 +122,16 @@ from ..fol.qml import (
 )
 from ..fol._symbol_names import dedupe
 
-__all__ = ["to_thf_modal_full", "thf_full_definitions", "thf_full_frame_axioms"]
+# The cross-family bridge REGISTRY is single-sourced from the Isabelle route: the
+# names, the families each bridge needs, and the fact names are shared, so the two
+# HOL routes cannot answer differently on the same input (the divergence this
+# option exists to remove). Only the axiom TEXT is route-local (_THF_BRIDGE_LINES).
+from .isabelle_modal import (
+    BRIDGES, _BRIDGES as _BRIDGE_SPEC, _validate_bridges,
+)
+
+__all__ = ["to_thf_modal_full", "thf_full_definitions", "thf_full_frame_axioms",
+           "BRIDGES"]
 
 
 # Accessibility-relation THF functors, one per modal family. Alethic ``r`` keeps the
@@ -233,6 +258,81 @@ def _agent_frame_axioms(rel: str, conds: Sequence[str], tag: str) -> List[str]:
             f"thf({tag}_eucl, axiom, ( ! [A: $i, W: mu, V: mu, U: mu] : "
             f"( ( ( {rel} @ A @ W @ V ) & ( {rel} @ A @ W @ U ) ) "
             f"=> ( {rel} @ A @ V @ U ) ) )).")
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Cross-family bridge axioms (opt-in, ``bridges=``).
+# ---------------------------------------------------------------------------
+#
+# Only the axiom TEXT lives here; the bridge names and the families each one needs
+# come from hol.isabelle_modal's registry, so `grep rb_in_rk` finds both routes and
+# neither can gain a bridge the other lacks. The TPTP formula names are the SAME
+# identifiers as the Isabelle fact names (rb_in_rk / rb_in_rs / d_meets_r) and
+# cannot collide with the signature declarations, which all carry a `_decl` suffix.
+#
+# Types check out unconditionally: rk / rb / rs are `$i > mu > mu > $o` and d / r
+# are `mu > mu > $o`, and this route declares every relation whether or not its
+# operators occur (see the comment at the declaration block), so a bridge axiom is
+# always WELL-FORMED here. That is exactly why the refusal below is a policy
+# decision rather than a syntactic necessity.
+_THF_BRIDGE_LINES = {
+    "knowledge_implies_belief": [
+        "thf(rb_in_rk, axiom, ( ! [A: $i, W: mu, V: mu] : "
+        "( ( rb @ A @ W @ V ) => ( rk @ A @ W @ V ) ) ))."],
+    "sincerity": [
+        "thf(rb_in_rs, axiom, ( ! [A: $i, W: mu, V: mu] : "
+        "( ( rb @ A @ W @ V ) => ( rs @ A @ W @ V ) ) ))."],
+    "ought_implies_can": [
+        "thf(d_meets_r, axiom, ( ! [W: mu] : ? [V: mu] : "
+        "( ( d @ W @ V ) & ( r @ W @ V ) ) ))."],
+}
+
+
+def _thf_bridge_axioms(used: Dict[str, bool], bridges) -> List[str]:
+    """THF axioms for the requested cross-family bridges, in registry order.
+
+    Each is the exact frame correspondent of the schema its option is named after
+    (``rb ⊆ rk``, ``rb ⊆ rs``, ``∀W ∃V. d W V ∧ r W V``), measured — not the
+    folklore ``d ⊆ r``, which fails to validate ``Oφ → ◇φ`` alone and, with
+    seriality, over-validates ``□φ → Oφ``. Emission order follows the shared
+    registry, not the caller's set-iteration order, so the output is deterministic.
+
+    Honest contract — why this route REFUSES a bridge whose partner family does not
+    occur in the formula, even though it could emit it. Unlike the Isabelle route,
+    every relation here is declared unconditionally (the ``_THF_DEFS_FULL`` macro
+    block references them all), so ``d_meets_r`` for a ``□``-only formula would be
+    perfectly well-formed THF. Emitting it anyway would nonetheless be wrong twice
+    over: it would make this route DISAGREE with
+    :func:`~unicode_fol_kit.hol.isabelle_modal.to_isabelle_modal` on the same input
+    — the exact divergence class the ``bridges=`` option exists to remove — and it
+    is not conservative, since ``d_meets_r`` entails seriality of the alethic ``r``
+    and so silently turns ``□P → ◇P`` from a non-theorem into a theorem under
+    ``frame='K'``. Silently skipping it would be worse still (a weaker logic than
+    requested, with no signal). So: ``ValueError``, same wording as the Isabelle
+    route modulo the function name.
+    """
+    requested = _validate_bridges(bridges, "to_thf_modal_full")
+    if not requested:
+        return []
+    out: List[str] = []
+    for name, spec in _BRIDGE_SPEC.items():
+        if name not in requested:
+            continue
+        missing = [op for fam, op in spec["needs"] if not used[fam]]
+        if missing:
+            raise ValueError(
+                f"to_thf_modal_full: the bridge {name!r} relates {spec['rels']}, "
+                f"but the formula contains no {' / '.join(missing)} operator. This "
+                "route declares every relation unconditionally, so the axiom would "
+                "be well-formed here — but emitting it would make this route "
+                "disagree with hol.isabelle_modal on the same input (the exact "
+                "divergence this option exists to remove), and it is not "
+                "conservative either (d_meets_r entails seriality of the alethic "
+                "r, which would silently make []P -> <>P valid under frame='K'); "
+                "while skipping it would emit a weaker logic than requested. Drop "
+                "the bridge, or state the formula in both families.")
+        out += _THF_BRIDGE_LINES[name]
     return out
 
 
@@ -418,7 +518,8 @@ _AGENT_SYSTEM_FAMILIES = (
 
 def thf_full_frame_axioms(frame: str = "K",
                           systems: Optional[Dict[str, str]] = None,
-                          temporal_closure: bool = True) -> List[str]:
+                          temporal_closure: bool = True,
+                          bridges: Optional[Sequence[str]] = None) -> List[str]:
     """Return the frame axioms the full export would emit (for inspection / testing).
 
     ``frame`` constrains the alethic relation ``r`` (K/T/S4/S5/KD/KD45); ``systems`` is
@@ -427,7 +528,16 @@ def thf_full_frame_axioms(frame: str = "K",
     The deontic relation ``d`` is always serial; the temporal relation ``t`` is
     reflexive-transitive unless ``temporal_closure=False`` (which keeps only the
     ``tnext ⊆ t`` inclusion, leaving ``t`` an arbitrary relation — mirroring
-    ``isabelle_modal_theory``'s parameter of the same name).
+    ``isabelle_modal_theory``'s parameter of the same name). ``bridges`` appends the
+    cross-family bridge axioms (see :func:`_thf_bridge_axioms`).
+
+    ASYMMETRY, stated so this helper does not look like it contradicts the emitter:
+    it takes no formula, so it cannot know which families occur and emits every
+    requested axiom UNCONDITIONALLY — exactly as it already emits the ``systems=``
+    axioms and ``d_serial`` unconditionally while :func:`to_thf_modal_full` gates
+    them on the families actually used. Unknown bridge names are still rejected
+    here, so a typo is caught in the inspection path too; the "family absent"
+    refusal can only be made by the real emitter.
     """
     if frame not in _FRAMES:
         raise ValueError(f"to_thf_modal_full: unknown frame {frame!r}.")
@@ -443,12 +553,17 @@ def thf_full_frame_axioms(frame: str = "K",
             axioms += _agent_frame_axioms(rel, _FRAMES[sys], tag)
     axioms.append(_THF_DEONTIC_AXIOM)
     axioms += _THF_TEMPORAL_AXIOMS if temporal_closure else _THF_TEMPORAL_AXIOMS[-1:]
+    requested = _validate_bridges(bridges, "to_thf_modal_full")
+    for name in _BRIDGE_SPEC:      # registry order, not the caller's set order
+        if name in requested:
+            axioms += _THF_BRIDGE_LINES[name]
     return axioms
 
 
 def to_thf_modal_full(formula: Node, mode: str = "constant", frame: str = "K",
                       systems: Optional[Dict[str, str]] = None,
-                      temporal_closure: bool = True) -> str:
+                      temporal_closure: bool = True,
+                      bridges: Optional[Sequence[str]] = None) -> str:
     """Emit a complete Benzmüller-style **THF** shallow embedding of a full-family modal formula.
 
     Unlike :func:`unicode_fol_kit.fol.qml.to_thf_modal` (alethic-only), this covers the
@@ -474,6 +589,17 @@ def to_thf_modal_full(formula: Node, mode: str = "constant", frame: str = "K",
             reflexive-transitive (default). ``False`` keeps only the ``tnext ⊆ t``
             inclusion, so ``t`` denotes an arbitrary relation — mirroring
             ``isabelle_modal_theory``'s parameter of the same name.
+        bridges: optional collection of CROSS-family bridge names (:data:`BRIDGES`,
+            shared verbatim with ``hol.isabelle_modal``), **off by default**:
+            ``"knowledge_implies_belief"`` (``K_a φ → B_a φ``, axiom ``rb_in_rk``,
+            condition ``rb ⊆ rk``), ``"sincerity"`` (``Say_a φ → B_a φ``,
+            ``rb_in_rs``, ``rb ⊆ rs``) and ``"ought_implies_can"`` (``Oφ → ◇φ``,
+            ``d_meets_r``, ``∀W ∃V. d W V ∧ r W V`` — NOT the folklore ``d ⊆ r``).
+            Each condition is the exact correspondent of its schema, so a bridge
+            adds that principle and nothing stronger. Requesting a bridge whose
+            partner family does not occur in the formula raises ``ValueError``,
+            matching ``to_isabelle_modal`` even though the axiom would be
+            well-formed here — see :func:`_thf_bridge_axioms`.
 
     Agent-indexedness (faithful to ``satisfies_modal``): the agent of ``Knows`` /
     ``Believes`` / ``Says`` / ``Wants`` is a first-class TERM and is carried into
@@ -497,6 +623,8 @@ def to_thf_modal_full(formula: Node, mode: str = "constant", frame: str = "K",
         raise ValueError(
             f"to_thf_modal_full: unknown mode {mode!r} (use one of "
             f"{sorted(_ACTUALIST_MODES | _CONSTANT_MODES)}).")
+    # Reject a bare string / an unknown bridge name before any emission work.
+    _validate_bridges(bridges, "to_thf_modal_full")
 
     used = _families_used(formula)
     systems = systems or {}
@@ -580,6 +708,9 @@ def to_thf_modal_full(formula: Node, mode: str = "constant", frame: str = "K",
     # unconditionally, so the axiom is always well-formed.)
     if used["temporal"] or used["tnext"]:
         lines += _THF_TEMPORAL_AXIOMS if temporal_closure else _THF_TEMPORAL_AXIOMS[-1:]
+
+    # --- opt-in cross-family bridge axioms (raises when a partner family is absent) ---
+    lines += _thf_bridge_axioms(used, bridges)
 
     # --- object-quantifier domain regime ---
     if mode in _THF_DOMAIN:

@@ -374,6 +374,43 @@ to_isabelle_modal(pm("K_alice P"), systems={"epistemic": "GL"})
 # the alethic relation for those systems.
 ```
 
+### Cross-family bridges with `bridges=`
+
+`frame=` and `systems=` each constrain **one** relation. A *bridge* relates **two** relations of different families, which is what a principle like "whatever you know, you believe" needs — it is not a property of `rk` or of `rb`, but of how they sit relative to each other. Bridges are therefore a separate, **opt-in** argument; nothing below is on by default.
+
+| `bridges=` name | Schema | Frame condition | Isabelle fact |
+| --- | --- | --- | --- |
+| `"knowledge_implies_belief"` | `K_a φ → B_a φ` | `rb ⊆ rk` | `rb_in_rk` |
+| `"sincerity"` | `Say_a φ → B_a φ` | `rb ⊆ rs` | `rb_in_rs` |
+| `"ought_implies_can"` | `Ⓞ φ → ◇φ` | `∀w ∃v. d w v ∧ r w v` | `d_meets_r` |
+
+`unicode_fol_kit.hol.BRIDGES` is the list of accepted names; `to_thf_modal_full`, `to_isabelle_modal` / `isabelle_modal_theory`, `modal_axiom_names` and `isabelle_decide_modal` all take the same `bridges=` argument and emit facts under the same names, so one grep finds both routes.
+
+```python
+from unicode_fol_kit.hol import BRIDGES, to_isabelle_modal, to_thf_modal_full
+
+BRIDGES   # → ('knowledge_implies_belief', 'sincerity', 'ought_implies_can')
+
+kb = pm("K_alice P → B_alice P")
+print("rb_in_rk" in to_isabelle_modal(kb))                                    # → False (off by default)
+print("rb_in_rk" in to_isabelle_modal(kb, bridges=["knowledge_implies_belief"]))  # → True
+print("rb_in_rk" in to_thf_modal_full(kb, bridges=["knowledge_implies_belief"]))  # → True
+```
+
+Each condition is the **exact** correspondent of its schema, so a bridge adds precisely that principle and nothing stronger. `ought_implies_can` is deliberately *not* the folklore `d ⊆ r`: measured over all frames on ≤ 2 worlds, `d ⊆ r` alone fails to validate `Ⓞφ → ◇φ`, and together with deontic seriality it over-validates `□φ → Ⓞφ` ("whatever is necessary is obligatory"). `d_meets_r` validates the schema and not that artefact.
+
+> **One name, one logic.** `fol.qml` emits the same three conditions under the same three names — including the meet condition for `ought_implies_can`, which it originally realised as the inclusion `D ⊆ R`. So `qml_is_valid(□φ → Ⓞφ, bridges=["ought_implies_can"])` and the HOL routes agree that the artefact is invalid, and `pytest tests/test_hol_bridges.py` pins that agreement in both registries.
+
+A bridge names two relations, and this emitter declares a relation only when its operators occur. Requesting a bridge whose partner family is **absent** from the formula therefore raises `ValueError` instead of silently emitting a weaker logic (skipping it) or a stronger one (`d_meets_r` entails seriality of the alethic `r`, which would quietly make `□P → ◇P` valid under `frame="K"`). `fol.qml` applies the same rule for the same reason:
+
+```python
+to_isabelle_modal(pm("□P → ◇P"), bridges=["ought_implies_can"])
+# raises ValueError: ... the formula contains no Obligatory/Permitted operator, so
+# that relation is never declared ...
+```
+
+The native tableau (`modal_decide` and friends) refuses `bridges=` outright with a `NotImplementedError` naming the routes above: every one of its structural rules acts inside a single relation, so it has no rule to apply and no sound way to approximate one.
+
 ## A sample emitted Isabelle theory
 
 `to_isabelle_modal` returns a `str` — a complete theory that starts with `theory ModalEmbedding` and ends with `end`, with every lifted operator as an `abbreviation`, the frame axioms via `axiomatization`, and the formula as a real `lemma`:
@@ -541,6 +578,16 @@ print(v.status, v.frame, v.method)    # → VALID T blast
 
 - **Locating Isabelle.** `find_isabelle()` looks at an explicit path, then `UFK_ISABELLE_HOME` / `ISABELLE_HOME`, then `isabelle` on `PATH`, then a light scan of standard install locations (no path is hard-coded). **Linux/macOS is the primary path** — `isabelle` is invoked directly; **Windows** is also supported, with the build routed through Isabelle's bundled Cygwin automatically (path translation + launcher exec-bit fixup), exposed as the `cygwin_bash` field of `IsabelleInstall`.
 - **Counter-models.** An `INVALID` verdict in the propositional alethic fragment carries a concrete Kripke counter-model in `ModalVerdict.countermodel`, reconstructed from `satisfies_modal` (`isabelle build` does not echo nitpick's model). For `Always`/`Eventually` together with `Next`, the refute theory defines the henceforth relation as the reflexive-transitive closure of the one-step relation, so the closure fragment is genuinely refuted rather than left `UNKNOWN`.
+- **Which logic the verdict is about.** `frame=`, `mode=`, `systems=`, `temporal_closure=` and `bridges=` all select a class of models, and every one of them is forwarded to *both* emitted theories and to the `using` axiom list. That is not tidiness: the two steps decide opposite questions, so an option reaching only the prove step would degrade to `UNKNOWN`, while one reaching only the refute step would let nitpick certify a "genuine" counter-model that is not in the requested class at all — a false `INVALID`.
+
+So opting into a cross-family bridge flips the verdict rather than half of it — the axiom lands in the proof battery *and* in nitpick's theory:
+
+```python
+# doctest: +SKIP
+print(isabelle_decide_modal(pm("K_alice P → B_alice P")))                              # invalid
+print(isabelle_decide_modal(pm("K_alice P → B_alice P"),
+                            bridges=["knowledge_implies_belief"]))                     # valid
+```
 
 ### Deciding classical validity: `isabelle_decide_fol`
 
@@ -570,7 +617,7 @@ print(list(FolVerdict.__dataclass_fields__.keys()))
 
 ### Deciding counterfactual validity: `isabelle_decide_counterfactual`
 
-`isabelle_decide_counterfactual(φ)` decides validity for formulas built from the propositional connectives plus the counterfactuals `□→` / `◇→` (`Would` / `Might`, parsed in modal mode). The modal exporter's accessibility relation is the wrong structure here — a counterfactual reads a **similarity ordering** — so `hol.isabelle_conditional` emits its own shallow sphere embedding: the sphere system is the uninterpreted constant `Sel`, and the goal is `nested Sel ⟹ ∀x. φ x`. The sphere condition is the same one `cf_satisfies` evaluates, so what Isabelle certifies is what the toolkit computes. Same scheme as `isabelle_decide_fol`: prove-battery ⇒ `VALID`, else `nitpick[expect = genuine]` over the world type ⇒ `INVALID`, else `UNKNOWN`; returns a `FolVerdict`.
+`isabelle_decide_counterfactual(φ)` decides validity for formulas built from the propositional connectives plus the counterfactuals `□→` / `◇→` (`Would` / `Might`, parsed in modal mode). The modal exporter's accessibility relation is the wrong structure here — a counterfactual reads a **similarity ordering** — so `hol.isabelle_conditional` emits its own shallow sphere embedding: the sphere system is the uninterpreted constant `Sel`, and the goal is `nested Sel ⟹ weakly_centered Sel ⟹ ∀x. φ x`. The sphere condition is the same one `cf_satisfies` evaluates, so what Isabelle certifies is what the toolkit computes. Same scheme as `isabelle_decide_fol`: prove-battery ⇒ `VALID`, else `nitpick[expect = genuine]` over the world type ⇒ `INVALID`, else `UNKNOWN`; returns a `FolVerdict`.
 
 ```python
 # doctest: +SKIP
@@ -585,7 +632,19 @@ print(isabelle_decide_counterfactual(p("(A □→ B) → ((A ∧ C) □→ B)"))
 # → FolVerdict[invalid]                      (antecedent strengthening fails)
 ```
 
-Two design points worth knowing when you write your own sphere theories: nesting is a **premise of the goal**, never an `axiomatization` (nitpick cannot certify a counter-model as genuine while axiomatised constants are in play — it downgrades to `quasi_genuine`); and the default proof battery is **verit-first**, because the `|` combinator has no per-method timeout and `blast` does not terminate on agglomeration, so a blast-first battery hangs before reaching the method that closes it.
+`centering=` picks the sphere class, exactly as `cf_valid` does in the [non-classical logics guide](nonclassical.md) and with the same default — `"none"` (Lewis **V**, nesting only) / `"weak"` (**VW**, default) / `"strong"` (**VC**) — so the Isabelle route and the internal evaluator decide the same conditional logic unless told otherwise. The level is emitted as a second **premise** (`weakly_centered Sel` / `strongly_centered Sel`) and recorded in the theory as a `text ‹centering = weak (Lewis VW)›` provenance line, since at `"none"` the lemma is otherwise byte-identical to a pre-centering one:
+
+```python
+# doctest: +SKIP
+mp_cf = p("(A ∧ (A □→ B)) → B")
+print(isabelle_decide_counterfactual(mp_cf))                       # valid   (VW: modus ponens)
+print(isabelle_decide_counterfactual(mp_cf, centering="none"))     # invalid (V: the empty sphere system)
+print(isabelle_decide_counterfactual(p("(A ∧ B) → (A □→ B)"), centering="strong"))   # valid (VC only)
+```
+
+The level reaches all three emission sites — the prove theory, the battery's `unfolding` list, and the nitpick theory. A mismatch would not produce a wrong verdict from a proof (an unfoldable premise just fails to close the goal, i.e. `UNKNOWN`), but a nitpick theory carrying the wrong premise would certify a counter-model from the wrong class, so the argument is never split. Note that `card` here bounds nitpick's finite-model search over the world type, while `cf_countermodel`'s `max_worlds` bounds a Python enumeration of sphere chains — equal numbers are not equal coverage.
+
+Two design points worth knowing when you write your own sphere theories: both premises are **premises of the goal**, never an `axiomatization` (nitpick cannot certify a counter-model as genuine while axiomatised constants are in play — it downgrades to `quasi_genuine`); and the default proof battery is **verit-first**, because the `|` combinator has no per-method timeout and `blast` does not terminate on agglomeration, so a blast-first battery hangs before reaching the method that closes it.
 
 A modal operator under a counterfactual is **rejected** (`NotImplementedError`), matching `cf_satisfies`: `□`/`◇` belong to the accessibility-relation embedding, not the sphere one.
 

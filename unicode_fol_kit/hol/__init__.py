@@ -46,6 +46,7 @@ Modules:
 
 from .isabelle_modal import (
     to_isabelle_modal, isabelle_modal_theory, ISABELLE_TACTICS, modal_axiom_names,
+    BRIDGES,
 )
 from .isabelle_runner import (
     find_isabelle, isabelle_available, isabelle_decide_modal, isabelle_decide_fol,
@@ -80,7 +81,7 @@ from .deepshallow import (
 
 __all__ = [
     "to_isabelle_modal", "isabelle_modal_theory", "ISABELLE_TACTICS",
-    "modal_axiom_names",
+    "modal_axiom_names", "BRIDGES",
     "find_isabelle", "isabelle_available", "isabelle_decide_modal",
     "isabelle_decide_fol", "isabelle_decide_counterfactual",
     "isabelle_decide_relevant", "check_theory",

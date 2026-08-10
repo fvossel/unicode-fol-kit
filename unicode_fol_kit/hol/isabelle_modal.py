@@ -66,6 +66,41 @@ so the two agree. The Isabelle-verified characterization (the strong-Until /
 Since fixpoint equation and reachability) lives in ``tests/test_hol_isabelle_modal``
 and the live ``check_theory`` gate.
 
+Cross-family bridges (``bridges=``)
+-----------------------------------
+``frame=`` and ``systems=`` each constrain exactly **one** relation. A *bridge*
+relates **two** relations belonging to different modal families, which is why it
+is a separate, **opt-in** option and not another ``systems=`` entry. Three are
+available (see :data:`BRIDGES`):
+
+======================================  ====================  ==========================
+name                                    schema                exact frame correspondent
+======================================  ====================  ==========================
+``knowledge_implies_belief``            ``K_a φ → B_a φ``     ``rb ⊆ rk``
+``sincerity``                           ``Say_a φ → B_a φ``   ``rb ⊆ rs``
+``ought_implies_can``                   ``Oφ → ◇φ``           ``∀w. ∃v. d w v ∧ r w v``
+======================================  ====================  ==========================
+
+Each condition is the **exact** correspondent of its schema — necessary as well
+as sufficient — established by brute force over every frame on ≤ 2 worlds against
+:func:`satisfies_modal`, not quoted from the literature. In particular
+``ought_implies_can`` is deliberately **not** the frequently quoted inclusion
+``d ⊆ r``: measured, ``d ⊆ r`` alone does not validate ``Oφ → ◇φ`` at all (a world
+with no ``d``-successor makes ``Oφ`` vacuously true while ``◇φ`` is false), and
+``d ⊆ r`` *together with* ``d``-seriality validates the strictly stronger
+``□φ → Oφ`` ("whatever is necessary is obligatory") that the caller never asked
+for. The emitted "meet" condition subsumes ``d``-seriality and does *not*
+validate ``□φ → Oφ``. ``d_serial`` is still emitted alongside it — redundant but
+harmless, and dropping it would change :func:`modal_axiom_names`' documented
+output.
+
+Bridges are OFF by default. A bridge whose partner family does not occur in the
+formula **raises** ``ValueError``: silently skipping it would emit a weaker logic
+than requested, and declaring the missing relation anyway is not conservative
+(``d_meets_r`` entails seriality of the alethic ``r``, measurably turning
+``□P → ◇P`` from invalid into valid under ``frame='K'``). See
+:func:`_bridge_axioms` for the full argument.
+
 Honesty
 -------
 The toolkit *emits* a theory; it does **not** run Isabelle, Sledgehammer, or any
@@ -81,11 +116,11 @@ Public API
 ----------
 :func:`to_isabelle_modal` (the real ``to_isabelle_modal`` replacement),
 :func:`isabelle_modal_theory` (alias with an explicit ``theory_name``),
-and the constant :data:`ISABELLE_TACTICS`.
+and the constants :data:`ISABELLE_TACTICS` and :data:`BRIDGES`.
 """
 
 import re
-from typing import List, Optional
+from typing import Iterable, List, Optional
 
 from unicode_fol_kit.fol.nodes import (
     Node, Variable, Constant, Number, Function,
@@ -173,6 +208,9 @@ _PRED_ALIAS = {"=": "feq", "≠": "fneq", "<": "flt", ">": "fgt", "≤": "fle", 
 # relations / existence predicate, and every lifted-operator abbreviation. A user
 # predicate / constant / function whose sanitised name lands here would shadow the
 # embedding and break loadability, so _safe_name disambiguates it with a trailing "_".
+# NOTE the axiom / bridge FACT names (r_refl, n_in_t, d_serial, rb_in_rk, ...) are
+# deliberately absent: they live in Isabelle's fact namespace, not the consts
+# namespace, so a user predicate sanitising onto one of them cannot shadow it.
 _RESERVED = frozenset({
     "i", "e", "existsAt",
     "r", "rk", "rb", "rs", "rw", "d", "t", "n",
@@ -812,6 +850,189 @@ def _agent_system_axioms(rel: str, system: str, family: str) -> List[str]:
             + _AGENT_CONDS[c].format(rel=rel, tag=rel) for c in conds]
 
 
+# --------------------------------------------------------------------------- #
+# Cross-family bridge axioms (opt-in, ``bridges=``).
+# --------------------------------------------------------------------------- #
+#
+# WHY A SEPARATE OPTION. ``frame=`` constrains the alethic r and ``systems=``
+# constrains ONE agent-indexed relation each; both are single-relation frame
+# properties. A bridge is a principle relating TWO relations of DIFFERENT modal
+# families (knowledge to belief, assertion to belief, obligation to possibility),
+# so it cannot be phrased as a ``systems=`` entry — hence its own opt-in option,
+# defaulting to off.
+#
+# WHY THESE CONDITIONS. Each condition below is the EXACT frame correspondent of
+# its schema — necessary as well as sufficient — measured by brute force over
+# every frame on <= 2 worlds against semantics.kripke.satisfies_modal, not quoted
+# from the literature:
+#
+#   rb subset rk        |= K_a phi -> B_a phi     and rb subset rk does NOT
+#                                                 validate B_a phi -> K_a phi,
+#                                                 while no condition at all fails
+#                                                 to validate K -> B.
+#   rb subset rs        |= Say_a phi -> B_a phi   (same two-sided check)
+#   d meets r           |= O phi -> <>phi
+#
+# THE ``d subset r`` TRAP — do NOT "simplify" d_meets_r into an inclusion. The
+# frequently quoted ought-implies-can condition ``d subset r`` is measurably the
+# WRONG axiom: on its own it does not validate O phi -> <>phi at all (a world with
+# no d-successor makes O phi vacuously true while <>phi is false), and ``d subset
+# r`` TOGETHER WITH d-seriality validates the strictly stronger [] phi -> O phi
+# ("whatever is necessary is obligatory"), which the caller never requested. The
+# existential "meet" condition emitted here is exactly right: it subsumes
+# d-seriality (every world gets a d-successor) and does not validate [] phi -> O
+# phi. ``d_serial`` is still emitted alongside it whenever the deontic family
+# occurs — redundant but harmless, and suppressing it would change the documented
+# output of :func:`modal_axiom_names`.
+#
+# ALL ROUTES AGREE, and that is asserted rather than assumed. The guarded
+# first-order route ``fol.qml`` emits the same three conditions under the same three
+# names, including this meet condition for ``ought_implies_can`` (it realised that
+# one as the inclusion ``D subset R`` in an earlier draft, which validated the
+# unrequested ``[] phi -> O phi`` and ``P phi -> <>phi``). ``fol.QML_BRIDGES`` and
+# ``hol.BRIDGES`` stay SEPARATE registries — ``fol`` must not import ``hol`` — so
+# tests/test_hol_bridges.py and tests/test_qml_bridges.py cross-check the two tables
+# against each other and against the Kripke oracle, rather than trusting either.
+#
+# WHY THE VARIABLES ARE BOUND EXPLICITLY (\<And>a w v. ...) rather than left free
+# and schematic like _frame_axioms / _AGENT_CONDS. A free variable in an
+# axiomatization is generalised ONLY if the name is not already a declared
+# constant. The agent slot is the dangerous one: an agent named ``a`` (the
+# canonical test agent) emits ``consts a :: "e"``, and a free ``a`` in the axiom
+# then resolves to THAT CONSTANT and typechecks, so the inclusion would silently
+# hold for one agent instead of all — a weaker logic than requested, with no
+# error. A Pure binder shadows the constant inside its scope, so the schema is
+# universal whatever the formula's symbols are named. (The pre-existing
+# _AGENT_CONDS schemas have the same exposure; changing them is a separate
+# change, since their emitted text is pinned by existing tests.)
+
+# Canonical family name -> the _Sig flag that says its relation is declared.
+_FAMILY_FLAG = {
+    "alethic": "uses_alethic",
+    "epistemic": "uses_epistemic",
+    "doxastic": "uses_doxastic",
+    "assertive": "uses_assertive",
+    "bouletic": "uses_bouletic",
+    "deontic": "uses_deontic",
+}
+
+# Bridge name -> the families it relates (with the operator label to name in an
+# error message), a description of the relations, and the Isabelle axiom lines.
+# The fact names ``rb_in_rk`` / ``rb_in_rs`` / ``d_meets_r`` deliberately follow
+# the existing relation-shaped naming (``n_in_t``, ``t_in_nstar``, ``d_serial``)
+# and are reused VERBATIM as the THF formula names in hol.thf_modal, so a single
+# grep for a fact name finds both routes.
+_BRIDGES = {
+    "knowledge_implies_belief": {
+        "needs": (("epistemic", "Knows"), ("doxastic", "Believes")),
+        "schema": "K_a phi -> B_a phi",
+        "rels": "the doxastic relation rb to the epistemic relation rk",
+        "lines": ['axiomatization where rb_in_rk: '
+                  '"\\<And>a w v. rb a w v \\<Longrightarrow> rk a w v"'],
+    },
+    "sincerity": {
+        "needs": (("assertive", "Says"), ("doxastic", "Believes")),
+        "schema": "Say_a phi -> B_a phi",
+        "rels": "the doxastic relation rb to the assertive relation rs",
+        "lines": ['axiomatization where rb_in_rs: '
+                  '"\\<And>a w v. rb a w v \\<Longrightarrow> rs a w v"'],
+    },
+    "ought_implies_can": {
+        "needs": (("deontic", "Obligatory/Permitted"), ("alethic", "□/◇")),
+        "schema": "O phi -> <>phi",
+        "rels": "the deontic relation d to the alethic relation r",
+        "lines": ['axiomatization where d_meets_r: '
+                  '"\\<And>w. \\<exists>v. d w v \\<and> r w v"'],
+    },
+}
+
+#: The cross-family bridge names accepted by ``bridges=`` (see :func:`_bridge_axioms`).
+BRIDGES = tuple(_BRIDGES)
+
+
+def _validate_bridges(bridges, func: str) -> frozenset:
+    """Normalise and validate a ``bridges=`` request; return it as a frozen set.
+
+    ``None`` / empty means "no bridges" (the default). A bare string is rejected
+    rather than iterated character-wise — ``bridges="sincerity"`` would otherwise
+    silently degrade into a set of unknown one-character names.
+    """
+    if not bridges:
+        return frozenset()
+    if isinstance(bridges, str):
+        raise ValueError(
+            f"{func}: bridges= takes a collection of names, not a single string; "
+            f"use bridges=['{bridges}'].")
+    requested = frozenset(bridges)
+    unknown = sorted(requested - set(_BRIDGES))
+    if unknown:
+        raise ValueError(
+            f"{func}: unknown bridge(s) {unknown} (use one of {sorted(_BRIDGES)}).")
+    return requested
+
+
+def _bridge_axioms(sig: "_Sig", bridges) -> List[str]:
+    """Axioms for the requested cross-family bridges, in table order.
+
+    Each bridge adds ONE frame condition relating two relations of different
+    modal families; the emitted axiom is the exact correspondent of the schema
+    the option is named after (``knowledge_implies_belief`` → ``rb ⊆ rk``,
+    ``sincerity`` → ``rb ⊆ rs``, ``ought_implies_can`` → ``∀w. ∃v. d w v ∧ r w v``
+    — never the folklore ``d ⊆ r``, see the section comment above). Emission
+    follows :data:`_BRIDGES` order, not the caller's set-iteration order, so the
+    output is deterministic.
+
+    Honest contract — what a request for a bridge whose partner family does NOT
+    occur in the formula does, and why. Such a bridge names a relation that this
+    emitter never declares (every relation block is conditional on its operators
+    occurring), so the axiom would not even load. There are three possible
+    policies and only one of them is honest:
+
+    - *silently skip it*: the caller asked for a logic and would receive a
+      strictly WEAKER one with no signal — the exact "silently weakened logic"
+      failure this module refuses everywhere else;
+    - *declare the relation anyway*: not uniformly conservative, and it fails in
+      the STRENGTHENING direction. Measured: ``d_meets_r`` entails
+      ``∃v. r w v``, i.e. seriality of the ALETHIC relation, so emitting
+      ``ought_implies_can`` for a formula with no ``O``/``P`` but with ``□``/``◇``
+      would turn ``□P → ◇P`` from invalid into valid under ``frame='K'`` — a
+      silent change to the alethic logic the caller *did* select. (The two
+      inclusion bridges happen to be conservative when their partner family is
+      absent, but a rule that sometimes emits and sometimes refuses depending on
+      the axiom's shape is not predictable from the option name.)
+    - *raise*: one uniform rule for every bridge, present and future; the repo's
+      established idiom for "this cannot be expressed here as asked" (see the GL
+      guard in ``fol.qml.qml_axioms`` and :func:`_agent_system_axioms`); and the
+      only policy under which the relation-declaration blocks stay untouched, so
+      a bridge is emitted exactly when both relation blocks already are.
+
+    ``ValueError`` — not ``NotImplementedError`` — because the route *can* express
+    the bridge; the caller's formula simply does not mention one of the families.
+    ``NotImplementedError`` stays reserved for "this route cannot express it".
+    """
+    requested = _validate_bridges(bridges, "to_isabelle_modal")
+    if not requested:
+        return []
+    out: List[str] = []
+    for name, spec in _BRIDGES.items():
+        if name not in requested:
+            continue
+        missing = [op for fam, op in spec["needs"]
+                   if not getattr(sig, _FAMILY_FLAG[fam])]
+        if missing:
+            raise ValueError(
+                f"to_isabelle_modal: the bridge {name!r} relates {spec['rels']}, "
+                f"but the formula contains no {' / '.join(missing)} operator, so "
+                "that relation is never declared. Emitting the axiom would not "
+                "load; declaring the relation anyway is not conservative "
+                "(d_meets_r entails seriality of the alethic r, which would "
+                "silently make []P -> <>P valid under frame='K'); and skipping it "
+                "would emit a weaker logic than requested. Drop the bridge, or "
+                "state the formula in both families.")
+        out += spec["lines"]
+    return out
+
+
 def _temporal_axioms() -> List[str]:
     """t is the refl+trans (henceforth) relation, matching satisfies_modal's closure."""
     return [
@@ -869,7 +1090,8 @@ def _domain_axioms(mode: str) -> List[str]:
 
 def _collect_axioms(sig: "_Sig", frame: str, mode: str,
                     temporal_closure: bool, temporal_def: bool = False,
-                    systems: Optional[dict] = None) -> List[str]:
+                    systems: Optional[dict] = None,
+                    bridges: Optional[Iterable[str]] = None) -> List[str]:
     """All ``axiomatization where ...`` lines the theory emits, in emission order.
 
     Centralised so the proof emitter and :func:`modal_axiom_names` agree on exactly
@@ -879,6 +1101,13 @@ def _collect_axioms(sig: "_Sig", frame: str, mode: str,
     theorems and are omitted. ``systems`` optionally constrains the agent-indexed
     relations (see :func:`isabelle_modal_theory`); a family whose operators do not
     occur in the formula is skipped (its relation is not even declared).
+
+    ``bridges`` optionally adds the opt-in CROSS-family axioms (see
+    :func:`_bridge_axioms`). Unlike a ``systems=`` family, a bridge whose partner
+    family is absent is NOT skipped — it raises, because a bridge constrains two
+    relations and skipping it would silently emit a weaker logic. The bridge block
+    is APPENDED after the temporal axioms, so every pre-existing
+    :func:`modal_axiom_names` result keeps its exact content *and* order.
     """
     # t = rtranclp n needs only t to be IN USE: for a formula without Next/
     # Until/Since the one-step n is simply unconstrained and nitpick constructs
@@ -913,6 +1142,7 @@ def _collect_axioms(sig: "_Sig", frame: str, mode: str,
             # formulas are not spuriously refuted (false INVALID).
             if temporal_closure:
                 axioms += _temporal_next_closure_axiom()
+    axioms += _bridge_axioms(sig, bridges)
     if sig.has_quant:
         axioms += _domain_axioms(mode)
     return axioms
@@ -981,6 +1211,7 @@ def isabelle_modal_theory(
     proof: Optional[str] = None,
     temporal_def: bool = False,
     systems: Optional[dict] = None,
+    bridges: Optional[Iterable[str]] = None,
 ) -> str:
     """Emit a complete, loadable Isabelle/HOL theory shallow-embedding ``formula``.
 
@@ -1031,6 +1262,25 @@ def isabelle_modal_theory(
             schematic, so the property holds per agent — mirroring
             ``to_thf_modal_full``'s parameter of the same name. A family whose
             operators do not occur in the formula is skipped.
+        bridges: optional collection of CROSS-family bridge names (see
+            :data:`BRIDGES`), **off by default**:
+
+            - ``"knowledge_implies_belief"`` — schema ``K_a φ → B_a φ``, frame
+              correspondent ``rb ⊆ rk`` (axiom ``rb_in_rk``);
+            - ``"sincerity"`` — schema ``Say_a φ → B_a φ``, correspondent
+              ``rb ⊆ rs`` (axiom ``rb_in_rs``);
+            - ``"ought_implies_can"`` — schema ``Oφ → ◇φ``, correspondent
+              ``∀w. ∃v. d w v ∧ r w v`` (axiom ``d_meets_r``). Deliberately NOT
+              the folklore ``d ⊆ r``, which measurably fails to validate
+              ``Oφ → ◇φ`` on its own and, with seriality, over-validates
+              ``□φ → Oφ``.
+
+            Each condition is the exact correspondent of its schema, so the
+            bridge adds precisely that principle and nothing stronger. Requesting
+            a bridge whose partner family does not occur in the formula raises
+            ``ValueError`` (its relation is never declared; skipping would emit a
+            weaker logic and declaring it anyway is not conservative) — see
+            :func:`_bridge_axioms`.
 
     Returns:
         The theory text (newline-terminated).
@@ -1041,6 +1291,9 @@ def isabelle_modal_theory(
         nothing; an external prover must discharge the lemma.
     """
     _validate(mode, frame, tactic)
+    # Reject a bare string / an unknown bridge name BEFORE any emission work, so a
+    # typo fails fast rather than after the formula has been scanned and lifted.
+    requested_bridges = _validate_bridges(bridges, "to_isabelle_modal")
 
     sig = _Sig()
     _scan(formula, sig)               # which modalities occur (relation/operator blocks)
@@ -1058,6 +1311,10 @@ def isabelle_modal_theory(
     lines.append("(* First-order modal logic is undecidable: an external prover must close  *)")
     lines.append("(* the lemma. Equality =/<> is an uninterpreted world-relativized         *)")
     lines.append("(* predicate (feq/fneq), NOT primitive HOL identity.                      *)")
+    if requested_bridges:
+        # Comment only — the bridge AXIOMS are emitted with the other axioms below.
+        named = ", ".join(n for n in _BRIDGES if n in requested_bridges)
+        lines.append(f"(* cross-family bridges: {named} *)")
     lines.append("")
     lines.append("typedecl i  \\<comment> \\<open>the type of worlds\\<close>")
     lines.append("typedecl e  \\<comment> \\<open>the type of entities (objects and agents)\\<close>")
@@ -1136,7 +1393,8 @@ def isabelle_modal_theory(
         lines.append("")
 
     # Axioms.
-    axioms = _collect_axioms(sig, frame, mode, temporal_closure, temporal_def, systems)
+    axioms = _collect_axioms(sig, frame, mode, temporal_closure, temporal_def,
+                             systems, bridges)
     if axioms:
         lines += axioms
         lines.append("")
@@ -1160,19 +1418,28 @@ def modal_axiom_names(
     frame: str = "K",
     temporal_closure: bool = True,
     systems: Optional[dict] = None,
+    bridges: Optional[Iterable[str]] = None,
 ) -> List[str]:
     """The names of the ``axiomatization`` facts the emitted theory would declare.
 
-    These are exactly the frame / domain / temporal-link / agent-system axioms in
-    scope for the proof of ``modal_goal``. The Isabelle runner needs them to build
-    a ``using <axioms> by <method>`` proof (or to know none are required), so this
-    exposes the same computation :func:`isabelle_modal_theory` uses internally.
+    These are exactly the frame / domain / temporal-link / agent-system / bridge
+    axioms in scope for the proof of ``modal_goal``. The Isabelle runner needs them
+    to build a ``using <axioms> by <method>`` proof (or to know none are required),
+    so this exposes the same computation :func:`isabelle_modal_theory` uses
+    internally.
+
+    Passing ``bridges`` here is load-bearing, not cosmetic: an ``axiomatization``
+    fact is not in the default claset/simpset, so a validity that holds only
+    because of a bridge (``K_a P → B_a P`` under ``knowledge_implies_belief``, say)
+    cannot be discharged by a ``by blast`` that does not ``using rb_in_rk`` — the
+    same failure mode the :data:`_BY_TACTICS` comment documents for the frame
+    axioms.
     """
     _validate(mode, frame, "oops")
     sig = _Sig()
     _scan(formula, sig)
     return _axiom_names(_collect_axioms(sig, frame, mode, temporal_closure,
-                                        systems=systems))
+                                        systems=systems, bridges=bridges))
 
 
 def to_isabelle_modal(
@@ -1183,6 +1450,7 @@ def to_isabelle_modal(
     temporal_closure: bool = True,
     proof: Optional[str] = None,
     systems: Optional[dict] = None,
+    bridges: Optional[Iterable[str]] = None,
 ) -> str:
     """Emit a complete, loadable Isabelle/HOL theory embedding ``formula`` (real lemma).
 
@@ -1193,6 +1461,11 @@ def to_isabelle_modal(
     wrapper fixes ``theory_name="ModalEmbedding"`` to match the historical
     signature ``to_isabelle_modal(formula, mode, frame)``.
 
+    ``bridges`` is the opt-in cross-family option (``knowledge_implies_belief`` /
+    ``sincerity`` / ``ought_implies_can``, see :data:`BRIDGES`); it is off by
+    default and raises ``ValueError`` when the formula does not mention both of a
+    requested bridge's families.
+
     Honesty: the toolkit emits the theory but never runs Isabelle/Sledgehammer.
     First-order modal logic is undecidable, so emission proves nothing — an
     external prover must discharge the lemma. Propositional modal K/T/S4/S5 are
@@ -1201,4 +1474,4 @@ def to_isabelle_modal(
     return isabelle_modal_theory(
         formula, mode=mode, frame=frame, tactic=tactic,
         theory_name="ModalEmbedding", temporal_closure=temporal_closure, proof=proof,
-        systems=systems)
+        systems=systems, bridges=bridges)

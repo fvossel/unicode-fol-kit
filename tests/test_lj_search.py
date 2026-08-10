@@ -123,18 +123,58 @@ _INVALID = [
 ]
 
 
-_GMT_TIMEOUT = 2000  # ms; every entry below was checked to be stable well under this
-                      # (some non-theorems make Z3's alethic embedding return `unknown`
-                      # at ANY timeout from 500ms to 10000ms -- always mapped to the
-                      # conservative False by z3_models.is_valid -- so a short timeout
-                      # loses no reliability here while keeping this file's runtime sane)
+# The two budgets below are DELIBERATELY different, because a Z3 timeout is not
+# symmetric: `z3_models.is_valid` maps `unknown` to the conservative False, so running
+# out of budget can only ever turn a True into a False.
+#
+# _GMT_TIMEOUT_INVALID -- for queries whose expected answer is False. There a timeout
+# IS the expected answer, so a short budget loses no reliability, and it is load-bearing
+# for runtime: some non-theorems make Z3's alethic embedding return `unknown` at ANY
+# budget from 500 ms to 10 s. Measured on the 100-formula random differential below:
+# 14 of them burn the whole budget, so that one test costs 30 s at a 2 s budget and
+# 285 s at a 20 s one.
+_GMT_TIMEOUT_INVALID = 2000
+
+# _GMT_TIMEOUT_VALID -- the RETRY budget used by _gmt_valid below.
+_GMT_TIMEOUT_VALID = 20000
+
+
+def _gmt_valid(f) -> bool:
+    """``gmt_is_s4_valid`` with one retry -- for queries whose expected answer is True.
+
+    On this side a timeout is a FALSE NEGATIVE, so the flat 2 s budget this file used
+    to apply everywhere made the curated battery fail for a reason that says nothing
+    about the logic. The cause, measured: roughly one ``gmt_is_s4_valid`` call per
+    PROCESS pays a one-off multi-second cost while Z3's global context crosses ~100 MB
+    and is rebuilt -- the call before it and the call after it both answer the SAME
+    formula in 0.03 s, and in isolation the formula answers in 0.01 s at every budget
+    from 500 ms to 60 s. Which call pays is fixed by how many Z3 queries the process
+    has already made, not by the formula, which is why this battery failed on a
+    DIFFERENT parameter from run to run, passed when the file was re-run alone, and
+    passed under ``pytest -n auto`` (each xdist worker is its own process). Reproduced
+    identically on 0.18.0 in a clean worktree, so it is a long-standing property of
+    the budget, not a regression.
+
+    A RETRY rather than simply a bigger number, because the rebuild completes during
+    the call that pays for it however long that takes, so the second call runs on the
+    cleaned-up context. That keeps this robust as the suite grows, instead of pinning
+    the file to a guess about how large the one-off cost can get.
+
+    Sound: a True from Z3 is a proof and is returned immediately without a retry, so
+    this can never turn a genuine disagreement into a pass -- only a False is retried,
+    and only at a larger budget. The cost is one extra query in the rare pathological
+    case.
+    """
+    if gmt_is_s4_valid(f, timeout=_GMT_TIMEOUT_INVALID) is True:
+        return True
+    return gmt_is_s4_valid(f, timeout=_GMT_TIMEOUT_VALID)
 
 
 @pytest.mark.parametrize("name,f", _VALID, ids=[n for n, _ in _VALID])
 def test_curated_valid_agrees_int_valid_and_gmt(name, f):
     assert int_decide(f) is True, name
     assert int_valid(f, max_worlds=3) is True, name
-    assert gmt_is_s4_valid(f, timeout=_GMT_TIMEOUT) is True, name
+    assert _gmt_valid(f) is True, name
 
 
 @pytest.mark.parametrize("name,f", _INVALID, ids=[n for n, _ in _INVALID])
@@ -145,7 +185,7 @@ def test_curated_invalid_agrees_int_valid_and_gmt(name, f):
     # alone would wrongly call the 3-disjunct formula valid at this bound; int_valid now
     # falls back to int_prove and gets it right regardless of max_worlds.
     assert int_valid(f, max_worlds=3) is False, name
-    assert gmt_is_s4_valid(f, timeout=_GMT_TIMEOUT) is False, name
+    assert gmt_is_s4_valid(f, timeout=_GMT_TIMEOUT_INVALID) is False, name
 
 
 def test_curated_battery_has_at_least_25_entries():
@@ -219,7 +259,20 @@ def test_random_differential_against_gmt_s4_oracle():
     for _ in range(100):
         f = _rand_prop(rng, rng.randint(1, 2), [And, Or, Implies, Iff, "not"])
         decided = int_decide(f)
-        assert decided == gmt_is_s4_valid(f, timeout=_GMT_TIMEOUT), (
+        # Route by the EXPECTED answer, for the asymmetry documented at _gmt_valid:
+        # only a True can be lost to a timeout, so the retry is needed exactly where
+        # True is expected. This does not weaken the differential. In the direction it
+        # is aimed at (int_decide says valid, the oracle refutes) the retry makes a
+        # real mismatch REPORTABLE instead of being timed out into a spurious failure.
+        # The other direction (int_decide says invalid, the oracle proves valid) stays
+        # bounded by the short budget -- but it already was at the previous flat 2 s,
+        # so nothing is lost relative to the old behaviour, and the short budget is
+        # what keeps this test at 30 s rather than 285 s. Measured on this seed: all 4
+        # valid formulas answer in <= 37 ms, and every one of the 14 budget-burning
+        # formulas is on the invalid side.
+        oracle = (_gmt_valid(f) if decided
+                  else gmt_is_s4_valid(f, timeout=_GMT_TIMEOUT_INVALID))
+        assert decided == oracle, (
             f"int_decide/gmt_is_s4_valid disagree on {f.to_unicode_str()}")
         if decided:
             n_true += 1

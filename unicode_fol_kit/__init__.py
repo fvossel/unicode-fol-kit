@@ -40,7 +40,7 @@ from .fol import (
     CCGDerivation, reduction_derivation,
     hybrid_is_valid,
     qml_translate, qml_is_valid, qml_equivalent,
-    to_thf_modal, to_isabelle_modal, BARCAN, CONVERSE_BARCAN,
+    to_thf_modal, to_isabelle_modal, BARCAN, CONVERSE_BARCAN, QML_BRIDGES,
 )
 from .atp import (
     formulas_are_equivalent, check_logical_entailment,
@@ -85,6 +85,7 @@ from .semantics import (
     free_find_model, free_countermodel, free_is_valid, free_entails,
     announce, box_announce, diamond_announce,
     CounterfactualModel, cf_satisfies, cf_countermodel, cf_valid, would, might,
+    CENTERING_LEVELS, DEFAULT_MAX_WORLDS,
     minimal_models, minimal_entails,
     circumscription_formula, circumscription_entails_so,
     RelevantModel, rel_satisfies, rel_countermodel, rel_valid,
@@ -111,7 +112,7 @@ from .hol import (
 )
 from . import dl   # the ALC description-logic subpackage (dl.concept_satisfiable, …)
 
-__version__ = "0.18.0"
+__version__ = "0.19.0"
 
 __all__ = [
     "MSFLParser",
@@ -155,6 +156,11 @@ __all__ = [
     "sanitize_names", "sanitize_all", "NameMapping",
     "qml_translate", "qml_is_valid", "qml_equivalent",
     "to_thf_modal", "to_isabelle_modal", "BARCAN", "CONVERSE_BARCAN",
+    # The cross-family bridge registry for qml_is_valid(..., bridges=[...]). The
+    # HOL routes accept the SAME three names from unicode_fol_kit.hol.BRIDGES,
+    # which stays subpackage-local (a bare "BRIDGES" is too generic at top level,
+    # as with hol's ISABELLE_TACTICS / SYSTEMS).
+    "QML_BRIDGES",
     "find_isabelle", "isabelle_available", "isabelle_decide_modal",
     "isabelle_decide_fol", "isabelle_decide_counterfactual",
     "isabelle_decide_relevant", "check_theory",
@@ -183,7 +189,7 @@ __all__ = [
     "free_find_model", "free_countermodel", "free_is_valid", "free_entails",
     "announce", "box_announce", "diamond_announce",
     "CounterfactualModel", "cf_satisfies", "cf_countermodel", "cf_valid",
-    "would", "might",
+    "would", "might", "CENTERING_LEVELS", "DEFAULT_MAX_WORLDS",
     "minimal_models", "minimal_entails",
     "circumscription_formula", "circumscription_entails_so",
     "RelevantModel", "rel_satisfies", "rel_countermodel", "rel_valid",

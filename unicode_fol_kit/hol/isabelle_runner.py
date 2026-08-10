@@ -41,6 +41,19 @@ A VALID / INVALID verdict is only as meaningful as the embedding's faithfulness
 to the chosen semantics. UNKNOWN is a real outcome, not a failure. The runner
 never claims a decision it did not obtain from the prover.
 
+Which logic a verdict is *about* is selected by the options that reach the
+emitter, and each of them is forwarded to **every** theory the decision builds —
+the prove theory, the proof battery, and the nitpick theory. That is not
+tidiness: the two steps decide opposite questions, so an option that reached only
+one of them would produce a verdict about a logic nobody asked for (a prove
+theory missing an axiom degrades to UNKNOWN; a *nitpick* theory missing one
+certifies a "genuine" counter-model outside the requested class, i.e. a false
+INVALID). The options are ``frame`` / ``mode`` / ``systems`` / ``temporal_closure``
+/ ``bridges`` for :func:`isabelle_decide_modal`, and ``centering`` for
+:func:`isabelle_decide_counterfactual` — whose default ``"weak"`` matches
+:func:`~unicode_fol_kit.semantics.conditional.cf_valid`, so the two routes decide
+the same conditional logic unless told otherwise.
+
 Platform support
 ----------------
 **Linux and macOS are the primary path**: the ``isabelle`` binary is invoked
@@ -71,7 +84,7 @@ import tempfile
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence, Tuple
+from typing import Iterable, List, Optional, Sequence, Tuple
 
 from unicode_fol_kit.fol.nodes import Node
 from unicode_fol_kit.hol.isabelle_modal import (
@@ -546,6 +559,7 @@ def isabelle_decide_modal(
     mode: str = "constant",
     temporal_closure: bool = True,
     systems: Optional[dict] = None,
+    bridges: Optional[Iterable[str]] = None,
     methods: Sequence[str] = DEFAULT_METHODS,
     refute: bool = True,
     card: str = "1-4",
@@ -575,6 +589,18 @@ def isabelle_decide_modal(
             (``{"epistemic": "S5", "doxastic": "KD45", "assertive"/"bouletic": …}``),
             passed through to the emitter — so e.g. factivity ``K_a P → P`` is
             provable under ``{"epistemic": "T"}``.
+        bridges: optional CROSS-family bridge names from
+            :data:`~unicode_fol_kit.hol.isabelle_modal.BRIDGES`
+            (``knowledge_implies_belief`` / ``sincerity`` / ``ought_implies_can``),
+            off by default. Threading this through is load-bearing on BOTH steps,
+            not only on the prove step: the prove theory needs the axiom *and* its
+            name in the ``using`` list (an ``axiomatization`` fact is not in the
+            default claset), and the nitpick theory needs the same axiom or nitpick
+            would happily build a model violating the bridge and certify a
+            **false INVALID** for a formula that is valid over the requested class.
+            ``ValueError`` when a requested bridge's partner family does not occur
+            in ``formula`` (see
+            :func:`~unicode_fol_kit.hol.isabelle_modal._bridge_axioms`).
         methods: proof methods tried, in order, as a ``by (… | …)`` battery.
         refute: also run nitpick to certify INVALID when the proof battery fails.
         card: nitpick cardinality range for the world type ``i`` (e.g. ``"1-4"``).
@@ -596,15 +622,22 @@ def isabelle_decide_modal(
             "No Isabelle installation found. Set UFK_ISABELLE_HOME (or ISABELLE_HOME) "
             "to the install directory, or put `isabelle` on PATH.")
 
+    # An unknown bridge name (or a bridge whose partner family is absent) is a
+    # ValueError from the emitter; raising it here, before the first build, keeps a
+    # typo from costing a JVM start — and every call below passes the SAME bridges,
+    # so the axiom list, the prove theory and the nitpick theory cannot disagree
+    # about which logic is being decided.
     axiom_ids = modal_axiom_names(formula, mode=mode, frame=frame,
-                                  temporal_closure=temporal_closure, systems=systems)
+                                  temporal_closure=temporal_closure, systems=systems,
+                                  bridges=bridges)
 
     # --- step 1: prove ---------------------------------------------------- #
     tok = "G" + uuid.uuid4().hex[:8]
     prove_proof = _battery_proof(axiom_ids, methods)
     prove_thy = isabelle_modal_theory(
         formula, mode=mode, frame=frame, tactic="oops", theory_name=tok,
-        temporal_closure=temporal_closure, proof=prove_proof, systems=systems)
+        temporal_closure=temporal_closure, proof=prove_proof, systems=systems,
+        bridges=bridges)
     r1 = check_theory(prove_thy, tok, install=install,
                       session_timeout=prove_timeout)
     if r1.ok:
@@ -626,7 +659,7 @@ def isabelle_decide_modal(
         nit_thy = isabelle_modal_theory(
             formula, mode=mode, frame=frame, tactic="oops", theory_name=tok2,
             temporal_closure=temporal_closure, proof=nit_proof, temporal_def=True,
-            systems=systems)
+            systems=systems, bridges=bridges)
         # nitpick can use most of the session budget; give the wall clock headroom.
         r2 = check_theory(nit_thy, tok2, install=install,
                           session_timeout=refute_timeout + 30,
@@ -636,9 +669,15 @@ def isabelle_decide_modal(
         if r2.ok:
             m = _NITPICK_CTEX_RE.search(r2.output)
             ctex = m.group(0).strip() if m else None
-            if ctex is None:
+            if ctex is None and not bridges:
                 # isabelle build does not echo nitpick's model; exhibit a witness from
                 # the toolkit's own evaluator for the propositional alethic fragment.
+                # Skipped under bridges=: the evaluator has no notion of a cross-family
+                # frame condition, so its witness would not be checked against the
+                # requested class. (Today this is belt-and-braces — a bridge requires
+                # its partner family to OCCUR, and every bridge has a non-alethic
+                # family, so _is_alethic_propositional already rejects such a formula —
+                # but the guard states the invariant instead of relying on it.)
                 ctex = _find_alethic_countermodel(formula, frame)
             return ModalVerdict(status=INVALID, frame=frame, mode=mode,
                                 countermodel=ctex, prove_output=r1.output,
@@ -780,6 +819,7 @@ def isabelle_decide_fol(
 
 def isabelle_decide_counterfactual(
     formula: Node, *,
+    centering: str = "weak",
     methods: Optional[Sequence[str]] = None,
     refute: bool = True,
     card: str = "1-3",
@@ -796,42 +836,73 @@ def isabelle_decide_counterfactual(
     exactly like :func:`isabelle_decide_fol`:
 
     1. tries a proof battery — exit 0 ⇒ :data:`VALID` over every **nested** sphere
-       system;
+       system meeting the requested ``centering`` level;
     2. otherwise (``refute``) runs ``nitpick[expect = genuine]`` over the world
-       type ``w`` — exit 0 ⇒ :data:`INVALID` (nesting is a *premise* of the goal,
-       so nitpick constructs the sphere system itself and certifies the model as
-       genuine);
+       type ``w`` — exit 0 ⇒ :data:`INVALID` (nesting and centering are *premises*
+       of the goal, so nitpick constructs the sphere system itself and certifies
+       the model as genuine);
     3. otherwise :data:`UNKNOWN`.
 
     Args:
         formula: the AST node — the propositional connectives plus ``□→`` / ``◇→``
             (``Would`` / ``Might``).
+        centering: which sphere class to decide over — ``"none"`` (Lewis **V**,
+            nesting only) / ``"weak"`` (**VW**, the default) / ``"strong"``
+            (**VC**). The default matches
+            :func:`~unicode_fol_kit.semantics.conditional.cf_valid`'s, so this
+            route and the internal evaluator answer the same question unless told
+            otherwise. It is threaded to **all three** emission sites — the prove
+            theory, the proof battery's ``unfolding`` list, and the nitpick theory:
+            a partial forward would silently decide a different logic than
+            requested (a premise the battery cannot unfold degrades to UNKNOWN, and
+            a nitpick theory carrying the wrong premise can certify a counter-model
+            that is not in the requested class at all).
         methods: proof battery; defaults to the embedding's own
             :data:`~unicode_fol_kit.hol.isabelle_conditional.DEFAULT_METHODS`
-            (verit-first — see there for why the order matters).
+            (verit-first — see there for why the order matters). Built at
+            ``centering`` here, so a caller-supplied battery need not repeat it.
         refute / card / prove_timeout / refute_timeout / install: as for
             :func:`isabelle_decide_fol` (``card`` bounds the world type ``w``).
 
+    Note:
+        ``card`` here and ``max_worlds`` in
+        :func:`~unicode_fol_kit.semantics.conditional.cf_countermodel` bound
+        different searches (nitpick's finite-model search over the world type vs.
+        the Python enumeration of sphere chains), so equal numbers do not mean
+        equal coverage. The default *numbers* do coincide at the centered levels —
+        ``card="1-3"`` here against
+        :data:`~unicode_fol_kit.semantics.conditional.DEFAULT_MAX_WORLDS`'s 3 —
+        which is why the schemas whose only countermodels have three worlds
+        (conditional excluded middle at VC, importation at VW) are now refuted by
+        both routes rather than only this one.
+
     Raises:
         IsabelleNotAvailable: if no Isabelle installation can be located.
+        ValueError: on an unknown ``centering`` level — checked *before* the
+            install lookup, so a typo is reported as a typo on a machine with no
+            Isabelle rather than masked by ``IsabelleNotAvailable``.
         NotImplementedError: propagated from the emitter on a quantifier or a
             modal operator (□/◇ range over an accessibility relation, not a
             similarity ordering).
     """
+    from unicode_fol_kit.hol.isabelle_conditional import (
+        isabelle_conditional_theory, battery_proof, nitpick_proof,
+        DEFAULT_METHODS as _CF_METHODS)
+    from unicode_fol_kit.semantics.conditional import check_centering
+
+    check_centering(centering)
     install = install or find_isabelle()
     if install is None:
         raise IsabelleNotAvailable(
             "No Isabelle installation found. Set UFK_ISABELLE_HOME (or ISABELLE_HOME) "
             "to the install directory, or put `isabelle` on PATH.")
-    from unicode_fol_kit.hol.isabelle_conditional import (
-        isabelle_conditional_theory, battery_proof, nitpick_proof,
-        DEFAULT_METHODS as _CF_METHODS)
 
     # --- step 1: prove ---------------------------------------------------- #
     tok = "G" + uuid.uuid4().hex[:8]
     prove_thy = isabelle_conditional_theory(
-        formula, theory_name=tok,
-        proof=battery_proof(methods if methods is not None else _CF_METHODS))
+        formula, theory_name=tok, centering=centering,
+        proof=battery_proof(methods if methods is not None else _CF_METHODS,
+                            centering=centering))
     r1 = check_theory(prove_thy, tok, install=install, session_timeout=prove_timeout)
     if r1.ok:
         return FolVerdict(status=VALID, method="prove-battery",
@@ -843,7 +914,7 @@ def isabelle_decide_counterfactual(
     if refute:
         tok2 = "G" + uuid.uuid4().hex[:8]
         nit_thy = isabelle_conditional_theory(
-            formula, theory_name=tok2,
+            formula, theory_name=tok2, centering=centering,
             proof=nitpick_proof(card=card, timeout=refute_timeout))
         r2 = check_theory(nit_thy, tok2, install=install,
                           session_timeout=refute_timeout + 30,

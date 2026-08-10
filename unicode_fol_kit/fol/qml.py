@@ -24,13 +24,76 @@ evaluator): **decreasing** ``∀x∀w∀v(E(x,v)∧R(w,v)→E(x,w))`` validates 
 (cumulative) ``∀x∀w∀v(E(x,w)∧R(w,v)→E(x,v))`` validates CBF; **constant** validates both;
 **varying** neither.
 
+**One relation per modal family.** ``R`` is alethic (``□`` / ``◇``, configured by
+``frame=``), ``T`` is the temporal *henceforth* relation (``Always`` / ``Eventually``
+read it forward, ``Historically`` / ``Once`` read its converse), ``N`` is the *one-step
+successor* (``Next``, and ``Previous`` over its converse) and ``D`` is deontic
+(``Obligatory`` / ``Permitted``); the agent-indexed families use the ternary ``Rk`` /
+``Rb`` / ``Rs`` / ``Rw`` (configured by ``systems=``). :func:`qml_axioms` types every
+relation the formula actually uses and, for ``T`` / ``N`` / ``D``, asserts these
+**default-on** frame conditions — chosen so this route agrees with
+:func:`unicode_fol_kit.semantics.kripke.satisfies_modal` and with the HOL routes, whose
+``t_refl`` / ``t_trans`` / ``n_in_t`` / ``d_serial`` are the same conditions
+(:mod:`unicode_fol_kit.hol.isabelle_modal`, :mod:`unicode_fol_kit.hol.thf_modal`):
+
+- ``T`` reflexive + transitive, ``N ⊆ T``, and — when both relations occur — the
+  ``first_step`` axiom below, the first-order shadow of the HOL routes' ``t_in_nstar``.
+  So ``Gφ → φ``, ``Gφ → GGφ``, ``Gφ → Fφ``, ``Gφ → Xφ``, ``φ → Fφ``, the fixpoint
+  unfolding ``(φ ∧ XGφ) → Gφ`` and the past mirrors ``Hφ → φ``, ``Hφ → HHφ``,
+  ``Hφ → Yφ``, ``φ → Once φ`` are valid, while ``Xφ → φ``, ``φ → Gφ``, ``Fφ → Gφ``,
+  ``Gφ → Hφ`` and ``Xφ → Fφ`` correctly stay invalid.
+- ``D`` serial (Standard Deontic Logic, KD), the reading the ``Obligatory`` / ``Permitted``
+  node docstrings already declare. ``Oφ → Pφ`` and ``Oφ → ¬O¬φ`` become valid; ``Oφ → φ``
+  stays invalid. Honest contract: a ``True`` verdict for a deontic formula therefore means
+  "valid over every **serial-deontic** model". ``satisfies_modal`` enforces no seriality of
+  its own, so a hand-built dead-end deontic model still refutes ``Oφ → Pφ`` *there*.
+
+**The transitive-closure limit — what stays out of reach.** ``satisfies_modal`` evaluates
+``Always`` / ``Eventually`` over the reflexive-transitive CLOSURE ``N*`` of the one-step
+relation, i.e. the *intended* constraint is ``T = N*``. Reflexivity, transitivity and
+``N ⊆ T`` axiomatise the half ``T ⊇ N*`` (``N*`` is by definition the least refl-trans
+relation containing ``N``), which is what makes the list above sound. The converse half
+``T ⊆ N*`` is **not** first-order definable — the same obstacle this module already
+reports for ``Until`` / ``Since`` — because it demands that the witnessing path be
+*finite*. A first-order CONSEQUENCE of it is definable, however, and this route asserts it
+whenever ``T`` and ``N`` both occur (``first_step``, see
+:func:`_temporal_first_step_axiom`)::
+
+    ∀w ∀v (World(w) ∧ World(v) ∧ T(w,v) → w = v ∨ ∃u (World(u) ∧ N(w,u) ∧ T(u,v)))
+
+— "a henceforth-step is either standing still or one step followed by a henceforth-step".
+Every ``T = N*`` model satisfies it, so it over-validates nothing, and with it the ``←``
+direction of the fixpoint unfolding ``(φ ∧ XGφ) → Gφ`` becomes provable here (the ``→``
+direction needs only ``T ⊇ N*``). Temporal induction ``(φ ∧ G(φ → Xφ)) → Gφ`` genuinely
+does stay out of reach — measured: ``first_step`` does not close it — because reaching an
+arbitrary ``T``-successor from the first step needs induction over the closure, which no
+first-order theory states. For that one use the higher-order routes
+:func:`unicode_fol_kit.hol.isabelle_modal.to_isabelle_modal` /
+:func:`unicode_fol_kit.hol.isabelle_runner.isabelle_decide_modal`, whose ``t_in_nstar``
+axiom pins ``t`` to ``rtranclp n``. The honest summary of this route's temporal strength
+is therefore "refl + trans + ``N ⊆ T`` + ``first_step``" — a chosen axiom set, not "the
+limit of first-order logic".
+
+**Cross-family bridges** relate two families' relations and are **opt-in**: none is
+emitted by default, because none of them is forced by ``satisfies_modal``. Pass
+``bridges=["knowledge_implies_belief", ...]``; the table is :data:`QML_BRIDGES`, an
+unknown name raises ``ValueError`` listing the known ones, and so does a bridge whose
+partner family the formula never mentions. Each condition is the exact frame correspondent
+of its schema and is **the same condition the HOL routes emit under the same name** —
+inclusions ``Rb ⊆ Rk`` / ``Rb ⊆ Rs`` for the two agent-indexed bridges, and the meet
+condition ``∀w ∃v (D(w,v) ∧ R(w,v))`` (``d_meets_r``) for ``ought_implies_can``, which is
+deliberately NOT the folklore ``D ⊆ R``: see :func:`_bridge_axiom` for the measured
+witnesses showing that the inclusion validates the unrequested ``□φ → Oφ`` and
+``Pφ → ◇φ`` while the meet condition validates ``Oφ → ◇φ`` and neither artefact.
+
 Validity is ``AX → ∀w (World(w) → ST(φ, w))``, checked with Z3. First-order modal logic
 is undecidable, so this is **sound but bounded-incomplete** (Z3 may not close every
 valid instance) — the model-theoretic partner is
 :func:`unicode_fol_kit.semantics.kripke.satisfies_modal` with per-world ``domains``.
 
 Public API: :func:`qml_translate`, :func:`qml_axioms`, :func:`qml_is_valid`,
-:func:`qml_equivalent`, and the constants :data:`BARCAN`, :data:`CONVERSE_BARCAN`.
+:func:`qml_equivalent`, and the constants :data:`BARCAN`, :data:`CONVERSE_BARCAN`,
+:data:`QML_BRIDGES`.
 """
 
 from functools import reduce
@@ -313,7 +376,313 @@ def _agent_frame_axioms(rel_name: str, conds) -> List[Node]:
     return out
 
 
-def qml_axioms(mode: str = "constant", frame: str = "K", systems=None) -> List[Node]:
+# Every accessibility relation this embedding can introduce. ``qml_axioms`` called
+# WITHOUT a formula ("give me the background theory") emits axioms for all of them.
+QML_RELATIONS = (_R_ALETHIC, _R_TEMPORAL, _R_NEXT, _R_DEONTIC,
+                 _R_KNOWS, _R_BELIEVES, _R_SAYS, _R_WANTS)
+
+# Which relation each modal node reads. ``Until`` / ``Since`` are deliberately ABSENT:
+# ``_st`` rejects them outright (not first-order definable), so they can never reach a
+# validity query, and listing them here would suggest this route handles them.
+_REL_OF_NODE = (
+    ((Box, Diamond), _R_ALETHIC),
+    ((Obligatory, Permitted), _R_DEONTIC),
+    ((Always, Eventually, Historically, Once), _R_TEMPORAL),
+    ((Next, Previous), _R_NEXT),
+    ((Knows,), _R_KNOWS),
+    ((Believes,), _R_BELIEVES),
+    ((Says,), _R_SAYS),
+    ((Wants,), _R_WANTS),
+)
+
+
+def _relations_used(formula: Node) -> set:
+    """The accessibility relations ``formula`` actually mentions.
+
+    Gating the frame axioms on this is **not** cosmetic. The deontic seriality axiom is
+    the only ∃-quantified frame condition in the set, and Z3's model finder chokes on it:
+    measured, asserting ``d_serial`` unconditionally turned ``∃x □A(x) → □∃x A(x)`` under
+    varying domains — a formula with no deontic operator at all — from a 0.017 s
+    countermodel into a 10 s timeout, i.e. flipped a *reported* verdict. The temporal
+    axioms are near-free by comparison, but the rule is uniform: a relation that does not
+    occur contributes nothing, so for a formula that uses none of ``T`` / ``N`` / ``D``
+    (and no configured ``systems=`` family) :func:`qml_axioms` returns the exact same
+    list — same members, same order — as it did before those axioms existed. That
+    identity is load-bearing: several suite queries sit on a Z3 knife edge under a short
+    timeout, where *any* perturbation of the axiom list can flip a verdict.
+    """
+    used = set()
+    for n in formula.walk():
+        for classes, rel in _REL_OF_NODE:
+            if isinstance(n, classes):
+                used.add(rel)
+                break
+    return used
+
+
+def _relation_typing(rel: str) -> Node:
+    """``∀w ∀v (rel(w,v) → World(w) ∧ World(v))`` — a binary relation is World×World.
+
+    Mirrors the ``R`` typing axiom exactly. Without it a model could relate an *object*
+    to a world and the guard predicates would no longer carve the universe in two.
+    """
+    w, v = _v("w", "v")
+    return Quantifier(_FORALL, w, Quantifier(_FORALL, v, Implies(
+        Atom(rel, [w, v]), And(Atom(_WORLD, [w]), Atom(_WORLD, [v])))))
+
+
+def _temporal_frame_axioms() -> List[Node]:
+    """``T`` is reflexive and transitive — the *henceforth* relation.
+
+    :func:`unicode_fol_kit.semantics.kripke.satisfies_modal` evaluates ``Always`` /
+    ``Eventually`` over the reflexive-transitive CLOSURE of the one-step ``"temporal"``
+    edges (and ``Historically`` / ``Once`` over the closure of the reversed edges), so
+    the current world is always in view and reachability composes. Asserting exactly that
+    makes ``Gφ → φ``, ``Gφ → GGφ``, ``Gφ → Fφ``, ``φ → Fφ`` and the past mirrors valid
+    here, matching the oracle and the Isabelle route's ``t_refl`` / ``t_trans``.
+
+    These two axioms plus ``n_in_t`` say ``T ⊇ N*`` and no more. The converse ``T ⊆ N*``
+    is not first-order definable, but a first-order CONSEQUENCE of it is, and
+    :func:`_temporal_first_step_axiom` asserts it; temporal induction stays out of reach
+    even so — see the module docstring and use ``isabelle_decide_modal`` for that one.
+    """
+    w, v, u = _v("w", "v", "u")
+    W = lambda a: Atom(_WORLD, [a])
+    T = lambda a, b: Atom(_R_TEMPORAL, [a, b])
+    fa = lambda var, body: Quantifier(_FORALL, var, body)
+    return [
+        fa(w, Implies(W(w), T(w, w))),
+        fa(w, fa(v, fa(u, Implies(
+            And(And(W(w), W(v)), And(W(u), And(T(w, v), T(v, u)))), T(w, u))))),
+    ]
+
+
+def _next_in_temporal_axiom() -> Node:
+    """``∀w ∀v (World(w) ∧ World(v) ∧ N(w,v) → T(w,v))`` — one step is a step.
+
+    ``_st`` splits the oracle's single ``"temporal"`` relation into two symbols: ``N``
+    carries the raw one-step edges that ``Next`` / ``Previous`` read, ``T`` carries the
+    closure that ``Always`` / ``Eventually`` read. Decoupled, the embedding would refute
+    ``Gφ → Xφ``, which the oracle validates. This inclusion restores it, and is the FO
+    counterpart of ``isabelle_modal``'s ``n_in_t``.
+    """
+    w, v = _v("w", "v")
+    return Quantifier(_FORALL, w, Quantifier(_FORALL, v, Implies(
+        And(And(Atom(_WORLD, [w]), Atom(_WORLD, [v])), Atom(_R_NEXT, [w, v])),
+        Atom(_R_TEMPORAL, [w, v]))))
+
+
+def _temporal_first_step_axiom() -> Node:
+    """``∀w ∀v (World(w) ∧ World(v) ∧ T(w,v) → w = v ∨ ∃u (World(u) ∧ N(w,u) ∧ T(u,v)))``.
+
+    "A henceforth-step is either standing still or one step followed by a henceforth-step"
+    — the FIRST STEP of the path that witnesses ``T``, made explicit. This is the
+    first-order half of ``T ⊆ N*`` that *is* expressible: ``T ⊆ N*`` itself demands the
+    witnessing path be finite and so is not first-order definable, but every model with
+    ``T = N*`` satisfies the implication above, which is what makes asserting it sound.
+    ``t_refl`` / ``t_trans`` / ``n_in_t`` alone do not entail it — they hold of any
+    refl-trans superset of ``N``, including one with edges no ``N``-path underwrites.
+
+    What it buys, measured: the ``←`` direction of the fixpoint unfolding
+    ``(φ ∧ XGφ) → Gφ`` becomes provable (Z3 closes it in well under a second), where the
+    shipped axioms alone left it underivable. What it does NOT buy: temporal induction
+    ``(φ ∧ G(φ → Xφ)) → Gφ`` stays underivable, because unrolling the first step finitely
+    many times never reaches an arbitrary ``T``-successor — that needs induction over the
+    closure, which no first-order theory states. So the honest summary of this route's
+    temporal strength is "refl + trans + ``N ⊆ T`` + ``first_step``", not "everything
+    first-order logic can reach" and not "everything the oracle validates".
+
+    The ``w = v`` disjunct is genuine identity: at this level ``Atom("=", [w, v])``
+    lowers to Z3's own equality (``Node.to_z3`` maps binary ``=`` natively). That is a
+    different symbol from an object-language ``=`` inside a modal formula, which ``_st``
+    world-relativises into a ternary uninterpreted predicate — the two cannot collide.
+
+    Emitted only when ``T`` and ``N`` BOTH occur and ``temporal_closure`` is on, mirroring
+    ``isabelle_modal``'s ``t_in_nstar`` (which pins ``t = rtranclp n`` outright, HOL being
+    able to say what first-order logic cannot) and for the same reason: the axiom relates
+    the two relations, so it is vacuous — and misleading — unless both are in play.
+    """
+    w, v, u = _v("w", "v", "u")
+    W = lambda a: Atom(_WORLD, [a])
+    T = lambda a, b: Atom(_R_TEMPORAL, [a, b])
+    fa = lambda var, body: Quantifier(_FORALL, var, body)
+    return fa(w, fa(v, Implies(
+        And(And(W(w), W(v)), T(w, v)),
+        Or(Atom("=", [w, v]),
+           Quantifier(_EXISTS, u, And(And(W(u), Atom(_R_NEXT, [w, u])), T(u, v)))))))
+
+
+def _deontic_frame_axioms() -> List[Node]:
+    """``∀w (World(w) → ∃v (World(v) ∧ D(w,v)))`` — the deontic relation is serial (KD).
+
+    Standard Deontic Logic is exactly this condition, and it is the reading the
+    ``Obligatory`` / ``Permitted`` node docstrings and the :mod:`kripke` module docstring
+    already declare; both HOL routes commit to it unconditionally
+    (``isabelle_modal._deontic_axioms``, ``thf_modal._THF_DEONTIC_AXIOM``). It validates
+    ``Oφ → Pφ`` and ``Oφ → ¬O¬φ`` and leaves ``Oφ → φ`` invalid.
+
+    Consequence for the contract: ``True`` for a deontic formula means "valid over every
+    SERIAL-deontic model". ``satisfies_modal`` itself enforces nothing, so a hand-built
+    dead-end deontic model refutes ``Oφ → Pφ`` there — that is the honest reading of the
+    disagreement, not a bug on either side.
+    """
+    w, v = _v("w", "v")
+    return [Quantifier(_FORALL, w, Implies(
+        Atom(_WORLD, [w]),
+        Quantifier(_EXISTS, v, And(Atom(_WORLD, [v]), Atom(_R_DEONTIC, [w, v])))))]
+
+
+# Cross-family bridges. Each entry names the two relations the bridge relates (with the
+# operator label to quote in an error message), the schema it is named after, and the
+# frame condition emitted for it.
+#
+# EVERY CONDITION IS THE EXACT FRAME CORRESPONDENT OF ITS SCHEMA — necessary as well as
+# sufficient — and is the SAME condition ``hol.isabelle_modal`` / ``hol.thf_modal`` emit
+# under the same option name, down to the fact name in ``"fact"``. One option name must
+# denote one logic on every route that offers it; a route-vs-route split is exactly the
+# disagreement ``bridges=`` was introduced to remove (``atp.modal_tableau`` refuses the
+# option outright for the same reason).
+#
+# For the two agent-indexed bridges the correspondent is a relation INCLUSION: a box over
+# the super-relation entails the box over the sub-relation, so the relation of the ENTAILED
+# modality is the subset, and the reversed inclusion does not validate the principle.
+#
+# THE ``D ⊆ R`` TRAP — do NOT "simplify" ought_implies_can into an inclusion. Measured
+# (:func:`_bridge_axiom` documents the witnesses): ``D ⊆ R`` on its own does not validate
+# ``Oφ → ◇φ`` at all — a world with no deontic successor makes ``Oφ`` vacuously true while
+# ``◇φ`` is false — and ``D ⊆ R`` TOGETHER WITH the default-on ``d_serial`` validates the
+# strictly stronger ``□φ → Oφ`` ("whatever is necessary is obligatory") plus ``Pφ → ◇φ``,
+# neither of which the caller asked for. The existential "meet" condition below is exactly
+# right: it subsumes deontic seriality and validates the schema and nothing else.
+QML_BRIDGES = {
+    "knowledge_implies_belief": {
+        "needs": ((_R_KNOWS, "Knows"), (_R_BELIEVES, "Believes")),
+        "schema": "K_a φ → B_a φ",
+        "condition": "Rb ⊆ Rk",
+        "fact": "rb_in_rk",
+    },
+    "sincerity": {
+        "needs": ((_R_SAYS, "Says"), (_R_BELIEVES, "Believes")),
+        "schema": "Say_a φ → B_a φ",
+        "condition": "Rb ⊆ Rs",
+        "fact": "rb_in_rs",
+    },
+    "ought_implies_can": {
+        "needs": ((_R_DEONTIC, "Obligatory/Permitted"), (_R_ALETHIC, "□/◇")),
+        "schema": "Oφ → ◇φ",
+        "condition": "∀w (World(w) → ∃v (World(v) ∧ D(w,v) ∧ R(w,v)))",
+        "fact": "d_meets_r",
+    },
+}
+
+# The two agent-indexed bridges are inclusions between ternary relations; the deontic one
+# is the binary "meet" condition. Kept next to the table so the shape of each axiom is
+# read off one place.
+_BRIDGE_INCLUSIONS = {
+    "knowledge_implies_belief": (_R_BELIEVES, _R_KNOWS),       # Rb ⊆ Rk
+    "sincerity": (_R_BELIEVES, _R_SAYS),                       # Rb ⊆ Rs
+}
+
+
+def _bridge_axiom(name: str) -> Node:
+    """The frame condition realising the cross-family bridge ``name``.
+
+    The two INCLUSION bridges are emitted **unguarded** — ``∀a ∀w ∀v (Rb(a,w,v) →
+    Rk(a,w,v))``, not the ``Object(a) ∧ World(w) ∧ …`` guarded form. That is deliberate
+    and load-bearing: the axiom constrains only the relations, every *use* site is already
+    ``World``-guarded by ``_box`` / ``_diamond`` / ``_box_agent``, and a guarded version
+    would silently fail to fire for a FREE agent variable, since nothing types a free
+    variable as an ``Object`` — so ``∀x (K_x φ → B_x φ)`` would come out invalid.
+    Soundness is untouched: any oracle model in which the inclusion holds between world
+    pairs expands to a first-order model of the unguarded axiom.
+
+    ``ought_implies_can`` is the ∃-quantified MEET condition ``∀w (World(w) → ∃v (World(v)
+    ∧ D(w,v) ∧ R(w,v)))`` — every world has an alternative that is *both* deontically
+    ideal and alethically possible — which is the exact correspondent of ``Oφ → ◇φ`` and
+    the same condition the HOL routes emit as ``d_meets_r``. Two details:
+
+    * Unlike the inclusions this one **must** be ``World``-guarded. Unguarded it would
+      demand a ``D``-successor for every element of the universe, including objects; with
+      the ``D`` typing axiom that forces every object to be a world, contradicting the
+      sort-disjointness axiom — an inconsistent hypothesis, under which *everything*
+      comes out valid. The guard costs nothing, since ``_box`` / ``_diamond`` only ever
+      instantiate the axiom at worlds.
+    * It does **not** validate the ``D ⊆ R`` artefacts ``□φ → Oφ`` and ``Pφ → ◇φ``, and
+      that is a measured difference rather than a stylistic one. The frame
+      ``W = {0,1,2}``, ``D = {(0,1),(0,2),(1,1),(2,2)}``, ``R = {(0,1),(1,1),(2,2)}``
+      satisfies the meet condition at every world, yet refutes ``□P → OP`` at 0 (with
+      ``P`` true only at 1) and ``PP → ◇P`` at 0 (with ``P`` true only at 2), while
+      ``OP → ◇P`` holds — checked against ``semantics.kripke.satisfies_modal``.
+    """
+    fa = lambda var, body: Quantifier(_FORALL, var, body)
+    if name in _BRIDGE_INCLUSIONS:
+        sub, sup = _BRIDGE_INCLUSIONS[name]
+        a, w, v = _v("a", "w", "v")
+        return fa(a, fa(w, fa(v, Implies(Atom(sub, [a, w, v]), Atom(sup, [a, w, v])))))
+    if name != "ought_implies_can":
+        raise ValueError(f"qml: no axiom shape for bridge {name!r}.")
+    w, v = _v("w", "v")
+    return fa(w, Implies(
+        Atom(_WORLD, [w]),
+        Quantifier(_EXISTS, v, And(Atom(_WORLD, [v]),
+                                   And(Atom(_R_DEONTIC, [w, v]), Atom(_R_ALETHIC, [w, v]))))))
+
+
+def _validate_bridges(bridges) -> List[str]:
+    """Normalise and check ``bridges=``; an unknown name must never be silently ignored."""
+    if not bridges:
+        return []
+    if isinstance(bridges, str):
+        bridges = [bridges]
+    names = list(bridges)
+    for name in names:
+        if name not in QML_BRIDGES:
+            raise ValueError(
+                f"qml: unknown bridge {name!r} (use one of {sorted(QML_BRIDGES)}).")
+    return names
+
+
+def _check_bridge_families(names: List[str], used: set) -> None:
+    """Reject a bridge whose partner family does not occur in the formula.
+
+    A bridge is a claim about how two relations sit relative to each other, so asking for
+    one while the formula mentions only one of the two families is asking for something
+    the query cannot express. The same three policies the HOL routes weigh apply here, and
+    the same one wins (see ``hol.isabelle_modal._bridge_axioms``):
+
+    - *skip it silently*: the caller asked for a logic and would get a strictly weaker one
+      with no signal — the "silently weakened logic" failure this package refuses;
+    - *emit it anyway*: not conservative. ``d_meets_r`` entails ``∃v R(w,v)``, i.e.
+      seriality of the ALETHIC relation, so emitting ``ought_implies_can`` for a ``□``-only
+      formula would turn ``□P → ◇P`` from invalid into valid under ``frame="K"`` — a
+      silent change to the alethic logic the caller *did* select;
+    - *raise*: one uniform rule for every bridge, present and future, and the same rule the
+      HOL routes apply, so a ``bridges=`` call means the same thing on every route.
+
+    ``ValueError`` — not ``NotImplementedError`` — because the route *can* express the
+    bridge; the caller's formula simply does not mention one of the families.
+    ``qml_axioms`` called **without** a formula asks for the whole background theory, in
+    which every relation is in scope, so nothing is rejected there.
+    """
+    for name in names:
+        spec = QML_BRIDGES[name]
+        missing = [op for rel, op in spec["needs"] if rel not in used]
+        if missing:
+            raise ValueError(
+                f"qml: the bridge {name!r} relates two modal families "
+                f"({spec['condition']}), but the formula contains no "
+                f"{' / '.join(missing)} operator, so that relation is unconstrained by "
+                "the query. Emitting the condition anyway is not conservative — "
+                "d_meets_r entails seriality of the alethic R, which would silently make "
+                "□P → ◇P valid under frame='K' — and skipping it would answer for a "
+                "weaker logic than requested. Drop the bridge, state the formula in both "
+                "families, or call qml_axioms() without formula= for the whole "
+                "background theory. (Same rule as to_isabelle_modal / to_thf_modal_full.)")
+
+
+def qml_axioms(mode: str = "constant", frame: str = "K", systems=None,
+               formula: Optional[Node] = None, bridges=None,
+               temporal_closure: bool = True) -> List[Node]:
     """Return the background axioms (sort typing, frame conditions, domain regime).
 
     The conjunction of these is the hypothesis under which a translated formula's
@@ -323,6 +692,34 @@ def qml_axioms(mode: str = "constant", frame: str = "K", systems=None) -> List[N
     epistemic / doxastic relations, e.g. ``systems={"epistemic": "S5", "doxastic": "KD45"}``
     — so knowledge can be made factive (T/S4/S5) and belief consistent (KD45), symmetric
     to the THF exporter.
+
+    The temporal (``T`` reflexive + transitive, ``N ⊆ T``) and deontic (``D`` serial)
+    conditions are **on by default**, which is what brings this route into agreement with
+    ``satisfies_modal`` and with the Isabelle / THF exporters; see the module docstring
+    for the resulting validities and for the transitive-closure limit that keeps temporal
+    induction out of reach.
+
+    ``formula`` gates the output: only the relations occurring in it are typed and
+    constrained (see :func:`_relations_used` for why that matters — it is a real
+    performance and *verdict* concern, not tidiness). Called **without** a formula this
+    stays the "give me the whole background theory" call and emits axioms for every
+    relation in :data:`QML_RELATIONS`.
+
+    ``bridges`` is an opt-in list of cross-family frame conditions from
+    :data:`QML_BRIDGES`; an unknown name raises ``ValueError`` listing the known ones, and
+    so does a bridge whose partner family the ``formula`` never mentions (see
+    :func:`_check_bridge_families` — the same rule the HOL routes apply, so one option
+    name means one thing on every route). A requested bridge is never gated away by
+    :func:`_relations_used`, but it also does not drag its relations' default frame blocks
+    into scope.
+
+    ``temporal_closure=False`` drops ``T``'s reflexivity and transitivity and the
+    ``first_step`` axiom, keeping only ``N ⊆ T``, for parity with
+    ``isabelle_modal_theory`` / ``to_thf_modal_full``. Be aware
+    of what that means on a *decision* route: the answers are then those of a strictly
+    weaker temporal logic than the one ``satisfies_modal`` implements (``Gφ → φ`` and
+    ``Gφ → Fφ`` become underivable), so a ``False`` under it is not evidence about the
+    oracle's temporal logic.
     """
     if frame == "GL":
         raise NotImplementedError(
@@ -336,6 +733,9 @@ def qml_axioms(mode: str = "constant", frame: str = "K", systems=None) -> List[N
         raise ValueError(
             f"qml: unknown mode {mode!r} (use one of "
             f"{sorted(_ACTUALIST_MODES | _CONSTANT_MODES)}).")
+    bridge_names = _validate_bridges(bridges)
+    used = set(QML_RELATIONS) if formula is None else _relations_used(formula)
+    _check_bridge_families(bridge_names, used)
     x, w, v, u = _v("x", "w", "v", "u")
     t = Variable("t")
     W = lambda a: Atom(_WORLD, [a])
@@ -353,6 +753,10 @@ def qml_axioms(mode: str = "constant", frame: str = "K", systems=None) -> List[N
         fa(w, fa(v, Implies(R(w, v), And(W(w), W(v))))),
         fa(x, fa(w, Implies(E(x, w), And(O(x), W(w))))),
     ]
+    # typing for the other world×world relations, only where they occur (see
+    # _relations_used). The agent-indexed ones are typed by _agent_frame_axioms.
+    axioms += [_relation_typing(rel)
+               for rel in (_R_TEMPORAL, _R_NEXT, _R_DEONTIC) if rel in used]
 
     conds = _FRAMES[frame]
     if "refl" in conds:
@@ -379,6 +783,21 @@ def qml_axioms(mode: str = "constant", frame: str = "K", systems=None) -> List[N
             And(And(W(w), W(v)), And(W(u), And(R(w, v), R(w, u)))),
             Or(R(v, u), R(u, v)))))))
 
+    # inter-modality frame conditions (default-on; see the module docstring). Each block
+    # fires only when its relation occurs, so a formula in the alethic fragment gets the
+    # exact axiom list it got before these existed.
+    if _R_TEMPORAL in used and temporal_closure:
+        axioms += _temporal_frame_axioms()
+    if _R_TEMPORAL in used and _R_NEXT in used:
+        # the link is vacuous — and misleading — unless BOTH relations occur.
+        axioms.append(_next_in_temporal_axiom())
+        if temporal_closure:
+            # ... and, when T is meant to be the closure, say that each T-step starts
+            # with an N-step. Mirrors isabelle_modal's t_in_nstar, which pins t = n**.
+            axioms.append(_temporal_first_step_axiom())
+    if _R_DEONTIC in used:
+        axioms += _deontic_frame_axioms()
+
     # non-empty local domains (standard classical QML: every world has an existing
     # individual). The Barcan counter-models all use non-empty domains, so this does
     # not affect BF/CBF; it makes ∀x φ → ∃x φ valid, and keeps (A) and the THF export
@@ -403,7 +822,14 @@ def qml_axioms(mode: str = "constant", frame: str = "K", systems=None) -> List[N
             if sys not in _FRAMES:
                 raise ValueError(
                     f"qml: unknown system {sys!r} for {fam} (use one of {sorted(_FRAMES)}).")
-            axioms += _agent_frame_axioms(_AGENT_FAMILIES[fam], _FRAMES[sys])
+            # both validators stay UNCONDITIONAL — a typo in systems= must be reported
+            # even when the configured family does not occur in the formula.
+            if _AGENT_FAMILIES[fam] in used:
+                axioms += _agent_frame_axioms(_AGENT_FAMILIES[fam], _FRAMES[sys])
+
+    # explicitly requested bridges are never gated away, but they also do not pull their
+    # relations' default frame blocks into scope (see the qml_axioms docstring).
+    axioms += [_bridge_axiom(name) for name in bridge_names]
     return axioms
 
 
@@ -437,9 +863,17 @@ def _signature_typing_facts(formula: Node) -> List[Node]:
     return facts
 
 
-def _validity_formula(formula: Node, mode: str, frame: str, systems=None) -> Node:
-    """Build ``⋀axioms ∧ ⋀typing-facts → ∀w (World(w) → ST(formula, w))``."""
-    axioms = qml_axioms(mode, frame, systems) + _signature_typing_facts(formula)
+def _validity_formula(formula: Node, mode: str, frame: str, systems=None,
+                      bridges=None, temporal_closure: bool = True) -> Node:
+    """Build ``⋀axioms ∧ ⋀typing-facts → ∀w (World(w) → ST(formula, w))``.
+
+    The axioms are gated on ``formula``'s signature, so a query only carries the frame
+    conditions of the relations it actually mentions. New parameters are APPENDED, so the
+    positional call in :mod:`unicode_fol_kit.atp.resolution` keeps working unchanged and
+    inherits the gating.
+    """
+    axioms = qml_axioms(mode, frame, systems, formula=formula, bridges=bridges,
+                        temporal_closure=temporal_closure) + _signature_typing_facts(formula)
     w = _pick_world_name(formula, "w")
     body = Implies(Atom(_WORLD, [Variable(w)]), qml_translate(formula, mode, world=w))
     closed = Quantifier(_FORALL, Variable(w), body)
@@ -448,27 +882,44 @@ def _validity_formula(formula: Node, mode: str, frame: str, systems=None) -> Nod
 
 
 def qml_is_valid(formula: Node, mode: str = "constant", frame: str = "K",
-                 systems=None, timeout: int = 10000) -> bool:
+                 systems=None, timeout: int = 10000, bridges=None,
+                 temporal_closure: bool = True) -> bool:
     """Return True iff ``formula`` is QML-valid under ``mode`` / ``frame`` (via Z3).
 
     ``systems`` optionally sets the agent-indexed epistemic / doxastic frame systems,
     e.g. ``systems={"epistemic": "S5"}`` makes knowledge factive so ``∀x (K_x φ → φ)``
-    comes out valid.
+    comes out valid. ``bridges`` opts into the cross-family relation inclusions of
+    :data:`QML_BRIDGES` (none by default).
 
     Sound but bounded-incomplete: ``True`` means Z3 proved validity; ``False`` means it
     did not (a genuine countermodel, or — since first-order modal logic is undecidable
     — an instance Z3 could not close). For a definite countermodel use
     :func:`unicode_fol_kit.semantics.kripke.satisfies_modal` over an explicit model.
+
+    Two contract details worth knowing before reading a verdict:
+
+    - a temporal or deontic formula is judged under the default-on frame conditions, so
+      ``True`` for a deontic formula means "valid over every SERIAL-deontic model", and
+      temporal induction ``(φ ∧ G(φ → Xφ)) → Gφ`` comes back ``False`` here despite
+      holding in every intended model — decide that one with
+      :func:`unicode_fol_kit.hol.isabelle_runner.isabelle_decide_modal`;
+    - a deontic ``False`` is typically Z3 returning *unknown* rather than a countermodel:
+      the ∃-quantified seriality axiom defeats its model finder, measured identical at
+      1 s / 2 s / 10 s budgets (the same behaviour ``frame="KD"`` has always had). A short
+      ``timeout`` therefore costs no reliability on deontic non-theorems.
     """
     from ..atp.z3_models import is_valid
-    return is_valid(_validity_formula(formula, mode, frame, systems), timeout=timeout)
+    return is_valid(_validity_formula(formula, mode, frame, systems, bridges=bridges,
+                                      temporal_closure=temporal_closure), timeout=timeout)
 
 
 def qml_equivalent(left: Node, right: Node, mode: str = "constant", frame: str = "K",
-                   systems=None, timeout: int = 10000) -> bool:
+                   systems=None, timeout: int = 10000, bridges=None,
+                   temporal_closure: bool = True) -> bool:
     """Return True iff two modal formulas are QML-equivalent under ``mode`` / ``frame``."""
     return qml_is_valid(Iff(left, right), mode=mode, frame=frame, systems=systems,
-                        timeout=timeout)
+                        timeout=timeout, bridges=bridges,
+                        temporal_closure=temporal_closure)
 
 
 # The Barcan formula and its converse, over a unary predicate A — the standard

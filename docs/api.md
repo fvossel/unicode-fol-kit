@@ -131,6 +131,7 @@ signature and documentation of each public entry point; use the search box or th
    to_isabelle_modal
    isabelle_decide_modal
    isabelle_decide_fol
+   isabelle_decide_counterfactual
    modal_faithfulness_theory
    intuitionistic_faithfulness_theory
    conditional_faithfulness_theory
@@ -160,6 +161,9 @@ signature and documentation of each public entry point; use the search box or th
    free_holds
    announce
    would
+   cf_satisfies
+   cf_valid
+   cf_countermodel
    rel_valid
    rel_countermodel
    rel_satisfies

@@ -11,9 +11,21 @@ ranges over ``nested`` sphere systems (any two spheres of a world are
 is the weakest sphere logic **V**. The dual "might" ``A \<diamond>\<rightarrow> B`` is
 ``\<not>(A \<box>\<rightarrow> \<not>B)``.
 
-There is no counterfactual node in the toolkit AST (conditionals are evaluated
-functionally by ``would`` / ``might``), so the encoder builds a deep term from an
-antecedent/consequent pair rather than from a single formula.
+**Which sphere class this is** — and how it differs from the decision routes. ``validD``
+/ ``validS`` here fix ``nested Sp`` and nothing more, so they denote the class
+:data:`~unicode_fol_kit.semantics.conditional.CENTERING_LEVELS`'s ``"none"`` names, i.e.
+Lewis's **V**. :func:`~unicode_fol_kit.semantics.conditional.cf_valid` and
+:func:`~unicode_fol_kit.hol.isabelle_runner.isabelle_decide_counterfactual` default to
+``"weak"`` (**VW**) instead, because modus ponens for ``\<box>\<rightarrow>`` fails in V.
+That difference is deliberate: what is machine-checked in this module is the *faithfulness*
+of the three embeddings to each other, which is a statement about the truth condition and
+holds at every centering level — adding a centering premise here would constrain the
+sphere systems without changing anything the faithfulness theorems say. Do not read a
+``validD`` verdict as a verdict about the logic ``cf_valid`` decides.
+
+The deep term is built from an antecedent/consequent **pair** rather than from a single
+formula node: the encoder predates the ``Would`` / ``Might`` AST nodes and mirrors the
+argument form of ``would`` / ``might``, whose propositional-only contract it shares.
 """
 
 from typing import Optional

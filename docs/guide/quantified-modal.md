@@ -365,7 +365,7 @@ The background axioms (sort typing, frame conditions, the existence-axiom that *
 from unicode_fol_kit.fol.qml import qml_axioms
 
 ax = qml_axioms(mode="increasing", frame="S4")
-len(ax)                       # → 9
+len(ax)                       # → 17
 ax[0].to_unicode_str()        # → '∀t ¬(World(t) ∧ Object(t))'   (worlds and objects are disjoint)
 
 # Inspect the axioms for different regimes
@@ -373,12 +373,77 @@ ax_const = qml_axioms(mode="constant", frame="K")
 ax_incr = qml_axioms(mode="increasing", frame="K")
 ax_decr = qml_axioms(mode="decreasing", frame="K")
 
-len(ax_const), len(ax_incr), len(ax_decr)  # → (7, 7, 7)  (same base count)
+len(ax_const), len(ax_incr), len(ax_decr)  # → (15, 15, 15)  (same base count)
 
-# Check if increasing mode has domain constraints
-any("cumulative" in str(ax) for ax in ax_incr)  # → True
-any("decreasing" in str(ax) for ax in ax_decr)  # → True
+# The regime axiom is the last one, and the two regimes are mirror images:
+# increasing carries existence FORWARD along R, decreasing carries it BACK.
+ax_incr[-1].to_unicode_str()
+# → '∀x ∀w ∀v (Object(x) ∧ World(w) ∧ (World(v) ∧ (E(x, w) ∧ R(w, v))) → E(x, v))'
+ax_decr[-1].to_unicode_str()
+# → '∀x ∀w ∀v (Object(x) ∧ World(w) ∧ (World(v) ∧ (E(x, v) ∧ R(w, v))) → E(x, w))'
 ```
+
+Called with no `formula=`, that is the *whole* background theory: one relation per modal family (alethic `R`, temporal `T`, one-step `N`, deontic `D`) plus their default frame conditions. Pass the formula and only the relations it actually mentions are typed and constrained — for a `□`-only formula the list is exactly what it was before the temporal/deontic conditions existed:
+
+```python
+from unicode_fol_kit import MSFLParser
+
+pm = MSFLParser(modal=True).parse
+len(qml_axioms(formula=pm("□P → P")))          # → 7   (nothing temporal or deontic in scope)
+len(qml_axioms())                              # → 15  (every family's relation)
+```
+
+### Temporal and deontic conditions are on by default
+
+The temporal relation `T` is reflexive + transitive (it *is* the henceforth relation), `N ⊆ T` links the one-step relation to it, and the deontic relation `D` is serial. These are on by default because that is what makes this route agree with `satisfies_modal` and with the Isabelle / THF exporters — before, a temporal or deontic formula was judged with *no* condition on its relation at all, so plainly valid principles came back `False`:
+
+```python
+from unicode_fol_kit import qml_is_valid
+
+qml_is_valid(pm("Ⓖ P → P"))          # → True   (T reflexive)
+qml_is_valid(pm("Ⓖ P → Ⓖ Ⓖ P"))      # → True   (T transitive)
+qml_is_valid(pm("Ⓖ P → Ⓝ P"))        # → True   (N ⊆ T)
+qml_is_valid(pm("Ⓞ P → Ⓟ P"))        # → True   (D serial)
+
+qml_is_valid(pm("Ⓝ P → P"))          # → False  (a step need not stay put)
+qml_is_valid(pm("Ⓞ P → P"))          # → False  (obligation is not fact)
+```
+
+So `True` for a deontic formula means "valid over every **serial-deontic** model" — `satisfies_modal` will still refute `Ⓞφ → Ⓟφ` on a hand-built dead-end model, and that is the honest reading of the disagreement, not a bug on either side. Set `temporal_closure=False` for parity with the exporters' own flag; be aware it answers for a strictly weaker temporal logic (`Ⓖφ → φ` and `Ⓖφ → Ⓕφ` become underivable).
+
+`T` is axiomatised as reflexive-transitive rather than *defined* as the transitive closure of `N`, because a first-order theory cannot pin a closure down. A first-order *consequence* of `T = N*` can be stated, though, and `qml_axioms` emits it whenever both relations occur (`first_step`):
+
+```text
+∀w ∀v (World(w) ∧ World(v) ∧ T(w,v) → w = v ∨ ∃u (World(u) ∧ N(w,u) ∧ T(u,v)))
+```
+
+— "a henceforth-step is either standing still or one step followed by a henceforth-step". Every `T = N*` model satisfies it, so it over-validates nothing, and with it the fixpoint unfolding `(φ ∧ Ⓝ Ⓖ φ) → Ⓖ φ` becomes provable here. Temporal induction `(φ ∧ Ⓖ(φ → Ⓝ φ)) → Ⓖ φ` genuinely does stay out of reach — reaching an arbitrary `T`-successor from the first step needs induction over the closure, which no first-order theory states. Decide that one with `hol.isabelle_runner.isabelle_decide_modal`, whose theory defines the closure outright. So this route's temporal strength is "refl + trans + `N ⊆ T` + `first_step`" — a chosen axiom set, not "the limit of first-order logic".
+
+### Cross-family bridges with `bridges=`
+
+`frame=` and `systems=` each constrain one relation; a **bridge** relates two relations of *different* families, which is what a principle like "whatever you know, you believe" needs. Bridges are opt-in — none is on by default — and an unknown name raises `ValueError` listing the known ones:
+
+| `bridges=` name | Schema | Frame condition |
+| --- | --- | --- |
+| `"knowledge_implies_belief"` | `K_a φ → B_a φ` | `Rb ⊆ Rk` |
+| `"sincerity"` | `Say_a φ → B_a φ` | `Rb ⊆ Rs` |
+| `"ought_implies_can"` | `Ⓞ φ → ◇φ` | `∀w ∃v (D(w,v) ∧ R(w,v))` |
+
+```python
+from unicode_fol_kit import QML_BRIDGES, qml_is_valid
+
+sorted(QML_BRIDGES)   # → ['knowledge_implies_belief', 'ought_implies_can', 'sincerity']
+
+kb = pm("K_a P → B_a P")
+qml_is_valid(kb)                                            # → False  (off by default)
+qml_is_valid(kb, bridges=["knowledge_implies_belief"])      # → True
+qml_is_valid(pm("B_a P → K_a P"),
+             bridges=["knowledge_implies_belief"])          # → False  (the converse stays invalid)
+```
+
+The two inclusions are emitted **unguarded** (`∀a ∀w ∀v (Rb(a,w,v) → Rk(a,w,v))`), which is what lets them fire for a quantified agent — `∀x (K_x φ → B_x φ)` is valid under the bridge. `ought_implies_can` is deliberately *not* the folklore `D ⊆ R`: measured, that inclusion fails to validate `Ⓞφ → ◇φ` on its own, and together with the default-on `d_serial` it over-validates both `□φ → Ⓞφ` ("whatever is necessary is obligatory") and `Ⓟφ → ◇φ`. The ∃-quantified *meet* condition emitted instead is the exact correspondent: it subsumes deontic seriality, validates the schema, and carries neither artefact. It is the same condition the HOL routes emit under the same name (`d_meets_r`), so **one option name denotes one logic on every route** — see [Higher-order logic](higher-order.md).
+
+A bridge relates two relations, so requesting one while the formula mentions only one of the two families raises `ValueError` rather than silently emitting a weaker logic (skipping it) or a stronger one (the meet condition entails seriality of the alethic `R`, which would quietly make `□P → ◇P` valid under `frame="K"`). The same rule applies on every route. `qml_axioms()` called without `formula=` asks for the whole background theory, in which every relation is in scope, so nothing is rejected there.
 
 ### Deciding validity per regime
 
@@ -528,6 +593,8 @@ resolution.prove([], CONVERSE_BARCAN)     # → True
 ```
 
 Like `qml_is_valid`, this is **sound but bounded-incomplete**: `False` means "not proved within `max_steps`", never "definitely invalid" — reach for `satisfies_modal` on an explicit model when you need a guaranteed countermodel. Unlike `qml_is_valid`, there is no `mode=`/`frame=` choice here; it is fixed to constant-domain K, matching `qml_is_valid`'s own defaults.
+
+One route difference is worth knowing before you compare verdicts on a **temporal or deontic** formula. Purely propositional modal input is lowered by `standard_translation`, which emits the accessibility relation and no frame conditions at all, so `resolution.prove([], Ⓖ P → P)` is `False` where `qml_is_valid` is `True` — the resolution route is answering for a temporal logic with an unconstrained relation. (`modal_decide` returns `'unknown'` on the same formula, for its own reason: the tableau has no rule for the henceforth closure.) Nothing here is unsound — a resolution `False` never claims invalidity — but it is not evidence against `qml_is_valid`'s `True`.
 
 ## (B) Higher-order shallow embedding → TPTP THF
 

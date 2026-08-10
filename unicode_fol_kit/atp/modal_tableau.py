@@ -43,6 +43,20 @@ closure, the euclidean rule closes ``w→v, w→u ⊢ v→u``, and seriality man
 successor for a world that lacks one. The named systems are K, T, D/KD, B/KB, K4, K45,
 S4, S5, KD45.
 
+**Cross-family bridges are NOT supported here.** A frame condition relating two
+DIFFERENT relations — ``rb ⊆ rk`` (``K_a φ → B_a φ``), ``rb ⊆ rs``
+(``Say_a φ → B_a φ``), ``∀w ∃v. d w v ∧ r w v`` (``Oφ → ◇φ``) — would need edge
+rules that copy or jointly witness across relations, and this tableau has none:
+every structural rule above acts within a single relation. Rather than accept a
+``bridges=`` request and quietly decide a *different* (weaker) logic, every public
+entry point takes ``bridges=None`` and **raises** ``NotImplementedError`` naming the
+routes that do implement the option — ``fol.qml.qml_is_valid`` /
+``fol.qml.qml_axioms`` and ``hol.isabelle_modal.to_isabelle_modal`` /
+``hol.thf_modal.to_thf_modal_full``. Without the guard a caller that threaded
+``bridges=`` through the toolkit would get ``invalid`` here and ``valid`` there for
+the same formula, which is precisely the cross-route disagreement the option was
+introduced to remove.
+
 **Soundness vs. completeness.** Every rule preserves satisfiability over its frame
 class, so a *closed* tableau is a real proof — ``is_modal_valid`` only returns ``True``
 when the tableau closes. Termination on the transitive logics relies on subset
@@ -568,6 +582,37 @@ def _solve(b: _Branch, ctx: _Ctx):
         return ("open", _build_model(b))
 
 
+#: The cross-family bridge names the HOL / qml routes accept. Listed here only so
+#: the refusal below can name them; this module implements NONE of them.
+_KNOWN_BRIDGES = ("knowledge_implies_belief", "sincerity", "ought_implies_can")
+
+
+def _check_bridges(bridges) -> None:
+    """Refuse any ``bridges=`` request, naming the routes that can honour it.
+
+    A bridge is a frame condition on TWO relations at once; this tableau's
+    structural rules (``_frame_close`` / ``_find_seriality``) each work inside a
+    single relation, so there is no rule to apply and no sound way to approximate
+    one. Accepting the argument and ignoring it would decide a strictly WEAKER
+    logic than the caller asked for and would make this module disagree with the
+    HOL routes on the same formula — so it raises instead, in the same style as the
+    GL guard below: name the boundary, name what does express it.
+    """
+    if not bridges:
+        return
+    if isinstance(bridges, str):
+        bridges = [bridges]
+    raise NotImplementedError(
+        f"modal_tableau: cross-family bridges {sorted(set(bridges))!r} are not "
+        "supported by this tableau — a bridge constrains two DIFFERENT "
+        "accessibility relations at once (e.g. rb ⊆ rk for K_aφ → "
+        "B_aφ), and every structural rule here acts inside a single relation. "
+        "Use a route that emits the bridge as an axiom: fol.qml.qml_is_valid / "
+        "qml_axioms, or hol.isabelle_modal.to_isabelle_modal (with "
+        "hol.isabelle_runner.isabelle_decide_modal) / "
+        f"hol.thf_modal.to_thf_modal_full. Known bridges: {list(_KNOWN_BRIDGES)}.")
+
+
 def _check_frame(frame: str, systems) -> None:
     if frame == "GL":
         # Not a typo the user made — a genuine scope boundary, explained like
@@ -593,7 +638,8 @@ def _check_frame(frame: str, systems) -> None:
                 f"(use one of {sorted(_FRAMES)}).")
 
 
-def _run(formulas, frame: str, systems, max_worlds: int, max_steps: int):
+def _run(formulas, frame: str, systems, max_worlds: int, max_steps: int,
+         bridges=None):
     """Build the root branch from ``formulas`` at world 0 and search it.
 
     ``formulas`` is first run through :func:`~unicode_fol_kit.fol.pal.reduce_announcements`
@@ -611,10 +657,13 @@ def _run(formulas, frame: str, systems, max_worlds: int, max_steps: int):
     Hybrid constructs are rejected up front — a nominal names ONE world, a
     constraint this labelled tableau has no rule for, and treating it as an
     ordinary atom would produce wrong verdicts (e.g. it would refute ``@i i``).
-    Every public entry point funnels through here, so the guard covers them all.
+    A ``bridges=`` request is rejected here for the same reason (see
+    :func:`_check_bridges`). Every public entry point funnels through here, so both
+    guards cover them all.
     """
     formulas = [reduce_announcements(f) for f in formulas]
     _check_frame(frame, systems)
+    _check_bridges(bridges)
     for f in formulas:
         if _contains_hybrid(f):
             raise NotImplementedError(
@@ -635,7 +684,8 @@ def _run(formulas, frame: str, systems, max_worlds: int, max_steps: int):
 
 
 def modal_tableau_closed(formulas, frame: str = "K", systems=None,
-                         max_worlds: int = 400, max_steps: int = 200000) -> bool:
+                         max_worlds: int = 400, max_steps: int = 200000,
+                         bridges=None) -> bool:
     """Return True iff ``formulas`` are jointly unsatisfiable at a world (the tableau closes).
 
     Interprets the list as a set of formulas true at the same (root) world under the
@@ -643,45 +693,56 @@ def modal_tableau_closed(formulas, frame: str = "K", systems=None,
     epistemic / doxastic / deontic / temporal relations). Sound: a True is a real
     closed tableau. A False means "no closed tableau within the bound", never a
     positive satisfiability claim — use :func:`modal_countermodel` for that.
+
+    ``bridges`` exists only to be REFUSED: any non-empty request raises
+    ``NotImplementedError`` pointing at the routes that implement cross-family
+    bridges (see :func:`_check_bridges`).
     """
-    res, _ = _run(formulas, frame, systems, max_worlds, max_steps)
+    res, _ = _run(formulas, frame, systems, max_worlds, max_steps, bridges)
     return res == "closed"
 
 
 def is_modal_valid(formula: Node, frame: str = "K", systems=None,
-                   max_worlds: int = 400, max_steps: int = 200000) -> bool:
+                   max_worlds: int = 400, max_steps: int = 200000,
+                   bridges=None) -> bool:
     """Return True iff ``formula`` is modally valid over ``frame`` — ``¬formula`` closes.
 
     Sound: only the closed tableau yields True. An open or bound-exhausted search
     yields False (the formula is then invalid-or-unknown; :func:`modal_decide`
-    distinguishes the two with a verified counter-model).
+    distinguishes the two with a verified counter-model). A non-empty ``bridges``
+    raises ``NotImplementedError`` (see :func:`_check_bridges`).
     """
-    res, _ = _run([Not(formula)], frame, systems, max_worlds, max_steps)
+    res, _ = _run([Not(formula)], frame, systems, max_worlds, max_steps, bridges)
     return res == "closed"
 
 
 def modal_prove(premises, conclusion: Node, frame: str = "K", systems=None,
-                max_worlds: int = 400, max_steps: int = 200000) -> bool:
+                max_worlds: int = 400, max_steps: int = 200000,
+                bridges=None) -> bool:
     """Return True iff ``premises`` locally entail ``conclusion`` over ``frame``.
 
     Local consequence: the tableau for ``premises ∪ {¬conclusion}`` at one world
     closes. Sound (a True is a closed tableau); incomplete only up to the bound.
+    A non-empty ``bridges`` raises ``NotImplementedError``
+    (see :func:`_check_bridges`).
     """
     res, _ = _run(list(premises) + [Not(conclusion)], frame, systems,
-                  max_worlds, max_steps)
+                  max_worlds, max_steps, bridges)
     return res == "closed"
 
 
 def modal_countermodel(formula: Node, frame: str = "K", systems=None,
-                       max_worlds: int = 400, max_steps: int = 200000):
+                       max_worlds: int = 400, max_steps: int = 200000,
+                       bridges=None):
     """Return a Kripke model falsifying ``formula`` over ``frame``, or None.
 
     None means the formula is valid (the tableau closed) **or** the search was
     inconclusive within the bound. The returned model is *verified*: it is only
     handed back when :func:`satisfies_modal` confirms the formula is false at its
-    root world, so a counter-model is never spurious.
+    root world, so a counter-model is never spurious. A non-empty ``bridges``
+    raises ``NotImplementedError`` (see :func:`_check_bridges`).
     """
-    res, model = _run([Not(formula)], frame, systems, max_worlds, max_steps)
+    res, model = _run([Not(formula)], frame, systems, max_worlds, max_steps, bridges)
     if res != "open" or model is None:
         return None
     try:
@@ -695,7 +756,8 @@ def modal_countermodel(formula: Node, frame: str = "K", systems=None,
 
 
 def modal_decide(formula: Node, frame: str = "K", systems=None,
-                 max_worlds: int = 400, max_steps: int = 200000) -> str:
+                 max_worlds: int = 400, max_steps: int = 200000,
+                 bridges=None) -> str:
     """Decide ``formula`` over ``frame``: ``"valid"`` / ``"invalid"`` / ``"unknown"``.
 
     ``"valid"``   — the tableau for ``¬formula`` closed (a sound proof).
@@ -706,9 +768,11 @@ def modal_decide(formula: Node, frame: str = "K", systems=None,
 
     Mirrors the valid / invalid / unknown contract of the local-Isabelle runner
     (:func:`~unicode_fol_kit.hol.isabelle_runner.isabelle_decide_modal`), but runs
-    fully in-process with no external prover.
+    fully in-process with no external prover. A non-empty ``bridges`` raises
+    ``NotImplementedError`` rather than silently deciding the bridge-free logic
+    (see :func:`_check_bridges`).
     """
-    res, model = _run([Not(formula)], frame, systems, max_worlds, max_steps)
+    res, model = _run([Not(formula)], frame, systems, max_worlds, max_steps, bridges)
     if res == "closed":
         return "valid"
     if res == "open" and model is not None:

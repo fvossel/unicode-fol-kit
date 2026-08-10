@@ -44,6 +44,7 @@ from .free_logic import (
 from .dynamic_epistemic import announce, box_announce, diamond_announce
 from .conditional import (
     CounterfactualModel, cf_satisfies, cf_countermodel, cf_valid, would, might,
+    CENTERING_LEVELS, DEFAULT_MAX_WORLDS,
 )
 from .nonmonotonic import (
     minimal_models, minimal_entails,
@@ -79,7 +80,7 @@ __all__ = [
     "free_find_model", "free_countermodel", "free_is_valid", "free_entails",
     "announce", "box_announce", "diamond_announce",
     "CounterfactualModel", "cf_satisfies", "cf_countermodel", "cf_valid",
-    "would", "might",
+    "would", "might", "CENTERING_LEVELS", "DEFAULT_MAX_WORLDS",
     "minimal_models", "minimal_entails",
     "circumscription_formula", "circumscription_entails_so",
     "RelevantModel", "rel_satisfies", "rel_countermodel", "rel_valid",

@@ -5,6 +5,129 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [0.19.0] - 2026-08-10
+
+Fixed — **two measured soundness gaps where a route reported plainly valid
+principles as invalid**, both because a relation or a model class was left
+unconstrained. Each is pinned by a regression test.
+
+- **Modus ponens for `□→` was not valid; it is now, by default.**
+  `semantics.conditional` quantified over *every* nested sphere system,
+  including the **empty** one — under which `A □→ B` is vacuously true even
+  where `A` holds at the evaluation world. So `cf_valid((P ∧ (P □→ Q)) → Q)`
+  and `cf_valid((P □→ Q) → (P → Q))` both came back `False`, with the
+  countermodel `spheres={w: []}` in each case, and `CounterfactualModel`'s
+  docstring promised a centering ("`w` in the first") the code did not impose.
+  The sphere class is now an explicit argument: `centering="none"` (Lewis
+  **V**) / `"weak"` (**VW**, the new default) / `"strong"` (**VC**), listed in
+  the new `CENTERING_LEVELS`. Under the default, modus ponens and weak
+  centering are valid; strong centering `(P ∧ Q) → (P □→ Q)` still needs
+  `"strong"`; and antecedent strengthening, contraposition and transitivity
+  stay invalid at all three levels — the non-monotonicity is untouched.
+  *(Behaviour change for callers who relied on the old verdicts: pass
+  `centering="none"` to get Lewis V back. `cf_valid(φ, 3)` positional calls are
+  unaffected — the new argument is keyword-only.)*
+  The Isabelle route had the same gap (its only premise was `nested Sel`) and
+  takes the same argument with the same default, so
+  `isabelle_decide_counterfactual` and `cf_valid` decide the same logic.
+  Excluding the empty sphere system also deleted the `|W| = 1` countermodel that
+  a *nested* counterfactual relied on, so the **default world bound had to grow
+  with it**: `max_worlds` now defaults to `DEFAULT_MAX_WORLDS[centering]` —
+  3 at `"weak"` / `"strong"`, 2 at `"none"`. Two worlds is structurally too few
+  at the centered levels, in two different ways. At VC `{w}` is pinned as the
+  innermost sphere, so refuting a disjunction of two counterfactuals needs three
+  worlds: Stalnaker's conditional excluded middle `(A □→ B) ∨ (A □→ ¬B)`, which
+  VC leaves open, was reported **valid**. At VW the plain schemas are settled at
+  two worlds but nested ones are not: importation
+  `(A □→ (B □→ C)) → ((A ∧ B) □→ C)` was correctly invalid before centering
+  and became **valid** after it. Both are `False` again at the new default, with
+  verified three-world countermodels. `"none"` keeps the smaller bound because
+  its enumeration is 26 sphere systems per world against VW's 11 (measured: a
+  three-atom schema is seconds at VW, minutes at V) — so default verdicts at
+  *different* levels are searched to different depths and are not directly
+  comparable; pass an explicit `max_worlds` when comparing levels. No row of the
+  ten-schema Lewis battery moves between the two bounds. At the centered levels
+  the default bound now also matches `isabelle_decide_counterfactual`'s
+  `card="1-3"`.
+- **`fol.qml` asserted nothing at all about the temporal, one-step and deontic
+  relations** — not even typing — while `hol.isabelle_modal` already emitted
+  `t_refl` / `t_trans` / `n_in_t` / `t_in_nstar` / `d_serial`, so the two routes
+  disagreed. `Ⓞφ → Ⓟφ`, `Ⓖφ → φ`, `Ⓖφ → ⒼⒼφ`, `Ⓖφ → Ⓕφ` and `Ⓖφ → Ⓝφ` were all
+  reported invalid. `qml_axioms` now emits typing plus the frame conditions
+  (`T` reflexive + transitive, `N ⊆ T`, `D` serial) for the relations the
+  formula actually uses, on by default and gated on `formula=` — for a
+  `□`-only formula the emitted list is member-for-member identical to before
+  (7 axioms), while the ungated "whole background theory" call now returns 15
+  instead of 7 (17 instead of 9 for `frame="S4", mode="increasing"`).
+  `Ⓝφ → φ`, `Ⓕφ → Ⓖφ`, `Ⓞφ → φ` and `φ → Ⓞφ` correctly stay invalid. A deontic
+  `True` now means "valid over every **serial-deontic** model". A first-order
+  theory cannot pin down a transitive closure, but a first-order *consequence*
+  of `T = N*` can be stated, and `qml_axioms` emits it whenever `T` and `N` both
+  occur (`first_step`: `T(w,v) → w = v ∨ ∃u (N(w,u) ∧ T(u,v))`, the FO shadow of
+  the HOL routes' `t_in_nstar`, gated exactly like `n_in_t` and off under
+  `temporal_closure=False`). It holds in every `T = N*` model — checked against
+  the canonical expansion of every one-step relation on ≤ 3 worlds and 4000
+  random ones on 4 — so it over-validates nothing, and with it the fixpoint
+  unfolding `(φ ∧ ⓃⒼφ) → Ⓖφ` is provable here. Only temporal induction
+  `(φ ∧ Ⓖ(φ → Ⓝφ)) → Ⓖφ` stays out of reach, and is documented as pointing at
+  `isabelle_decide_modal`. *(Behaviour change: temporal and deontic formulas
+  previously reported invalid are now valid. `temporal_closure=False` restores
+  the weaker temporal reading, for parity with the exporters' own flag.)*
+  Not fixed in this release, and now **documented** in the quantified-modal
+  guide instead: `resolution.prove` lowers purely propositional modal input with
+  `standard_translation`, which still asserts nothing about `T`/`N`/`D`, so
+  `resolution.prove([], Ⓖ P → P)` stays `False` where `qml_is_valid` is `True`
+  (a resolution `False` never claims invalidity, so this is a coverage gap, not
+  an unsoundness).
+
+Added — **cross-family bridge axioms**, opt-in on every route that can express
+them. `frame=` and `systems=` each constrain one relation; a bridge relates
+**two** relations of different families, which is what these principles need:
+`knowledge_implies_belief` (`K_a φ → B_a φ`, condition `Rb ⊆ Rk` / fact
+`rb_in_rk`), `sincerity` (`Say_a φ → B_a φ`, `Rb ⊆ Rs` / `rb_in_rs`) and
+`ought_implies_can` (`Ⓞ φ → ◇φ`, `∀w ∃v (D(w,v) ∧ R(w,v))` / `d_meets_r`).
+
+- Available as `bridges=` on `qml_axioms` / `qml_is_valid` / `qml_equivalent`
+  (registry `fol.QML_BRIDGES`, also re-exported at the top level) and on
+  `isabelle_modal_theory` / `to_isabelle_modal` / `modal_axiom_names` /
+  `to_thf_modal_full` / `thf_full_frame_axioms` / `isabelle_decide_modal`
+  (registry `hol.BRIDGES`, single-sourced between the Isabelle and THF
+  emitters so the fact names cannot drift). Nothing is on by default; an
+  unknown name raises `ValueError` listing the known ones.
+- Every route emits the **exact** correspondent of each schema, verified by a
+  brute-force sweep over all frames on ≤ 2 worlds, so **one option name denotes
+  one logic everywhere**. `ought_implies_can` is deliberately not the folklore
+  `d ⊆ r`, which measurably fails to validate `Ⓞφ → ◇φ` on its own and, with
+  seriality, over-validates both `□φ → Ⓞφ` ("whatever is necessary is
+  obligatory") and `Ⓟφ → ◇φ`. `fol.qml` shipped the inclusion in an earlier
+  draft of this release and now emits the same meet condition as the HOL routes;
+  the frame `W = {0,1,2}`, `D = {(0,1),(0,2),(1,1),(2,2)}`,
+  `R = {(0,1),(1,1),(2,2)}` satisfies the meet condition and refutes both
+  artefacts, and `test_hol_bridges.py` pins the agreement in both registries.
+- Requesting a bridge whose partner family does not occur in the formula raises
+  `ValueError` on **every** route rather than skipping it (a weaker logic than
+  requested) or emitting it anyway (`d_meets_r` entails seriality of the alethic
+  `r`, which would quietly make `□P → ◇P` valid under `frame="K"`).
+  `qml_axioms()` without `formula=` is the whole-background-theory call, in
+  which every relation is in scope, so nothing is rejected there. The native
+  modal tableau refuses `bridges=` outright with a `NotImplementedError` naming
+  the routes that can honour it: every one of its structural rules acts inside a
+  single relation.
+
+Changed — **the runner now forwards the full logic selection to every theory it
+builds.** `isabelle_decide_counterfactual` gained `centering=` (default
+`"weak"`, matching the emitter and `cf_valid`) and `isabelle_decide_modal`
+gained `bridges=`. Each reaches *all* emission sites — the prove theory, the
+proof battery's `unfolding` / `using` lists, and the nitpick theory. That is
+load-bearing, not tidiness: the two steps decide opposite questions, so an
+option reaching only the prove step degrades to `UNKNOWN`, while one reaching
+only the refute step lets nitpick certify a "genuine" counter-model outside the
+requested class — a false `INVALID`. An unknown `centering` level is reported as
+a `ValueError` *before* the install lookup, so a typo is a typo even on a
+machine with no Isabelle. Under `bridges=`, the reconstructed Kripke witness on
+an `INVALID` verdict is skipped, since the toolkit's evaluator has no notion of
+a cross-family frame condition; the verdict itself is unaffected.
+
 ## [0.18.0] - 2026-07-28
 
 Added — two checker-side capabilities for certifying external provers (built for,

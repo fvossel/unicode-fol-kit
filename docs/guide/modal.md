@@ -478,6 +478,20 @@ modal_decide(nested, frame="K", systems={"epistemic": "T"})  # → 'valid'    (K
 modal_decide(nested, frame="K", systems={"epistemic": "K"})  # → 'invalid'
 ```
 
+### Cross-family bridges are refused here, not approximated
+
+`frame=` and `systems=` each constrain **one** relation. A principle like `K_a φ → B_a φ` ("what you know, you believe") is not a property of `rk` or of `rb` but of how the two sit relative to each other — a *bridge*, `rb ⊆ rk`. Every structural rule of this tableau acts inside a single relation, so there is no rule to apply and no sound way to approximate one. The entry points therefore take `bridges=` only to **refuse** it, naming the routes that can honour it:
+
+```python
+modal_decide(mp.parse("K_a P → B_a P"), bridges=["knowledge_implies_belief"])
+# raises NotImplementedError: modal_tableau: cross-family bridges ... are not supported
+# by this tableau ... Use fol.qml.qml_is_valid / qml_axioms, or
+# hol.isabelle_modal.to_isabelle_modal (with hol.isabelle_runner.isabelle_decide_modal)
+# / hol.thf_modal.to_thf_modal_full.
+```
+
+Accepting the argument and ignoring it would decide a strictly *weaker* logic than asked for and make this module disagree with the HOL routes on the same formula — the same reason `frame="GL"` is rejected rather than approximated. The three bridge names and what each one commits you to are documented under [Quantified modal logic](quantified-modal.md) and [Higher-order logic](higher-order.md).
+
 ### Assertive `Says` and bouletic `Wants`
 
 `Says` and `Wants` are each a **minimal K modality over their own relation, with no frame conditions** — they take no `systems=` entry (there is nothing to tune). The K distribution axiom holds (asserting `P → Q` and asserting `P` lets you derive asserting `Q`), but factivity and veridicality do **not**: saying `P` does not make `P` true, and wanting `P` does not make `P` true.

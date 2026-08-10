@@ -330,6 +330,8 @@ would(CF, 0, A, B)              # → True   (if A were, B would be)
 would(CF, 0, FAnd(A, C), B)    # → False  (strengthening the antecedent breaks it)
 ```
 
+`cf_valid` / `cf_countermodel` lift this from one model to a whole class; `centering="none"` / `"weak"` (default) / `"strong"` picks which of Lewis's V / VW / VC that class is — see [Further non-classical logics](nonclassical.md).
+
 **Circumscription (non-monotonic entailment)** — minimal-model reasoning that strengthening can retract:
 
 ```python
