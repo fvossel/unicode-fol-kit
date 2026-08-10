@@ -65,26 +65,36 @@ jobs:
         run: |
           set -euo pipefail
           cd "$HOME"
-          # The TUM server has real outages (a cache-miss run died with curl 28
-          # connecting to dist.isabelle.cit.tum.de), so try the official mirrors
-          # in order, with retries. The SHA256 pin below is the integrity gate,
-          # so every mirror is equally trustworthy.
+          # The TUM server has real outages, and its canonical /dist/ URL 301s to an
+          # http:// CDN address that curl will not follow (protocol downgrade) — it
+          # then writes a stub file and still exits 0, so a mirror loop that only
+          # checks curl's exit status accepts the failure and never falls through.
+          # Two consequences are handled here: the CDN is listed directly over https,
+          # and the SHA256 pin is verified INSIDE the loop, so any mirror that yields
+          # the wrong bytes (stub, error page, truncated transfer) moves on to the
+          # next one instead of failing the whole job at the integrity gate.
           urls=(
-            "https://isabelle.in.tum.de/dist/${ISABELLE_VERSION}_linux.tar.gz"
+            "https://dist.isabelle.cit.tum.de/dist/${ISABELLE_VERSION}_linux.tar.gz?token=Isabelle"
             "https://www.cl.cam.ac.uk/research/hvg/Isabelle/dist/${ISABELLE_VERSION}_linux.tar.gz"
+            "https://isabelle.in.tum.de/dist/${ISABELLE_VERSION}_linux.tar.gz"
           )
           ok=""
           for url in "${urls[@]}"; do
             echo "Downloading $url"
-            if curl -fSL --connect-timeout 30 --retry 3 --retry-all-errors \
-                 -o isabelle.tar.gz "$url"; then
-              ok="$url"
-              break
+            rm -f isabelle.tar.gz
+            if ! curl -fSL --proto-redir =https --connect-timeout 30 \
+                   --retry 3 --retry-all-errors -o isabelle.tar.gz "$url"; then
+              echo "::warning::download failed from $url - trying next mirror"
+              continue
             fi
-            echo "::warning::download failed from $url - trying next mirror"
+            if ! echo "${ISABELLE_SHA256}  isabelle.tar.gz" | sha256sum -c -; then
+              echo "::warning::checksum mismatch from $url ($(stat -c %s isabelle.tar.gz) bytes) - trying next mirror"
+              continue
+            fi
+            ok="$url"
+            break
           done
           test -n "$ok" || { echo "::error::all Isabelle mirrors failed"; exit 28; }
-          echo "${ISABELLE_SHA256}  isabelle.tar.gz" | sha256sum -c -
           tar xzf isabelle.tar.gz
           rm -f isabelle.tar.gz
           test -x "$HOME/${ISABELLE_VERSION}/bin/isabelle"
