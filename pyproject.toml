@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "unicode-fol-kit"
-version = "0.19.0"
+version = "0.20.0"
 description = "Parser and toolkit for first-order logic formulas using Unicode operators"
 readme = "README.md"
 license = { text = "MIT" }
@@ -39,6 +39,31 @@ test = [
     "pytest>=7.0",
     "pytest-xdist>=3.0",   # parallel test runs: pytest -n auto (the suite is Z3-bound)
 ]
+mcp = [
+    # The MCP server layer (unicode_fol_kit.mcp): the seven-verb API as
+    # Model Context Protocol tools for LLM agents/editors.
+    # Run with: python -m unicode_fol_kit.mcp
+    "mcp>=2.0,<3",
+]
+hf = [
+    # The HuggingFace-evaluate adapter around eval.metric_hf.FolEquivalence.
+    # compute_fol_metrics itself needs NEITHER of these.
+    "evaluate>=0.4",
+    "datasets>=2.14",
+]
+cvc5 = [
+    # Second, independent SMT decision procedure (BSD-3). When installed, the
+    # FOL default chain gains the "cvc5" backend right after "z3" — see
+    # unicode_fol_kit.atp.protocol.default_chain.
+    "cvc5>=1.3,<2",
+]
+chem = [
+    # unicode_fol_kit.chem.mol_to_structure — molecules as finite FOL
+    # structures. Only mol_to_structure needs RDKit; the chemical SIGNATURE,
+    # the structure layer and the evaluator are all RDKit-free, so the rest
+    # of unicode_fol_kit.chem imports and runs without this extra.
+    "rdkit>=2023.9",
+]
 
 [project.urls]
 Documentation = "https://unicode-fol-kit.readthedocs.io/"
@@ -54,7 +79,21 @@ markers = [
     # `pytest -m isabelle_live` — even `-n 4` makes concurrent JVM builds
     # contend for CPU and push long proof batteries (S4.3 ~70 s) past their
     # session timeouts, producing flaky failures. Never put `-n` in addopts.
+    #
+    # Measured 2026-08-13 on a 24-core box, in case anyone is tempted again:
+    # parallelism is not the bottleneck here. `-n 6` with Isabelle's session
+    # timeouts scaled to match (`-o timeout_scale=6 -o threads=4`, so
+    # contention could not trip them) ran 20:05 against 22:51 serial — and
+    # still produced two false failures (both intuitionistic prove cases).
+    # Each build gets its own scratch dir and a uuid session name, so they
+    # cannot collide; what does not parallelise is per-build JVM + heap
+    # startup, and scaling the timeouts also stretches the tests whose
+    # expected outcome IS a timeout. Serial it is.
     "isabelle_live: exercises a real Isabelle/HOL installation via isabelle_runner (slow subprocess builds; skipped automatically when isabelle_available() is False)",
+    # Same convention as isabelle_live: real HTTP calls against a real HETS server
+    # (unicode_fol_kit.hets), gated by hets_available() and skipped automatically
+    # when no server is reachable. Run explicitly and SERIALLY: `pytest -m hets_live`.
+    "hets_live: exercises a real HETS server via unicode_fol_kit.hets (Docker-backed REST; skipped automatically when hets_available() is False)",
 ]
 
 [tool.hatch.build.targets.wheel]

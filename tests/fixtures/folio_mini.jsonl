@@ -1,0 +1,4 @@
+{"premises": ["All cats are mammals.", "Tom is a cat."], "premises-FOL": ["∀x (Cat(x) → Mammal(x))", "Cat(tom)"], "conclusion": "Tom is a mammal.", "conclusion-FOL": "Mammal(tom)", "label": "True"}
+{"premises": ["No birds are mammals.", "Tweety is a bird."], "premises-FOL": ["∀x (Bird(x) → ¬Mammal(x))", "Bird(tweety)"], "conclusion": "Tweety is a mammal.", "conclusion-FOL": "Mammal(tweety)", "label": "False"}
+{"premises": ["Some students study logic.", "Alice is a student."], "premises-FOL": ["∃x (Student(x) ∧ StudiesLogic(x))", "Student(alice)"], "conclusion": "Alice studies logic.", "conclusion-FOL": "StudiesLogic(alice)", "label": "Uncertain", "example-id": "folio-dev-42", "source": "synthetic"}
+{"premises": ["All cats are mammals.", "Tom is a cat."], "premises-FOL": ["Cat(x) → Mammal(x)", "Cat(tom)"], "conclusion": "Tom is a mammal.", "conclusion-FOL": "Mammal(tom)", "label": "True"}

@@ -8,12 +8,16 @@ These cover the previously untested export paths:
 - Prover9 variables are uppercased so they are recognised under
   set(prolog_style_variables); constants stay lowercase.
 - to_latex() escapes the underscore in c_-prefixed constants.
+- TPTP name folding (Atom/Function/Constant) touches only the FIRST
+  character, mirroring tptp_input.py's _cap() exactly, instead of
+  lower-casing the whole name.
 """
 
 import pytest
 
 from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol._fol_nodes import Atom, Number, Xor, Constant
+from unicode_fol_kit.fol._fol_nodes import Atom, Function, Number, Variable, Xor, Constant
+from unicode_fol_kit.fol.tptp_input import parse_tptp_formula
 
 FOL = MSFLParser()
 MSFOL = MSFLParser(many_sorted=True)
@@ -66,6 +70,96 @@ class TestProver9Variables:
 
     def test_constant_stays_lowercase(self):
         assert FOL.parse("Human(socrates)").to_prover9() == "Human(socrates)"
+
+
+class TestTptpNameFolding:
+    """``Node.to_tptp`` used to fold a predicate/function/constant name to
+    TPTP's required lowercase-initial form by calling ``.lower()`` on the
+    WHOLE string. That is wrong two ways: it is not the true inverse of
+    ``tptp_input.py``'s ``_cap()`` (which capitalises only the FIRST
+    character of a parsed predicate name on import), and it mangles a
+    mixed-case function/constant name that needed no folding at all (those
+    are never touched by ``_cap()`` on import in the first place). The fix
+    folds only the first character (see ``fol._fol_nodes.tptp_fold_first_letter``).
+    """
+
+    # -- predicate names (Atom) ------------------------------------------------
+
+    def test_atom_predicate_folds_only_first_letter(self):
+        # 'BDouble' would have collapsed to 'bdouble' under the old whole-
+        # string .lower() — only the leading 'B' is touched now.
+        assert Atom("BDouble", [Variable("a")]).to_tptp() == "bDouble(A)"
+
+    def test_atom_predicate_already_lower_first_letter_is_unchanged(self):
+        # A predicate whose first letter is already lower-case (reachable
+        # only via the Python API, e.g. unicode_fol_kit.chem.mol — the
+        # PREDICATE grammar token always capitalises the first letter for a
+        # parsed atom) is emitted byte-for-byte, not touched at all.
+        assert Atom("bDOUBLE", []).to_tptp() == "bDOUBLE"
+
+    def test_atom_predicate_nullary_folds_only_first_letter(self):
+        assert Atom("ChiralR", []).to_tptp() == "chiralR"
+
+    # -- function / constant names --------------------------------------------
+
+    def test_function_name_folds_only_first_letter(self):
+        assert (Function("hasBondTo", [Variable("a"), Variable("b")]).to_tptp()
+                == "hasBondTo(A,B)")
+
+    def test_constant_name_folds_only_first_letter(self):
+        # A mixed-case constant survives unmangled beyond its first letter
+        # (which is already lower-case per the kit's own NAME-token
+        # convention, so this is in fact a no-op fold).
+        assert Constant("hasBond").to_tptp() == "hasBond"
+
+    # -- round-trip: to_tptp() -> parse_tptp_formula() recovers the SAME symbol -
+
+    @pytest.mark.parametrize("predicate_name", ["BDouble", "HasBondTo", "ChiralR"])
+    def test_atom_predicate_round_trips_through_tptp(self, predicate_name):
+        """Reproduces the reported bug: under the old whole-string .lower(),
+        'bDOUBLE'.to_tptp() -> 'bdouble', which re-parses (tptp_input._cap
+        capitalises only the first letter) to 'Bdouble' — a DIFFERENT
+        symbol than the original 'bDOUBLE'/'BDouble'. With only-the-first-
+        letter folding, to_tptp() and _cap() are exact inverses of each
+        other, so the round trip recovers the identical predicate name.
+        """
+        original = Atom(predicate_name, [Variable("a")])
+        reparsed = parse_tptp_formula(original.to_tptp())
+        assert reparsed == original
+        assert reparsed.predicate == predicate_name
+
+    @pytest.mark.parametrize("name", ["hasBond", "hasBondTo", "aliceSmith"])
+    def test_constant_name_round_trips_through_tptp(self, name):
+        """Function/Constant names are never touched by _cap() on import (only
+        Atom predicates are), so they need NO folding at all — a mixed-case
+        constant name must survive to_tptp() -> parse_tptp_formula()
+        completely unchanged, which the old whole-string .lower() broke.
+
+        Wrapped in an equality atom (rather than parsed bare) because a bare
+        TPTP identifier in FORMULA position parses as a 0-ary predicate
+        (``prop_atom``, ``_cap()``-folded), not a term — an equality atom's
+        two sides are the term position that actually exercises the
+        ``constant()`` import handler this is testing.
+        """
+        original = Atom("=", [Constant(name), Constant(name)])
+        reparsed = parse_tptp_formula(original.to_tptp())
+        assert reparsed == original
+        assert reparsed.args[0].name == name
+
+    # -- documented residual: folding alone is not injective -------------------
+
+    def test_first_letter_fold_alone_still_collides_on_case_of_first_letter(self):
+        """'Foo' and 'foo' differ ONLY in the case of their first letter, so
+        folding just that one character still maps both to 'foo' — this
+        residual collision is exactly what the collision guard in
+        atp._tptp_problem.generate_tptp_problem (and atp.tptp_ncl.to_tptp_ncl)
+        exists to catch across a WHOLE problem's formulas; a single node's
+        to_tptp() has no way to detect it in isolation. See
+        tests/test_tptp_problem.py for the guard itself.
+        """
+        assert (Atom("Foo", [Variable("a")]).to_tptp()
+                == Atom("foo", [Variable("a")]).to_tptp()
+                == "foo(A)")
 
 
 class TestLatexUnderscore:

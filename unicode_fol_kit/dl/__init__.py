@@ -21,6 +21,14 @@ Parsing the glyph concept syntax back into a :class:`Concept`
     dl.parse_concept("∃hasChild.(Doctor ⊓ ¬Rich)")   # -> Concept
     dl.parse_gci("Doctor ⊑ ∃hasChild.⊤")              # -> (Concept, Concept)
 
+Parsing/rendering the W3C OWL 2 Manchester Syntax (ALC fragment only,
+:mod:`unicode_fol_kit.dl.owl_manchester`)::
+
+    dl.parse_manchester("hasChild some (Doctor and not Rich)")   # -> Concept
+    dl.to_manchester(C)                                          # -> str
+    dl.parse_manchester_axiom("Doctor SubClassOf hasChild some owl:Thing")
+    #  -> ("subclass", Concept, Concept)
+
 The standard translation to FOL, so ALC reuses the kit's FOL provers/exports
 (:mod:`unicode_fol_kit.dl.translate`)::
 
@@ -42,6 +50,7 @@ from .parser import parse_concept, parse_gci, ConceptSyntaxError
 from .translate import (
     concept_to_fol, subsumption_to_fol, tbox_to_fol, abox_to_fol, concept_to_modal,
 )
+from .owl_manchester import parse_manchester, to_manchester, parse_manchester_axiom, ManchesterSyntaxError
 
 __all__ = [
     "Concept", "Top", "Bottom", "Atomic", "Not", "And", "Or", "Exists", "ForAll", "nnf",
@@ -51,4 +60,5 @@ __all__ = [
     "parse_concept", "parse_gci", "ConceptSyntaxError",
     "concept_to_fol", "subsumption_to_fol", "tbox_to_fol", "abox_to_fol",
     "concept_to_modal",
+    "parse_manchester", "to_manchester", "parse_manchester_axiom", "ManchesterSyntaxError",
 ]

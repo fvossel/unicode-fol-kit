@@ -442,6 +442,37 @@ class TestMixingErrors:
         with pytest.raises(ParsingError):
             MSFLParser().parse("P(x) →")
 
+    # -- Propositional atoms get the same diagnosis as applied ones --
+
+    def test_mixing_after_a_bare_atom_is_not_reported_as_a_naming_error(self):
+        """'A ∧ B ∨ C' is a mixing failure, not a bad name.
+
+        The lexer stops on the ∨ with the *predicate* 'B' as the last token,
+        which used to produce "Invalid predicate 'B' … Expected pattern:
+        [A-Z][a-zA-Z0-9]*" — a diagnosis that is simply false, since 'B'
+        matches that pattern exactly. Whoever reads it goes off renaming a
+        good predicate instead of adding the brackets the grammar wants.
+        """
+        msg = self._error_str(MSFLParser(), "A ∧ B ∨ C")
+        assert "Cannot mix" in msg
+        assert "Invalid predicate" not in msg
+        assert "Expected pattern" not in msg
+        # The locator survives: the reader still learns WHERE it broke.
+        assert "position 7" in msg and "'B'" in msg
+
+    def test_bare_atom_mixing_hint_is_mode_aware_like_the_applied_case(self):
+        msg = self._error_str(MSFLParser(many_sorted=True), "A ∧ B ∨ C")
+        assert "exclusive or" not in msg          # ⊕ is not in MSFOL's group
+        assert "conjunction" in msg and "disjunction" in msg
+
+    def test_a_genuine_naming_error_still_names_the_pattern(self):
+        """The narrowing is confined to same-level connectives: a character
+        that is NOT one of them still yields the naming diagnosis with the
+        expected pattern, which is what makes that message useful."""
+        msg = self._error_str(MSFLParser(), "P(1x)")
+        assert "Invalid number" in msg
+        assert "Expected pattern" in msg
+
 
 # ---------------------------------------------------------------------------
 # Lambda syntax (subtask 4a)

@@ -377,6 +377,55 @@ def constant_name_from_ascii(s: str) -> str:
     return s
 
 
+# --------------------------------------------------------------------------- #
+# TPTP name folding — the exact mirror of tptp_input.py's ``_cap()``.
+#
+# TPTP requires an unquoted identifier to start with a lower-case letter
+# (``lower_word: [a-z][A-Za-z0-9_]*``), while this kit's own Atom-predicate
+# convention requires an upper-case first letter (grammar token
+# ``PREDICATE: /[A-Z][a-zA-Z0-9]*/``). On import, ``tptp_input.py``'s
+# ``_cap()`` bridges that gap by capitalising ONLY the first character of a
+# parsed predicate name (``hasBond`` → ``HasBond``) and leaving every other
+# character untouched — never a whole-string case fold. Exporting therefore
+# has to invert exactly that: fold only the first character back to
+# lower-case, not `.lower()` the entire name. An earlier version of
+# Atom/Function/Constant.to_tptp did the latter, which is wrong two ways:
+#
+#  1. **Not the true inverse of `_cap()`.** ``_cap()`` only ever touches
+#     position 0, so re-exporting a mixed-case name via whole-string
+#     `.lower()` does not reproduce the original: a chemistry predicate like
+#     ``BDouble`` would round-trip as ``bdouble`` → (re-imported, `_cap()`
+#     applied) → ``Bdouble`` — a DIFFERENT symbol, silently.
+#  2. **Loses information `_cap()` never touched at all for Function/Constant
+#     names.** Those are never case-folded on import (`_functor_name` only
+#     strips quotes), so a mixed-case function/constant name such as
+#     ``hasBond`` needs NO folding whatsoever — the first character is
+#     already lower-case per this kit's own NAME-token convention — yet the
+#     old whole-string `.lower()` mangled it to ``hasbond`` anyway.
+#
+# Folding only the first character does NOT by itself make the export
+# injective: ``Foo`` and ``foo`` still both fold to ``foo``. That residual
+# case is caught at the point where all of a TPTP PROBLEM's formulas come
+# together — see :func:`unicode_fol_kit.atp._tptp_problem.generate_tptp_problem`
+# (the three external-prover backends) and
+# :func:`unicode_fol_kit.atp.tptp_ncl.to_tptp_ncl` (the NXF modal export) —
+# neither of which a single node's ``to_tptp()`` can check on its own, since
+# a collision is a property of the WHOLE set of symbols in a problem, not of
+# one node in isolation.
+# --------------------------------------------------------------------------- #
+
+def tptp_fold_first_letter(name: str) -> str:
+    """Fold ``name``'s first character to lower-case for TPTP export; leave the rest untouched.
+
+    The exact mirror of :func:`tptp_input._cap`, which capitalises only the
+    first character of a parsed predicate name on import — see the module
+    comment above this function for why a whole-string ``.lower()`` is wrong.
+    Used by :meth:`Atom.to_tptp`, :meth:`Function.to_tptp`, and
+    :meth:`Constant.to_tptp` for their predicate/function/constant name.
+    """
+    return (name[:1].lower() + name[1:]) if name else name
+
+
 @dataclass(frozen=True)
 class Constant(Node):
     """A ground constant, produced by a bare NAME, a c_-prefixed CONSTANT, or a
@@ -406,8 +455,14 @@ class Constant(Node):
         return constant_name_to_ascii(self.name)
 
     def to_tptp(self) -> str:
-        """Render constant in TPTP syntax (ASCII, lowercase-initial): transliterate then lowercase."""
-        return constant_name_to_ascii(self.name).lower()
+        """Render constant in TPTP syntax (ASCII, lowercase-initial): transliterate, then fold the first letter.
+
+        Only the first character is folded to lower-case (see
+        :func:`tptp_fold_first_letter`) — everything from the second character
+        on is emitted verbatim, so a mixed-case constant name (e.g. a
+        chemistry identifier like ``hasBond``) survives export unmangled.
+        """
+        return tptp_fold_first_letter(constant_name_to_ascii(self.name))
 
 
 @dataclass(frozen=True)
@@ -494,11 +549,13 @@ class Function(Node):
 
         Arithmetic operators (+, -, *, /) are mapped to their TPTP dollar-word
         equivalents ($sum, $difference, $product, $quotient) and emitted in
-        prefix notation. All other functions are emitted as lowercase
-        identifiers with a parenthesised argument list.
+        prefix notation. All other functions are emitted as identifiers with
+        a parenthesised argument list, with only the first character folded
+        to lower-case (see :func:`tptp_fold_first_letter`) — a mixed-case
+        function name is otherwise preserved verbatim.
         """
         args_str = ",".join(a.to_tptp() for a in self.args)
-        tptp_name = self.TPTP_ARITH_OPS.get(self.name, self.name.lower())
+        tptp_name = self.TPTP_ARITH_OPS.get(self.name, tptp_fold_first_letter(self.name))
         return f"{tptp_name}({args_str})"
 
 
@@ -592,9 +649,23 @@ class Atom(Node):
         Equality (=) and disequality (!=) are emitted infix — the only genuine
         infix predicates in TPTP. The arithmetic comparisons (<, >, ≤, ≥) are
         TPTP dollar-word predicates and are emitted in prefix/functor form
-        ($less(a, b), $greater(a, b), $lesseq(a, b), $greatereq(a, b)). All other
-        predicates are emitted as lowercase identifiers with a parenthesised
-        argument list; a nullary predicate becomes a bare propositional atom.
+        ($less(a, b), $greater(a, b), $lesseq(a, b), $greatereq(a, b)). All
+        other predicates are emitted as identifiers with a parenthesised
+        argument list, with only the first character folded to lower-case
+        (see :func:`tptp_fold_first_letter`) — the exact mirror of
+        ``tptp_input.py``'s ``_cap()``, which capitalises only the first
+        character of a parsed predicate name on import. A nullary predicate
+        becomes a bare propositional atom.
+
+        This first-letter fold is NOT injective on its own — ``Foo`` and
+        ``foo`` both render as ``foo`` — so two distinct predicates that
+        differ only in their first letter's case still collide here; a
+        caller assembling a whole TPTP problem from several formulas (as the
+        three external-prover backends and the NXF export do) is
+        responsible for checking that collision across the WHOLE problem
+        and refusing rather than silently merging two symbols, since a
+        single node has no visibility into its siblings elsewhere in the
+        problem.
         """
         if self.predicate in self.INFIX_PREDS_TPTP and len(self.args) == 2:
             left = self.args[0].to_tptp()
@@ -609,10 +680,10 @@ class Atom(Node):
             return f"{op}({left},{right})"
 
         if not self.args:
-            return f"{self.predicate.lower()}"
+            return tptp_fold_first_letter(self.predicate)
 
         args_str = ",".join(a.to_tptp() for a in self.args)
-        return f"{self.predicate.lower()}({args_str})"
+        return f"{tptp_fold_first_letter(self.predicate)}({args_str})"
 
 
 @dataclass(frozen=True)

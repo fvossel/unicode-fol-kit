@@ -10,13 +10,27 @@ hold only in their *guarded* forms ``(∀x φ ∧ E!(c)) → φ(c)`` and ``(φ(c
 
 A :class:`FreeModel` carries an ``outer`` domain, the ``existing`` inner subset, a
 (possibly partial) constant/function interpretation, and predicate tables over the
-outer domain. Two policies for an atom that contains a **non-denoting** term:
+outer domain. Three policies for an atom that contains a **non-denoting** term:
 
 - ``"negative"`` (default) — the atom is simply **false** (negative free logic;
   ``t = t`` then also fails when ``t`` does not denote);
 - ``"positive"`` — self-identity ``t = t`` is **true** for any term, while every other
   atom with a non-denoting term is false (the common positive-free-logic convention
-  for identity).
+  for identity);
+- ``"supervaluation"`` — treats every ground atom with a non-denoting term as a
+  genuine truth-value **gap** rather than forcing it false, then asks whether the
+  *whole formula* comes out true under **every** classical way of filling the gaps
+  (a *precisification*), false under every one, or neither. A formula is true
+  (*supertrue*) iff every precisification makes it true, false (*superfalse*) iff
+  every precisification makes it false, and otherwise it is itself a gap — reported
+  as ``False``, the same convention ``"negative"`` already uses for a single gappy
+  atom (``free_satisfies`` always returns a plain ``bool``; there is no third value
+  in the return type). The distinguishing case is a classical tautology such as
+  ``P(e) ∨ ¬P(e)`` for non-denoting ``e``: each disjunct is individually a gap, yet
+  *every* precisification of ``P(e)`` (true or false) makes the disjunction true, so
+  the whole formula is supertrue — unlike naively combining each disjunct's own
+  gappy verdict, which would stay a gap. See :func:`free_satisfies` for the bounded
+  precisification search this policy runs (:data:`SUPERVALUATION_MAX_GAPS`).
 
 Beyond single-model checking, :func:`free_find_model`, :func:`free_countermodel`,
 :func:`free_is_valid` and :func:`free_entails` add a Mace4-style **bounded exhaustive
@@ -25,9 +39,9 @@ search** over ``FreeModel``s, in the style of
 every existing/outer split, every partial constant/function assignment, and every
 predicate extension. See their docstrings for the honest bounded-search contract.
 
-Public API: :class:`FreeModel`, :data:`NONDENOTING`, :func:`free_satisfies`,
-:func:`free_holds`, :func:`free_find_model`, :func:`free_countermodel`,
-:func:`free_is_valid`, :func:`free_entails`.
+Public API: :class:`FreeModel`, :data:`NONDENOTING`, :data:`SUPERVALUATION_MAX_GAPS`,
+:func:`free_satisfies`, :func:`free_holds`, :func:`free_find_model`,
+:func:`free_countermodel`, :func:`free_is_valid`, :func:`free_entails`.
 """
 
 from dataclasses import dataclass, field
@@ -90,12 +104,18 @@ def free_satisfies(formula: Node, model: FreeModel,
 
     Quantifiers range over ``model.existing``; ``E!(t)`` is true iff ``t`` denotes an
     existing object; an atom with a non-denoting term is handled per ``policy``
-    (``"negative"`` / ``"positive"`` — see the module docstring).
+    (``"negative"`` / ``"positive"`` / ``"supervaluation"`` — see the module
+    docstring). Under ``"supervaluation"`` this delegates to :func:`_supervaluate`,
+    a bounded search over every classical completion of the formula's gap atoms
+    (capped at :data:`SUPERVALUATION_MAX_GAPS` distinct gaps).
     """
     if assignment is None:
         assignment = {}
-    if policy not in ("negative", "positive"):
-        raise ValueError(f"free_satisfies: unknown policy {policy!r} (negative / positive).")
+    if policy not in ("negative", "positive", "supervaluation"):
+        raise ValueError(
+            f"free_satisfies: unknown policy {policy!r} (negative / positive / supervaluation).")
+    if policy == "supervaluation":
+        return _supervaluate(formula, model, assignment)
 
     if isinstance(formula, Atom):
         return _atom(formula, model, assignment, policy)
@@ -153,6 +173,165 @@ def _atom(atom: Atom, model: FreeModel, assignment: Mapping[str, Any], policy: s
 def free_holds(formula: Node, model: FreeModel, policy: str = "negative") -> bool:
     """Convenience: ``free_satisfies`` of a closed ``formula`` (empty assignment)."""
     return free_satisfies(formula, model, {}, policy)
+
+
+# ---------------------------------------------------------------------------
+# Supervaluationism — policy="supervaluation" for free_satisfies.
+#
+# A "gap atom" is a ground occurrence of an ordinary predicate atom (never ``=``,
+# ``≠`` or ``E!`` — those are always decided, per the negative-free-logic reading,
+# regardless of policy: identity/existence are not treated as an additional locus
+# of gap here) that has a non-denoting argument. A *precisification* assigns each
+# distinct gap atom a classical truth value, consistently everywhere it recurs in
+# the formula (the same ground atom under a quantifier, e.g. one instantiated at
+# the same domain element from two different sub-formulas, gets the same value).
+# The formula is supertrue / superfalse / a gap according to whether every, no, or
+# some-but-not-all of the 2**n precisifications make it true — see the module
+# docstring for the running P(e) ∨ ¬P(e) example.
+# ---------------------------------------------------------------------------
+
+#: Hard cap on the number of distinct gap atoms a single supervaluation may
+#: enumerate (2**n precisifications to check, each a full recursive evaluation of
+#: the formula) — exceeding it raises rather than silently truncating the search.
+SUPERVALUATION_MAX_GAPS = 16
+
+
+def _term_repr(term: Node, assignment: Mapping[str, Any]) -> Tuple[Any, ...]:
+    """A hashable structural key identifying ``term`` under ``assignment``.
+
+    Unlike :func:`_term_value`, this never collapses to :data:`NONDENOTING` — two
+    syntactically different non-denoting terms (e.g. two different constants
+    absent from ``model.constants``) get different keys, so they can be
+    precisified independently, while the same term recurring (e.g. under a
+    quantifier, once per bound variable) gets the same key both times, so
+    :func:`_supervaluate` can hold it to a single consistent precisified value.
+    """
+    if isinstance(term, Variable):
+        return ("var", assignment.get(term.name))
+    if isinstance(term, Constant):
+        return ("const", term.name)
+    if isinstance(term, Number):
+        return ("num", str(term.value))
+    if isinstance(term, Function):
+        return ("fn", term.name, tuple(_term_repr(a, assignment) for a in term.args))
+    raise TypeError(f"free_logic: not a term: {type(term).__name__}")
+
+
+def _is_gap_candidate(atom: Atom) -> bool:
+    """Whether ``atom`` is ever subject to precisification (identity/E! never are)."""
+    if atom.predicate == _EXISTS_PRED and len(atom.args) == 1:
+        return False
+    if atom.predicate in ("=", "≠"):
+        return False
+    return True
+
+
+def _gap_key(atom: Atom, assignment: Mapping[str, Any]) -> Tuple[Any, ...]:
+    """The precisification-dict key for a gappy occurrence of ``atom``."""
+    return (atom.predicate, tuple(_term_repr(a, assignment) for a in atom.args))
+
+
+def _collect_gap_atoms(formula: Node, model: FreeModel,
+                       assignment: Mapping[str, Any], gaps: set) -> None:
+    """Populate ``gaps`` with the key of every non-denoting gap-candidate atom in
+    ``formula``, instantiating quantifiers over ``model.existing`` (finite domain)."""
+    if isinstance(formula, Atom):
+        if not _is_gap_candidate(formula):
+            return
+        values = tuple(_term_value(a, model, assignment) for a in formula.args)
+        if any(v is NONDENOTING for v in values):
+            gaps.add(_gap_key(formula, assignment))
+        return
+    if isinstance(formula, Quantifier):
+        var = formula.variable.name
+        for d in model.existing:
+            _collect_gap_atoms(formula.formula, model, {**assignment, var: d}, gaps)
+        return
+    for child in formula._child_nodes():
+        _collect_gap_atoms(child, model, assignment, gaps)
+
+
+def _atom_precisified(atom: Atom, model: FreeModel, assignment: Mapping[str, Any],
+                      precisification: Mapping[Tuple[Any, ...], bool]) -> bool:
+    """Truth value of ``atom`` under one precisification (identity/E! bypass it)."""
+    if not _is_gap_candidate(atom):
+        return _atom(atom, model, assignment, "negative")
+    values = tuple(_term_value(a, model, assignment) for a in atom.args)
+    if any(v is NONDENOTING for v in values):
+        return precisification[_gap_key(atom, assignment)]
+    relation = model.predicates.get((atom.predicate, len(atom.args)), frozenset())
+    return values in relation
+
+
+def _eval_precisified(formula: Node, model: FreeModel, assignment: Mapping[str, Any],
+                      precisification: Mapping[Tuple[Any, ...], bool]) -> bool:
+    """``free_satisfies``'s recursion, but gap atoms resolve via ``precisification``."""
+    if isinstance(formula, Atom):
+        return _atom_precisified(formula, model, assignment, precisification)
+    if isinstance(formula, Not):
+        return not _eval_precisified(formula.formula, model, assignment, precisification)
+    if isinstance(formula, And):
+        return (_eval_precisified(formula.left, model, assignment, precisification)
+                and _eval_precisified(formula.right, model, assignment, precisification))
+    if isinstance(formula, Or):
+        return (_eval_precisified(formula.left, model, assignment, precisification)
+                or _eval_precisified(formula.right, model, assignment, precisification))
+    if isinstance(formula, Xor):
+        return (_eval_precisified(formula.left, model, assignment, precisification)
+                != _eval_precisified(formula.right, model, assignment, precisification))
+    if isinstance(formula, Implies):
+        return ((not _eval_precisified(formula.left, model, assignment, precisification))
+                or _eval_precisified(formula.right, model, assignment, precisification))
+    if isinstance(formula, Iff):
+        return (_eval_precisified(formula.left, model, assignment, precisification)
+                == _eval_precisified(formula.right, model, assignment, precisification))
+    if isinstance(formula, Quantifier):
+        var = formula.variable.name
+        results = (
+            _eval_precisified(formula.formula, model, {**assignment, var: d}, precisification)
+            for d in model.existing
+        )
+        if formula.type in _FORALL:
+            return all(results)
+        if formula.type in _EXISTS:
+            return any(results)
+        raise ValueError(f"free_satisfies: unknown quantifier {formula.type!r}")
+    raise TypeError(f"free_satisfies: unsupported node {type(formula).__name__}")
+
+
+def _supervaluate(formula: Node, model: FreeModel, assignment: Mapping[str, Any]) -> bool:
+    """``policy="supervaluation"`` entry point: enumerate every precisification.
+
+    Collects the formula's gap atoms (quantifiers instantiated over
+    ``model.existing``), enumerates all ``2**n`` classical completions, and
+    evaluates the formula under each with :func:`_eval_precisified`. Returns
+    ``True`` iff every completion agrees on ``True`` (supertrue), ``False`` iff
+    every completion agrees on ``False`` (superfalse) OR the completions disagree
+    (a genuine gap — see the module docstring for why this collapses to the same
+    ``False`` a lone gappy atom already returns under ``"negative"``).
+    """
+    gaps: set = set()
+    _collect_gap_atoms(formula, model, assignment, gaps)
+    if len(gaps) > SUPERVALUATION_MAX_GAPS:
+        raise ValueError(
+            f"free_satisfies: supervaluation over {len(gaps)} distinct gap atom(s) exceeds "
+            f"SUPERVALUATION_MAX_GAPS = {SUPERVALUATION_MAX_GAPS} (2**n precisifications to "
+            "check, each a full evaluation of the formula); reformulate with fewer "
+            "non-denoting ground atoms, or evaluate under policy='negative' / 'positive' "
+            "instead.")
+    gap_list = sorted(gaps, key=repr)   # order just needs to be fixed across the loop below
+
+    saw_true = False
+    saw_false = False
+    for bits in product((False, True), repeat=len(gap_list)):
+        precisification = dict(zip(gap_list, bits))
+        if _eval_precisified(formula, model, assignment, precisification):
+            saw_true = True
+        else:
+            saw_false = True
+        if saw_true and saw_false:
+            return False                  # already a gap; no need to check the rest
+    return saw_true and not saw_false
 
 
 # ---------------------------------------------------------------------------
@@ -357,8 +536,10 @@ def _search(formulas: Sequence[Node], max_size: int, policy: str, domain_split: 
     searched, so a bare ``None`` would misleadingly look like a completed bounded
     search — this raises instead (see the arity/message in the ValueError).
     """
-    if policy not in ("negative", "positive"):
-        raise ValueError(f"free_logic model search: unknown policy {policy!r} (negative / positive).")
+    if policy not in ("negative", "positive", "supervaluation"):
+        raise ValueError(
+            f"free_logic model search: unknown policy {policy!r} "
+            "(negative / positive / supervaluation).")
     closed = [_universal_closure(f) for f in formulas]
 
     constants: set = set()

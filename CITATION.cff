@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you use unicode-fol-kit in your research, please cite it as below."
+title: "unicode-fol-kit"
+type: software
+authors:
+  - family-names: Vossel
+    given-names: Felix
+    email: felixvossel@gmail.com
+license: MIT
+repository-code: "https://github.com/fvossel/unicode-fol-kit"
+url: "https://unicode-fol-kit.readthedocs.io/"
+keywords:
+  - logic
+  - first-order-logic
+  - modal-logic
+  - non-classical-logic
+  - theorem-proving
+  - semantic-parsing
+  - autoformalization
+  - NL-to-FOL
+version: 0.20.0
+date-released: "2026-08-13"

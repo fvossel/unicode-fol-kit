@@ -58,24 +58,28 @@ clauses = (to_clauses(parser.parse("∀x (Human(x) → Mortal(x))"))
 refute(clauses)   # → True   (the empty clause is derivable ⇒ jointly unsatisfiable)
 ```
 
-### Equality is uninterpreted
+### Equality via paramodulation
 
-`=` is treated as an ordinary predicate (no built-in reflexivity/congruence), so entailments that rely on the theory of equality must supply the needed axioms as explicit premises — or use the Z3 backend, which interprets `=` natively. **Watch the naming convention:** a single lowercase letter like `a` is a *variable*, so use a multi-character name (`alice`) for a constant individual.
+The resolution prover handles `=` with built-in paramodulation, reflexivity
+resolution, and demodulation — congruence, symmetry, and transitivity are
+provable without hand-supplied equality axioms. The rules are unconditionally
+sound; completeness for full equational logic is NOT claimed (this remains
+the didactic prover — external ATPs and Z3 are the heavy equipment). Every
+equality step appears in the proof object and is re-derived by the
+independent checker (`atp.resolution_check`). **Watch the naming
+convention:** a single lowercase letter like `a` is a *variable*, so use a
+multi-character name (`alice`) for a constant individual.
 
 ```python
-# Without a congruence axiom, resolution cannot connect equal constants:
+# Paramodulation connects equal constants without any congruence axiom:
 prove([parser.parse("alice = bob"), parser.parse("P(alice)")],
-      parser.parse("P(bob)"))                                        # → False
+      parser.parse("P(bob)"))                                        # → True
 
-# Supplying congruence for P makes the entailment go through:
-with_congruence = [
-    parser.parse("alice = bob"),
-    parser.parse("P(alice)"),
-    parser.parse("∀x ∀y (x = y → (P(x) → P(y)))"),
-]
-prove(with_congruence, parser.parse("P(bob)"))                       # → True
+# Function congruence, likewise axiom-free:
+prove([parser.parse("carl = dave")],
+      parser.parse("f(carl) = f(dave)"))                             # → True
 
-# Z3 decides it natively, no axiom needed (see the next section):
+# Z3 also decides it natively (see the next section):
 is_valid(parser.parse("(alice = bob ∧ P(alice)) → P(bob)"))          # → True
 ```
 

@@ -26,7 +26,13 @@ from .sequent import (
 )
 from .z3_input import from_z3, parse_smtlib, load_smtlib
 from .fitch_search import find_fitch_proof, fitch_prove, is_valid_fitch
-from .tableau import tableau_closed, is_valid_tableau, prove_tableau, tableau_model
+from .tableau import (
+    tableau_closed, is_valid_tableau, prove_tableau, tableau_model,
+    prove_tableau_detailed, TableauProof, TableauStep, TableauClosure,
+)
+from .tableau_check import (
+    TableauCheckError, check_tableau_proof, check_entailment_tableau_detailed,
+)
 from .modal_tableau import (
     modal_tableau_closed, is_modal_valid, modal_prove, modal_decide, modal_countermodel,
 )
@@ -39,6 +45,34 @@ from .lambek import (
     lambek_prove, lambek_derivable, check_lambek_proof, verify_lambek_proof,
     render_lambek_proof, LambekSequent, LambekDerivation,
 )
+from .protocol import (
+    Verdict, BackendUnavailable, ProverBackend,
+    register_backend, get_backend, available_backends, default_chain,
+    run_backend,
+)
+from .vampire_entailment import check_entailment_vampire_detailed
+from .tstp import (
+    extract_szs_status, szs_to_verdict_fields,
+    TstpStep, TstpDerivation, parse_tstp_derivation,
+)
+from .portfolio import portfolio_prove
+from .cvc5_backend import Cvc5Backend
+from .eprover_backend import (
+    EProverBackend, ZipperpositionBackend,
+    check_entailment_eprover_detailed,
+    eprover_available, zipperposition_available,
+)
+from .hets_backend import HetsBackend
+from .nanocop_backend import NanocopBackend, to_nanocop, nanocop_available
+from .twee_backend import TweeBackend
+from .twee_entailment import twee_available, check_entailment_twee_detailed
+from .twee_check import check_twee_proof, TweeCheckResult
+from .kripke_enum import (
+    EnumSearchResult, modal_enum_search, modal_enum_countermodel,
+    kripke_model_to_dict, kripke_model_from_dict, KripkeEnumBackend,
+)
+from .tptp_ncl import to_tptp_ncl
+from .leo3_backend import Leo3Backend
 
 __all__ = [
     "formulas_are_equivalent",
@@ -60,6 +94,9 @@ __all__ = [
     "from_z3", "parse_smtlib", "load_smtlib",
     "find_fitch_proof", "fitch_prove", "is_valid_fitch",
     "tableau_closed", "is_valid_tableau", "prove_tableau", "tableau_model",
+    "prove_tableau_detailed", "TableauProof", "TableauStep", "TableauClosure",
+    "TableauCheckError", "check_tableau_proof",
+    "check_entailment_tableau_detailed",
     "modal_tableau_closed", "is_modal_valid", "modal_prove", "modal_decide",
     "modal_countermodel",
     "check_lj_proof", "verify_lj_proof", "int_prove", "int_decide",
@@ -68,4 +105,23 @@ __all__ = [
     "lambek_prove", "lambek_derivable", "check_lambek_proof",
     "verify_lambek_proof", "render_lambek_proof", "LambekSequent",
     "LambekDerivation",
+    "Verdict", "BackendUnavailable", "ProverBackend",
+    "register_backend", "get_backend", "available_backends", "default_chain",
+    "run_backend",
+    "check_entailment_vampire_detailed",
+    "extract_szs_status", "szs_to_verdict_fields",
+    "TstpStep", "TstpDerivation", "parse_tstp_derivation",
+    "portfolio_prove",
+    "Cvc5Backend",
+    "EProverBackend", "ZipperpositionBackend",
+    "check_entailment_eprover_detailed",
+    "eprover_available", "zipperposition_available",
+    "HetsBackend",
+    "NanocopBackend", "to_nanocop", "nanocop_available",
+    "TweeBackend", "twee_available", "check_entailment_twee_detailed",
+    "check_twee_proof", "TweeCheckResult",
+    "EnumSearchResult", "modal_enum_search", "modal_enum_countermodel",
+    "kripke_model_to_dict", "kripke_model_from_dict", "KripkeEnumBackend",
+    "to_tptp_ncl",
+    "Leo3Backend",
 ]

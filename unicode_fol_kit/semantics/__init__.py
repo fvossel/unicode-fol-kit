@@ -42,6 +42,10 @@ from .free_logic import (
     free_find_model, free_countermodel, free_is_valid, free_entails,
 )
 from .dynamic_epistemic import announce, box_announce, diamond_announce
+from .action_models import (
+    ActionModel, product_update, public_announcement_action,
+    common_knowledge_holds, everybody_knows,
+)
 from .conditional import (
     CounterfactualModel, cf_satisfies, cf_countermodel, cf_valid, would, might,
     CENTERING_LEVELS, DEFAULT_MAX_WORLDS,
@@ -53,9 +57,25 @@ from .nonmonotonic import (
 from .relevant import RelevantModel, rel_satisfies, rel_countermodel, rel_valid
 from .team import team_satisfies, team_models, MAX_TEAM_SEARCH
 from .team_translation import dependence_to_eso
+from .structures import FiniteStructure, structure_from_dict, graph_to_structure
+# The structure evaluator's own `evaluate` is re-exported under the explicit
+# name `evaluate_in_structure`: this package's bare `evaluate` has meant the
+# Łukasiewicz fuzzy evaluator since long before, and silently rebinding an
+# established public name would break callers in the quietest possible way.
+# `evaluate_detailed` carries no such history and keeps its name.
+from .model_eval import (
+    evaluate as evaluate_in_structure,
+    evaluate_detailed,
+    EvalResult, BudgetExhausted, UninterpretedSymbol, UnsupportedNode,
+)
 
 __all__ = [
     "Structure", "term_value", "satisfies", "models",
+    # Finite structures + the direct structure evaluator (model CHECKING:
+    # is this sentence true in THIS given interpretation?).
+    "FiniteStructure", "structure_from_dict", "graph_to_structure",
+    "evaluate_in_structure", "evaluate_detailed", "EvalResult",
+    "BudgetExhausted", "UninterpretedSymbol", "UnsupportedNode",
     # Second-order finite-model semantics (∀P / ∃P over predicate variables).
     "satisfies_so", "holds",
     "so_find_model", "so_find_countermodel",
@@ -79,6 +99,8 @@ __all__ = [
     "FreeModel", "free_satisfies", "free_holds", "NONDENOTING",
     "free_find_model", "free_countermodel", "free_is_valid", "free_entails",
     "announce", "box_announce", "diamond_announce",
+    "ActionModel", "product_update", "public_announcement_action",
+    "common_knowledge_holds", "everybody_knows",
     "CounterfactualModel", "cf_satisfies", "cf_countermodel", "cf_valid",
     "would", "might", "CENTERING_LEVELS", "DEFAULT_MAX_WORLDS",
     "minimal_models", "minimal_entails",

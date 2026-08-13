@@ -5,6 +5,760 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [0.20.0] - 2026-08-13
+
+Added — **finite structures and model CHECKING** (`semantics.structures` +
+`semantics.model_eval`). The kit could already SEARCH for a model; it can now
+evaluate a sentence in a structure that is GIVEN — the direction structured
+real-world data actually needs. `FiniteStructure` carries a domain, extensions
+keyed by `(name, arity)`, and **computed predicates**: symbols decided by a
+callable rather than a stored extension, which is how properties that are
+decidable on a finite structure but not first-order definable over it
+(connectivity, ring membership) enter without leaving first-order logic.
+Indexing (`individuals_with`, `neighbors`) is part of the contract, because
+iterating a quantifier over "the oxygens double-bonded to this carbon"
+instead of over the whole domain is the difference between a millisecond and
+a timeout. `graph_to_structure` builds one from any labelled graph.
+`evaluate_in_structure` / `evaluate_detailed` evaluate the AST **directly** —
+no prenex form, no CNF: negated existentials search for a witness and stop,
+disjunctions short-circuit, and the counting quantifier is counted rather
+than expanded. (Those three are not micro-optimisations: the published
+ChEBI2FOL evaluation documents its checker's PNF/CNF requirement as the
+*source* of two of its three timeout classes.) `all_different` is offered as
+an explicit semantics switch, budgets exhaust into an honest `None` rather
+than a `False`, and an uninterpreted symbol raises instead of silently
+reading as false. Differentially tested against the kit's own `satisfies`.
+
+Added — **`unicode_fol_kit.chem` — molecules as finite FOL structures**
+(optional `[chem]` extra for RDKit; the signature, structure and evaluator
+layers are RDKit-free). `mol_to_structure` turns a SMILES or RDKit molecule
+into a structure over ChemLog's signature — heavy atoms as individuals, atom
+types / hydrogen counts / charges as unary predicates, bonds as symmetric
+binary relations, net charge as 0-ary — reproducing the worked ethanol
+structure from the ChEBI2FOL paper exactly, plus ten computed predicates
+(`in_ring`, `in_ring_of_size_3..8`, `aromatic`, `same_fragment`,
+`carbon_connected`). `CHEMLOG_SIGNATURE` makes `api.check` report unknown
+predicates and arity errors against that vocabulary. **`chem.interop`** is
+the bridge that makes the two halves meet: TPTP inverts the kit's case
+convention, so a formula imported from ChemLog TPTP arrives as `C/1` where
+the structure carries `c/1` — `parse_chemlog_tptp` renames the chemical
+vocabulary back, with the mapping's **injectivity checked at import time**
+(a non-injective renaming would merge two predicates into one, the same
+soundness trap `atp.tptp_ncl` guards against). Verified end to end: ChemLog's
+amide-bond axiom holds of glycylglycine and fails on ethanol, sub-millisecond.
+
+Added — **`fol.tptp_repair` — syntax repair that costs no generation
+attempt.** The three failure classes measured in the ChEBI2FOL evaluation
+(89 of 136 failed classes) are handled: an unbracketed biconditional is
+re-emitted fully bracketed (the kit's parser already reads it with the
+correct precedence, so the rewrite is meaning-preserving — asserted by an
+equivalence test, not by claim); a predicate name that begins with a digit or
+carries punctuation is single-quoted per the TPTP standard, which preserves
+the full chemical name *including* locant prefixes that a camel-case
+sanitisation would discard; free variables are REPORTED, and only closed on
+explicit opt-in — silently binding them would change what the author claimed.
+
+Added — **`fol.simplify_check` — the anti-bloat pass.** Under the
+`all_different` convention, pairwise inequalities between separately
+introduced existential variables are redundant; `simplify_for_checking`
+removes exactly those (never inequalities involving constants or
+universally bound variables, and never under standard semantics).
+`count_from_existential_chain` recognises the "n distinct witnesses of one
+predicate" pattern and contracts it to `∃≥n`, refusing whenever the variables
+carry further structure; `expand_count` goes back for backends without
+counting. Both directions are z3-verified as equivalent. On the published
+40-variable / 780-inequality example this removes all 780 literals.
+
+Added — **`eval.theory_check` — deductive checks over a set of DEFINITIONS.**
+Where the existing verbs decide one formula, this decides a vocabulary:
+`dependency_graph` / `find_cycles` (a circular definition fixes nothing and
+must be reported, not evaluated), `unfold` (substitute defined predicates
+down to primitives — the part that makes the background axioms right),
+`check_satisfiable` (an unsatisfiable definition is a classifier that
+silently returns zero hits forever), and `check_subsumption`, which answers
+`Def(sub) ⊨ Def(sup)` over the backend chain. The last one is the point:
+where a single prover reports only "proved / not proved", a `"refuted"`
+verdict here always carries a **countermodel** — a concrete structure
+satisfying the subclass and violating the superclass, which says *why* — and
+`"unknown"` is never reported as `"refuted"`. `check_theory` aggregates into
+a report that keeps proven defects and open questions strictly apart.
+
+Added — **`eval.generality` — is this definition too easily satisfied?**
+`minimal_model_size` finds the smallest finite structure satisfying a
+definition, which turns over-generality into something measurable *without
+any dataset*: a class whose real members have fifty atoms but whose
+definition is satisfied by a three-atom structure is under-constrained, and
+that is visible before a single membership check runs. Deliberately
+calibrated as an indication, not a verdict — the report only judges against
+an `expected_min_size` the caller supplies, and never invents a threshold of
+its own. `is_vacuous_specialisation` catches the subclass definition that is
+logically equivalent to its superclass (specialising nothing), and
+`strictly_stronger` separates a real specialisation from an undecided one,
+combining the two entailment directions in genuine three-valued logic.
+
+Added — **`eval.datasets.c3po`** — the first adapter whose gold is not a
+formula but an **executable membership decision**: `score_definition` model-
+checks a candidate definition against real molecule structures and reports
+the confusion matrix — with budget exhaustion and evaluation errors kept in
+their own categories rather than quietly counted as negatives, which is the
+difference between a metric and a flattering metric.
+
+Added — **`mcp.chem_tools` — six chemistry tools** on the MCP server
+(28 tools total): `molecule_to_structure` (see what the definition is being
+checked against, instead of guessing), `check_molecule` / `check_molecules`
+(three-valued, batch-safe), `explain_molecule_failure` (which conjunct fails,
+which atoms and bonds exist — the counterexample-explanation component the
+ChEBI2FOL evaluation names as missing), `simplify_definition`, and
+`chemical_signature` (the permitted vocabulary, so the model need not guess).
+
+Added — **`mcp.syntax_spec` + the `get_syntax_spec` tool** (server: 22
+tools at that point, 28 after the chemistry tools). Eight retrievable topics — naming conventions, operator precedence,
+quantifier scope, the counting quantifier, dialect selection, the chemical
+signature, and a catalogue of measured LLM failure modes with fixes. **The
+spec cannot drift from the parser**: every example it serves is parsed with
+its declared dialect and compared to its advertised rendering by the test
+suite, and facts derivable from live objects are read from them. Every parse
+failure the server returns now carries a `spec_topic`, so a generate → fail →
+look up → regenerate loop closes without the grammar living in the prompt —
+which matters when the generating model pays for prompt tokens on thousands
+of classes.
+
+Added — **`unicode_fol_kit.prob` — exact probabilistic logic (no sampling,
+no floats)**: `prob.nilsson.entailment_bounds` computes Nilsson-style
+probability-interval entailment over propositional formulas as an exact
+linear program (Z3 `Optimize`, `Fraction` in and out, conditional
+constraints in Nilsson's linear form, quantifiers refused loudly —
+classical entailment falls out as the bounds-collapse-to-(1,1) corner
+case); `prob.distribution.query` implements Sato/ProbLog distribution
+semantics over definite logic programs (independent ground `ProbFact`s +
+`∀`-quantified definite-clause rules), summing exact total-choice weights
+via forward-chained least Herbrand models, with correctness-preserving
+dependency-cone pruning and honest exponential-blow-up brakes
+(`max_atoms` / `max_choice_facts`). Exposed over MCP as
+`probability_bounds` / `probability_query` (JSON probabilities read
+decimally — `0.7` means 7/10, never the binary float artefact). 53
+hand-checked tests (+4 through the MCP layer).
+
+Added — **four guide pages for the layer this release adds**, each example
+executed against the built package rather than written from memory:
+`model-checking` (finite structures, computed predicates, molecules as
+structures, and the measured cost of the counting quantifier — 108979 → 8
+evaluation steps on the same six-carbon query), `verification` (repair,
+definition sets, satisfiability, subsumption with countermodels, minimal
+models, vacuous specialisation), `probabilistic` (Nilsson bounds vs
+distribution semantics, and why one returns an interval and the other a
+number) and `mcp` (the tool inventory and the self-correction loop). The API
+reference gained the matching entry points; `docs/index` names the four in
+its opening.
+
+Fixed — **`diagnose` returned the least informative of the competing parse
+errors, and no topic at all.** `api.repair`'s suggestion took `errors[-1]`,
+but errors arrive one per candidate dialect in detection order and the
+specialised dialects at the end of it are the ones that give up EARLIEST on
+ordinary input — so for `A ∧ B ∨ C` the suggestion was lambek's "Invalid
+predicate 'A'" rather than the mixed-connective diagnosis seven other
+dialects had reached. It now picks the message from the dialect that read
+furthest (shared helper, also used by the MCP topic routing), and the MCP
+`diagnose` tool carries `spec_topic` like every other failing tool, so the
+loop it exists to drive can actually close.
+
+Fixed — **a mixed-connective rejection was diagnosed as a naming error**, in
+the message and in the MCP correction loop. The kit's unicode grammar puts
+∧, ∨ and ⊕ on one level and refuses `A ∧ B ∨ C` rather than resolving it by
+precedence — deliberately, since the two readings are different formulas and
+in the linear and fuzzy modes there is no agreed precedence to resolve it
+with. But the lexer stops with the *predicate* `B` in hand, and the message
+read "Invalid predicate 'B' … Expected pattern: `[A-Z][a-zA-Z0-9]*`" — a
+claim that is simply false, `B` matches that pattern. The mixing hint is now
+attached whatever the preceding token was, and the naming wording (with its
+"expected pattern") is reserved for characters that really are name
+problems. In `mcp.server`, `spec_topic` sent the same failure to the
+`naming` rules, a dead end: every name in the formula is already well
+formed, so a generator would rename them and be rejected in the same place.
+Routing now weighs how FAR each dialect got against how MANY agree — the
+dialects that never reach the offending connective no longer outvote the
+ones that did, and a single dialect that happens to consume the whole string
+no longer outvotes six that agree on the real cause. `A ∧ B ∨ C` routes to
+`operators`, `∀ P(x)` to `quantifiers`, and the errors catalogue gained the
+mixed-connective class with the fix (bracket, do not rename).
+
+Fixed — **Tier-3 adversarial review (9 confirmed findings, all fixed with
+regressions)**. Two soundness cores: (1) the resolution prover's
+shared-instance SELF-paramodulation shortcut was UNSOUND (it dropped both
+the consumed equation and the target literal from one instantiation —
+``{a=b ∨ ¬P(b)}, {P(a)}`` "refuted" a satisfiable set) — removed from the
+prover AND from the independent checker's rule vocabulary (a clause
+paramodulating into itself goes through the sound renamed-copy cross path;
+an external derivation claiming ``self_paramodulate`` is now rejected, not
+re-derived); (2) the tableau checker never verified that a step's principal
+formula is actually ON the branch it extends, so a fabricated proof could
+"decompose" an invented contradiction and close on its own components —
+branch-membership is now enforced for every step and every β split (two
+fabrication attacks pinned as tests). Contracts: `parse_casl_spec` gained a
+post-parse usage-conformance pass (undeclared symbols and declared-vs-used
+arity mismatches now refuse loudly instead of returning a self-inconsistent
+CaslSpec) and discloses the third round-trip exception (a SortedQuantifier
+at exactly `default_sort` collapses to a plain Quantifier — the CASL text
+cannot tell them apart); `to_casl_spec` validates `default_sort` itself
+(the union-find fallback emitted an unchecked caller string into the
+`sorts` line); the MCP `truth_table` tool no longer leaks a raw
+NotImplementedError on modal/fuzzy input and `probability_bounds` refuses
+JSON booleans as probabilities; the resolution checker's unknown-rule
+message enumerates its actual rule vocabulary (generated, so it cannot
+drift again).
+
+Added — **tableau proof objects + an independent tableau checker**.
+`prove_tableau_detailed` records a `TableauProof` (root formulas, the
+α/β/γ/δ rule tree with node IDs, γ instantiation terms and δ witness
+constants explicit per step, each closed branch's closure pair) alongside
+the EXISTING search — the algorithm itself is untouched and the detailed
+route provably agrees with `prove_tableau`. `atp.tableau_check
+.check_tableau_proof` verifies every step independently: its own rule
+dispatch, its own capture-avoiding substitution (`fol.nodes.substitute`,
+not the producer's), its own branch-local δ-freshness check, full-closure
+accounting (no open branch slips through) — the third independent proof
+checker after resolution and Twee. The `"tableau"` backend's PROVED
+Verdicts now carry the checkable proof dict. 46 hand-checked tests
+including an eight-way tamper suite.
+
+Changed — **the resolution prover learned equality: sound paramodulation,
+reflexivity resolution, and demodulation**. `alice = bob, P(alice) ⊨
+P(bob)` and function congruence are now provable WITHOUT hand-supplied
+equality axioms (`=` previously was an ordinary uninterpreted predicate
+for this prover — the documented guide example flipped from False to
+True and was updated). Ordering: term size with lexicographic
+tie-breaks, checked on concretely substituted terms (so no
+substitution-closure subtlety); demodulation only rewrites under a
+strict orientation and is recorded as its own proof step, never
+silently. The independent checker gained matching `paramodulate` /
+`self_paramodulate` / `reflexivity` / `demodulate` rules that re-derive
+every unifier, position, and orientation from scratch. Honest limits in
+the module docstring: unconditionally sound, NOT complete for equational
+logic — the didactic core stays didactic; E/Vampire/cvc5/Twee remain the
+heavy equipment. 43 new tests + 6-way tamper suite; all 316 dependent
+tests green.
+
+Added — **CASL import + DOL libraries — the CASL route becomes a
+round-trip**. `fol.casl_import.parse_casl_spec` inverts `to_casl_spec`:
+a hand-rolled recursive-descent parser (lazy lexer, real precedence
+climbing) for the emitted CASL fragment plus a tolerant superset
+(singular/plural declaration keywords, `%%` comments, multi-variable
+quantifiers, optional `end`), returning `CaslSpec(name, signature,
+axioms, conjectures)` with the round-trip contract
+`parse_casl_spec(to_casl_spec(fs)).axioms == fs` tested across the
+classical/many-sorted fragment; everything outside (partial functions,
+subsorting, free/generated types, structuring, attributes) raises
+`CaslImportError` with a line number. Documented irrecoverables: 0-ary
+ops always reconstruct as `Constant`, and `Xor` comes back as
+`Not(Iff(…))` (the export is textually identical). `hets.dol.to_dol_library`
+emits multi-spec DOL libraries (`then`-extension structure, `%implied`
+goals) — live-verified against a HETS server: the development graph
+shows both named nodes and SPASS proves an extension node's implied
+goal (emission only; no DOL parsing, same cut as T2). 64 tests
+(62 offline + 2 `hets_live`).
+
+Added — **MCP error-analysis wave: twelve more tools (nine →
+twenty-one, the two probabilistic tools above included)**. The
+server now also exposes `normalize` (nnf/pnf/cnf/dnf/canonical are
+equivalence-preserving, `tseitin_cnf` declares itself EQUISATISFIABLE and
+`skolemize` satisfiability-preserving via the `semantics` key; `is_horn`
+rides along), `render` (unicode / TPTP / Prover9 / LaTeX / bare CASL /
+versioned-JSON envelope / deterministic English), `detect_dialect`
+(nomination list + what actually parsed), `compare_formulas` (the
+per-pair error-analysis breakdown: structural / canonical / vocabulary-
+aligned match, the renamed prediction, the graded equivalence verdict,
+and a per-namespace `Name/arity` symbol diff), `score_batch`
+(`compute_fol_metrics` over aligned lists), `check_consistency` (is the
+SET satisfiable — fresh-atom contradiction encoding, model witness with
+English gloss / refutation verdict / honest `None`), `get_signature`
+(inferred `Signature` dict, ready to feed back into
+`check_formula`/`diagnose`), `truth_table` (classical/K3/LP by full
+enumeration, quantifiers and >4096-row tables refused loudly),
+`drs_to_fol` (box/SBN discourse → provable FOL, optional
+accessibility-respecting pronoun resolution), and `list_translations`
+(comorphism edges, `hets:<Name>` bridges included after a refresh). All
+parse failures keep the ONE `{"ok": False, "argument": …, "errors": […]}`
+shape; 30 new hand-checked tests (46 total for the server).
+
+Added — **the Tier-0 package of the NL→logic infrastructure roadmap**: a
+seven-verb facade, a uniform prover protocol, versioned serialisation, and
+repository hygiene. Everything is additive; no existing signature changed.
+
+- **`unicode_fol_kit.api` — the seven-verb facade** (namespaced on purpose:
+  `api.prove` must not shadow the resolution prover's top-level `prove`):
+  `parse_any` (dialect detection over unicode-MSFL modes / TPTP annotated+bare /
+  LaTeX / Prover9 / SMT-LIB, never raises, records every attempt's error),
+  `check` (well-formedness plus optional signature conformance with
+  did-you-mean suggestions), `equivalent` (re-export, see below), `prove` /
+  `countermodel` (backend chains, see the protocol), `repair` (a
+  diagnose→suggest→fix generator whose `fixer` callback the caller's LLM
+  supplies), and `translate` (comorphism registry). All result objects carry
+  JSON-compatible `to_dict()`. The module documents the API stability policy
+  (additive-only within a minor line).
+- **`atp.protocol` — one `Verdict` over every decision route.** Semantic
+  `status` (proved / refuted / unknown / error) with a separate `reason` axis
+  (`timeout` / `bound_hit` / `incomplete` / `unsupported` / `infra`), SZS
+  ontology values, wall-time and provenance. Nine backends registered at
+  this layer's introduction — the kit's OWN calculi and semantic searches as
+  first-class citizens (`tableau`, `resolution`, `modelfinder`,
+  `modal-tableau`, `qml`) next to the solver and prover routes (`z3` — the
+  bundled SMT solver — plus the separately-installed `isabelle`, `prover9`,
+  `vampire`); the Tier-1 wave below brings the registry to twelve with
+  `cvc5`, `kripke-enum`, and `leo3`. Loud availability contract: unknown
+  name → `ValueError`, known-but-missing → `BackendUnavailable`, never a
+  silent skip; an in-backend crash becomes an ERROR verdict so batch runs
+  record failures instead of dying. The default chains never run the
+  minutes-per-call Isabelle route implicitly.
+- **`eval.equivalence` — graded equivalence for NL→FOL scoring.**
+  `equivalent(prediction, reference, method=…)` runs the ladder exact →
+  canonical → predicate-aligned → solver; the solver level is TRI-STATE
+  (`True` / `False` + counterexample / `None`), deliberately unlike
+  `formulas_are_equivalent`, which collapses unknown to False. Modal formulas
+  route through `modal_decide` (with Kripke witnesses) and fall back to the
+  sound-incomplete QML embedding, whose "not proven" is never reported as a
+  refutation.
+- **`eval.predicate_match.align_symbols` / `aligned_exact_match` — AST-level
+  symbol alignment** with the three guarantees the lexical matcher cannot
+  give: separate predicate/function/constant namespaces, arity-awareness, and
+  an injective, capture-free greedy assignment (two prediction symbols never
+  merge; a symbol is never renamed into a name the prediction already uses).
+- **`fol.serialize` — versioned JSON envelope**: `serialize` / `deserialize` /
+  `SCHEMA_VERSION` wrap the unchanged `to_dict()` node format in
+  `{"schema_version": 1, "root": …}`; future versions are rejected loudly,
+  bare pre-envelope dicts keep loading. The CLI's `--to json` now emits the
+  envelope (its only breaking surface change, listed here deliberately).
+- **`comorphism` — the kit's translations as a composable registry** (the
+  HETS idea, native Python): `standard_translation` (modal→fol), ALC→modal-K,
+  ALC→FOL, dependence→ESO as named edges with BFS path composition and
+  per-edge convention notes; `register_comorphism` for third-party edges.
+- **Repository hygiene**: `.github/workflows/tests.yml` runs the fast suite
+  (`pytest -n auto -m "not isabelle_live"`) on every push/PR across Python
+  3.10–3.13 on Linux plus a Windows leg; README carries the badges;
+  `CITATION.cff` makes the repo citable.
+
+Added — **the Tier-1 wave**: three new prover backends, the SZS/TSTP reading
+layer, batch/portfolio evaluation, dataset adapters, countermodel
+explanations, supervaluationism, and Manchester OWL syntax. Additive
+throughout, with two deliberate behaviour upgrades called out below (the
+default chains and the `vampire` backend).
+
+- **`atp.cvc5_backend.Cvc5Backend`** (`"cvc5"`, optional extra
+  `unicode-fol-kit[cvc5]`): a second, fully independent SMT decision procedure
+  for classical FOL, fed through the SAME `to_z3()` translation Z3 already
+  trusts (via canonical SMT-LIB2 text, so the two translations can never
+  drift apart). When the extra is installed, `default_chain("fol")` becomes
+  `("z3", "cvc5", "tableau", "resolution", "modelfinder")` — the one
+  documented availability-dependent chain member; without it the chain is
+  unchanged.
+- **`atp.kripke_enum`** — bounded exhaustive enumeration of finite Kripke
+  models against the kit's OWN `satisfies_modal` evaluator:
+  `modal_enum_search` (three-way honest: countermodel / exhausted / budget
+  hit), `modal_enum_countermodel`, and the refutation-only `"kripke-enum"`
+  backend. **This closes the temporal-refutation gap**: `Ⓕ P → P` (invalid)
+  was previously "unknown" on every route — the labelled tableau has no rule
+  for the temporal closure operators and the QML embedding is proof-only —
+  and is now REFUTED with a two-world witness. `default_chain("modal")` is
+  now `("modal-tableau", "kripke-enum", "qml")`, and `api.countermodel`'s
+  modal chain gained the same member.
+- **`atp.tstp`** — the TPTP-family result reader: `extract_szs_status`,
+  `szs_to_verdict_fields` (SZS → the protocol's status/reason axes), and
+  `parse_tstp_derivation` (annotated `fof`/`cnf` output → a `TstpDerivation`
+  proof DAG).
+- **`vampire` backend upgraded to the SZS route** (behaviour change, strictly
+  more informative): `szs_status` is Vampire's own status line verbatim, a
+  `CounterSatisfiable` answer is an honest REFUTED (previously collapsed into
+  "unknown"), and a PROVED verdict carries the parsed TSTP derivation in
+  `proof`. The underlying plumbing (`check_entailment_vampire_detailed`,
+  passing `--proof tptp`) is additive next to the unchanged boolean
+  `check_logical_entailment_vampire`.
+- **`atp.tptp_ncl.to_tptp_ncl` + `atp.leo3_backend.Leo3Backend`** (`"leo3"`,
+  `$UFK_LEO3` + `java`): NXF export of the mono-modal alethic propositional
+  fragment (frames K/T/S4/S5, syntax verified against the current TPTP NCL
+  documents) and the Leo-III adapter reading results back through `atp.tstp`.
+  Out-of-fragment formulas are `UNKNOWN/"unsupported"` — a malformed NXF file
+  never reaches the subprocess.
+- **`atp.portfolio.portfolio_prove`** — run several backends CONCURRENTLY on
+  one goal (processes, capped at 8): first definitive verdict wins,
+  `require_agreement=n` collects n agreeing backends, and a PROVED/REFUTED
+  split between two backends is a soundness alarm reported as an ERROR
+  verdict — never auto-resolved.
+- **`eval.batch.batch_decide`** — the campaign runner: content-addressed
+  verdict cache (keyed over the versioned serialisation, backend list,
+  timeout and options), process parallelism (jobs ≤ 8), JSONL results,
+  per-task error isolation.
+- **`eval.datasets`** — benchmark adapters with a shared `DatasetExample`
+  shape, machine-readable `DATASET_INFO` (source, license, field schema), a
+  curated `known_bad_ids` mechanic, and `audit_examples` (does every gold
+  formula parse and validate?). Eight adapters, every upstream schema
+  verified at the primary source: FOLIO, MALLS, **GROVES**, WillowNLtoFOL,
+  ProntoQA (Logic-LM rendering, including `parse_logic_program` — the
+  Logic-LM DSL compiled to kit ASTs — and `solve_example`, deciding each
+  example end-to-end via `api.prove` against the gold answer), ProofWriter
+  (no FOL gold; the CWA/OWA-vs-classical-entailment caveat is documented
+  prominently), LogicNLI (upstream structured logic annotation preserved in
+  `meta`, honestly not presented as FOL strings), and ProverQA (gold FOL
+  loaded verbatim although its naming convention is the opposite of this
+  kit's grammar — never silently rewritten). AR-LSAT, LogicalDeduction and
+  FraCaS were verified and deliberately omitted (no logic annotations exist;
+  the package docstring records the reasons). Measured honesty findings
+  shipped with the adapters instead of being smoothed over: WillowNLtoFOL
+  parses ~98.8% under this kit's grammar (three real defect classes pinned
+  by tests); ProntoQA's GPT-4-generated DSL reproduces its own gold answer
+  on only 76/100 sampled rows (both mismatch classes cited by row id).
+- **Per-dataset import dialect grammars** — gold FOL whose notation the kit's
+  own grammar refuses is now parsed at import time with a DEDICATED grammar
+  per dataset and re-emitted in kit notation, instead of being lexically
+  rewritten or left unusable. ProverQA (previously 0% kit-parse): a Lark
+  grammar for its snake_case-predicate / Capitalised-constant notation with
+  an injective, recorded renaming (`HasExperiencedHeartbreak(brecken)` from
+  `has_experienced_heartbreak(Brecken)`; collisions and constant→variable
+  degradations refuse loudly) — the fixture now audits 8/8 well-formed, and
+  `proverqa.solve_example` reproduces 7/8 gold answers end-to-end via
+  `api.prove` (the 8th is the documented upstream predicate-name typo, where
+  the classical verdict is honestly "Uncertain"). WillowNLtoFOL: a repair
+  grammar for its measured ~1.2% tail — the NLTK/textbook precedence reading
+  (∧ over ∨, the convention Willow's own nltk-based filter used) for
+  unparenthesised connective mixes, NFKD + case repair for out-of-class
+  predicate names (`iOS`→`IOS`, `Café`→`Cafe`); the ~98.8% that already
+  parse stay byte-for-byte verbatim, and only the genuine arity defect
+  remains visible to `audit_examples`. Originals and changed-name mappings
+  always land in `meta`; `convert_fol=False` restores raw pass-through.
+- **`load_proofwriter_structured` — FOL GENERATED from ProofWriter's own
+  symbolic annotations.** The structured OWA distribution (mirrored complete
+  at `hitachi-nlp/proofwriter_processed_OWA`) ships RuleTaker triple/rule
+  representations next to every sentence; `parse_proofwriter_representation`
+  translates them deterministically (attribute triples → unary atoms,
+  relation triples → binary atoms, polarity → ¬, `something`/`someone`
+  placeholders → universally quantified variables) — no LLM, no NL
+  heuristics. One example per question, `meta["fol_generated"]` marks the
+  kit-generated origin, and `solve_structured_example` decides each
+  question with a CALLER-CHOSEN ATP (`prove_kwargs` go verbatim to
+  `api.prove`) under either reasoning assumption: `semantics="owa"` runs
+  the entailment cascade (True ⇔ premises ⊨ q, False ⇔ premises ⊨ ¬q,
+  Unknown otherwise — reproduces the OWA labels 24/24 on the real fixture),
+  and `semantics="cwa"` runs two-valued CLOSED-MODEL CHECKING — the closed
+  model is COMPUTED exactly by LOCALLY stratified forward chaining over
+  the grounded theory (perfect-model semantics: rules with negated bodies
+  get their standard negation-as-failure reading, the negatively-tested
+  GROUND ATOM fully fixpointed in a lower stratum first — ground-level
+  strata rather than predicate-level, which real ProofWriter theories
+  require: `¬Likes(mouse, dog) → Likes(dog, rabbit)` cycles through
+  negation on the predicate graph but not on the ground graph), the query
+  is evaluated compositionally in it (¬q true iff q not in the model; ∀/∃
+  over the theory's constants), and on definite theories every queried
+  atom is cross-checked against the caller's chosen ATP (least model ⟺
+  classical entailment there; a definitive disagreement raises a soundness
+  alarm). Only a GROUND cycle through negation (not even locally
+  stratifiable) or a theory deriving an atom both positively and
+  negatively (inconsistent under CWA) is refused. The CWA route is
+  verified against the original AllenAI release
+  (`proofwriter-dataset-V2020.12.3.zip`, whose per-question schema the
+  loader reads unchanged): the first 100 theories of
+  `CWA/depth-2/meta-dev.jsonl` reproduce 1078/1078 gold answers across
+  all four configs (AttNoneg/AttNeg/RelNoneg/RelNeg), and
+  `tests/fixtures/proofwriter_cwa_mini.jsonl` pins two of those real rows
+  (one definite, one NAF theory needing local stratification) as a 24/24
+  regression fixture. All three dataset solvers (`proverqa.solve_example`,
+  `prontoqa.solve_example`, `proofwriter.solve_structured_example`) take
+  `on_indefinite="label" | "abstain" | "raise"` controlling how a
+  NON-DEFINITIVE prover outcome (unknown/error — timeout, hit bound) is
+  interpreted when neither entailment direction was proved: `"label"`
+  (default) scores the dataset's uncertain label; `"abstain"` labels it
+  ONLY when both directions are definitively refuted (underdetermination
+  established by countermodels) and returns `predicted=None` otherwise, so
+  a prover timeout can never be silently credited as a correct
+  "Unknown"/"Uncertain"; `"raise"` turns an indefinite leg into a
+  `ValueError` for hole-free pipelines.
+- Willow license note: explicit usage permission for the
+  GROVES/unicode-fol-kit use was obtained from the Willow authors (recorded
+  in the adapter next to the still-flagged CC-BY-4.0 vs CC BY-NC-ND 4.0
+  card discrepancy).
+- **`eval.explain.explain_countermodel`** — any countermodel witness (Kripke
+  model, Tarski structure, Z3 assignment, Verdict-layer dict) rendered as 2–6
+  short deterministic English sentences. `api.countermodel` now uses it for
+  `explanation_nl`: structured Kripke witnesses are rebuilt and narrated
+  world by world (with the world-0 check evaluating the FOLDED goal
+  `(∧ premises) → φ`), with the old one-line gloss as the fallback.
+- **Structured Kripke witnesses**: every `"kripke"` countermodel dict from
+  `modal-tableau` and `kripke-enum` now carries a JSON `"data"` payload next
+  to `"repr"`, with the public converters `kripke_model_to_dict` /
+  `kripke_model_from_dict` round-tripping worlds, relations, valuation,
+  nominals and per-world domains.
+- **`semantics.free_logic`: `policy="supervaluation"`** — truth-value gaps
+  from empty terms resolved by quantifying over all precisifications
+  (supertrue / superfalse / gap), so `P(e) ∨ ¬P(e)` comes out supertrue even
+  where `P(e)` itself is a gap.
+- **`dl.owl_manchester`** — `parse_manchester` / `to_manchester` /
+  `parse_manchester_axiom` for the ALC fragment of Manchester OWL syntax,
+  with explicit rejections outside it.
+- **`atp.resolution`: redundancy elimination** — tautology deletion plus
+  forward/backward subsumption (one-sided matching, indexed, with a
+  documented pattern cap) inside `refute`; public signatures unchanged, the
+  step counter's meaning ("kept clauses") documented.
+- **CLI subcommands** — `python -m unicode_fol_kit check | equiv | prove |
+  countermodel | repair | translate …` with `--json` envelopes; the legacy
+  single-formula invocation is untouched.
+
+Added — **the Tier-2 HETS binding (Docker-first)**: the kit can now drive a
+real HETS (Heterogeneous Tool Set) server end-to-end — CASL export, REST
+client, a thirteenth registered backend, and the server's comorphisms as
+dynamic translation edges. Every wire-protocol fact below was verified live
+against the official `spechub2/hets:latest` image (HETS 0.108.0).
+
+- **`fol.casl_export` — kit AST → CASL** (`to_casl_spec`, `formula_to_casl`,
+  both re-exported at top level). CASL is natively many-sorted, so kit MSFOL
+  exports WITHOUT the single-sort collapse every TPTP route needs: sort
+  inference runs a union-find over predicate/function/constant slots
+  (bound sorted variables and `name:Sort` constants anchor concrete sorts,
+  equality unifies its sides, unconstrained classes fall back to the default
+  sort), and a class with two distinct concrete sorts, an arity conflict, a
+  free variable, or a CASL-reserved-word identifier refuses loudly. Goals
+  are emitted as `%implied` axioms — exactly what Hets turns into proof
+  obligations. Everything outside FOL/MSFOL (modal, fuzzy, Count/Measure,
+  second-order, …) raises `NotImplementedError` naming the node class.
+- **`unicode_fol_kit.hets` — REST-over-Docker client subpackage.** The GPL
+  boundary is structural (this MIT process and the GPL Haskell server share
+  a TCP socket, nothing else; the in-process spechub Python binding is
+  documented as considered-and-rejected: GHC-build-only, Linux-only, GPL in
+  the process). `hets.docker`: `HetsContainer` lifecycle manager and
+  `discover_hets_url` (`$UFK_HETS_URL` → `localhost:8000` → optional
+  auto-start; anything else raises `BackendUnavailable` with the exact
+  commands to fix it). `hets.client`: stdlib-urllib `HetsClient` for
+  upload (`/folder` + `/uploadFile`), development-graph JSON (`/dg`),
+  prover/translation listing, theory rendering/translation (`/theory`),
+  `/prove` and `/consistency-check` with per-goal
+  Proved/Disproved/Open results normalized into stable dicts. Documented
+  image quirks: the bundled eprover and Vampire wrappers are broken (always
+  Open); SPASS, darwin and darwin-non-fd work.
+- **`atp.hets_backend.HetsBackend`** — registry name `"hets"`, the
+  thirteenth backend: CASL export → upload → `POST /prove` → Verdict, with
+  reasoner+comorphism provenance in `detail` (e.g. `reasoner=SPASS,
+  translation=CASL2TPTP_FOF`). Mapping: Proved → PROVED, Disproved →
+  REFUTED (darwin-non-fd's finite-model disproof), Open → UNKNOWN
+  (`incomplete` — NEVER refuted, see the image quirks). NEVER in a default
+  chain (container start is minutes-expensive, the Isabelle rule), and
+  `decide()` never starts a container — it only discovers running servers.
+  `check_consistency()` is the extra route over `/consistency-check`
+  (deliberately a plain dict, not a Verdict: PROVED must keep meaning "goal
+  follows", not "premises consistent"). The roadmap's acceptance criterion
+  is a live test: one genuinely many-sorted problem proved end-to-end by
+  two different Hets reasoners (SPASS via CASL2TPTP_FOF, darwin via
+  CASL2SoftFOL), each verdict carrying its own provenance.
+- **`hets.bridge.register_hets_comorphisms`** — every comorphism the server
+  offers for CASL becomes a registered translation edge `hets:<Name>`
+  (source label `"casl"`, term type: CASL spec TEXT — the registry's term
+  type is per-source-logic, and the kit deliberately does not pretend to
+  parse SoftFOL/DFG output back into ASTs). `api.translate(spec_text,
+  "casl", "hets:CASL2SoftFOL")` returns the translated theory text as Hets
+  renders it; the native registry stays the offline core.
+- New serial live-test marker `hets_live` (same convention as
+  `isabelle_live`; CI excludes both), 101 tests across
+  `test_casl_export` / `test_hets_client` / `test_hets_backend` /
+  `test_hets_bridge` (92 from the wave itself plus the review-fix
+  regressions below; offline suites fully server-free via stubs).
+
+Fixed — **15 adversarial-review findings on the HETS wave** (6-dimension
+review, 2 refuters per finding; the CWA local-stratification dimension
+survived with zero findings). Soundness: CASL export now checks PREDICATE
+and SORT names (including `default_sort`) against CASL keywords and word
+shape — a directly-constructed `Atom("axiom", ())` or a keyword sort
+produced specs HETS 500s on (live-confirmed); 0-ary `Function` terms render
+bare (`f`, not the invalid `f()`); `upload()` percent-encodes both path
+segments (an unencoded `#` silently truncated the stored filename);
+`http.client` exceptions (e.g. `InvalidURL`) now honour the client's
+RuntimeError contract; the plain-text `nothing to prove` response is the
+legitimate empty goal list, not a JSON error. Contracts/docs: `theory()`
+documents that `node` is effectively mandatory (the "single-node default"
+claim was live-false); port-already-allocated `docker run` failures get
+their own actionable `BackendUnavailable`; empty `$UFK_HETS_URL` ≡ unset
+(documented as deliberate); `HetsBackend` documents that `url=` pairs with
+direct `decide()` calls while chains want `$UFK_HETS_URL`, that ANY
+reasoner may report Disproved, and that `check_consistency` passes
+`RuntimeError` through; `register_hets_comorphisms` refreshes COMPLETELY —
+edges a re-registered server no longer offers are unregistered (new
+`ComorphismRegistry.unregister`), never left as stale closures; the README
+install section now names HETS/Docker and every extra.
+
+Added — **E and Zipperposition backends** (`atp.eprover_backend`, one shared
+SZS/TPTP runner): registry names `"eprover"` and `"zipperposition"`
+(fourteenth and fifteenth backends), never in a default chain. Discovery per
+backend: `$UFK_EPROVER_CMD`/`$UFK_ZIPPERPOSITION_CMD` (a `wsl:` prefix
+forces the WSL route) → native PATH → the same binary inside WSL; a miss
+raises `BackendUnavailable` with the per-platform acquisition paths (E:
+`apt install eprover` on Ubuntu 24.04+/Debian — note 22.04 does NOT carry
+it — or build from source; Zipperposition: opam only, no deb exists — where
+absent the backend is honestly unavailable and its live tests skip). The
+SZS status line is authoritative (the extractor now also accepts E's
+`# SZS status …` hash-comment style — regression-tested), mapped through
+the same ontology as Vampire; E is asked for `--proof-object` and a parsed
+TSTP derivation lands in `Verdict.proof`, a Theorem WITHOUT a derivation
+(Zipperposition's default output) keeps `proof=None` with the degradation
+noted in `detail`, never silently. CI installs E on its Ubuntu 24.04
+runner, so the E live tests run for real there.
+
+Fixed — **26 adversarial-review findings on the post-HETS Tier-2 wave**
+(8-dimension review, 2 refuters per finding, every fix regression-tested).
+Soundness: the Twee goal check now requires an INJECTIVE variable binding
+(a ground fact could previously "prove" its own universal generalisation
+by collapsing distinct conclusion variables onto one Skolem term);
+nanoCoP-M routes QUANTIFIED problems through the QML embedding for the
+mandatory cross-check (the propositional tableau/enumerator are blind to
+quantifiers — a K-frame proof soundly confirms any stronger logic, a
+K-countermodel never alarms), maps quantifier variables through the
+injective name map (kit `x1`/`X1` no longer silently unify as one Prolog
+variable), and treats the wrapper's exit code as authoritative (a stale
+result line in a timed-out run's buffer is discarded; a code/text mismatch
+refuses); `product_update` REFUSES an action model that omits a relation
+name the base model carries (an omitted agent previously came out with an
+EMPTY product relation — vacuously omniscient, factivity broken — and the
+old test pinning that behaviour is rewritten to the refusal contract);
+`api.check(signature=Signature)` now also reports SORT violations
+(`kind="sort_mismatch"`) instead of silently projecting them away;
+`Signature.validate`/`from_formulas` descend into
+Cardinality/SortedCardinality set-builder formulas (buried predicates were
+invisible to declaredness/arity/sort checks and inference); the CI
+eprover install step is Linux-gated (it crashed the Windows leg's pwsh).
+Contracts: `TweeBackend.decide` returns ERROR verdicts instead of leaking
+`RuntimeError` (broken WSL) or `ValueError` (a Theorem whose proof text
+falls outside the distilled grammar — now honestly ERROR "refusing PROVED
+without verification"); E/Zipperposition/nanoCoP discovery reads env
+overrides FRESH on every call (a cached miss no longer freezes the
+process); `Signature.merge` folds vacuous `arg_sorts=(None,…)` before
+comparing (spurious conflicts gone); the MCP tools share ONE parse-error
+shape (`{"ok": False, "argument": …, "errors": […]}` across every
+argument position) and `translate` parses `"alc"` terms via the DL
+grammar (the registered concept edges were unreachable through MCP);
+`parse_sbn` validates accessibility before returning (a cross-NEGATION
+offset can no longer hand out a silently invalid DRS). Docs: stale
+Signature design note, ActionModel/`public_announcement_action`
+docstrings, README install section (Twee, nanoCoP-M), the HETS-wave test
+count, and the CI header comment all corrected to reality.
+
+Added — **`unicode_fol_kit.drt` — Discourse Representation Theory**: the
+one NL phenomenon single-sentence FOL structurally cannot express —
+cross-sentence anaphora and donkey sentences — as a first-class subpackage.
+`DRS` + the classical Kamp/Reyle condition core (`Pred`/`Eq`/`Neg`/`Impl`/
+`Or`) with the textbook ACCESSIBILITY relation enforced by `validate()`
+(antecedent referents accessible in the consequent, Neg/Or-internal ones
+not); `parse_drs` for a compact box notation (`[x, y | Farmer(x),
+Donkey(y), Owns(x, y)] -> [ | Beats(x, y)]`) and `parse_sbn` for a
+precisely bounded subset of the Parallel Meaning Bank's Sequence Box
+Notation (sense lines → predicates, role/offset targets, TAB-scoped
+NEGATION; every unsupported construct refused BY NAME);
+`resolve_anaphora` binds explicit PRONOUN markers most-recent-first over
+the accessibility layers (ambiguity raises under `strict=True`, is picked
+and RECORDED otherwise); `drs_to_fol` is the standard translation whose
+donkey rule (∀-quantified antecedent referents) is tested end-to-end:
+the classic donkey sentence plus facts entails `Beats(john, daisy)`
+through `api.prove` (z3), and every closed DRS exports a formula
+`api.check` certifies closed. 66 hand-derived tests.
+
+Added — **Twee with an independent proof checker**
+(`atp.twee_entailment` / `atp.twee_check` / `atp.twee_backend`, registry
+name `"twee"`, the seventeenth backend; never in a default chain). Twee
+(nick8325, equational superposition) decides UNIT-EQUALITY problems and
+prints human-readable rewrite-chain proofs — which this kit REFUSES to
+take on faith: `twee_check.check_twee_proof` re-derives every rewrite step
+by one-directional matching against the cited axiom/lemma (deliberately
+NOT `unify`, which would unsoundly bind proof-term variables),
+alpha-checks every restated axiom against the caller's real premises, and
+verifies lemma order and chain endpoints; the backend runs the checker on
+EVERY proof and reports ERROR instead of PROVED when verification fails.
+Fragment honesty: only (∀-closed) equations are accepted — anything else
+is UNKNOWN/`unsupported` before any subprocess runs. Documented from live
+Twee 2.6.1 output (the `The conjecture is true!` banner, per-equation
+canonical `X`/`Y`/`Z` variables, Skolemized goal variables, `tuple(...)`
+conjunction goals whose slot order needs a bijection search — all found by
+experiment, not assumed); the checker rejects all 8 hand-crafted tampered
+proof variants in the suite (wrong axiom, flipped direction, skipped step,
+forward lemma citation, …). Discovery `$UFK_TWEE_CMD` → PATH → WSL. 85
+tests (79 offline on captured output, 6 live via the WSL binary).
+
+Added — **Common knowledge + BMS action models**
+(`semantics.action_models`): one-step `everybody_knows` (`E_G`) and
+fixpoint `common_knowledge_holds` (`C_G` via the reflexive-transitive
+closure of the union of the group's `K:` relations — the reading argued in
+the docstring against FHMV's one-or-more-steps variant, equivalent on the
+reflexive frames the kit's `Knows` assumes), `ActionModel` (events,
+preconditions, per-agent event relations — purely epistemic: factual
+postconditions are a documented non-goal), `product_update` (the
+Baltag–Moss–Solecki product; worlds are literal `(w, e)` pairs), and
+`public_announcement_action` whose product update is DIFFERENTIALLY tested
+to agree exactly with the existing PAL `announce()`. Acceptance is the
+roadmap's named criterion: the full Muddy Children scenario (3 children,
+2 muddy; 8→7→4 worlds) hand-derived and run through BOTH routes, with the
+classic round-2 knowledge result and the common-knowledge-after-public-
+announcement check; plus the 2-event private announcement (anne learns φ,
+bert cannot know that she did). 44 hand-derived tests.
+
+Added — **nanoCoP-M as an opt-in, MANDATORILY cross-checked modal backend**
+(`atp.nanocop_backend`, registry name `"nanocop"`, the sixteenth backend;
+never in a default chain). nanoCoP-M (Jens Otten, GPL, Prolog) natively
+decides FIRST-ORDER modal logic D/T/S4/S5 with explicit domain conditions —
+power the kit accepts only under an asymmetric trust policy: a `Theorem`
+answer is re-run through `modal-tableau` (definitive disagreement → ERROR
+soundness alarm; agreement or inconclusive → PROVED with both provenances
+in `detail`), and a `Non-Theorem` claim becomes REFUTED **only** when
+`kripke-enum` independently finds a countermodel (attached as the
+certificate) — otherwise it stays UNKNOWN/`incomplete` with the claim
+recorded, because FO modal validity is undecidable and a proof-search
+failure is not a refutation certificate. The translator emits the shipped
+ReadMe's exact syntax (`f(...)`, `#`/`*` box/diamond, `,`/`;`, `all X:`)
+with injective name mapping (collision → refusal, the NXF discipline), and
+the wrapper script's own report line (`… is a modal (s4/cumul) Theorem`) is
+parsed back: a caller-requested `logic=`/`domain=` that contradicts what
+the user's `nanocopm.sh` is configured to run is an ERROR pointing at the
+script, never an answer from the wrong logic. Discovery:
+`$UFK_NANOCOP_CMD` (with `wsl:` prefix) → PATH → WSL; needs the user's own
+nanoCoP-M + ECLiPSe/SWI-Prolog install, documented in the module.
+
+Added — **`fol.signature` — a first-class Signature object** (`Signature`,
+`PredicateDecl` / `FunctionDecl` / `ConstantDecl`; all frozen): the canonical
+carrier for vocabulary declarations. `from_formulas` infers arities,
+constant sorts and the sort set from ASTs (cross-formula arity conflicts,
+constant-vs-function clashes and double-sorted constants refuse loudly);
+`from_dict` accepts BOTH the loose `api.check` convention and a richer
+explicit form, `to_dict` round-trips with stable ordering; `validate`
+reports undeclared symbols, arity mismatches and concrete-sort mismatches;
+`merge` unions with loud conflicts. `api.check(signature=…)` now also
+accepts a `Signature` (projected onto the loose convention so the
+did-you-mean diagnostics stay identical).
+
+Added — **`eval.metric_hf` — the first NL→FOL metric for the HuggingFace
+`evaluate` ecosystem** (a verified-empty niche). `compute_fol_metrics`
+(pure Python, NO evaluate dependency) scores prediction/reference batches
+per pair through `parse_any` + the graded `equivalent` ladder and
+aggregates `{exact_match, equivalence_accuracy, mean_partial_credit,
+parse_failure_rate, solver_unknown_rate, n}` — the honesty contract made
+metric-shaped: a solver-level `None` counts neither as right nor wrong,
+its mass is reported separately so users can compute bounds.
+`FolEquivalence` (extra `[hf]`) wraps it as a real `evaluate.Metric`;
+importing the module never needs the extra, only instantiating does.
+
+Added — **`fol.dialect_detect`** — the dialect-detection order behind
+`api.parse_any` extracted into one pure, importable source of truth:
+`detect_dialects(text)` returns the ORDERED candidate list (smtlib →
+annotated TPTP → LaTeX → bare TPTP/Prover9 on ASCII text → always
+`"unicode"` last), `DIALECT_SIGNALS` documents each give-away regex, and
+`parse_any` now consumes exactly this list (behavior unchanged,
+regression-covered end-to-end).
+
+Added — **`unicode_fol_kit.mcp` — the kit as an MCP server** (optional extra
+`[mcp]`, MCP SDK >= 2.0; run with `python -m unicode_fol_kit.mcp`). Nine
+tools projecting the seven-verb API faithfully — `parse_formula` (dialect
+auto-detection, unicode rendering next to the JSON AST), `check_formula`,
+`prove` / `find_countermodel` (full Verdict/countermodel dicts, structured
+`{"error": {type, message}}` payloads for `BackendUnavailable`/`ValueError`
+instead of tracebacks), `check_equivalence` (the graded tri-state ladder),
+`diagnose` (ONE repair round: over MCP the client LLM *is* the fixer —
+apply the suggestion, call again), `translate` (comorphism registry; the
+text-typed `"casl"` source passes through verbatim for the `hets:<Name>`
+edges), `verbalize`, and `list_backends` (registry + default-chain
+introspection). Deliberately NOT imported by the package `__init__` — the
+SDK stays optional; the subpackage raises a clear install hint when it is
+missing. 16 tests, including two through the real MCP `list_tools` /
+`call_tool` layer.
+
 ## [0.19.0] - 2026-08-10
 
 Fixed — **two measured soundness gaps where a route reported plainly valid

@@ -35,6 +35,42 @@ Checking semantics (soundness is the only job; the searcher's search *strategy*
 - ``"factor"`` (1 parent ``i``): accepted iff *some* pair of same-polarity
   literals in the parent unifies, and the mgu applied to the whole clause is a
   variant of the stated clause.
+- ``"paramodulate"`` (2 parents ``i, j`` — ``i`` the equation, ``j`` the
+  rewrite target): unlike ``"resolve"``/``"factor"``, which search over EVERY
+  candidate literal pair, this rule and the two below require the
+  derivation to name its literals EXPLICITLY (``step.eq_literal``,
+  ``step.target_literal``, as they appear in the cited parents' OWN clauses —
+  not in some checker-internal renamed form) plus ``step.direction`` (``"lr"``
+  uses the equation's first argument as the rewrite source, ``"rl"`` the
+  second) and ``step.position`` (a tuple of argument indices addressing the
+  rewritten subterm of ``target_literal``'s atom). Nothing about the
+  UNIFIER is trusted or stored: the checker re-derives it from scratch by
+  unifying the equation's stated side against the subterm it extracts at
+  ``step.position``, and only accepts the step if that mgu, applied
+  everywhere, reproduces a variant of the stated clause. The two parents are
+  standardized apart first, exactly as for ``"resolve"``.
+  There is deliberately NO ``"self_paramodulate"`` rule: a shared-instance
+  shortcut (equation and target from ONE clause instantiation, both dropped)
+  is unsound — {u ≈ v, L[u]} would certify {L[v]}, false in a model that
+  satisfies the clause via L[u] alone with u ≠ v. A clause paramodulating
+  into itself must be certified as ``"paramodulate"`` with the clause cited
+  as BOTH parents (the checker standardizes the two citations apart).
+- ``"reflexivity"`` (1 parent ``i``): ``step.eq_literal`` must be a NEGATIVE
+  equality literal ``¬(u=v)`` of the cited clause whose two sides unify (own
+  ``_unify``); the mgu applied to the clause minus that literal must be a
+  variant of the stated clause.
+- ``"demodulate"`` (2 parents ``i, j`` — ``i`` the target, ``j`` a UNIT
+  equation clause): ``step.eq_literal`` must be the sole literal of the
+  cited unit clause ``j`` (a non-unit clause can never license an
+  unconditional rewrite — it only asserts a disjunction). Unlike
+  ``"paramodulate"``, the rewrite uses one-sided MATCHING, not unification
+  (the equation's stated side must literally instantiate, via its own free
+  variables only, the subterm at ``step.position`` — the target's variables
+  are never bound), and the orientation is re-checked with this module's own
+  term order (``_term_gt`` — see :mod:`atp.resolution`'s module docstring for
+  the order's definition): a direction that does not strictly decrease under
+  it is rejected, independent of what the derivation claims. No standardizing
+  apart is needed here (see the module's own note on that, near ``_match_term``).
 - The empty step list is ``ok=True, refuted=False`` (a derivation may verify
   ok without proving anything); ``refuted`` is True iff some *successfully
   verified* step's clause is empty, tracked independently of whether a later
@@ -93,23 +129,57 @@ class ResolutionStep:
 
     ``rule`` is one of ``"input"`` (0 parents — the clause must be a variant
     of one of the derivation's inputs), ``"resolve"`` (2 parents — a binary
-    resolvent of the two cited earlier clauses), or ``"factor"`` (1 parent — a
-    factor of the one cited earlier clause). ``parents`` holds the 1-based
+    resolvent of the two cited earlier clauses), ``"factor"`` (1 parent — a
+    factor of the one cited earlier clause), or the three equality rules
+    ``"paramodulate"``/``"reflexivity"``/``"demodulate"``
+    (see the module docstring for each — including why a
+    ``"self_paramodulate"`` rule deliberately does NOT exist). ``parents``
+    holds the 1-based
     ``index`` values of the cited earlier steps, in citation order (so for
     ``"resolve"`` the pair is *not* order-sensitive — both orderings of the
-    complementary literal are tried by the checker). ``clause`` is coerced to
-    a ``frozenset`` and ``parents`` to a ``tuple`` so the step stays hashable.
+    complementary literal are tried by the checker; the equality rules
+    ARE order-sensitive — see below and the module docstring).
+
+    The four extra fields below are used only by the equality rules (and left
+    at their defaults — ``None``/``None``/``None``/``()`` — for
+    ``"input"``/``"resolve"``/``"factor"``, keeping old derivations valid
+    unchanged):
+
+    - ``eq_literal``: the equality-atom literal the step consumes, exactly as
+      it appears in its owning parent clause (parents[0] for
+      ``"paramodulate"``/``"reflexivity"``,
+      parents[1] for ``"demodulate"``) — POSITIVE for
+      ``"paramodulate"``/``"demodulate"``, NEGATIVE
+      for ``"reflexivity"``.
+    - ``target_literal``: the literal being rewritten (unused by
+      ``"reflexivity"``, which only ever removes ``eq_literal`` itself) —
+      for ``"paramodulate"``/``"demodulate"`` this is a literal of the OTHER
+      parent (parents[1]/parents[0] respectively).
+    - ``direction``: ``"lr"`` uses ``eq_literal``'s first argument as the
+      rewrite source and its second as the replacement, ``"rl"`` the reverse.
+    - ``position``: a tuple of argument indices addressing the rewritten
+      subterm within ``target_literal``'s atom (``()`` would address the
+      atom itself, never valid — a position always descends into at least
+      one argument first).
+
+    ``clause`` is coerced to a ``frozenset``, ``parents``/``position`` to
+    ``tuple``\\ s, so the step stays hashable.
     """
 
     index: int
     clause: FrozenSet[Node]
     rule: str
     parents: Tuple[int, ...] = ()
+    eq_literal: Optional[Node] = None
+    target_literal: Optional[Node] = None
+    direction: Optional[str] = None
+    position: Tuple[int, ...] = ()
 
     def __post_init__(self):
-        """Coerce ``clause``/``parents`` to a frozenset/tuple for hashability."""
+        """Coerce ``clause``/``parents``/``position`` for hashability."""
         object.__setattr__(self, "clause", frozenset(self.clause))
         object.__setattr__(self, "parents", tuple(self.parents))
+        object.__setattr__(self, "position", tuple(self.position))
 
 
 @dataclass(frozen=True)
@@ -408,6 +478,27 @@ def _rename_literal(literal: Node, mapping: Dict[str, Variable]) -> Node:
     return _rename_term(literal, mapping)
 
 
+def _standardize_apart_maps(ca: FrozenSet[Node], cb: FrozenSet[Node]):
+    """As :func:`_standardize_apart`, but also returns the two rename maps
+    (original variable name -> fresh :class:`Variable`) used to build the
+    standardized-apart clauses.
+
+    Needed by ``"paramodulate"`` (not
+    ``"demodulate"``, which needs no standardizing apart — see its checker):
+    a derivation names ``eq_literal``/``target_literal`` exactly as they
+    appear in the ORIGINAL (pre-rename) parent clauses, so the checker must
+    replay the SAME rename to find their counterparts in the standardized
+    clauses it works with.
+    """
+    names_a = sorted(_clause_var_names(ca))
+    names_b = sorted(_clause_var_names(cb))
+    map_a = {name: Variable(f"_L{i}") for i, name in enumerate(names_a)}
+    map_b = {name: Variable(f"_R{i}") for i, name in enumerate(names_b)}
+    new_a = frozenset(_rename_literal(lit, map_a) for lit in ca)
+    new_b = frozenset(_rename_literal(lit, map_b) for lit in cb)
+    return new_a, new_b, map_a, map_b
+
+
 def _standardize_apart(ca: FrozenSet[Node], cb: FrozenSet[Node]):
     """Rename the variables of ``ca`` and ``cb`` to disjoint fresh names.
 
@@ -417,14 +508,12 @@ def _standardize_apart(ca: FrozenSet[Node], cb: FrozenSet[Node]):
     unrelated individuals and must not be conflated. Renaming is deterministic
     (sorted by original name, prefixed ``_L``/``_R``) so the check is
     reproducible; the *choice* of fresh names is otherwise immaterial since
-    every candidate resolvent is compared up to variant, not up to `==`.
+    every candidate resolvent is compared up to variant, not up to `==`. A
+    thin wrapper over :func:`_standardize_apart_maps` that drops the maps,
+    for callers (``"resolve"``) that don't need to translate a
+    pre-standardization literal reference.
     """
-    names_a = sorted(_clause_var_names(ca))
-    names_b = sorted(_clause_var_names(cb))
-    map_a = {name: Variable(f"_L{i}") for i, name in enumerate(names_a)}
-    map_b = {name: Variable(f"_R{i}") for i, name in enumerate(names_b)}
-    new_a = frozenset(_rename_literal(lit, map_a) for lit in ca)
-    new_b = frozenset(_rename_literal(lit, map_b) for lit in cb)
+    new_a, new_b, _map_a, _map_b = _standardize_apart_maps(ca, cb)
     return new_a, new_b
 
 
@@ -453,6 +542,107 @@ def _lit_key(literal: Node) -> str:
     order (hash-randomised across processes), so the checker's behaviour and
     :func:`render_resolution_proof`'s output are reproducible run to run."""
     return literal.to_unicode_str()
+
+
+# ---------------------------------------------------------------------------
+# Equality: an INDEPENDENT reimplementation of the term order, one-sided term
+# matching, and subterm positions/replacement used by the four equality
+# rules below. Independence requirement 1 (see the module docstring) applies
+# here exactly as it does to _unify/_apply: this module must reach the SAME
+# verdicts as unicode_fol_kit.atp.resolution's own _term_gt/_match_term/
+# _term_at/_replace_at on any given input, but shares no code with them.
+# ---------------------------------------------------------------------------
+
+def _is_equality_atom(atom: Atom) -> bool:
+    """True iff atom is a binary ``=`` atom."""
+    return atom.predicate == "=" and len(atom.args) == 2
+
+
+def _term_weight(term: Node) -> int:
+    """Term order, part 1 — WEIGHT (term size): 1 for a leaf
+    (Variable/Constant/Number), 1 + the sum of its arguments' weights for a
+    Function. Must be the SAME definition as
+    :func:`unicode_fol_kit.atp.resolution._term_weight` (both sides need to
+    reach the same orientation verdict on any given equation), reimplemented
+    independently here."""
+    if isinstance(term, Function):
+        return 1 + sum(_term_weight(a) for a in term.args)
+    return 1
+
+
+def _term_order_key(term: Node):
+    """Term order, part 2 — ties in weight broken lexicographically by the
+    term's ``to_unicode_str()`` rendering."""
+    return (_term_weight(term), term.to_unicode_str())
+
+
+def _term_gt(s: Node, t: Node) -> bool:
+    """True iff ``s`` is STRICTLY greater than ``t`` under the module's term
+    order (weight, then lexicographic tie-break). See
+    :mod:`unicode_fol_kit.atp.resolution`'s module docstring ("Equality"
+    section) for the full definition and the soundness argument for why
+    checking this on concretely SUBSTITUTED terms (as ``"demodulate"``'s
+    checker does) needs no substitution-compatibility closure."""
+    return _term_order_key(s) > _term_order_key(t)
+
+
+def _match_term(pattern: Node, target: Node, subst: Dict[str, Node]) -> Optional[Dict[str, Node]]:
+    """One-sided structural match of ``pattern`` against ``target``: PATTERN's
+    variables may bind, TARGET is held fixed (its own variables, if any, are
+    opaque — never instantiated). A repeated pattern variable must match the
+    same target subterm everywhere (checked by structural equality against
+    the existing binding). Returns the extended substitution, or None on
+    failure. Used only by ``"demodulate"``'s checker, to re-derive whether
+    the cited equation's stated side genuinely matches the target subterm —
+    an independent reimplementation of the same one-sided-matching idea
+    :mod:`unicode_fol_kit.atp.resolution` uses for both subsumption and its
+    own demodulation (:func:`~unicode_fol_kit.atp.resolution._match_term`),
+    sharing no code with it.
+    """
+    if isinstance(pattern, Variable):
+        if pattern.name in subst:
+            return subst if subst[pattern.name] == target else None
+        extended = dict(subst)
+        extended[pattern.name] = target
+        return extended
+    if isinstance(pattern, Function):
+        if (not isinstance(target, Function)
+                or pattern.name != target.name
+                or len(pattern.args) != len(target.args)):
+            return None
+        for p_arg, t_arg in zip(pattern.args, target.args):
+            subst = _match_term(p_arg, t_arg, subst)
+            if subst is None:
+                return None
+        return subst
+    return subst if pattern == target else None
+
+
+def _term_at(node: Node, position: Tuple[int, ...]) -> Node:
+    """Walk ``position`` (a tuple of argument indices) from ``node`` down to
+    the addressed subterm. Raises ``IndexError``/``AttributeError``/
+    ``TypeError`` on an invalid path (out-of-range index, or descending past
+    a leaf) — callers catch these and turn them into a proper
+    ``"step N: ..."`` error, exactly the outcome a TAMPERED position (one of
+    the derivation manipulations these checkers must catch) should produce.
+    """
+    for i in position:
+        node = node.args[i]
+    return node
+
+
+def _replace_at(node: Node, position: Tuple[int, ...], replacement: Node) -> Node:
+    """Return a copy of ``node`` (an :class:`Atom` or :class:`Function`) with
+    the subterm at ``position`` replaced by ``replacement``. Raises the same
+    exceptions as :func:`_term_at` on an invalid path."""
+    if not position:
+        return replacement
+    i, rest = position[0], position[1:]
+    new_args = list(node.args)
+    new_args[i] = _replace_at(node.args[i], rest, replacement)
+    if isinstance(node, Atom):
+        return Atom(node.predicate, new_args)
+    return Function(node.name, new_args)
 
 
 # ---------------------------------------------------------------------------
@@ -525,7 +715,190 @@ def _check_factor_step(step: ResolutionStep, ci: FrozenSet[Node]) -> Optional[st
             "stated factored clause")
 
 
-_RULE_ARITY = {"input": 0, "resolve": 2, "factor": 1}
+def _direction_sides(eq_atom: Atom, direction: Optional[str]):
+    """Return ``(from, to)`` for a ``"lr"``/``"rl"`` direction over
+    ``eq_atom``'s two arguments, or ``None`` for any other value (including
+    a missing direction) -- shared by all four equality-rule checkers below."""
+    if direction == "lr":
+        return eq_atom.args[0], eq_atom.args[1]
+    if direction == "rl":
+        return eq_atom.args[1], eq_atom.args[0]
+    return None
+
+
+def _check_paramodulate_step(step: ResolutionStep, ci: FrozenSet[Node], cj: FrozenSet[Node]) -> Optional[str]:
+    """``"paramodulate"``: parents ``(i, j)`` -- ``i`` supplies a positive
+    equality literal (``step.eq_literal``, oriented by ``step.direction``),
+    ``j`` supplies the target literal (``step.target_literal``) rewritten at
+    ``step.position``. Re-derived from scratch: the two parents are
+    standardized apart (as for ``"resolve"``); the declared eq_literal/
+    target_literal (named as they appear in the ORIGINAL parents) are
+    located in the standardized clauses via the SAME rename maps; the
+    subterm at ``step.position`` is extracted from the target atom and
+    unified (own ``_unify``) against the equation's stated side; the
+    resulting mgu, applied to both remainders plus the rewritten literal, is
+    compared up to variant against the stated clause -- resolve's recipe,
+    generalized to a rewrite instead of a literal cancellation.
+    """
+    if step.eq_literal is None or step.target_literal is None:
+        return "'paramodulate' requires eq_literal and target_literal"
+    ci2, cj2, map_i, map_j = _standardize_apart_maps(ci, cj)
+    eq_lit = _rename_literal(step.eq_literal, map_i)
+    if eq_lit not in ci2:
+        return "'paramodulate': eq_literal is not present in the cited equation parent"
+    parsed_eq = _lit_atom_polarity(eq_lit)
+    if parsed_eq is None or not parsed_eq[1]:
+        return "'paramodulate': eq_literal must be a POSITIVE equality literal"
+    eq_atom, _pos = parsed_eq
+    if not _is_equality_atom(eq_atom):
+        return "'paramodulate': eq_literal is not a binary equality atom"
+    sides = _direction_sides(eq_atom, step.direction)
+    if sides is None:
+        return "'paramodulate' requires direction 'lr' or 'rl'"
+    frm, to = sides
+
+    tgt_lit = _rename_literal(step.target_literal, map_j)
+    if tgt_lit not in cj2:
+        return "'paramodulate': target_literal is not present in the cited target parent"
+    parsed_tgt = _lit_atom_polarity(tgt_lit)
+    if parsed_tgt is None:
+        return "'paramodulate': target_literal is not a well-formed literal"
+    tgt_atom, tgt_is_positive = parsed_tgt
+
+    try:
+        subterm = _term_at(tgt_atom, step.position)
+    except (IndexError, TypeError, AttributeError):
+        return "'paramodulate': position does not address a subterm of target_literal"
+
+    sigma = _unify(frm, subterm)
+    if sigma is None:
+        return "'paramodulate': the equation's stated side does not unify with the subterm at position"
+
+    try:
+        rewritten_atom = _replace_at(tgt_atom, step.position, to)
+    except (IndexError, TypeError, AttributeError):
+        return "'paramodulate': position does not address a replaceable subterm"
+    rewritten_lit = rewritten_atom if tgt_is_positive else Not(rewritten_atom)
+
+    expected = frozenset(
+        [_apply_literal(l, sigma) for l in ci2 if l != eq_lit]
+        + [_apply_literal(l, sigma) for l in cj2 if l != tgt_lit]
+        + [_apply_literal(rewritten_lit, sigma)]
+    )
+    if _is_variant(expected, step.clause):
+        return None
+    return "'paramodulate': the recomputed rewrite is not a variant of the stated clause"
+
+
+def _check_reflexivity_step(step: ResolutionStep, ci: FrozenSet[Node]) -> Optional[str]:
+    """``"reflexivity"``: drops a NEGATIVE equality literal ``¬(u=v)`` from
+    the cited clause once its own two sides unify (own ``_unify``,
+    occurs-checked); the resulting mgu is applied to what remains. Covers
+    reflexivity goals such as ``⊢ c=c``, whose negation clausifies to
+    ``{¬(c=c)}`` (unified by the trivial mgu ``{}``).
+    """
+    if step.eq_literal is None:
+        return "'reflexivity' requires eq_literal"
+    if step.eq_literal not in ci:
+        return "'reflexivity': eq_literal is not present in the cited parent"
+    parsed = _lit_atom_polarity(step.eq_literal)
+    if parsed is None or parsed[1]:
+        return "'reflexivity': eq_literal must be a NEGATIVE equality literal"
+    atom, _pos = parsed
+    if not _is_equality_atom(atom):
+        return "'reflexivity': eq_literal is not a binary equality atom"
+    u, v = atom.args
+    sigma = _unify(u, v)
+    if sigma is None:
+        return "'reflexivity': the two sides of eq_literal do not unify"
+    expected = frozenset(_apply_literal(l, sigma) for l in ci if l != step.eq_literal)
+    if _is_variant(expected, step.clause):
+        return None
+    return "'reflexivity': the recomputed clause is not a variant of the stated clause"
+
+
+def _check_demodulate_step(step: ResolutionStep, ci: FrozenSet[Node], cj: FrozenSet[Node]) -> Optional[str]:
+    """``"demodulate"``: parents ``(target i, unit-equation j)``. ``cj`` must
+    be a UNIT clause (a single literal) whose sole literal is
+    ``step.eq_literal``, a positive equality literal used as a REWRITE RULE
+    via one-sided MATCHING (:func:`_match_term` -- not unification: the
+    rule's variables bind, the target clause's variables are held fixed)
+    against the subterm of ``step.target_literal`` in ``ci`` at
+    ``step.position``. The orientation is re-checked on the CONCRETE,
+    substituted terms with this module's own term order (:func:`_term_gt`):
+    only a genuinely simplifying rewrite (subterm ≻ rσ) is accepted -- a
+    tampered direction against the order is rejected here, independent of
+    what the derivation claims. No standardizing apart is needed: one-sided
+    matching never binds a target-side variable, so a coincidental variable
+    name shared between ``ci`` and ``cj`` cannot cause capture (the same
+    reasoning :mod:`unicode_fol_kit.atp.resolution` relies on for its own
+    demodulation and for clause subsumption, neither of which standardizes
+    apart either).
+
+    The non-unit restriction on ``cj`` is a soundness requirement, not a
+    convenience: a clause ``{u≈v, Q}`` only asserts ``u≈v ∨ Q``, not the
+    unconditional fact ``u≈v`` -- rewriting with it while discarding ``Q``
+    would be unsound.
+    """
+    if step.eq_literal is None or step.target_literal is None:
+        return "'demodulate' requires eq_literal and target_literal"
+    if len(cj) != 1:
+        return "'demodulate': the equation parent must be a UNIT clause (a single positive equality literal)"
+    if step.eq_literal not in cj:
+        return "'demodulate': eq_literal is not present in the cited equation parent"
+    parsed_eq = _lit_atom_polarity(step.eq_literal)
+    if parsed_eq is None or not parsed_eq[1]:
+        return "'demodulate': eq_literal must be a POSITIVE equality literal"
+    eq_atom, _pos = parsed_eq
+    if not _is_equality_atom(eq_atom):
+        return "'demodulate': eq_literal is not a binary equality atom"
+    sides = _direction_sides(eq_atom, step.direction)
+    if sides is None:
+        return "'demodulate' requires direction 'lr' or 'rl'"
+    l, r = sides
+
+    if step.target_literal not in ci:
+        return "'demodulate': target_literal is not present in the cited target parent"
+    parsed_tgt = _lit_atom_polarity(step.target_literal)
+    if parsed_tgt is None:
+        return "'demodulate': target_literal is not a well-formed literal"
+    tgt_atom, tgt_is_positive = parsed_tgt
+
+    try:
+        subterm = _term_at(tgt_atom, step.position)
+    except (IndexError, TypeError, AttributeError):
+        return "'demodulate': position does not address a subterm of target_literal"
+
+    sigma = _match_term(l, subterm, {})
+    if sigma is None:
+        return "'demodulate': the equation's stated left side does not MATCH the subterm at position"
+
+    r_sigma = _apply(r, sigma)
+    if not _term_gt(subterm, r_sigma):
+        return "'demodulate': the orientation does not strictly decrease under the documented term order"
+
+    try:
+        rewritten_atom = _replace_at(tgt_atom, step.position, r_sigma)
+    except (IndexError, TypeError, AttributeError):
+        return "'demodulate': position does not address a replaceable subterm"
+    rewritten_lit = rewritten_atom if tgt_is_positive else Not(rewritten_atom)
+
+    rest = [l2 for l2 in ci if l2 != step.target_literal]
+    expected = frozenset(rest + [rewritten_lit])
+    if _is_variant(expected, step.clause):
+        return None
+    return "'demodulate': the recomputed clause is not a variant of the stated clause"
+
+
+_RULE_ARITY = {
+    "input": 0, "resolve": 2, "factor": 1,
+    "paramodulate": 2, "reflexivity": 1, "demodulate": 2,
+}
+# NO "self_paramodulate": the shared-instance shortcut (equation and target
+# from ONE instantiation, both dropped) is UNSOUND — for {u ≈ v, L[u]} it
+# would certify {L[v]}, false in a model satisfying the clause via L[u] with
+# u ≠ v. The generator no longer emits it (adversarial review, Tier 3), and
+# an external derivation claiming it must be REJECTED, not re-derived.
 
 
 # ---------------------------------------------------------------------------
@@ -562,10 +935,11 @@ def verify_resolution_proof(derivation: "ResolutionDerivation") -> ResolutionChe
 
         arity = _RULE_ARITY.get(step.rule)
         if arity is None:
+            expected = ", ".join(repr(r) for r in _RULE_ARITY)
             return ResolutionCheckResult(
                 False, step.index,
                 f"step {step.index}: unknown rule {step.rule!r} (expected "
-                f"'input', 'resolve', or 'factor')",
+                f"one of {expected})",
                 refuted)
         if len(step.parents) != arity:
             return ResolutionCheckResult(
@@ -588,9 +962,18 @@ def verify_resolution_proof(derivation: "ResolutionDerivation") -> ResolutionChe
         elif step.rule == "resolve":
             i, j = step.parents
             err = _check_resolve_step(step, clause_by_index[i], clause_by_index[j])
-        else:  # "factor"
+        elif step.rule == "factor":
             (i,) = step.parents
             err = _check_factor_step(step, clause_by_index[i])
+        elif step.rule == "paramodulate":
+            i, j = step.parents
+            err = _check_paramodulate_step(step, clause_by_index[i], clause_by_index[j])
+        elif step.rule == "reflexivity":
+            (i,) = step.parents
+            err = _check_reflexivity_step(step, clause_by_index[i])
+        else:  # "demodulate"
+            i, j = step.parents
+            err = _check_demodulate_step(step, clause_by_index[i], clause_by_index[j])
 
         if err is not None:
             return ResolutionCheckResult(False, step.index, f"step {step.index}: {err}", refuted)

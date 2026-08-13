@@ -19,6 +19,13 @@ SMT (Z3) and external-prover (Prover9/Vampire) backends, truth tables, and dedic
 semantics for every logic. Formulas import/export to TPTP, Prover9, SMT-LIB, LaTeX,
 and JSON.
 
+Beyond deciding formulas, the kit evaluates them against structures you already
+have (**{doc}`guide/model-checking`**, including molecules as first-order
+structures), audits definition *sets* for coherence and over-generality
+(**{doc}`guide/verification`**), computes exact probability bounds and queries
+(**{doc}`guide/probabilistic`**), and serves the whole toolkit — grammar
+included — to a language model over MCP (**{doc}`guide/mcp`**).
+
 ## Where to start
 
 - New here? Read **{doc}`guide/installation`** then **{doc}`guide/quickstart`**.
@@ -49,8 +56,12 @@ guide/relevant
 guide/dependence
 guide/substructural
 guide/nonclassical
+guide/probabilistic
 guide/natural-language
 guide/derivations
+guide/model-checking
+guide/verification
+guide/mcp
 guide/syntax-reference
 ```
 

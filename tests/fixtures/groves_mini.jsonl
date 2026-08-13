@@ -1,0 +1,8 @@
+{"NL": "Every pharmaceutical company researches, develops, and manufactures drugs that target diseases and medical conditions and improve patient outcomes.", "FOL": "∀x (PharmaceuticalCompany(x) → ∃y (Drug(y) ∧ Researches(x, y) ∧ Develops(x, y) ∧ Manufactures(x, y) ∧ ∃z (Disease(z) ∧ Targets(y, z)) ∧ ∃w (MedicalCondition(w) ∧ Targets(y, w)) ∧ ImprovesPatientOutcomes(y)))"}
+{"NL": "Every event is indoors, outdoors, or virtual, but not all three.", "FOL": "∀x (Event(x) → ((Indoors(x) ∨ Outdoors(x) ∨ Virtual(x)) ∧ ¬(Indoors(x) ∧ Outdoors(x) ∧ Virtual(x))))"}
+{"NL": "A bird flies unless it is flightless.", "FOL": "∀x (Bird(x) → (¬Flightless(x) → Flies(x)))"}
+{"NL": "A person is content if and only if they are not fit and have companions.", "FOL": "∀x (Person(x) → (Content(x) ↔ (¬Fit(x) ∧ ∃y (Companion(y) ∧ Has(x, y)))))"}
+{"NL": "An ice cream cone has a scoop and a waffle cone.", "FOL": "∀x (IceCreamCone(x) → ∃y ∃z (Scoop(y) ∧ WaffleCone(z) ∧ Has(x, y) ∧ Has(x, z)))"}
+{"NL": "All monkeys are either red or blue.", "FOL": "∀x (Monkey(x) → (Red(x) ⊕ Blue(x)))"}
+{"NL": "There is a titan that every titan respects, presuming not all humans are mortal.", "FOL": "¬∀x (Human(x) → Mortal(x)) → ∃y (Titan(y) ∧ ∀z (Titan(z) → Respects(z, y)))"}
+{"NL": "There isn't a professor who has taught every course in the university.", "FOL": "¬∃x (Professor(x) ∧ ∀y (Course(y) ∧ In(y, university) → Taught(x, y)))"}

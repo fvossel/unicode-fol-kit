@@ -153,14 +153,22 @@ class NamingError(UnexpectedCharacters):
     def _build_message(self, last_token, exc: UnexpectedCharacters) -> str:
         """Compose the final error message for a lexer-level failure."""
         display = _display_name(last_token.type, self._patterns)
+        mixing_symbols, mixing_hint = _MIXING_INFO.get(self._mode, _MIXING_INFO["fol"])
+        mixes = exc.char in mixing_symbols
 
-        if _is_structural(last_token.type):
+        # A same-level connective is never a NAMING failure, even when the token
+        # in front of it is name-like: in 'A ∧ B ∨ C' the predicate 'B' is
+        # perfectly well formed and it is the MIX that the grammar refuses.
+        # Reporting it as "Invalid predicate 'B' … Expected pattern: [A-Z]…"
+        # sends the reader (or a generating model) off renaming a good name
+        # instead of adding the brackets, so the mixing case takes the
+        # structural wording — which carries the hint — in both branches.
+        if _is_structural(last_token.type) or mixes:
             message = (
                 f"SYNTAX_ERROR: Unexpected character '{exc.char}' at position "
                 f"{exc.column} after {display} '{last_token.value}'"
             )
-            mixing_symbols, mixing_hint = _MIXING_INFO.get(self._mode, _MIXING_INFO["fol"])
-            if exc.char in mixing_symbols:
+            if mixes:
                 message += f". Hint: {mixing_hint}"
             return message
 

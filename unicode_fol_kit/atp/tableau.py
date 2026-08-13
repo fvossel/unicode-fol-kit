@@ -18,10 +18,13 @@ prover — a non-closing first-order tableau within the bound is reported as "op
 without claiming satisfiability.
 
 Public API: :func:`tableau_closed`, :func:`is_valid_tableau`, :func:`prove_tableau`,
-:func:`tableau_model`.
+:func:`tableau_model`, and — for a recorded, independently-checkable proof object —
+:func:`prove_tableau_detailed` / :class:`TableauProof` (checked by
+:mod:`unicode_fol_kit.atp.tableau_check`).
 """
 
-from typing import List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
 
 from ..fol.nodes import (
     Node, Atom, Not, And, Or, Xor, Implies, Iff, Quantifier, Variable, Constant, Number, Function,
@@ -372,3 +375,306 @@ def tableau_model(formulas, max_steps: int = 20000, max_terms: int = 8) -> Optio
         elif isinstance(lit, Atom):
             assignment[lit.to_unicode_str()] = True
     return assignment
+
+
+# ---------------------------------------------------------------------------
+# Tier 3: a tableau PROOF OBJECT, recorded alongside the search above with
+# zero effect on it (see _close_recording's docstring — it is a separate,
+# additive function; every entry point above still calls the untouched
+# original _close, so their behaviour is unchanged by everything below).
+# Independently checked by :mod:`unicode_fol_kit.atp.tableau_check`, which
+# never imports this module's rule-application machinery (``_rule``,
+# ``_close``, ``_close_recording``, ``_instance``) — only the plain data
+# classes below.
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class TableauStep:
+    """One rule application in a recorded tableau proof — one node of its tree.
+
+    Every step has exactly one ``parent_id`` (``0`` denotes the tableau's root —
+    :attr:`TableauProof.root_formulas`, i.e. premises + ¬conclusion) and adds the
+    formula(s) in ``produced`` to the branch it extends:
+
+    - ``"alpha"`` (non-branching): ``produced`` is all of the principal formula's
+      own components (e.g. both conjuncts of an ``And``) — one child step.
+    - ``"beta"`` (branching): recorded as TWO SIBLING steps sharing the same
+      ``parent_id`` *and* the same ``principal_formula`` — one per branch, each
+      with ``branch_split=True`` and its own alternative in ``produced``.
+    - ``"gamma"`` (∀-instantiation): ``produced`` and ``terms`` are parallel
+      tuples of the same length — ``produced[i]`` is the principal formula's
+      matrix with its bound variable substituted by ``terms[i]``. A single step
+      may instantiate at several terms at once (the initial encounter of a
+      universal instantiates at every ground term already on the branch); a
+      later re-instantiation on saturation is always a single-term step.
+    - ``"delta"`` (∃-witness): ``produced`` is a single formula — the principal
+      formula's matrix substituted by the fresh witnessing constant recorded in
+      ``fresh_constant``.
+
+    ``step_id`` is 1-based and equal to the step's position in
+    :attr:`TableauProof.steps` (mirrors :class:`atp.resolution_check
+    .ResolutionStep`'s ``index`` convention).
+    """
+
+    step_id: int
+    parent_id: int
+    rule: str
+    principal_formula: Node
+    produced: Tuple[Node, ...]
+    branch_split: bool = False
+    terms: Tuple[Node, ...] = ()
+    fresh_constant: Optional[Node] = None
+
+    def __post_init__(self):
+        """Coerce ``produced``/``terms`` to tuples for hashability."""
+        object.__setattr__(self, "produced", tuple(self.produced))
+        object.__setattr__(self, "terms", tuple(self.terms))
+
+    def to_dict(self) -> dict:
+        return {
+            "step_id": self.step_id,
+            "parent_id": self.parent_id,
+            "rule": self.rule,
+            "principal_formula": self.principal_formula.to_dict(),
+            "produced": [f.to_dict() for f in self.produced],
+            "branch_split": self.branch_split,
+            "terms": [t.to_dict() for t in self.terms],
+            "fresh_constant": self.fresh_constant.to_dict() if self.fresh_constant is not None else None,
+        }
+
+
+@dataclass(frozen=True)
+class TableauClosure:
+    """One closed branch's closure pair, with the node IDs where both lie.
+
+    ``leaf_id`` is the tree node (``0``, or a :class:`TableauStep`'s ``step_id``)
+    at which the branch closes — it must be a genuine leaf (no step cites it as a
+    parent). ``literal`` is the formula whose processing triggered the closure;
+    ``literal_step_id`` names the branch node where it actually occurs (``0`` for
+    a root formula, else a step whose ``produced`` contains it). When ``literal``
+    is ⊥ itself the branch is self-closing and ``complement``/``complement_step_id``
+    are both ``None``; otherwise ``complement`` is ``literal``'s complementary
+    formula and ``complement_step_id`` names where IT occurs on the same branch.
+    """
+
+    leaf_id: int
+    literal: Node
+    literal_step_id: int
+    complement: Optional[Node] = None
+    complement_step_id: Optional[int] = None
+
+    def to_dict(self) -> dict:
+        return {
+            "leaf_id": self.leaf_id,
+            "literal": self.literal.to_dict(),
+            "literal_step_id": self.literal_step_id,
+            "complement": self.complement.to_dict() if self.complement is not None else None,
+            "complement_step_id": self.complement_step_id,
+        }
+
+
+@dataclass(frozen=True)
+class TableauProof:
+    """A full recorded tableau proof: the root formulas, the rule-application
+    tree, and every closed branch's closure pair.
+
+    This records what the search DID — it is not itself a certificate that the
+    search was sound. Call :func:`unicode_fol_kit.atp.tableau_check
+    .check_tableau_proof` to verify one independently before trusting it.
+    """
+
+    root_formulas: Tuple[Node, ...]
+    steps: Tuple[TableauStep, ...] = ()
+    closures: Tuple[TableauClosure, ...] = ()
+
+    def __post_init__(self):
+        """Coerce ``root_formulas``/``steps``/``closures`` to tuples for hashability."""
+        object.__setattr__(self, "root_formulas", tuple(self.root_formulas))
+        object.__setattr__(self, "steps", tuple(self.steps))
+        object.__setattr__(self, "closures", tuple(self.closures))
+
+    def to_dict(self) -> dict:
+        return {
+            "root_formulas": [f.to_dict() for f in self.root_formulas],
+            "steps": [s.to_dict() for s in self.steps],
+            "closures": [c.to_dict() for c in self.closures],
+        }
+
+
+class _Recorder:
+    """Builds a :class:`TableauProof` tree alongside :func:`_close_recording`.
+
+    Pure bookkeeping: every method here only records what the search already
+    decided (see :func:`_close_recording`'s docstring) — nothing here feeds back
+    into a decision, so recording cannot change the search's order or result.
+    """
+
+    def __init__(self):
+        self._next_id = 1
+        self.steps: List[TableauStep] = []
+        self.steps_by_id: Dict[int, TableauStep] = {}
+        self.closures: List[TableauClosure] = []
+
+    def add(self, parent_id: int, rule: str, principal: Node, produced,
+            branch_split: bool = False, terms=(), fresh_constant: Optional[Node] = None) -> int:
+        """Append a new :class:`TableauStep`, returning its fresh ``step_id``."""
+        step_id = self._next_id
+        self._next_id += 1
+        step = TableauStep(step_id, parent_id, rule, principal, tuple(produced),
+                           branch_split, tuple(terms), fresh_constant)
+        self.steps.append(step)
+        self.steps_by_id[step_id] = step
+        return step_id
+
+    def _origin(self, formula: Node, node_id: int, root_formulas) -> int:
+        """The nearest branch node (searching leaf-to-root) whose ``produced``
+        (or, at ``0``, ``root_formulas``) contains ``formula``."""
+        cur = node_id
+        while cur != 0:
+            step = self.steps_by_id[cur]
+            if any(formula == p for p in step.produced):
+                return cur
+            cur = step.parent_id
+        return 0
+
+    def close(self, node_id: int, root_formulas, literal: Node,
+              complement: Optional[Node] = None) -> None:
+        """Record a branch closure at ``node_id`` (see :class:`TableauClosure`)."""
+        literal_id = self._origin(literal, node_id, root_formulas)
+        complement_id = self._origin(complement, node_id, root_formulas) if complement is not None else None
+        self.closures.append(TableauClosure(node_id, literal, literal_id, complement, complement_id))
+
+
+def _close_recording(work: Tuple[Node, ...], lits: frozenset,
+                     gammas: Tuple[Tuple, ...], terms: Tuple[Node, ...],
+                     used: frozenset, ctx: "_Ctx", rec: "_Recorder",
+                     node_id: int, root_formulas: Tuple[Node, ...]) -> bool:
+    """A recording twin of :func:`_close` — the engine behind :func:`prove_tableau_detailed`.
+
+    Line-for-line the same search as :func:`_close` — same term pools, the same
+    ``ctx.fresh_const()`` call sequence, the same budget accounting, the same
+    (deterministic, backtracking-free) control flow — with a :class:`_Recorder`
+    call added at every point :func:`_close` makes a decision, so the two never
+    diverge in VERDICT for the same inputs. Kept as a wholly separate function
+    (rather than adding recorder hooks to ``_close`` itself) specifically so
+    :func:`prove_tableau` and every other existing entry point above keep
+    calling the untouched original: this function has zero effect on their
+    behaviour, by construction, not merely by argument.
+
+    Because the search is deterministic and never backtracks (every choice —
+    which fresh constant, which pool terms, which unused ``(key, t)`` pair to
+    reinstantiate — is made once, immediately, never retried), a top-level
+    ``True`` return means every :class:`TableauStep`/:class:`TableauClosure`
+    recorded during the whole call genuinely lies on the closed proof: nothing
+    here is spliced out afterwards, and nothing is recorded that a failed
+    sub-call later discards (a ``False`` anywhere propagates straight up
+    through this call's own ``and``/return, which is why :func:`prove_tableau_detailed`
+    simply discards the whole recorder when the top call returns ``False``).
+    """
+    if ctx.budget[0] <= 0:
+        return False
+    ctx.budget[0] -= 1
+
+    if work:
+        f, rest = work[0], work[1:]
+
+        if _is_literal(f):
+            if is_falsum(f):
+                rec.close(node_id, root_formulas, f)
+                return True
+            if _neg(f) in lits:
+                rec.close(node_id, root_formulas, f, _neg(f))
+                return True
+            if f in lits:
+                return _close_recording(rest, lits, gammas, terms, used, ctx, rec, node_id, root_formulas)
+            return _close_recording(rest, lits | {f}, gammas, _terms_of(f, terms, ctx.max_terms),
+                                    used, ctx, rec, node_id, root_formulas)
+
+        kind = _rule(f)[0]
+        rule = _rule(f)
+        if kind == "alpha":
+            child = rec.add(node_id, "alpha", f, rule[1])
+            return _close_recording(tuple(rule[1]) + rest, lits, gammas, terms, used,
+                                    ctx, rec, child, root_formulas)
+        if kind == "beta":
+            left, right = rule[1]
+            left_id = rec.add(node_id, "beta", f, left, branch_split=True)
+            right_id = rec.add(node_id, "beta", f, right, branch_split=True)
+            return (_close_recording(tuple(left) + rest, lits, gammas, terms, used,
+                                     ctx, rec, left_id, root_formulas)
+                    and _close_recording(tuple(right) + rest, lits, gammas, terms, used,
+                                         ctx, rec, right_id, root_formulas))
+        if kind == "delta":
+            _, var, body, neg = rule
+            if len(terms) >= ctx.max_terms:
+                # Term-pool cap reached: give up on this branch (sound but incomplete) —
+                # mirrors _close exactly; this path is never on a path that ends up True.
+                if ctx.open_branch is None:
+                    ctx.open_branch = lits
+                return False
+            c = ctx.fresh_const()
+            inst = _instance(var, body, neg, c)
+            child = rec.add(node_id, "delta", f, (inst,), fresh_constant=c)
+            return _close_recording((inst,) + rest, lits, gammas, terms + (c,), used,
+                                    ctx, rec, child, root_formulas)
+        if kind == "gamma":
+            _, var, body, neg = rule
+            key = f
+            new_gammas = gammas + ((key, var, body, neg),)
+            pool = terms if terms else (ctx.fresh_const(),)
+            insts = tuple(_instance(var, body, neg, t) for t in pool)
+            new_used = used | {(key, t) for t in pool}
+            new_terms = terms if terms else pool
+            child = rec.add(node_id, "gamma", f, insts, terms=pool)
+            return _close_recording(insts + rest, lits, new_gammas, new_terms, new_used,
+                                    ctx, rec, child, root_formulas)
+        raise AssertionError(kind)
+
+    # No compound work left: re-instantiate a universal at a term it has not used.
+    for key, var, body, neg in gammas:
+        for t in terms:
+            if (key, t) not in used:
+                inst = _instance(var, body, neg, t)
+                child = rec.add(node_id, "gamma", key, (inst,), terms=(t,))
+                return _close_recording((inst,), lits, gammas, terms, used | {(key, t)},
+                                        ctx, rec, child, root_formulas)
+    # Saturated and not closed: an OPEN branch — never reached on a path that ends up True.
+    if ctx.open_branch is None:
+        ctx.open_branch = lits
+    return False
+
+
+def prove_tableau_detailed(premises, conclusion: Node, max_steps: int = 20000,
+                           max_terms: int = 8) -> Optional["TableauProof"]:
+    """Return a :class:`TableauProof` if a closed tableau is found within budget, else ``None``.
+
+    Builds the SAME tableau :func:`prove_tableau` would — :func:`_close_recording`
+    mirrors :func:`_close` exactly (see its docstring) — plus a proof object
+    recording every rule application and every branch's closure pair.
+
+    ``None`` is NEVER a verdict of invalidity, exactly as for :func:`prove_tableau`:
+    it only means no closed tableau was found within ``max_steps``/``max_terms``
+    (first-order γ-instantiation is merely semi-decidable). Call
+    :func:`unicode_fol_kit.atp.tableau_check.check_tableau_proof` to independently
+    verify a returned proof before trusting it — this function's own bookkeeping is
+    not a soundness guarantee.
+
+    Raises the same ``NotImplementedError`` as :func:`prove_tableau` for a
+    non-classical node family. A modal input is also rejected here (with a
+    pointer to :mod:`unicode_fol_kit.atp.modal_tableau`) since the labelled modal
+    tableau does not build a detailed proof object of this shape.
+    """
+    formulas = list(premises) + [Not(conclusion)]
+    _reject_exotic(formulas, "prove_tableau_detailed")
+    if _any_modal(formulas):
+        raise NotImplementedError(
+            "prove_tableau_detailed: modal tableaux do not build a detailed proof "
+            "object here — use modal_tableau.modal_prove for the plain verdict.")
+    root_formulas = tuple(formulas)
+    ctx = _Ctx(max_steps, max_terms)
+    rec = _Recorder()
+    closed = _close_recording(root_formulas, frozenset(), (), _initial_terms(formulas, max_terms),
+                              frozenset(), ctx, rec, 0, root_formulas)
+    if not closed:
+        return None
+    return TableauProof(root_formulas, tuple(rec.steps), tuple(rec.closures))

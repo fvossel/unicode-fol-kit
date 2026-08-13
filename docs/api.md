@@ -171,6 +171,71 @@ signature and documentation of each public entry point; use the search box or th
    team_models
 ```
 
+## Model checking in a given structure
+
+```{eval-rst}
+.. currentmodule:: unicode_fol_kit.semantics
+
+.. autosummary::
+   :toctree: _autosummary
+   :nosignatures:
+
+   FiniteStructure
+   evaluate_in_structure
+   evaluate_detailed
+   graph_to_structure
+   structure_from_dict
+```
+
+```{eval-rst}
+.. currentmodule:: unicode_fol_kit
+
+.. autosummary::
+   :toctree: _autosummary
+   :nosignatures:
+
+   simplify_for_checking
+   count_from_existential_chain
+   repair_tptp_formula
+   repair_tptp_problem
+```
+
+## Verifying definition sets
+
+```{eval-rst}
+.. currentmodule:: unicode_fol_kit.eval
+
+.. autosummary::
+   :toctree: _autosummary
+   :nosignatures:
+
+   check_theory
+   check_satisfiable
+   check_subsumption
+   find_cycles
+   minimal_model_size
+   generality_report
+   is_vacuous_specialisation
+   explain_countermodel
+```
+
+## Probability
+
+```{eval-rst}
+.. currentmodule:: unicode_fol_kit.prob
+
+.. autosummary::
+   :toctree: _autosummary
+   :nosignatures:
+
+   ProbConstraint
+   ProbBounds
+   entailment_bounds
+   ProbFact
+   ProbProgram
+   query
+```
+
 ## Subpackage modules
 
 ```{eval-rst}
@@ -187,6 +252,10 @@ signature and documentation of each public entry point; use the search box or th
    semantics.conditional
    semantics.dynamic_epistemic
    semantics.nonmonotonic
+   semantics.structures
+   semantics.model_eval
    atp.modal_tableau
    hol.isabelle_runner
+   chem
+   mcp.syntax_spec
 ```

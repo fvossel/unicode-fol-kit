@@ -5,6 +5,13 @@ from .fol import (
     Count, Measure, Cardinality, Contrast,
     Z3Env,
     NamingError, ParsingError,
+    SCHEMA_VERSION, serialize, deserialize,
+    to_casl_spec, formula_to_casl,
+    parse_casl_spec, CaslSpec, CaslImportError,
+    repair_tptp_formula, repair_tptp_problem,
+    simplify_for_checking, count_from_existential_chain, expand_count,
+    detect_dialects,
+    Signature, PredicateDecl, FunctionDecl, ConstantDecl,
     SortedQuantifier, SortedConstant,
     SortedCount, SortedCardinality,
     Nominal, At,
@@ -61,8 +68,21 @@ from .atp import (
     from_z3, parse_smtlib, load_smtlib,
     find_fitch_proof, fitch_prove, is_valid_fitch,
     tableau_closed, is_valid_tableau, prove_tableau, tableau_model,
+    prove_tableau_detailed, TableauProof,
+    TableauCheckError, check_tableau_proof, check_entailment_tableau_detailed,
     modal_tableau_closed, is_modal_valid, modal_prove, modal_decide, modal_countermodel,
     check_lj_proof, verify_lj_proof, int_prove, int_decide,
+    Verdict, BackendUnavailable, ProverBackend,
+    register_backend, get_backend, available_backends, default_chain,
+    run_backend,
+    check_entailment_vampire_detailed,
+    extract_szs_status, szs_to_verdict_fields,
+    TstpStep, TstpDerivation, parse_tstp_derivation,
+    portfolio_prove,
+    Cvc5Backend,
+    EnumSearchResult, modal_enum_search, modal_enum_countermodel,
+    kripke_model_to_dict, kripke_model_from_dict, KripkeEnumBackend,
+    to_tptp_ncl, Leo3Backend,
     ill_prove, ill_derivable, check_ill_proof, verify_ill_proof,
     render_ill_proof, ILLSequent, ILLDerivation,
     lambek_prove, lambek_derivable, check_lambek_proof, verify_lambek_proof,
@@ -87,6 +107,8 @@ from .semantics import (
     CounterfactualModel, cf_satisfies, cf_countermodel, cf_valid, would, might,
     CENTERING_LEVELS, DEFAULT_MAX_WORLDS,
     minimal_models, minimal_entails,
+    ActionModel, product_update, public_announcement_action,
+    common_knowledge_holds, everybody_knows,
     circumscription_formula, circumscription_entails_so,
     RelevantModel, rel_satisfies, rel_countermodel, rel_valid,
     team_satisfies, team_models, MAX_TEAM_SEARCH,
@@ -96,6 +118,9 @@ from .eval import (
     canonicalize, exact_match,
     validate, is_wellformed, validate_text, ValidationReport,
     formulas_are_identical, match_predicates, formulas_are_matched_identical,
+    align_symbols, aligned_exact_match,
+    EquivalenceResult, equivalent,
+    explain_countermodel, batch_decide,
 )
 from .hol import (
     find_isabelle, isabelle_available, isabelle_decide_modal, isabelle_decide_fol,
@@ -111,8 +136,16 @@ from .hol import (
     to_thf_matrix_entailment, to_isabelle_matrix_entailment,
 )
 from . import dl   # the ALC description-logic subpackage (dl.concept_satisfiable, …)
+from . import comorphism   # logic-to-logic translation registry (Comorphism, …)
+from . import hets  # REST binding to a Dockerized HETS server (HetsClient, …)
+from . import drt  # Discourse Representation Theory (DRS, parse_drs, drs_to_fol, …)
+from . import prob  # exact probabilistic logic (Nilsson bounds, distribution semantics)
+from . import chem  # molecules as finite FOL structures (needs the [chem] extra)
+from . import api  # the seven-verb facade (api.parse_any / check / prove / …) —
+                   # namespaced on purpose: api.prove must not shadow the
+                   # resolution prover's top-level `prove`
 
-__version__ = "0.19.0"
+__version__ = "0.20.0"
 
 __all__ = [
     "MSFLParser",
@@ -121,6 +154,13 @@ __all__ = [
     "Count", "Measure", "Cardinality", "Contrast",
     "Z3Env",
     "NamingError", "ParsingError",
+    "SCHEMA_VERSION", "serialize", "deserialize",
+    "to_casl_spec", "formula_to_casl",
+    "parse_casl_spec", "CaslSpec", "CaslImportError",
+    "repair_tptp_formula", "repair_tptp_problem",
+    "simplify_for_checking", "count_from_existential_chain", "expand_count",
+    "detect_dialects",
+    "Signature", "PredicateDecl", "FunctionDecl", "ConstantDecl",
     "formulas_are_equivalent", "check_logical_entailment",
     "check_logical_entailment_vampire",
     "SortedQuantifier", "SortedConstant",
@@ -174,10 +214,27 @@ __all__ = [
     "to_thf_matrix", "to_isabelle_matrix",
     "to_thf_matrix_entailment", "to_isabelle_matrix_entailment",
     "dl",
+    "prob",
+    "chem",
     "from_z3", "parse_smtlib", "load_smtlib",
     "find_fitch_proof", "fitch_prove", "is_valid_fitch",
     "tableau_closed", "is_valid_tableau", "prove_tableau", "tableau_model",
+    "prove_tableau_detailed", "TableauProof",
+    "TableauCheckError", "check_tableau_proof",
+    "check_entailment_tableau_detailed",
     "check_lj_proof", "verify_lj_proof", "int_prove", "int_decide",
+    "Verdict", "BackendUnavailable", "ProverBackend",
+    "register_backend", "get_backend", "available_backends", "default_chain",
+    "run_backend",
+    "check_entailment_vampire_detailed",
+    "extract_szs_status", "szs_to_verdict_fields",
+    "TstpStep", "TstpDerivation", "parse_tstp_derivation",
+    "portfolio_prove",
+    "Cvc5Backend",
+    "EnumSearchResult", "modal_enum_search", "modal_enum_countermodel",
+    "kripke_model_to_dict", "kripke_model_from_dict", "KripkeEnumBackend",
+    "to_tptp_ncl", "Leo3Backend",
+    "explain_countermodel", "batch_decide",
     "to_english",
     "CCGDerivation", "reduction_derivation",
     "truth_table", "TruthTable", "is_tautology", "is_contradiction", "is_satisfiable_tt",
@@ -191,6 +248,8 @@ __all__ = [
     "CounterfactualModel", "cf_satisfies", "cf_countermodel", "cf_valid",
     "would", "might", "CENTERING_LEVELS", "DEFAULT_MAX_WORLDS",
     "minimal_models", "minimal_entails",
+    "ActionModel", "product_update", "public_announcement_action",
+    "common_knowledge_holds", "everybody_knows",
     "circumscription_formula", "circumscription_entails_so",
     "RelevantModel", "rel_satisfies", "rel_countermodel", "rel_valid",
     "team_satisfies", "team_models", "MAX_TEAM_SEARCH",
@@ -224,4 +283,6 @@ __all__ = [
     "canonicalize", "exact_match",
     "validate", "is_wellformed", "validate_text", "ValidationReport",
     "formulas_are_identical", "match_predicates", "formulas_are_matched_identical",
+    "align_symbols", "aligned_exact_match",
+    "EquivalenceResult", "equivalent",
 ]

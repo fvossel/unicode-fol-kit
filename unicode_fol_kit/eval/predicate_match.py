@@ -33,11 +33,22 @@ third-party dependency.
 """
 
 import re
+from dataclasses import replace
+from typing import Dict, FrozenSet, Tuple
+
+from unicode_fol_kit.fol.nodes import (
+    Node, Atom, Function, Constant, SortedConstant,
+)
+# Single source of truth for which symbols are built-in operators rather than
+# user vocabulary (=, ≠, <, … and +, -, *, /) — shared with validate's walk.
+from .validate import _BUILTIN_PREDS, _BUILTIN_FUNCS
 
 __all__ = [
     "formulas_are_identical",
     "match_predicates",
     "formulas_are_matched_identical",
+    "align_symbols",
+    "aligned_exact_match",
 ]
 
 # A predicate or function symbol is a maximal word immediately followed by an
@@ -178,3 +189,157 @@ def formulas_are_matched_identical(
     """
     matched_prediction = match_predicates(prediction, reference, max_norm_distance)
     return formulas_are_identical(matched_prediction, reference)
+
+
+# ---------------------------------------------------------------------------
+# AST-level symbol alignment: separate namespaces, arity-aware, injective.
+# ---------------------------------------------------------------------------
+#
+# The lexical matcher above deliberately works on surface strings (so it also
+# applies to output that does not parse), but that comes with three known
+# blind spots: predicates and functions share one regex, arity is ignored, and
+# the greedy per-occurrence mapping can collapse two distinct prediction
+# symbols onto the same reference symbol — which CHANGES the logical content.
+# ``align_symbols`` is the parsed-AST counterpart without those blind spots.
+
+# A predicate/function symbol key: (name, arity). Constants key on the name.
+_SymKey = Tuple[str, int]
+
+
+def _symbol_inventory(node: Node):
+    """Collect the user vocabulary of ``node`` per namespace.
+
+    Returns ``(preds, funcs, consts)`` where ``preds`` / ``funcs`` are sets of
+    ``(name, arity)`` keys (built-in operators excluded, mirroring
+    ``validate``'s classification) and ``consts`` is a set of constant names
+    (``Constant`` and ``SortedConstant`` — a sorted constant is renamed in
+    place, its sort annotation is untouched). Variables are deliberately NOT
+    collected: bound-variable naming is ``canonicalize``'s job (α-renaming),
+    not a vocabulary difference.
+    """
+    preds: set = set()
+    funcs: set = set()
+    consts: set = set()
+    for n in node.walk():
+        if isinstance(n, Atom):
+            if n.predicate not in _BUILTIN_PREDS:
+                preds.add((n.predicate, len(n.args)))
+        elif isinstance(n, Function):
+            if n.name not in _BUILTIN_FUNCS:
+                funcs.add((n.name, len(n.args)))
+        elif isinstance(n, (Constant, SortedConstant)):
+            consts.add(n.name)
+    return preds, funcs, consts
+
+
+def _greedy_injective(pred_keys, ref_keys, taken_names: FrozenSet[str],
+                      max_norm_distance: float) -> Dict:
+    """Best-first injective assignment prediction-key → reference-key.
+
+    Candidate pairs are restricted to EQUAL ARITY (for ``(name, arity)`` keys;
+    plain constant names always pair), filtered by the normalised-Levenshtein
+    threshold, and sorted by (distance, names) for determinism. Each
+    prediction key maps to at most one reference key and vice versa
+    (injectivity: two distinct prediction symbols are never merged, which
+    would change the logical content). Identity pairs have distance 0, so a
+    symbol present on both sides always claims itself first and cannot be
+    captured by a near-miss neighbour.
+
+    ``taken_names`` are the names the prediction already uses in this
+    namespace: a key is never renamed INTO one of them (identity excepted) —
+    otherwise the rewrite could manufacture a name clash the prediction never
+    had (e.g. renaming ``Foo/2`` to ``Fo`` while the prediction already uses
+    ``Fo/1`` would create a mixed-arity symbol out of thin air).
+    """
+    def name_of(key):
+        return key if isinstance(key, str) else key[0]
+
+    def arity_of(key):
+        return None if isinstance(key, str) else key[1]
+
+    pairs = []
+    for p in pred_keys:
+        for r in ref_keys:
+            if arity_of(p) != arity_of(r):
+                continue
+            if name_of(r) in taken_names and r != p:
+                continue
+            d = _normalised_distance(name_of(p), name_of(r))
+            if d <= max_norm_distance:
+                pairs.append((d, name_of(p), name_of(r), p, r))
+    pairs.sort(key=lambda t: (t[0], t[1], t[2]))
+
+    mapping: Dict = {}
+    used_targets: set = set()
+    for _d, _pn, _rn, p, r in pairs:
+        if p in mapping or r in used_targets:
+            continue
+        mapping[p] = r
+        used_targets.add(r)
+    # Identity entries are no-ops for the rewrite — drop them.
+    return {p: r for p, r in mapping.items() if p != r}
+
+
+def align_symbols(prediction: Node, reference: Node,
+                  max_norm_distance: float = 0.6) -> Node:
+    """Rename ``prediction``'s vocabulary toward ``reference``, AST-safely.
+
+    The parsed-AST counterpart of :func:`match_predicates` with three
+    guarantees the lexical matcher cannot give:
+
+    * **separate namespaces** — predicate, function, and constant symbols are
+      aligned independently (a predicate ``foo`` never interferes with a
+      function ``foo``);
+    * **arity-aware** — ``P/1`` is only ever aligned to a reference symbol of
+      arity 1;
+    * **injective + capture-free** — two distinct prediction symbols are never
+      merged onto one reference symbol, and a symbol is never renamed into a
+      name the prediction already uses. The result is the image of the
+      prediction under an injective renaming of its vocabulary, so its logical
+      content is preserved up to that renaming — the alignment can make a
+      formula *equal* to the reference, never *more true*.
+
+    Bound variables are untouched (α-renaming is ``canonicalize``'s job).
+    The distance measure and default threshold match :func:`match_predicates`.
+    """
+    p_preds, p_funcs, p_consts = _symbol_inventory(prediction)
+    r_preds, r_funcs, r_consts = _symbol_inventory(reference)
+
+    pred_map = _greedy_injective(
+        p_preds, r_preds, frozenset(n for n, _a in p_preds), max_norm_distance)
+    func_map = _greedy_injective(
+        p_funcs, r_funcs, frozenset(n for n, _a in p_funcs), max_norm_distance)
+    const_map = _greedy_injective(
+        p_consts, r_consts, frozenset(p_consts), max_norm_distance)
+
+    def rec(n: Node) -> Node:
+        n = n.map_children(rec)
+        if isinstance(n, Atom):
+            key = (n.predicate, len(n.args))
+            if key in pred_map:
+                return replace(n, predicate=pred_map[key][0])
+        elif isinstance(n, Function):
+            key = (n.name, len(n.args))
+            if key in func_map:
+                return replace(n, name=func_map[key][0])
+        elif isinstance(n, (Constant, SortedConstant)):
+            if n.name in const_map:
+                return replace(n, name=const_map[n.name])
+        return n
+
+    return rec(prediction)
+
+
+def aligned_exact_match(prediction: Node, reference: Node,
+                        max_norm_distance: float = 0.6) -> bool:
+    """Canonical exact match after AST-level symbol alignment.
+
+    Combines the two orthogonal quotients: :func:`align_symbols` forgives
+    lexical vocabulary differences (namespace- and arity-aware), then
+    :func:`unicode_fol_kit.eval.canonical.exact_match` forgives α-renaming,
+    commutativity/associativity, operand duplication, and double negation.
+    """
+    from .canonical import exact_match
+
+    return exact_match(align_symbols(prediction, reference, max_norm_distance),
+                       reference)

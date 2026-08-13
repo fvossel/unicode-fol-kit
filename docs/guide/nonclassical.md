@@ -49,8 +49,61 @@ free_satisfies(Px(x), m_open, {"x": 0})         # → False  (x ↦ 0, which is 
 An unknown policy is rejected up front:
 
 ```python
-free_satisfies(Px(x), m_open, {"x": 1}, policy="supervaluation")   # raises ValueError: unknown policy
+free_satisfies(Px(x), m_open, {"x": 1}, policy="quiet")   # raises ValueError: unknown policy
 ```
+
+### Supervaluationism: a third policy
+
+`"negative"` and `"positive"` both force every atom with a non-denoting term to a
+definite classical value. `"supervaluation"` instead treats such an atom as a genuine
+truth-value **gap**, and asks whether the *whole formula* is true under **every**
+classical way of filling the gaps (a *precisification*, one per distinct non-denoting
+ground atom), false under every one, or neither. The classic case is why this differs
+from just forcing gaps false: excluded middle survives even though each disjunct,
+taken alone, is itself a gap:
+
+```python
+e = Constant("e")                                 # e is non-denoting below
+m_sv = FreeModel(outer=(0,), existing=frozenset({0}), constants={},
+                 predicates={("P", 1): frozenset()})
+
+excluded_middle = Or(Px(e), Not(Px(e)))            # P(e) ∨ ¬P(e)
+free_holds(Px(e), m_sv, policy="supervaluation")           # → False  (gap: true under one precisification, false under the other)
+free_holds(Not(Px(e)), m_sv, policy="supervaluation")      # → False  (gap, for the same reason)
+free_holds(excluded_middle, m_sv, policy="supervaluation") # → True   (supertrue: BOTH precisifications make the disjunction true)
+```
+
+A conjunction of an atom with its own negation is superfalse (false under every
+precisification), and a gap can still arise when the completions genuinely disagree,
+including when two independent gap atoms interact:
+
+```python
+free_holds(And(Px(e), Not(Px(e))), m_sv, policy="supervaluation")   # → False  (superfalse)
+
+q = Constant("q")                                  # q also non-denoting
+m_2gaps = FreeModel(outer=(0,), existing=frozenset({0}), constants={},
+                    predicates={("P", 1): frozenset(), ("Q", 1): frozenset()})
+Qx = lambda t: Atom("Q", [t])
+# P(e) ∨ ¬Q(e): of the 4 precisifications (P,Q) ∈ {TT,TF,FT,FF}, only (F,T) is false —
+# not all agree, so this is a gap, not supertrue.
+free_holds(Or(Px(e), Not(Qx(e))), m_2gaps, policy="supervaluation")  # → False  (gap)
+```
+
+Since `free_satisfies` always returns a plain `bool`, a gap is reported as `False` —
+the same value `"negative"` already returns for a lone gappy atom; `free_is_valid` /
+`free_countermodel` / `free_find_model` / `free_entails` accept `policy="supervaluation"`
+exactly like the other two policies. Quantifiers are unaffected — `∃`/`∀` still range
+only over `model.existing`, precisification only ever touches non-denoting *ground*
+atoms:
+
+```python
+free_holds(Quantifier("∃", x, Px(x)), m_sv, policy="supervaluation")   # → False  (existing domain {0} has no P, e is irrelevant: e is not in the domain quantifiers range over)
+```
+
+The search is exhaustive over `2**n` completions for `n` distinct gap atoms in the
+formula, capped at `SUPERVALUATION_MAX_GAPS = 16` — a formula with more distinct
+non-denoting ground atoms than that raises `ValueError` rather than silently
+truncating the search.
 
 ### Guarded inference rules are valid
 

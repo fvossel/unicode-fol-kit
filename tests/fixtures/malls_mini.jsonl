@@ -1,0 +1,4 @@
+{"NL": "All dogs are animals.", "FOL": "∀x (Dog(x) → Animal(x))"}
+{"NL": "Some birds can fly.", "FOL": "∃x (Bird(x) ∧ CanFly(x))"}
+{"NL": "Nothing is both a cat and a dog.", "FOL": "¬∃x (Cat(x) ∧ Dog(x))"}
+{"NL": "Every gizmo whirs when powered.", "FOL": "∀x (Gizmo(x) → Whirs(x)"}

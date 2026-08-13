@@ -48,6 +48,21 @@ from .qml import (
     to_thf_modal, to_isabelle_modal, BARCAN, CONVERSE_BARCAN, QML_BRIDGES,
 )
 from .naming import NamingError, ParsingError
+from .serialize import SCHEMA_VERSION, serialize, deserialize
+from .casl_export import to_casl_spec, formula_to_casl
+from .casl_import import parse_casl_spec, CaslSpec, CaslImportError
+from .tptp_repair import (
+    repair_tptp_formula, repair_tptp_problem, RepairResult, Issue,
+    ProblemRepairEntry, ProblemRepairResult, TptpRepairError,
+)
+from .simplify_check import (
+    simplify_for_checking, SimplifyResult,
+    count_from_existential_chain, expand_count,
+)
+from .dialect_detect import detect_dialects
+from .signature import (
+    Signature, PredicateDecl, FunctionDecl, ConstantDecl,
+)
 
 __all__ = [
     "MSFLParser",
@@ -56,6 +71,15 @@ __all__ = [
     "Count", "Measure", "Cardinality", "Contrast",
     "Z3Env",
     "NamingError", "ParsingError",
+    "SCHEMA_VERSION", "serialize", "deserialize",
+    "to_casl_spec", "formula_to_casl",
+    "parse_casl_spec", "CaslSpec", "CaslImportError",
+    "repair_tptp_formula", "repair_tptp_problem", "RepairResult", "Issue",
+    "ProblemRepairEntry", "ProblemRepairResult", "TptpRepairError",
+    "simplify_for_checking", "SimplifyResult",
+    "count_from_existential_chain", "expand_count",
+    "detect_dialects",
+    "Signature", "PredicateDecl", "FunctionDecl", "ConstantDecl",
     "SortedQuantifier", "SortedConstant",
     "SortedCount", "SortedCardinality",
     "Nominal", "At",

@@ -1,0 +1,8 @@
+{"NL_sentence": "A baby is playing with a toy in the playroom.", "FOL_expression": "∃x ∃y (Baby(x) ∧ Toy(y) ∧ Playing(x, y) ∧ InThePlayroom(x))"}
+{"NL_sentence": "A baker bakes bread, whereas a potter makes pottery.", "FOL_expression": "∀x (Baker(x) → BakesBread(x)) ∧ ∀y (Potter(y) → MakesPottery(y))"}
+{"NL_sentence": "A baker is baking bread in a busy bakery.", "FOL_expression": "∃x ∃y (Baker(x) ∧ BakeBread(x) ∧ BusyBakery(y) ∧ In(x, y))"}
+{"NL_sentence": "A ball is blue if and only if it is not heavy and it hits a green or a yellow object.", "FOL_expression": "∀x (Ball(x) → ((Blue(x) ↔ ¬Heavy(x)) ∧ ∃y (Hits(x, y) → (Green(y) ∨ Yellow(y)))))"}
+{"NL_sentence": "A ball is large or small, but not both.", "FOL_expression": "∀x (Ball(x) → (Large(x) ⊕ Small(x)))"}
+{"NL_sentence": "A bird is a predator if and only if it hunts or eats meat, but it doesn't eat seeds.", "FOL_expression": "∀y (Bird(y) ∧ Predator(y) ↔ (Hunt(y) ∨ EatMeat(y) ∧ ¬EatSeeds(y)))"}
+{"NL_sentence": "A device operates Android or iOS.", "FOL_expression": "∀x (Device(x) → (Android(x) ∨ iOS(x)))"}
+{"NL_sentence": "Various chefs have cooked every meal by a cook.", "FOL_expression": "∃x (Chef(x) ∧ ∃y (Cook(y) ∧ ∀z (Meal(z) ∧ CookedBy(z, y) → Cook(x, z))))"}

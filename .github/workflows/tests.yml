@@ -1,0 +1,52 @@
+name: Tests
+
+# The fast suite: every test EXCEPT the serial live batteries — isabelle_live
+# (real `isabelle build` subprocesses, own workflow isabelle-tests.yml) and
+# hets_live (a running HETS server; no runner has one). Parallel via
+# pytest-xdist; the pyproject marker comment explains why -n never goes into
+# addopts (the live suites must stay serial).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  fast:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+        include:
+          # One Windows leg: the primary dev box is Windows, so path handling
+          # and subprocess quirks get coverage where they actually differ.
+          - os: windows-latest
+            python-version: '3.11'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package + test extras
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[test]
+
+      # E (eprover, universe) gives the eprover backend LIVE coverage here:
+      # its tests gate on eprover_available() and run for real once the
+      # binary exists. Linux-only (apt/sudo; on the Windows leg the tests
+      # just skip via discovery) and non-fatal on purpose — a mirror hiccup
+      # must not fail the suite.
+      - name: Install E prover (live backend coverage)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq eprover || true
+
+      - name: Run the fast suite
+        run: pytest -n auto -m "not isabelle_live and not hets_live"
