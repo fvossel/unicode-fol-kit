@@ -1,0 +1,22 @@
+% Preprocessing class: FSSSSMSSSSSNFFN.
+% Configuration: G-E--_302_C18_F1_URBAN_RG_S04BN
+% (lift_lambdas = 1, lambda_to_forall = 1,unroll_only_formulas = 1, sine = Auto)
+% No SInE strategy applied
+% Search class: FHUNF-FFSF00-SFFFFFNN
+% Configuration: SubtermCWHack
+
+% Proof found!
+% SZS status Theorem
+% SZS output start CNFRefutation
+fof(goal, conjecture, q(alice), file('/tmp/probe.p', goal)).
+fof(premise_2, axiom, ![X1]:((p(X1)=>q(X1))), file('/tmp/probe.p', premise_2)).
+fof(premise_1, axiom, p(alice), file('/tmp/probe.p', premise_1)).
+fof(c_0_3, negated_conjecture, ~(q(alice)), inference(assume_negation,[status(cth)],[goal])).
+fof(c_0_4, negated_conjecture, ~q(alice), inference(fof_simplification,[status(thm)],[c_0_3])).
+fof(c_0_5, negated_conjecture, ~q(alice), inference(fof_nnf,[status(thm)],[c_0_4])).
+fof(c_0_6, plain, ![X2]:((~p(X2)|q(X2))), inference(fof_nnf,[status(thm)],[inference(variable_rename,[status(thm)],[inference(fof_nnf,[status(thm)],[premise_2])])])).
+cnf(c_0_7, negated_conjecture, (~q(alice)), inference(split_conjunct,[status(thm)],[c_0_5])).
+cnf(c_0_8, plain, (q(X1)|~p(X1)), inference(split_conjunct,[status(thm)],[c_0_6])).
+cnf(c_0_9, plain, (p(alice)), inference(split_conjunct,[status(thm)],[premise_1])).
+cnf(c_0_10, negated_conjecture, ($false), inference(cn,[status(thm)],[inference(rw,[status(thm)],[inference(spm,[status(thm)],[c_0_7, c_0_8]), c_0_9])]), ['proof']).
+% SZS output end CNFRefutation

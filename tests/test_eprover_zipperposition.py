@@ -1,14 +1,29 @@
 """Tests for the E / Zipperposition backends (atp.eprover_backend).
 
 Offline tests pin problem generation, discovery precedence and the
-SZS→Verdict mapping against CANNED outputs in each prover's real comment
-style (E prints ``# SZS status …`` with a hash — the regression the tstp
-extractor grew for these backends). Live tests are ``skipif``-gated on
-discovery: on this Windows box they usually skip (Ubuntu 22.04 WSL has no
-eprover package); in CI (Ubuntu 24.04, ``apt install eprover``) the E ones
-run for real. Zipperposition has no apt package anywhere — its live test
-skips until someone opam-installs it, and that is honest, not a gap.
+SZS→Verdict mapping. Two kinds of prover output are used, and the difference
+is the point:
+
+* CANNED outputs written by hand, in E's NATIVE style (``# SZS status …``,
+  hash-marked). E prints these when it is not asked for TSTP output.
+* RECORDED outputs, captured verbatim from a real E 3.5.1 run under exactly
+  the argument list :class:`EProverBackend` passes
+  (``--auto --tstp-format --proof-object -s --cpu-limit=N``), stored in
+  ``tests/fixtures/eprover_3_5_1_*.txt``. Under ``--tstp-format`` E switches
+  to TPTP comment style and marks the status with ``%``, NOT ``#`` — so the
+  hand-written fixtures above are in a shape our own invocation never
+  produces. Both are kept: the canned ones pin the extractor's tolerance for
+  E's native style, the recorded ones pin the whole chain against what our
+  arguments actually elicit.
+
+Live tests are ``skipif``-gated on discovery and additionally skip when the
+binary is present but ABORTS (Ubuntu's eprover 3.0.03 dies in
+``sat_solver_init`` on every problem — see ``_skip_if_the_binary_crashed``).
+Zipperposition has no apt package anywhere — its live test skips until
+someone opam-installs it, and that is honest, not a gap.
 """
+
+from pathlib import Path
 
 import pytest
 
@@ -144,6 +159,62 @@ def test_e_resourceout_maps_to_unknown_bound_hit(fake_run):
     verdict = get_backend("eprover").decide(_GOAL, _PREMISES)
     assert verdict.status == "unknown"
     assert verdict.reason == "bound_hit"
+
+
+def _recorded(name: str) -> str:
+    """Verbatim stdout+stderr of a real E 3.5.1 run under our own arguments."""
+    path = Path(__file__).parent / "fixtures" / f"eprover_3_5_1_{name}.txt"
+    return path.read_text(encoding="utf-8")
+
+
+def test_recorded_e_theorem_run_maps_to_proved_with_a_real_derivation(fake_run):
+    """The whole chain against output a real E actually produced.
+
+    Recorded from E 3.5.1 on the modus-ponens problem this module generates,
+    invoked with exactly ``EProverBackend._args``. Note the marker: under
+    ``--tstp-format`` E writes TPTP-style ``%`` comments, so this fixture is
+    NOT in the hash-marked shape the hand-written ones above use — which is
+    precisely why recording one mattered. Eleven derivation steps, counted
+    from the fixture.
+    """
+    output = _recorded("theorem")
+    assert "% SZS status Theorem" in output       # the real marker, not '#'
+    fake_run["response"] = (output, False)
+    verdict = get_backend("eprover").decide(_GOAL, _PREMISES)
+    assert verdict.status == "proved"
+    assert verdict.szs_status == "Theorem"
+    assert verdict.proof is not None
+    assert len(verdict.proof["steps"]) == 11
+
+
+def test_recorded_e_countersatisfiable_run_maps_to_refuted(fake_run):
+    """E's saturation output for a non-theorem, recorded from the same run.
+
+    The Saturation block parses like a derivation, so this also pins that a
+    REFUTED verdict is not mistaken for a proof: status decides, the block is
+    only evidence.
+    """
+    output = _recorded("countersatisfiable")
+    assert "% SZS status CounterSatisfiable" in output
+    fake_run["response"] = (output, False)
+    verdict = get_backend("eprover").decide(_GOAL, [_PARSE("P(alice)")])
+    assert verdict.status == "refuted"
+    assert verdict.szs_status == "CounterSatisfiable"
+    assert verdict.proof is None      # only a "proved" verdict carries one
+
+
+def test_the_recorded_runs_used_the_arguments_the_backend_still_passes():
+    """The fixtures are only evidence while the invocation matches them.
+
+    E 3.5.1 produced them under ``--auto --tstp-format --proof-object -s
+    --cpu-limit=N``. Drop ``--tstp-format`` and E reverts to hash markers;
+    drop ``--proof-object`` and the derivation block disappears — either way
+    the recordings would silently stop describing what we run.
+    """
+    args = EProverBackend()._args(15)
+    for flag in ("--auto", "--tstp-format", "--proof-object", "-s"):
+        assert flag in args, f"{flag} gone: re-record the E fixtures"
+    assert "--cpu-limit=15" in args
 
 
 def test_subprocess_timeout_maps_to_unknown_timeout(fake_run):

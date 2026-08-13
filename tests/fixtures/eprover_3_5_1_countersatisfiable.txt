@@ -1,0 +1,18 @@
+% Preprocessing class: FSSSSMSSSSSNFFN.
+% Configuration: G-E--_302_C18_F1_URBAN_RG_S04BN
+% (lift_lambdas = 1, lambda_to_forall = 1,unroll_only_formulas = 1, sine = Auto)
+% No SInE strategy applied
+% Search class: FUUNF-FFSF00-SFFFFFNN
+% Configuration: SubtermCWHack
+
+% No proof found!
+% SZS status CounterSatisfiable
+% SZS output start Saturation
+fof(goal, conjecture, q(alice), file('/tmp/nonthm.p', goal)).
+fof(premise_1, axiom, p(alice), file('/tmp/nonthm.p', premise_1)).
+fof(c_0_2, negated_conjecture, ~(q(alice)), inference(assume_negation,[status(cth)],[goal])).
+fof(c_0_3, negated_conjecture, ~q(alice), inference(fof_simplification,[status(thm)],[c_0_2])).
+fof(c_0_4, negated_conjecture, ~q(alice), inference(fof_nnf,[status(thm)],[c_0_3])).
+cnf(c_0_5, negated_conjecture, (~q(alice)), inference(split_conjunct,[status(thm)],[c_0_4]), ['final']).
+cnf(c_0_6, plain, (p(alice)), inference(split_conjunct,[status(thm)],[premise_1]), ['final']).
+% SZS output end Saturation

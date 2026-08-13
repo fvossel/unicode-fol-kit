@@ -39,20 +39,49 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .[test]
 
-      # E (eprover, universe) is installed so the eprover backend's live
-      # tests can run for real. NOTE: Ubuntu's eprover 3.0.03 currently
-      # aborts on every problem —
+      # E, built from source, so the eprover backend's live tests run for
+      # real. NOT the distro package: Ubuntu's eprover 3.0.03 aborts on every
+      # problem with
       #   che_proofcontrol.c:163: sat_solver_init: Assertion `status' failed.
-      # — so those tests SKIP with the crash text rather than fail (see
+      # so `apt install eprover` bought a binary that can answer nothing, and
+      # the live tests only ever reported that (they now skip on it — see
       # tests/test_eprover_zipperposition.py::_skip_if_the_binary_crashed).
-      # The step stays: the moment the packaged prover works, the live
-      # coverage comes back by itself. Until then, do not read a green run
-      # as evidence that the E backend was exercised against a real E.
-      # Linux-only (apt/sudo; the Windows leg skips via discovery) and
-      # non-fatal on purpose — a mirror hiccup must not fail the suite.
-      - name: Install E prover (live backend coverage)
+      #
+      # The pin matters twice over: E-3.5.1 is also the version the recorded
+      # fixtures in tests/fixtures/eprover_3_5_1_*.txt were captured from, so
+      # CI exercises the same prover the offline tests describe. Bump both
+      # together or neither.
+      #
+      # Linux-only (the Windows leg skips via discovery). The build is
+      # continue-on-error so a GitHub/network hiccup degrades to "live tests
+      # skip" instead of reddening the whole suite — but it is a real failure
+      # in the log, not a silent `|| true`.
+      - name: Cache E prover
         if: runner.os == 'Linux'
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq eprover || true
+        id: cache-eprover
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/bin
+          key: eprover-E-3.5.1-${{ runner.os }}
+
+      - name: Build E prover from source
+        if: runner.os == 'Linux' && steps.cache-eprover.outputs.cache-hit != 'true'
+        continue-on-error: true
+        run: |
+          set -euxo pipefail
+          curl -fsSL https://github.com/eprover/eprover/archive/refs/tags/E-3.5.1.tar.gz -o e.tar.gz
+          tar xzf e.tar.gz
+          cd eprover-E-3.5.1
+          ./configure
+          make -j"$(nproc)"
+          mkdir -p "$HOME/.local/bin"
+          cp PROVER/eprover "$HOME/.local/bin/eprover"
+
+      - name: Put E on PATH and report the version
+        if: runner.os == 'Linux'
+        run: |
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/eprover" --version || echo "no working E: live tests will skip"
 
       - name: Run the fast suite
         run: pytest -n auto -m "not isabelle_live and not hets_live"
