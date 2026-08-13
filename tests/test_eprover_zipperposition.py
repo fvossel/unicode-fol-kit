@@ -191,19 +191,33 @@ def test_zipperposition_theorem_output_maps_to_proved(monkeypatch):
 # Live (skipif-gated; runs in CI where apt installs eprover)
 # ---------------------------------------------------------------------------
 
+def _why(verdict) -> str:
+    """Everything the backend knows about a verdict, as an assertion message.
+
+    These tests only run where a real binary exists — which, for most of us,
+    means CI and nowhere else. A bare ``assert verdict.status == "proved"``
+    then reports ``'error' != 'proved'`` and stops, while the reason sits
+    unread in ``detail``: the SZS line that was missing, the exception that
+    was raised, the last 200 characters the prover printed. Diagnosing that
+    from a machine without the prover costs a round trip per guess.
+    """
+    return (f"status={verdict.status!r} reason={verdict.reason!r} "
+            f"szs={verdict.szs_status!r} detail={verdict.detail!r}")
+
+
 @pytest.mark.skipif(not eprover_available(), reason="no eprover binary found")
 class TestEProverLive:
     def test_modus_ponens_proved_live(self):
         verdict = get_backend("eprover").decide(_GOAL, _PREMISES,
                                                 timeout=15000)
-        assert verdict.status == "proved"
-        assert verdict.szs_status == "Theorem"
-        assert verdict.proof is not None
+        assert verdict.status == "proved", _why(verdict)
+        assert verdict.szs_status == "Theorem", _why(verdict)
+        assert verdict.proof is not None, _why(verdict)
 
     def test_non_theorem_countersatisfiable_live(self):
         verdict = get_backend("eprover").decide(_GOAL, [_PARSE("P(alice)")],
                                                 timeout=15000)
-        assert verdict.status == "refuted"
+        assert verdict.status == "refuted", _why(verdict)
 
 
 @pytest.mark.skipif(not eb.zipperposition_available(),
