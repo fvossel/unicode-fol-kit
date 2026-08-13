@@ -1,12 +1,12 @@
 """Shared naming-scheme machinery for :mod:`unicode_fol_kit.chem` — PRIVATE.
 
 The ChemLog vocabulary this subpackage targets (Flügel et al. 2025, MIT
-licence) is spelled two different ways by the two sources the task's own
-brief quotes:
+licence, https://github.com/sfluegel05/chemlog-peptides) is spelled two
+different ways by the two kinds of source that describe it:
 
-* the ChEBI2FOL **paper's own prose** (Section 3.1's worked ethanol example)
-  writes ``has3Hs`` / ``has2Hs`` / ``has1H`` (note the irregular singular at
-  exactly one) and ``singleBond``;
+* **running prose** (as in a worked ethanol example) writes ``has3Hs`` /
+  ``has2Hs`` / ``has1H`` (note the irregular singular at exactly one) and
+  ``singleBond``;
 * the actual **ChemLog TPTP source files** write ``has_1_hs`` / ``has_2_hs``
   / ``has_3_hs`` and ``bSINGLE``.
 
@@ -26,23 +26,24 @@ without RDKit installed, because :mod:`unicode_fol_kit.chem.signature`
 **The default scheme is ``"chemlog"``** (the TPTP-file spelling), because
 that is the vocabulary :mod:`unicode_fol_kit.chem.signature`'s
 ``CHEMLOG_SIGNATURE`` is built to validate against and because it is
-internally uniform (one snake_case convention throughout) where the paper's
-own prose is not (see ``_hs_name_paper`` below). ``"paper"`` exists
-specifically so a caller can reproduce the literal worked example from the
-paper — see ``mol.py``'s ethanol acceptance test.
+internally uniform (one snake_case convention throughout) where the prose
+spelling is not (see ``_hs_name_paper`` below). ``"paper"`` exists
+specifically so a caller can reproduce the literal prose spelling — see
+``mol.py``'s ethanol acceptance test.
 
 Naming decisions spelled out (so a reviewer does not have to reverse-engineer
 them from the code):
 
-* **Hydrogen count.** ChemLog: ``has_{n}_hs`` uniformly. Paper: ``has{n}H``
-  at ``n == 1``, ``has{n}Hs`` otherwise — this is a GENERALISATION of the
-  paper's own literal ``has3Hs``/``has2Hs``/``has1H`` (the only three values
-  ethanol exhibits) to arbitrary ``n``; the paper's prose never shows
-  ``n == 0`` or ``n > 3``, so extending the same singular-at-one rule to
-  those is the only assumption made here, not a literal quote.
+* **Hydrogen count.** ChemLog: ``has_{n}_hs`` uniformly. ``"paper"``:
+  ``has{n}H`` at ``n == 1``, ``has{n}Hs`` otherwise — this is a
+  GENERALISATION of the literal ``has3Hs``/``has2Hs``/``has1H`` (the only
+  three values ethanol exhibits) to arbitrary ``n``; the prose spelling
+  never shows ``n == 0`` or ``n > 3``, so extending the same
+  singular-at-one rule to those is the only assumption made here, not a
+  literal quote.
 * **Formal charge.** IDENTICAL under both schemes: ``charge0`` at zero,
   ``charge_p{n}``/``charge_m{n}`` (``n = abs(charge)``) otherwise. The
-  paper's prose only ever demonstrates ``charge0``; the ChemLog spec gives
+  prose spelling only ever demonstrates ``charge0``; the ChemLog spec gives
   ``charge0, charge_m1, charge_p1 (bzw. chargeN)`` for the ChemLog side. The
   parenthetical generic form is read here as "continue the sign-letter
   pattern established by charge_m1/charge_p1 to any n" rather than as a
@@ -51,16 +52,17 @@ them from the code):
   leave the sign undetermined for exactly the cases (n>1) it is supposed to
   cover.
 * **Bond types.** ChemLog: ``bSINGLE``/``bDOUBLE``/``bTRIPLE``/``bAROMATIC``
-  (all four are literal ChemLog spec text). Paper: only ``singleBond`` is
-  literally shown; ``doubleBond``/``tripleBond``/``aromaticBond`` are this
-  module's generalisation of that one example by analogy.
+  (all four are literal ChemLog spec text). ``"paper"``: only
+  ``singleBond`` is literally attested; ``doubleBond``/``tripleBond``/
+  ``aromaticBond`` are this module's generalisation of that one example by
+  analogy.
 * **Net-charge globals.** ``NetChargePositive``/``NetChargeNegative`` are
-  spelled IDENTICALLY in the ChemLog spec text and the paper's prose (both
+  spelled IDENTICALLY in the ChemLog spec text and in prose (both
   CamelCase) — no alias needed. Only the neutral flag differs:
   ``net_charge_neutral`` (ChemLog, snake_case — matching the spec text
   verbatim, inconsistent as that is with the sibling predicates being
-  CamelCase) vs. ``NetChargeNeutral`` (paper, CamelCase, matching its
-  siblings and the paper's own literal quote).
+  CamelCase) vs. ``NetChargeNeutral`` (the ``"paper"`` scheme, CamelCase,
+  matching its siblings and the literal prose spelling).
 * **Element letters, ``atom``, ``ChiralR``/``ChiralS``, the ``bond``
   super-relation.** Spelled identically by both sources — no alias table
   entry is needed for these beyond the identity pairing (included below for
@@ -69,8 +71,8 @@ them from the code):
 * **``has_bond_to``.** ChemLog-only: the spec text lists it as a second name
   for the same bond-existence super-relation ``bond`` alongside ``bond``
   itself (their exact relationship undocumented beyond "binaere: ... bond
-  (Oberrelation), has_bond_to" in the brief) — both are populated as
-  IDENTICAL extensions under the ``"chemlog"`` scheme. The paper's prose
+  (Oberrelation), has_bond_to" in the spec text) — both are populated as
+  IDENTICAL extensions under the ``"chemlog"`` scheme. The prose spelling
   never mentions a second name at all, so the ``"paper"`` scheme simply
   omits it; it has no alias-table counterpart (deliberately absent, not an
   oversight — see :mod:`unicode_fol_kit.chem.signature`).
@@ -92,8 +94,8 @@ __all__: Tuple[str, ...] = ()   # private module — nothing meant for reuse out
 # Fixed, scheme-invariant vocabulary
 # -----------------------------------------------------------------------
 
-#: RDKit element symbol -> ChemLog/paper atom-type letter (identical in both
-#: schemes, and in the paper's own literal ethanol example: M(c), M(o)).
+#: RDKit element symbol -> ChemLog atom-type letter (identical in both
+#: schemes, and in the literal worked ethanol example: M(c), M(o)).
 ELEMENT_LETTERS: Dict[str, str] = {
     "C": "c", "N": "n", "O": "o", "S": "s", "P": "p", "H": "h",
 }

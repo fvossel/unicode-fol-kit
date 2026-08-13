@@ -28,7 +28,7 @@ carries a `spec_topic` and why the grammar itself is served as a tool.
 | Compare & score | `compare_formulas`, `score_batch` |
 | Translate | `translate`, `list_translations`, `drs_to_fol` |
 | Probability | `probability_bounds`, `probability_query` |
-| Self-correction | `diagnose`, `get_syntax_spec` |
+| Self-correction | `diagnose`, `repair_formula`, `get_syntax_spec` |
 | Introspection | `list_backends` |
 | Chemistry | `check_molecule`, `check_molecules`, `molecule_to_structure`, `explain_molecule_failure`, `simplify_definition`, `chemical_signature` |
 
@@ -118,9 +118,53 @@ step = diagnose("∀x (P(x) → Q(x))")
 print(step["ok"], step["converged"])        # → True True
 ```
 
-The kit never rewrites the text itself. It diagnoses; the caller (typically the
-model) proposes the next candidate and calls again. Silently repairing a formula
-would hide from an evaluation exactly the errors the evaluation is measuring.
+`diagnose` never rewrites the text itself: it diagnoses, and the caller
+(typically the model) proposes the next candidate and calls again. Silently
+repairing a formula would hide from an evaluation exactly the errors the
+evaluation is measuring.
+
+## Mechanical repair, where the answer is unique
+
+`repair_formula` is the deliberate exception, and the boundary is drawn where
+there is exactly one right answer. Two shapes qualify — both of them cost a
+generation attempt for nothing otherwise:
+
+- **A name no symbol class accepts**: a chemical name carrying digits, commas
+  or hyphens. The kit's unicode syntax has no quoting mechanism, so the name is
+  renamed to a legal predicate — and the original stays in `names`, so nothing
+  about it is lost; it lives beside the formula instead of inside it. Pass a
+  shared `NameMapping` (via `fol.repair_formula`) to keep one class named the
+  same way across a whole run.
+- **A free variable**: always reported, and closed on request
+  (`close_free_variables=True`) — by dropping the argument where the formula is
+  a `P(x) ↔ …` definition whose `x` never recurs on the right, else by
+  universal closure.
+
+```python
+from unicode_fol_kit.mcp.server import repair_formula
+
+fixed = repair_formula("∀x (1,2-diacyl(x) → Lipid(x))")
+print(fixed["repaired_text"])
+# → ∀x (P12diacyl(x) → Lipid(x))
+print(fixed["names"])
+# → [{'original': '1,2-diacyl', 'legal': 'P12diacyl'}]
+```
+
+Mixed connectives are not among them, and that is the point: `A ∧ B ∨ C` has
+two readings, so bracketing it would be a guess dressed as a repair.
+
+```python
+from unicode_fol_kit.mcp.server import repair_formula
+
+refused = repair_formula("A(x) ∧ B(x) ∨ C(x)")
+print(refused["ok"], refused["issues"][0]["kind"], refused["spec_topic"])
+# → False mixed_connectives operators
+```
+
+(For formulas written in TPTP rather than the kit's own syntax, the sibling
+`fol.repair_tptp_formula` covers the same three failure classes with TPTP's own
+answers — single-quoting instead of renaming, and explicit bracketing for
+parsers that demand it.)
 
 ## Scoring a batch
 

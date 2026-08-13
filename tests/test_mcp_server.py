@@ -33,6 +33,7 @@ from unicode_fol_kit.mcp.server import (   # noqa: E402
     probability_query,
     prove,
     render,
+    repair_formula,
     score_batch,
     translate,
     truth_table,
@@ -488,7 +489,7 @@ def test_list_translations_names_the_default_edges():
 # Through the MCP layer proper
 # ---------------------------------------------------------------------------
 
-def test_server_registers_all_twentyeight_tools():
+def test_server_registers_all_twentynine_tools():
     server = create_server()
     tools = asyncio.run(server.list_tools())
     assert sorted(t.name for t in tools) == [
@@ -499,8 +500,8 @@ def test_server_registers_all_twentyeight_tools():
         "get_syntax_spec", "list_backends", "list_translations",
         "molecule_to_structure", "normalize", "parse_formula",
         "probability_bounds", "probability_query", "prove", "render",
-        "score_batch", "simplify_definition", "translate", "truth_table",
-        "verbalize",
+        "repair_formula", "score_batch", "simplify_definition", "translate",
+        "truth_table", "verbalize",
     ]
 
 
@@ -591,6 +592,26 @@ def test_diagnose_carries_the_topic_and_the_farthest_message():
     assert result["spec_topic"] == "operators"
     assert "Cannot mix" in result["suggestion"]
     assert "Invalid predicate" not in result["suggestion"]
+
+
+def test_repair_formula_fixes_the_name_and_refuses_the_bracket():
+    """`repair_formula` is `diagnose`'s counterpart: it applies the fixes that
+    have one right answer and reports the one that does not.
+
+    A name no symbol class accepts is renamed invertibly (the original stays
+    in `names`); a mix of ∧ and ∨ at one level is NOT bracketed, because the
+    two readings are different formulas — that comes back ok=False, routed to
+    the operators topic like every other rejection.
+    """
+    fixed = repair_formula("∀x (1,2-diacyl(x) → Lipid(x))")
+    assert fixed["ok"] is True
+    assert fixed["names"] == [{"original": "1,2-diacyl", "legal": "P12diacyl"}]
+    assert fixed["repaired_text"] == "∀x (P12diacyl(x) → Lipid(x))"
+
+    refused = repair_formula("A(x) ∧ B(x) ∨ C(x)")
+    assert refused["ok"] is False
+    assert refused["issues"][0]["kind"] == "mixed_connectives"
+    assert refused["spec_topic"] == "operators"
 
 
 def test_diagnose_adds_no_topic_when_the_text_parses():

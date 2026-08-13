@@ -6,7 +6,7 @@ read off from running the code first. Two independent things are checked
 
 * ``simplify_for_checking`` — the "always safe" rules (duplicate conjuncts/
   disjuncts, ``t=t``, vacuous quantifiers, double negation) plus the
-  ``all_different=True`` rule that is sound only under the ChEBI2FOL model
+  ``all_different=True`` rule that is sound only under a chemistry model
   checker's own "separately introduced existential variables are already
   distinct" convention (never under plain classical semantics — that is
   exactly why it defaults to ``False`` and is tested both ways below).
@@ -15,7 +15,7 @@ read off from running the code first. Two independent things are checked
   because the former IS ``Count._expand``'s own encoding), checked with Z3
   (unbounded-domain validity of the biconditional, not just small models) for
   n=2,3,4 in both directions, plus the literal hasAtLeast40Carbons example
-  from the paper (40 variables, C(40,2)=780 pairwise inequalities).
+  (40 variables, C(40,2)=780 pairwise inequalities).
 
 Recursion note: the n=40 example builds a genuinely 820-conjunct, left-
 nested ∧-chain (exactly how straightforward code generates a flat n-ary
@@ -64,9 +64,9 @@ def _conj(*parts):
 
 
 def _build_chain(n, predicate, varprefix):
-    """The literal ChEBI2FOL distinct-witnesses pattern: n existentially
-    quantified variables, each satisfying ``predicate``, plus all C(n,2)
-    pairwise inequalities — left-nested, exactly as straightforward code
+    """The literal distinct-witnesses pattern: n existentially quantified
+    variables, each satisfying ``predicate``, plus all C(n,2) pairwise
+    inequalities — left-nested, exactly as straightforward code
     (or an LLM writing out every pair by hand) would emit it. Returns
     (formula, [the n Variable nodes, outermost-bound first])."""
     vs = [Variable(f"{varprefix}{i}") for i in range(n)]
@@ -396,18 +396,18 @@ def test_idempotent_and_composes_across_rule_kinds():
 
 
 # ---------------------------------------------------------------------------
-# The literal paper example: hasAtLeast40Carbons (40 variables, C(40,2)=780
-# pairwise inequalities). Appendix B.3 of ChEBI2FOL (NeSy 2026).
+# The literal worst case: hasAtLeast40Carbons (40 variables, C(40,2)=780
+# pairwise inequalities), written out the way naive code generation emits it.
 # ---------------------------------------------------------------------------
 
-def test_paper_example_40_carbons_recognized_as_count():
+def test_forty_carbons_recognized_as_count():
     with _wide_recursion_limit():
         formula, vs = _build_chain(40, "c", "x")
         recognized = count_from_existential_chain(formula)
     assert recognized == Count("ge", Number(40), vs[0], Atom("c", [vs[0]]))
 
 
-def test_paper_example_40_carbons_all_different_removes_exactly_780():
+def test_forty_carbons_all_different_removes_exactly_780():
     with _wide_recursion_limit():
         formula, _ = _build_chain(40, "c", "x")
 

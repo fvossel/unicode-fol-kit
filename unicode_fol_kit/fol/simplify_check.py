@@ -1,17 +1,16 @@
 """Model-checking-oriented simplification of FOL formulas, and a bridge between
 Count and the "distinct existential witnesses" encoding an LLM tends to write.
 
-Motivation (ChEBI2FOL, NeSy 2026, Appendix B.3, quoted in this module's task
-brief): an LLM translating a class definition such as "has at least 40
+Motivation: an LLM translating a class definition such as "has at least 40
 carbons" produces ``∃x_0…∃x_39 (⋀_i c(x_i) ∧ ⋀_{i<j} x_i≠x_j)`` — 40
 existentially-quantified variables plus all ``binomial(40,2) = 780`` pairwise
-inequalities between them. The paper's own diagnosis: "These constraints are
-unnecessary in our setting, as the model checker already interprets separately
-introduced variables as distinct. [...] FOL definitions that rely on such
-predicates or that contain trivial pairwise inequality constraints are prone
-to timeouts." The paper also asks for "parameterised built-ins for such cases
-(e.g. hasAtLeastNCarbons(n)), evaluated directly by the model checker" — this
-kit already has that built-in: :class:`~unicode_fol_kit.fol.nodes.Count`
+inequalities between them. Those constraints are unnecessary for a model
+checker that already interprets separately introduced variables as distinct,
+and FOL definitions that rely on such predicates, or that carry trivial
+pairwise inequality constraints, are prone to timeouts. What the shape really
+asks for is a parameterised built-in — an "at least n carbons" counter,
+evaluated directly by the model checker — and this kit already has one:
+:class:`~unicode_fol_kit.fol.nodes.Count`
 (``∃≥n x φ``), which is first-order EXPRESSIBLE (so nothing about the target
 logic changes) but is represented and can be *evaluated* without ever
 materialising the O(n²) encoding (see :mod:`unicode_fol_kit.semantics` for the
@@ -34,12 +33,12 @@ Two independent tools, two independent soundness stories
     ``removed``/`changed`` bookkeeping documents exactly what left the tree
     and why. Its one semantics-DEPENDENT rule (``all_different=True``) removes
     pairwise inequalities between separately ∃-bound variables under the
-    *specific, non-standard convention the paper's model checker uses* —
-    "separately introduced [existential] variables are [already] distinct" —
+    *specific, non-standard convention some model checkers adopt* —
+    separately introduced existential variables are already distinct —
     which is NOT a theorem of ordinary FOL (a domain with one element makes
     ``∃x∃y(x≠y)`` false there). ``all_different`` therefore defaults to
-    ``False``: soundness under standard semantics is the default, and the
-    paper's convention must be opted into explicitly, one call at a time.
+    ``False``: soundness under standard semantics is the default, and that
+    convention must be opted into explicitly, one call at a time.
 
 ``count_from_existential_chain`` / ``expand_count``
     A structural equivalence, sound under ORDINARY FOL semantics (no flag,
@@ -113,7 +112,7 @@ class SimplifyResult:
 # conjunction as an LLM actually writes it (left- or right-nested, never
 # balanced) recurses to depth n in the naive implementation, and n is exactly
 # the O(n²)-inequality count this module exists to simplify (820 conjuncts for
-# the paper's hasAtLeast40Carbols example) — close enough to Python's default
+# an "at least 40 carbons" formula) — close enough to Python's default
 # recursion limit (1000) to be a real risk, not a theoretical one.
 # ---------------------------------------------------------------------------
 
@@ -199,10 +198,10 @@ def _is_redundant_all_diff_ne(node: Node, binders: Dict[str, str]) -> bool:
     docstring). Deliberately narrow:
 
     - both sides must be plain :class:`Variable` terms (a constant or a
-      function application on either side is excluded — the paper's
-      convention is about how the model checker treats freshly INTRODUCED
-      existential variables, and says nothing about a comparison against a
-      fixed denotation);
+      function application on either side is excluded — the convention is
+      about how a model checker treats freshly INTRODUCED existential
+      variables, and says nothing about a comparison against a fixed
+      denotation);
     - the two names must differ (``x ≠ x`` is not "two separate variables
       happen to be distinct", it is an outright contradiction — leaving it
       alone is the conservative choice, not an oversight);

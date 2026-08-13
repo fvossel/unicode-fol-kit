@@ -10,8 +10,9 @@ evaluator with none of model_eval's indexing) rather than a per-case hand
 derivation — that is the whole point of the technique, and it is what the
 task asked for ("Differentialtest gegen den bestehenden Kit-Modelchecker").
 
-Fixture: ``ETHANOL`` reproduces the worked example from the ChEBI2FOL paper
-(NeSy 2026), Section 3.1, verbatim:
+Fixture: ``ETHANOL`` is the standard worked example — the smallest molecule
+that still exercises unary atom types, per-atom property predicates, a
+symmetric bond relation and nullary charge globals at once:
 
     D(M) = {c1, c2, o1}
     M(atom) = {c1, c2, o1}; M(c) = {c1, c2}; M(o) = {o1}
@@ -22,12 +23,13 @@ Fixture: ``ETHANOL`` reproduces the worked example from the ChEBI2FOL paper
 
 The predicate names used here follow the ChemLog TPTP convention instead
 (``has_3_hs``/``has_2_hs``/``has_1_hs`` and ``bSINGLE`` rather than the
-paper's prose ``has3Hs``/``has2Hs``/``has1H``/``singleBond``) — one
+prose spellings ``has3Hs``/``has2Hs``/``has1H``/``singleBond`` above) — one
 consistent scheme, chosen and stated explicitly rather than silently mixed;
-see the CHEMLOG-SIGNATUR note this task was given for the two spellings this
-maps between. A kit-wide alias table between the two conventions is out of
-scope for this module (it is a chemistry front-end concern, not a structural
-evaluator concern).
+see the CHEMLOG-SIGNATUR note for the two spellings this maps between, and
+https://github.com/sfluegel05/chemlog-peptides for the vocabulary itself. A
+kit-wide alias table between the two conventions is out of scope for this
+module (it is a chemistry front-end concern, not a structural evaluator
+concern).
 """
 
 import random
@@ -613,16 +615,16 @@ class TestDifferentialVsTarski:
 
 
 # ---------------------------------------------------------------------------
-# Performance: the paper's hasAtLeast40Carbons claim
+# Performance: the hasAtLeast40Carbons claim
 # ---------------------------------------------------------------------------
 
 class TestPerformance:
     def test_count_ge_40_of_50_carbons_is_fast(self):
-        # The paper's motivating case: "at least 40 carbons" against a
-        # molecule with ~50 carbons (plus a few non-carbon atoms, so the
-        # candidate-narrowing actually has to do something). As a native
-        # Count>=40, this should take milliseconds, not the exponential-ish
-        # blowup the 40-nested-∃-with-780-pairwise-≠ encoding produces.
+        # The motivating case: "at least 40 carbons" against a molecule
+        # with ~50 carbons (plus a few non-carbon atoms, so the candidate-
+        # narrowing actually has to do something). As a native Count>=40,
+        # this should take milliseconds, not the exponential-ish blowup the
+        # 40-nested-∃-with-780-pairwise-≠ encoding produces.
         nodes = {f"c{i}": ["c"] for i in range(50)}
         nodes.update({f"o{i}": ["o"] for i in range(5)})
         s = graph_to_structure(nodes=nodes, edges={})

@@ -5,6 +5,112 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [0.21.0] - 2026-08-13
+
+Added — **`fol.parse_prolog_clause` / `parse_prolog_program` / `load_prolog`**,
+the missing leg of the importer family (TPTP, Prover9, SMT-LIB, LaTeX, CASL —
+and now Prolog/Datalog). Its immediate use is reading back what a rule learner
+produces, so an induced clause can be model-checked, proved with, exported to
+TPTP or compared against a reference instead of eyeballed.
+
+Two things it refuses to decide for you:
+
+- **Which reading.** `h(A) :- b(A, B).` is either `∀a∀b (B(a,b) → H(a))`
+  (`mode="clause"`, the standard logical reading) or the CONDITION alone,
+  `∃b B(a,b)` with the head's variable free (`mode="body"` — what a class
+  definition is). Different formulas; the caller says which.
+- **Negation as failure.** `\+ G` means "not derivable", which is `¬G` only
+  under the closed world assumption on a stratified program. Refused unless
+  the caller passes `negation_as_failure="classical"` and thereby asserts it.
+
+The cut, if-then, `is`, `=..` and list terms are refused **by name** — a
+parser that quietly dropped a cut would change what the program means. Naming
+is inverted on import like TPTP's (`carbon(A)` → `Carbon(a)`), folding only
+the FIRST character, so ChemLog's `bSINGLE` survives as `BSINGLE` rather than
+collapsing to `Bsingle`. Prolog is deliberately NOT added to `parse_any`'s
+auto-detection: `p(a).` is ambiguous with several other dialects, and silent
+misrouting is the failure this kit exists to avoid — ask for it explicitly.
+
+Added — **`eval.check_definitions` + `chem.StructureCache`**: the layer a
+campaign runs on. `score_definition` answers "how good is THIS definition";
+this answers "run K definitions over N molecules and write down everything
+that happened", and its contract is drawn along one line: **is this a property
+of the data or of the configuration?** Data becomes a ROW — an unparseable
+SMILES, a definition mentioning a predicate no structure interprets, a budget
+that ran out — so one bad molecule in 200 000 never costs the other rows.
+Configuration (RDKit missing, unknown `naming`, unwritable results path) fails
+loudly *before the first molecule*. Rows are flushed per definition, and
+`resume=True` reads back what a killed run already wrote instead of redoing
+it. An exhausted budget is its own status with `holds=None`, never a `False`.
+
+`StructureCache` is what makes the inner loop cheap: the structure does not
+depend on the formula, so K definitions over N molecules build N structures,
+not K·N. Measured with the new runner, 4 definitions × 60 molecules:
+**1860 → 8000 checks/s, a factor of 4.3** at a 0.958 hit rate. Failures are
+cached too — a SMILES RDKit refuses is refused identically next time.
+
+Fixed — **the structure cache key now carries `naming`** (BREAKING for a
+caller that builds its own keys: the tuple grew from three fields to four —
+`(smiles, naming, aromatic, computed)`. Passing a plain `dict` as
+`structure_cache` and letting the kit key it needs no change). It was
+`(smiles, aromatic, computed)`, correct only because
+`eval.datasets.c3po` hardcodes `naming="chemlog"` — an invariant nothing
+enforced. A shared campaign-wide cache breaks it: `mcp.chem_tools.
+molecule_to_structure` exposes `naming`, and `"paper"` spells the single bond
+`singleBond` where `"chemlog"` spells it `bSINGLE`, so a cross-answered
+request would report every predicate as uninterpreted. The key is now the full
+option tuple, and `c3po`'s sentinel for a refused SMILES is the same class as
+the cache's, so neither module's `isinstance` check can miss the other's
+cached failures.
+
+Added — **`eval.minimal_model_size(..., all_different=True)`**: the generality
+analysis under ChemLog's own convention, and the reason it was needed is the
+measurement it replaces. Under plain FOL semantics a definition built only
+from ∃, ∧ and ∨ — what an LLM writes for a chemical class — is satisfied by a
+ONE-element structure interpreting every predicate as universally true,
+whatever the definition says. Measured over the 367 learned definitions of the
+published run: **265 of 366 parseable ones are provably in that fragment**, so
+the number was constant 1 and separated nothing. Under the convention it
+measures what the definition actually demands: how many DISTINCT individuals
+must exist.
+
+Two implementation points carry the feature. It is a **formula
+transformation**, not a search-time switch — the finder evaluates with
+`semantics.tarski.satisfies`, which has no all_different reading, so the
+implicit distinctness is written out as ≠ atoms, placed INSIDE each binder
+(conjoining them to the formula as a whole leaves the variables free, and a
+free variable reads as universally quantified: "every individual differs from
+itself", i.e. every formula unsatisfiable). And it is answered in **closed
+form** for the fragment where that is provable — `n` existentials over a
+negation-free, comparison-free matrix have a smallest model of exactly
+`max(n, 1)` individuals, proof in `_closed_form_size` — because a class
+definition binding two dozen atoms is not reachable by enumeration at all.
+The closed form is checked against the search it replaces, on formulas small
+enough for both.
+
+Added — **`fol.repair_formula`**, the repair layer for LLM output written in
+the kit's OWN surface syntax, plus the matching `repair_formula` MCP tool
+(29 tools now). `fol.repair_tptp_formula` has covered the three recurring
+LLM syntax-failure classes in TPTP since 0.20.0; carrying them to the unicode
+dialect gives three different answers, and that difference is the feature:
+
+- **Biimplication brackets** have no analogue. The grammar puts
+  ↔/→ below ∧/∨, so `P(x) ↔ A(x) ∧ B(x)` is unambiguous, and
+  `to_unicode_str` re-emits exactly those brackets — nothing to normalise on
+  either side. What the grammar refuses instead, `A ∧ B ∨ C` mixed at one
+  level, is **reported and never repaired** (`"mixed_connectives"`): the two
+  readings are different formulas, and bracketing one would throw away the
+  property that makes this dialect worth generating in.
+- **Invalid names** are renamed, not quoted — the unicode grammar has no
+  quoting mechanism at all. The rename goes through `sanitize.NameMapping`,
+  so it is invertible (`names`, and the caller's own mapping for run-wide
+  consistency), unlike a plain camelCase fallback. A legalised name can never
+  collide with a symbol already in the text, and a rewrite that does not make
+  the input parse is discarded whole rather than half-applied.
+- **Free variables** are handled identically, by calling
+  `tptp_repair`'s own two fixes rather than reimplementing them, so the two
+  paths cannot drift.
+
 ## [0.20.0] - 2026-08-13
 
 Added — **finite structures and model CHECKING** (`semantics.structures` +

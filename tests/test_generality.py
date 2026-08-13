@@ -17,18 +17,18 @@ import pytest
 import unicode_fol_kit.api as api_module
 from unicode_fol_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, Verdict
 from unicode_fol_kit.eval import generality
-from unicode_fol_kit.fol.nodes import Atom, And, Not, Quantifier, Variable
+from unicode_fol_kit.fol.nodes import Atom, And, Not, Or, Quantifier, Variable
 from unicode_fol_kit.fol.signature import PredicateDecl, Signature
 
 X, Y, Z = Variable("x"), Variable("y"), Variable("z")
 
 # ---------------------------------------------------------------------------
-# Fixtures — the literal ChEBI2FOL (NeSy 2026) appendix definitions, and two
-# hand-derivable calibration formulas.
+# Fixtures — a chemical class definition body, and two hand-derivable
+# calibration formulas.
 # ---------------------------------------------------------------------------
 
-# The paper's own "molecule <=> net_charge_neutral" — the definitional BODY
-# under test is just the right-hand side.
+# The degenerate class definition "molecule <=> net_charge_neutral" — the
+# definitional BODY under test is just the right-hand side.
 NET_CHARGE_NEUTRAL = Atom("net_charge_neutral", [])
 
 # ∃x∃y∃z (c(x) ∧ c(y) ∧ c(z) ∧ x≠y ∧ x≠z ∧ y≠z) — "there are three pairwise
@@ -280,3 +280,127 @@ class TestStrictlyStrongerKleeneLogic:
         assert d["backward"] is False
         assert d["countermodel"] is not None
         assert d["forward_countermodel"] is None
+
+
+# ---------------------------------------------------------------------------
+# all_different — ChemLog's convention as a formula transformation
+# ---------------------------------------------------------------------------
+
+class TestAllDifferent:
+    """The switch exists because plain semantics cannot see these definitions.
+
+    Under plain FOL semantics a definition built only from ∃, ∧ and ∨ — which
+    is what an LLM writes for a chemical class — is satisfied by a ONE-element
+    structure interpreting every predicate as universally true. That is not a
+    quirk of the finder: it is what the formula says. So the measurement is
+    constant 1 and separates nothing, which the first test pins down.
+    """
+
+    # ∃x∃y∃z (c(x) ∧ o(y) ∧ n(z)) — three atoms demanded, no ≠ written.
+    THREE_ATOMS = Quantifier(
+        "exists", X, Quantifier(
+            "exists", Y, Quantifier(
+                "exists", Z,
+                And(Atom("c", [X]), And(Atom("o", [Y]), Atom("n", [Z]))))))
+
+    def test_plain_semantics_reports_1_for_every_positive_definition(self):
+        """By hand: domain {d}, x=y=z=d, c/o/n all true of d. One individual
+        satisfies a definition 'about' three atoms — and equally satisfies the
+        one-atom definition, so the two are indistinguishable this way."""
+        one_atom = Quantifier("exists", X, Atom("c", [X]))
+        assert generality.minimal_model_size(self.THREE_ATOMS).size == 1
+        assert generality.minimal_model_size(one_atom).size == 1
+
+    def test_all_different_recovers_the_number_of_atoms_demanded(self):
+        """Under the convention the three variables denote distinct
+        individuals, so no structure smaller than 3 can satisfy it — and 3
+        does (assign one variable each, let every predicate hold)."""
+        result = generality.minimal_model_size(self.THREE_ATOMS, all_different=True)
+        assert result.size == 3
+        assert result.exhausted is False
+
+    def test_the_closed_form_agrees_with_the_search_it_replaces(self):
+        """The fast path is only sound if it answers what the search would.
+
+        Both are computed here for formulas small enough that the search
+        actually terminates: the closed form directly, and the search over the
+        ≠-augmented formula that carries the same convention.
+        """
+        from unicode_fol_kit.semantics.modelfinder import find_model
+
+        formulas = [
+            Quantifier("exists", X, Atom("c", [X])),                        # 1
+            Quantifier("exists", X, Quantifier(                             # 2
+                "exists", Y, And(Atom("c", [X]), Atom("o", [Y])))),
+            Quantifier("exists", X, Quantifier(                             # 2, ∨
+                "exists", Y, Or(Atom("c", [X]), Atom("o", [Y])))),
+            self.THREE_ATOMS,                                               # 3
+            NET_CHARGE_NEUTRAL,                                             # 1
+        ]
+        for formula in formulas:
+            closed = generality._closed_form_size(formula)
+            assert closed is not None, formula
+            augmented = generality._with_all_different(formula)
+            searched = next(
+                (k for k in range(1, 7)
+                 if find_model([augmented], max_size=k) is not None), None)
+            assert closed == searched, formula
+
+    def test_the_constraints_land_inside_the_binder(self):
+        """Regression: conjoining ``x ≠ y`` to the formula as a WHOLE leaves
+        both variables free, and the finder reads a free variable as
+        universally quantified — 'every individual differs from itself'.
+        Every such formula would come back unsatisfiable, and a generality
+        report would silently call every definition unsatisfiable."""
+        from unicode_fol_kit.semantics.modelfinder import find_model
+
+        augmented = generality._with_all_different(self.THREE_ATOMS)
+        assert isinstance(augmented, Quantifier)          # still ∃-led, not And(...)
+        assert find_model([augmented], max_size=3) is not None
+
+    def test_both_spellings_of_the_existential_are_recognised(self):
+        """``Quantifier`` normalises neither 'exists' nor '∃'; the parsers emit
+        one and hand-built ASTs the other. Matching only one would answer an
+        all_different question under plain semantics without saying so."""
+        unicode_spelling = Quantifier(
+            "∃", X, Quantifier("∃", Y, And(Atom("c", [X]), Atom("o", [Y]))))
+        ascii_spelling = Quantifier(
+            "exists", X, Quantifier("exists", Y, And(Atom("c", [X]), Atom("o", [Y]))))
+        assert generality._closed_form_size(unicode_spelling) == 2
+        assert generality._closed_form_size(ascii_spelling) == 2
+
+    def test_out_of_fragment_falls_back_to_the_search(self):
+        """A negation breaks the closed form's proof (an atom being true no
+        longer makes the matrix true), so there is no fast answer — but there
+        is still an answer."""
+        with_negation = Quantifier("exists", X, And(Atom("c", [X]),
+                                                    Not(Atom("o", [X]))))
+        assert generality._closed_form_size(with_negation) is None
+        assert generality.minimal_model_size(with_negation, all_different=True).size == 1
+
+    def test_an_explicit_inequality_is_out_of_fragment_but_still_answered(self):
+        """A definition may write its ≠ atoms out instead of relying on the
+        convention. Those are comparisons, so the closed form declines — and
+        the search returns the 3 the formula demands."""
+        assert generality._closed_form_size(THREE_DISTINCT_CARBONS) is None
+        result = generality.minimal_model_size(THREE_DISTINCT_CARBONS,
+                                               max_size=4, all_different=True)
+        assert result.size == 3
+
+    def test_the_closed_form_returns_a_witness_that_really_satisfies_it(self):
+        """A size without a witness is a claim; with one it is a fact."""
+        from unicode_fol_kit.semantics.tarski import satisfies
+
+        result = generality.minimal_model_size(self.THREE_ATOMS, all_different=True)
+        assert result.model is not None
+        assert len(result.model.domain) == 3
+        # …and it satisfies the convention too, which is what the ≠-augmented
+        # formula says in plain semantics.
+        assert satisfies(generality._with_all_different(self.THREE_ATOMS),
+                         result.model) is True
+
+    def test_a_formula_without_nested_existentials_is_untouched(self):
+        """The convention costs nothing where it says nothing."""
+        assert generality._with_all_different(NET_CHARGE_NEUTRAL) == NET_CHARGE_NEUTRAL
+        single = Quantifier("exists", X, Atom("c", [X]))
+        assert generality._with_all_different(single) == single

@@ -5,16 +5,17 @@ autosummary truncates it at the first sentence end, and a dotted target like
 ``semantics.structures.FiniteStructure`` gets cut mid-role, leaving an
 unterminated backtick in the generated table.)
 
-This is the bridge ChEBI2FOL-style classification needs: the paper's own
-framing (Section 2) is that a molecule *is* a finite FOL structure — atoms
-are individuals, and classification is model CHECKING a class definition
-against that structure — but the paper gives no code for the molecule side,
-only a worked prose example (Section 3.1, reproduced exactly by this
-module's ethanol test). :func:`mol_to_structure` is that missing
-translation: SMILES (or an already-parsed RDKit ``Mol``) in,
-:class:`FiniteStructure` out, in the ChemLog vocabulary (Flügel et al. 2025,
-MIT licence) — see :mod:`unicode_fol_kit.chem._naming` for exactly how that
-vocabulary is spelled and why, and
+This is the bridge model-checking-based classification needs: a molecule
+*is* a finite FOL structure — atoms are individuals, and classification is
+model CHECKING a class definition against that structure — but that framing
+is usually stated in prose only, with no code for the molecule side, at
+most a worked example done by hand (the one this module's ethanol test
+reproduces exactly). :func:`mol_to_structure` is that missing translation:
+SMILES (or an already-parsed RDKit ``Mol``) in, :class:`FiniteStructure`
+out, in the ChemLog vocabulary (Flügel et al. 2025, MIT licence,
+https://github.com/sfluegel05/chemlog-peptides) — see
+:mod:`unicode_fol_kit.chem._naming` for exactly how that vocabulary is
+spelled and why, and
 :data:`unicode_fol_kit.chem.signature.CHEMLOG_SIGNATURE` for the matching
 declared vocabulary ``api.check`` can validate a formula against.
 
@@ -84,10 +85,10 @@ Two naming schemes, chosen at the call site
 ----------------------------------------------
 ``naming="chemlog"`` (the default) spells every predicate the way the real
 ChemLog TPTP files do (``bSINGLE``, ``has_1_hs``, ...); ``naming="paper"``
-spells them the way the ChEBI2FOL paper's own prose does (``singleBond``,
-``has1H``, ...) — this is what lets the ethanol acceptance test below
-reproduce the paper's Section 3.1 example VERBATIM rather than merely
-"equivalently". See :mod:`unicode_fol_kit.chem._naming` for the exact
+spells them the way prose write-ups of such class definitions do
+(``singleBond``, ``has1H``, ...) — this is what lets the ethanol acceptance
+test below reproduce a hand-written worked example VERBATIM rather than
+merely "equivalently". See :mod:`unicode_fol_kit.chem._naming` for the exact
 per-symbol rationale and the two schemes' full definitions, and
 :mod:`unicode_fol_kit.chem.signature` for the ``CHEMLOG_TO_PAPER`` /
 ``PAPER_TO_CHEMLOG`` alias tables that translate between them after the
@@ -152,11 +153,11 @@ brute-force domain-squared enumeration:
   convenience anyway, for the same reason ChemLog itself precomputes ring
   membership rather than making every consumer spell out an N-quantifier
   cycle formula by hand: writing that axiom out is exactly the kind of
-  syntax burden the paper's own failure analysis blames for 89 of 136
-  failed classifications. A ring larger than the family's max (a
-  macrocycle) is still correctly reported by the general ``in_ring/1``
-  (True); it simply has no ``in_ring_of_size_N`` member of its own — a real,
-  documented limitation, not a silent one.
+  syntax burden that makes hand- or machine-written class definitions fail
+  on pure syntax before they are ever evaluated. A ring larger than the
+  family's max (a macrocycle) is still correctly reported by the general
+  ``in_ring/1`` (True); it simply has no ``in_ring_of_size_N`` member of
+  its own — a real, documented limitation, not a silent one.
 * ``aromatic/1`` — RDKit's aromaticity perception is a Hückel-rule
   ring-electron-counting algorithm, not a graph-local property any fixed-
   quantifier FOL formula over ``bond``/``bAROMATIC`` could re-derive from
@@ -277,7 +278,7 @@ def mol_to_structure(
     computed: bool = True,
 ) -> FiniteStructure:
     """Translate a molecule into a :class:`FiniteStructure` in the ChemLog
-    (or, with ``naming="paper"``, ChEBI2FOL-paper-prose) vocabulary.
+    (or, with ``naming="paper"``, the prose-spelling) vocabulary.
 
     Args:
         mol_or_smiles: a SMILES string, or an already-parsed

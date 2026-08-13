@@ -42,7 +42,10 @@ unicode, TPTP, LaTeX, Prover9, SMT-LIB), well-formedness checks, graded
 equivalence, proving/refuting over a multi-backend portfolio (list_backends
 shows what is registered and available right now), self-explaining
 countermodels, formula diagnosis for repair loops (you are the fixer:
-diagnose -> apply the suggestion -> diagnose again), logic-to-logic
+diagnose -> apply the suggestion -> diagnose again), mechanical repair of
+the failures that have one right answer (repair_formula: an illegal symbol
+name renamed invertibly, a free variable closed on request -- but never a
+bracket guessed into a mixed conjunction/disjunction), logic-to-logic
 translation, and English verbalization. Error-analysis layer:
 compare_formulas gives the full prediction-vs-gold breakdown (structural /
 canonical / vocabulary-aligned match, solver equivalence, symbol diff),
@@ -277,6 +280,39 @@ def diagnose(text: str, dialect: Optional[str] = None,
     parse_errors = result.get("diagnostics", {}).get("parse")
     if parse_errors:
         result["spec_topic"] = _spec_topic_for(parse_errors)
+    return result
+
+
+def repair_formula(text: str, dialect: Optional[str] = None,
+                   close_free_variables: bool = False,
+                   sanitize_invalid_names: bool = True) -> dict:
+    """Mechanically repair what CAN be repaired; report the rest.
+
+    The counterpart to ``diagnose`` (where you are the fixer): this fixes the
+    two failure shapes that have one right answer, so they cost you no
+    attempt. A name no symbol class of this dialect accepts (a chemical name
+    with digits, commas or hyphens) is renamed to a legal predicate, with the
+    original kept in ``names`` — nothing is lost. A free variable is reported
+    and, with ``close_free_variables=True``, closed.
+
+    What it deliberately does NOT do is bracket a formula that mixes ∧ and ∨
+    at the same level: the readings differ and choosing one would be a guess.
+    That comes back ``ok=False`` with kind ``"mixed_connectives"`` — write the
+    brackets you mean and call again.
+
+    Returns ``{ok, formula, repaired_text, issues, changed, dialect, names}``,
+    plus ``spec_topic`` when nothing parsed. ``repaired_text`` is in the kit's
+    unicode syntax and re-parses to ``formula``.
+    """
+    from ..fol.dialect_repair import repair_formula as _repair
+
+    result = _repair(text, dialect=dialect,
+                     close_free_variables=close_free_variables,
+                     sanitize_invalid_names=sanitize_invalid_names).to_dict()
+    if not result["ok"]:
+        # Same routing every other tool's failure carries: the issue names
+        # WHAT broke, spec_topic names the rule to look up before retrying.
+        result["spec_topic"] = _spec_topic_for(result["issues"])
     return result
 
 
@@ -913,8 +949,8 @@ def create_server():
 
     server = MCPServer(_SERVER_NAME, instructions=_INSTRUCTIONS)
     for fn in (parse_formula, check_formula, prove, find_countermodel,
-               check_equivalence, diagnose, translate, verbalize,
-               list_backends,
+               check_equivalence, diagnose, repair_formula, translate,
+               verbalize, list_backends,
                normalize, render, detect_dialect, compare_formulas,
                score_batch, check_consistency, get_signature, truth_table,
                drs_to_fol, list_translations,

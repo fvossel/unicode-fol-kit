@@ -1,7 +1,7 @@
 """Tests for unicode_fol_kit.eval.theory_check — the deductive verification
 layer for a collection of predicate definitions (see the module docstring for
-the ChEBI2FOL motivation: model checking alone cannot see that a definition
-is dead, cyclic, or missing a superclass conjunct).
+the motivation: model checking alone cannot see that a definition is dead,
+cyclic, or missing a superclass conjunct).
 
 Every expected value below is worked out by hand in the comment next to the
 assertion — never copied from a program run. Backends are pinned to
@@ -70,7 +70,7 @@ class TestDependencyGraphAndCycles:
         defs = {"A": Atom("B", [x]), "B": P()}
         assert dependency_graph(defs) == {"A": frozenset(), "B": frozenset()}
 
-    def test_paper_definitions_dependency_graph(self):
+    def test_chemical_definitions_dependency_graph(self):
         # molecule depends on nothing (net_charge_neutral is primitive);
         # organicMolecularEntity depends on {molecule}; thioester depends on
         # {organicMolecularEntity}; carboxylicAcid depends on {carbonOxoacid}.
@@ -335,8 +335,8 @@ class TestCheckSatisfiable:
 # ---------------------------------------------------------------------------
 
 class TestCheckSubsumption:
-    def test_real_paper_definitions_carboxylic_acid_entails_carbon_oxoacid(self):
-        """The literal ChEBI2FOL-paper definitions (appendix, verbatim FOL):
+    def test_real_definitions_carboxylic_acid_entails_carbon_oxoacid(self):
+        """A realistic set of chemical class definitions, verbatim FOL:
 
             molecule <=> net_charge_neutral
             organicMolecularEntity <=> ?[A1]: (molecule & c(A1))
@@ -347,9 +347,9 @@ class TestCheckSubsumption:
                 ?[A1,A2,A3]: (c(A1) & o(A2) & o(A3) & has_1_hs(A3) &
                               bDOUBLE(A1,A2) & bSINGLE(A1,A3)))
 
-        The paper does not give carbonOxoacid's own body in the excerpt this
-        module was built from, so it is stood in here as a small, honestly
-        labelled placeholder (``carbonOxoacid <=> organicMolecularEntity``) —
+        carbonOxoacid's own body is not part of the excerpt this module was
+        built from, so it is stood in here as a small, honestly labelled
+        placeholder (``carbonOxoacid <=> organicMolecularEntity``) —
         the point being tested does not depend on what that body actually
         is: carboxylicAcid's unfolded definition is LITERALLY
         ``carbonOxoacid's-unfolded-body ∧ (more stuff)``, so

@@ -1,5 +1,5 @@
 """Tests for :mod:`unicode_fol_kit.fol.tptp_repair` — the TPTP syntax-repair
-layer for the three ChEBI2FOL (NeSy 2026, Appendix B.1) failure classes.
+layer for the three shapes LLM-generated TPTP fails on.
 
 Every expected string/AST below is hand-derived (never copy-pasted from a
 program run) from the TPTP grammar in ``tptp_input.py`` and reasoned about in
@@ -24,7 +24,7 @@ each test's docstring or an inline comment:
   original text (via its ``known_names`` mechanism — see the module
   docstring) is uncomplicated by that convention.
 * **Case 3** (unbound variable): ``free_variables`` (already tested
-  elsewhere) finds ``X`` unbound in the paper's own example; the two
+  elsewhere) finds ``X`` unbound in the worked example below; the two
   ``close_free_variables=True`` outcomes (argument-drop vs. universal
   closure) are derived by hand per formula shape in each test below.
 """
@@ -44,13 +44,13 @@ from unicode_fol_kit.fol.tptp_repair import (
 
 
 # ---------------------------------------------------------------------------
-# Case 1 — biimplication structure error (46 classes in the paper)
+# Case 1 — biimplication structure error
 # ---------------------------------------------------------------------------
 
-def test_case1_biimplication_paper_example_gets_fully_bracketed():
-    """Paper's own literal example (Appendix B.1, Case 1): a definitional
-    biimplication whose right side mixes ``<=>`` and ``&`` with no explicit
-    grouping — the exact shape gavel rejects.
+def test_case1_biimplication_worked_example_gets_fully_bracketed():
+    """A literal case-1 example: a definitional biimplication whose right
+    side mixes ``<=>`` and ``&`` with no explicit grouping — the exact shape
+    gavel rejects.
 
     Hand-derivation: ``&`` (``conj``) binds tighter than ``<=>`` (``equiv``)
     in the grammar, so this is unambiguously
@@ -113,11 +113,11 @@ def test_bracket_normalisation_preserves_ast_and_is_equivalent():
 
 
 # ---------------------------------------------------------------------------
-# Case 2 — invalid predicate name (29 classes in the paper)
+# Case 2 — invalid predicate name
 # ---------------------------------------------------------------------------
 
-def test_case2_stereodescriptor_prefix_paper_example_quoted_and_preserved():
-    """Paper's own literal example: ``(2S)Flavan4One`` — a stereodescriptor
+def test_case2_stereodescriptor_prefix_example_quoted_and_preserved():
+    """A literal case-2 example: ``(2S)Flavan4One`` — a stereodescriptor
     prefix glued to a chemical name, starting with ``(`` so it cannot even be
     LEXED as an unquoted TPTP functor (the grammar's ``(`` is reserved for
     grouping/argument lists). Case-2's fix single-quotes it verbatim.
@@ -147,14 +147,13 @@ def test_case2_stereodescriptor_prefix_paper_example_quoted_and_preserved():
     assert name_issues[0].suggestion == "'(2S)Flavan4One'"
 
 
-def test_case2_positional_prefix_paper_example_preserves_full_name():
-    """Paper's other literal example: ``1,2-diacyl-sn-glycero-3-phosphocholine``
-    — a digit-led, hyphen-/comma-bearing chemical name. The paper explicitly
-    contrasts this with the lossy camelCase fallback
-    (``diacylSnGlycero3Phosphocholine``, which drops the ``1,2-`` positional
-    prefix and severs the ChEBI-class link); this test's whole point is that
-    the repair does NOT do that — the ``1,2`` prefix specifically must
-    survive, character for character.
+def test_case2_positional_prefix_example_preserves_full_name():
+    """A second literal example: ``1,2-diacyl-sn-glycero-3-phosphocholine``
+    — a digit-led, hyphen-/comma-bearing chemical name. Contrast the lossy
+    camelCase fallback (``diacylSnGlycero3Phosphocholine``, which drops the
+    ``1,2-`` positional prefix and severs the ChEBI-class link); this test's
+    whole point is that the repair does NOT do that — the ``1,2`` prefix
+    specifically must survive, character for character.
     """
     original_name = "1,2-diacyl-sn-glycero-3-phosphocholine"
     text = f"{original_name}(a) => lipid(a)"
@@ -163,7 +162,7 @@ def test_case2_positional_prefix_paper_example_preserves_full_name():
     assert r.ok is True
     assert r.repaired_text == f"('{original_name}'(a) => lipid(a))"
     assert r.formula.left.predicate == original_name
-    # The specific fidelity claim the paper cares about: the "1,2" prefix.
+    # The specific fidelity claim that matters here: the "1,2" prefix.
     assert r.formula.left.predicate.startswith("1,2-")
 
     # Reparsing the repaired text recovers the identical predicate name —
@@ -333,15 +332,15 @@ def test_case2_camelcase_and_uppercase_locant_names_round_trip_exactly():
 
 
 # ---------------------------------------------------------------------------
-# Case 3 — unbound variable (14 classes in the paper)
+# Case 3 — unbound variable
 # ---------------------------------------------------------------------------
 
 _CASE3_TEXT = "threeOxoSteroid(X) <=> (steroid & ?[A1,A2]: (c(A1) & o(A2)))"
 
 
-def test_case3_free_variable_paper_example_reported_not_silently_changed():
-    """Paper's own literal example. ``X`` is free (it appears only on the
-    left; ``A1``/``A2`` are existentially bound). Default
+def test_case3_free_variable_example_reported_not_silently_changed():
+    """A literal case-3 example. ``X`` is free (it appears only on the left;
+    ``A1``/``A2`` are existentially bound). Default
     ``close_free_variables=False``: the free variable is REPORTED but the
     formula is not silently rewritten — the left-hand definiendum still
     carries its (unbound) argument exactly as parsed.
@@ -355,19 +354,19 @@ def test_case3_free_variable_paper_example_reported_not_silently_changed():
     assert free_issues[0].suggestion is None  # nothing was applied
 
     # Not silently changed: the left side still has its 1-ary argument, and
-    # the AST still has exactly the one free variable the paper describes.
+    # the AST still has exactly the one free variable the input carries.
     assert isinstance(r.formula, Iff)
     assert r.formula.left == Atom("ThreeOxoSteroid", [Variable("x")])
     assert free_variables(r.formula) == {Variable("x")}
 
 
-def test_case3_close_free_variables_drops_argument_per_paper():
-    """``close_free_variables=True`` on the exact same formula: the paper's
-    own fix applies here (``X`` is the SOLE argument of the left-hand
-    definiendum and does not recur on the right, since the right side only
-    mentions the separately-bound ``A1``/``A2``) — the argument is dropped,
-    turning ``threeOxoSteroid`` into the 0-ary, molecule-level predicate the
-    paper says it always meant.
+def test_case3_close_free_variables_drops_the_definiendum_argument():
+    """``close_free_variables=True`` on the exact same formula: the narrow
+    argument-drop fix applies here (``X`` is the SOLE argument of the
+    left-hand definiendum and does not recur on the right, since the right
+    side only mentions the separately-bound ``A1``/``A2``) — the argument is
+    dropped, turning ``threeOxoSteroid`` into the 0-ary, molecule-level
+    predicate the definition always meant.
     """
     r = repair_tptp_formula(_CASE3_TEXT, close_free_variables=True)
 
@@ -392,7 +391,7 @@ def test_case3_close_free_variables_drops_argument_per_paper():
 
 
 def test_case3_close_free_variables_falls_back_to_universal_closure():
-    """When the paper's narrow argument-drop shape does NOT apply — here
+    """When the narrow argument-drop shape does NOT apply — here
     ``X`` recurs on the right (``q(X)``), so dropping the left argument
     would silently discard information the formula actually depends on —
     ``close_free_variables=True`` instead applies the standard, generic

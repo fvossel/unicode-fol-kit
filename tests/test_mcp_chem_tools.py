@@ -341,7 +341,7 @@ def test_explain_molecule_failure_invalid_smiles_is_argument_shape():
 # ---------------------------------------------------------------------------
 
 def test_simplify_definition_shrinks_pairwise_inequality_chain():
-    """The literal ChEBI2FOL redundancy pattern (Appendix B.3), at small n:
+    """The literal distinct-witnesses redundancy pattern, at small n:
     ``∃x∃y∃z (c(x) ∧ c(y) ∧ c(z) ∧ x≠y ∧ x≠z ∧ y≠z)`` — 3 witnesses, all
     C(3,2)=3 pairwise inequalities written out. Under the (default here)
     ``all_different=True`` convention every one of those 3 ``≠`` literals is

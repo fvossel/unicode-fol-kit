@@ -6,15 +6,15 @@ clausal preprocessing of any kind. The kit already has a Tarskian evaluator
 (:func:`unicode_fol_kit.semantics.tarski.satisfies`); it is correct and
 general but iterates every quantifier over the WHOLE domain and gives no
 special treatment to negated quantifiers or counting. This module targets
-exactly the gap ChEBI2FOL (NeSy 2026) documents as the practical bottleneck of
-that style of checker (paper, Appendix B.3) when the structure is a molecule
-(one individual per non-hydrogen atom) and the formula is an LLM-produced
-ChEBI class definition. Three design decisions carry the module's value:
+exactly the practical bottleneck of that style of checker when the structure
+is a molecule (one individual per non-hydrogen atom) and the formula is an
+LLM-produced ChEBI class definition. Three design decisions carry the
+module's value:
 
 1. **No PNF/CNF normal form, ever.** The existing ChemLog TPTP checker this
    module is meant to out-perform requires prenex form with a CNF matrix, and
-   the paper documents two normal-form-*induced* timeout sources that direct
-   evaluation simply does not have:
+   that requirement alone produces two normal-form-*induced* timeout sources
+   that direct evaluation simply does not have:
 
    * A negated existential ``¬(∃o: o(o) ∧ bDOUBLE(c,o))`` is mechanically
      Skolem/prenex-turned into ``∀x (¬o(x) ∨ ¬bDOUBLE(c,x))``, which then has
@@ -24,7 +24,7 @@ ChEBI class definition. Three design decisions carry the module's value:
      the end (see :func:`_eval`, the ``Not`` / ``Quantifier`` cases). It never
      becomes a ``∀`` over the whole domain.
    * A top-level disjunction of two existentials gets DISTRIBUTED across a
-     CNF matrix — the paper's own ``oxoFattyAcid`` example turns into 32
+     CNF matrix — a realistic ``oxoFattyAcid`` definition turns into 32
      disjunctive clauses that must be resolved "simultaneously". Evaluated
      directly, ``Or`` just short-circuits (Python's ``or`` on the two
      recursive calls in :func:`_eval`): the first disjunct that is true wins,
@@ -75,10 +75,10 @@ ChEBI class definition. Three design decisions carry the module's value:
    only understand plain FOL. This evaluator does not: :func:`_eval_count`
    counts satisfying individuals directly off the candidate set from (2),
    short-circuiting as soon as the bound is reached for ``op="ge"`` (and as
-   soon as it is provably exceeded for ``"le"``/``"eq"``). The paper's own
-   motivating case is ``hasAtLeast40Carbons``, written today as 40 nested
-   existentials plus all C(40,2)=780 pairwise inequalities — a formula shape
-   the paper names as a primary timeout source. As ``∃≥40 x c(x)`` against a
+   soon as it is provably exceeded for ``"le"``/``"eq"``). The motivating
+   case is ``hasAtLeast40Carbons``, written today as 40 nested existentials
+   plus all C(40,2)=780 pairwise inequalities — a formula shape that is a
+   primary timeout source in practice. As ``∃≥40 x c(x)`` against a
    structure of ~50 carbons, this evaluator does a single pass over the
    ~50-element carbon candidate list and stops at the 40th hit (see
    ``tests/test_model_eval.py``'s performance test). Evaluating the SAME
@@ -624,8 +624,8 @@ def _eval_quantifier(
 ) -> bool:
     if node.type in _FORALL:
         # ∀ iterates the whole domain — see the module docstring: this
-        # evaluator's optimisations target ∃/Count (the paper's documented
-        # bottlenecks), not ∀, which has no analogous candidate-narrowing
+        # evaluator's optimisations target ∃/Count (the bottlenecks that
+        # actually bite), not ∀, which has no analogous candidate-narrowing
         # opportunity without also inspecting the (possibly absent) guard
         # implicit in an implication body.
         name = node.variable.name

@@ -1,27 +1,28 @@
 """Repair layer over :mod:`unicode_fol_kit.fol.tptp_input` for LLM-generated TPTP.
 
-Context (ChEBI2FOL, NeSy 2026, Appendix B.1): of 136 ChEBI class definitions an
-LLM failed to translate to FOL, 89 failed on pure SYNTAX, each burning a whole
-LLM attempt. Three shapes account for (nearly) all of them:
+LLM-generated TPTP fails on pure SYNTAX often enough to be worth repairing
+rather than retrying — a syntax rejection costs a whole generation attempt.
+Three shapes account for nearly all of it:
 
-  1. **Biimplication structure error** (46 classes) — the LLM writes
-     ``predicate(x) <=> condition1 & condition2`` and the paper's parser
-     (gavel) rejects it for lacking explicit brackets around the right side.
-  2. **Invalid predicate name** (29 classes) — a chemical name used as a
+  1. **Biimplication structure error** — the LLM writes
+     ``predicate(x) <=> condition1 & condition2`` and a strict downstream
+     parser (gavel) rejects it for lacking explicit brackets around the
+     right side.
+  2. **Invalid predicate name** — a chemical name used as a
      predicate/function symbol starts with a digit or contains characters TPTP
      forbids in a bare ``lower_word`` (hyphens, commas, parentheses — e.g. a
      stereodescriptor prefix like ``(2S)`` or a positional prefix like
-     ``1,2-``). The paper's own fallback (renaming to a camelCase identifier)
+     ``1,2-``). Renaming such a name to a plain camelCase identifier
      *loses* exactly the chemical information those characters encode and
      severs the link back to the ChEBI class; TPTP single-quoting
      (``'1,2-diacyl-sn-glycero-3-phosphocholine'``) keeps both.
-  3. **Unbound variable error** (14 classes) — e.g.
+  3. **Unbound variable error** — e.g.
      ``threeOxoSteroid(X) <=> (steroid & ?[A1,A2]: (c(A1) & o(A2))))``: ``X``
-     on the left never occurs on the right. The paper's own fix drops the
+     on the left never occurs on the right. The conservative fix drops the
      argument (``threeOxoSteroid <=> …``) precisely because the definition is
      a 0-ary, molecule-level property, not a property of some individual
-     ``X`` — and holds this class is NOT reliably fixable by a parser
-     heuristic in general.
+     ``X`` — and this shape is NOT reliably fixable by a parser heuristic in
+     general.
 
 This module's premise (verified against :func:`parse_tptp_formula` before
 writing a line here): the kit's own Lark TPTP grammar already ACCEPTS all
@@ -51,12 +52,12 @@ Hard limits (refuse rather than silently reinterpret)
   diagnosis, never guessed at.
 * Case 3's fix is applied ONLY with ``close_free_variables=True`` (default
   ``False``: report, don't touch), and even then only the narrow
-  ``predicate(X) <=> …`` / ``predicate(X) => …`` shape (paper's exact
-  pattern: the free variable is the sole argument of the definiendum on the
-  LEFT, and does not recur on the right) gets the meaning-preserving
-  argument-drop; anything else gets the standard, well-understood universal
-  closure (∀-wrap every free variable) — never a guess at what the author
-  meant that could go either way.
+  ``predicate(X) <=> …`` / ``predicate(X) => …`` shape (exactly: the free
+  variable is the sole argument of the definiendum on the LEFT, and does not
+  recur on the right) gets the meaning-preserving argument-drop; anything
+  else gets the standard, well-understood universal closure (∀-wrap every
+  free variable) — never a guess at what the author meant that could go
+  either way.
 * A predicate name that needed quoting because :mod:`tptp_input` failed to
   parse it unquoted is quoted using the EXACT original substring, tracked
   through re-parsing by exact ``_cap()``-image lookup (see the
@@ -90,7 +91,7 @@ Hard limits (refuse rather than silently reinterpret)
   possibility for such a name — and is otherwise a last-resort, irreversible
   GUESS reached only when neither of the two recovery mechanisms above
   applies. This residual gap is real but narrow and fully documented at
-  :func:`_uncap`; it never fires on either literal paper example (both start
+  :func:`_uncap`; it never fires on either literal example above (both start
   with a digit / a parenthesis, so :func:`_uncap` is a no-op regardless of
   which branch computes it).
 """
@@ -204,7 +205,7 @@ class RepairResult:
 #
 # _CANDIDATE_RE looks for a name-shaped span immediately followed by an
 # argument list's "(" (i.e. a functor application), built from the two
-# concrete shapes the paper's Appendix B.1 names:
+# concrete shapes case 2 takes in practice:
 #
 #   (a) a stray parenthesised prefix glued to more identifier characters,
 #       e.g. "(2S)Flavan4One" — `(?:\([^()\n]{1,40}\))?` optionally eats a
@@ -470,7 +471,7 @@ def _squash(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _drop_argument_fix(formula: Node, var: Variable) -> Optional[Node]:
-    """The paper's Case-3 fix: ``P(X) <=> …`` / ``P(X) => …`` becomes
+    """Case 3's argument-drop fix: ``P(X) <=> …`` / ``P(X) => …`` becomes
     ``P <=> …`` when ``X`` is the SOLE free variable, is the entire (single)
     argument list of the left-hand definiendum, and does not recur on the
     right — i.e. exactly when the formula is, in substance, already a 0-ary
@@ -670,8 +671,8 @@ def repair_tptp_formula(text: str, *, quote_invalid_names: bool = True,
                     "free_variable",
                     f"unbound variable {names!r} is the sole argument of the "
                     "left-hand definiendum and does not recur on the right — "
-                    "dropped it (the definition is a 0-ary, molecule-level "
-                    "property), per the paper's own fix for this shape.",
+                    "dropped it: the definition is, in substance, a 0-ary "
+                    "property that only accidentally carries an argument.",
                     suggestion=_render(dropped, known_names)))
             else:
                 final_formula = _close_universally(formula, free)
@@ -679,7 +680,7 @@ def repair_tptp_formula(text: str, *, quote_invalid_names: bool = True,
                     "free_variable",
                     f"unbound variable(s) {names} closed via universal "
                     "quantification (standard universal-closure convention; "
-                    "the paper's argument-drop fix does not apply — the "
+                    "the argument-drop fix does not apply — the "
                     "formula is not a `predicate(X) <=> …`/`predicate(X) => …` "
                     "definition with X absent from the right-hand side).",
                     suggestion=_render(final_formula, known_names)))

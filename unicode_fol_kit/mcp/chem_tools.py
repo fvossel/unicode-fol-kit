@@ -1,10 +1,10 @@
 """Chemistry MCP tools — model-checking feedback for an LLM writing ChEBI FOL.
 
-Context (ChEBI2FOL, NeSy 2026 — see ``unicode_fol_kit.chem``'s own module
-docstring for the full brief): an LLM translates a ChEBI class definition to
-FOL; classification is MODEL CHECKING that formula against a molecule
-represented as a finite structure. The paper's own measured failure modes are
-what these six tools exist to close, one each:
+The setting (see ``unicode_fol_kit.chem``'s own module docstring for the
+full brief): an LLM translates a ChEBI class definition to FOL;
+classification is MODEL CHECKING that formula against a molecule represented
+as a finite structure. The failure modes that loop runs into are what these
+six tools exist to close, one each:
 
 * the LLM never SEES what its formula is being checked against
   (:func:`molecule_to_structure` — the structure as JSON, plus a headline
@@ -14,22 +14,24 @@ what these six tools exist to close, one each:
   (:func:`check_molecule` — ``holds`` plus, on failure, the
   :func:`~unicode_fol_kit.semantics.model_eval.evaluate_detailed` blame trail);
 * a whole labelled corpus needs to be re-checked after every definition edit,
-  and the paper's headline number (0.0363 precision at 0.8836 recall — the
-  definitions are far too general) is exactly the kind of thing only visible
-  in aggregate (:func:`check_molecules` — per-molecule results plus a
-  holds/fails/unknown/errors summary);
-* the paper explicitly names "a counterexample explanation component" as
-  future work it does not have (:func:`explain_molecule_failure` — the
-  failing conjunct PLUS the molecule's atoms-by-type and bond list, so a
-  model can see both halves of the mismatch at once);
-* the paper's own Appendix B.3 names redundant pairwise-inequality chains
-  (``hasAtLeast40Carbons`` written as 40 nested existentials + C(40,2)=780
-  ``≠`` literals) as a documented timeout cause (:func:`simplify_definition`
+  and a definition that is too general (matching far too much, at a precision
+  cost invisible until it is measured against a corpus) is exactly the kind
+  of thing only visible in aggregate (:func:`check_molecules` — per-molecule
+  results plus a holds/fails/unknown/errors summary);
+* a failing conjunct alone still does not say what the molecule looks like —
+  a counterexample needs explaining, not just reporting
+  (:func:`explain_molecule_failure` — the failing conjunct PLUS the
+  molecule's atoms-by-type and bond list, so a model can see both halves of
+  the mismatch at once);
+* redundant pairwise-inequality chains (``hasAtLeast40Carbons`` written as 40
+  nested existentials + C(40,2)=780 ``≠`` literals) are a routine timeout
+  cause (:func:`simplify_definition`
   — applies :func:`~unicode_fol_kit.fol.simplify_check.simplify_for_checking`
   and reports what shrank, by how much);
-* 89 of 136 failures are "pure syntax", including hallucinated predicates
-  (:func:`chemical_signature` — the exact 35-predicate ChemLog vocabulary so
-  a generator never has to guess what it is allowed to write).
+* pure-SYNTAX failures, hallucinated predicate names among them, burn a whole
+  generation attempt each (:func:`chemical_signature` — the exact
+  35-predicate ChemLog vocabulary so a generator never has to guess what it
+  is allowed to write).
 
 Conventions (matching :mod:`unicode_fol_kit.mcp.server`, followed exactly so
 a client that already talks to that server needs no special-casing for these
@@ -57,7 +59,7 @@ FUNCTION, never a predicate, so a chemical class definition can only be
 parsed as TPTP. ``dialect="tptp_bare"`` (the default on every tool that takes
 a formula) therefore routes through
 :func:`unicode_fol_kit.chem.parse_chemlog_tptp`, which additionally repairs
-the three LLM syntax failure modes the paper documents (unbracketed
+the three recurring LLM syntax failure modes (unbracketed
 biimplication, an unquoted invalid predicate name, a free left-hand
 variable — see :mod:`unicode_fol_kit.fol.tptp_repair`) BEFORE renaming the
 chemical vocabulary back from the TPTP importer's forced-capitalised kit
@@ -71,7 +73,12 @@ predicate names, e.g. ``C(x)`` for carbon) — it is parsed via
 :func:`unicode_fol_kit.api.parse_any` and then the SAME chemical-vocabulary
 rename is applied, so the resulting :class:`~unicode_fol_kit.fol.nodes.Node`
 always ends up chemlog-spelled either way. It is NOT repaired in that branch
-(only the ``tptp_bare`` path calls the repair layer), and auxiliary/class
+(only the ``tptp_bare`` path calls the repair layer — a formula in the kit's
+own syntax is repaired by calling
+:func:`unicode_fol_kit.fol.repair_formula` explicitly first, which is
+deliberate: a rename that happened silently inside a CHECKING tool would
+change which predicate was checked without the caller ever seeing it), and
+auxiliary/class
 predicates outside ChemLog's 35-symbol vocabulary (``carboxylicAcid``,
 ``organicMolecularEntity``, ...) are left exactly as parsed either way — they
 have no ChemLog spelling to rename to.
@@ -81,8 +88,8 @@ evaluator)
 ------------------------------------------------------------------------------
 :func:`unicode_fol_kit.semantics.model_eval.evaluate_detailed` defaults
 ``all_different=False`` (plain classical semantics: two separately
-existentially-bound variables MAY denote the same individual). Every ChemLog/
-ChEBI2FOL definition this tool layer exists to check is written under the
+existentially-bound variables MAY denote the same individual). Every ChemLog
+class definition this tool layer exists to check is written under the
 OPPOSITE, ChemLog-specific convention — "separately introduced existential
 variables are already pairwise distinct" — so every tool below that runs
 model checking defaults ``all_different=True`` instead. Pass ``False``
@@ -355,9 +362,9 @@ def molecule_to_structure(smiles: str, *, naming: str = "chemlog",
         smiles: a SMILES string (e.g. ``"CCO"`` for ethanol).
         naming: ``"chemlog"`` (default — ``c``, ``bSINGLE``, ``has_1_hs``,
             ...; what :func:`check_molecule` and friends require) or
-            ``"paper"`` (the ChEBI2FOL paper's own prose spelling — ``c``,
-            ``singleBond``, ``has1H``, ...; use this only to reproduce the
-            paper's literal worked example, never to feed a
+            ``"paper"`` (the human-readable prose spelling — ``c``,
+            ``singleBond``, ``has1H``, ...; use this only to reproduce a
+            worked example written that way, never to feed a
             ``dialect="tptp_bare"`` formula, which always comes back
             ChemLog-spelled).
         include_computed: attach the five ring/aromaticity/connectivity
@@ -566,9 +573,8 @@ def explain_molecule_failure(formula: str, smiles: str, *,
                              dialect: str = "tptp_bare",
                              include_computed: bool = True,
                              budget: Optional[int] = None) -> dict:
-    """The full counterexample-explanation view for ONE molecule — the
-    "counterexample explanation component" the ChEBI2FOL paper names as
-    future work it does not have (its own model checker returns only
+    """The full counterexample-explanation view for ONE molecule — the piece
+    a bare classifier does not give you (a plain model checker returns only
     proved/not-proved, never a witness).
 
     Runs the identical check :func:`check_molecule` does (same holds/
@@ -623,9 +629,9 @@ def explain_molecule_failure(formula: str, smiles: str, *,
 def simplify_definition(formula: str, *, all_different: bool = True,
                         dialect: str = "tptp_bare") -> dict:
     """Shrink a class definition for model checking, and report exactly what
-    changed — the fix for the paper's own documented timeout cause
-    (Appendix B.3: a redundant O(n²) pairwise-inequality chain, e.g. 780
-    literals for "at least 40 carbons").
+    changed — the fix for the standard timeout cause (a redundant O(n²)
+    pairwise-inequality chain, e.g. 780 literals for "at least 40
+    carbons").
 
     Two independent, differently-scoped rewrites are applied (see
     :mod:`unicode_fol_kit.fol.simplify_check`'s own module docstring for the
@@ -768,11 +774,13 @@ _SIGNATURE_GROUPS: Dict[str, Tuple[str, ...]] = {
 
 
 def chemical_signature() -> dict:
-    """The full ChemLog vocabulary a chemical class definition may use — so a
-    generator never has to GUESS a predicate name or arity (89 of 136
-    ChEBI2FOL failures were "pure syntax"; an unknown-predicate/wrong-arity
-    slip is exactly what this catches before a definition ever reaches model
-    checking, via ``api.check(formula, signature=chem.CHEMLOG_SIGNATURE)``).
+    """The full ChemLog vocabulary a chemical class definition may use
+    (https://github.com/sfluegel05/chemlog-peptides) — so a generator never
+    has to GUESS a predicate name or arity (a hallucinated predicate name is
+    a pure-SYNTAX failure that burns a whole generation attempt; an
+    unknown-predicate/wrong-arity slip is exactly what this catches before a
+    definition ever reaches model checking, via
+    ``api.check(formula, signature=chem.CHEMLOG_SIGNATURE)``).
 
     Returns:
         ``{"ok": True, "signature": <chem.CHEMLOG_SIGNATURE.to_dict()>,

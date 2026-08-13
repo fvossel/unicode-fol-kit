@@ -1,27 +1,26 @@
 """Deductive verification layer for a collection of predicate definitions.
 
-ChEBI2FOL (NeSy 2026) has an LLM translate ChEBI class definitions to FOL and
-then classifies by MODEL CHECKING a definition against a molecule structure
+An LLM translates chemical class definitions to FOL, and classification is
+then MODEL CHECKING a definition against a molecule structure
 (:mod:`unicode_fol_kit.semantics.model_eval`). That measures whether the
-definitions are individually *useful* against real data (their holdout
-micro-precision is 0.0363 at recall 0.8836 — the formulas are wildly too
-general). It says nothing about whether the definitions are *coherent as a
-theory*: an auxiliary predicate is optimised only in the context of the one
-class that introduces it and then silently inherited by every subclass
-("prone to overfitting to that specific context" — the paper's own words),
-and OWL-subsumption checks against Vampire report only bewiesen/nicht bewiesen
-(237 axioms: 171 proved, 56 not proved, 10 timeouts) with **no counterexample**
-when a subsumption fails. This module is the layer that sits between "does
-this predicate fire on real molecules" and "is this DEFINITION SET internally
-consistent" — it never touches a molecule; every question here is decided
-purely from the definitions' own logical content, via the kit's existing
-prover chain (:mod:`unicode_fol_kit.atp.protocol`) and finite model finder.
+definitions are individually *useful* against real data (a definition that
+is too general matches far too much, and the precision cost stays invisible
+until it is measured against a corpus). It says nothing about whether the
+definitions are *coherent as a theory*: an auxiliary predicate is optimised
+only in the context of the one class that introduces it and then silently
+inherited by every subclass, which overfits it to that one context, and a
+prover-backed OWL-subsumption check reports only proved/not proved, with
+**no counterexample** when a subsumption fails. This module is the layer that
+sits between "does this predicate fire on real molecules" and "is this
+DEFINITION SET internally consistent" — it never touches a molecule; every
+question here is decided purely from the definitions' own logical content,
+via the kit's existing prover chain (:mod:`unicode_fol_kit.atp.protocol`)
+and finite model finder.
 
 Data model — why a plain ``name -> body`` mapping
 ---------------------------------------------------
 A "definition" is a **named 0-ary predicate** with a defining FORMULA: exactly
-the ``className <=> body`` shape the paper itself uses, e.g. (verbatim from
-its appendix)::
+the ``className <=> body`` shape such a translation produces, e.g.::
 
     molecule <=> net_charge_neutral
     organicMolecularEntity <=> ?[A1]: (molecule & c(A1))
@@ -39,7 +38,7 @@ side of the ``<=>`` — never re-wrap it in ``Iff(Atom(name, ()), body)``, the
 mapping key already carries the left-hand side). This is a deliberate,
 narrower choice than a general "Definition object with parameters" — a
 parametrised definition (``isRing(x) <=> ...``) would need a substitution-
-with-arguments mechanic none of the paper's examples exercise; admitting it
+with-arguments mechanic none of these definitions exercise; admitting it
 here would be a real design expansion, not a small one, so a body atom that
 names a defined predicate is only ever recognised as a USE of that definition
 when it appears with ZERO arguments (:func:`dependency_graph`, :func:`unfold`)
@@ -117,8 +116,8 @@ It never runs a definition against real data (that is model_eval's job) and
 it never suggests a fix for a broken definition — it only proves, precisely,
 THAT something is broken (dead classifier, meaningless cycle, missing
 conjunct) and, for a refuted subsumption, exhibits WHY via a concrete
-countermodel. That is the whole value-add over the paper's own Vampire check,
-which reports only bewiesen/nicht bewiesen with no witness.
+countermodel. That is the whole value-add over a bare prover-backed
+subsumption check, which reports only proved/not proved with no witness.
 """
 
 from dataclasses import dataclass, field
@@ -547,7 +546,7 @@ class SubsumptionResult:
             here (never ``None`` — see the defensive fallback in
             :func:`check_subsumption`'s implementation), a concrete witness
             where ``sub`` holds and ``sup`` does not. This is the module's
-            main value-add over the paper's Vampire-only "not proved": a
+            main value-add over a bare prover's witness-free "not proved": a
             reader can see EXACTLY which conjunct of the superclass the
             subclass definition forgot.
         ``"unknown"`` — neither proved nor refuted within the backend

@@ -180,3 +180,7 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 .claude
+# Session scratch: experiment material (campaign plans, dataset analyses) does
+# not belong in the kit — only the general-purpose tools those experiments
+# motivated. Ignored so it can never ride along in a `git add .`.
+scratchpad/

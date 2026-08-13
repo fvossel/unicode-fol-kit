@@ -27,12 +27,12 @@ import unicode_fol_kit.chem as chem
 
 
 # ---------------------------------------------------------------------------
-# Ethanol — the paper's own worked example (Section 3.1), reproduced EXACTLY
+# Ethanol — the smallest complete worked example, reproduced EXACTLY
 # ---------------------------------------------------------------------------
 
 def test_ethanol_reproduces_paper_structure_exactly():
-    """"CCO" (ethanol, CH3-CH2-OH) must reproduce the ChEBI2FOL paper's own
-    literal Section-3.1 structure, symbol for symbol.
+    """"CCO" (ethanol, CH3-CH2-OH) must reproduce the canonical structure
+    for this molecule under the ``paper`` naming scheme, symbol for symbol.
 
     RDKit's atom order for "CCO" is C(idx0), C(idx1), O(idx2) (left to right
     as written), so the running-per-element naming gives exactly c1, c2, o1.
@@ -104,7 +104,7 @@ def test_ethanol_reproduces_paper_structure_exactly():
 def test_ethanol_default_naming_is_chemlog_and_aliases_to_paper():
     """The default ``naming="chemlog"`` call must produce the TPTP-style
     spelling of the IDENTICAL facts checked above, and the two spellings
-    must translate into each other via the published alias tables.
+    must translate into each other via the documented alias tables.
     """
     s = chem.mol_to_structure("CCO")   # naming="chemlog" is the default
     assert s.individuals_with("has_3_hs") == ("c1",)
@@ -141,8 +141,7 @@ def test_cysteine_seven_atoms_three_carbons_one_c_equals_o_neutral_chiral_r():
     carboxyl carbon), O(5, the hydroxyl O), O(6, the carbonyl =O).
     Per-element running index over that order gives: n1=N(0), c1=C(1),
     c2=C(2), s1=S(3), c3=C(4), o1=O(5), o2=O(6) — 7 non-hydrogen atoms,
-    domain = {c1, c2, c3, s1, n1, o1, o2} as a set, matching the task
-    brief's own literal domain for this molecule; three of them (c1, c2,
+    domain = {c1, c2, c3, s1, n1, o1, o2} as a set; three of them (c1, c2,
     c3) are carbons.
 
     Bonds (all SINGLE except one): N(0)-C(1), C(1)-C(2), C(2)-S(3),

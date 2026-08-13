@@ -4,9 +4,9 @@ classification program synthesis using generative artificial intelligence",
 Journal of Cheminformatics, 2025, DOI 10.1186/s13321-025-01092-3) — local
 JSONL only, no network access.
 
-C3PO is the benchmark the ChEBI2FOL paper (this task's own commissioning
-paper) evaluates against: one CHEBI class -> its natural-language definition
-plus the SMILES of molecules known to be members. Unlike every other adapter
+C3PO pairs each CHEBI class with its natural-language definition plus the
+SMILES of molecules known to be members -- the shape any FOL formalisation
+of chemical classes has to be evaluated against. Unlike every other adapter
 in this subpackage, C3PO's gold is NOT a reference FOL formula to compare a
 prediction against by parsing/structural-equality (there is no gold FOL
 here at all — see "Honesty" below); it is an EXECUTABLE membership decision:
@@ -39,7 +39,7 @@ CC0-1.0). Verified directly, 2026-08-13:
     fallback scheme needed for the common case.
   * ``"name"``                        -- ``str``, the class's ``rdfs:label``.
   * ``"definition"``                  -- ``str``, the natural-language
-    definition an FOL-formalisation system (ChEBI2FOL's LLM, or a human) is
+    definition an FOL-formalisation system (an LLM, or a human) is
     asked to translate. THIS is what :func:`load_c3po` maps onto
     ``nl_conclusion`` -- see "Field mapping" below.
   * ``"parents"``                     -- list of parent-class CHEBI curies.
@@ -54,14 +54,14 @@ CC0-1.0). Verified directly, 2026-08-13:
     corresponding list field (kept verbatim, not recomputed, in case a real
     export ever has them drift).
 
-  Note for anyone recalling this task from the paper's prose rather than the
-  verified schema: there is NO "number of transitive subclasses" field
+  Note for anyone working from prose descriptions of this benchmark rather
+  than the verified schema: there is NO "number of transitive subclasses" field
   anywhere in this table -- ``parents_count`` counts DIRECT PARENTS, the
   opposite direction. Whatever prior description mentioned a transitive-
   subclass count was not corroborated by the live schema and this loader
   does not invent one.
 
-* **``structures.csv``** (all 177,875 CHEBI structures with their SMILES and
+* **``structures.csv``** (every CHEBI structure with its SMILES and its
   class memberships, referenced by the README as containing "a flag ... [for
   the] validation split") is a REAL sibling file in the same HF repo but
   could NOT be verified at the row level: it is a 38.5 MB Git-LFS blob, over
@@ -72,12 +72,11 @@ CC0-1.0). Verified directly, 2026-08-13:
   model (``c3p/datamodel.py``'s ``ChemicalStructure``) declares only
   ``name``/``smiles``; the validation-split flag the README describes is not
   visible on that model at all, so its ACTUAL column name in the exported
-  CSV is unverified. Per this task's own instructions ("wenn nicht
-  erreichbar, dokumentiere das ehrlich"): **this adapter does not parse
-  ``structures.csv``** rather than guess a column name that could silently
-  mislabel every molecule's split. This is not a functional gap for the
-  documented use: :func:`score_definition` takes its ``positives``/
-  ``negatives`` SMILES directly from the CALLER (typically
+  CSV is unverified. Recorded honestly rather than glossed over: **this
+  adapter does not parse ``structures.csv``** rather than guess a column
+  name that could silently mislabel every molecule's split. This is not a
+  functional gap for the documented use: :func:`score_definition` takes its
+  ``positives``/``negatives`` SMILES directly from the CALLER (typically
   ``example.meta["positive_smiles"]`` for positives, plus whatever negative
   pool the caller assembles) rather than reading a structures table itself.
 
@@ -151,6 +150,7 @@ from dataclasses import dataclass
 from ...fol.nodes import Node
 from ...fol.tptp_input import TptpParsingError
 from ...chem import mol_to_structure, parse_chemlog_tptp, to_chemlog_names
+from ...chem.cache import StructureBuildError
 from ...semantics.model_eval import (
     evaluate_detailed, UninterpretedSymbol, UnsupportedNode,
 )
@@ -316,32 +316,37 @@ class DefinitionScore:
         }
 
 
-class _StructureBuildError:
-    """Internal sentinel cached in place of a :class:`FiniteStructure` when
-    :func:`unicode_fol_kit.chem.mol_to_structure` refused a SMILES (invalid
-    syntax, unsupported element/bond, ...) -- see :func:`_structure_for`.
-    Caching the failure too (not just successes) means a SMILES that fails
-    once is never re-run through RDKit on a later call sharing the same
-    ``structure_cache``, the same cost argument the module docstring makes
-    for successes."""
-
-    __slots__ = ("message",)
-
-    def __init__(self, message: str):
-        self.message = message
+#: Sentinel cached in place of a :class:`FiniteStructure` when
+#: :func:`unicode_fol_kit.chem.mol_to_structure` refused a SMILES (invalid
+#: syntax, unsupported element/bond, ...) -- see :func:`_structure_for`.
+#: Caching the failure too (not just successes) means a SMILES that fails once
+#: is never re-run through RDKit on a later call sharing the same
+#: ``structure_cache``, the same cost argument the module docstring makes for
+#: successes.
+#:
+#: ALIASED, not redefined: a campaign shares one
+#: :class:`~unicode_fol_kit.chem.cache.StructureCache` between this module and
+#: :mod:`unicode_fol_kit.eval.chem_batch`, and two structurally identical
+#: sentinel classes would make each module's ``isinstance`` check silently
+#: miss the other's cached failures -- reporting them as structures and
+#: crashing in the evaluator instead.
+_StructureBuildError = StructureBuildError
 
 
 #: :func:`_structure_for`'s cache key -- see that function's own docstring
-#: for why it is NOT just the bare SMILES string.
-_CacheKey = Tuple[str, bool, bool]
+#: for why it is NOT just the bare SMILES string. Identical to
+#: :data:`unicode_fol_kit.chem.cache.CacheKey`, so a
+#: :class:`~unicode_fol_kit.chem.cache.StructureCache` can be handed straight
+#: to :func:`score_definition`'s ``structure_cache``.
+_CacheKey = Tuple[str, str, bool, bool]
 
 
 def _structure_for(
     smiles: str, cache: MutableMapping[_CacheKey, object], *,
-    aromatic: bool, computed: bool,
+    naming: str = "chemlog", aromatic: bool, computed: bool,
 ) -> Union[FiniteStructure, _StructureBuildError]:
-    """``cache[(smiles, aromatic, computed)]``, building and inserting it
-    first if absent.
+    """``cache[(smiles, naming, aromatic, computed)]``, building and inserting
+    it first if absent.
 
     The cache key is the FULL triple, not the bare SMILES string, because
     ``aromatic``/``computed`` are STRUCTURE-DETERMINING parameters, not
@@ -362,15 +367,21 @@ def _structure_for(
     this fix, silently reporting the wrong verdict rather than raising or
     rebuilding.
 
-    Naming is always ``"chemlog"`` (never exposed as a parameter, so it is
-    not part of the key either): every formula path in this module ends up
-    in ChemLog spelling too (:func:`unicode_fol_kit.chem.parse_chemlog_tptp`
-    renames back to it, and the ``dialect="unicode"`` path applies
+    ``naming`` is the third structure-determining parameter and is in the key
+    for the same reason, even though this module always passes
+    ``"chemlog"``: every formula path here ends up in ChemLog spelling
+    (:func:`unicode_fol_kit.chem.parse_chemlog_tptp` renames back to it, and
+    the ``dialect="unicode"`` path applies
     :func:`unicode_fol_kit.chem.to_chemlog_names` explicitly -- see
-    :func:`_resolve_formula`), so the structure side has no reason to ever
-    diverge from it; letting a caller pick ``naming="paper"`` here would
-    only manufacture spurious :class:`~unicode_fol_kit.semantics.model_eval.
-    UninterpretedSymbol` errors on every single molecule.
+    :func:`_resolve_formula`), so the structure side has no reason to diverge
+    from it here. It is in the key anyway because the cache is no longer
+    private to this module: :class:`unicode_fol_kit.chem.cache.StructureCache`
+    is shared across a whole campaign, and other entry points DO expose
+    ``naming`` (``mcp.chem_tools.molecule_to_structure``). Leaving naming out
+    kept this module correct only by an invariant nothing enforced -- the
+    moment one cache serves both, a ``naming="paper"`` request would be
+    answered with a ChemLog-spelled structure and every predicate would come
+    back uninterpreted.
 
     Only :class:`ValueError` from ``mol_to_structure`` (a bad/unsupported
     molecule) is caught and turned into a cached
@@ -378,14 +389,14 @@ def _structure_for(
     installed) and :class:`TypeError` (a caller passing something that is
     not even a string) are environment/caller bugs, not a per-molecule data
     problem, and are left to propagate immediately rather than being
-    reported as 177,875 identical "errors".
+    reported as one identical "error" per molecule in the corpus.
     """
-    key: _CacheKey = (smiles, aromatic, computed)
+    key: _CacheKey = (smiles, naming, aromatic, computed)
     if key in cache:
         return cache[key]
     try:
         structure = mol_to_structure(
-            smiles, naming="chemlog", aromatic=aromatic, computed=computed)
+            smiles, naming=naming, aromatic=aromatic, computed=computed)
     except ValueError as exc:
         result: Union[FiniteStructure, _StructureBuildError] = (
             _StructureBuildError(f"{type(exc).__name__}: {exc}"))
@@ -404,8 +415,8 @@ def _resolve_formula(formula: Union[Node, str], dialect: str) -> Node:
     parse_chemlog_tptp` itself, or from :func:`_resolve_formula`'s own
     ``dialect="unicode"`` branch on an earlier call).
 
-    ``dialect="tptp"`` (the default -- this is the format the ChEBI2FOL
-    paper's own LLM emits, and the format ChemLog's own axiom files use):
+    ``dialect="tptp"`` (the default -- this is the format an LLM asked for
+    FOL emits, and the format ChemLog's own axiom files use):
     parsed via :func:`unicode_fol_kit.chem.parse_chemlog_tptp`, which
     already renames the chemical vocabulary back to ChemLog's lower-case
     spelling (bare TPTP capitalises every predicate on import -- see that
@@ -544,8 +555,8 @@ def score_definition(
 
     This is C3PO-style evaluation: ``formula`` is a CLOSED FOL sentence over
     the ChemLog vocabulary (typically the right-hand side of a ChEBI class's
-    ``<=>`` definition -- e.g. the ``?[A1,A2,A3]: (...)`` half of the
-    appendix's ``carboxylicAcid`` example, NOT the biconditional itself: the
+    ``<=>`` definition -- e.g. the ``?[A1,A2,A3]: (...)`` half of a
+    ``carboxylicAcid`` definition, NOT the biconditional itself: the
     left-hand class name is a bare 0-ary atom this module's structures do
     not interpret, so evaluating the whole biconditional would raise
     :class:`~unicode_fol_kit.semantics.model_eval.UninterpretedSymbol` on
@@ -626,8 +637,8 @@ def score_definition(
             but via the ordinary per-molecule ``UninterpretedSymbol`` path,
             so it shows up as ``n_errors == n_positives + n_negatives`` in an
             otherwise normally-returned score -- exactly the distinction
-            this task's own instructions asked for ("wird als
-            Fehlerkategorie berichtet und NICHT als 'alles negativ'").
+            that matters here: an unusable vocabulary is reported as its own
+            error category, never as "everything came out negative".
         ImportError: RDKit is not installed (propagated from the first
             :func:`~unicode_fol_kit.chem.mol_to_structure` call).
     """

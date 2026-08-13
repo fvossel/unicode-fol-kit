@@ -1,12 +1,13 @@
 """Logical generality analysis — an early-warning signal for over-general
 class definitions, computed WITHOUT any molecule database.
 
-Motivation (ChEBI2FOL, NeSy 2026): an LLM translates ChEBI class definitions
-to FOL and classification is then model-checking a definition against real
-molecule structures. The paper's holdout evaluation found micro-precision of
-only 0.0363 at a recall of 0.8836 — the learned formulas match far too much.
-Two of the paper's own worked examples (Appendix) show exactly why, and both
-are literal enough to serve as this module's calibration cases:
+Motivation: an LLM translates chemical class definitions to FOL, and
+classification is then model-checking a definition against real molecule
+structures. A learned class definition that is too general matches far too
+much, and the precision cost is invisible until it is measured against a
+corpus. Two definitions of exactly the shape such a translation produces
+show why, and both are concrete enough to serve as this module's
+calibration cases:
 
     molecule <=> net_charge_neutral
     organicMolecularEntity <=> ?[A1]: (molecule & c(A1))
@@ -39,7 +40,7 @@ Three tools, matching the three questions a definition author should ask:
   subclass body actually narrow down the superclass body, or does it
   (possibly after being dressed up differently) mean the same thing?" A
   "specialisation" that is logically equivalent to what it specialises has
-  added nothing — exactly the kind of silent redundancy the paper's
+  added nothing — exactly the kind of silent redundancy an
   auxiliary-predicate-inheritance mechanism (each helper predicate is
   optimised only in the context of the class that introduces it, then
   inherited by every subclass verbatim) can produce without anyone noticing.
@@ -87,9 +88,12 @@ the dishonest choice (silently downgrading a proven answer to "unknown").
 """
 
 from dataclasses import dataclass
-from typing import Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
-from ..fol.nodes import Node
+from ..fol.nodes import (
+    Node, Variable, Constant, Number, Function, Atom,
+    Not, And, Or, Xor, Implies, Iff, Quantifier,
+)
 from ..fol.signature import Signature
 from ..semantics.modelfinder import MAX_CANDIDATES, find_model
 from ..semantics.tarski import Structure
@@ -159,11 +163,154 @@ class MinimalModelResult:
         }
 
 
+# ---------------------------------------------------------------------------
+# all_different — the ChemLog convention, as a formula transformation
+# ---------------------------------------------------------------------------
+#
+# The model finder searches under plain FOL semantics, and there is no place
+# to hand it a semantics switch: it evaluates with
+# unicode_fol_kit.semantics.tarski.satisfies, which has no all_different
+# reading. So the convention is applied where it CAN be applied exactly — to
+# the formula, before the search — by making the distinctness the convention
+# leaves implicit explicit as ≠ atoms. The two are the same statement:
+# "separately introduced existential variables denote distinct individuals"
+# IS the conjunction of those inequalities.
+#
+# The pairs are chosen to mirror
+# unicode_fol_kit.semantics.model_eval's OWN reading of all_different, not a
+# wider one: only existentials in an ANCESTOR/DESCENDANT relationship in the
+# syntax tree (∃y somewhere inside the matrix ∃x quantifies over) are made
+# distinct — two existentials in SIBLING positions (the two sides of an ∧)
+# may still coincide there, and so they may here. Any drift between the two
+# readings would mean the model checker and the generality analysis disagree
+# about what the same formula says.
+
+_NEGATIVE_NODES = (Not, Implies, Iff, Xor)
+_COMPARISONS = frozenset({"=", "≠", "<", ">", "≤", "≥"})
+
+#: Both spellings of the existential quantifier's ``type``. The kit's own
+#: parsers emit ``"∃"``, hand-built ASTs (and several importers) use
+#: ``"exists"``, and :class:`~unicode_fol_kit.fol.nodes.Quantifier` normalises
+#: neither — so matching only one of them here would silently read a formula
+#: as having no existentials at all, and answer an all_different question
+#: under plain semantics without saying so. Same pair as
+#: ``semantics.model_eval._EXISTS``.
+_EXISTS = ("exists", "∃")
+
+
+def _is_exists(node: Node) -> bool:
+    return isinstance(node, Quantifier) and node.type in _EXISTS
+
+
+def _with_all_different(formula: Node, enclosing: Tuple[str, ...] = ()) -> Node:
+    """``formula`` with the all_different convention written out as ≠ atoms.
+
+    Each ``∃v`` gains, INSIDE its own scope, one ``u ≠ v`` for every
+    existential ``u`` it is nested in. Placing the atom inside the binder is
+    the whole difficulty: conjoining ``u ≠ v`` to the formula as a whole
+    would leave both variables FREE there, and the model finder reads a free
+    variable as universally quantified — which turns the constraint into
+    "all individuals are pairwise distinct, including each from itself" and
+    makes every formula unsatisfiable.
+
+    A formula with no nested existentials comes back unchanged, so the
+    convention costs nothing where it says nothing.
+    """
+    if _is_exists(formula):
+        name = formula.variable.name
+        inner = _with_all_different(formula.formula, enclosing + (name,))
+        for outer in enclosing:
+            inner = And(inner, Atom("≠", [Variable(outer), Variable(name)]))
+        return Quantifier(formula.type, formula.variable, inner)
+    return formula.map_children(lambda child: _with_all_different(child, enclosing))
+
+
+def _closed_form_size(formula: Node) -> Optional[int]:
+    """The minimal model size under all_different, computed rather than
+    searched — or ``None`` when the formula is outside the fragment where
+    that is provable.
+
+    **Fragment**: a chain of existential quantifiers over a matrix built only
+    from atoms, ∧ and ∨, with no comparison atom (``= ≠ < > ≤ ≥``) and no
+    :class:`~unicode_fol_kit.fol.nodes.Number` anywhere.
+
+    **Claim**: for such a formula with ``n`` existentially bound variables,
+    the smallest structure satisfying it under all_different has exactly
+    ``max(n, 1)`` individuals.
+
+    **Proof.** (≥) Every pair of the ``n`` variables stands in an
+    ancestor/descendant relation, so the convention makes them pairwise
+    distinct and any model has at least ``n`` individuals; a domain is
+    non-empty, so at least 1. (≤) Take ``D = {d_1, …, d_n}``, assign
+    ``v_i ↦ d_i``, interpret every predicate of arity ``k`` as ``D^k``, every
+    function as the constant ``d_1``, every constant as ``d_1``. Every atom
+    of the matrix is then true — every argument denotes an individual of
+    ``D``, and the predicate holds of every tuple — and a matrix built from
+    true atoms by ∧ and ∨ alone is true. ∎
+
+    The fragment conditions are exactly the proof's load-bearing
+    assumptions, which is why each is checked rather than assumed: a
+    negation would break "every atom true ⇒ matrix true"; an equality atom
+    would be made true between DISTINCT individuals by the all-tuples
+    interpretation, contradicting the assignment; a ``Number`` denotes an
+    individual outside ``D``; a universal quantifier ranges over ``D`` and
+    can fail. Out of fragment, the caller falls back to search — which is
+    correct but exponential, and for the formulas this matters for (a
+    ChEBI class definition binds up to two dozen atoms) will not finish.
+    Verified against that search on the fragment in
+    ``tests/test_generality.py``.
+    """
+    count = 0
+    node = formula
+    while isinstance(node, Quantifier):
+        if not _is_exists(node):
+            return None
+        count += 1
+        node = node.formula
+    for part in node.walk():
+        if isinstance(part, (Quantifier, Number)) or isinstance(part, _NEGATIVE_NODES):
+            return None
+        if isinstance(part, Atom) and part.predicate in _COMPARISONS:
+            return None
+        if not isinstance(part, (Atom, And, Or, Variable, Constant, Function)):
+            return None
+    return max(count, 1)
+
+
+def _saturated_witness(formula: Node, size: int) -> Structure:
+    """The structure the closed form's (≤) direction constructs: ``size``
+    individuals, every predicate holding of every tuple, every function and
+    constant denoting the first individual."""
+    domain = tuple(f"d{i}" for i in range(1, size + 1))
+    predicates = {}
+    functions = {}
+    constants = {}
+    for part in formula.walk():
+        if isinstance(part, Atom):
+            arity = len(part.args)
+            predicates[(part.predicate, arity)] = (
+                True if arity == 0
+                else {tuple(t) for t in _tuples(domain, arity)})
+        elif isinstance(part, Function):
+            functions[(part.name, len(part.args))] = (
+                lambda *_args, first=domain[0]: first)
+        elif isinstance(part, Constant):
+            constants[part.name] = domain[0]
+    return Structure(domain, constants=constants, functions=functions,
+                     predicates=predicates)
+
+
+def _tuples(domain: Tuple[str, ...], arity: int):
+    from itertools import product
+    return product(domain, repeat=arity)
+
+
 def minimal_model_size(
     formula: Node, *,
     signature: Optional[Signature] = None,
     max_size: int = 6,
     max_candidates: int = MAX_CANDIDATES,
+    all_different: bool = False,
 ) -> MinimalModelResult:
     """Search for the SMALLEST finite structure satisfying ``formula``.
 
@@ -199,12 +346,34 @@ def minimal_model_size(
             "minimal" size reported here is minimal among the sizes that
             were actually searched, not provably minimal overall — see the
             module docstring's "Boundedness" section. Formulas built only
-            from unary predicates and 0-ary facts (the paper's own worked
-            examples, and this module's own tests) stay far under the
-            default budget for every ``max_size`` this module defaults to;
+            from unary predicates and 0-ary facts (the module docstring's
+            calibration cases, and this module's own tests) stay far under
+            the default budget for every ``max_size`` this module defaults to;
             a formula with several binary predicates can hit the skip much
             sooner, since a binary predicate's interpretation space grows as
             ``2**(k**2)``.
+
+        all_different: read the formula under ChemLog's convention —
+            separately introduced existential variables denote PAIRWISE
+            DISTINCT individuals (see
+            :mod:`unicode_fol_kit.semantics.model_eval`, whose
+            ancestor/descendant reading of "separately introduced" this
+            mirrors exactly). Default ``False``: plain FOL semantics.
+
+            This matters more than it looks. Under plain semantics a
+            definition built only from ∃, ∧ and ∨ — which is what an LLM
+            writes for a chemical class — is satisfied by a ONE-element
+            structure in which every predicate holds, whatever it says: the
+            measurement is constant 1 and discriminates nothing. Under the
+            convention it measures what the definition actually demands,
+            namely how many DISTINCT atoms must exist. Implemented as a
+            formula transformation (the implicit distinctness written out as
+            ≠ atoms) rather than a search-time switch, because the finder
+            evaluates with :func:`~unicode_fol_kit.semantics.tarski.satisfies`,
+            which has no such reading — and answered in CLOSED FORM, without
+            any search, for the fragment where that is provable (see
+            :func:`_closed_form_size`); a two-dozen-variable class definition
+            is not reachable by enumeration at all.
 
     Returns:
         A :class:`MinimalModelResult`. Any exception the underlying finder
@@ -224,7 +393,16 @@ def minimal_model_size(
                 "analysis over an undeclared symbol would be meaningless."
             )
 
-    model = find_model([formula], max_size=max_size, max_candidates=max_candidates)
+    searched = formula
+    if all_different:
+        size = _closed_form_size(formula)
+        if size is not None:
+            return MinimalModelResult(
+                size=size, model=_saturated_witness(formula, size),
+                exhausted=False, max_size_tried=max(max_size, size))
+        searched = _with_all_different(formula)
+
+    model = find_model([searched], max_size=max_size, max_candidates=max_candidates)
     if model is None:
         return MinimalModelResult(size=None, model=None, exhausted=True,
                                   max_size_tried=max_size)

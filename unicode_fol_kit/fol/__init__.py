@@ -40,6 +40,9 @@ from .tptp_input import (
 from .prover9_input import (
     parse_prover9, parse_prover9_problem, load_prover9, Prover9Formula,
 )
+from .prolog_input import (
+    parse_prolog_clause, parse_prolog_program, load_prolog, PrologParsingError,
+)
 from .sanitize import sanitize_names, sanitize_all, NameMapping
 from .verbalize import to_english
 from .derivation import CCGDerivation, reduction_derivation
@@ -55,6 +58,7 @@ from .tptp_repair import (
     repair_tptp_formula, repair_tptp_problem, RepairResult, Issue,
     ProblemRepairEntry, ProblemRepairResult, TptpRepairError,
 )
+from .dialect_repair import repair_formula, DialectRepairResult
 from .simplify_check import (
     simplify_for_checking, SimplifyResult,
     count_from_existential_chain, expand_count,
@@ -76,6 +80,9 @@ __all__ = [
     "parse_casl_spec", "CaslSpec", "CaslImportError",
     "repair_tptp_formula", "repair_tptp_problem", "RepairResult", "Issue",
     "ProblemRepairEntry", "ProblemRepairResult", "TptpRepairError",
+    "repair_formula", "DialectRepairResult",
+    "parse_prolog_clause", "parse_prolog_program", "load_prolog",
+    "PrologParsingError",
     "simplify_for_checking", "SimplifyResult",
     "count_from_existential_chain", "expand_count",
     "detect_dialects",

@@ -39,9 +39,9 @@ _C3PO_FIXTURE = _FIXTURES / "c3po_mini.jsonl"
 # (A2) and singly bonded to a SECOND, distinct oxygen (A3) that itself
 # carries exactly one hydrogen. Written directly in ChemLog/bare-TPTP
 # syntax, the format :func:`score_definition`'s default dialect="tptp"
-# expects (and the format the ChEBI2FOL paper's own LLM emits — see the
-# appendix's ``carboxylicAcid`` example in this task's own instructions,
-# which this formula deliberately mirrors the shape of).
+# expects (and the format an LLM asked for a chemical class definition
+# emits — one existential block of atom-type, hydrogen-count and bond
+# literals, whose shape this formula deliberately mirrors).
 _CARBOXY_FORMULA = (
     "?[A1,A2,A3]: (c(A1) & o(A2) & o(A3) & has_1_hs(A3) "
     "& bDOUBLE(A1,A2) & bSINGLE(A1,A3))"
@@ -309,14 +309,15 @@ def test_score_definition_structure_cache_is_reused_across_calls():
     by identity (the second call's cached objects are the literal SAME
     Python objects the first call inserted, not rebuilt equivalents).
 
-    The cache key is ``(smiles, aromatic, computed)``, not the bare
+    The cache key is ``(smiles, naming, aromatic, computed)``, not the bare
     SMILES -- see ``test_score_definition_structure_cache_keyed_by_aromatic_
     and_computed_too`` below for why that extra key material matters."""
     cache = {}
     score_definition(_CARBOXY_FORMULA, _POSITIVES, _NEGATIVES, structure_cache=cache)
     populated_after_first = dict(cache)
     assert set(populated_after_first) == {
-        (smiles, True, True) for smiles in set(_POSITIVES) | set(_NEGATIVES)}
+        (smiles, "chemlog", True, True)
+        for smiles in set(_POSITIVES) | set(_NEGATIVES)}
 
     score_definition(_CARBOXY_FORMULA, _POSITIVES, _NEGATIVES, structure_cache=cache)
     for key, structure in populated_after_first.items():
@@ -355,7 +356,10 @@ def test_score_definition_structure_cache_keyed_by_aromatic_and_computed_too():
 
     # both structures were actually built and kept, under distinct keys --
     # the second call did not just silently reuse (or overwrite) the first.
-    assert set(cache) == {("c1ccccc1", True, True), ("c1ccccc1", False, True)}
+    # The key carries naming too (always "chemlog" from this module, but the
+    # cache is shared with entry points that expose it -- see _structure_for).
+    assert set(cache) == {("c1ccccc1", "chemlog", True, True),
+                          ("c1ccccc1", "chemlog", False, True)}
 
 
 def test_score_definition_without_a_cache_still_dedupes_within_one_call():

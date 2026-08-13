@@ -53,9 +53,11 @@ from .generality import (
     VacuousSpecialisationResult, is_vacuous_specialisation,
 )
 from .batch import batch_decide
+from .chem_batch import check_definitions, ChemBatchResult
 from . import datasets   # NL→logic benchmark adapters (datasets.load_folio, …)
 
 __all__ = [
+    "check_definitions", "ChemBatchResult",
     "canonicalize", "exact_match",
     "validate", "is_wellformed", "validate_text", "ValidationReport",
     "formulas_are_identical", "match_predicates", "formulas_are_matched_identical",

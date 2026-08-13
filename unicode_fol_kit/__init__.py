@@ -9,6 +9,8 @@ from .fol import (
     to_casl_spec, formula_to_casl,
     parse_casl_spec, CaslSpec, CaslImportError,
     repair_tptp_formula, repair_tptp_problem,
+    repair_formula, DialectRepairResult,
+    parse_prolog_clause, parse_prolog_program, load_prolog,
     simplify_for_checking, count_from_existential_chain, expand_count,
     detect_dialects,
     Signature, PredicateDecl, FunctionDecl, ConstantDecl,
@@ -145,7 +147,7 @@ from . import api  # the seven-verb facade (api.parse_any / check / prove / …)
                    # namespaced on purpose: api.prove must not shadow the
                    # resolution prover's top-level `prove`
 
-__version__ = "0.20.0"
+__version__ = "0.21.0"
 
 __all__ = [
     "MSFLParser",
@@ -158,6 +160,8 @@ __all__ = [
     "to_casl_spec", "formula_to_casl",
     "parse_casl_spec", "CaslSpec", "CaslImportError",
     "repair_tptp_formula", "repair_tptp_problem",
+    "repair_formula", "DialectRepairResult",
+    "parse_prolog_clause", "parse_prolog_program", "load_prolog",
     "simplify_for_checking", "count_from_existential_chain", "expand_count",
     "detect_dialects",
     "Signature", "PredicateDecl", "FunctionDecl", "ConstantDecl",

@@ -168,7 +168,7 @@ def to_kit_names(formula: Node) -> Node:
 
 
 def parse_chemlog_tptp(text: str, *, repair: bool = True) -> Node:
-    """Parse ChemLog/ChEBI2FOL TPTP into an AST that matches molecule structures.
+    """Parse ChemLog-style TPTP into an AST that matches molecule structures.
 
     Parses ``text`` as a bare TPTP formula and renames the chemical
     vocabulary back to its ChemLog spelling, so the result can be evaluated
