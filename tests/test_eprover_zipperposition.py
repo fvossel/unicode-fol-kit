@@ -205,11 +205,42 @@ def _why(verdict) -> str:
             f"szs={verdict.szs_status!r} detail={verdict.detail!r}")
 
 
+#: Substrings that identify a prover binary ABORTING rather than answering.
+#: Ubuntu's eprover 3.0.03 dies on every problem with
+#: ``che_proofcontrol.c:163: sat_solver_init: Assertion 'status' failed.``
+#: — E parses the arguments and the problem, then aborts initialising its SAT
+#: solver, so nothing it is asked can be answered.
+_CRASH_MARKERS = ("Assertion", "assertion failed", "Segmentation fault",
+                  "core dumped", "Aborted")
+
+
+def _skip_if_the_binary_crashed(verdict) -> None:
+    """Treat a prover that ABORTS as unavailable, not as a wrong answer.
+
+    ``eprover_available()`` only asks whether a binary is reachable, which is
+    the right question for a discovery predicate but not a sufficient one
+    here: a build that dies on startup is reachable and unusable. Asserting
+    against it reports a failure of THIS project for a defect in someone
+    else's package, and — worse — the red run says nothing about whether our
+    backend is correct, which is the only thing these tests exist to check.
+
+    The skip carries the crash text, so a broken install is visible in the
+    run rather than silently green, and the tests light up again by
+    themselves once the packaged prover works.
+    """
+    if verdict.status == "error" and verdict.reason == "infra":
+        detail = verdict.detail or ""
+        if any(marker in detail for marker in _CRASH_MARKERS):
+            pytest.skip(f"the eprover binary aborted, so it cannot answer "
+                        f"anything: {detail}")
+
+
 @pytest.mark.skipif(not eprover_available(), reason="no eprover binary found")
 class TestEProverLive:
     def test_modus_ponens_proved_live(self):
         verdict = get_backend("eprover").decide(_GOAL, _PREMISES,
                                                 timeout=15000)
+        _skip_if_the_binary_crashed(verdict)
         assert verdict.status == "proved", _why(verdict)
         assert verdict.szs_status == "Theorem", _why(verdict)
         assert verdict.proof is not None, _why(verdict)
@@ -217,6 +248,7 @@ class TestEProverLive:
     def test_non_theorem_countersatisfiable_live(self):
         verdict = get_backend("eprover").decide(_GOAL, [_PARSE("P(alice)")],
                                                 timeout=15000)
+        _skip_if_the_binary_crashed(verdict)
         assert verdict.status == "refuted", _why(verdict)
 
 

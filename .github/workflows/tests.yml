@@ -39,11 +39,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .[test]
 
-      # E (eprover, universe) gives the eprover backend LIVE coverage here:
-      # its tests gate on eprover_available() and run for real once the
-      # binary exists. Linux-only (apt/sudo; on the Windows leg the tests
-      # just skip via discovery) and non-fatal on purpose — a mirror hiccup
-      # must not fail the suite.
+      # E (eprover, universe) is installed so the eprover backend's live
+      # tests can run for real. NOTE: Ubuntu's eprover 3.0.03 currently
+      # aborts on every problem —
+      #   che_proofcontrol.c:163: sat_solver_init: Assertion `status' failed.
+      # — so those tests SKIP with the crash text rather than fail (see
+      # tests/test_eprover_zipperposition.py::_skip_if_the_binary_crashed).
+      # The step stays: the moment the packaged prover works, the live
+      # coverage comes back by itself. Until then, do not read a green run
+      # as evidence that the E backend was exercised against a real E.
+      # Linux-only (apt/sudo; the Windows leg skips via discovery) and
+      # non-fatal on purpose — a mirror hiccup must not fail the suite.
       - name: Install E prover (live backend coverage)
         if: runner.os == 'Linux'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq eprover || true
