@@ -41,6 +41,16 @@ scratch-verification run (not committed) reproduced every count and
 structure asserted here.
 """
 
+import pytest
+
+# clingo is the [asp] extra, not a test dependency: every route in
+# asp_models imports it lazily, INCLUDING the ones that only validate
+# arguments (the fragment gate and the `size` checks run after the import),
+# so there is no subset of this file that survives without the solver. Same
+# module-level guard as tests/test_clingo_backend.py — nothing here is
+# mocked, and a run without the extra must skip, not fail.
+pytest.importorskip("clingo")
+
 from unicode_fol_kit.fol._fol_nodes import (
     Atom, And, Or, Not, Implies, Quantifier, Variable, Constant, Cardinality, Contrast,
 )
