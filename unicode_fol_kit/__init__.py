@@ -143,6 +143,7 @@ from . import hets  # REST binding to a Dockerized HETS server (HetsClient, …)
 from . import drt  # Discourse Representation Theory (DRS, parse_drs, drs_to_fol, …)
 from . import prob  # exact probabilistic logic (Nilsson bounds, distribution semantics)
 from . import chem  # molecules as finite FOL structures (needs the [chem] extra)
+from . import ilp  # structures -> an ILP task, and the learned clause back
 from . import api  # the seven-verb facade (api.parse_any / check / prove / …) —
                    # namespaced on purpose: api.prove must not shadow the
                    # resolution prover's top-level `prove`
@@ -220,6 +221,7 @@ __all__ = [
     "dl",
     "prob",
     "chem",
+    "ilp",
     "from_z3", "parse_smtlib", "load_smtlib",
     "find_fitch_proof", "fitch_prove", "is_valid_fitch",
     "tableau_closed", "is_valid_tableau", "prove_tableau", "tableau_model",

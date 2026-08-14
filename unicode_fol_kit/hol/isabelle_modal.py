@@ -161,6 +161,10 @@ _EXISTS = ("∃", "exists")
 # default: it inserts a Sledgehammer invitation and an ``oops`` so the theory
 # always loads (Isabelle treats ``oops`` as "abandon this goal" — syntactically
 # valid, nothing claimed proved).
+#: Proof-tactic presets for the emitted lemma, keyed by name; the value is the
+#: Isabelle proof text placed after the lemma statement. ``"sledgehammer"`` is
+#: the honest default — see the comment above for why a theory that always
+#: loads matters more here than one that claims a proof.
 ISABELLE_TACTICS = {
     "sledgehammer": "  sledgehammer\n  oops",
     "auto": "  by auto",

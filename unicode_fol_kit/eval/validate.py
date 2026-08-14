@@ -50,23 +50,33 @@ class ValidationReport:
     falsely conflicting with an unrelated function ``p`` used as ``p/2``.
 
     Fields:
-        is_closed: True iff the formula has no free logical variables (it is a
-            sentence). Free occurrences of both ``Variable`` and ``LambdaVar``
-            count against closedness.
-        free_variable_names: sorted, de-duplicated names of the free
-            Variable/LambdaVar occurrences.
-        arity_consistent: True iff every predicate symbol is used with a single
-            arity and likewise every function symbol.
-        arity_conflicts: maps a namespaced symbol key ``("pred"|"func", name)``
-            to the sorted tuple of the distinct arities observed; only symbols
-            with more than one distinct arity appear.
-        has_lambdas: True iff any Lambda / Application / LambdaVar remains.
-        predicates / functions / constants: sorted ``name/arity`` (predicates,
-            functions) or ``name`` (constants) inventories for quick inspection.
-        sorts_used: sorted sort names from SortedQuantifier / SortedConstant.
-        parseable: True for ``validate(node)``; ``validate_text`` sets it False
-            on a parse failure.
-        error: the parse-error message when ``parseable`` is False, else None.
+
+    ``is_closed``
+        True iff the formula has no free logical variables (it is a
+        sentence). Free occurrences of both ``Variable`` and ``LambdaVar``
+        count against closedness.
+    ``free_variable_names``
+        sorted, de-duplicated names of the free Variable/LambdaVar
+        occurrences.
+    ``arity_consistent``
+        True iff every predicate symbol is used with a single arity and
+        likewise every function symbol.
+    ``arity_conflicts``
+        maps a namespaced symbol key ``("pred"|"func", name)`` to the sorted
+        tuple of the distinct arities observed; only symbols with more than
+        one distinct arity appear.
+    ``has_lambdas``
+        True iff any Lambda / Application / LambdaVar remains.
+    ``predicates`` / ``functions`` / ``constants``
+        sorted ``name/arity`` (predicates, functions) or ``name`` (constants)
+        inventories for quick inspection.
+    ``sorts_used``
+        sorted sort names from SortedQuantifier / SortedConstant.
+    ``parseable``
+        True for ``validate(node)``; ``validate_text`` sets it False on a
+        parse failure.
+    ``error``
+        the parse-error message when ``parseable`` is False, else None.
     """
 
     is_closed: bool

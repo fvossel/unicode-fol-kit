@@ -70,6 +70,10 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+# autosummary stubs are generated from the package on every build; a stale
+# committed stub is worse than none (it survives a rename and renders the old
+# object), which is why the sdist excludes them too.
+docs/_autosummary/
 
 # PyBuilder
 .pybuilder/

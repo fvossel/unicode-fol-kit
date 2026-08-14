@@ -70,6 +70,9 @@ PRODUCT = TNorm(
     neg=lambda x: 1.0 if x <= 0.0 else 0.0,
 )
 
+#: The three built-in t-norms by name (``"lukasiewicz"``, ``"godel"``,
+#: ``"product"``) — what :func:`get_tnorm` looks up and what the fuzzy
+#: evaluator accepts as a ``tnorm=`` argument.
 TNORMS = {t.name: t for t in (LUKASIEWICZ, GODEL, PRODUCT)}
 
 

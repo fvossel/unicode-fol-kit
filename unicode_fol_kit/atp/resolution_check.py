@@ -1010,7 +1010,12 @@ def _render_clause(clause: FrozenSet[Node]) -> str:
 
 
 def render_resolution_proof(derivation: "ResolutionDerivation") -> str:
-    """Render ``derivation`` as numbered lines: ``"N. <clause> [rule parents]"``.
+    """Render ``derivation`` as one numbered line per step.
+
+    Each line is ``N. <clause> [rule parents]`` — the number, the clause, and
+    the justification in brackets. (The format is spelled out here rather than
+    in the summary line above because autosummary cuts that line at the first
+    sentence end, and a ``.`` inside an inline literal reads as one.)
 
     The empty clause renders as ``□``. Parent indices are comma-joined in
     citation order; a rule with no parents (``"input"``) renders with no

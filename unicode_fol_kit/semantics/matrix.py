@@ -261,4 +261,7 @@ FDE_MATRIX = TruthMatrix.from_functions(
     neg=_fde_neg, conj=_fde_conj, disj=_fde_disj)   # material → via ¬a ∨ b
 
 
+#: The built-in truth matrices by name — ``"K3"``, ``"LP"`` and ``"FDE"``.
+#: What :func:`matrix_is_valid` and friends accept in place of a
+#: :class:`TruthMatrix` instance.
 MATRICES = {"K3": K3_MATRIX, "LP": LP_MATRIX, "FDE": FDE_MATRIX}

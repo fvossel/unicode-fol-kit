@@ -54,69 +54,73 @@ _METHODS = ("exact", "canonical", "predicate_align", "solver", "auto")
 class EquivalenceResult:
     """Outcome of :func:`equivalent` — one Optional[bool] per level.
 
-    Field semantics (``None`` always means "not computed" for the structural
-    levels, and "could not decide within budget" for ``logically_equivalent``):
+    ``None`` always means "not computed" for the structural levels, and
+    "could not decide within budget" for ``logically_equivalent``.
 
-        equivalent: the headline verdict — ``True`` iff the requested method
-            (or, for ``auto``, any level of the ladder) established
-            equivalence; ``False`` iff the strongest level that ran refuted
-            it; ``None`` if undecided. Truthiness follows this field.
-        method_used: the level that produced the headline verdict.
-        syntax_equal / structurally_equal / aligned_equal: the structural
-            ladder (``==`` / canonical / aligned+canonical).
-        logically_equivalent: the solver's tri-state verdict.
-        counterexample: JSON-able witness when the solver REFUTED equivalence —
-            ``{"kind": "z3_model", "assignment": {...}}`` for classical
-            formulas, ``{"kind": "kripke", "repr": "..."}`` for modal ones;
-            ``None`` otherwise.
-        partial_credit: a heuristic RANKING signal in ``{0.0, 0.25, 0.5, 0.75,
-            1.0}`` — explicitly NOT a probability of correctness, just a
-            coarse ordinal score for sorting or averaging predictions when the
-            headline verdict is not a clean ``True``. Rubric:
+    Fields:
 
-              * ``equivalent is True`` (at ANY level of the ladder) →
-                ``1.0``. The headline already gives the strongest possible
-                signal, so the sub-component breakdown below is not computed
-                and ``partial_credit_components`` stays ``None``.
-              * otherwise → the sum of four independent 0.25-weighted binary
-                checks, see ``partial_credit_components``.
+    ``equivalent``
+        the headline verdict — ``True`` iff the requested method (or, for
+        ``auto``, any level of the ladder) established equivalence; ``False``
+        iff the strongest level that ran refuted it; ``None`` if undecided.
+        Truthiness follows this field.
+    ``method_used``
+        the level that produced the headline verdict.
+    ``syntax_equal`` / ``structurally_equal`` / ``aligned_equal``
+        the three rungs of the structural ladder: ``==``, canonical form,
+        and alignment followed by canonical form.
+    ``logically_equivalent``
+        the solver's tri-state verdict.
+    ``counterexample``
+        JSON-able witness when the solver REFUTED equivalence —
+        ``{"kind": "z3_model", "assignment": …}`` for classical formulas,
+        ``{"kind": "kripke", "repr": …}`` for modal ones; ``None`` otherwise.
+    ``partial_credit``
+        a heuristic RANKING signal in ``{0.0, 0.25, 0.5, 0.75, 1.0}`` —
+        explicitly NOT a probability of correctness, just a coarse ordinal
+        score for sorting or averaging predictions when the headline verdict
+        is not a clean ``True``. The rubric: ``equivalent is True`` at ANY
+        level of the ladder scores ``1.0`` (the headline already gives the
+        strongest possible signal, so the sub-component breakdown is not
+        computed and ``partial_credit_components`` stays ``None``); otherwise
+        the score is the sum of four independent 0.25-weighted binary checks,
+        see ``partial_credit_components``.
 
-            Only computed for ``method="auto"`` and ``method="solver"``: the
-            rubric's ``s4`` component needs the solver's tri-state verdict,
-            which the purely structural methods (``exact`` / ``canonical`` /
-            ``predicate_align``) never obtain — for those, ``partial_credit``
-            stays ``None`` (an honest "not computed", never a score of 0).
-        partial_credit_components: the four binary sub-checks behind a
-            summed (non-``1.0``, non-``None``) ``partial_credit``, as a
-            JSON-able ``{"s1": bool, "s2": bool, "s3": bool, "s4": bool}``.
-            ``None`` whenever ``partial_credit`` itself is ``None`` or
-            ``1.0`` (see above). Each key:
+        Only computed for ``method="auto"`` and ``method="solver"``: the
+        rubric's ``s4`` component needs the solver's tri-state verdict, which
+        the purely structural methods (``exact`` / ``canonical`` /
+        ``predicate_align``) never obtain — for those, ``partial_credit``
+        stays ``None`` (an honest "not computed", never a score of 0).
+    ``partial_credit_components``
+        the four binary sub-checks behind a summed (non-``1.0``,
+        non-``None``) ``partial_credit``, as a JSON-able
+        ``{"s1": bool, "s2": bool, "s3": bool, "s4": bool}``. ``None``
+        whenever ``partial_credit`` itself is ``None`` or ``1.0`` (see
+        above). The four keys:
 
-              s1 "wellformed"           — BOTH prediction and reference are
-                  ``eval.validate.is_wellformed`` (closed, arity-consistent,
-                  lambda-free).
-              s2 "vocabulary_alignable" — after
-                  ``align_symbols(prediction, reference)`` the aligned
-                  prediction's symbol inventories (predicate name/arity,
-                  function name/arity, constant names) equal the reference's.
-              s3 "aligned_equal"        — ``aligned_exact_match(prediction,
-                  reference)`` is True. This practically implies s2 (a
-                  successful vocabulary alignment is a prerequisite for the
-                  canonical match that follows it) but is tracked as an
-                  independent bit because it is the STRICTLY stronger
-                  condition — matching vocabularies is necessary but not
-                  sufficient for the aligned canonical forms to agree.
-              s4 "logically_equivalent" — the solver's tri-state verdict is
-                  True; both ``None`` (undecided) and ``False`` (refuted)
-                  count as 0, per the tri-state discipline the rest of this
-                  module enforces (see the module docstring). Note: for the
-                  two methods that ever reach the summed branch, the headline
-                  verdict IS the solver verdict, so by the time s1..s4 are
-                  computed that verdict has already failed to be ``True`` —
-                  meaning s4 is always ``False`` in every case this field is
-                  actually populated today. It is still evaluated against the
-                  real verdict (never hard-coded) so it stays correct should
-                  a future call site ever decouple the two.
+        * ``s1`` "wellformed" — BOTH prediction and reference are
+          ``eval.validate.is_wellformed`` (closed, arity-consistent,
+          lambda-free).
+        * ``s2`` "vocabulary_alignable" — after
+          ``align_symbols(prediction, reference)`` the aligned prediction's
+          symbol inventories (predicate name/arity, function name/arity,
+          constant names) equal the reference's.
+        * ``s3`` "aligned_equal" — ``aligned_exact_match`` holds of the pair.
+          This practically implies ``s2`` (a successful vocabulary alignment
+          is a prerequisite for the canonical match that follows it) but is
+          tracked as an independent bit because it is the STRICTLY stronger
+          condition — matching vocabularies is necessary but not sufficient
+          for the aligned canonical forms to agree.
+        * ``s4`` "logically_equivalent" — the solver's tri-state verdict is
+          True; both ``None`` (undecided) and ``False`` (refuted) count as 0,
+          per the tri-state discipline the rest of this module enforces (see
+          the module docstring). Note: for the two methods that ever reach
+          the summed branch, the headline verdict IS the solver verdict, so
+          by the time ``s1``–``s4`` are computed that verdict has already
+          failed to be ``True`` — meaning ``s4`` is always ``False`` in every
+          case this field is actually populated today. It is still evaluated
+          against the real verdict (never hard-coded) so it stays correct
+          should a future call site ever decouple the two.
     """
 
     equivalent: Optional[bool]

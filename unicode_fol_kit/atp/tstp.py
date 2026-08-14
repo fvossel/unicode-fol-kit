@@ -218,30 +218,37 @@ class TstpStep:
     """One annotated TSTP statement: ``language(name, role, formula, source).``
 
     Fields:
-        name: the statement's TSTP name (``"f1"``, ``"c_0_7"``, a bare
-            number, ...), verbatim.
-        language: ``"fof"`` or ``"cnf"`` (the only two this module reads —
-            ``tff``/``thf`` lines are skipped, see :func:`parse_tstp_derivation`).
-        role: the TSTP role verbatim (``"axiom"``, ``"plain"``,
-            ``"negated_conjecture"``, ``"lemma"``, ...), not validated
-            against a fixed vocabulary.
-        formula_text: the formula's TSTP source text, verbatim, always
-            present regardless of whether it parsed.
-        formula: ``formula_text`` parsed into a toolkit :class:`Node` via
-            :func:`fol.tptp_input.parse_tptp_formula`, or ``None`` if that
-            parse failed (a TSTP formula shape the grammar does not cover,
-            e.g. one carrying ``$distinct`` or other constructs outside its
-            scope) — the raw text is kept either way, nothing is lost.
-        rule: the inference rule name from an ``inference(rule, info,
-            parents)`` source record, or ``None`` for a leaf statement
-            (``file(...)`` source, no source field at all, or a source form
-            this module does not interpret, e.g. ``introduced(...)``).
-        parents: names of the statements this one was derived from, read
-            from an ``inference(...)`` source's parent list; empty for a
-            leaf statement or when every parent-list entry is itself a
-            compound term (e.g. ``theory(equality)``, or a provers's
-            inline-nested ``inference(...)`` parent rather than a plain
-            name) rather than a bare name/number.
+
+    ``name``
+        the statement's TSTP name (``"f1"``, ``"c_0_7"``, a bare number, …),
+        verbatim.
+    ``language``
+        ``"fof"`` or ``"cnf"`` (the only two this module reads — ``tff`` /
+        ``thf`` lines are skipped, see :func:`parse_tstp_derivation`).
+    ``role``
+        the TSTP role verbatim (``"axiom"``, ``"plain"``,
+        ``"negated_conjecture"``, ``"lemma"``, …), not validated against a
+        fixed vocabulary.
+    ``formula_text``
+        the formula's TSTP source text, verbatim, always present regardless
+        of whether it parsed.
+    ``formula``
+        ``formula_text`` parsed into a toolkit :class:`Node` via
+        :func:`fol.tptp_input.parse_tptp_formula`, or ``None`` if that parse
+        failed (a TSTP formula shape the grammar does not cover, e.g. one
+        carrying ``$distinct`` or other constructs outside its scope) — the
+        raw text is kept either way, nothing is lost.
+    ``rule``
+        the inference rule name from an ``inference(rule, info, parents)``
+        source record, or ``None`` for a leaf statement (a ``file(…)``
+        source, no source field at all, or a source form this module does not
+        interpret, e.g. ``introduced(…)``).
+    ``parents``
+        names of the statements this one was derived from, read from an
+        ``inference(…)`` source's parent list; empty for a leaf statement or
+        when every parent-list entry is itself a compound term (e.g.
+        ``theory(equality)``, or a prover's inline-nested ``inference(…)``
+        parent) rather than a bare name/number.
     """
 
     name: str

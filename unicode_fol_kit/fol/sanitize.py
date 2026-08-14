@@ -115,7 +115,8 @@ class NameMapping:
         return legal
 
     def for_constant(self, name: str) -> str:
-        """Legal constant token for ``name``: keep a legal bare NAME, else the c_ form."""
+        """Legal constant token for ``name``: a legal bare NAME kept as it is,
+        otherwise the ``c_`` form."""
         if name in self.constant:
             return self.constant[name]
         if _NAME_RE.fullmatch(name):

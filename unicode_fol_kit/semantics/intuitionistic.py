@@ -59,7 +59,7 @@ def _reject_second_order(formula: Node) -> None:
 
 @dataclass(frozen=True)
 class IntKripkeModel:
-    """A finite intuitionistic Kripke model over worlds ``0 .. n-1``.
+    """A finite intuitionistic Kripke model over the worlds ``0`` to ``n-1``.
 
     ``upset[w]`` is the set of worlds accessible from ``w`` (its up-set in the partial
     order, reflexive and transitive — including ``w`` itself). ``valuation[key]`` is the

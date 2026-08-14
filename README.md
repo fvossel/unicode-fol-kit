@@ -53,6 +53,15 @@ print(is_valid(phi))   # True
   structure but not first-order definable over it (connectivity, ring
   membership) admitted as **computed predicates**. `unicode_fol_kit.chem`
   turns a SMILES string into such a structure over the ChemLog signature.
+- **Rule learning, both directions, with the silent failures made loud.**
+  `unicode_fol_kit.ilp` turns those same structures into an ILP task (Popper's
+  `bk.pl` / `exs.pl` / `bias.pl`) and reads the learned Prolog clause back as a
+  kit formula you can model-check. Two encoding mistakes produce a hypothesis
+  that scores **precision 1.00 and means nothing** — example-local individual
+  names a learner joins across, and the example argument on every predicate —
+  and both are refused rather than documented, on the way out and on the way
+  back. `check_separation` asks the question that has to come first: does your
+  reference definition separate the two example sets at all?
 - **Exact probabilistic logic — no sampling, no floats.**
   `prob.entailment_bounds` answers "what does P(bird)=0.9 entail about
   P(fly)?" with the exact tightest interval (Nilsson's probabilistic

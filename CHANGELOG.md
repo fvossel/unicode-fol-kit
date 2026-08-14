@@ -7,6 +7,70 @@ breaking changes.
 
 ## [Unreleased]
 
+### `unicode_fol_kit.ilp` — structures in, a learning task out
+
+The other end of the Prolog importer. `IlpTask` turns
+`FiniteStructure` objects into the three files an ILP system reads (`bk.pl`,
+`exs.pl`, `bias.pl`); `clause_to_formula` turns the learner's answer back into
+a kit formula that can be model-checked against the very structures it came
+from. No new dependency: the kit writes and reads text, the learner is the
+learner's business.
+
+The module exists because two encoding mistakes are easy to make, invisible in
+the output, and both produce a hypothesis scoring **precision 1.00 that means
+nothing**. Both were made building this kit's own pre-trial, and both are now
+refused rather than written down as advice:
+
+- **Example-local individual names** let a learner join across examples through
+  a shared constant. Every individual is prefixed by its example, and the task
+  is refused if two constants still collide — examples and individuals share
+  one namespace, so `m1` with individual `a` collides with an example `m1_a`.
+- **The example argument on every predicate** lets a learner introduce a second
+  example variable and connect through it. It exists on the membership
+  predicate alone, and `clause_to_formula` refuses, coming back, a clause where
+  the example variable survives or a second example is named.
+- Two consequences of the same reasoning: a **0-ary** background predicate
+  would hold across every example at once, and a goal **not linked** to the
+  example ranges over the whole fact base rather than over one structure.
+  Both are refused, the second with the linkage propagating through positive
+  goals only — `\+` binds nothing in SLDNF.
+
+`check_separation` asks the question that has to come first: does the reference
+definition actually separate the two example sets under the kit's own model
+checker? If not, the task is broken and no learner's answer would have meant
+anything. Undecided (`exhausted`) and vocabulary errors stay separate from
+"decided the wrong way", because those call for different fixes.
+
+An adversarial review of the package raised 23 findings, 13 of which survived
+refutation and are fixed here — including two holes in the guarantees above
+(an example name colliding with an individual constant; two structure symbols
+folding to one Prolog functor and being silently merged) and one in the name
+check itself: `re.match` with a `$` anchor accepts a trailing newline, so
+`"m1\n"` passed as a legal atom while being the *same* atom as `m1` to Prolog.
+
+### API reference: complete, and enforced
+
+`docs/api.md` now lists **every** name in `unicode_fol_kit.__all__` and in each
+subpackage's `__all__` — 368 top-level names and 182 subpackage-only ones,
+grouped by what they are for rather than by module. The ~90 AST node classes
+(`Box`, `Always`, `Tensor`, `LukImplication`, …) had lived only in the syntax
+reference. `tests/test_api_reference_complete.py` enforces the claim in both
+directions, so a new public name cannot ship undocumented and a withdrawn one
+cannot linger on the page.
+
+Rendering names that had never been rendered exposed the docstring faults that
+go with them, all fixed here: ad-hoc `Fields:` blocks docutils reads as
+definition lists (which breaks any inline literal that wraps to the next line),
+`|{v : φ}|` read as substitution syntax, a bare `c_` read as a link target, an
+unescaped `*` in prose, a literal followed immediately by a letter, and two
+first sentences autosummary cuts inside a literal. Ten dict registries and
+naming maps had no documentation at all and were rendering `dict.__doc__`; they
+now carry `#:` comments at their definition site and are listed there.
+`conf.py` gains `autosummary_filename_map` for the seven name pairs that differ
+only by case (`Would`/`would`, `Line`/`line`, …) and therefore collide as
+filenames on a case-insensitive filesystem — a build that was clean on Linux
+and broken on Windows. A clean docs build is at **0 warnings**.
+
 Documentation — **the shipped-but-invisible subsystems now have pages.** An
 audit against `__all__` found 371 public names and 106 of them in the API
 reference; the gap was not evenly spread but concentrated in whole subsystems

@@ -241,22 +241,28 @@ class EnumSearchResult:
     """The outcome of one :func:`modal_enum_search` call.
 
     Fields:
-        model: a verified :class:`~unicode_fol_kit.semantics.kripke.KripkeModel`
-            falsifying the searched formula at world 0, or ``None`` if none was
-            found (whether because the space was exhausted, the budget ran out,
-            or the formula is unsupported — see ``exhausted``/``unsupported``).
-        exhausted: ``True`` iff ``model is None`` because EVERY candidate up to
-            ``max_worlds`` was checked and none refuted the formula — a genuine
-            "no countermodel with ≤ max_worlds worlds" statement, but NEVER a
-            validity proof (see the module docstring). Always ``False`` when
-            ``model`` is not ``None`` or ``unsupported`` is not ``None``.
-        checked: the number of distinct candidate models actually run through
-            ``satisfies_modal`` (informational; bounded by ``max_models``).
-        unsupported: ``None`` if the formula is within the propositional/ground
-            modal fragment ``satisfies_modal`` understands; otherwise the
-            ``"ExceptionType: message"`` the evaluator raised on the formula,
-            naming exactly why it is out of scope.
-        detail: a short free-text explanation of which of the above happened.
+
+    ``model``
+        a verified :class:`~unicode_fol_kit.semantics.kripke.KripkeModel`
+        falsifying the searched formula at world 0, or ``None`` if none was
+        found (whether because the space was exhausted, the budget ran out,
+        or the formula is unsupported — see ``exhausted``/``unsupported``).
+    ``exhausted``
+        ``True`` iff ``model is None`` because EVERY candidate up to
+        ``max_worlds`` was checked and none refuted the formula — a genuine
+        "no countermodel with ≤ max_worlds worlds" statement, but NEVER a
+        validity proof (see the module docstring). Always ``False`` when
+        ``model`` is not ``None`` or ``unsupported`` is not ``None``.
+    ``checked``
+        the number of distinct candidate models actually run through
+        ``satisfies_modal`` (informational; bounded by ``max_models``).
+    ``unsupported``
+        ``None`` if the formula is within the propositional/ground modal
+        fragment ``satisfies_modal`` understands; otherwise the
+        ``"ExceptionType: message"`` the evaluator raised on the formula,
+        naming exactly why it is out of scope.
+    ``detail``
+        a short free-text explanation of which of the above happened.
     """
 
     model: Optional[KripkeModel]

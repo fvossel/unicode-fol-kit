@@ -554,6 +554,11 @@ def _deontic_frame_axioms() -> List[Node]:
 # strictly stronger ``□φ → Oφ`` ("whatever is necessary is obligatory") plus ``Pφ → ◇φ``,
 # neither of which the caller asked for. The existential "meet" condition below is exactly
 # right: it subsumes deontic seriality and validates the schema and nothing else.
+#: The cross-family bridge schemas :func:`qml_is_valid` accepts in
+#: ``bridges=[...]``, keyed by name. Each entry names the accessibility
+#: relations it needs, the schema it validates, the frame condition that does
+#: so, and the fact name the exporters emit. The same three names are accepted
+#: by the HOL routes via :data:`unicode_fol_kit.hol.BRIDGES`.
 QML_BRIDGES = {
     "knowledge_implies_belief": {
         "needs": ((_R_KNOWS, "Knows"), (_R_BELIEVES, "Believes")),

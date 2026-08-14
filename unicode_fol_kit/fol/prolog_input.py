@@ -350,7 +350,8 @@ def parse_prolog_clause(text: str, *, mode: str = "clause",
         inventing ``⊤`` would be a formula the caller never wrote).
 
     Raises:
-        PrologParsingError: the text is outside the accepted fragment (see
+        ~unicode_fol_kit.fol.prolog_input.PrologParsingError: the text is
+            outside the accepted fragment (see
             the module docstring), or ``mode``/``negation_as_failure`` is not
             one of the documented values.
     """
@@ -421,7 +422,8 @@ def parse_prolog_program(text: str, *, mode: str = "clause",
     silently would strengthen what the caller wrote.
 
     Raises:
-        PrologParsingError: as :func:`parse_prolog_clause`, with the failing
+        ~unicode_fol_kit.fol.prolog_input.PrologParsingError: as
+            :func:`parse_prolog_clause`, with the failing
             clause's text in the message.
     """
     clauses = []

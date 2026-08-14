@@ -301,7 +301,8 @@ class PredicateDecl:
     sort name or ``None`` (that argument position's sort is left
     unconstrained — see the module docstring's "both sides concrete" rule).
     ``arg_sorts=None`` (the default) is the canonical "nothing declared"
-    form for a fully unsorted predicate — NOT a tuple of ``arity`` ``None``s;
+    form for a fully unsorted predicate — NOT a tuple of ``arity`` ``None``
+    entries;
     the two are equivalent to :meth:`Signature.validate` (neither ever
     conflicts with anything), but only the former is what
     :meth:`Signature.from_dict` / :meth:`Signature.from_formulas` produce.

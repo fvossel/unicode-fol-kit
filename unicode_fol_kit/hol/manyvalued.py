@@ -65,7 +65,7 @@ constant :data:`SYSTEMS`.
 """
 
 from itertools import product
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Type
 
 from ..fol.nodes import (
     Node, Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
@@ -295,7 +295,7 @@ def _resolve_value_names(matrix: TruthMatrix,
     return resolved
 
 
-def _resolve_conn_names(conn_names: Optional[Dict[type, str]]) -> Dict[type, str]:
+def _resolve_conn_names(conn_names: Optional[Dict[Type[Node], str]]) -> Dict[Type[Node], str]:
     """Merge caller-supplied connective symbol names with the field-name defaults."""
     resolved = dict(_DEFAULT_CONN_NAMES)
     if conn_names:
@@ -342,7 +342,7 @@ def _matrix_entailment_countermodel(premises: Sequence[Node], conclusion: Node,
 # functions matching the matrix's own tables, one ground equation per cell.
 
 
-def _thf_preamble(matrix: TruthMatrix, names: Dict[Value, str], conns: Dict[type, str],
+def _thf_preamble(matrix: TruthMatrix, names: Dict[Value, str], conns: Dict[Type[Node], str],
                    type_name: str, predicate_name: str) -> List[str]:
     """Type/constant/connective *declarations* plus distinctness + exhaustiveness."""
     ordered = list(names.keys())
@@ -368,7 +368,7 @@ def _thf_preamble(matrix: TruthMatrix, names: Dict[Value, str], conns: Dict[type
 
 
 def _thf_op_axioms(matrix: TruthMatrix, names: Dict[Value, str],
-                    conns: Dict[type, str]) -> List[str]:
+                    conns: Dict[Type[Node], str]) -> List[str]:
     """One THF ground equation per truth-table cell, for every op ``matrix`` defines."""
     ordered = list(names.keys())
     lines: List[str] = []
@@ -403,7 +403,7 @@ def _thf_designated_predicate(matrix: TruthMatrix, names: Dict[Value, str],
             f"( {predicate_name} = ( ^ [D: {type_name}] : {body} ) )).")
 
 
-def _thf_eval_matrix(node: Node, names_by_key: dict, conns: Dict[type, str]) -> str:
+def _thf_eval_matrix(node: Node, names_by_key: dict, conns: Dict[Type[Node], str]) -> str:
     """Render the formula as a truth-value-typed THF term using the connective fns."""
     if isinstance(node, Atom):
         return names_by_key[node.to_unicode_str()]
@@ -419,7 +419,7 @@ def _thf_eval_matrix(node: Node, names_by_key: dict, conns: Dict[type, str]) -> 
 
 def to_thf_matrix(formula: Node, matrix: TruthMatrix, *,
                    value_names: Optional[Dict[Value, str]] = None,
-                   conn_names: Optional[Dict[type, str]] = None,
+                   conn_names: Optional[Dict[Type[Node], str]] = None,
                    type_name: str = "tv",
                    predicate_name: str = "des") -> str:
     """Emit a complete THF problem whose theorem-hood is ``matrix``-validity of ``formula``.
@@ -477,7 +477,7 @@ def to_thf_matrix(formula: Node, matrix: TruthMatrix, *,
 
 def to_thf_matrix_entailment(premises: Sequence[Node], conclusion: Node, matrix: TruthMatrix, *,
                               value_names: Optional[Dict[Value, str]] = None,
-                              conn_names: Optional[Dict[type, str]] = None,
+                              conn_names: Optional[Dict[Type[Node], str]] = None,
                               type_name: str = "tv",
                               predicate_name: str = "des") -> str:
     """Emit a THF problem whose theorem-hood is ``matrix``-entailment of ``conclusion`` by ``premises``.
@@ -550,7 +550,7 @@ def _isa_datatype_line(matrix: TruthMatrix, names: Dict[Value, str], type_name: 
 
 
 def _isa_neg_def_matrix(matrix: TruthMatrix, names: Dict[Value, str],
-                         conns: Dict[type, str], type_name: str) -> str:
+                         conns: Dict[Type[Node], str], type_name: str) -> str:
     cname = conns[Not]
     ordered = list(names.keys())
     eqs = [f'  "{cname} {names[v]} = {names[matrix.neg[v]]}"' for v in ordered]
@@ -558,7 +558,7 @@ def _isa_neg_def_matrix(matrix: TruthMatrix, names: Dict[Value, str],
             + " |\n".join(eqs))
 
 
-def _isa_binop_def_matrix(matrix: TruthMatrix, names: Dict[Value, str], conns: Dict[type, str],
+def _isa_binop_def_matrix(matrix: TruthMatrix, names: Dict[Value, str], conns: Dict[Type[Node], str],
                            cls: type, attr: str, type_name: str) -> str:
     cname = conns[cls]
     table = getattr(matrix, attr)
@@ -584,7 +584,7 @@ def _isa_designated_def_matrix(matrix: TruthMatrix, names: Dict[Value, str],
 
 
 def _isa_matrix_prelude(theory_name: str, matrix: TruthMatrix, names: Dict[Value, str],
-                         conns: Dict[type, str], type_name: str, predicate_name: str,
+                         conns: Dict[Type[Node], str], type_name: str, predicate_name: str,
                          header_comments: List[str]) -> List[str]:
     """The shared theory header: datatype, connective funs, designated-predicate definition.
 
@@ -611,7 +611,7 @@ def _isa_matrix_prelude(theory_name: str, matrix: TruthMatrix, names: Dict[Value
     return parts
 
 
-def _isa_eval_matrix(node: Node, names_by_key: dict, conns: Dict[type, str]) -> str:
+def _isa_eval_matrix(node: Node, names_by_key: dict, conns: Dict[Type[Node], str]) -> str:
     if isinstance(node, Atom):
         return names_by_key[node.to_unicode_str()].lower()
     if isinstance(node, Not):
@@ -659,7 +659,7 @@ def to_isabelle_matrix(formula: Node, matrix: TruthMatrix, *,
                         name: str = "Matrix_Validity",
                         lemma_name: str = "matrix_validity",
                         value_names: Optional[Dict[Value, str]] = None,
-                        conn_names: Optional[Dict[type, str]] = None,
+                        conn_names: Optional[Dict[Type[Node], str]] = None,
                         type_name: str = "tv",
                         predicate_name: str = "des") -> str:
     """Emit a complete, loadable Isabelle/HOL theory text for ``matrix``-validity of ``formula``.
@@ -736,7 +736,7 @@ def to_isabelle_matrix_entailment(premises: Sequence[Node], conclusion: Node, ma
                                    name: str = "Matrix_Entailment",
                                    lemma_name: str = "matrix_entailment",
                                    value_names: Optional[Dict[Value, str]] = None,
-                                   conn_names: Optional[Dict[type, str]] = None,
+                                   conn_names: Optional[Dict[Type[Node], str]] = None,
                                    type_name: str = "tv",
                                    predicate_name: str = "des") -> str:
     """Emit a loadable Isabelle/HOL theory whose lemma is ``matrix``-entailment.

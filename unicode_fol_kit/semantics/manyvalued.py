@@ -60,6 +60,9 @@ TRUTH_VALUES = (FALSE, UNDEFINED, TRUE)
 # Designated (truth-preserved) value sets keyed by logic name.
 #   K3 — only plain truth is designated.
 #   LP — Priest's Logic of Paradox: both "true" and "both" are designated.
+#: Designated (truth-preserved) value sets, keyed by logic name: ``"K3"``
+#: designates plain truth alone, ``"LP"`` (Priest's Logic of Paradox)
+#: designates both "true" and "both".
 DESIGNATED: Dict[str, frozenset] = {
     "K3": frozenset({TRUE}),
     "LP": frozenset({UNDEFINED, TRUE}),

@@ -223,8 +223,8 @@ _NO_SORTED_CARDINALITY_EXPORT = (
 
 @dataclass(frozen=True)
 class SortedCardinality(Node):
-    """A sort-restricted set-cardinality term |{v:S : φ}|: the number of elements of sort
-    ``S`` satisfying ``φ``.
+    """A sort-restricted set-cardinality term ``|{v:S : φ}|``: how many
+    elements of sort ``S`` satisfy ``φ``.
 
     The many-sorted counterpart of :class:`Cardinality`. It BINDS ``variable`` (of sort
     ``sort``) over the matrix ``formula``. Set cardinality is genuinely second-order, so it
@@ -1201,6 +1201,7 @@ def resolve_lambda_scope(node: Node) -> Node:
        recursively resolved args. Zero args → bare LambdaVar.
 
     Scope rules — innermost binder wins:
+
     - Lambda(p, body): p.name is ADDED to the bound set for body.
     - Quantifier / SortedQuantifier(_, v, _, body): v.name is REMOVED from the
       bound set for body. The quantifier shadows any outer lambda of the same

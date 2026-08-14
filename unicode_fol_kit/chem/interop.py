@@ -104,8 +104,19 @@ def _build_maps() -> Tuple[Dict[str, str], Dict[str, str]]:
     return forward, inverse
 
 
-#: ChemLog spelling -> the spelling the kit's TPTP importer produces.
-CHEMLOG_TO_KIT, KIT_TO_CHEMLOG = _build_maps()
+_CHEMLOG_TO_KIT, _KIT_TO_CHEMLOG = _build_maps()
+
+# Bound one at a time rather than by tuple unpacking: a `#:` comment cannot
+# attach to an unpacking target, so both names would reach the API reference
+# undocumented — and autodoc would fall back to describing `dict` itself.
+
+#: ChemLog spelling -> the spelling the kit's TPTP importer produces
+#: (``"bSINGLE"`` -> ``"BSINGLE"``, ``"c"`` -> ``"C"``): the importer
+#: capitalises every predicate, and only these symbols are renamed back.
+CHEMLOG_TO_KIT: Dict[str, str] = _CHEMLOG_TO_KIT
+
+#: The inverse of :data:`CHEMLOG_TO_KIT`.
+KIT_TO_CHEMLOG: Dict[str, str] = _KIT_TO_CHEMLOG
 
 
 def _rename(node: Node, mapping: Dict[str, str]) -> Node:

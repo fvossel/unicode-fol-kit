@@ -56,6 +56,24 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 # -- Autodoc / autosummary ---------------------------------------------------
 autosummary_generate = True
+
+# The kit exports several names that differ from another export only by case —
+# the node class `Would` and the constructor function `would`, `Line` and
+# `line`, `Announce` and `announce`, and so on. autosummary derives a stub
+# FILENAME from the dotted name, so on a case-insensitive filesystem (Windows,
+# macOS by default) the two stubs are the same file and one silently wins:
+# "stub file not found" on a page that looked fine on Linux. Mapping the
+# lower-case member of each pair to a distinct filename makes the build
+# identical everywhere.
+autosummary_filename_map = {
+    "unicode_fol_kit.announce": "unicode_fol_kit.announce_function",
+    "unicode_fol_kit.line": "unicode_fol_kit.line_function",
+    "unicode_fol_kit.might": "unicode_fol_kit.might_function",
+    "unicode_fol_kit.sequent": "unicode_fol_kit.sequent_function",
+    "unicode_fol_kit.would": "unicode_fol_kit.would_function",
+    "unicode_fol_kit.comorphism": "unicode_fol_kit.comorphism_module",
+    "unicode_fol_kit.semantics.PRODUCT": "unicode_fol_kit.semantics.PRODUCT_tnorm",
+}
 autodoc_default_options = {
     "members": True,
     "undoc-members": False,

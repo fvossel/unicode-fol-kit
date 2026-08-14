@@ -246,35 +246,155 @@ print(len(edges), edges[:3])
 The edges are **discovered, not hardcoded**: what you get depends on the HETS
 build you are talking to.
 
-## Round trip: an induced rule, checked
+## Inductive logic programming: the other direction
 
-Putting the pieces together — this is the loop that motivated the Prolog reader.
-A learner returns a clause; the kit turns it into a formula and evaluates it
-against real structures, with no hand-written translation in between:
+Reading a learner's answer is half the loop. {mod}`unicode_fol_kit.ilp` writes
+the learner's *question* — the background knowledge, examples and language bias
+an ILP system (Popper, Aleph, Metagol) reads — from the very same
+{class}`~unicode_fol_kit.semantics.structures.FiniteStructure` objects the model
+checker evaluates against:
 
-```python
-from unicode_fol_kit import parse_prolog_clause
-
-learned = "amide(A) :- bSINGLE(C, D), bDOUBLE(D, B), n(C), atom_in(A, B)."
-body = parse_prolog_clause(learned, mode="body")
-print(body.to_unicode_str())
-# → ∃b ∃c ∃d (BSINGLE(c, d) ∧ BDOUBLE(d, b) ∧ N(c) ∧ Atom_in(a, b))
+```text
+structure ──IlpTask──▶ Prolog task ──learner──▶ clause
+    ──clause_to_formula──▶ kit formula ──model checker──▶ verdicts
 ```
 
-`atom_in/2` is the learner's membership predicate — it anchors the clause to its
-example and says nothing about the structure being checked, so it is dropped
-before evaluation. What remains is a chemical pattern, and
-{doc}`model-checking` shows how to run it against molecules.
+Nothing runs a learner: Popper needs SWI-Prolog and, from v4, `janus_swi`, which
+is not a dependency the kit takes on for a file format. It writes `bk.pl`,
+`exs.pl` and `bias.pl`, and reads the text a learner prints.
 
-Two encoding traps are worth knowing if you are producing the learner's input
-rather than consuming its output, because both produce a hypothesis that scores
-perfectly and means nothing:
+```python
+from unicode_fol_kit.semantics import FiniteStructure
+from unicode_fol_kit.ilp import IlpTask, Example
 
-- **Example-local individual names.** If every example names its individuals
-  `c1`, `n1`, …, the same constant denotes a different thing in each example and
-  a learner will happily join across them. Make the names globally unique.
-- **The example argument on every predicate.** If each predicate carries the
-  example (`c(M, X)`, `bond(M, X, Y)`), the learner can introduce a *second*
-  example variable and connect through it — and the resulting clause is no
-  longer a statement about one structure. Put the example on exactly one
-  membership predicate and leave it off the rest.
+amide = FiniteStructure(
+    domain=("c1", "o1", "n1"),
+    extensions={("c", 1): [("c1",)], ("o", 1): [("o1",)], ("n", 1): [("n1",)],
+                ("bDOUBLE", 2): [("c1", "o1"), ("o1", "c1")],
+                ("bSINGLE", 2): [("c1", "n1"), ("n1", "c1")]})
+acid = FiniteStructure(
+    domain=("c1", "o1", "o2"),
+    extensions={("c", 1): [("c1",)], ("o", 1): [("o1",), ("o2",)], ("n", 1): [],
+                ("bDOUBLE", 2): [("c1", "o1"), ("o1", "c1")],
+                ("bSINGLE", 2): [("c1", "o2"), ("o2", "c1")]})
+
+task = IlpTask("amide", [Example("m1", amide, True),
+                         Example("m2", acid, False)])
+print(task.counts)
+# → {'positive': 1, 'negative': 1, 'predicates': 5, 'facts': 20}
+print(task.examples_text(), end="")
+# → pos(amide(m1)).
+# → neg(amide(m2)).
+```
+
+`task.write(directory)` puts the three files there. The facts are the extension
+exactly — one Prolog fact per tuple, no orientation guessed — so a symmetric
+relation comes out symmetric because it was stored that way, and an asymmetric
+one keeps the single direction it has.
+
+### Why this is a module and not a script
+
+Because two encoding mistakes are easy to make, invisible in the output, and
+both produce a hypothesis that scores **precision 1.00 and means nothing**. Both
+were made while building this kit's own pre-trial. They are now refused rather
+than written down as advice:
+
+- **Example-local individual names.** Every molecule has a `c1`. Emitted raw,
+  one constant denotes a different atom in each example and the learner joins
+  *across* examples through it — the first run of that pre-trial returned a
+  clause that scored perfectly by hopping between molecules. `IlpTask` prefixes
+  every individual with its example and refuses the task if two constants would
+  still collide, examples and individuals sharing one namespace.
+- **The example argument on every predicate.** Carry it everywhere (`c(M, X)`,
+  `bond(M, X, Y)`) and the learner introduces a *second* example variable and
+  connects through it. Here the example argument exists on the membership
+  predicate alone — the emitter has no way to put it anywhere else.
+
+A third guard falls out of the same reasoning: a **0-ary** predicate cannot be
+attached to one example, so it would hold globally. It is excluded from an
+inferred vocabulary (visibly, and noted in the emitted file) and refused if
+named explicitly.
+
+### Reading the clause back
+
+```python
+from unicode_fol_kit.ilp import clause_to_formula
+
+learned = "amide(A) :- bSINGLE(C, D), bDOUBLE(D, B), n(C), atom_in(A, B)."
+print(clause_to_formula(learned).to_unicode_str())
+# → ∃b ∃c ∃d (BSINGLE(c, d) ∧ BDOUBLE(d, b) ∧ N(c))
+```
+
+The membership atom is gone: it anchored the clause to its example and says
+nothing about the structure being checked. `IlpTask.read_clause` does the same
+with the task's own vocabulary, so the predicate names come back **exactly as
+they were emitted** rather than in the importer's capitalised spelling — which
+is what makes the result checkable against the structures it came from.
+
+The way back is where the encoding is checked a second time. Three shapes are
+refused instead of translated, each because no formula about a single structure
+means the same thing:
+
+```python
+from unicode_fol_kit.ilp import clause_to_formula, IlpEncodingError
+
+for clause, why in [
+    ("amide(A) :- n(C), atom_in(B, C).",          "names a second example"),
+    ("amide(A) :- n(A), atom_in(A, B).",          "example variable survives"),
+    ("amide(A) :- n(C), atom_in(A, B), o(B).",    "goal not linked to the example"),
+]:
+    try:
+        clause_to_formula(clause)
+    except IlpEncodingError:
+        print("refused:", why)
+# → refused: names a second example
+# → refused: example variable survives
+# → refused: goal not linked to the example
+```
+
+The third is the subtle one. In `amide(A) :- n(C), atom_in(A, B), o(B).` nothing
+connects `C` to `B`, so in Prolog `n(C)` ranges over the **whole fact base**: it
+succeeds if *any* example has a nitrogen, which makes the clause true of every
+example at once. Reading it as `∃c N(c)` over one structure would turn that
+global claim into a local one, and a clause that covers a negative example would
+come back scoring perfectly — the very outcome the module exists to prevent.
+Linkage propagates through positive goals only, because `\+` binds nothing in
+SLDNF.
+
+### Is the task even sound?
+
+Ask before you learn, not after. If the reference definition you already believe
+in does not separate the two example sets under the kit's own model checker,
+the task is broken and no answer from any learner would have meant anything:
+
+```python
+from unicode_fol_kit.semantics import FiniteStructure
+from unicode_fol_kit.ilp import Example, IlpTask, check_separation
+
+amide = FiniteStructure(
+    domain=("c1", "o1", "n1"),
+    extensions={("c", 1): [("c1",)], ("o", 1): [("o1",)], ("n", 1): [("n1",)],
+                ("bDOUBLE", 2): [("c1", "o1"), ("o1", "c1")],
+                ("bSINGLE", 2): [("c1", "n1"), ("n1", "c1")]})
+acid = FiniteStructure(
+    domain=("c1", "o1", "o2"),
+    extensions={("c", 1): [("c1",)], ("o", 1): [("o1",), ("o2",)], ("n", 1): [],
+                ("bDOUBLE", 2): [("c1", "o1"), ("o1", "c1")],
+                ("bSINGLE", 2): [("c1", "o2"), ("o2", "c1")]})
+task = IlpTask("amide", [Example("m1", amide, True),
+                         Example("m2", acid, False)])
+
+reference = task.read_clause(
+    "amide(A) :- c(C), o(O), n(N), bDOUBLE(C,O), bSINGLE(C,N), atom_in(A,C).")
+report = check_separation(reference, task)
+print(report.separates, report.counts["true_positive"],
+      report.counts["true_negative"])
+# → True 1 1
+```
+
+And after: a learner returns the *smallest* hypothesis consistent with its
+examples, so every property the negatives did not force it to name is a hole.
+Run the learned clause over held-out structures and the holes show up as false
+positives — `report.misclassified` names them, while `exhausted` and
+`eval_error` rows stay separate from "decided the wrong way", because those call
+for different fixes.

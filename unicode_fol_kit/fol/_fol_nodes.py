@@ -428,7 +428,7 @@ def tptp_fold_first_letter(name: str) -> str:
 
 @dataclass(frozen=True)
 class Constant(Node):
-    """A ground constant, produced by a bare NAME, a c_-prefixed CONSTANT, or a
+    """A ground constant, produced by a bare NAME, a ``c_``-prefixed CONSTANT, or a
     non-ASCII (Greek, e.g. ``θ``) CONSTANT token.
 
     The name may contain non-ASCII letters; the Kripke evaluator and Z3 use them
@@ -547,8 +547,9 @@ class Function(Node):
     def to_tptp(self) -> str:
         """Render function application in TPTP syntax.
 
-        Arithmetic operators (+, -, *, /) are mapped to their TPTP dollar-word
-        equivalents ($sum, $difference, $product, $quotient) and emitted in
+        Arithmetic operators (``+``, ``-``, ``*``, ``/``) are mapped to their
+        TPTP dollar-word equivalents (``$sum``, ``$difference``, ``$product``,
+        ``$quotient``) and emitted in
         prefix notation. All other functions are emitted as identifiers with
         a parenthesised argument list, with only the first character folded
         to lower-case (see :func:`tptp_fold_first_letter`) — a mixed-case
@@ -1159,7 +1160,7 @@ _NO_CARDINALITY_EXPORT = (
 
 @dataclass(frozen=True)
 class Cardinality(Node):
-    """A set-cardinality term |{v : φ}|: the number of individuals ``v`` satisfying ``φ``.
+    """A set-cardinality term ``|{v : φ}|``: how many ``v`` satisfy ``φ``.
 
     The first-class ``|S|`` term behind faithful counting comparisons — ``more votes
     than`` becomes ``|{v : Votes(x, v)}| > |{v : Votes(y, v)}|``. It BINDS ``variable``
@@ -1745,7 +1746,7 @@ class FOLTransformer(Transformer):
         return Constant(str(items))
 
     def const_(self, items):
-        """Transform c_-prefixed constant token into Constant node."""
+        """Transform a ``c_``-prefixed constant token into a Constant node."""
         return Constant(str(items[0]))
 
     def number_(self, items):
