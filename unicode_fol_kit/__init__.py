@@ -89,6 +89,7 @@ from .atp import (
     render_ill_proof, ILLSequent, ILLDerivation,
     lambek_prove, lambek_derivable, check_lambek_proof, verify_lambek_proof,
     render_lambek_proof, LambekSequent, LambekDerivation,
+    ClingoBackend, MinizincBackend,
 )
 from .semantics import (
     Structure, term_value, satisfies, models,
@@ -148,7 +149,7 @@ from . import api  # the seven-verb facade (api.parse_any / check / prove / …)
                    # namespaced on purpose: api.prove must not shadow the
                    # resolution prover's top-level `prove`
 
-__version__ = "0.21.0"
+__version__ = "0.22.0"
 
 __all__ = [
     "MSFLParser",
@@ -266,6 +267,7 @@ __all__ = [
     "lambek_prove", "lambek_derivable", "check_lambek_proof",
     "verify_lambek_proof", "render_lambek_proof", "LambekSequent",
     "LambekDerivation",
+    "ClingoBackend", "MinizincBackend",
     "is_satisfiable", "is_valid", "get_model",
     "fuzzy_is_satisfiable", "fuzzy_is_valid", "fuzzy_get_model",
     "to_z3_arith", "is_satisfiable_arith", "is_valid_arith", "get_model_arith",

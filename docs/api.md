@@ -493,6 +493,8 @@ entry point can reach it.
    Cvc5Backend
    Leo3Backend
    KripkeEnumBackend
+   ClingoBackend
+   MinizincBackend
    check_entailment_vampire_detailed
    extract_szs_status
    szs_to_verdict_fields
@@ -662,6 +664,17 @@ entry point can reach it.
    LUKASIEWICZ
    PRODUCT
 ```
+
+### Minimal models via ASP
+
+`unicode_fol_kit.semantics.asp_models` is reached only by its own path — it
+is not re-exported anywhere else. {func}`~unicode_fol_kit.semantics.asp_models.asp_minimal_models`
+lets `clingo` enumerate models natively and filters them through
+{mod}`~unicode_fol_kit.semantics.nonmonotonic`'s own, unmodified minimality
+predicate; {func}`~unicode_fol_kit.semantics.asp_models.asp_find_model` is
+its single-shot analogue. Both return the same
+{class}`~unicode_fol_kit.semantics.tarski.Structure` type `minimal_models`
+and `find_model` already return. See {doc}`guide/finite-domain`.
 
 ## Verifying and batch-checking definition sets
 
@@ -942,6 +955,14 @@ hypothesis refused rather than documented. See {doc}`guide/interoperability`.
    nanocop_available
    to_nanocop
    HetsBackend
+   FiniteDomainProblem
+   fragment_check
+   structure_from_solution
+   verify_model
+   clingo_available
+   to_asp
+   minizinc_available
+   to_minizinc
    modal_tableau_closed
    is_modal_valid
    modal_decide
@@ -994,6 +1015,10 @@ its submodules.
    semantics.nonmonotonic
    semantics.structures
    semantics.model_eval
+   semantics.asp_models
+   atp.finite_domain
+   atp.clingo_backend
+   atp.minizinc_backend
    atp.modal_tableau
    hol.isabelle_runner
    chem

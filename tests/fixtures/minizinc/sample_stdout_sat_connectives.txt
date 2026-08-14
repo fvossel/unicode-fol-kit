@@ -1,0 +1,8 @@
+UFK-SOLUTION-BEGIN
+UFK p_P 1 [true, false, false]
+UFK p_Q 1 [false, true, false]
+UFK p_Rain 0 true
+UFK k_a 0 0
+UFK k_b 0 1
+UFK-SOLUTION-END
+----------

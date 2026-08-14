@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "unicode-fol-kit"
-version = "0.21.0"
+version = "0.22.0"
 description = "Parser and toolkit for first-order logic formulas using Unicode operators"
 readme = "README.md"
 license = { text = "MIT" }
@@ -63,6 +63,29 @@ chem = [
     # the structure layer and the evaluator are all RDKit-free, so the rest
     # of unicode_fol_kit.chem imports and runs without this extra.
     "rdkit>=2023.9",
+]
+asp = [
+    # unicode_fol_kit.atp.clingo_backend.ClingoBackend and
+    # unicode_fol_kit.semantics.asp_models — a refutation-only finite-domain
+    # FOL prover and a minimal-models route, both via clingo's ASP solver.
+    # A pip package with the solver bundled (no separate install, unlike
+    # `cp` below); ClingoBackend.available() is a pure import check. Without
+    # this extra, the counting fragment (Count/Cardinality) still has no
+    # decision procedure and minimal_models still goes through the
+    # second-order route in semantics.nonmonotonic — nothing else regresses.
+    "clingo>=5.6",
+]
+cp = [
+    # unicode_fol_kit.atp.minizinc_backend.MinizincBackend — the same
+    # refutation-only finite-domain search, via a CP solver instead of ASP.
+    # The real prerequisite is a separate MiniZinc >= 2.6 CLI installation on
+    # PATH (or $UFK_MINIZINC) — MinizincBackend.available() checks for that
+    # binary via subprocess, the same discovery convention as Prover9Backend
+    # / VampireBackend, and does not import this package. `minizinc` (the
+    # official Python bindings) is pinned here as the documented companion
+    # install rather than left unnamed. Without either, `minizinc` reports
+    # unavailable and every other backend is unaffected.
+    "minizinc>=0.9",
 ]
 
 [project.urls]

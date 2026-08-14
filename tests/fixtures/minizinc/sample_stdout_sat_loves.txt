@@ -1,0 +1,5 @@
+UFK-SOLUTION-BEGIN
+UFK p_Loves 2 [true, false, false, false]
+UFK k_a 0 0
+UFK-SOLUTION-END
+----------

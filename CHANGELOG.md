@@ -5,7 +5,84 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
-## [Unreleased]
+## [0.22.0] - 2026-08-14
+
+### `atp.clingo_backend` / `atp.minizinc_backend` / `semantics.asp_models` — a decision procedure for counting, and minimal models without the second-order detour
+
+Two questions the kit's other 19 backends could not answer, both closed by
+grounding to a real finite-domain solver instead of exporting to unsorted
+classical FOL:
+
+- **The counting fragment had no solver.** `Count` (∃≥n/∃≤n/∃=n) and
+  `Cardinality` (`|{v : φ}|` as a term) are genuinely second-order for
+  `to_z3`/`to_prover9`/`to_tptp`, which reject them outright. Over a *finite*
+  structure they are plain counting, and `ClingoBackend`/`MinizincBackend`
+  decide them directly — `#count` in ASP, `sum(...)` over `bool2int(...)` in
+  MiniZinc — rather than the `expand_count` blow-up.
+- **Minimal models went through a second-order detour.** `minimal_models`
+  enumerates and filters in Python; `circumscription_entails_so` builds a
+  second-order formula. `semantics.asp_models.asp_minimal_models` lets clingo
+  enumerate every model at a given size natively and filters through
+  `nonmonotonic.py`'s OWN `_circ_profile`/`_strictly_below` predicate rather
+  than reimplementing minimality — sound by construction, since the two
+  routes share one filter and can only ever disagree about which models
+  clingo found.
+
+New shared layer `atp.finite_domain` (`FiniteDomainProblem`, `fragment_check`,
+`structure_from_solution`, `verify_model`) gives both backends one gate for
+`unsupported` and one re-verification step: every countermodel is run back
+through `evaluate_in_structure` against the refutation goal before it leaves
+the backend, never returned unchecked.
+
+That rule turned out to bite the very fragment it was meant to protect. The
+first build could ground and solve a cardinality comparison but not CHECK it —
+`semantics.model_eval` refused `Cardinality` outright — so the counting
+fragment came back `ERROR`/`infra`: sound, and hollow at exactly the point
+that justified the work. Three changes close it, and they are improvements to
+the kit independent of any backend:
+
+- **`semantics.model_eval` now evaluates `Cardinality`.** Over a finite
+  structure `|{v : φ}|` is counting — the same insight that already makes
+  `Count` native there, one level down at the term. A comparison switches to
+  the arithmetic reading as soon as one operand is numeric; `_term_value`
+  still answers with individuals and still refuses numeric terms, so the two
+  notions of "term value" meet only in that one branch instead of being merged
+  throughout. Counting respects the evaluation budget per individual.
+- **`semantics.model_eval` now evaluates `Contrast`** as the conjunction its
+  own docstring says it is ("concession is a discourse relation, not a
+  truth-functional one; exports behave exactly like `And`") — an omission
+  restored, not a semantics invented.
+- **`fragment_check` now refuses `Function`.** `FiniteStructure` has no slot
+  for a function interpretation, so a model containing one could never be
+  checked back; the refusal is an honest `UNKNOWN`/`unsupported` naming the
+  reason, instead of a late `ERROR`/`infra` that reads like a transient fault.
+  Giving `FiniteStructure` function interpretations touches serialisation, the
+  evaluator and every consumer — separate work, not a detail of a backend.
+
+Also fixed, found by a test written against the implementation rather than
+with it: `ClingoBackend` universally closed the negated conclusion but not the
+premises. The ASP encoding reads a free variable in a constraint as implicitly
+∀-bound; `evaluate_in_structure` does not. Encoder and checker were looking at
+different sentences, so a premise like `P(a)` (single letters parse as
+VARIABLES here) produced a correct refutation that then failed its own
+verification. Both now share one closed sentence list.
+
+Both backends are **refutation-only, by construction** — neither imports
+`PROVED` from `atp.protocol`. FOL has no finite model property, so "no
+countermodel up to `max_size`" is `UNKNOWN`/`bound_hit`, never a validity
+proof — the same discipline `ModelFinderBackend` and `KripkeEnumBackend`
+already follow. Registered in `atp.protocol`'s registry next to
+`Cvc5Backend`, but deliberately **not** added to any `default_chain`: they
+fill the same role as `modelfinder`, already in the FOL chain, and promoting
+a stronger implementation into the default path is its own measured decision
+(the `cvc5` precedent), not a side effect of adding the backend.
+
+New optional extras: `[asp]` (`clingo>=5.6` — the solver ships in the wheel,
+no separate install) and `[cp]` (`minizinc>=0.9`, plus a separate MiniZinc
+CLI on `PATH`/`$UFK_MINIZINC` — `MinizincBackend` shells out like
+`Prover9Backend`/`VampireBackend`, it does not use the Python bindings this
+extra installs). Without either extra, the corresponding backend reports
+`available() == False` and every existing backend is unaffected.
 
 ### `unicode_fol_kit.ilp` — structures in, a learning task out
 

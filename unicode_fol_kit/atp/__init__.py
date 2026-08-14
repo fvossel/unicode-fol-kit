@@ -73,6 +73,11 @@ from .kripke_enum import (
 )
 from .tptp_ncl import to_tptp_ncl
 from .leo3_backend import Leo3Backend
+from .finite_domain import (
+    FiniteDomainProblem, fragment_check, structure_from_solution, verify_model,
+)
+from .clingo_backend import ClingoBackend, clingo_available, to_asp
+from .minizinc_backend import MinizincBackend, minizinc_available, to_minizinc
 
 __all__ = [
     "formulas_are_equivalent",
@@ -124,4 +129,7 @@ __all__ = [
     "kripke_model_to_dict", "kripke_model_from_dict", "KripkeEnumBackend",
     "to_tptp_ncl",
     "Leo3Backend",
+    "FiniteDomainProblem", "fragment_check", "structure_from_solution", "verify_model",
+    "ClingoBackend", "clingo_available", "to_asp",
+    "MinizincBackend", "minizinc_available", "to_minizinc",
 ]

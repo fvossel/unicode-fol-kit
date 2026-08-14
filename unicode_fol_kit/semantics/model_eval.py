@@ -95,26 +95,40 @@ module's value:
 
 Supported nodes: ``Atom`` (incl. ``=``/``≠``, read as term identity — domain
 individuals are opaque names, so identity is Python ``==``), ``Not``, ``And``,
-``Or``, ``Xor``, ``Implies``, ``Iff``, ``Quantifier`` (``forall``/``exists``,
-ASCII or ``∀``/``∃``), ``Count`` (``ge``/``le``/``eq``). Term positions accept
-only ``Variable`` (via ``assignment``) and ``Constant`` (via
+``Contrast`` (truth-functionally ``And``: concession is a DISCOURSE relation,
+and the node's own contract says every export treats it as ``∧``, so reading
+it any other way here would invent a semantics that contract denies), ``Or``,
+``Xor``, ``Implies``, ``Iff``, ``Quantifier`` (``forall``/``exists``, ASCII or
+``∀``/``∃``), ``Count`` (``ge``/``le``/``eq``) and ``Cardinality``
+(``|{v : φ}|``, in a comparison — see below). Argument positions accept only
+``Variable`` (via ``assignment``) and ``Constant`` (via
 :attr:`FiniteStructure.constants`) — no ``Function`` terms, since a
 :class:`FiniteStructure` interprets predicates, not functions. Anything else
 (modal/epistemic/temporal operators, Łukasiewicz/fuzzy connectives, lambda
-terms, second-order quantifiers, sorted/many-sorted nodes, ``Measure``,
-``Cardinality``, ``Contrast``, ...) is refused LOUDLY with
-:class:`UnsupportedNode` rather than silently approximated — this kit never
-guesses at semantics it was not told to implement. Two of these were
-weighed deliberately rather than just skipped: ``SortedCount`` needs a sort
-universe to range over, and :class:`FiniteStructure` has no ``sorts`` concept
-at all (unlike ``tarski.Structure``) — inventing one here would mean
-extending the shared structure contract, out of bounds for this module.
-``Cardinality`` (``|{v : φ}|``) denotes a NATURAL NUMBER, not a domain
-individual; every term this evaluator handles denotes an individual (that is
-what makes it usable as a predicate argument), so admitting a numeric term
-would mean a second, incompatible notion of "term value" and numeric
-comparison atoms throughout — a real redesign, not a small addition, so it is
-left out rather than half-supported.
+terms, second-order quantifiers, sorted/many-sorted nodes, ``Measure``, ...)
+is refused LOUDLY with :class:`UnsupportedNode` rather than silently
+approximated — this kit never guesses at semantics it was not told to
+implement. ``SortedCount`` was weighed deliberately rather than just skipped:
+it needs a sort universe to range over, and :class:`FiniteStructure` has no
+``sorts`` concept at all (unlike ``tarski.Structure``) — inventing one here
+would mean extending the shared structure contract, out of bounds for this
+module.
+
+**Two kinds of term value, kept apart.** ``Cardinality`` denotes a NATURAL
+NUMBER, not a domain individual, and every term in an ARGUMENT position must
+denote an individual (that is what makes it usable as a predicate argument).
+Admitting numbers everywhere really would be a redesign. It is not needed:
+over a finite structure a numeric term can only occur as an operand of a
+COMPARISON, so the two notions never have to mix. :func:`_term_value` still
+answers with individuals and still refuses ``Cardinality``;
+:func:`_numeric_value` answers with integers and is reached only from the
+comparison branch of :func:`_atom_value`, which switches on the syntactic
+shape of the operands. ``|{v : φ}|`` is then simply counted over the domain —
+the same "counting is decidable on a finite structure" that makes ``Count``
+native here, one level down at the term. This is what lets the finite-domain
+backends (:mod:`unicode_fol_kit.atp.clingo_backend`) have their answers
+CHECKED: a solver that decides a cardinality comparison is of no use if the
+kit cannot verify the model it returns.
 
 **``all_different`` — a SEMANTICS switch, not a performance knob.** Under
 plain FOL semantics (``all_different=False``, the default), two separately
@@ -218,8 +232,8 @@ from typing import Dict, FrozenSet, List, Mapping, Optional, Tuple
 
 from .structures import FiniteStructure, Individual, Key
 from ..fol.nodes import (
-    Node, Variable, Constant,
-    Atom, Not, And, Or, Xor, Implies, Iff, Quantifier, Count,
+    Node, Variable, Constant, Number, Cardinality,
+    Atom, Not, And, Contrast, Or, Xor, Implies, Iff, Quantifier, Count,
 )
 
 __all__ = [
@@ -386,16 +400,81 @@ def _holds(structure: FiniteStructure, name: str, args: Tuple[Individual, ...]) 
         ) from None
 
 
-def _atom_value(atom: Atom, structure: FiniteStructure, assignment: Assignment) -> bool:
-    """Truth value of an atomic formula. ``=``/``≠`` are read as term identity
-    directly (domain individuals are opaque names, so identity is Python
-    ``==``) rather than routed through the structure — a structure never
-    stores an extension for them. Every other predicate is looked up via
-    :func:`_holds`."""
+#: The comparison predicates, with the integer relation each denotes when its
+#: operands are NUMERIC. ``=``/``≠`` appear here as well as in the identity
+#: path below: which reading applies is decided by the operands, never by the
+#: symbol alone.
+_ORDER_OPS = {
+    "=": lambda a, b: a == b, "≠": lambda a, b: a != b,
+    "<": lambda a, b: a < b, ">": lambda a, b: a > b,
+    "≤": lambda a, b: a <= b, "≥": lambda a, b: a >= b,
+}
+
+#: Term nodes that denote a NUMBER rather than an individual. Their presence
+#: in a comparison is what switches that comparison to the numeric reading.
+_NUMERIC_TERMS = (Cardinality, Number)
+
+
+def _numeric_value(term: Node, structure: FiniteStructure, assignment: Assignment,
+                   bound_existentials: FrozenSet[Individual], ctx: "_Ctx") -> int:
+    """Evaluate a NUMERIC term to an integer.
+
+    Deliberately separate from :func:`_term_value`, which answers with
+    individuals: the two notions of "term value" are incompatible and are kept
+    apart rather than merged (see the module docstring). Only the comparison
+    branch of :func:`_atom_value` calls this.
+
+    ``|{v : φ}|`` is counted over the whole domain — no candidate narrowing,
+    because a COUNT needs every satisfying individual, not one witness, so
+    there is nothing to prune. Each individual costs a ``tick``, so the
+    evaluation budget covers counting exactly as it covers quantification.
+    """
+    if isinstance(term, Number):
+        return term.value
+    if isinstance(term, Cardinality):
+        name = term.variable.name
+        total = 0
+        for d in structure.domain:
+            ctx.tick()
+            if _eval(term.formula, structure, _extend(assignment, name, d),
+                     bound_existentials, ctx):
+                total += 1
+        return total
+    raise UnsupportedNode(
+        f"model_eval: {type(term).__name__} does not denote a number, so it "
+        "cannot be compared with one — a comparison mixing a cardinality with "
+        "a domain individual has no reading here."
+    )
+
+
+def _atom_value(atom: Atom, structure: FiniteStructure, assignment: Assignment,
+                bound_existentials: FrozenSet[Individual], ctx: "_Ctx") -> bool:
+    """Truth value of an atomic formula.
+
+    Three readings, chosen by the operands rather than by the predicate name:
+
+    * a comparison with at least one NUMERIC operand (``Cardinality`` or
+      ``Number``) is arithmetic — ``|{x : P(x)}| > |{y : Q(y)}|`` compares two
+      counts;
+    * ``=``/``≠`` over individuals is term identity, read directly (domain
+      individuals are opaque names, so identity is Python ``==``) rather than
+      routed through the structure, which never stores an extension for them;
+    * everything else, INCLUDING ``<``/``>``/``≤``/``≥`` between ordinary
+      terms, is an ordinary predicate looked up via :func:`_holds`. A
+      structure is free to interpret ``<`` as any relation it likes, and this
+      evaluator does not impose an order on an uninterpreted symbol.
+    """
+    if (atom.predicate in _ORDER_OPS and len(atom.args) == 2
+            and any(isinstance(a, _NUMERIC_TERMS) for a in atom.args)):
+        left = _numeric_value(atom.args[0], structure, assignment,
+                              bound_existentials, ctx)
+        right = _numeric_value(atom.args[1], structure, assignment,
+                               bound_existentials, ctx)
+        return _ORDER_OPS[atom.predicate](left, right)
     if atom.predicate in ("=", "≠") and len(atom.args) == 2:
-        left = _term_value(atom.args[0], structure, assignment)
-        right = _term_value(atom.args[1], structure, assignment)
-        same = left == right
+        left_i = _term_value(atom.args[0], structure, assignment)
+        right_i = _term_value(atom.args[1], structure, assignment)
+        same = left_i == right_i
         return same if atom.predicate == "=" else not same
     args = tuple(_term_value(a, structure, assignment) for a in atom.args)
     return _holds(structure, atom.predicate, args)
@@ -410,7 +489,7 @@ def _harvest_atoms(node: Node) -> List[Atom]:
     through a chain of nested ``And`` (both branches); does not descend into
     ``Or``/``Not``/``Implies``/``Iff``/``Xor``/nested ``Quantifier``/``Count``.
     See the module docstring's "Harvesting rule" for why this is sound."""
-    if isinstance(node, And):
+    if isinstance(node, (And, Contrast)):
         return _harvest_atoms(node.left) + _harvest_atoms(node.right)
     if isinstance(node, Atom):
         return [node]
@@ -684,10 +763,16 @@ def _eval(
     explicitly on a false antecedent."""
     ctx.tick()
     if isinstance(node, Atom):
-        return _atom_value(node, structure, assignment)
+        return _atom_value(node, structure, assignment, bound_existentials, ctx)
     if isinstance(node, Not):
         return not _eval(node.formula, structure, assignment, bound_existentials, ctx)
-    if isinstance(node, And):
+    if isinstance(node, (And, Contrast)):
+        # Contrast (``P Ⓒ Q``, whereas/although/but) is truth-functionally
+        # conjunction — concession is a DISCOURSE relation, not a
+        # truth-functional one. The node exists so a front-end can keep the
+        # contrast instead of flattening it to ∧, and every export already
+        # treats it as ∧; evaluating it any other way here would invent a
+        # semantics the node's own contract denies.
         return (_eval(node.left, structure, assignment, bound_existentials, ctx)
                 and _eval(node.right, structure, assignment, bound_existentials, ctx))
     if isinstance(node, Or):

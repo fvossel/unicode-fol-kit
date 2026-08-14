@@ -63,6 +63,7 @@ guide/derivations
 guide/model-checking
 guide/verification
 guide/batch-checking
+guide/finite-domain
 guide/mcp
 guide/syntax-reference
 ```

@@ -1,0 +1,4 @@
+UFK-SOLUTION-BEGIN
+UFK f_f 1 [0, 1]
+UFK-SOLUTION-END
+----------

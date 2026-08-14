@@ -607,17 +607,19 @@ for _b in (Z3Backend(), TableauBackend(), ResolutionBackend(),
 # accident: keeping the whole stock registry in one place guarantees that
 # `default_chain` and `_REGISTRY` can never disagree about what exists,
 # whichever submodule a process imports first.
+from .clingo_backend import ClingoBackend      # noqa: E402
 from .cvc5_backend import Cvc5Backend          # noqa: E402
 from .eprover_backend import EProverBackend, ZipperpositionBackend  # noqa: E402
 from .hets_backend import HetsBackend          # noqa: E402
 from .kripke_enum import KripkeEnumBackend     # noqa: E402
 from .leo3_backend import Leo3Backend          # noqa: E402
+from .minizinc_backend import MinizincBackend  # noqa: E402
 from .nanocop_backend import NanocopBackend    # noqa: E402
 from .twee_backend import TweeBackend          # noqa: E402
 
-for _b in (Cvc5Backend(), EProverBackend(), HetsBackend(),
-           KripkeEnumBackend(), Leo3Backend(), NanocopBackend(),
-           TweeBackend(), ZipperpositionBackend()):
+for _b in (ClingoBackend(), Cvc5Backend(), EProverBackend(), HetsBackend(),
+           KripkeEnumBackend(), Leo3Backend(), MinizincBackend(),
+           NanocopBackend(), TweeBackend(), ZipperpositionBackend()):
     register_backend(_b)
 
 
