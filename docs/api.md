@@ -54,15 +54,38 @@ signature and documentation of each public entry point; use the search box or th
    parse_prover9
    parse_prover9_problem
    load_prover9
+   parse_prolog_clause
+   parse_prolog_program
+   load_prolog
    from_z3
    parse_smtlib
    load_smtlib
+   to_casl_spec
+   formula_to_casl
+   parse_casl_spec
+   to_tptp_ncl
    sanitize_names
    sanitize_all
    parse_latex
    latex_to_unicode
    to_english
+   detect_dialects
+   serialize
+   deserialize
 ```
+
+Every importer inverts its source language's naming convention where it differs
+from the kit's — TPTP and Prolog both spell a predicate lower-case and a
+variable upper-case, so `carbon(A)` arrives as `Carbon(a)`. A name that is
+legal in the source but not a legal kit token survives verbatim; run
+{func}`~unicode_fol_kit.sanitize_names` over the result before rendering it
+back to kit text.
+
+{func}`~unicode_fol_kit.parse_prolog_clause` additionally asks the caller to
+decide what a clause MEANS — the universally closed implication, or the
+condition alone with the head's variables free (`mode="body"`). Those are
+different formulas, so it will not choose for you. See
+{doc}`guide/interoperability`.
 
 ## Classical reasoning
 
@@ -196,8 +219,75 @@ signature and documentation of each public entry point; use the search box or th
 
    simplify_for_checking
    count_from_existential_chain
+   expand_count
    repair_tptp_formula
    repair_tptp_problem
+   repair_formula
+```
+
+## Chemistry: molecules as structures
+
+{mod}`unicode_fol_kit.chem` is documented as a whole in the module list at the
+end of this page — `mol_to_structure` builds a structure from a SMILES string,
+`parse_chemlog_tptp` reads a ChemLog definition, `to_chemlog_names` /
+`to_kit_names` move a formula between the two naming conventions, and
+`StructureCache` keeps built structures for a whole run (see
+{doc}`guide/batch-checking`).
+
+## Prover backends, portfolios & batch runs
+
+The backend protocol is the extension point: implement
+{class}`~unicode_fol_kit.ProverBackend`, register it, and every chain-driven
+entry point can reach it.
+
+```{eval-rst}
+.. currentmodule:: unicode_fol_kit
+
+.. autosummary::
+   :toctree: _autosummary
+   :nosignatures:
+
+   Verdict
+   ProverBackend
+   register_backend
+   get_backend
+   available_backends
+   default_chain
+   run_backend
+   portfolio_prove
+   Cvc5Backend
+   Leo3Backend
+   KripkeEnumBackend
+```
+
+```{eval-rst}
+.. currentmodule:: unicode_fol_kit.eval
+
+.. autosummary::
+   :toctree: _autosummary
+   :nosignatures:
+
+   batch_decide
+   check_definitions
+   ChemBatchResult
+```
+
+## Evaluating generated formulas
+
+```{eval-rst}
+.. currentmodule:: unicode_fol_kit.eval
+
+.. autosummary::
+   :toctree: _autosummary
+   :nosignatures:
+
+   canonicalize
+   exact_match
+   validate
+   equivalent
+   match_predicates
+   align_symbols
+   compute_fol_metrics
 ```
 
 ## Verifying definition sets
@@ -257,5 +347,12 @@ signature and documentation of each public entry point; use the search box or th
    atp.modal_tableau
    hol.isabelle_runner
    chem
+   fol.prolog_input
+   fol.dialect_repair
+   eval.chem_batch
+   eval.datasets
+   hets
+   comorphism
+   drt
    mcp.syntax_spec
 ```

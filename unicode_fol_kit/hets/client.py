@@ -12,7 +12,9 @@ Wire protocol (verified live against ``spechub2/hets:latest``, HETS 0.108.0,
 2026-08-12 — treat every claim below as ground truth for THIS client, not
 general HETS documentation, since the REST API is not versioned separately
 from the server and has changed shape across releases before)
+
 --------------------------------------------------------------------------
+
 1. ``GET /version`` → plain text, e.g. ``"The Heterogeneous Tool Set, version
    0.108.0"``.
 2. Upload is a two-step handshake: ``GET /folder`` → a plain-text absolute

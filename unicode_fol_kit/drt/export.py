@@ -29,14 +29,14 @@ fixed reserved constant) — the same "no constraint" idiom
 silently vanishes into an ill-typed conjunction of zero formulas.
 
 Closedness, and why :func:`drs_to_fol` always calls :meth:`~unicode_fol_kit.drt.nodes.DRS.validate`
---------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------
 The classical Kamp/Reyle accessibility relation (see ``nodes.py``'s module docstring) is
 EXACTLY the condition under which this translation binds every referent it uses: a
 referent-shaped argument is accessible to the box it occurs in iff, walking the same
 recursive structure this translation walks, some ∃/∀ introduced along the way would bind
 it. So an accessibility VIOLATION (a referent used somewhere it isn't accessible)
 translates to a genuinely FREE variable in the output formula — silently. To make that
-impossible, :func:`drs_to_fol` calls ``drs.validate()` before translating anything, so an
+impossible, :func:`drs_to_fol` calls ``drs.validate()`` before translating anything, so an
 invalid DRS is refused loudly (``ValueError`` from ``validate()``) rather than handed back
 as an FOL formula that fails ``unicode_fol_kit.api.check(...).ok`` for a reason the caller
 would have to rediscover by re-deriving accessibility themselves.

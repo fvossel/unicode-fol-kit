@@ -249,6 +249,8 @@ appearing more specific. Anything the provers cannot settle comes back
 
 ## Where to go next
 
+- {doc}`batch-checking` — running a whole definition set against a molecule
+  corpus once the definitions themselves have been audited.
 - {doc}`model-checking` — the other half: evaluating a definition against a
   structure you already have.
 - {doc}`classical-reasoning` — the prover chain and finite model finder these

@@ -311,6 +311,9 @@ all, because distinctness is part of what `∃≥6` *means*.
 
 ## Where to go next
 
+- {doc}`batch-checking` — the same check over thousands of molecules, with a
+  structure cache, a resumable JSONL log, and a failure that becomes a row
+  instead of stopping the run.
 - {doc}`verification` — checking the definitions themselves (satisfiable at all?
   circular? does the subclass entail the superclass?) rather than checking a
   structure against them.

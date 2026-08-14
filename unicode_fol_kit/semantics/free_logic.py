@@ -1,4 +1,4 @@
-"""Free logic — first-order logic without the existence assumption.
+r"""Free logic — first-order logic without the existence assumption.
 
 Classical FOL assumes every term denotes an *existing* individual, so universal
 instantiation ``∀x φ → φ(c)`` and existential generalisation ``φ(c) → ∃x φ`` are
@@ -34,7 +34,7 @@ outer domain. Three policies for an atom that contains a **non-denoting** term:
 
 Beyond single-model checking, :func:`free_find_model`, :func:`free_countermodel`,
 :func:`free_is_valid` and :func:`free_entails` add a Mace4-style **bounded exhaustive
-search** over ``FreeModel``s, in the style of
+search** over ``FreeModel``\ s, in the style of
 :mod:`~unicode_fol_kit.semantics.modelfinder`: every outer domain size up to a bound,
 every existing/outer split, every partial constant/function assignment, and every
 predicate extension. See their docstrings for the honest bounded-search contract.

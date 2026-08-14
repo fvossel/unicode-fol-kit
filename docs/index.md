@@ -42,6 +42,7 @@ guide/quickstart
 guide/choosing
 guide/parsing
 guide/transforms
+guide/interoperability
 guide/classical-reasoning
 guide/modal
 guide/quantified-modal
@@ -61,6 +62,7 @@ guide/natural-language
 guide/derivations
 guide/model-checking
 guide/verification
+guide/batch-checking
 guide/mcp
 guide/syntax-reference
 ```

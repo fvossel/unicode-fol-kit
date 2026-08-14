@@ -754,8 +754,10 @@ def _render_block(keyword: str, entries: List[Tuple[str, str]]) -> str:
 # =============================================================================
 
 def formula_to_casl(formula: Node, *, default_sort: str = "Thing") -> str:
-    """Render a single closed formula as bare CASL formula text (no ``spec``
-    wrapper) — the same rendering :func:`to_casl_spec` uses for each of its
+    """Render a single closed formula as bare CASL formula text, without a
+    ``spec`` wrapper.
+
+    This is the same rendering :func:`to_casl_spec` uses for each of its
     ``. <formula>`` lines, for embedding into hand-written CASL.
 
     Runs the full validation pipeline first (see the module docstring's
@@ -787,7 +789,7 @@ def to_casl_spec(
     default_sort: str = "Thing",
 ) -> str:
     """Render ``axioms`` and ``conjectures`` as one complete CASL basic spec:
-    ``spec <spec_name> = ... end``, Hets-parsable ASCII text.
+    ``spec <spec_name> = … end``, Hets-parsable ASCII text.
 
     ``axioms`` and ``conjectures`` share ONE signature: every predicate,
     function, and constant that appears anywhere across both is declared

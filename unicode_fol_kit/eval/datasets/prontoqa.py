@@ -138,9 +138,8 @@ free of both defect classes above, so :func:`solve_example` DOES reproduce
 ``answer`` on every fixture row (see its own docstring for one fully
 worked by hand).
 
-This dataset does NOT have (being explicit, per this subpackage's honesty
-rule)
-------------------------------------------------------------------------
+This dataset does NOT have (being explicit, per this subpackage's honesty rule)
+-------------------------------------------------------------------------------
 * No FOL annotation at all: nothing in ``raw_logic_programs`` is a string
   this kit's ``parse_any`` can parse (it is Logic-LM's own bracket DSL, not
   this kit's unicode/TPTP/Prover9 surface syntax). Accordingly
@@ -539,8 +538,8 @@ def solve_example(example: DatasetExample, *, on_indefinite: str = "label",
             default chain, which is what the fixture was validated against.
 
     Returns:
-        ``{"predicted": "A" | "B" | None, "query_polarity": bool,
-        "verdict": Verdict.to_dict(), "verdict_negated": ... | None}``.
+        ``{"predicted": "A" | "B" | None, "query_polarity": bool,``
+        ``"verdict": Verdict.to_dict(), "verdict_negated": ... | None}``.
         ``predicted`` is ``"A"`` when ``premises ⊨ query`` is PROVED, ``"B"``
         when ``premises ⊨ ¬query`` is PROVED (a SECOND prove call — a mere
         REFUTED on the first call only witnesses that the entailment fails,

@@ -79,7 +79,7 @@ Real SBN is a line-per-token format: each line names a WordNet-style sense for o
 the sentence, optionally followed by semantic-role edges to OTHER lines (by relative line
 offset) or to literal constants. This function implements a precisely bounded SUBSET,
 documented here in full — anything outside it is REFUSED, naming the construct, rather than
-silently mis-parsed:
+silently mis-parsed::
 
     sbn      := line+
     line     := TABS (sense_line | "NEGATION") COMMENT?
@@ -120,9 +120,10 @@ silently mis-parsed:
   ``NEGATION`` line with no more-indented line following it (an empty scope) is refused too
   — in this subset a box operator only ever appears to introduce content, never vacuously.
 * **Quoted constants** are sanitized via :class:`~unicode_fol_kit.fol.sanitize.NameMapping`
-  (lower-cased first, so ``"John"`` and ``"john"` map together), and the mapping IS returned
-  (:class:`SBNMapping.constants`) — unlike the box notation's escape-hatch quoting, a
-  quoted literal is SBN's ONLY way to write a constant, so recovering the original matters.
+  (lower-cased first, so ``"John"`` and ``"john"`` map together), and the mapping IS
+  returned (:class:`SBNMapping.constants`) — unlike the box notation's escape-hatch
+  quoting, a quoted literal is SBN's ONLY way to write a constant, so recovering the
+  original matters.
 
 **What is explicitly out of scope** (refused by name, never silently dropped): event
 quantification / plural referents, presupposition triggers, any operator besides NEGATION,

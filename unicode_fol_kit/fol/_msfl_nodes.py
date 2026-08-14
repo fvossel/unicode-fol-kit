@@ -1674,6 +1674,7 @@ def to_fol(node: Node, include_sort_facts: bool = False) -> Node:
     """Reduce an MSFL (or plain FOL) node to a purely classical FOL node.
 
     Three-phase reduction:
+
     1. to_msfol() — replaces Łukasiewicz operators with classical boolean
        counterparts (And/Or/Not/Implies/Iff); sort annotations are preserved.
     2. _relativize() — replaces SortedQuantifier with a guarded plain

@@ -5,6 +5,39 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [Unreleased]
+
+Documentation — **the shipped-but-invisible subsystems now have pages.** An
+audit against `__all__` found 371 public names and 106 of them in the API
+reference; the gap was not evenly spread but concentrated in whole subsystems
+that had neither a guide page nor an API entry. HETS was the starkest: a Docker
+binding, a REST client, a prover backend and a comorphism bridge, undiscoverable
+for anyone reading the docs.
+
+- New **{doc}`guide/interoperability`** — the importer/exporter family under one
+  rule ("an importer inverts naming, and refuses what it cannot read"): the
+  dialect table, why Prolog is deliberately not in `parse_any`'s auto-detection,
+  the two readings of a Prolog clause, negation-as-failure as an opt-in, the
+  by-name refusals, the CASL round trip, HETS (discovery, client, backend, the
+  *discovered* `hets:<Name>` edges), and the ILP round trip with the two
+  encoding traps that produce a perfect score and mean nothing.
+- New **{doc}`guide/batch-checking`** — `check_definitions` and
+  `StructureCache`: the data-becomes-a-row / configuration-raises contract, the
+  status table (including why `exhausted` is not `False`), the four-field cache
+  key with the reason for each field, and resumption.
+- `docs/api.md` gained the entry points that had none: Prolog, CASL in both
+  directions, the chemistry layer, the **backend protocol** (the extension point
+  for a prover the kit has no backend for), `batch_decide`/`check_definitions`,
+  the evaluation functions, plus `hets`, `comorphism` and `drt` in the module
+  list.
+
+Every example on both new pages is executed, not asserted: 15 blocks run, 3
+skipped as needing Docker, 0 failing. Rendering the newly listed modules also
+exposed reStructuredText faults in docstrings that had never been rendered —
+block quotes where lists belonged, unpaired literals, a title underline too
+short. Those are fixed across ten modules, and a clean docs build is now at
+**0 warnings** (it was 9 before this work).
+
 ## [0.21.0] - 2026-08-13
 
 Added — **`fol.parse_prolog_clause` / `parse_prolog_program` / `load_prolog`**,

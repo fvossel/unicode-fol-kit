@@ -342,6 +342,7 @@ def explain_countermodel(model: Any, formula: Optional[Node] = None, *,
 
     Args:
         model: the countermodel to explain. One of:
+
             - a :class:`~unicode_fol_kit.semantics.kripke.KripkeModel`;
             - a :class:`~unicode_fol_kit.semantics.tarski.Structure`;
             - a bare Z3-style assignment ``dict`` (``{name: value}``, no

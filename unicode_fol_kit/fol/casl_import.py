@@ -804,7 +804,7 @@ def _validate_usage(parser: "_Parser") -> None:
 
 
 def parse_casl_spec(text: str, *, default_sort: str = "Thing") -> CaslSpec:
-    """Parse one CASL ``spec <NAME> = ... end`` block into a :class:`CaslSpec`.
+    """Parse one CASL ``spec <NAME> = … end`` block into a :class:`CaslSpec`.
 
     See the module docstring for the exact grammar supported (a bounded
     tolerant superset of what

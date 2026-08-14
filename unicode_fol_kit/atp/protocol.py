@@ -90,22 +90,23 @@ class Verdict:
     """One decision result, whatever route produced it.
 
     Fields:
-        status: ``"proved"`` / ``"refuted"`` / ``"unknown"`` / ``"error"``.
-            Truthiness follows ``status == "proved"``.
-        backend: name of the backend that produced this verdict.
-        logic: the logic the query was decided in (``"fol"``, ``"modal"``, …).
-        reason: the why-not-more axis for UNKNOWN/ERROR (see module docstring);
-            ``None`` for definitive verdicts.
-        szs_status: SZS ontology value; derived from (status, reason) unless a
-            backend sets it explicitly (e.g. verbatim from a TSTP line).
-        wall_time: seconds spent inside the backend call.
-        countermodel: JSON-able witness for REFUTED (shape is backend-specific
-            but always a dict with a ``"kind"`` key), else ``None``.
-        proof: JSON-able proof object where the backend yields one, else None.
-        detail: short free-text note (method that closed it, bound that was
-            hit, tried-backends summary, …).
-        agreement: backend names that reported the SAME status, filled by the
-            portfolio layer; a single-backend verdict lists just its own.
+
+    * status: ``"proved"`` / ``"refuted"`` / ``"unknown"`` / ``"error"``.
+      Truthiness follows ``status == "proved"``.
+    * backend: name of the backend that produced this verdict.
+    * logic: the logic the query was decided in (``"fol"``, ``"modal"``, …).
+    * reason: the why-not-more axis for UNKNOWN/ERROR (see module docstring);
+      ``None`` for definitive verdicts.
+    * szs_status: SZS ontology value; derived from (status, reason) unless a
+      backend sets it explicitly (e.g. verbatim from a TSTP line).
+    * wall_time: seconds spent inside the backend call.
+    * countermodel: JSON-able witness for REFUTED (shape is backend-specific
+      but always a dict with a ``"kind"`` key), else ``None``.
+    * proof: JSON-able proof object where the backend yields one, else None.
+    * detail: short free-text note (method that closed it, bound that was
+      hit, tried-backends summary, …).
+    * agreement: backend names that reported the SAME status, filled by the
+      portfolio layer; a single-backend verdict lists just its own.
     """
 
     status: str

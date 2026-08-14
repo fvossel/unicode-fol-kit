@@ -760,11 +760,11 @@ def modal_decide(formula: Node, frame: str = "K", systems=None,
                  bridges=None) -> str:
     """Decide ``formula`` over ``frame``: ``"valid"`` / ``"invalid"`` / ``"unknown"``.
 
-    ``"valid"``   — the tableau for ``¬formula`` closed (a sound proof).
-    ``"invalid"`` — an open branch yielded a counter-model **verified** by
-                    :func:`satisfies_modal`.
-    ``"unknown"`` — the search hit the world/step bound, or an open branch's model
-                    failed verification (so neither verdict is safe to assert).
+    * ``"valid"``   — the tableau for ``¬formula`` closed (a sound proof).
+    * ``"invalid"`` — an open branch yielded a counter-model **verified** by
+      :func:`satisfies_modal`.
+    * ``"unknown"`` — the search hit the world/step bound, or an open branch's
+      model failed verification (so neither verdict is safe to assert).
 
     Mirrors the valid / invalid / unknown contract of the local-Isabelle runner
     (:func:`~unicode_fol_kit.hol.isabelle_runner.isabelle_decide_modal`), but runs

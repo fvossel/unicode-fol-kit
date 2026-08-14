@@ -28,7 +28,7 @@ Every string that appears as a ``Pred``/``Eq`` argument is either a *discourse r
 (bound by some box's own existential/universal quantifier once translated to FOL) or a
 *constant* (a rigid designator, e.g. a proper name). Rather than tagging each argument with
 its role explicitly, this module reuses the kit's OWN lexical convention for telling a FOL
-Variable from a Constant — see ``unicode_fol_kit/fol/grammars/terminals.lark``:
+Variable from a Constant — see ``unicode_fol_kit/fol/grammars/terminals.lark``::
 
     VARIABLE.1: /[a-z][0-9]*/                              # single lowercase letter + digits
     NAME.2:     /[a-z][a-zA-Z0-9]*[a-zA-Z][a-zA-Z0-9]*/     # lowercase-initial, >= 2 letters

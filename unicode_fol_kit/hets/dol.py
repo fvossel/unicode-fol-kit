@@ -206,7 +206,7 @@ def _spec_block(spec_name: str, spec: DolSpec) -> str:
 
 def to_dol_library(name: str, specs: "OrderedDict[str, DolSpec]") -> str:
     """Render ``specs`` as one DOL library: ``library <name>`` / ``logic
-    CASL`` / one ``spec ... end`` block per entry, in ``specs`` iteration
+    CASL`` / one ``spec … end`` block per entry, in ``specs`` iteration
     order.
 
     Args:
