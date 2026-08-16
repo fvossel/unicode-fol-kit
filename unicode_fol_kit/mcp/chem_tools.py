@@ -790,7 +790,7 @@ def chemical_signature() -> dict:
         "groups": {"atom_types": [...], "hydrogen_count": [...], "charge":
         [...], "chirality": [...], "bonds": [...], "molecule_global": [...],
         "computed": [...]}, "dialect_note": str}``. ``signature`` is the
-        raw, declared ``(name, arity)`` table (35 predicates — see
+        raw, declared ``(name, arity)`` table (40 predicates — see
         :data:`unicode_fol_kit.chem.CHEMLOG_SIGNATURE`'s own docstring for
         exactly what is and is not covered, e.g. only the CANONICAL
         hydrogen-count 0..3 / charge -1/0/+1 range); ``stored_predicates``/
@@ -798,7 +798,7 @@ def chemical_signature() -> dict:
         :func:`unicode_fol_kit.chem.mol_to_structure` materialises the
         extension up front or decides it algorithmically on demand (see that
         function's own "Why five predicates are COMPUTED" section);
-        ``groups`` is the same 35 predicates organised by chemical
+        ``groups`` is the same 40 predicates organised by chemical
         role, for a caller that wants "what covers charge" rather than a
         flat list.
     """
