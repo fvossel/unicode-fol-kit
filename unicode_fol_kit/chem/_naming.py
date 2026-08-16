@@ -96,8 +96,25 @@ __all__: Tuple[str, ...] = ()   # private module — nothing meant for reuse out
 
 #: RDKit element symbol -> ChemLog atom-type letter (identical in both
 #: schemes, and in the literal worked ethanol example: M(c), M(o)).
+#:
+#: The first six are ChemLog's own: its published vocabulary is a peptide
+#: one, and peptides are built from C/N/O/S/P/H. The halogens below are this
+#: module's extension, on the same footing as the computed predicates
+#: described at the end of the module docstring -- an addition beyond either
+#: source's literal vocabulary, spelled by the same rule (lower-cased
+#: element symbol) and therefore scheme-invariant.
+#:
+#: They are here because the vocabulary has to cover the molecules it is
+#: pointed at, not just the ones its source paper was about. ChEBI classes
+#: such as ``organohalogenCompound`` are *defined* by a halogen; without
+#: these letters ``mol_to_structure`` refuses the molecule outright, and a
+#: refusal is not a chemical statement -- every such class would be
+#: unanswerable rather than answered. Astatine is included for closure of
+#: the group even though it is vanishingly rare in ChEBI: leaving out one
+#: member would make the vocabulary's boundary an accident of frequency.
 ELEMENT_LETTERS: Dict[str, str] = {
     "C": "c", "N": "n", "O": "o", "S": "s", "P": "p", "H": "h",
+    "F": "f", "Cl": "cl", "Br": "br", "I": "i", "At": "at",
 }
 
 ATOM_NAME = "atom"

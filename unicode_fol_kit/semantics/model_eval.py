@@ -333,13 +333,20 @@ class _Ctx:
     :meth:`FiniteStructure.neighbors`'s own cache this module cannot attach
     a cache to the (frozen, unowned-by-us) structure object itself."""
 
-    __slots__ = ("budget", "steps", "all_different", "reverse_cache")
+    __slots__ = ("budget", "steps", "all_different", "reverse_cache",
+                 "harvest_cache")
 
     def __init__(self, budget: Optional[int], all_different: bool):
         self.budget = budget
         self.steps = 0
         self.all_different = all_different
         self.reverse_cache: Dict[Key, Dict[Individual, FrozenSet[Individual]]] = {}
+        #: node -> _harvest_atoms(node). The harvest depends on the FORMULA
+        #: alone, never on the assignment, but candidate generation asks for
+        #: it once per binding attempt — so without this it is recomputed,
+        #: by full recursive descent, on every single step. Keyed by the node
+        #: itself (nodes are frozen and hashable), scoped to one call.
+        self.harvest_cache: Dict[Node, List[Atom]] = {}
 
     def tick(self) -> None:
         self.steps += 1
@@ -553,8 +560,12 @@ def _variable_candidates(
     harvested from ``body`` (see :func:`_harvest_atoms`). Falls back to the
     WHOLE domain if nothing usable was found — still correct (every candidate
     is fully re-checked by evaluating the whole body), just not narrowed."""
+    harvested = ctx.harvest_cache.get(body)
+    if harvested is None:
+        harvested = _harvest_atoms(body)
+        ctx.harvest_cache[body] = harvested
     found: Optional[set] = None
-    for atom in _harvest_atoms(body):
+    for atom in harvested:
         if atom.predicate in ("=", "≠"):
             continue  # (dis)equality carries no domain-membership information
         if len(atom.args) == 1:

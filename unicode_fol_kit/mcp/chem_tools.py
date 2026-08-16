@@ -222,13 +222,15 @@ def _parse_chem(text: str, dialect: str, argument: str = "formula"
 # explain_molecule_failure)
 # ---------------------------------------------------------------------------
 
-#: The six ChemLog atom-type letters (see chem._naming.ELEMENT_LETTERS —
-#: not imported: that module is documented PRIVATE, and this literal tuple
-#: is the exact list unicode_fol_kit.mcp.syntax_spec's own "chemistry" topic
-#: already publishes, so duplicating it here does not risk drifting from an
+#: The atom-type letters: ChemLog's own six, then the halogens the kit adds
+#: (see chem._naming.ELEMENT_LETTERS — not imported: that module is
+#: documented PRIVATE, and this literal tuple is the exact list
+#: unicode_fol_kit.mcp.syntax_spec's own "chemistry" topic already
+#: publishes, so duplicating it here does not risk drifting from an
 #: undocumented internal any more than that existing publication already
-#: does).
-_ATOM_LETTERS: Tuple[str, ...] = ("c", "n", "o", "s", "p", "h")
+#: does). Kept in sync by tests/test_chem.py's vocabulary test.
+_ATOM_LETTERS: Tuple[str, ...] = (
+    "c", "n", "o", "s", "p", "h", "f", "cl", "br", "i", "at")
 
 _BOND_KINDS: Tuple[str, ...] = ("bSINGLE", "bDOUBLE", "bTRIPLE", "bAROMATIC")
 

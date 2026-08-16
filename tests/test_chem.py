@@ -65,6 +65,11 @@ def test_ethanol_reproduces_paper_structure_exactly():
             ("c", 1): {("c1",), ("c2",)},
             ("o", 1): {("o1",)},
             ("n", 1): set(), ("s", 1): set(), ("p", 1): set(), ("h", 1): set(),
+            # Every element letter the vocabulary knows is declared for every
+            # molecule, empty where the molecule has no such atom — ethanol
+            # has no halogen, so all five are empty here.
+            ("f", 1): set(), ("cl", 1): set(), ("br", 1): set(),
+            ("i", 1): set(), ("at", 1): set(),
             ("charge0", 1): {("c1",), ("c2",), ("o1",)},
             ("charge_m1", 1): set(), ("charge_p1", 1): set(),
             ("has0Hs", 1): set(),
@@ -374,13 +379,31 @@ def test_chemically_invalid_smiles_also_raises_valueerror():
 
 
 def test_unsupported_element_raises_valueerror_naming_it():
-    """"CCF" has a fluorine atom; ChemLog's own vocabulary here only types
-    {C, N, O, S, P, H} atoms (see ``chem._naming.ELEMENT_LETTERS``), so an
-    atom of any other element must be refused loudly rather than silently
-    built without an atom-type predicate.
+    """Ferrocene's iron is outside the vocabulary (``chem._naming.
+    ELEMENT_LETTERS`` types C/N/O/S/P/H plus the halogens), so an atom of
+    any other element must be refused loudly rather than silently built
+    without an atom-type predicate.
     """
-    with pytest.raises(ValueError, match="F"):
-        chem.mol_to_structure("CCF")
+    with pytest.raises(ValueError, match="Fe"):
+        chem.mol_to_structure("[Fe]")
+
+
+def test_halogens_are_typed_not_refused():
+    """Chloroethane builds, and its chlorine carries ``cl``.
+
+    The halogens are an extension beyond ChemLog's peptide vocabulary; the
+    reason they are in it is that a ChEBI class like ``organohalogenCompound``
+    is *defined* by the halogen, and refusing the molecule would make such a
+    class unanswerable rather than answered. Checked at the extension, not
+    just at "no exception raised": a letter that is declared but never
+    populated would pass the weaker test.
+    """
+    structure = chem.mol_to_structure("CCCl")
+    assert structure.extensions[("cl", 1)] == frozenset({("cl1",)})
+    assert ("cl1",) in structure.extensions[("atom", 1)]
+    # The bond to carbon is present too -- the halogen is a full citizen of
+    # the domain, not a bare atom hung off the side.
+    assert ("c2", "cl1") in structure.extensions[("has_bond_to", 2)]
 
 
 def test_unknown_naming_scheme_raises_valueerror():
@@ -531,3 +554,29 @@ def test_importable_without_rdkit(monkeypatch):
     assert fresh.CHEMLOG_SIGNATURE.predicates["atom"].arity == 1
     with pytest.raises(ImportError, match="pip install rdkit"):
         fresh.mol_to_structure("CCO")
+
+
+def test_atom_letters_published_by_mcp_match_the_vocabulary():
+    """``mcp.chem_tools._ATOM_LETTERS`` deliberately duplicates the element
+    letters as a literal (``chem._naming`` is private). A duplicate is only
+    safe while something checks it, and the failure it guards against is
+    silent: an element the vocabulary types but the MCP list omits would
+    simply never be reported in a molecule summary.
+    """
+    from unicode_fol_kit.chem import _naming
+    from unicode_fol_kit.mcp import chem_tools
+
+    assert set(chem_tools._ATOM_LETTERS) == set(_naming.ELEMENT_LETTERS.values())
+
+
+def test_halogen_letters_are_declared_in_the_signature():
+    """Building the structure and declaring the predicate are two different
+    code paths (``mol_to_structure`` vs. ``chemlog_predicate_arities``); a
+    letter present in one and absent from the other gives a molecule that
+    checks fine against a formula the signature validator rejects.
+    """
+    from unicode_fol_kit.chem import CHEMLOG_SIGNATURE
+
+    for letter in ("f", "cl", "br", "i", "at"):
+        decl = CHEMLOG_SIGNATURE.predicates.get(letter)
+        assert decl is not None and decl.arity == 1, letter

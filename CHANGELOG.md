@@ -5,6 +5,27 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [Unreleased]
+
+### `chem` — the halogens enter the vocabulary
+
+`mol_to_structure` types `F`, `Cl`, `Br`, `I` and `At` as `f`/`cl`/`br`/`i`/
+`at`, and `CHEMLOG_SIGNATURE` declares them (40 predicates, up from 35).
+
+ChemLog's published vocabulary is a peptide one, so it covers C/N/O/S/P/H
+and stops there — and a molecule containing any other element was refused
+outright. Measured against the ChEBI corpus that is not a small edge: **5049
+of the 35 459 molecules** in the reference run could not be built at all, and
+whole classes (`organohalogenCompound` and its kin) are *defined* by the very
+atom that made them unbuildable. A refusal is not a chemical statement: those
+classes came out unanswerable rather than answered.
+
+Anything outside the eleven letters — a metal, say — is still refused with a
+`ValueError` naming the element, because silently dropping an atom's type
+predicate would misrepresent the molecule. Astatine is included for closure
+of the group despite being vanishingly rare in ChEBI; leaving one member out
+would make the vocabulary's boundary an accident of frequency.
+
 ## [0.22.0] - 2026-08-14
 
 ### `atp.clingo_backend` / `atp.minizinc_backend` / `semantics.asp_models` — a decision procedure for counting, and minimal models without the second-order detour

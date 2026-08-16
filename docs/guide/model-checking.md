@@ -253,6 +253,15 @@ print(evaluate_in_structure(amide, chem.mol_to_structure("CCO")))
 {class}`~unicode_fol_kit.fol.signature.Signature`, so `api.check` reports unknown
 predicates and arity mistakes against it before anything is evaluated.
 
+The element letters are `c`, `n`, `o`, `s`, `p`, `h` — ChemLog's own, its
+published vocabulary being a peptide one — plus `f`, `cl`, `br`, `i`, `at`,
+which the kit adds. An atom of any other element (a metal, say) is refused
+with a `ValueError` naming it, rather than built without its type predicate.
+The halogens are in the vocabulary because a ChEBI class such as
+`organohalogenCompound` is *defined* by the halogen: without them
+`mol_to_structure` rejects the molecule, and every such class is left
+unanswerable rather than answered.
+
 ## Counting instead of enumerating
 
 Machine-generated class definitions habitually express "at least six carbons" as

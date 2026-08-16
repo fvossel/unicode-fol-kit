@@ -103,7 +103,14 @@ def test_chemical_signature_names_core_predicates():
     predicates = result["signature"]["predicates"]
     for name in ("c", "o", "n", "bSINGLE", "bDOUBLE"):
         assert name in predicates
-    assert len(predicates) == 35  # chem.CHEMLOG_SIGNATURE's own documented count
+    # 40 = the 35 ChemLog predicates plus the five halogen letters the kit
+    # adds (f/cl/br/i/at). Pinned against CHEMLOG_SIGNATURE itself rather
+    # than a literal, so extending the vocabulary updates one place: the
+    # point of this assertion is that the MCP tool publishes the WHOLE
+    # signature, not that the signature has some particular size.
+    from unicode_fol_kit.chem import CHEMLOG_SIGNATURE
+
+    assert len(predicates) == len(CHEMLOG_SIGNATURE.predicates) == 40
 
     # in_ring/aromatic/same_fragment/carbon_connected need transitive
     # closure and are therefore COMPUTED, never stored — c/o/n/bSINGLE/
@@ -115,7 +122,8 @@ def test_chemical_signature_names_core_predicates():
     assert set(result["stored_predicates"]) & set(result["computed_predicates"]) == set()
     assert set(result["stored_predicates"]) | set(result["computed_predicates"]) == set(predicates)
 
-    assert result["groups"]["atom_types"] == ["c", "n", "o", "s", "p", "h"]
+    assert result["groups"]["atom_types"] == [
+        "c", "n", "o", "s", "p", "h", "f", "cl", "br", "i", "at"]
     assert "tptp_bare" in result["dialect_note"]
 
 
