@@ -30,7 +30,7 @@ six tools exist to close, one each:
   and reports what shrank, by how much);
 * pure-SYNTAX failures, hallucinated predicate names among them, burn a whole
   generation attempt each (:func:`chemical_signature` — the exact
-  35-predicate ChemLog vocabulary so a generator never has to guess what it
+  40-predicate ChemLog vocabulary so a generator never has to guess what it
   is allowed to write).
 
 Conventions (matching :mod:`unicode_fol_kit.mcp.server`, followed exactly so
@@ -79,7 +79,7 @@ own syntax is repaired by calling
 deliberate: a rename that happened silently inside a CHECKING tool would
 change which predicate was checked without the caller ever seeing it), and
 auxiliary/class
-predicates outside ChemLog's 35-symbol vocabulary (``carboxylicAcid``,
+predicates outside ChemLog's 40-symbol vocabulary (``carboxylicAcid``,
 ``organicMolecularEntity``, ...) are left exactly as parsed either way — they
 have no ChemLog spelling to rename to.
 
