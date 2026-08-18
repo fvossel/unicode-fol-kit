@@ -79,14 +79,23 @@ class TestUnderscore:
         with pytest.raises(NamingError):
             FOL.parse("P(_foo)")
 
-    def test_underscored_predicate_position_is_still_illegal(self):
-        """PREDICATE itself is NOT widened with underscore — only the
-        term-valued terminals are (see fol/_identifiers.py's predicate_
-        pattern docstring). This is also pinned by tests/test_sanitize.py's
-        test_underscored_predicate_round_trips; repeated here because it is
-        exactly the boundary this change could have blurred."""
+    def test_underscored_predicate_parses(self):
+        """PREDICATE carries the underscore too. 0.23.0 shipped this
+        asymmetric — underscore in term position only — and that broke
+        chem/interop.py, whose kit spelling of a ChemLog predicate capitalises
+        only the first character: 17 of the chemical signature's 40 predicates
+        spell as Has_bond_to / In_ring_of_size_6 / Net_charge_neutral, i.e. as
+        names the kit's own parser refused. See
+        test_chem_signature_kit_spellings_parse for the exhaustive check."""
+        assert FOL.parse("Family_History(x)") == Atom(
+            "Family_History", [Variable("x")])
+
+    def test_leading_underscore_in_predicate_position_is_still_rejected(self):
+        """The underscore stays a CONTINUATION character in predicate position
+        too: it may not open the token, or the first character would no longer
+        carry the predicate/term distinction."""
         with pytest.raises((NamingError, ParsingError)):
-            FOL.parse("Family_History(x)")
+            FOL.parse("_Family(x)")
 
 
 # ---------------------------------------------------------------------------
@@ -408,3 +417,64 @@ class TestRegressionUpperNonalphaContinuation:
         result = MS.parse(f"∀x :A{circled_a} (P(x))")
         assert result == SortedQuantifier(
             "∀", Variable("x"), f"A{circled_a}", Atom("P", [Variable("x")]))
+
+
+# ---------------------------------------------------------------------------
+# The chemical vocabulary, end to end
+# ---------------------------------------------------------------------------
+
+class TestChemSignatureIsWritable:
+    """The test whose absence let 0.23.0 ship a half-widening.
+
+    ``chem/interop.py`` maps each ChemLog predicate to a kit spelling by
+    capitalising the FIRST character only, so ``has_bond_to`` becomes
+    ``Has_bond_to``. With the underscore widened for term-valued identifiers
+    but NOT for predicates, 17 of the 40 chemical predicates spelled as tokens
+    the kit's own parser refused — the chemical vocabulary was unwritable in
+    the kit's own surface syntax, and nothing in the suite noticed, because
+    every underscore case tested came from FOLIO, where they all sit in term
+    position.
+
+    Walking the bridge itself (rather than a hand-picked sample of it) is the
+    point: a future predicate added to the signature is covered automatically.
+    """
+
+    def test_chem_signature_kit_spellings_parse(self):
+        from unicode_fol_kit.chem.interop import KIT_TO_CHEMLOG
+
+        assert KIT_TO_CHEMLOG, "the bridge is empty — the test proves nothing"
+        failures = []
+        for kit_name in sorted(KIT_TO_CHEMLOG):
+            try:
+                parsed = FOL.parse(f"{kit_name}(a, b)")
+            except (NamingError, ParsingError) as exc:
+                failures.append((kit_name, str(exc).splitlines()[0]))
+                continue
+            # Parsed as an ATOM headed by that exact name — not, say, silently
+            # swallowed as a term or truncated at the underscore.
+            assert isinstance(parsed, Atom), (kit_name, parsed)
+            assert parsed.predicate == kit_name, (kit_name, parsed.predicate)
+        assert not failures, f"kit spellings the parser refuses: {failures}"
+
+    def test_underscored_chem_predicate_survives_the_round_trip(self):
+        """Hand-checked on one representative: parse → render → parse is
+        stable, so a formula over the chemical vocabulary can be written,
+        printed, and read back."""
+        text = "∃x ∃y (C(x) ∧ Cl(y) ∧ Has_bond_to(x, y))"
+        first = FOL.parse(text)
+        # ∃x ( ∃y ( (C(x) ∧ Cl(y)) ∧ Has_bond_to(x, y) ) ) — ∧ is left-nested,
+        # so the underscored atom is the OUTER conjunction's right operand.
+        inner_conjunction = first.formula.formula
+        assert inner_conjunction.right == Atom(
+            "Has_bond_to", [Variable("x"), Variable("y")])
+        assert FOL.parse(first.to_unicode_str()) == first
+
+    def test_bridge_maps_the_underscored_spelling_back_to_chemlog(self):
+        """The parser accepting ``Has_bond_to`` is only useful if the bridge
+        then renames it to the structure's own ``has_bond_to``; otherwise the
+        formula parses and still fails to evaluate."""
+        from unicode_fol_kit.chem.interop import to_chemlog_names
+
+        parsed = FOL.parse("Has_bond_to(x, y)")
+        assert to_chemlog_names(parsed) == Atom(
+            "has_bond_to", [Variable("x"), Variable("y")])

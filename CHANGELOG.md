@@ -5,6 +5,48 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [0.23.1] - 2026-08-18
+
+### `fol._identifiers` — the underscore reaches predicate position too
+
+0.23.0 widened the identifier terminals but did it asymmetrically: `_` became
+legal in the term-valued terminals (NAME, CONSTANT) and stayed illegal in
+PREDICATE and SORT. The stated reason was that keeping it out of predicate
+position left an IRI-shaped name such as `Http___www_w3_org_owl_Thing` as
+illegal a token as it had always been, which `fol/sanitize.py` was said to rely
+on. It does not: `sanitize.py` carries its own deliberately ASCII-strict
+`_PRED_RE` and reaches its verdict without consulting the grammar, so it
+rewrites that IRI either way — as its updated test now states outright.
+
+What the asymmetry did break is the chemical vocabulary. `chem/interop.py`
+spells a ChemLog predicate for the kit by capitalising the FIRST character and
+nothing else, so `has_bond_to` becomes `Has_bond_to` — and 17 of the chemical
+signature's 40 predicates carry an underscore that way: `In_ring_of_size_6`,
+`Net_charge_neutral`, `Carbon_connected`, `Same_fragment` and the rest. Every
+one of them was a token the kit's own parser refused, which made the chemical
+vocabulary impossible to write down in the kit's own surface syntax at all.
+The failure did not surface as a parse error where it belonged. Handed the
+signature and told to use it, a generating model wrote `Has_bond_to(c, x)`, was
+refused by the parser, and fell back to `HasBondTo` — which parses, but is in
+no signature, so the model checker returned an uninterpreted-symbol error for
+every molecule rather than a verdict. 400 of 400 in the run that found this.
+
+PREDICATE and SORT now take the same continuation class as NAME. The underscore
+remains a continuation character everywhere: `_Family(x)` and `∀x :_History` are
+rejected as before, since the first character is what carries the
+predicate-versus-term distinction. CONSTANT's `c_` form deliberately keeps the
+narrower tail — its leading `c_` is the marker, and letting the tail carry more
+underscores would widen the span it competes with NAME over.
+
+The test that was missing is the one that would have caught this: rather than
+sampling identifiers by hand, `tests/test_identifier_widening.py` now walks
+every entry of `chem.interop.KIT_TO_CHEMLOG` through `parse` and asserts each
+one comes back as an atom headed by that exact name, so a predicate added to
+the signature later is covered without anyone remembering to add a case. Every
+underscore case in 0.23.0's tests came from the FOLIO corpus, where they all
+sit in term position — which is exactly why the gap in predicate position went
+unnoticed.
+
 ## [0.23.0] - 2026-08-18
 
 ### `fol.grammars` / `fol._identifiers` — identifiers widen past ASCII, underscores, and digit-leading names

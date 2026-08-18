@@ -492,22 +492,43 @@ def _lowerish_atom() -> str:
 @lru_cache(maxsize=1)
 def _continuation_atom(*, underscore: bool) -> str:
     """The shared "letter, digit, or combining mark" continuation atom,
-    optionally with ``_`` added (NAME/CONSTANT vs. PREDICATE/SORT — see the
-    module docstring's CONSTANT-priority section for why the underscore is
-    the one character that must NOT appear here for PREDICATE). Matches
-    exactly one character; callers append ``*``/``+`` themselves, the same
-    way they would to a character class — this is a non-capturing group
-    standing in for one, not a class body."""
+    optionally with ``_`` added. Every identifier terminal now passes
+    ``underscore=True``; the flag survives because CONSTANT's ``c_`` form must
+    NOT (its own leading ``c_`` is the marker, and letting the tail carry more
+    underscores would widen the span it competes with NAME over — see the
+    module docstring's CONSTANT-priority section). Matches exactly one
+    character; callers append ``*``/``+`` themselves, the same way they would
+    to a character class — this is a non-capturing group standing in for one,
+    not a class body."""
     digits = "0-9_" if underscore else "0-9"
     return f"(?:{_letter_atom()}|[{digits}{combining_class()}])"
 
 
 def predicate_pattern() -> str:
     """PREDICATE: an uppercase-signalling letter, then letters/digits/
-    combining marks — no underscore, so a pre-existing text like
-    ``Http___www_w3_org_owl_Thing`` (see ``tests/test_sanitize.py``) stays
-    exactly as illegal a predicate token as it always was."""
-    cont = _continuation_atom(underscore=False)
+    underscores/combining marks — the SAME continuation class the term-valued
+    terminals get.
+
+    0.23.0 shipped this asymmetric, on the reasoning that keeping ``_`` out of
+    predicate position left an IRI-shaped name such as
+    ``Http___www_w3_org_owl_Thing`` as illegal a predicate token as it had
+    always been, which ``fol/sanitize.py`` relies on. That reasoning does not
+    hold: ``sanitize.py`` carries its OWN deliberately ASCII-strict
+    ``_PRED_RE`` (``[A-Z][a-zA-Z0-9]*``) and reaches its verdict without
+    consulting this module at all, so it renames that IRI either way.
+
+    What the asymmetry did break is ``chem/interop.py``. Its kit spelling of a
+    ChemLog predicate capitalises the FIRST character and nothing else, so 17
+    of the chemical signature's 40 predicates spell as ``Has_bond_to``,
+    ``In_ring_of_size_6``, ``Net_charge_neutral`` and the like — names the kit's
+    own parser then refused, leaving the chemical vocabulary impossible to
+    write down in the kit's own surface syntax. A generating model handed the
+    signature and told to use it produced ``Has_bond_to(c, x)``, was refused,
+    and fell back to ``HasBondTo`` — which parses but is in no signature, so
+    every molecule came back as an uninterpreted-symbol error rather than a
+    verdict.
+    """
+    cont = _continuation_atom(underscore=True)
     return f"[{uppercase_class()}]{cont}*"
 
 
@@ -552,9 +573,11 @@ def constant_pattern() -> str:
 
 
 def sort_pattern() -> str:
-    """SORT: a literal ``:`` then the same shape as PREDICATE (a sort name
-    is capitalised like a predicate, and never carries an underscore)."""
-    cont = _continuation_atom(underscore=False)
+    """SORT: a literal ``:`` then the same shape as PREDICATE — including the
+    underscore, so a sorted signature can name a sort after the same vocabulary
+    its predicates come from (``:In_ring``) instead of being the one identifier
+    position that still cannot."""
+    cont = _continuation_atom(underscore=True)
     return f":[{uppercase_class()}]{cont}*"
 
 

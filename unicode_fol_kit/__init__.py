@@ -152,7 +152,7 @@ from . import api  # the seven-verb facade (api.parse_any / check / prove / …)
                    # namespaced on purpose: api.prove must not shadow the
                    # resolution prover's top-level `prove`
 
-__version__ = "0.23.0"
+__version__ = "0.23.1"
 
 __all__ = [
     "MSFLParser",

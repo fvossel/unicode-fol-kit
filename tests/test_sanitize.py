@@ -49,10 +49,19 @@ def test_comparisons_and_arithmetic_not_renamed():
 # ---------------------------------------------------------------------------
 
 def test_underscored_predicate_round_trips():
+    """The underscore became legal in predicate position after 0.23.0 (the
+    chemical vocabulary needs it — see fol/_identifiers.predicate_pattern), so
+    this IRI now parses on its own. sanitize_names still rewrites it, and must:
+    its job is not "make it parseable" but "make it safe for the ASCII target
+    formats", and it reaches that verdict through its OWN deliberately
+    ASCII-strict _PRED_RE, never by asking the parser. The round-trip and the
+    reverse mapping are what this test is actually about, and both still hold.
+    """
     f = Atom("Http___www_w3_org_owl_Thing", [Variable("x")])
-    with pytest.raises(Exception):
-        P.parse(f.to_unicode_str())          # underscores are not a legal predicate
+    assert P.parse(f.to_unicode_str()) == f   # legal now — but still rewritten
     s, m = sanitize_names(f)
+    assert s.predicate != "Http___www_w3_org_owl_Thing"
+    assert "_" not in s.predicate
     assert _roundtrips(s)
     assert m.reverse()[s.predicate] == "Http___www_w3_org_owl_Thing"
 

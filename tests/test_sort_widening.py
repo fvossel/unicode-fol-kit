@@ -101,30 +101,39 @@ class TestUnicodeSortName:
 
 
 # ---------------------------------------------------------------------------
-# Negative: a sort name may NOT contain an underscore, even though NAME and
-# CONSTANT (widened in the same change) now do allow one.
+# A sort name carries the underscore, like every other identifier position.
+#
+# 0.23.0 shipped SORT (and PREDICATE) without it while NAME and CONSTANT had
+# it, which left the chemical vocabulary unwritable -- chem/interop.py spells
+# a ChemLog predicate by capitalising only the first character, so 17 of the
+# signature's 40 predicates need the underscore in predicate position. SORT
+# follows PREDICATE's shape by construction, so it is widened with it rather
+# than left as the one identifier position that still cannot name a sort after
+# the vocabulary its predicates come from.
 # ---------------------------------------------------------------------------
 
-class TestSortNameRejectsUnderscore:
-    def test_msfol_quantifier_sort_rejects_underscore(self):
-        """msfol: an underscore-bearing quantifier SORT annotation is illegal."""
-        with pytest.raises(NamingError):
-            MSFOL.parse("∀x :Family_History (P(x))")
+class TestSortNameAcceptsUnderscore:
+    def test_msfol_quantifier_sort_accepts_underscore(self):
+        assert MSFOL.parse("∀x :Family_History (P(x))") == SortedQuantifier(
+            "∀", Variable("x"), "Family_History", Atom("P", [Variable("x")]))
 
-    def test_msfol_constant_sort_rejects_underscore(self):
-        """msfol: an underscore-bearing sorted-constant SORT annotation is illegal."""
-        with pytest.raises(NamingError):
-            MSFOL.parse("P(alice:Family_History)")
+    def test_msfol_constant_sort_accepts_underscore(self):
+        assert MSFOL.parse("P(alice:Family_History)") == Atom(
+            "P", [SortedConstant("alice", "Family_History")])
 
-    def test_msfl_quantifier_sort_rejects_underscore(self):
-        """msfl: an underscore-bearing quantifier SORT annotation is illegal."""
-        with pytest.raises(NamingError):
-            MSFL.parse("∀x :Family_History (P(x))")
+    def test_msfl_quantifier_sort_accepts_underscore(self):
+        assert MSFL.parse("∀x :Family_History (P(x))") == SortedQuantifier(
+            "∀", Variable("x"), "Family_History", Atom("P", [Variable("x")]))
 
-    def test_msfl_constant_sort_rejects_underscore(self):
-        """msfl: an underscore-bearing sorted-constant SORT annotation is illegal."""
+    def test_msfl_constant_sort_accepts_underscore(self):
+        assert MSFL.parse("P(alice:Family_History)") == Atom(
+            "P", [SortedConstant("alice", "Family_History")])
+
+    def test_sort_name_still_rejects_a_leading_underscore(self):
+        """Widened in CONTINUATION position only: the first character after
+        the colon must still be an uppercase-signalling letter."""
         with pytest.raises(NamingError):
-            MSFL.parse("P(alice:Family_History)")
+            MSFOL.parse("∀x :_History (P(x))")
 
 
 # ---------------------------------------------------------------------------
