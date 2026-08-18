@@ -493,3 +493,40 @@ def test_distinct_predicates_not_collapsed():
     ab_family = sorted(c for c in consts if c == "ab" or c.startswith("ab_"))
     assert ab_family == ["ab", "ab_2"]                     # two distinct ab-symbols
     assert thy.count("(mbox ab)") < 2                      # not collapsed to a tautology
+
+
+# --------------------------------------------------------------------------- #
+# Non-ASCII / digit-leading identifiers (the widened FOL-parser identifier
+# grammar's reach into _safe_name/_var_name/_IsaNames.variable). Until this
+# regression suite existed, no test anywhere exercised a non-ASCII or
+# digit-leading predicate/constant/variable name through this exporter.
+# --------------------------------------------------------------------------- #
+
+def test_non_ascii_predicate_and_constants_are_ascii_legal_and_transliterated():
+    f = Box(Atom("Świątek", [Constant("świątek"), Constant("2008SummerOlympics")]))
+    thy = to_isabelle_modal(f)
+    consts_lines = [ln for ln in thy.splitlines() if ln.strip().startswith("consts")]
+    lemma_lines = [ln for ln in thy.splitlines() if ln.strip().startswith("lemma")]
+    assert all(ln.isascii() for ln in consts_lines + lemma_lines)
+    assert _balanced(thy, "(", ")") and _quotes_balanced(thy)
+    # hand-computed via constant_name_to_ascii("Świątek")/("świątek") plus the
+    # digit-leading 'c_' guard _safe_name applies (no reversible escape scheme
+    # for constant_name_to_ascii's own name -- see fol._fol_nodes).
+    assert re.search(r"consts u015awiu0105tek ::", thy), thy    # Świątek (predicate)
+    assert re.search(r"consts u015bwiu0105tek :: \"e\"", thy), thy  # świątek (constant)
+    assert re.search(r"consts c_2008SummerOlympics :: \"e\"", thy), thy  # digit-leading
+    assert "u015awiu0105tek u015bwiu0105tek c_2008SummerOlympics" in thy  # the lemma goal
+    assert not any("Świątek" in ln or "świątek" in ln for ln in consts_lines + lemma_lines)
+
+
+def test_non_ascii_variable_is_ascii_legal_and_deduped():
+    # A bound variable whose name is itself non-ASCII must come out as an
+    # ASCII Isabelle term-variable token (_IsaNames.variable / _var_name),
+    # not the raw Unicode letter passed straight through.
+    v = Variable("świątek")
+    f = Quantifier("∀", v, Atom("Above", [v]))
+    thy = to_isabelle_modal(f)
+    assert thy.isascii() or all(
+        ln.isascii() for ln in thy.splitlines() if ln.strip().startswith("lemma"))
+    assert "u015bwiu0105tek" in thy
+    assert "świątek" not in thy

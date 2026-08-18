@@ -31,15 +31,17 @@ and inventing a round-trip for them would be guessing at a convention the
 source never stated.
 """
 
-from typing import Dict, Optional, Tuple
+from typing import Dict, Tuple
 
 from ..fol.nodes import Node
+from ..fol.spans import SpanMap, project_spans
 from ..fol.tptp_input import parse_tptp_formula
 from .signature import CHEMLOG_SIGNATURE
 
 __all__ = [
     "CHEMLOG_TO_KIT", "KIT_TO_CHEMLOG",
     "parse_chemlog_tptp", "to_kit_names", "to_chemlog_names",
+    "rename_with_spans", "to_chemlog_names_with_spans",
 ]
 
 
@@ -143,6 +145,32 @@ def _rename(node: Node, mapping: Dict[str, str]) -> Node:
     return walk(node)
 
 
+def rename_with_spans(node: Node, mapping: Dict[str, str],
+                      spans: SpanMap) -> Tuple[Node, SpanMap]:
+    """:func:`_rename`, plus propagation of ``spans`` across the rewrite.
+
+    The rename walk (see :func:`_rename`) only ever changes an ``Atom``'s
+    ``predicate`` string or a ``Function``'s ``name`` string — never the
+    number, order, or TYPE of a node's children — so it is a
+    shape-preserving rewrite: :func:`unicode_fol_kit.fol.spans.project_spans`
+    carries ``spans`` (PATH-keyed — see that module's docstring for why a
+    path, not a node identity, is what stays meaningful across a rewrite that
+    reconstructs every node on the path to a renamed leaf) onto
+    ``renamed_node`` unchanged, since every path in ``spans`` still denotes
+    the exact same structural position in ``renamed_node`` that it did in
+    ``node``.
+
+    Returns:
+        ``(renamed_node, new_spans)`` — ``renamed_node`` is identical to
+        ``_rename(node, mapping)``; ``new_spans`` is a
+        :class:`~unicode_fol_kit.fol.spans.SpanMap` with the same path data,
+        already bound (via :meth:`~unicode_fol_kit.fol.spans.SpanMap.rebind`)
+        to ``renamed_node`` so ``new_spans.for_node(...)`` works against it.
+    """
+    renamed = _rename(node, mapping)
+    return renamed, project_spans(node, renamed, spans)
+
+
 def to_chemlog_names(formula: Node) -> Node:
     """Rename a kit-side formula's chemical symbols to ChemLog spelling.
 
@@ -150,6 +178,12 @@ def to_chemlog_names(formula: Node) -> Node:
     it against a :func:`~unicode_fol_kit.chem.mol_to_structure` structure.
     """
     return _rename(formula, KIT_TO_CHEMLOG)
+
+
+def to_chemlog_names_with_spans(formula: Node, spans: SpanMap) -> Tuple[Node, SpanMap]:
+    """:func:`to_chemlog_names`, plus propagation of ``spans`` — see
+    :func:`rename_with_spans`."""
+    return rename_with_spans(formula, KIT_TO_CHEMLOG, spans)
 
 
 def to_kit_names(formula: Node) -> Node:

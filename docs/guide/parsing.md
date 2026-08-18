@@ -54,7 +54,7 @@ for kwargs in [dict(modal=True, many_sorted=True),
 
 ## Unicode surface syntax
 
-Formulas are written with natural symbols — `∀ ∃ ∧ ∨ ¬ → ↔ ⊕ ⊗ = ≠ ≤ ≥` — with no ASCII fallbacks required. Predicates are uppercase-initial and applied with parentheses; the lowercase identifier rules below decide whether a bare lowercase token is a variable or a constant.
+Formulas are written with natural symbols — `∀ ∃ ∧ ∨ ¬ → ↔ ⊕ ⊗ = ≠ ≤ ≥` — with no ASCII fallbacks required. An identifier's own first character decides whether it is predicate-valued or term-valued: an uppercase-initial identifier is a predicate, applied with parentheses; anything else is term-valued, and the term-level identifier rules below decide whether a bare token is a variable or a constant.
 
 ```python
 parser = MSFLParser()
@@ -64,12 +64,12 @@ parser.parse("∀x (Human(x) → Mortal(x))")
 #                              right=Atom(predicate='Mortal', args=(Variable(name='x'),))))
 ```
 
-### The three lowercase identifier classes
+### The three term-valued identifier classes
 
-A bare lowercase token resolves to one of three terminal classes — and therefore one of three node types — purely by its spelling:
+A bare term-valued token resolves to one of three terminal classes — and therefore one of three node types — purely by its spelling:
 
-- **`VARIABLE`** — a single lowercase letter, optionally followed by digits (`x`, `y`, `x2`). It becomes a `Variable`.
-- **`NAME`** — a multi-character lowercase identifier with a non-leading letter (`alice`, `socrates`). It becomes a `Constant` (and, when applied with parentheses, the head of a `Function`).
+- **`VARIABLE`** — a single term-valued letter, optionally followed by digits (`x`, `y`, `x2`). It becomes a `Variable`.
+- **`NAME`** — a multi-character term-valued identifier with a non-leading letter (`alice`, `socrates`). It becomes a `Constant` (and, when applied with parentheses, the head of a `Function`).
 - **`CONSTANT`** — the explicit `c_`-prefix form (`c_7`, `c_alice`). It becomes a `Constant` too, and is the way to force a single-symbol name to be a constant.
 
 ```python
@@ -82,7 +82,7 @@ parser.parse("P(c_7)")        # → Atom(predicate='P', args=(Constant(name='c_7
 parser.parse("P(c_alice)")    # → Atom(predicate='P', args=(Constant(name='c_alice'),))
 ```
 
-Because a single lowercase letter is always a *variable*, a function symbol must be a multi-character `NAME`; `f(x)` is a parse error (`f` is a variable, which cannot be applied), whereas `father(x)` is a `Function`:
+Because a single term-valued letter is always a *variable*, a function symbol must be a multi-character `NAME`; `f(x)` is a parse error (`f` is a variable, which cannot be applied), whereas `father(x)` is a `Function`:
 
 ```python
 parser = MSFLParser()
@@ -91,6 +91,82 @@ parser.parse("father(x) = bob")
 #        args=(Function(name='father', args=(Variable(name='x'),)),
 #              Constant(name='bob')))
 ```
+
+### Non-ASCII letters, underscores, and digit-leading names
+
+`PREDICATE`/`CONSTANT`/`NAME`/`VARIABLE` are not ASCII-only: any Unicode
+letter is accepted (Greek is the one exception — see below), a `NAME` may
+contain underscores anywhere past its first character, and a `NAME` may
+also start with one or more digits, as long as a letter follows. Which
+class a token belongs to is still decided the same way as the plain-ASCII
+case above — by its first character, never by a special case for "this is
+non-ASCII" — so the rule to keep in mind is just: **`str.isupper()` on the
+first character means predicate, anything else means term-valued.**
+
+```python
+parser = MSFLParser()
+
+parser.parse("LostTo(x, świątek)")
+# → Atom(predicate='LostTo', args=(Variable(name='x'), Constant(name='świątek')))
+parser.parse("Sibling(dani_Shapiro, family_History)")
+# → Atom(predicate='Sibling', args=(Constant(name='dani_Shapiro'), Constant(name='family_History')))
+parser.parse("Hosted(beijing, 2008SummerOlympics)")
+# → Atom(predicate='Hosted', args=(Constant(name='beijing'), Constant(name='2008SummerOlympics')))
+```
+
+A script with no upper/lower distinction — Chinese, Arabic, Hebrew,
+Devanagari, and most others — never satisfies `str.isupper()`, so a bare
+identifier from such a script is always term-valued and can never head an
+atom by itself:
+
+```python
+parser.parse("P(中文)")   # → Atom(predicate='P', args=(Constant(name='中文'),))
+parser.parse("中文(x)")   # → ParsingError — 中文(x) parses as a term (a Function), and a
+                          #   bare term is not a complete formula; a caseless-script
+                          #   identifier can never head an atom on its own
+```
+
+A digit-leading identifier (`2008SummerOlympics`) is a `NAME`, never a
+number and never a predicate: `NUMBER` itself is unchanged (`2008` and
+`2.5` still lex as plain numbers), and nothing lets an atom's head start
+with a digit. Underscore is a continuation character only — never legal as
+the first character of any identifier (`_foo` is a `NamingError`) — and it
+widens `NAME`/`CONSTANT`/`VARIABLE` but deliberately **not** `PREDICATE`:
+`Family_History(x)` is still rejected, exactly as `Foo_bar(x)` always was.
+
+Greek letters are excluded from every one of these widened classes,
+because they are already spoken for: `λ` opens a lambda term (see "Lambda
+syntax" below), `μ` opens a measure term (see "Measure term
+`μ(entity, dimension)`" below), and the plain lowercase Greek run
+(`αβγδεζηθικνξοπρστυφχψω`) is `CONSTANT`'s other alternative alongside
+`c_...` — widening the letter classes without this exclusion would have
+turned those operators into ordinary identifier characters instead.
+
+```python
+parser.parse("λx. P(x)")   # → still a Lambda, not P applied to a NAME "λx"
+parser.parse("P(α)")       # → Atom(predicate='P', args=(Constant(name='α'),)) — via the Greek CONSTANT form
+```
+
+This widening is purely additive: every formula this kit's grammar
+accepted before still parses to the structurally identical AST (see
+`CHANGELOG.md`'s entry for the change, and
+`tests/test_identifier_widening.py`).
+
+The two shapes only this widening lets through — a non-ASCII predicate or
+function name, and a digit-leading term — are not automatically legal
+wherever a parsed formula is *exported* to next: TPTP, Prover9, SMT-LIB2,
+THF, Isabelle, and MiniZinc are each ASCII-only formats with their own
+legality rules that a raw `świątek` or `2008SummerOlympics` can violate.
+Every one of those export routes now sanitises for its own target format
+before rendering — an injective, whole-problem-consistent ASCII rewrite,
+with the original names translated back into anything a prover's answer
+echoes — see {doc}`transforms` for the mechanism and examples, and
+`CHANGELOG.md`'s entry for the full account. This is a *different*
+mechanism from `fol.sanitize`: that module rewrites a name to a token
+THIS parser's own grammar can re-parse (the case an import from outside
+the kit runs into — an IRI-derived TPTP predicate name, say — not a name
+this parser already accepts), and stays untouched by the export-format
+fix.
 
 ### Comparisons and arithmetic
 
@@ -606,3 +682,70 @@ parser.parse("(P(x) ∧ Q(x)) ∨ R(x)")
 #               right=Atom(predicate='Q', args=(Variable(name='x'),))),
 #      right=Atom(predicate='R', args=(Variable(name='x'),)))
 ```
+
+## Source spans: pointing a node back at its own text
+
+`parse()` builds an AST but keeps no record of where in the input each node
+came from. `parse_with_spans()` does: it parses exactly like `parse()`, then
+also returns a `SpanMap` — each node of the returned formula maps back to
+the exact character range(s) of `text` it was parsed from.
+
+```python
+parser = MSFLParser()
+
+spanned = parser.parse_with_spans("∀x (Human(x) → Mortal(x))")
+spanned.formula == parser.parse("∀x (Human(x) → Mortal(x))")   # → True — same AST parse() builds
+
+human = spanned.formula.formula.left        # the Human(x) atom
+spanned.spans.for_node(human)
+# → NodeSpans(extent=Span(start=4, end=12, ..., text='Human(x)'),
+#              head=Span(start=4, end=9, ..., text='Human'))
+```
+
+A span never has to be re-derived: `Span.text` is already the slice, and
+`start`/`end` index straight into the original `text` passed to
+`parse_with_spans`. Every node gets TWO spans, bundled as `NodeSpans`:
+`extent` is the minimal text the whole node covers (redundant outer
+parentheses excluded), `head` is just its own head token — a connective's
+occurrence, an atom's predicate name, a quantifier's symbol together with
+its bound variable (`"∀x"`, whitespace included). A leaf term
+(`Variable`/`Constant`/`Number`) has `head == extent`: it IS its one token.
+
+The spans are returned as a table alongside the AST, keyed by PATH — a tuple
+of child indices from the root — not as a field on each node, and not by the
+node object's own identity or value. Every node class is a frozen dataclass
+with structural equality (`P(x) == P(x)` even from two different formulas,
+or two occurrences in the SAME formula, as in `P(x) ∧ P(x)`), which a
+per-node span field — or a table keyed by the node's value — would break:
+two textually-distinct occurrences of the same subformula would collapse
+onto one span. `spans.get(path)` is the primary lookup; `spans.for_node(node)`
+above is the convenience form for when you already have a node object in
+hand (resolved by identity against whichever tree the map is currently bound
+to — `parse_with_spans`'s own result is already bound to `spanned.formula`).
+Walk every `(path, node)` pair with `unicode_fol_kit.traverse(spanned.formula)`.
+
+Either half of a `NodeSpans` may independently report `UNKNOWN` — a sentinel
+distinct from every real `Span`, and falsy, so `if span:` and `if span is
+UNKNOWN:` both work. This happens in narrow, specific situations, never as a
+silent guess: an operator outside the classical FOL fragment this feature
+targets (`∀ ∃ ¬ ∧ ∨ → ↔ ⊕`, predicates over constants/variables/function
+terms — those get BOTH spans exactly, always), a higher-order application of
+a lambda-bound predicate (rewritten during scope resolution into nodes the
+original parse never produced), and an agent variable sliced out of a
+combined `K_a`-style token in modal mode — the enclosing `Knows`/`Believes`/…
+node itself still has an exact EXTENT, only its bare agent sub-node does not:
+
+```python
+modal = MSFLParser(modal=True)
+ms = modal.parse_with_spans("K_alice P(alice)")
+
+ms.spans.get(()).extent                  # the whole Knows node — known
+# → Span(start=0, end=16, line=1, column=1, end_line=1, end_column=17, text='K_alice P(alice)')
+ms.spans.get((0,)).extent is UNKNOWN     # → True — the agent, sliced out of one combined token
+```
+
+`unicode_fol_kit.replace_at(root, path, new_node)` is the matching
+path-addressed edit: it rebuilds only the spine from `root` down to `path`,
+so every node reachable via a path that does not run through the edit is the
+exact same object in the result — including under a span table built before
+the edit, which stays valid for every path outside it.

@@ -72,9 +72,27 @@ class EquivalenceResult:
     ``logically_equivalent``
         the solver's tri-state verdict.
     ``counterexample``
-        JSON-able witness when the solver REFUTED equivalence —
-        ``{"kind": "z3_model", "assignment": …}`` for classical formulas,
-        ``{"kind": "kripke", "repr": …}`` for modal ones; ``None`` otherwise.
+        THE COUNTERMODEL, as an accessible, documented, JSON-able field —
+        set exactly when the solver stage REFUTED equivalence (i.e. whenever
+        ``equivalent is False``; for ``method="solver"``/``"auto"`` that is
+        the same moment ``logically_equivalent is False``), ``None`` in
+        every other case (proved, undecided, or a structural level never
+        reached the solver). A caller checks it with
+        ``if result.counterexample is not None: ...`` — no separate lookup
+        or solver re-invocation needed; the witness that falsified
+        equivalence is already attached to the result that reports the
+        refutation. Two shapes, keyed by ``"kind"``:
+        ``{"kind": "z3_model", "assignment": {var_name: value_repr, …}}``
+        for classical formulas (every declared Z3 symbol's value under the
+        model that satisfies ``¬(φ ↔ ψ)``), and
+        ``{"kind": "kripke", "repr": …}`` for modal ones (the ``repr()`` of
+        the Kripke countermodel :func:`~unicode_fol_kit.atp.modal_tableau.modal_countermodel`
+        found). Both are plain JSON-compatible dicts of strings, so the
+        whole ``EquivalenceResult`` — countermodel included — survives a
+        ``pickle`` round-trip and a process boundary undisturbed (it is a
+        frozen dataclass over ``Optional[bool]``/``str``/``dict`` fields
+        only), which matters for a caller that evaluates candidates in a
+        worker pool and inspects failures back in the parent process.
     ``partial_credit``
         a heuristic RANKING signal in ``{0.0, 0.25, 0.5, 0.75, 1.0}`` —
         explicitly NOT a probability of correctness, just a coarse ordinal

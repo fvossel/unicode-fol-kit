@@ -59,11 +59,13 @@ from typing import List, Optional, Tuple
 from ..fol.nodes import Node
 from ..fol.naming import ParsingError
 from ..fol.tptp_input import parse_tptp_formula
+from ._tptp_problem import TptpNameMap, apply_reverse_tptp
 from .protocol import ERROR, PROVED, REFUTED, UNKNOWN
 
 __all__ = [
     "extract_szs_status", "szs_to_verdict_fields",
     "TstpStep", "TstpDerivation", "parse_tstp_derivation",
+    "reverse_map_derivation",
 ]
 
 # ---------------------------------------------------------------------------
@@ -467,3 +469,35 @@ def parse_tstp_derivation(output: str) -> TstpDerivation:
             rule=rule, parents=parents,
         ))
     return TstpDerivation(steps=tuple(steps))
+
+
+# ---------------------------------------------------------------------------
+# Rückweg: translate a derivation's formulas back to kit-level symbol names.
+# ---------------------------------------------------------------------------
+
+def reverse_map_derivation(derivation: TstpDerivation, mapping: TptpNameMap) -> TstpDerivation:
+    """Return a copy of ``derivation`` with every step's ``formula`` rewritten
+    from the sanitised TPTP-ASCII identifiers :func:`atp._tptp_problem
+    .generate_tptp_problem_with_mapping` chose back to the original
+    kit-level names, via ``mapping`` (see :func:`atp._tptp_problem
+    .apply_reverse_tptp`).
+
+    ``formula_text`` — the prover's own verbatim printed form of the step —
+    is deliberately left UNTOUCHED: it stays a truthful record of exactly
+    what the prover said, while ``formula`` becomes the structured form a
+    caller actually wants to read symbol names off of. A step whose formula
+    failed to parse (``formula is None``) passes through unchanged, and a
+    symbol the prover introduced itself (a Skolem constant, a
+    clausification name — ``sK1``, ``esk1_0``, ...) was never one of ours
+    to begin with, so :func:`apply_reverse_tptp` leaves it exactly as
+    printed rather than guessing at it.
+    """
+    new_steps = tuple(
+        step if step.formula is None else
+        TstpStep(name=step.name, language=step.language, role=step.role,
+                 formula_text=step.formula_text,
+                 formula=apply_reverse_tptp(step.formula, mapping),
+                 rule=step.rule, parents=step.parents)
+        for step in derivation.steps
+    )
+    return TstpDerivation(steps=new_steps)

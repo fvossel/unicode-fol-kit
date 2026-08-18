@@ -467,6 +467,23 @@ so = MSFLParser(second_order=True).parse("∀P P(x)")
 so.to_tptp()       # raises NotImplementedError (no first-order image)
 ```
 
+### ASCII-legal names in export, for a whole problem
+
+`to_tptp()` / `to_prover9()` render a predicate/function/constant name close to verbatim: TPTP folds only the exported name's first character to lower-case, Prover9 folds nothing at all, and neither transliterates a non-ASCII predicate or function name (only `Constant.to_tptp`/`to_prover9` transliterate, via `constant_name_to_ascii`). {doc}`parsing`'s identifier widening lets a predicate/function name carry a non-ASCII letter and a term start with a digit, so calling these two methods directly on such a formula can produce text that is not legal TPTP/Prover9 in the first place:
+
+```python
+f = MSFLParser().parse("Świątek(x)")
+f.to_tptp()      # → 'świątek(X)'    — the raw non-ASCII letter, only the case folded
+f.to_prover9()   # → 'Świątek(X)'    — completely untouched
+
+g = MSFLParser().parse("P(2008SummerOlympics)")
+g.to_tptp()      # → 'p(2008SummerOlympics)'   — leading digit intact, illegal TPTP lower_word
+```
+
+That is deliberate at the node level, not an oversight: a single node has no view of the rest of the problem it belongs to, so it cannot keep two distinct names from colliding once "fixed", and a per-node fix could never reach a caller that later needs to read a prover's own answer back. The fix instead runs once, over a WHOLE set of premises and a conclusion together — inside every one of the kit's own external-prover entry points: `check_logical_entailment_vampire` / `atp.vampire_entailment.check_entailment_vampire_detailed`, `atp.eprover_backend.check_entailment_eprover_detailed` (E and Zipperposition), `atp.twee_entailment.check_entailment_twee_detailed`, `check_logical_entailment` (Prover9), and `Cvc5Backend.decide` (SMT-LIB2, narrower — only a digit-leading name needs fixing there, since Z3's own SMT-LIB2 serialiser already quotes a non-ASCII name correctly on its own). Call any of these — see {doc}`classical-reasoning`'s "External provers" section for the Prover9/Vampire pair — on the same two formulas above, and the external tool sees a legal, ASCII, non-digit-leading problem instead; an already-legal name passes through completely untouched, so nothing changes for a formula these entry points already handled correctly. Wherever the tool's own answer can carry a symbol name back (a TSTP proof step, a countermodel), that answer is translated back to the ORIGINAL kit-level names before it reaches the caller — a real `Świątek`/`2008SummerOlympics`, never the synthesised token the external tool actually saw. See `CHANGELOG.md`'s `fol.grammars` / `fol._identifiers` entry for the full mechanism (the injective, whole-problem-consistent rewrite; the reverse mapping; what was checked against a real E, Vampire, Twee, and cvc5).
+
+`hol.classical.to_thf_fol` / `to_isabelle_fol` (and their MSFOL/modal counterparts in `fol.qml` / `hol.isabelle_modal`, see {doc}`higher-order`) and `atp.minizinc_backend.to_minizinc` (see {doc}`finite-domain`) sanitise the same way on every call, with no separate step to remember: their own name resolvers already transliterate and de-collide every predicate, function, constant, and (for the modal exporters) bound variable name before any THF/Isabelle/MiniZinc text is emitted.
+
 ### JSON round-trip
 
 `to_dict()` produces a JSON-serialisable dict tagged with `_type`; the static `Node.from_dict()` reconstructs the AST. This preserves **every** node family (modal, second-order, fuzzy, lambda), so it is the portable serialisation of choice.

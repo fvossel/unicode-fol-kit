@@ -13,8 +13,9 @@ import pytest
 
 from unicode_fol_kit import MSFLParser, check_logical_entailment_vampire
 from unicode_fol_kit.atp.vampire_entailment import (
-    _generate_vampire_input, _is_entailed_output,
+    _generate_vampire_input, _is_entailed_output, check_entailment_vampire_detailed,
 )
+from unicode_fol_kit.atp import vampire_entailment as _ve
 
 _FOL = MSFLParser()
 _MODUS_PONENS_PREMISES = [
@@ -94,6 +95,90 @@ def test_non_first_order_input_is_rejected_before_running():
         check_logical_entailment_vampire(
             [modal_premise], _MORTAL, vampire_path="vampire",
         )
+
+
+# ---------------------------------------------------------------------------
+# Rückweg: reverse-mapping a (simulated) Vampire proof — no binary needed.
+#
+# No real Vampire binary is reachable in this environment (neither natively
+# nor via WSL — see _wsl_vampire_ok below), so this exercises
+# check_entailment_vampire_detailed's ASCII-sanitisation Rückweg against a
+# FAKE _spawn_vampire that echoes the problem's OWN (already-sanitised) fof
+# lines back as a trivial "proof" — built entirely from the real problem
+# text this module generated, never a hand-typed identifier, so the test
+# cannot pass by a typo accidentally matching a typo. Where a live external
+# tool IS available (E via WSL, Twee via WSL), the equivalent live round
+# trip is tested in test_eprover_zipperposition.py / test_twee.py instead.
+# ---------------------------------------------------------------------------
+
+def test_check_entailment_vampire_detailed_reverse_maps_derivation(monkeypatch):
+    def fake_spawn(input_str, vampire_path, timeout=30, use_wsl=False, extra_args=()):
+        lines = [ln for ln in input_str.splitlines() if ln.strip()]
+        proof_lines = list(lines)  # already "fof(name, role, formula)." shaped
+        proof_lines.append("fof(refutation, plain, $false, inference(x,[status(thm)],[])).")
+        stdout = "% SZS status Theorem for problem\n" + "\n".join(proof_lines) + "\n"
+        return stdout, False
+
+    monkeypatch.setattr(_ve, "_spawn_vampire", fake_spawn)
+
+    premise = _FOL.parse("∀x (LostTo(x, świątek) → P(x))")
+    conclusion = _FOL.parse("P(dani_Shapiro)")
+    result = check_entailment_vampire_detailed([premise], conclusion, vampire_path="unused")
+
+    assert result["status"] == "proved"
+    steps = result["derivation"]["steps"]
+    formula_dicts = [s["formula"] for s in steps if s["formula"] is not None]
+    assert any("świątek" in str(d) for d in formula_dicts)
+    # the sanitised u-escape token must not leak through anywhere.
+    assert not any("u015b" in str(d) for d in formula_dicts)
+    # the free-text excerpt is reverse-mapped too (R3's "Erklärungstexte").
+    assert "świątek" in result["output_excerpt"]
+    assert "u015b" not in result["output_excerpt"]
+
+
+def test_check_entailment_vampire_detailed_reverse_maps_predicate_names(monkeypatch):
+    """R3's free-text Rückweg must restore PREDICATE names too, not only
+    constants -- ``Node.to_tptp`` folds only a name's first character
+    (``tptp_fold_first_letter``), so even an already ASCII-legal,
+    uppercase-initial predicate like 'Human' appears in the exported
+    problem (and therefore in anything Vampire echoes back verbatim) as
+    'human'. Regression: ``TptpNameMap.reverse()``'s predicate dict used to
+    be keyed by the un-folded token, so it never matched the folded text
+    this fake echo (built from the REAL generated problem text, not
+    hand-typed) puts in stdout.
+    """
+    def fake_spawn(input_str, vampire_path, timeout=30, use_wsl=False, extra_args=()):
+        lines = [ln for ln in input_str.splitlines() if ln.strip()]
+        proof_lines = list(lines)
+        proof_lines.append("fof(refutation, plain, $false, inference(x,[status(thm)],[])).")
+        stdout = "% SZS status Theorem for problem\n" + "\n".join(proof_lines) + "\n"
+        return stdout, False
+
+    monkeypatch.setattr(_ve, "_spawn_vampire", fake_spawn)
+
+    result = check_entailment_vampire_detailed(
+        _MODUS_PONENS_PREMISES, _MORTAL, vampire_path="unused")
+
+    assert result["status"] == "proved"
+    assert "Human" in result["output_excerpt"]
+    assert "Mortal" in result["output_excerpt"]
+    assert "human(" not in result["output_excerpt"]
+    assert "mortal(" not in result["output_excerpt"]
+
+
+def test_check_entailment_vampire_detailed_prover_introduced_symbol_is_untouched(monkeypatch):
+    """A prover-introduced name (a Skolem constant, say) was never one of
+    ours, so apply_reverse_tptp must leave it exactly as printed."""
+    def fake_spawn(input_str, vampire_path, timeout=30, use_wsl=False, extra_args=()):
+        stdout = ("% SZS status Theorem for problem\n"
+                  "fof(sk, plain, p(sk1), inference(skolemize,[status(thm)],[])).\n")
+        return stdout, False
+
+    monkeypatch.setattr(_ve, "_spawn_vampire", fake_spawn)
+    result = check_entailment_vampire_detailed(
+        [_FOL.parse("∃x P(x)")], _FOL.parse("∃x P(x)"), vampire_path="unused")
+    [step] = result["derivation"]["steps"]
+    assert step["formula"]["args"][0]["name"] == "sk1"
 
 
 # ---------------------------------------------------------------------------

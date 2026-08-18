@@ -815,6 +815,34 @@ def test_live_subprocess_timeout_reports_unknown_timeout():
     assert result["timed_out"] is True
 
 
+@pytest.mark.skipif(not _TWEE_AVAILABLE, reason="no Twee binary reachable via WSL")
+def test_live_ascii_sanitisation_round_trip():
+    """A REAL Twee run (through WSL), on a problem using both a non-ASCII
+    constant and a digit-leading one, with the proof and raw output
+    reverse-mapped back to the ORIGINAL kit-level names — the strongest R5
+    evidence this suite can offer for the TPTP Hinweg+Rückweg through the
+    equational fragment: an actual external prover, not the kit's own
+    reader.
+    """
+    premise = [_P.parse("∀x (mult(świątek, x) = x)")]
+    conclusion = _P.parse("mult(świątek, 2008wins) = 2008wins")
+    result = check_entailment_twee_detailed(premise, conclusion, timeout=30)
+    assert result["status"] == "Theorem"
+    proof = result["proof"]
+    assert proof is not None
+    assert "świątek" in str(proof.goal.equation.lhs)
+    assert "2008wins" in str(proof.goal.equation.rhs)
+    # the sanitised tokens must not leak through anywhere in the structured
+    # proof or in the free-text raw output.
+    assert "u015b" not in str(proof.to_dict())
+    assert "u015b" not in result["raw_output"]
+    assert "świątek" in result["raw_output"]
+    assert "2008wins" in result["raw_output"]
+    check_result = check_twee_proof(proof, premise)
+    assert check_result.ok, check_result.error
+    assert goal_matches_conclusion(proof, conclusion)
+
+
 def test_goal_match_rejects_non_injective_variable_collapse():
     """Adversarial-review soundness regression: a proof of the GROUND fact
     f(a) = g(a) must never certify the strictly stronger ∀X ∀Y f(X) = g(Y)

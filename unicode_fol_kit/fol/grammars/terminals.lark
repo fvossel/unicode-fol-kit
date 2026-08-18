@@ -1,14 +1,14 @@
-PREDICATE: /[A-Z][a-zA-Z0-9]*/
-
-CONSTANT.3: /c_[a-zA-Z0-9]+/ | /[αβγδεζηθικνξοπρστυφχψω]+/
-
-NAME.2: /[a-z][a-zA-Z0-9]*[a-zA-Z][a-zA-Z0-9]*/
-
-VARIABLE.1: /[a-z][0-9]*/
+# PREDICATE, CONSTANT, NAME, VARIABLE, and SORT used to be declared here as
+# fixed ASCII regexes. They are now GENERATED AT RUNTIME by
+# unicode_fol_kit/fol/_identifiers.py, from the running interpreter's own
+# Unicode letter tables, and spliced directly into each mode's grammar text
+# by _fol_nodes.build_grammar() — see _identifiers.py's module docstring for
+# why a codepoint range belongs in generated code, not frozen into this file.
+#
+# NUMBER, FORALL, EXISTS, and LAMBDA are unaffected by that widening (none of
+# them classifies a letter) and stay here, %import'd as before.
 
 NUMBER.1: /[0-9]+(\.[0-9]+)?/
-
-SORT: /:[A-Z][a-zA-Z0-9]*/
 
 FORALL: "∀"
 

@@ -393,3 +393,114 @@ def test_every_used_head_is_declared_after_decollision():
     assert len(decl_names) == len(set(decl_names))
     # ...and every used lowercase identifier is among the declared ones.
     assert used <= decl_names, used - decl_names
+
+
+# ---------------------------------------------------------------------------
+# `_SymbolResolver`/`_sanitize` legalise (de-collide, escape punctuation,
+# prefix a digit lead) AND transliterate to ASCII via `constant_name_to_ascii`
+# (Greek -> conventional name, everything else non-ASCII -> a reversible
+# `uXXXX` codepoint escape), so a name with non-ASCII letters no longer reaches
+# the emitted THF/Isabelle text at all — only its transliteration does.
+#
+# HISTORY / WHY THIS CLASS CHANGED (not just got new tests): this class used to
+# be named `TestNonAsciiNamesReachThfAndIsabelleVerbatim` and pinned the
+# OPPOSITE, broken behaviour on purpose, as a documented bug report: THF and
+# Isabelle are ASCII-only target formats (TPTP `lower_word`, Isabelle
+# identifiers), and `str.isalnum()` is `True` for nearly every Unicode letter,
+# so the old filter waved non-ASCII letters through as "harmless" -- silent
+# corruption of the exported problem, not sanitisation. Per the task's (R4),
+# updating a test that pins TODAY's output is only correct when that output
+# was illegal in the target format to begin with; that is exactly this case
+# (a raw `ś`/`中` in an unquoted TPTP/Isabelle identifier is not legal there),
+# so the old assertions are replaced with the fixed, ASCII-pure ones rather
+# than kept. No assertion on an already-ASCII name changes anywhere in this
+# file — see `TestAsciiNamesUnaffectedByAsciiTransliteration` below for that
+# guarantee made explicit.
+# ---------------------------------------------------------------------------
+
+class TestNonAsciiNamesAreTransliteratedInThfAndIsabelle:
+    def test_non_ascii_constant_in_thf(self):
+        # 'świątek' -> constant_name_to_ascii -> 'u015bwiu0105tek' (ś=U+015B,
+        # ą=U+0105 each escaped; plain ASCII letters pass through unchanged).
+        f = Atom("P", [Constant("świątek")])
+        out = to_thf_fol(f)
+        assert "świątek" not in out
+        assert "thf(u015bwiu0105tek_decl, type, ( u015bwiu0105tek : $i ))." in out
+        assert "( p @ u015bwiu0105tek )" in out
+
+    def test_non_ascii_constant_in_isabelle(self):
+        f = Atom("P", [Constant("świątek")])
+        out = to_isabelle_fol(f)
+        assert "świątek" not in out
+        assert 'consts u015bwiu0105tek :: "i"' in out
+        assert '"(p u015bwiu0105tek)"' in out
+
+    def test_non_ascii_predicate_in_thf(self):
+        # 'Świątek' -> constant_name_to_ascii -> 'u015awiu0105tek' (Ś=U+015A,
+        # a DIFFERENT escape than lower-case 'świątek' above -- the fix must
+        # not accidentally collapse the two). _sanitize's first-letter fold
+        # then has no effect (the transliterated stem already starts 'u').
+        f = Atom("Świątek", [X])
+        out = to_thf_fol(f)
+        assert "Świątek" not in out and "świątek" not in out
+        assert "thf(u015awiu0105tek_decl, type, ( u015awiu0105tek : ( $i > $o ) ))." in out
+
+    def test_cjk_constant_in_thf_and_isabelle(self):
+        # '中文' -> 'u4e2du6587' (U+4E2D, U+6587), ASCII-pure in both exports.
+        f = Atom("P", [Constant("中文")])
+        thf = to_thf_fol(f)
+        isa = to_isabelle_fol(f)
+        assert "中文" not in thf and "中文" not in isa
+        assert "u4e2du6587" in thf
+        assert "u4e2du6587" in isa
+
+    def test_diacritic_lookalike_constants_stay_distinct_thf(self):
+        # (R2/R4 collision testfall) 'świątek' and its ASCII lookalike
+        # 'swiatek' must NOT collapse onto the same THF constant: the
+        # uXXXX-escape transliteration already keeps them apart (unlike a
+        # lossy accent-strip would), and _SymbolResolver's dedupe is the
+        # second line of defence if it ever didn't.
+        f = And(Atom("P", [Constant("świątek")]), Atom("Q", [Constant("swiatek")]))
+        out = to_thf_fol(f)
+        const_decls = [l for l in out.splitlines() if l.rstrip().endswith(": $i )).")]
+        assert len(const_decls) == 2, out
+        idents = {l.split(",")[0][len("thf("):][:-len("_decl")] for l in const_decls}
+        assert idents == {"u015bwiu0105tek", "swiatek"}
+
+    def test_diacritic_lookalike_constants_stay_distinct_isabelle(self):
+        f = And(Atom("P", [Constant("świątek")]), Atom("Q", [Constant("swiatek")]))
+        out = to_isabelle_fol(f)
+        consts = [l for l in out.splitlines() if l.startswith("consts ") and l.endswith('"i"')]
+        names = {l.split()[1] for l in consts}
+        assert names == {"u015bwiu0105tek", "swiatek"}
+
+
+# ---------------------------------------------------------------------------
+# (R1) backward compatibility: a name already legal in THF/Isabelle must come
+# out of `_sanitize` byte-identically to before this fix.
+# `constant_name_to_ascii` is the identity on a string where every character
+# is already ASCII (see its own docstring), so inserting it ahead of the
+# pre-existing alnum/underscore filter cannot change the result for such a
+# name -- executed here directly against the private `_sanitize` (imported
+# explicitly for this one regression-proof test; every other test in this
+# file goes through the public `to_thf_fol`/`to_isabelle_fol` surface, and
+# the fact that ~30 of them, written before this fix and pinning literal
+# ASCII output, still pass unmodified is itself the same guarantee at the
+# integration level).
+# ---------------------------------------------------------------------------
+
+from unicode_fol_kit.hol.classical import _sanitize  # noqa: E402
+
+
+class TestAsciiNamesUnaffectedByAsciiTransliteration:
+    @pytest.mark.parametrize("raw,expected", [
+        ("socrates", "socrates"),          # plain lower ASCII: untouched
+        ("Human", "human"),                # first letter folded, as before
+        ("dani_Shapiro", "dani_Shapiro"),  # underscore continuation: untouched
+        ("family_History", "family_History"),
+        ("2008SummerOlympics", "p2008SummerOlympics"),  # digit lead: 'p'-prefixed, as before
+        ("HasBond", "hasBond"),
+        ("=", "feq"),                      # alias path, bypasses transliteration entirely
+    ])
+    def test_sanitize_matches_pre_fix_output(self, raw, expected):
+        assert _sanitize(raw) == expected

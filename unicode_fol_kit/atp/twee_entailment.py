@@ -180,13 +180,15 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 from ..fol.nodes import Atom, And, Constant, Function, Node, Number, Quantifier, Variable
-from ._tptp_problem import generate_tptp_problem
+from ._ascii_names import reverse_map_text
+from ._tptp_problem import (TptpNameMap, apply_reverse_tptp, generate_tptp_problem,
+                            generate_tptp_problem_with_mapping)
 
 __all__ = [
     "twee_available", "check_entailment_twee_detailed",
     "TweeEquation", "TweeCitation", "TweeChain",
     "TweeAxiom", "TweeLemma", "TweeGoal", "TweeProof",
-    "parse_twee_proof",
+    "parse_twee_proof", "reverse_map_twee_proof",
 ]
 
 _DEFAULT_TWEE_CMD = "~/.local/bin/twee"
@@ -687,6 +689,48 @@ def parse_twee_proof(stdout: str) -> Optional[TweeProof]:
 
 
 # ---------------------------------------------------------------------------
+# Rückweg: translate a parsed TweeProof's terms back to kit-level names.
+# ---------------------------------------------------------------------------
+
+def _reverse_map_equation(eq: TweeEquation, mapping: TptpNameMap) -> TweeEquation:
+    return TweeEquation(apply_reverse_tptp(eq.lhs, mapping), apply_reverse_tptp(eq.rhs, mapping))
+
+
+def _reverse_map_chain(chain: TweeChain, mapping: TptpNameMap) -> TweeChain:
+    return TweeChain(tuple(apply_reverse_tptp(t, mapping) for t in chain.terms), chain.citations)
+
+
+def reverse_map_twee_proof(proof: TweeProof, mapping: TptpNameMap) -> TweeProof:
+    """Rewrite every term in ``proof`` from the sanitised TPTP-ASCII function/
+    constant names :func:`atp._tptp_problem.generate_tptp_problem_with_mapping`
+    chose back to the original kit-level names (see
+    :func:`atp._tptp_problem.apply_reverse_tptp`).
+
+    Twee's equational fragment only ever uses ``=`` as a predicate (excluded
+    from renaming to begin with — see :mod:`atp._tptp_problem`'s module
+    docstring), so only function/constant names can ever have been
+    sanitised here; ``apply_reverse_tptp`` is reused as-is (it simply never
+    hits its ``Atom`` branch on a bare term). Axiom/lemma/goal NUMBERS and
+    axiom NAMES (Twee's own local proof-step indexing, and the
+    ``premise_<i>`` names this module itself assigned — see
+    :func:`_generate_twee_input`) are not symbol names and are left alone.
+    """
+    axioms = tuple(
+        TweeAxiom(a.number, a.name, _reverse_map_equation(a.equation, mapping))
+        for a in proof.axioms
+    )
+    lemmas = tuple(
+        TweeLemma(l.number, _reverse_map_equation(l.equation, mapping),
+                 _reverse_map_chain(l.chain, mapping))
+        for l in proof.lemmas
+    )
+    goal = TweeGoal(proof.goal.number, proof.goal.name,
+                    _reverse_map_equation(proof.goal.equation, mapping),
+                    _reverse_map_chain(proof.goal.chain, mapping))
+    return TweeProof(axioms, lemmas, goal)
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
@@ -736,12 +780,21 @@ def check_entailment_twee_detailed(premises: List[Node], conclusion: Node,
           else ``None``.
         * ``timed_out``: ``True`` iff this function's own ``timeout`` (not
           one of Twee's ``--max-*`` budgets) killed the subprocess.
+
+        Every function/constant name in ``raw_output`` and in ``proof``'s
+        terms has already been translated back from whatever ASCII-safe
+        token :func:`atp._tptp_problem.generate_tptp_problem_with_mapping`
+        may have substituted (a non-ASCII or digit-leading kit-level name)
+        to the ORIGINAL kit-level name (see
+        :func:`reverse_map_twee_proof`); Twee's own axiom/lemma/goal
+        numbering and the ``premise_<i>`` axiom names are untouched (they
+        were never symbol names to begin with).
     """
     for i, premise in enumerate(premises, start=1):
         _require_equational(premise, f"premise {i}")
     _require_equational(conclusion, "conclusion")
 
-    problem = _generate_twee_input(list(premises), conclusion)
+    problem, name_map = generate_tptp_problem_with_mapping(list(premises), conclusion)
     stdout, stderr, timed_out = _spawn_twee(problem, timeout=timeout, use_wsl=use_wsl,
                                             twee_cmd=twee_cmd)
 
@@ -753,12 +806,14 @@ def check_entailment_twee_detailed(premises: List[Node], conclusion: Node,
     raw_output = stdout
     if status == "Unknown" and stderr:
         raw_output = f"{stdout}\n{stderr}" if stdout else stderr
+    pred_rev, term_rev = name_map.reverse_rendered()
+    raw_output = reverse_map_text(raw_output, pred_rev, term_rev)
 
     proof = None
     proof_parse_error = None
     if status == "Theorem":
         try:
-            proof = parse_twee_proof(stdout)
+            proof = reverse_map_twee_proof(parse_twee_proof(stdout), name_map)
         except ValueError as exc:
             # A Theorem status with proof text outside this module's
             # distilled grammar (another Twee version, a reformat) must not

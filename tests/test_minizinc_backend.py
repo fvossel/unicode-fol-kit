@@ -104,6 +104,75 @@ def test_mzn_const_name_ascii_and_greek_collide_before_prefixing():
     assert mb._mzn_const_name("theta") == mb._mzn_const_name("θ") == "k_theta"
 
 
+# ---------------------------------------------------------------------------
+# (fix) _mzn_pred_name / _mzn_func_name / _mzn_var_name used to NOT
+# transliterate at all (unlike _mzn_const_name above) -- a predicate/function/
+# variable name is exactly as free to be non-ASCII as a constant's is (see
+# fol/grammars/terminals.lark: PREDICATE, NAME, and VARIABLE all admit any
+# Unicode letter), so e.g. Atom("Świątek", ...) used to render literally as
+# "p_Świątek" -- not a legal MiniZinc identifier. Hand-verified against
+# unicode_fol_kit.fol._fol_nodes.constant_name_to_ascii directly (świątek's
+# ś=U+015B -> "u015b", ą=U+0105 -> "u0105"; 中=U+4E2D -> "u4e2d",
+# 文=U+6587 -> "u6587"; ASCII letters pass through unchanged).
+# ---------------------------------------------------------------------------
+
+def test_mzn_pred_name_transliterates_non_ascii():
+    assert mb._mzn_pred_name("Świątek") == "p_u015awiu0105tek"
+
+
+def test_mzn_func_name_transliterates_non_ascii():
+    assert mb._mzn_func_name("świątek") == "f_u015bwiu0105tek"
+
+
+def test_mzn_var_name_transliterates_non_ascii():
+    assert mb._mzn_var_name("ą") == "v_u0105"
+
+
+def test_mzn_pred_func_var_names_transliterate_cjk():
+    assert mb._mzn_pred_name("中文") == "p_u4e2du6587"
+    assert mb._mzn_func_name("中文") == "f_u4e2du6587"
+    assert mb._mzn_var_name("中") == "v_u4e2d"
+
+
+def test_mzn_pred_name_ascii_and_greek_collide_before_prefixing():
+    # Same collision shape as _mzn_const_name above (a literal "theta" and
+    # the Greek letter both fold to "theta"), now also reachable through the
+    # predicate namespace since it reuses the same (non-injective)
+    # constant_name_to_ascii transliteration. _mzn_pred_name is a pure string
+    # function with no grammar-legality check of its own, so a lower-case
+    # "theta" is a perfectly good input here even though the parser's own
+    # PREDICATE terminal would never produce one.
+    assert mb._mzn_pred_name("theta") == mb._mzn_pred_name("θ") == "p_theta"
+
+
+def test_mzn_func_name_ascii_and_greek_collide_before_prefixing():
+    assert mb._mzn_func_name("theta") == mb._mzn_func_name("θ") == "f_theta"
+
+
+# ---------------------------------------------------------------------------
+# (R1) names already legal in MiniZinc must render byte-identically to
+# before this fix -- constant_name_to_ascii is the identity on an
+# already-ASCII string (including a digit-leading or underscore-bearing
+# one), so inserting it ahead of the literal f"{prefix}_{name}" formatting
+# changes nothing for such a name. The digit-lead case in particular was
+# ALREADY safe before this fix purely because of the fixed role prefix
+# (p_/f_/k_/v_ always starts with a letter) -- transliteration does not
+# change that, it only matters for the non-ASCII case exercised above.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("namer,raw,expected", [
+    (mb._mzn_pred_name, "Loves", "p_Loves"),
+    (mb._mzn_pred_name, "P", "p_P"),
+    (mb._mzn_func_name, "father_Of", "f_father_Of"),
+    (mb._mzn_func_name, "f", "f_f"),
+    (mb._mzn_var_name, "x", "v_x"),
+    (mb._mzn_const_name, "2008SummerOlympics", "k_2008SummerOlympics"),
+    (mb._mzn_const_name, "dani_Shapiro", "k_dani_Shapiro"),
+])
+def test_ascii_names_unaffected_by_transliteration(namer, raw, expected):
+    assert namer(raw) == expected
+
+
 # =============================================================================
 # _number_int
 # =============================================================================
@@ -191,6 +260,57 @@ def test_to_minizinc_rejects_constant_name_collision():
         to_minizinc(FiniteDomainProblem((goal,), 2))
     msg = str(exc_info.value)
     assert "'theta'" in msg and "'θ'" in msg and "k_theta" in msg
+
+
+def test_to_minizinc_rejects_predicate_name_collision():
+    # (fix regression) same collision shape as the constant test above, now
+    # exercised through the predicate namespace: 'Świątek' and the (already
+    # escaped) literal 'u015awiu0105tek' both render as MiniZinc identifier
+    # p_u015awiu0105tek. Distinct declared predicates must never merge.
+    x = Variable("x")
+    goal = Quantifier("forall", x, Iff(
+        Atom("Świątek", (x,)), Atom("u015awiu0105tek", (x,))))
+    with pytest.raises(NotImplementedError) as exc_info:
+        to_minizinc(FiniteDomainProblem((goal,), 2))
+    msg = str(exc_info.value)
+    assert "'Świątek'" in msg and "'u015awiu0105tek'" in msg
+    assert "p_u015awiu0105tek" in msg
+
+
+def test_to_minizinc_rejects_function_name_collision():
+    # A live `Function` NODE in a sentence is refused upstream by
+    # fragment_check itself (see test_functions_never_reach_the_renderer),
+    # so the only way to reach to_minizinc's own function-declaration code
+    # -- the "second line of defence for a caller that builds a
+    # FiniteDomainProblem by hand and skips the gate" the module docstring
+    # describes -- is a hand-built Signature that declares two functions
+    # without any Function node in the sentence list.
+    from unicode_fol_kit.fol.signature import FunctionDecl, PredicateDecl
+    sig = Signature(
+        predicates={"P": PredicateDecl("P", 1)},
+        functions={
+            "theta": FunctionDecl("theta", 1),
+            "θ": FunctionDecl("θ", 1),
+        },
+    )
+    goal = Atom("P", (Constant("a"),))  # no Function node -- passes fragment_check
+    problem = FiniteDomainProblem((goal,), 2, signature=sig)
+    with pytest.raises(NotImplementedError) as exc_info:
+        to_minizinc(problem)
+    msg = str(exc_info.value)
+    assert "'theta'" in msg and "'θ'" in msg and "f_theta" in msg
+
+
+def test_to_minizinc_transliterates_non_ascii_predicate_end_to_end():
+    # Full pipeline (fix regression): a non-ASCII predicate name must reach
+    # the rendered .mzn text only as its ASCII transliteration, never raw.
+    x = Variable("x")
+    goal = Quantifier("forall", x, Implies(
+        Atom("Świątek", (x,)), Atom("Human", (x,))))
+    out = to_minizinc(FiniteDomainProblem((goal,), 2))
+    assert out.isascii()
+    assert "Świątek" not in out
+    assert "p_u015awiu0105tek" in out
 
 
 # =============================================================================

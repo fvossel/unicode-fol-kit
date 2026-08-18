@@ -627,7 +627,12 @@ def test_every_routed_topic_is_one_the_spec_serves():
     than no hint at all."""
     from unicode_fol_kit.mcp.syntax_spec import SPEC_TOPICS
 
-    for text in ("A ∧ B ∨ C", "∀ P(x)", "P(1x)", "c(A1) ∧ o(A2)", "P(",
+    # "P(1x)" used to be the naming-error example here (digit-leading names
+    # were illegal), but a digit-leading identifier is now legal NAME syntax
+    # (see tests/test_identifier_widening.py) and "P(1x)" parses today; "@"
+    # is not a legal continuation character for anything, so "P(1@)" is the
+    # naming-error example instead.
+    for text in ("A ∧ B ∨ C", "∀ P(x)", "P(1@)", "c(A1) ∧ o(A2)", "P(",
                  "∀x P(x) ∧", "P(x) ∧ Q(x) ∨ R(x)", "∃≥ x P(x)"):
         result = prove(text)
         assert result["ok"] is False, text

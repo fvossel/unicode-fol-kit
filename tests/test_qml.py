@@ -14,6 +14,7 @@ from itertools import product, combinations
 
 import pytest
 
+from unicode_fol_kit.fol.msflparser import MSFLParser
 from unicode_fol_kit.fol.nodes import (
     Atom, Not, And, Or, Implies, Box, Diamond, Quantifier, Variable,
 )
@@ -326,3 +327,61 @@ def test_qml_exports():
     for name in ("qml_translate", "qml_is_valid", "qml_equivalent",
                  "to_thf_modal", "to_isabelle_modal", "BARCAN", "CONVERSE_BARCAN"):
         assert hasattr(u, name) and name in u.__all__, name
+
+
+# ---------------------------------------------------------------------------
+# Non-ASCII / digit-leading identifiers reaching the modal THF/Isabelle
+# exporters (fol.qml._thf_name / _ThfNames.variable and
+# hol.isabelle_modal._safe_name / _IsaNames.variable). These now
+# transliterate via constant_name_to_ascii and digit-guard their result --
+# mirroring the classical to_tptp()/to_prover9() fix for the same widened
+# grammar -- but until this regression suite existed, nothing exercised a
+# non-ASCII or digit-leading name through EITHER modal exporter: every
+# to_thf_modal/to_isabelle_modal call anywhere else in the suite uses plain
+# ASCII, letter-initial predicate/constant names.
+# ---------------------------------------------------------------------------
+
+_MODAL_PARSE = MSFLParser(modal=True).parse
+
+
+def test_thf_non_ascii_predicate_and_constants_are_ascii_legal():
+    f = _MODAL_PARSE("□ Świątek(świątek, 2008SummerOlympics)")
+    thf = to_thf_modal(f, "constant", "K")
+    assert thf.isascii()
+    assert thf.count("(") == thf.count(")")
+    # the transliterated, digit-guarded tokens must actually appear -- hand
+    # computed from constant_name_to_ascii("Świątek")/("świątek") plus the
+    # 'p'-digit-guard _thf_name applies.
+    assert "u015awiu0105tek" in thf      # Świątek (predicate)
+    assert "u015bwiu0105tek" in thf      # świątek (constant)
+    assert "p2008SummerOlympics" in thf  # digit-leading -> 'p'-prefixed
+    # no raw non-ASCII character or a bare digit-leading identifier survives.
+    assert "Świątek" not in thf and "świątek" not in thf
+    assert "thf(2008SummerOlympics_decl" not in thf
+
+
+def test_thf_non_ascii_variable_is_ascii_legal_and_deduped():
+    # A bound variable whose name is itself non-ASCII (reachable the same
+    # widened-grammar way a predicate/constant name is, and directly
+    # constructible regardless) must come out as an ASCII, upper-cased THF
+    # variable token too (_ThfNames.variable), not the raw Unicode letter
+    # merely upper-cased.
+    v = Variable("świątek")
+    f = Quantifier("∀", v, Atom("Above", [v]))
+    thf = to_thf_modal(f, "constant", "K")
+    assert thf.isascii()
+    assert "U015BWIU0105TEK" in thf
+    assert "ŚWIĄTEK" not in thf
+
+
+def test_isabelle_non_ascii_predicate_and_constants_are_ascii_legal():
+    f = _MODAL_PARSE("□ Świątek(świątek, 2008SummerOlympics)")
+    isa = to_isabelle_modal(f, mode="constant", frame="K")
+    consts_lines = [ln for ln in isa.splitlines() if ln.startswith("consts")]
+    lemma_lines = [ln for ln in isa.splitlines() if ln.startswith("lemma")]
+    assert all(ln.isascii() for ln in consts_lines + lemma_lines)
+    assert any("u015awiu0105tek" in ln for ln in consts_lines)       # Świątek
+    assert any("u015bwiu0105tek" in ln for ln in consts_lines)       # świątek
+    assert any("c_2008SummerOlympics" in ln for ln in consts_lines)  # digit-leading -> 'c_'-prefixed
+    assert not any("Świątek" in ln or "świątek" in ln
+                  for ln in consts_lines + lemma_lines)

@@ -61,9 +61,11 @@ from .signature import (
     to_paper_naming, to_chemlog_naming,
 )
 
+from ..fol.spans import SpanMap
 from .interop import (
     parse_chemlog_tptp, to_kit_names, to_chemlog_names,
     CHEMLOG_TO_KIT, KIT_TO_CHEMLOG,
+    rename_with_spans, to_chemlog_names_with_spans,
 )
 
 __all__ = [
@@ -76,4 +78,11 @@ __all__ = [
     # back before it lines up with a molecule structure.
     "parse_chemlog_tptp", "to_kit_names", "to_chemlog_names",
     "CHEMLOG_TO_KIT", "KIT_TO_CHEMLOG",
+    # Span propagation (opt-in; see unicode_fol_kit.mcp.chem_tools's module
+    # docstring for the consumer): rename_with_spans/to_chemlog_names_with_spans
+    # carry a caller-supplied SpanMap across the rename this module always
+    # performs, since that rename reconstructs every node (see
+    # interop.rename_with_spans's own docstring) and would otherwise sever
+    # the link between a parsed AST node and the source span it came from.
+    "SpanMap", "rename_with_spans", "to_chemlog_names_with_spans",
 ]

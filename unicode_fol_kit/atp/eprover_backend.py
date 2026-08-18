@@ -49,7 +49,8 @@ import time
 from typing import List, Optional, Sequence, Tuple
 
 from ..fol.nodes import Node
-from ._tptp_problem import generate_tptp_problem
+from ._ascii_names import reverse_map_text
+from ._tptp_problem import generate_tptp_problem, generate_tptp_problem_with_mapping
 from .protocol import ProverBackend, Verdict, UNKNOWN, ERROR
 
 __all__ = ["EProverBackend", "ZipperpositionBackend",
@@ -175,6 +176,14 @@ def check_entailment_eprover_detailed(premises: List[Node], conclusion: Node,
     ``command=None`` discovery runs (env → PATH → WSL) and a miss raises
     ``RuntimeError`` — use :func:`eprover_available` to probe first.
 
+    Every symbol name in ``raw`` and in ``derivation``'s formulas has
+    already been translated back from whatever ASCII-safe token
+    :func:`atp._tptp_problem.generate_tptp_problem_with_mapping` may have
+    substituted (a non-ASCII or digit-leading kit-level name) to the
+    ORIGINAL kit-level name — see that function's module docstring. A name
+    E introduced itself (a clausification symbol, e.g. ``c_0_7``) was never
+    one of ours and is left as E printed it.
+
     Raises:
         NotImplementedError: a formula is outside the classical FOL fragment
             ``Node.to_tptp`` covers, or two distinct predicate (or
@@ -186,7 +195,7 @@ def check_entailment_eprover_detailed(premises: List[Node], conclusion: Node,
         RuntimeError: no ``eprover`` binary found (see above).
     """
     from .tstp import (extract_szs_status, parse_tstp_derivation,
-                       szs_to_verdict_fields)
+                       reverse_map_derivation, szs_to_verdict_fields)
 
     if command is None:
         found = _discover("eprover", "UFK_EPROVER_CMD")
@@ -197,17 +206,19 @@ def check_entailment_eprover_detailed(premises: List[Node], conclusion: Node,
                 "https://github.com/eprover/eprover")
         command, use_wsl = found
 
-    problem = _generate_tptp_problem(premises, conclusion)
+    problem, name_map = generate_tptp_problem_with_mapping(premises, conclusion)
+    pred_rev, term_rev = name_map.reverse_rendered()
     args = ["--auto", "--tstp-format", "--proof-object", "-s",
             f"--cpu-limit={max(1, timeout)}"]
     # Wall clock outlasts E's own cpu budget so E reports ResourceOut itself.
-    output, timed_out = _run_tptp_prover(problem, command, args, use_wsl,
-                                         timeout_s=timeout + 10)
+    raw_output, timed_out = _run_tptp_prover(problem, command, args, use_wsl,
+                                             timeout_s=timeout + 10)
+    output = reverse_map_text(raw_output, pred_rev, term_rev)
     if timed_out:
         return {"status": UNKNOWN, "reason": "timeout", "szs_status": None,
                 "derivation": None, "raw": output}
 
-    szs = extract_szs_status(output)
+    szs = extract_szs_status(raw_output)
     if szs is None:
         return {"status": ERROR, "reason": "infra", "szs_status": None,
                 "derivation": None, "raw": output}
@@ -215,7 +226,8 @@ def check_entailment_eprover_detailed(premises: List[Node], conclusion: Node,
     derivation = None
     if status == "proved":
         try:
-            derivation = parse_tstp_derivation(output).to_dict()
+            derivation = reverse_map_derivation(
+                parse_tstp_derivation(raw_output), name_map).to_dict()
         except ValueError:
             derivation = None      # never silent: backends put this in detail
     return {"status": status, "reason": reason, "szs_status": szs,
@@ -240,7 +252,7 @@ class _TptpSzsBackend(ProverBackend):
     def decide(self, formula: Node, premises: Sequence[Node] = (),
                timeout: int = 10000, **options) -> Verdict:
         from .tstp import (extract_szs_status, parse_tstp_derivation,
-                           szs_to_verdict_fields)
+                           reverse_map_derivation, szs_to_verdict_fields)
 
         found = _discover(self._binary, self._env_var)
         if found is None:
@@ -252,15 +264,16 @@ class _TptpSzsBackend(ProverBackend):
         command, use_wsl = found
 
         try:
-            problem = _generate_tptp_problem(list(premises), formula)
+            problem, name_map = generate_tptp_problem_with_mapping(list(premises), formula)
         except NotImplementedError as exc:
             return Verdict(UNKNOWN, self.name, reason="unsupported",
                            detail=str(exc))
+        pred_rev, term_rev = name_map.reverse_rendered()
 
         timeout_s = max(1, timeout // 1000)
         start = time.perf_counter()
         try:
-            output, timed_out = _run_tptp_prover(
+            raw_output, timed_out = _run_tptp_prover(
                 problem, command, self._args(timeout_s), use_wsl,
                 timeout_s=timeout_s + 10)
         except (OSError, RuntimeError) as exc:
@@ -271,18 +284,18 @@ class _TptpSzsBackend(ProverBackend):
         if timed_out:
             return Verdict(UNKNOWN, self.name, reason="timeout",
                            wall_time=elapsed)
-        szs = extract_szs_status(output)
+        szs = extract_szs_status(raw_output)
         if szs is None:
             return Verdict(ERROR, self.name, reason="infra",
                            wall_time=elapsed,
                            detail="no SZS status line in output: "
-                                  + output.strip()[-200:])
+                                  + reverse_map_text(raw_output.strip()[-200:], pred_rev, term_rev))
         status, reason = szs_to_verdict_fields(szs, query="conjecture")
         proof = None
         detail = f"SZS status {szs}"
         if status == "proved":
             try:
-                parsed = parse_tstp_derivation(output)
+                parsed = reverse_map_derivation(parse_tstp_derivation(raw_output), name_map)
                 # A status line without TSTP steps (Zipperposition's default
                 # output) is a verdict without a certificate — proof stays
                 # None and the detail says so, the Theorem status stands.

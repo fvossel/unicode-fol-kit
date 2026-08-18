@@ -73,14 +73,32 @@ Hard limits (refuse rather than silently reinterpret)
 
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import List, Optional, Tuple
 
 from .nodes import Node, free_variables
-# The three symbol-class patterns are imported rather than restated: they
-# define what "already legal" means for a name, and a rename that disagreed
-# with sanitize's own notion would either rewrite valid names or leave
-# invalid ones in place.
-from .sanitize import NameMapping, _NAME_RE, _PRED_RE, _VAR_RE
+# The three symbol-class patterns come from fol._identifiers — the SAME
+# generated character classes the grammar itself lexes PREDICATE/NAME/
+# VARIABLE with — rather than from sanitize.py. sanitize.py's patterns are a
+# DIFFERENT, deliberately narrower thing: the strictly-ASCII subset safe to
+# emit into TPTP/Prover9/SMT-LIB/Isabelle/CASL (see its module docstring), not
+# "every name this dialect's parser accepts". Using sanitize's patterns here
+# used to be harmless because they happened to coincide with the grammar's
+# own (then-ASCII) terminals; once the grammar widened to Unicode letters,
+# underscores, and digit-leading names, that coincidence broke — a legal name
+# like `family_History` would fail sanitize's ASCII-only _NAME_RE and get
+# needlessly (and destructively) renamed, even though it already parses fine.
+# _is_legal_name has to ask what THIS dialect's grammar accepts, which is
+# _identifiers, not what sanitize.py is willing to export.
+from ._identifiers import (
+    predicate_pattern as _predicate_pattern,
+    name_pattern as _name_pattern,
+    variable_pattern as _variable_pattern,
+    uppercase_class as _uppercase_class,
+    lowercase_class as _lowercase_class,
+    combining_class as _combining_class,
+)
+from .sanitize import NameMapping
 from .tptp_repair import (
     Issue, RepairResult, _close_universally, _drop_argument_fix, _squash,
 )
@@ -132,9 +150,35 @@ _CANDIDATE_RE = re.compile(
     r"(?=\s*\()"
 )
 
-#: Every identifier already present in the text — used to preseed the name
-#: mapping's reserved set (see the module docstring's collision limit).
-_IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+# The three symbol-class patterns (and the broader IDENT scan below) are
+# built from fol._identifiers lazily, behind lru_cache, rather than at this
+# module's import time: fol/__init__.py imports this module eagerly, so a
+# module-level ``re.compile(_predicate_pattern())`` here would force
+# _identifiers' once-per-process codepoint scan (~0.1-1s) onto every
+# ``import unicode_fol_kit`` — even one that never calls repair_formula. The
+# lru_cache still means the scan runs at most once per process; it just runs
+# on first actual USE instead of on import.
+
+@lru_cache(maxsize=1)
+def _legal_name_patterns():
+    return (
+        re.compile(_predicate_pattern()),
+        re.compile(_name_pattern()),
+        re.compile(_variable_pattern()),
+    )
+
+
+@lru_cache(maxsize=1)
+def _ident_re():
+    """Every identifier-shaped span in the dialect's widened alphabet: a
+    letter or digit, then letters/digits/underscores/combining marks — a
+    superset of PREDICATE/NAME/VARIABLE/CONSTANT (permissive on purpose,
+    since this only feeds the collision-avoidance preseed below, not a
+    legality check)."""
+    letters = f"{_uppercase_class()}{_lowercase_class()}"
+    cont = f"{letters}0-9_{_combining_class()}"
+    return re.compile(f"[{letters}0-9][{cont}]*")
+
 
 #: Substring of a parse-error message that means the grammar refused a mix of
 #: same-level connectives. Matching on the message text is the same small,
@@ -145,17 +189,20 @@ _MIXING_MARKER = "cannot mix"
 
 
 def _is_legal_name(name: str) -> bool:
-    """Is ``name`` already a legal token in SOME symbol class?
+    """Is ``name`` already a legal token in SOME symbol class of THIS
+    dialect's grammar?
 
-    Predicate (``[A-Z][a-zA-Z0-9]*``), function/bare constant (lowercase,
-    at least two letters) or variable (``[a-z][0-9]*``). The variable class
-    matters even though a variable is never a functor: ``∀x (…)`` puts ``x``
-    immediately before a "(" and so matches :data:`_CANDIDATE_RE` — renaming
-    a bound variable to a predicate would destroy the formula, and the one
-    thing keeping it out of the candidate list is that ``x`` is legal here.
+    Predicate, function/bare constant (NAME, including its underscored and
+    digit-leading forms), or variable — see :mod:`unicode_fol_kit.fol.
+    _identifiers` for the exact shapes. The variable class matters even
+    though a variable is never a functor: ``∀x (…)`` puts ``x`` immediately
+    before a "(" and so matches :data:`_CANDIDATE_RE` — renaming a bound
+    variable to a predicate would destroy the formula, and the one thing
+    keeping it out of the candidate list is that ``x`` is legal here.
     """
-    return bool(_PRED_RE.fullmatch(name) or _NAME_RE.fullmatch(name)
-                or _VAR_RE.fullmatch(name))
+    pred_re, name_re, var_re = _legal_name_patterns()
+    return bool(pred_re.fullmatch(name) or name_re.fullmatch(name)
+                or var_re.fullmatch(name))
 
 
 def _find_name_candidates(text: str) -> List[str]:
@@ -281,7 +328,7 @@ def repair_formula(text: str, *, dialect: Optional[str] = None,
         # Preseed with the identifiers already in the text so a legalised
         # name can never collide with a symbol that is already there (see
         # the module docstring's collision limit).
-        mapping.used.update(match.group(0) for match in _IDENT_RE.finditer(text))
+        mapping.used.update(match.group(0) for match in _ident_re().finditer(text))
         renames = tuple((name, mapping.for_predicate(name)) for name in candidates)
 
         retried = _apply_renames(text, renames)

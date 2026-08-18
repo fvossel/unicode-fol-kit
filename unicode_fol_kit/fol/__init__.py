@@ -4,6 +4,7 @@ from .nodes import (
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
     Count, Measure, Cardinality, Contrast,
     Z3Env,
+    node_at, replace_at,
     SortedQuantifier, SortedConstant,
     SortedCount, SortedCardinality,
     Nominal, At,
@@ -51,6 +52,10 @@ from .qml import (
     to_thf_modal, to_isabelle_modal, BARCAN, CONVERSE_BARCAN, QML_BRIDGES,
 )
 from .naming import NamingError, ParsingError
+from .spans import (
+    Span, UNKNOWN, NodeSpans, Path, SpanMap, SpannedFormula,
+    traverse, build_span_map, project_spans,
+)
 from .serialize import SCHEMA_VERSION, serialize, deserialize
 from .casl_export import to_casl_spec, formula_to_casl
 from .casl_import import parse_casl_spec, CaslSpec, CaslImportError
@@ -74,7 +79,10 @@ __all__ = [
     "Atom", "Not", "And", "Or", "Xor", "Implies", "Iff", "Quantifier",
     "Count", "Measure", "Cardinality", "Contrast",
     "Z3Env",
+    "node_at", "replace_at",
     "NamingError", "ParsingError",
+    "Span", "UNKNOWN", "NodeSpans", "Path", "SpanMap", "SpannedFormula",
+    "traverse", "build_span_map", "project_spans",
     "SCHEMA_VERSION", "serialize", "deserialize",
     "to_casl_spec", "formula_to_casl",
     "parse_casl_spec", "CaslSpec", "CaslImportError",

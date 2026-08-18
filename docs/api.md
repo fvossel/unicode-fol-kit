@@ -34,6 +34,8 @@ there. Two deliberate exceptions:
 
    MSFLParser
    Node
+   replace_at
+   node_at
    substitute
    free_variables
    to_fol
@@ -45,6 +47,26 @@ there. Two deliberate exceptions:
    to_english
    CCGDerivation
    reduction_derivation
+```
+
+## Source spans
+
+```{eval-rst}
+.. currentmodule:: unicode_fol_kit
+
+.. autosummary::
+   :toctree: _autosummary
+   :nosignatures:
+
+   SpannedFormula
+   SpanMap
+   NodeSpans
+   Path
+   Span
+   UNKNOWN
+   traverse
+   build_span_map
+   project_spans
 ```
 
 ## AST: terms and the classical connectives
@@ -715,7 +737,9 @@ and `find_model` already return. See {doc}`guide/finite-domain`.
 
 `mol_to_structure` builds a structure from a SMILES string,
 `parse_chemlog_tptp` reads a ChemLog definition, `to_chemlog_names` /
-`to_kit_names` move a formula between the two naming conventions, and
+`to_kit_names` move a formula between the two naming conventions,
+`rename_with_spans` / `to_chemlog_names_with_spans` do the same rename while
+carrying a `SpanMap` (see "Source spans" above) across it, and
 `StructureCache` keeps built structures for a whole run (see
 {doc}`guide/batch-checking`).
 
@@ -734,6 +758,8 @@ and `find_model` already return. See {doc}`guide/finite-domain`.
    to_kit_names
    to_chemlog_naming
    to_paper_naming
+   rename_with_spans
+   to_chemlog_names_with_spans
 ```
 
 ```{eval-rst}

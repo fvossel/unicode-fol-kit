@@ -11,7 +11,7 @@ Together they buy things plain modal logic cannot express: asserting facts about
 
 | construct | Unicode | AST node | meaning |
 | --- | --- | --- | --- |
-| nominal | `i` (a bare lowercase name in formula position) | `Nominal("i")` | true at exactly the world named `i` |
+| nominal | `i` (a bare term-valued identifier in formula position — same shape as a variable or constant, any script, never uppercase-initial) | `Nominal("i")` | true at exactly the world named `i` |
 | satisfaction | `@i φ` | `At(Nominal("i"), φ)` | `φ` holds at the world named `i` |
 
 `@i` binds like the other prefix operators (`¬`, `K_a`), and nominals combine freely with every modal operator:

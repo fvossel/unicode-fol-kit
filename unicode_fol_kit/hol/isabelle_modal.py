@@ -120,7 +120,7 @@ and the constants :data:`ISABELLE_TACTICS` and :data:`BRIDGES`.
 """
 
 import re
-from typing import Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional
 
 from unicode_fol_kit.fol.nodes import (
     Node, Variable, Constant, Number, Function,
@@ -130,7 +130,8 @@ from unicode_fol_kit.fol.nodes import (
     Historically, Once, Previous, Nominal, At,
     Obligatory, Permitted, SortedQuantifier,
 )
-from unicode_fol_kit.fol._symbol_names import SymbolNames
+from unicode_fol_kit.fol._fol_nodes import constant_name_to_ascii
+from unicode_fol_kit.fol._symbol_names import SymbolNames, dedupe
 
 # --------------------------------------------------------------------------- #
 # Configuration tables (kept in sync with qml.py / satisfies_modal).
@@ -227,14 +228,26 @@ _RESERVED = frozenset({
 
 
 def _safe_name(name: str) -> str:
-    """Turn a predicate/constant/function name into a legal lowercase Isabelle id.
+    """Turn a predicate/constant/function name into a legal lowercase ASCII Isabelle id.
 
     Disambiguates names that would collide with a built-in embedding identifier
     (a relation, the existence predicate, the world type, or a lifted operator).
+
+    Non-ASCII characters are transliterated FIRST via
+    :func:`~unicode_fol_kit.fol._fol_nodes.constant_name_to_ascii` (ASCII passthrough;
+    Greek -> conventional name; anything else -> a reversible ``uXXXX`` escape) — an
+    Isabelle ``consts`` identifier is ASCII-only, so a raw Unicode letter reaching this
+    far (``str.isalnum()`` is ``True`` for almost every one of them, so the old
+    alnum-or-underscore filter alone let them straight through) would be silent
+    corruption of the loaded theory, not sanitisation. ``constant_name_to_ascii`` is
+    the identity on an already-ASCII string, so this changes nothing for a name that
+    was already legal — the digit-lead (``c_`` prefix) and reserved-word handling below
+    are exactly what they were before.
     """
     if name in _PRED_ALIAS:
         return _PRED_ALIAS[name]
-    out = "".join(c if (c.isalnum() or c == "_") else "_" for c in str(name))
+    out = "".join(c if (c.isalnum() or c == "_") else "_"
+                   for c in constant_name_to_ascii(str(name)))
     if not out:
         out = "p"
     if not (out[0].isalpha() or out[0] == "_"):
@@ -247,8 +260,18 @@ def _safe_name(name: str) -> str:
 
 
 def _var_name(name: str) -> str:
-    """Isabelle term-variable name (object variables stay lowercase, legal)."""
-    out = "".join(c if (c.isalnum() or c == "_") else "_" for c in str(name))
+    """Isabelle term-variable name (object variables stay lowercase, legal).
+
+    Same ASCII-transliteration fix as :func:`_safe_name`, for the same reason: a raw
+    non-ASCII variable name previously reached the Isabelle text verbatim (only
+    non-alnum/underscore ASCII punctuation was replaced), which is not a legal
+    Isabelle identifier. Use :meth:`_IsaNames.variable` for a per-formula unique
+    token — ``_var_name`` alone can map two distinct source names onto the same
+    token once they are both transliterated (the same class of gap ``_safe_name``
+    has, closed there by :class:`_IsaNames`'s ``dedupe``-backed maps).
+    """
+    out = "".join(c if (c.isalnum() or c == "_") else "_"
+                   for c in constant_name_to_ascii(str(name)))
     if not out or not (out[0].isalpha() or out[0] == "_"):
         out = "x_" + out
     return out
@@ -280,10 +303,33 @@ class _IsaNames(SymbolNames):
                     cand += "0"
                 taken.add(cand)
                 self.nom[n.name] = cand
+        self._var_map: Dict[str, str] = {}
+        self._var_used: set = set()
 
     def nominal(self, name: str) -> str:
         """The world constant naming nominal ``name``."""
         return self.nom[name]
+
+    def variable(self, name: str) -> str:
+        """Unique Isabelle bound-variable token for object-variable ``name``.
+
+        Isabelle variables are not case-folded the way THF's are, so the pre-existing
+        `x`/`X` case collision THF's variable resolver preserves does not arise here.
+        What DOES need de-collision is the same ASCII-transliteration gap
+        :func:`_var_name` closed for individual names: two distinct source names could
+        still coincide AFTER transliteration (e.g. a literal ``theta`` and the Greek
+        ``θ``, both -> ``theta``). Routed through
+        :func:`~unicode_fol_kit.fol._symbol_names.dedupe` against a token pool private
+        to this resolver instance (never shared with the pred/const/func pool: a
+        variable token and a functor token can never collide lexically, since variables
+        here stay whatever case `_var_name` gives them and functors are independently
+        de-collided already).
+        """
+        if name in self._var_map:
+            return self._var_map[name]
+        cand = dedupe(_var_name(name), self._var_used)
+        self._var_map[name] = cand
+        return cand
 
 
 # --------------------------------------------------------------------------- #
@@ -293,7 +339,7 @@ class _IsaNames(SymbolNames):
 def _term(node: Node, names: "_IsaNames") -> str:
     """Render an individual term (used as an argument to a lifted predicate)."""
     if isinstance(node, Variable):
-        return _var_name(node.name)
+        return names.variable(node.name)
     if isinstance(node, Constant):
         return names.constant(node.name)
     if isinstance(node, Number):
@@ -392,7 +438,7 @@ def _lift(node: Node, names: "_IsaNames") -> str:
                 f"{names.nominal(node.nominal.name)})")
 
     if isinstance(node, Quantifier):
-        x = _var_name(node.variable.name)
+        x = names.variable(node.variable.name)
         binder = "mforall" if node.type in _FORALL else "mexists"
         return f"({binder} (\\<lambda>{x}. {_lift(node.formula, names)}))"
 

@@ -30,6 +30,17 @@ _AMIDE_PATTERN = (
     "?[C,O,N]: (c(C) & o(O) & n(N) & bDOUBLE(C,O) & bSINGLE(C,N))"
 )
 
+# The identical pattern, written in the kit's OWN unicode surface syntax
+# with kit-capitalised chemical predicate names (see the chem_tools module
+# docstring's "Chemical formulas MUST be written in TPTP" — a non-tptp_bare
+# dialect is honoured too, renamed to ChemLog spelling the same way). This
+# is also the dialect with_spans=True actually supports (see the module
+# docstring's "Spans" section) and, empirically, the one the real ChEBI
+# campaign calls these tools with throughout its own pipeline.
+_AMIDE_PATTERN_UNICODE = (
+    "∃x∃y∃z (C(x) ∧ O(y) ∧ N(z) ∧ BDOUBLE(x,y) ∧ BSINGLE(x,z))"
+)
+
 
 # ---------------------------------------------------------------------------
 # 1. molecule_to_structure
@@ -438,3 +449,113 @@ def test_simplify_definition_unparseable_formula_is_argument_shape():
     result = ct.simplify_definition("garbage ((( &&&")
     assert result["ok"] is False
     assert result["argument"] == "formula"
+
+
+# ---------------------------------------------------------------------------
+# 6. Spans (opt-in: with_spans=True on check_molecule / check_molecules /
+#    explain_molecule_failure) — see the module docstring's "Spans" section.
+# ---------------------------------------------------------------------------
+
+def test_check_molecule_default_is_byte_identical_to_before_with_spans_existed():
+    """The Pflichttest for the whole feature: a caller that never passes
+    ``with_spans`` must see EXACTLY the same shape as before this parameter
+    existed — in particular, no ``"span"`` key anywhere, not even a ``None``
+    one, in either the omitted-argument or explicit-``False`` form."""
+    omitted = ct.check_molecule(_AMIDE_PATTERN, "CCO")
+    explicit = ct.check_molecule(_AMIDE_PATTERN, "CCO", with_spans=False)
+    assert omitted == explicit
+    assert "span" not in omitted["failing_conjunct"]
+
+
+def test_check_molecule_with_spans_true_span_slices_the_original_text():
+    """``with_spans=True`` on the kit's own unicode dialect: for ethanol
+    (no nitrogen), the reported failing_conjunct's span, sliced out of the
+    ORIGINAL formula text this call was given, must be a real substring of
+    it — not merely resemble the re-rendered ``unicode`` field, which is
+    free to re-space/re-bracket."""
+    result = ct.check_molecule(_AMIDE_PATTERN_UNICODE, "CCO",
+                               dialect="unicode", with_spans=True)
+    assert result["ok"] is True
+    assert result["holds"] is False
+    span = result["failing_conjunct"]["span"]
+    assert span is not None
+    sliced = _AMIDE_PATTERN_UNICODE[span["start"]:span["end"]]
+    assert sliced == span["text"]
+    # Ethanol has no nitrogen at all, so blame cannot get past the outermost
+    # quantifier chain (see test_explain_molecule_failure_names_missing_
+    # nitrogen_for_ethanol's own comment on this same shape) -- the span
+    # therefore covers the WHOLE formula.
+    assert sliced == _AMIDE_PATTERN_UNICODE
+
+
+def test_check_molecule_with_spans_true_narrows_to_the_specific_failing_conjunct():
+    """A TOP-LEVEL conjunction of two independent existentials narrows blame
+    (and hence the span) to whichever SIDE actually failed — the concrete
+    payoff over reporting the whole formula's text: ethanol has carbons (the
+    left conjunct holds) but no nitrogen (the right one fails), so the
+    reported span must be exactly the right conjunct's own substring, with
+    its surrounding parentheses excluded (they are not part of the AST
+    node, only grouping punctuation around it)."""
+    formula = "(∃x C(x)) ∧ (∃x N(x))"
+    result = ct.check_molecule(formula, "CCO", dialect="unicode", with_spans=True)
+    assert result["holds"] is False
+    span = result["failing_conjunct"]["span"]
+    assert formula[span["start"]:span["end"]] == "∃x N(x)"
+
+
+def test_check_molecule_with_spans_true_tptp_bare_is_a_value_error_shape():
+    """``with_spans=True`` together with this module's own default dialect
+    (``tptp_bare``) is a caller/config mistake -- the span layer only covers
+    the kit's own MSFLParser-backed syntax (see the module docstring) -- and
+    must be reported as ``{"error": {"type": "ValueError", ...}}``, not a
+    silent ``span: None`` a caller could mistake for "this conjunct simply
+    has no span"."""
+    result = ct.check_molecule(_AMIDE_PATTERN, "CCO", with_spans=True)
+    assert result == {"error": result.get("error")}  # ONLY the error shape
+    assert result["error"]["type"] == "ValueError"
+    assert "tptp_bare" in result["error"]["message"]
+    assert "with_spans" in result["error"]["message"]
+
+
+def test_check_molecule_with_spans_true_unparseable_formula_is_argument_shape():
+    """A genuine syntax error, even with with_spans=True, is the SAME
+    uniform ok=False/argument shape :func:`check_molecule` always reports —
+    a caller's ``result.get("ok") is False`` check must not have to branch
+    on whether it asked for spans."""
+    result = ct.check_molecule("this is not valid unicode syntax (((",
+                               "CCO", dialect="unicode", with_spans=True)
+    assert result["ok"] is False
+    assert result["argument"] == "formula"
+    assert result["errors"]
+    assert result["spec_topic"]
+
+
+def test_check_molecules_with_spans_true_attaches_span_to_every_failing_entry():
+    result = ct.check_molecules(_AMIDE_PATTERN_UNICODE, ["CCO", "CC"],
+                                dialect="unicode", with_spans=True)
+    assert result["ok"] is True
+    by_smiles = {item["smiles"]: item for item in result["results"]}
+    for smiles in ("CCO", "CC"):
+        entry = by_smiles[smiles]
+        assert entry["holds"] is False
+        assert entry["failing_conjunct"]["span"] is not None
+
+
+def test_explain_molecule_failure_with_spans_true_attaches_span():
+    result = ct.explain_molecule_failure(_AMIDE_PATTERN_UNICODE, "CCO",
+                                         dialect="unicode", with_spans=True)
+    assert result["ok"] is True
+    assert result["holds"] is False
+    span = result["failing_conjunct"]["span"]
+    assert span is not None
+    assert _AMIDE_PATTERN_UNICODE[span["start"]:span["end"]] == span["text"]
+
+
+def test_check_molecule_with_spans_true_holds_true_has_no_failing_conjunct_key():
+    """``holds is True`` never carries a ``failing_conjunct`` at all (with or
+    without spans) — with_spans=True must not manufacture one."""
+    result = ct.check_molecule(_AMIDE_PATTERN_UNICODE, "NCC(=O)NCC(=O)O",
+                               dialect="unicode", with_spans=True)
+    assert result["holds"] is True
+    assert "failing_conjunct" not in result
+    assert "witness" in result

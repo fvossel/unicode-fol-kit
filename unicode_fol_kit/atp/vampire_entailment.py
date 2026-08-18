@@ -29,7 +29,8 @@ import tempfile
 from typing import List, Tuple
 
 from ..fol.nodes import Node
-from ._tptp_problem import generate_tptp_problem
+from ._ascii_names import reverse_map_text
+from ._tptp_problem import generate_tptp_problem, generate_tptp_problem_with_mapping
 
 
 def _generate_vampire_input(premises: List[Node], conclusion: Node) -> str:
@@ -254,6 +255,15 @@ def check_entailment_vampire_detailed(premises: List[Node], conclusion: Node,
           when the output contained at least one parseable ``fof``/``cnf``
           statement, else ``None`` (no derivation to report — not an error).
 
+        Every symbol name in ``output_excerpt`` and in ``derivation``'s
+        formulas has already been translated back from whatever ASCII-safe
+        token :func:`atp._tptp_problem.generate_tptp_problem_with_mapping`
+        may have substituted (a non-ASCII or digit-leading kit-level name) to
+        the ORIGINAL kit-level name — see that function's module docstring.
+        A name Vampire introduced itself (a Skolem constant, a
+        clausification symbol) was never one of ours and is left as Vampire
+        printed it.
+
     Raises:
         FileNotFoundError: ``vampire_path`` does not point to an executable
             (or, with ``use_wsl=True``, ``wsl.exe`` itself is not found) —
@@ -265,9 +275,9 @@ def check_entailment_vampire_detailed(premises: List[Node], conclusion: Node,
             :func:`check_logical_entailment_vampire`.
     """
     from .protocol import PROVED, UNKNOWN
-    from .tstp import extract_szs_status, parse_tstp_derivation, szs_to_verdict_fields
+    from .tstp import extract_szs_status, parse_tstp_derivation, reverse_map_derivation, szs_to_verdict_fields
 
-    vampire_input = _generate_vampire_input(premises, conclusion)
+    vampire_input, name_map = generate_tptp_problem_with_mapping(premises, conclusion)
     stdout, timed_out = _spawn_vampire(vampire_input, vampire_path, timeout=timeout,
                                        use_wsl=use_wsl, extra_args=("--proof", "tptp"))
 
@@ -280,7 +290,8 @@ def check_entailment_vampire_detailed(premises: List[Node], conclusion: Node,
             "derivation": None,
         }
 
-    excerpt = stdout[-_EXCERPT_CHARS:]
+    pred_rev, term_rev = name_map.reverse_rendered()
+    excerpt = reverse_map_text(stdout[-_EXCERPT_CHARS:], pred_rev, term_rev)
     szs = extract_szs_status(stdout)
     if szs is None:
         status = PROVED if _is_entailed_output(stdout) else UNKNOWN
@@ -288,7 +299,7 @@ def check_entailment_vampire_detailed(premises: List[Node], conclusion: Node,
     else:
         status, reason = szs_to_verdict_fields(szs, query="conjecture")
 
-    derivation = parse_tstp_derivation(stdout)
+    derivation = reverse_map_derivation(parse_tstp_derivation(stdout), name_map)
     derivation_dict = derivation.to_dict() if derivation.steps else None
 
     return {

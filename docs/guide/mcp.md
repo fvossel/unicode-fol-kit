@@ -67,9 +67,9 @@ print(bad["ok"], bad["spec_topic"])
 from unicode_fol_kit.mcp.server import get_syntax_spec
 
 spec = get_syntax_spec("naming")
-print(spec["ok"], len(spec["rules"]))       # → True 4
-print(spec["rules"][0]["kind"], "—", spec["rules"][0]["shape"])
-# → variable — one lowercase letter, optional digits
+print(spec["ok"], len(spec["rules"]))       # → True 5
+print(spec["rules"][1]["kind"], "—", spec["rules"][1]["shape"])
+# → variable — one term-valued letter (any script, cased or caseless), then optional trailing digits
 ```
 
 The eight topics are `overview`, `naming`, `dialects`, `operators`,

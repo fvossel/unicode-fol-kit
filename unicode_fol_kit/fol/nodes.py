@@ -2,6 +2,53 @@
 
 Classical FOL definitions live in _fol_nodes.py.
 MSFL extension (sorted quantifiers/constants, Łukasiewicz operators, to_fol) lives in _msfl_nodes.py.
+
+STABLE PUBLIC API
+------------------
+Two things exported from this module are STABLE PUBLIC API, in the sense
+that a downstream consumer is meant to build directly on them rather than
+reaching past them into the modules underneath (``_fol_nodes.py``,
+``_msfl_nodes.py``, …, all underscore-prefixed precisely because THEY are
+not the contract):
+
+  * every node class's CONSTRUCTOR — ``Variable``, ``Constant``, ``Number``,
+    ``Function``, ``Atom``, ``Not``, ``And``, ``Or``, ``Xor``, ``Implies``,
+    ``Iff``, ``Quantifier``, ``Count``, ``Measure``, ``Cardinality``,
+    ``Contrast``, and every MSFL/modal/hybrid/team/linear/lambek/
+    second-order class re-exported below — meaning field names, field
+    order, and what a positional or keyword argument means;
+  * ``Node.to_unicode_str()``, meaning both that it renders a parseable
+    Unicode formula string, and that the string it renders parses back
+    (via the matching ``MSFLParser`` mode) to a structurally equal node —
+    the roundtrip guarantee documented on ``to_unicode_str`` itself and
+    exercised by the FOL-fragment roundtrip test suite.
+
+A consumer that builds nodes by calling these constructors directly and
+serialises them back to text via ``to_unicode_str`` — the way a mutation-
+search loop assembling candidate formulas and shipping them across a
+process boundary would — is standing on committed API, not on an
+implementation detail that happens to work today.
+
+What "stable" commits this kit to: a node class is not renamed, its
+dataclass fields are not reordered or reinterpreted, and ``to_unicode_str``'s
+grammar does not change in a way that breaks the roundtrip for an existing
+node shape, without that change being called out explicitly in
+``CHANGELOG.md`` — never folded silently into an unrelated change. This
+project is pre-1.0 (see ``CHANGELOG.md``'s header: "a minor release MAY
+contain breaking changes"), so a break is not impossible — but for these
+names it is never an accident. ``Node.__eq__`` / ``__hash__`` / ``repr`` /
+``to_dict`` / ``from_dict`` are part of the same commitment: unchanged for
+every node already registered in ``NODE_CLASSES``.
+
+What it does NOT commit to: anything not re-exported here or in
+``fol/__init__.py``'s ``__all__`` — internal helpers, the exact
+``_child_nodes()``/``map_children`` traversal order, or any
+underscore-prefixed name in any ``_*_nodes.py`` module. The separate, PATH
+convention ``replace_at``/``node_at``/``fol.spans.traverse`` agree on
+(``_child_nodes()`` order, except a ``Quantifier``'s bound variable is
+excluded — see ``_fol_nodes.py``'s "Public tree editing" section and
+``fol/spans.py``'s module docstring) is its own narrower commitment, scoped
+to those three functions.
 """
 
 from ._fol_nodes import (
@@ -12,6 +59,7 @@ from ._fol_nodes import (
     Count, Measure, Cardinality, Contrast,
     NODE_CLASSES,
     FOLTransformer,
+    node_at, replace_at,
 )
 from ._msfl_nodes import (
     SortedQuantifier, SortedConstant,
@@ -50,6 +98,7 @@ __all__ = [
     "Count", "Measure", "Cardinality", "Contrast",
     "NODE_CLASSES",
     "FOLTransformer",
+    "node_at", "replace_at",
     "SortedQuantifier", "SortedConstant",
     "SortedCount", "SortedCardinality",
     "Nominal", "At",

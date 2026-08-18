@@ -5,7 +5,266 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
-## [Unreleased]
+## [0.23.0] - 2026-08-18
+
+### `fol.grammars` / `fol._identifiers` — identifiers widen past ASCII, underscores, and digit-leading names
+
+`PREDICATE`, `CONSTANT`, `NAME`, and `VARIABLE` were each one fixed ASCII
+regex (`[A-Z][a-zA-Z0-9]*` and siblings), so a name that was not plain
+`A-Za-z0-9` never parsed at all. Run against the FOLIO gold corpus
+(`tests/fixtures/folio_fol_strings.txt`, 1310 lines), 96 lines failed —
+and 46 of them failed at exactly this seam, not at some deeper grammar
+limitation: a digit-leading name (`Hosted(beijing, 2008SummerOlympics)`,
+17 lines), an underscore inside a name (`dani_Shapiro`, `family_History`,
+15 lines), or a non-ASCII letter (`LostTo(x, świątek)`, 14 lines). The
+remaining 50 are genuine gold-corpus defects, unrelated to identifiers and
+left rejected: 44 lines with unbalanced parentheses, 5 that mix `∧`/`∨`
+without brackets (a mix this grammar has always refused outright, on
+purpose — two different readings, and picking one would be a guess), and
+one formula using the wrong biconditional glyph (`⟷` instead of `↔`).
+
+`PREDICATE`/`CONSTANT`/`NAME`/`VARIABLE`/`SORT` are now generated at
+runtime, once per process (`fol._identifiers`, scanning `str.isupper()`/
+`str.isalpha()` over the running interpreter's own Unicode tables) rather
+than hand-typed as a frozen codepoint range — a range pasted into source
+would go stale the moment Unicode gains a script or a codepoint's category
+changes, silently drifting from whatever Python 3.10+ actually runs the
+kit. The rule that decided PREDICATE vs. term position never changed, it
+just widened honestly to alphabets it was never tested against before:
+the FIRST character's `str.isupper()` decides — true means PREDICATE,
+anything else means term-valued (NAME/CONSTANT/VARIABLE). Most scripts
+(CJK, Arabic, Hebrew, Devanagari, …) draw no upper/lower distinction at
+all, so `str.isupper()` is always false there and a bare identifier in
+such a script is always term-valued, never able to head an atom by
+itself — not a special case, just what the existing rule says once it is
+applied to a script that has no case to signal with. A digit-leading name
+(`2008SummerOlympics`) is folded into `NAME` rather than a new terminal —
+digits then a letter then the ordinary continuation — so it is always
+term-valued too and can never open an atom; `NUMBER` itself is completely
+unchanged (`2008` and `2.5` still lex as `NUMBER`). Continuation
+characters (position two onward) additionally gained `_` and Unicode
+combining marks (categories Mn/Mc), the latter so an NFD-decomposed name
+(`ś` → `s` + U+0301) still lexes as one identifier instead of a letter
+plus a stray mark.
+
+Greek and Coptic (U+0370–U+03FF), Greek Extended (U+1F00–U+1FFF), and
+U+2126 OHM SIGN are excluded from every generated class: `λ` is the
+LAMBDA terminal, `μ` is the measure-term operator, and the plain lowercase
+Greek run is already `CONSTANT`'s second alternative — widening the letter
+classes without carving Greek back out would have turned those operators
+into ordinary identifier characters. Widening `NAME` to accept `_` also
+means `CONSTANT`'s `c_...` form and `NAME`'s alpha-leading form can now
+match the exact same span (`c_alpha` never overlapped before, because
+`NAME` never accepted an underscore) — `CONSTANT`'s existing priority
+(`.3` over `NAME`'s `.2`) still wins that tie, now for a real reason
+instead of an accident of spelling; the `c_` form itself may also carry
+Unicode letters (`c_świątek`). `fol.sanitize` — the layer that rewrites an AST's names to
+tokens THIS parser's own grammar can re-parse, for a name from outside the
+kit (an imported TPTP IRI dump, typically) that the grammar does not
+accept as-is — is deliberately untouched: its job is re-parseability by
+this parser, not legality for any particular export format (a separate
+concern, closed for TPTP/Prover9/SMT-LIB2/THF/Isabelle/MiniZinc export by
+the fix described further down in this entry), and widening its own
+ASCII-only patterns to match this now-Unicode-wide grammar would only let
+a name back through parsing that is still illegal wherever it must
+eventually export to. `fol.dialect_repair`'s legality check
+(which functor-position names are worth renaming when a formula fails to
+parse) now asks the same generated classes rather than `sanitize`'s
+ASCII-only ones, so a name like `family_History` is recognised as already
+legal instead of being needlessly rewritten. `fol.naming.NamingError`
+shows a short hand-written description of each widened terminal's shape
+in its "Expected pattern" text instead of the several-kilobyte generated
+regex, which is not something a human — or a model reading the error to
+retry — could act on.
+
+The two name shapes this widening lets past the parser — a non-ASCII
+letter in predicate/function position, and a digit-leading term — used to
+reach every export format unchanged or nearly so: `Atom.to_tptp`/
+`to_prover9` and `Function.to_tptp`/`to_prover9` emit the predicate/
+function name close to verbatim (TPTP folds only the first character's
+case; Prover9 folds nothing), `hol.classical`'s `_sanitize` ran
+`str.isalnum()` over a name without transliterating first (`True` for
+nearly every Unicode letter, so `świątek` passed straight through),
+`atp.minizinc_backend` transliterated a constant's name but not a
+predicate's or a function's, and a digit-leading name reached
+`to_z3`/`Solver.to_smt2()`'s SMT-LIB2 text with no quoting at all — text
+that does not parse back. None of this was new *in kind*: a
+`Constant`/`Atom`/`Function` built directly in Python, without going
+through this parser at all, could already carry such a name and hit the
+same exporters. What the widening added was a second, ordinary way to
+arrive at one, so the gap stopped being a corner case reachable only by
+hand-built AST and became something a parsed FOLIO-style sentence hits
+directly.
+
+Every one of those gaps is closed now, and the fix does not live inside
+any node's own `to_tptp`/`to_prover9`/`to_z3`. A single node has no view
+of what any other node in the same problem is named, so a per-node rename
+cannot keep two distinct kit-level names from colliding on their fix, and
+it never reaches a caller that later needs to read a prover's own symbol
+names back out. The fix instead sits where a whole problem or theory is
+assembled: `atp._tptp_problem.generate_tptp_problem`/
+`..._with_mapping` (shared, unchanged, by `atp.vampire_entailment`,
+`atp.eprover_backend`'s E and Zipperposition routes, and
+`atp.twee_entailment`) and `atp.prover9_entailment
+.generate_prover9_input_with_mapping` each walk every premise and the
+conclusion TOGETHER, leave a name that is already legal for that target
+completely untouched, and replace only the rest with an ASCII,
+non-digit-leading token — injective and consistent across the whole
+problem, via a shared reservation set that is filled in two passes
+(collect every name first, only then synthesise a token for the ones that
+need one) so a synthesised token's collision-avoidance never depends on
+which order the premises happen to be given in. `hol.classical._sanitize`
+(THF/Isabelle, classical and MSFOL) and `fol.qml`/`hol.isabelle_modal`'s
+THF/Isabelle modal exporters now transliterate via `constant_name_to_ascii`
+*before* their existing alnum-or-underscore filter runs, and the modal
+exporters gained a de-colliding resolver for bound variable names, which
+they had not had before. `atp.minizinc_backend`'s predicate, function, and
+variable names now transliterate the same way its constant names always
+did, with predicates and functions also gaining the collision guard only
+constants had. `atp.cvc5_backend` needed a narrower fix, because Z3's own
+`Solver.to_smt2()` already pipe-quotes a non-ASCII name correctly on its
+own (checked live: `świątek` round-trips through it with no help from this
+kit) — only a pure-ASCII, digit-leading name still produced unquoted,
+unparseable SMT-LIB2 text, and reproduced live, feeding one to this
+backend before the fix does not raise a catchable error at all: cvc5's
+`InputParser` segfaults the whole Python process.
+
+A prover's own answer carries these sanitised names back — a TSTP proof
+step, raw stdout, an SZS status detail, a cvc5 countermodel — so every one
+of these routes also translates its answer back to the original kit-level
+names before it reaches the caller, via a `TptpNameMap`/`Prover9NameMap`
+each `..._with_mapping` function hands back alongside the problem text.
+`atp._tptp_problem.apply_reverse_tptp` and `atp.tstp.reverse_map_derivation`
+handle a parsed, structured proof step; the new `atp._ascii_names
+.reverse_map_text` handles free text. The free-text side exposed a real
+bug while it was being built, caught live against a real prover rather
+than assumed: keying the reverse dictionary by the raw token chosen before
+rendering is correct for the structured route (re-parsing a prover's TSTP
+text re-applies the kit's own capitalisation convention on import) but
+wrong for text a prover echoes back UNPARSED, because `Node.to_tptp` also
+folds the first character of whatever it exports — so a plain, already-
+legal predicate like `Human`, never touched by sanitisation at all, still
+came back through E's or Vampire's own stdout as `human` and was never
+translated back. `TptpNameMap.reverse_rendered()` fixes it by keying the
+reverse dictionary on the token actually written into the exported text
+instead; checked live against a real E 3.5.1 and a real Vampire 5.0.1
+(both via WSL) on a `Human`/`Mortal` and a `Świątek`/`2008SummerOlympics`
+battery, with the reverse-mapped derivation step (which was already
+correct, being on the structured route) as the control showing the
+free-text side was the only one broken. `atp.cvc5_backend` reverse-maps
+and un-quotes its countermodel the same way, checked live on the same
+battery.
+
+None of this touches `Node.to_tptp`, `Node.to_prover9`, or `Constant.to_z3`
+themselves — they still render a name close to verbatim, exactly as
+before, and that stays deliberate rather than an oversight: a
+`Constant`/`Atom`/`Function` assembled directly in Python, never passed
+through one of the problem-generation entry points above, can still carry
+any name at all, and the whole-problem view a consistent rewrite needs
+only exists once premises and a conclusion are actually gathered into one
+problem. `fol.sanitize.sanitize_names` — described above as the layer that
+makes an imported name re-parseable by this parser — looks like the
+obvious tool to reuse here, and was deliberately not: its target is
+re-parseability by the kit's OWN grammar, not any export format's, and the
+two disagree often enough to matter — `fol.sanitize` rewrites the
+already-TPTP-legal single-letter constant `a` to `c_a`, which would break
+the "an already-legal name passes through byte-identical" guarantee every
+route above makes. The new `atp._ascii_names` module reuses the same
+SHAPE `fol.sanitize.NameMapping` already established — a shared
+reservation set, numeric-suffix de-collision, a flat reverse dict — built
+fresh per target format instead of reusing its kit-specific methods.
+
+One path stayed unverified against a real prover, named here rather than
+left implicit: Prover9 has no route anywhere in this kit that reads a
+proof or a countermodel back out of Prover9's own output —
+`check_logical_entailment` reports a bare proved/not-proved verdict — so
+there was no reverse mapping to build there in the first place, and no `prover9`
+binary was reachable from this machine (checked `PATH` and WSL) to test
+the export direction against the real thing either; the kit's own
+`prover9_input.parse_prover9` reader served as the touchstone instead.
+Everything else above was checked against the real tool it targets: E
+3.5.1 and Vampire 5.0.1 (via WSL) for TPTP, Twee 2.6.1 (via WSL) for the
+equational fragment — proving and correctly reverse-mapping a
+`świątek`/`2008wins` equation live — and an installed `cvc5` for
+SMT-LIB2, including reproducing the digit-leading segfault above live,
+before confirming the fix round-trips through `z3.parse_smt2_string`.
+
+Every string the parser accepted before this change still parses to the
+structurally identical AST: verified by diffing this parser against the
+one committed at HEAD before the change, over all 1310 FOLIO lines — the
+1214 that already parsed produced byte-identical ASTs, and exactly the 46
+described above newly parse.
+
+### `fol.msflparser` / `fol.spans` — a parsed formula can point back at its own text
+
+A formula that parsed cleanly never carried any link to the text it came
+from: `MSFLParser` built its Lark grammar without `propagate_positions`, so
+the parse tree carried no offsets, and positions existed only on FAILURE —
+`NamingError`/`ParsingError` build them from Lark's own exception. Nothing
+downstream (repair, simplify, the chemical tools' "which conjunct is too
+permissive" feedback) could say WHERE in the source text a subformula sits.
+
+`MSFLParser.parse_with_spans` closes that gap, alongside `.parse` rather
+than replacing it: it returns a `SpannedFormula` — `.formula` is exactly
+what `.parse(text)` would build, `.spans` a `SpanMap` from each of its
+nodes back to the slice(s) of `text` it was parsed from. Every node gets
+TWO spans (`NodeSpans(extent, head)`): `extent` is the minimal text the
+node covers (redundant outer parentheses excluded), `head` is just its own
+head token — a connective's occurrence, an atom's predicate name, a
+quantifier's symbol together with its bound variable including the
+whitespace between them (`"∀ x"`); a leaf term has `head == extent`.
+
+The spans live in a side table beside the AST, not as a field on `Node`:
+every node is a frozen dataclass with structural equality and hashing —
+dedup, `canonical_key` caches, sets of nodes, the harvest cache in
+`semantics/model_eval.py`, and every test that compares a parsed formula to
+a hand-built one all depend on that holding. A span *field* would make two
+structurally identical formulas parsed from different source text compare
+unequal and hash apart, so the table stays external, and `parse_with_spans`
+changes nothing about how `.formula` itself is built.
+
+Within that table, the key is PATH — a tuple of child indices from the
+root, the SAME convention `fol.spans.traverse`/`fol.nodes.node_at`/
+`fol.nodes.replace_at` all agree on — never node identity or node value:
+a value-keyed table would collapse two textually-distinct occurrences of
+the same subformula (`P(x)` in `P(x) ∧ P(x)`) onto one span, and an
+id()-keyed one goes stale the moment a node is rebuilt, which the
+scope-resolution rewrite that runs after parsing (and, in modal mode,
+agent-variable resolution) always does — `map_children` reconstructs every
+node it touches, even a lambda-free formula with nothing to actually
+rewrite. A path denotes the same structural position regardless, so it
+survives that rebuild for free;
+`fol.spans.project_spans` carries the table across a rewrite that is NOT
+shape-preserving (the one case: a higher-order lambda application, rebuilt
+into fresh `Application`/`LambdaVar` nodes the original parse never
+produced). `SpanMap.for_node(node)` is the convenience form for a caller
+holding a node object rather than a path, resolved by identity against
+whichever tree the map is currently bound to.
+
+A span that cannot be recovered reports `UNKNOWN`, never a guessed or
+interpolated one. For the classical FOL fragment (`∀ ∃ ¬ ∧ ∨ → ↔ ⊕` and
+predicates over constants/variables/function terms) both spans are exact
+for every node — checked over the 1310-formula FOLIO gold corpus
+(`tests/fixtures/folio_fol_strings.txt`, MIT), with the handful of
+non-parsable gold lines committed as
+`tests/fixtures/folio_fol_strings_nonparsable.txt`. Outside that fragment
+(modal/lambda/second-order/counting operators), `head` may legitimately be
+`UNKNOWN` — two narrow, already-known cases: a higher-order lambda
+application built by a rewrite the original parse never produced, and an
+agent variable sliced out of a combined `K_a`-style token (the enclosing
+`Knows`/`Believes`/… node's own `extent` is unaffected either way).
+
+`chem.interop` gets the matching propagation step, `rename_with_spans` /
+`to_chemlog_names_with_spans`, since the kit-to-ChemLog vocabulary rename
+every chem tool runs first also reconstructs every node in the tree — a
+shape-preserving rewrite, so every path in the table still means the same
+thing after it, no projection needed.
+`mcp.chem_tools.check_molecule` / `check_molecules` / `explain_molecule_failure`
+take a new `with_spans=True` (default off, byte-identical output otherwise)
+that adds a `"span"` key beside `failing_conjunct` — a caller gets a
+character range straight into the formula it submitted, instead of having
+to find the rendered `failing_conjunct` text again inside the original
+string by eye.
 
 ### `chem` — the halogens enter the vocabulary
 
@@ -25,6 +284,63 @@ Anything outside the eleven letters — a metal, say — is still refused with a
 predicate would misrepresent the molecule. Astatine is included for closure
 of the group despite being vanishingly rare in ChEBI; leaving one member out
 would make the vocabulary's boundary an accident of frequency.
+
+### `fol.nodes` — `replace_at` / `node_at`, a public path-addressed tree editor
+
+A consumer that wants to mutate one subformula of a parsed AST — swap a
+connective, negate an atom, substitute an argument term — previously had to
+either hand-roll a `map_children`-based rewrite for each node type it might
+hit, or use `atp.resolution`'s private `_replace_at`, which only ever
+addresses an `Atom`/`Function`'s argument positions. `replace_at(root, path,
+new_node)` (and the companion read-only `node_at(root, path)`) are the
+general, public counterparts: they work over any node — formula or term —
+so a path is a tuple of child indices, `()` addressing the root itself.
+
+The path convention is `Node._child_nodes()`'s existing, already-relied-on
+child order (the same order `map_children`/`walk`/`count`/`depth` use) for
+every node EXCEPT `Quantifier`, whose bound variable is deliberately
+excluded: a `Quantifier`'s only path child is its `formula`, at index 0 —
+the SAME convention `fol.spans.traverse`/`fol.spans.SpanMap` use, so a path
+one hands out is valid input to the other. (The variable is folded into the
+quantifier's HEAD span instead, the same way `Node._tree_parts()`/`to_dot`
+already fold it into the node's *label* rather than its *children* — see
+`fol.spans`'s module docstring for the full reasoning.)
+
+The guarantee that makes it safe to build a larger edit on top of: any path
+that does not run through the replaced subtree addresses the exact same
+object — not just an equal one — in the result, because every node off the
+root-to-target spine is carried over by reference rather than copied; only
+the spine itself is rebuilt. See `tests/test_replace_at.py` and
+`tests/test_spans.py`'s edit-stability test.
+
+### `fol.nodes` — two API commitments made explicit
+
+Two things a caller assembling and re-serialising ASTs across a process
+boundary already depended on are now documented as STABLE PUBLIC API rather
+than left implicit: every node class's constructor (field names, order, and
+meaning) and `Node.to_unicode_str()`, including its roundtrip guarantee —
+`parse(n.to_unicode_str())` is structurally equal to `n` for the classical
+FOL fragment (`∀ ∃ ¬ ∧ ∨ → ↔ ⊕` and predicates over constants/variables).
+That guarantee is now exercised by a dedicated property suite,
+`tests/test_fol_fragment_roundtrip_b2.py` (hand-built parenthesisation edge
+cases plus a seeded randomized search), alongside the existing
+example-based `tests/test_to_unicode_str.py`; no counterexample was found.
+
+`eval.equivalence.EquivalenceResult.counterexample` — the countermodel a
+refuted `solver`/`auto` equivalence check returns — is documented more
+explicitly as the accessible field a caller checks after a `False` verdict,
+rather than something to be inferred from the surrounding prose; the field
+itself is unchanged.
+
+### Packaging — `requires-python` stays `>=3.10`
+
+Raised explicitly because a consumer building on the span layer asked: no,
+it does not move. Nothing in this release's new surface —
+`parse_with_spans`, the path-keyed `SpanMap`, `replace_at`/`node_at`, the
+span-capturing Lark transform — reaches for anything newer than what the
+rest of the kit already assumes; frozen dataclasses, `typing.Tuple`/`Dict`
+generics and ordinary recursion are all 3.10-safe. There was no technical
+reason to raise the floor, so it was not raised.
 
 ## [0.22.0] - 2026-08-14
 

@@ -468,8 +468,15 @@ class TestMixingErrors:
     def test_a_genuine_naming_error_still_names_the_pattern(self):
         """The narrowing is confined to same-level connectives: a character
         that is NOT one of them still yields the naming diagnosis with the
-        expected pattern, which is what makes that message useful."""
-        msg = self._error_str(MSFLParser(), "P(1x)")
+        expected pattern, which is what makes that message useful.
+
+        ``P(1x)`` used to be this genuine error (NUMBER lexes '1', then 'x'
+        is unexpected) but a digit-leading identifier is now legal NAME
+        syntax (``2008SummerOlympics`` and the like — see
+        ``tests/test_identifier_widening.py``), so ``1x`` parses today; '@'
+        is not a legal continuation character for anything, so it still
+        triggers the same diagnosis this test pins."""
+        msg = self._error_str(MSFLParser(), "P(1@)")
         assert "Invalid number" in msg
         assert "Expected pattern" in msg
 
@@ -726,3 +733,30 @@ class TestFLMode:
         assert isinstance(result.body, StrongConjunction)
         assert result.body.left == Atom("P", [LambdaVar("x")])
         assert result.body.right == Atom("Q", [LambdaVar("x")])
+
+
+def test_lambda_parameter_carries_a_span():
+    """``λx. P(x)``'s bound parameter must know where its ``x`` came from.
+
+    ``LambdaTransformer.lambda_`` reads the parameter out of the parse tree
+    and then builds a FRESH ``LambdaVar`` from its name, discarding the node
+    it came from. That new object never passes through Lark's dispatch, and
+    ``LambdaVar`` is a leaf, so the operator-chain gap filler (which derives
+    a span as the union of a node's children's) cannot recover it either --
+    the parameter of every lambda, ordinary ones included, reported UNKNOWN
+    while its position sat one character into the source.
+
+    Both parameter shapes are checked: a VARIABLE parameter (arrives as a
+    span-captured node) and a PREDICATE parameter (arrives as a raw Lark
+    token), because they travel different paths into the handler.
+    """
+    from unicode_fol_kit.fol.msflparser import MSFLParser
+
+    for text, expected in (("λx. P(x)", "x"), ("λP. P(alice)", "P")):
+        spanned = MSFLParser().parse_with_spans(text)
+        span = spanned.spans.for_node(spanned.formula.param).extent
+        assert span is not None, f"{text}: parameter span is UNKNOWN"
+        assert span.text == expected
+        assert text[span.start:span.end] == expected
+        # The span pass must not change what is parsed.
+        assert spanned.formula == MSFLParser().parse(text)

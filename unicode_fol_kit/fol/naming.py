@@ -1,6 +1,8 @@
 from lark import Lark, UnexpectedCharacters, UnexpectedToken, UnexpectedEOF
 from lark.exceptions import ParseError
 
+from ._identifiers import HUMAN_READABLE_PATTERNS
+
 
 _SYMBOL_NAMES = {
     "↔": "biconditional",
@@ -176,9 +178,19 @@ class NamingError(UnexpectedCharacters):
             f"SYNTAX_ERROR: Invalid {display} '{last_token.value}' - "
             f"unexpected character '{exc.char}' at position {exc.column}"
         )
-        pattern = self._patterns.get(last_token.type)
-        if pattern:
-            message += f". Expected pattern: {pattern}"
+        # PREDICATE/NAME/CONSTANT/VARIABLE/SORT are generated at runtime from
+        # the interpreter's Unicode tables (see fol/_identifiers.py) — their
+        # raw pattern text is several kilobytes of \uXXXX-\uYYYY ranges, which
+        # is not a message a human (or a model reading the error to retry)
+        # can act on, so those five show a short hand-written description
+        # instead of the pattern this module resolved from the grammar.
+        human = HUMAN_READABLE_PATTERNS.get(last_token.type)
+        if human:
+            message += f". Expected pattern: {human}"
+        else:
+            pattern = self._patterns.get(last_token.type)
+            if pattern:
+                message += f". Expected pattern: {pattern}"
         return message
 
     def __str__(self):

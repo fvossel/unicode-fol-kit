@@ -8,19 +8,21 @@ The lexer distinguishes the following token kinds. Because the patterns are mutu
 
 | Token | Pattern | Examples | Meaning |
 |---|---|---|---|
-| Variable | one lowercase letter, optional trailing digits | `x`, `y`, `x1`, `z42` | a (possibly bound) logical variable |
-| Name | lowercase, at least two letters, may contain digits and uppercase after the first letter | `socrates`, `distance`, `centerOf`, `foo1` | a bare constant or a function symbol |
-| Constant (`c_`) | `c_` followed by letters/digits | `c_a`, `c_zero`, `c_42` | an explicitly marked constant |
+| Variable | one term-valued letter, optional trailing digits | `x`, `y`, `x1`, `z42`, `ś`, `ś1` | a (possibly bound) logical variable |
+| Name | term-valued, at least two letters (or one-or-more digits then a letter), may also contain digits, underscores, and uppercase letters after the first character | `socrates`, `distance`, `centerOf`, `foo1`, `dani_Shapiro`, `2008SummerOlympics`, `świątek` | a bare constant or a function symbol |
+| Constant (`c_`) | `c_` followed by letters/digits (any script) | `c_a`, `c_zero`, `c_42`, `c_świątek` | an explicitly marked constant |
 | Constant (Greek) | a run of Greek letters, **excluding** `λ` and `μ` | `θ`, `α`, `π` | a constant, e.g. a threshold `θ` in `μ(x, dim) > θ` |
-| Predicate | one uppercase letter, then letters/digits | `P`, `Human`, `OnSurfaceOf` | a predicate symbol |
+| Predicate | one uppercase-signalling letter, then letters/digits (no underscore) | `P`, `Human`, `OnSurfaceOf`, `Ś` | a predicate symbol |
 | Number | digits, optional decimal part | `0`, `42`, `3.14` | a numeric literal |
-| Sort annotation | `:` followed by an uppercase letter and letters/digits | `:Human`, `:Sort1` | a sort tag *(MSFOL and MSFL modes only)* |
+| Sort annotation | `:` followed by an uppercase-signalling letter and letters/digits | `:Human`, `:Sort1` | a sort tag *(MSFOL and MSFL modes only)* |
+
+"Term-valued letter" and "uppercase-signalling letter" are not ASCII-only: any Unicode letter qualifies, decided by the SAME rule Python's `str.isupper()` uses on that letter — true means uppercase-signalling (Predicate/Sort), anything else (including every letter of a script with no case distinction at all, such as Chinese, Arabic, Hebrew, or Devanagari) means term-valued (Variable/Name/Constant). A caseless-script identifier is therefore always term-valued and can never head an atom by itself. Underscore is a Name-only continuation character — never legal as a token's first character, and deliberately not part of Predicate or Sort, so `Foo_bar(x)` is still rejected exactly as it always was. A Name may also start with one or more ASCII digits followed by a letter (`2008SummerOlympics`); `Number` itself is unaffected, so a bare digit run with no trailing letter (`2008`, `3.14`) still lexes as a number, never a Name. Greek letters are excluded from every one of these classes (not just carved out of Name/Predicate specifically) because `λ`/`μ`/the Greek Constant run already use them; see below.
 
 The `c_` form exists so that **single-letter constants** can be written without colliding with variables. A bare `a` is always a variable; if you need the constant *a*, write `c_a`.
 
-Greek letters (except the reserved operators `λ` Lambda and `μ` Measure) name constants directly — handy for symbolic thresholds and parameters, e.g. `μ(x, volume) > θ` (“too much”). This is **constants only**: predicates, function names, and variables stay ASCII. The Kripke evaluator and Z3 carry the raw unicode name; the ASCII-only Prover9 / TPTP exporters transliterate it deterministically and reversibly (`θ` → `theta`, other non-ASCII → a `uXXXX` codepoint escape), so an emitted problem is always valid ASCII.
+Greek letters (except the reserved operators `λ` Lambda and `μ` Measure) name constants directly — handy for symbolic thresholds and parameters, e.g. `μ(x, volume) > θ` (“too much”). This is **constants only**: predicates, function names, and variables never draw from this Greek-letter Constant form, though they do accept non-Greek Unicode letters as described above. The Kripke evaluator and Z3 carry the raw unicode name; `Constant.to_prover9`/`to_tptp` transliterate a constant's own name deterministically and reversibly (`θ` → `theta`, other non-ASCII → a `uXXXX` codepoint escape) on their own, node by node. A non-ASCII predicate or function name, and any digit-leading term, need a wider fix a single node cannot do by itself — an injective rewrite across a whole problem, with the original names translated back out of a prover's answer — which every ASCII-only export route (TPTP, Prover9, SMT-LIB2, THF, Isabelle, MiniZinc) now applies before rendering; see {doc}`transforms` for how. `unicode_fol_kit.fol.sanitize` is a different mechanism for a different problem: it rewrites a name to a token THIS PARSER's own grammar can re-parse (an import from outside the kit, not a name this parser already accepts), and is unrelated to what any export format accepts.
 
-A function or predicate is recognised by being immediately followed by a parenthesised argument list, e.g. `distance(x, y)` or `Human(socrates)`. The same token class (Name) serves both as a bare constant and, when applied, as a function symbol. **A single lowercase letter is the one exception to "Variable, always"**: standing alone it is a variable (`f` in `∀f P(f)`), but immediately followed by `(` it is read as a one-letter function symbol instead — `f(x)` is `Function("f", [x])`, not a variable applied to something:
+A function or predicate is recognised by being immediately followed by a parenthesised argument list, e.g. `distance(x, y)` or `Human(socrates)`. The same token class (Name) serves both as a bare constant and, when applied, as a function symbol. **A single term-valued letter is the one exception to "Variable, always"**: standing alone it is a variable (`f` in `∀f P(f)`), but immediately followed by `(` it is read as a one-letter function symbol instead — `f(x)` is `Function("f", [x])`, not a variable applied to something:
 
 ```python
 from unicode_fol_kit import MSFLParser
@@ -252,8 +254,8 @@ A lambda abstraction is written `λ` followed by a parameter name, a literal `.`
 
 | Parameter form | Example | Typical use |
 |---|---|---|
-| Single lowercase letter | `λx. P(x)` | value variable |
-| Multi-letter lowercase name | `λfoo. P(foo(x))` | named-constant parameter |
+| Single term-valued letter | `λx. P(x)` | value variable |
+| Multi-letter term-valued name | `λfoo. P(foo(x))` | named-constant parameter |
 | Uppercase predicate symbol | `λP. P(x)` | predicate / higher-order parameter |
 
 All three token classes become a `LambdaVar` in the AST. Scope resolution (applied automatically by `parse()`) then rewrites body occurrences of the lambda-bound name:

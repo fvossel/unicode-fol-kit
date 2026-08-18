@@ -143,6 +143,31 @@ def test_e_theorem_output_maps_to_proved_with_tstp_proof(fake_run):
     assert "--proof-object" in fake_run["args"]
 
 
+def test_check_entailment_eprover_detailed_reverse_maps_predicate_in_raw(fake_run):
+    """R3's free-text Rückweg must restore PREDICATE names too, not just
+    constants -- ``Atom.to_tptp`` folds only a name's first character
+    (``tptp_fold_first_letter``), so even an already ASCII-legal,
+    uppercase-initial predicate like 'Human' appears in the exported
+    problem (and therefore in anything E echoes back verbatim) as 'human'.
+    Regression: ``TptpNameMap.reverse()``'s predicate dict used to be keyed
+    by the un-folded token, so it never matched the folded text that is
+    actually present in ``result['raw']``.
+    """
+    premise1 = _PARSE("∀x (Human(x) → Mortal(x))")
+    premise2 = _PARSE("Human(socrates)")
+    conclusion = _PARSE("Mortal(socrates)")
+    fake_run["response"] = (
+        "# SZS status Theorem\n"
+        "fof(goal, conjecture, mortal(socrates)).\n"
+        "fof(premise_2, axiom, human(socrates)).\n", False)
+    result = eb.check_entailment_eprover_detailed([premise1, premise2], conclusion)
+    assert result["status"] == "proved"
+    assert "Human(socrates)" in result["raw"]
+    assert "Mortal(socrates)" in result["raw"]
+    assert "human(socrates)" not in result["raw"]
+    assert "mortal(socrates)" not in result["raw"]
+
+
 def test_e_countersatisfiable_maps_to_refuted(fake_run):
     fake_run["response"] = (_E_COUNTERSAT_OUTPUT, False)
     verdict = get_backend("eprover").decide(_GOAL, [])
@@ -230,6 +255,24 @@ def test_no_szs_line_is_an_infra_error(fake_run):
     assert verdict.status == "error"
     assert verdict.reason == "infra"
     assert "frobnicate" in verdict.detail
+
+
+def test_no_szs_line_detail_reverse_maps_predicate_names(fake_run):
+    """The 'no SZS status line' infra-error detail string is free text (R3's
+    'Erklärungstexte') built from RAW, un-reparsed prover output, so an
+    ASCII-legal predicate name must be restored the same way 'raw' /
+    'output_excerpt' are -- not left in ``Node.to_tptp``'s folded form.
+    Regression for TptpNameMap.reverse()'s predicate dict being keyed by the
+    un-folded token, which never matches the folded text actually present
+    (see atp._tptp_problem.TptpNameMap.reverse_rendered's docstring).
+    """
+    fake_run["response"] = (
+        "eprover: garbage, no status line here, but mentions human(alice)\n", False)
+    verdict = get_backend("eprover").decide(_PARSE("Human(alice)"), [])
+    assert verdict.status == "error"
+    assert verdict.reason == "infra"
+    assert "Human(alice)" in verdict.detail
+    assert "human(alice)" not in verdict.detail
 
 
 def test_untranslatable_node_is_unsupported_before_any_run(monkeypatch):
@@ -321,6 +364,37 @@ class TestEProverLive:
                                                 timeout=15000)
         _skip_if_the_binary_crashed(verdict)
         assert verdict.status == "refuted", _why(verdict)
+
+    def test_ascii_sanitisation_round_trip_live(self):
+        """The task's own non-ASCII/digit-leading example, decided by a REAL
+        E-prover run (through WSL) and the derivation reverse-mapped back to
+        the ORIGINAL kit-level names — the strongest R5 evidence this suite
+        can offer for the TPTP Hinweg+Rückweg, an actual external prover
+        rather than the kit's own reader.
+        """
+        premise1 = _PARSE("∀x (LostTo(x, świątek) → P(x))")
+        premise2 = _PARSE("LostTo(dani_Shapiro, świątek)")
+        conclusion = _PARSE("P(dani_Shapiro)")
+        result = eb.check_entailment_eprover_detailed(
+            [premise1, premise2], conclusion, timeout=15)
+        if result["status"] == "error" and any(
+                m in (result.get("raw") or "") for m in _CRASH_MARKERS):
+            pytest.skip("the eprover binary aborted")
+        assert result["status"] == "proved"
+        formula_dicts = [s["formula"] for s in result["derivation"]["steps"]
+                         if s["formula"] is not None]
+        assert any("świątek" in str(d) for d in formula_dicts)
+        assert not any("u015b" in str(d) for d in formula_dicts)
+        assert "świątek" in result["raw"]
+        assert "u015b" not in result["raw"]
+        # PREDICATE names must round-trip through the free-text 'raw' field
+        # too, not only constants -- 'LostTo' is already TPTP-legal, so it
+        # is subject to Node.to_tptp's first-letter fold ('lostTo') the same
+        # way a synthesised token is (R3/R1 regression: see
+        # TestReverseRenderedFreeTextRoundTrip in test_tptp_problem.py for
+        # the offline/unit-level pin of this same gap).
+        assert "LostTo" in result["raw"]
+        assert "lostTo(" not in result["raw"]
 
 
 @pytest.mark.skipif(not eb.zipperposition_available(),

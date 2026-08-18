@@ -101,6 +101,80 @@ Every model-checking tool exposes an optional ``budget`` (default ``None`` —
 unbounded). If a budget is given and exhausted before a definitive answer,
 ``holds`` comes back ``None`` (never ``False``) — see
 :mod:`unicode_fol_kit.semantics.model_eval`'s own "three-valued contract".
+
+Spans (opt-in, ``with_spans=True`` on :func:`check_molecule`,
+:func:`check_molecules`, :func:`explain_molecule_failure`)
+------------------------------------------------------------------------------
+``failing_conjunct`` names the piece of ``formula`` that made the check fail,
+but only ever as rendered TEXT (``fc.to_unicode_str()``) — a caller has to
+find that text again inside the ORIGINAL ``formula`` string by eye (or by a
+substring search that can fail to be unique, or fail outright once
+rendering has re-bracketed or re-spaced anything). ``with_spans=True`` adds
+a ``"span"`` key beside ``failing_conjunct`` instead: ``{"start": int, "end":
+int, "line": int, "column": int, "end_line": int, "end_column": int, "text":
+str}`` (a JSON rendering of a :class:`~unicode_fol_kit.fol.spans.Span`) when
+one was recovered, else ``None`` — a character range directly into the
+``formula`` TEXT this call was given, exact and unambiguous, ready for a
+caller to slice or highlight without re-deriving it.
+
+This is built directly on
+:meth:`unicode_fol_kit.fol.msflparser.MSFLParser.parse_with_spans` — a new,
+additive method alongside ``.parse`` on the SAME instance (``.parse`` itself
+is byte-for-byte unchanged) that returns a
+:class:`~unicode_fol_kit.fol.spans.SpannedFormula`: ``.formula`` is the
+identical AST ``.parse`` would build, ``.spans`` a
+:class:`~unicode_fol_kit.fol.spans.SpanMap` from each of that AST's nodes
+back to the slice of source text it was parsed from. ``SpanMap`` is keyed by
+PATH (a tuple of child indices from the root — see
+:mod:`unicode_fol_kit.fol.spans`'s module docstring), NOT by the node's own
+value and NOT by Python ``id()``: every
+:class:`~unicode_fol_kit.fol.nodes.Node` subclass is a frozen dataclass with
+STRUCTURAL equality/hashing (see the kit-wide reason in ``_fol_nodes.py``),
+so a value-keyed table would silently collapse two textually-distinct but
+structurally-identical subformulas (``c(x) & c(x)``, two separate
+occurrences of the same class predicate) onto a single span, and an
+id()-keyed one goes stale the moment a node is rebuilt (which
+``map_children``-based rewrites, including the rename below, always do).
+This module uses the convenience ``.for_node(node)`` lookup — a node object
+in hand, resolved by identity against whichever tree the map was last bound
+to — rather than the PATH-keyed ``.get(path)`` a caller doing its own
+traversal would use.
+
+This module supplies the piece the span layer does not itself cover: every
+``check_molecule``/``check_molecules``/``explain_molecule_failure`` call
+renames the freshly parsed formula's chemical vocabulary to ChemLog spelling
+before evaluating it (see "Chemical formulas MUST be written in TPTP"
+above), and that rename reconstructs EVERY node in the tree — including
+every ancestor of a renamed leaf, not just the renamed leaf itself, since
+:meth:`~unicode_fol_kit.fol.nodes.Node.map_children` always allocates a new
+object — so a fresh set of node OBJECTS exists after the rename even though
+the tree's SHAPE (and hence every PATH into it) is unchanged
+(:func:`~unicode_fol_kit.semantics.model_eval.evaluate_detailed` itself
+never rebuilds a node, so identity survives evaluation, just not the rename
+that happens first). :func:`unicode_fol_kit.chem.rename_with_spans` closes
+exactly that gap, via :func:`unicode_fol_kit.fol.spans.project_spans` (the
+span layer's own utility for carrying a ``SpanMap`` across a
+shape-preserving rewrite — the rename only ever changes an ``Atom``'s
+predicate or a ``Function``'s name, never the shape of the tree around it —
+and re-binds the identity index to the renamed tree, so ``.for_node``
+resolves against the SAME tree ``failing_conjunct`` is drawn from): a caller
+sees a span on ``failing_conjunct`` whenever ``parse_with_spans`` recorded
+one for the corresponding source node, all the way through the rename.
+
+Only the dialects that route through ``MSFLParser`` support ``with_spans``
+today — the kit's own surface syntax (``"unicode"``, or a specific mode name
+such as ``"fol"``/``"msfol"``/...), NOT ``dialect="tptp_bare"`` (this
+module's own default): TPTP is parsed by a wholly separate Lark grammar
+(:mod:`unicode_fol_kit.fol.tptp_input`) that the span layer above does not
+cover. This is not a theoretical restriction: the real external caller of
+these tools (the ChEBI campaign) already calls every one of them with
+``dialect="unicode"`` throughout its own pipeline (never ``"tptp_bare"``),
+specifically so its `check_formula`/`diagnose`/`repair_formula` loop and its
+model-checking calls agree on one dialect — ``with_spans=True`` lines up
+with that exact usage, not a hypothetical one. Passing ``with_spans=True``
+with ``dialect="tptp_bare"`` (or any other non-kit-syntax dialect) is
+reported as ``{"error": {"type": "ValueError", ...}}`` — a caller/config
+mismatch, not formula data being bad.
 """
 
 from typing import Dict, List, Optional, Tuple
@@ -218,6 +292,88 @@ def _parse_chem(text: str, dialect: str, argument: str = "formula"
 
 
 # ---------------------------------------------------------------------------
+# Spans (opt-in) -- see the module docstring's "Spans" section for the full
+# contract this builds on (unicode_fol_kit.fol.msflparser.MSFLParser
+# .parse_with_spans / unicode_fol_kit.fol.spans).
+# ---------------------------------------------------------------------------
+
+#: Dialects with_spans=True actually supports: the kit's own MSFLParser-
+#: backed surface syntax -- api._UNICODE_HINTS's keys (each a single fixed
+#: mode) plus "unicode" itself (the ladder that tries them in the SAME
+#: order api._unicode_ladder does). Deliberately reuses api's own table
+#: rather than restating the mode list here, the same way fol.dialect_repair
+#: reuses fol.tptp_repair's fixes instead of reimplementing them -- two
+#: independently-maintained copies of "which modes, which order" could
+#: silently drift, and with_spans=True must pick the identical winning mode
+#: plain parsing would, or the span-carrying node would not even be the SAME
+#: formula. NOT "tptp_bare" (this module's own default): TPTP is parsed by
+#: a wholly separate Lark grammar (fol.tptp_input) with no span tracking.
+_SPAN_DIALECTS = frozenset(api._UNICODE_HINTS) | {"unicode"}
+
+
+def _parse_chem_with_spans(text: str, dialect: str, argument: str = "formula"
+                           ) -> Tuple[Optional[Node], Optional[chem.SpanMap],
+                                      Optional[dict]]:
+    """:func:`_parse_chem`, plus a :class:`unicode_fol_kit.chem.SpanMap` for
+    the returned node — ``(node, spans, None)`` on success.
+
+    ``(None, None, error_dict)`` on failure, where ``error_dict`` is one of
+    two shapes (see the module docstring's "Conventions" and "Spans"):
+
+    * ``{"error": {"type": "ValueError", ...}}`` — ``dialect`` is not in
+      :data:`_SPAN_DIALECTS` (a caller/config mistake: ``with_spans=True``
+      together with, most commonly, this module's own ``dialect="tptp_bare"``
+      default — not formula DATA being bad);
+    * the uniform ``{"ok": False, "argument": ..., "errors": [...],
+      "spec_topic": ...}`` shape for a genuine syntax error in ``text`` — the
+      SAME shape :func:`_parse_chem` reports for the identical input, so a
+      caller's ``result.get("ok") is False`` check behaves identically
+      whether or not it asked for spans.
+    """
+    if dialect not in _SPAN_DIALECTS:
+        return None, None, _error(ValueError(
+            f"chem_tools: with_spans=True is not supported for dialect={dialect!r} "
+            f"yet — only the kit's own surface syntax ({sorted(_SPAN_DIALECTS)}) "
+            "has a span-tracking parser (not this module's own default, "
+            "dialect='tptp_bare'). Call again without with_spans, or with one "
+            "of the dialects above."))
+
+    from ..fol.msflparser import MSFLParser
+
+    ladder = (api._UNICODE_MODES if dialect == "unicode"
+             else ((dialect, api._UNICODE_HINTS[dialect]),))
+    spanned = None
+    message = "no unicode-surface mode accepted the text"
+    for _name, kwargs in ladder:
+        try:
+            spanned = MSFLParser(**kwargs).parse_with_spans(text)
+            break
+        except Exception as exc:  # noqa: BLE001 — mirrors api._try's own catch-all
+            message = str(exc)
+    if spanned is None:
+        return None, None, {"ok": False, "argument": argument,
+                            "errors": [{"dialect": dialect, "message": message}],
+                            "spec_topic": _spec_topic_for(message)}
+    node, spans = chem.to_chemlog_names_with_spans(spanned.formula, spanned.spans)
+    return node, spans, None
+
+
+def _span_dict(span) -> Optional[dict]:
+    """JSON rendering of a :class:`unicode_fol_kit.fol.spans.Span`, or
+    ``None`` for :data:`~unicode_fol_kit.fol.spans.UNKNOWN` — a node the span
+    layer could not recover an exact source range for (see that module's
+    docstring for the two documented, narrow cases) is reported as ``None``,
+    never a guessed range."""
+    from ..fol.spans import UNKNOWN
+
+    if span is UNKNOWN:
+        return None
+    return {"start": span.start, "end": span.end, "line": span.line,
+           "column": span.column, "end_line": span.end_line,
+           "end_column": span.end_column, "text": span.text}
+
+
+# ---------------------------------------------------------------------------
 # Structure -> readable summary helpers (shared by molecule_to_structure /
 # explain_molecule_failure)
 # ---------------------------------------------------------------------------
@@ -282,7 +438,8 @@ def _atom_notes(structure: FiniteStructure, individual: str) -> List[str]:
     return sorted(held)
 
 
-def _eval_payload(result: EvalResult) -> dict:
+def _eval_payload(result: EvalResult,
+                  spans: Optional[chem.SpanMap] = None) -> dict:
     """The holds/exhausted/steps/witness/failing_conjunct bookkeeping shared
     by :func:`check_molecule`, :func:`check_molecules` and
     :func:`explain_molecule_failure` — factored out so the three tools report
@@ -294,6 +451,23 @@ def _eval_payload(result: EvalResult) -> dict:
     ``holds`` is ``None`` — the budget ran out) — see
     :mod:`unicode_fol_kit.semantics.model_eval`'s own docstring for exactly
     what shape of formula each can explain.
+
+    ``spans``, when given (the caller asked for ``with_spans=True`` and
+    parsing succeeded with a span table — see the module docstring's
+    "Spans" section), adds a ``"span"`` key beside ``failing_conjunct``: a
+    JSON rendering of its EXTENT :class:`~unicode_fol_kit.fol.spans.Span`
+    when this exact node has one, else ``None`` (:data:`~unicode_fol_kit.fol.spans.UNKNOWN`
+    — never guessed). ``spans is None`` (the default — every caller that
+    never passes ``with_spans=True``) omits the key entirely, so the
+    returned shape is byte-identical to before this parameter existed.
+    :func:`~unicode_fol_kit.semantics.model_eval.evaluate_detailed` never
+    rebuilds any node (see that module's ``_find_blame``), so
+    ``failing_conjunct`` is always a literal object out of the tree
+    ``spans`` was built over —
+    :meth:`~unicode_fol_kit.fol.spans.SpanMap.for_node` finds it directly, by
+    identity, no re-derivation (``spans`` is already bound to that tree —
+    see :func:`_parse_chem_with_spans`, which routes it through
+    :func:`unicode_fol_kit.chem.to_chemlog_names_with_spans`).
     """
     payload: dict = {"holds": result.holds, "exhausted": result.exhausted,
                      "steps": result.steps}
@@ -301,9 +475,11 @@ def _eval_payload(result: EvalResult) -> dict:
         payload["witness"] = result.witness
     elif result.holds is False:
         fc = result.failing_conjunct
-        payload["failing_conjunct"] = (
-            {"unicode": fc.to_unicode_str(), "formula": fc.to_dict()}
-            if fc is not None else None)
+        entry = ({"unicode": fc.to_unicode_str(), "formula": fc.to_dict()}
+                 if fc is not None else None)
+        if spans is not None and entry is not None:
+            entry["span"] = _span_dict(spans.for_node(fc).extent)
+        payload["failing_conjunct"] = entry
     return payload
 
 
@@ -430,7 +606,8 @@ def molecule_to_structure(smiles: str, *, naming: str = "chemlog",
 
 def check_molecule(formula: str, smiles: str, *, all_different: bool = True,
                    dialect: str = "tptp_bare", include_computed: bool = True,
-                   budget: Optional[int] = None) -> dict:
+                   budget: Optional[int] = None,
+                   with_spans: bool = False) -> dict:
     """Does ``formula`` hold of the molecule ``smiles`` describes?
 
     Parses ``formula`` (see the module docstring's "Chemical formulas MUST
@@ -454,6 +631,11 @@ def check_molecule(formula: str, smiles: str, *, all_different: bool = True,
         budget: cap the evaluator's step count. ``None`` (default) is
             unbounded. If given and exhausted, ``holds`` comes back ``None``
             — an honest UNKNOWN, never a guessed ``False``.
+        with_spans: add a ``"span"`` byte-offset range beside
+            ``failing_conjunct`` — see the module docstring's "Spans"
+            section for the shape and its current dialect restriction.
+            Default ``False``: byte-identical to every call made before this
+            parameter existed.
 
     Returns:
         On success: ``{"ok": True, "holds": bool|None, "exhausted": bool,
@@ -464,6 +646,9 @@ def check_molecule(formula: str, smiles: str, *, all_different: bool = True,
         :func:`evaluate_detailed`'s blame trail drilled down to; ``None`` if
         the formula's shape has no natural single-conjunct blame — see that
         function's own docstring for exactly which shapes it can explain).
+        With ``with_spans=True``, ``failing_conjunct`` additionally carries
+        a ``"span"`` key — see the module docstring's "Spans" section for
+        its shape.
 
         A parse failure or invalid SMILES is the uniform ``ok=False``
         argument/errors shape; a formula mentioning a predicate the
@@ -471,10 +656,16 @@ def check_molecule(formula: str, smiles: str, *, all_different: bool = True,
         (:class:`~unicode_fol_kit.semantics.model_eval.UninterpretedSymbol`
         — almost always a vocabulary typo, or a class predicate this call
         never defined), an unsupported node type
-        (:class:`~unicode_fol_kit.semantics.model_eval.UnsupportedNode`), or
-        a free variable are the ``{"error": {...}}`` shape.
+        (:class:`~unicode_fol_kit.semantics.model_eval.UnsupportedNode`), a
+        free variable, or (``with_spans=True`` only) an unsupported
+        ``dialect``/unavailable span layer are the ``{"error": {...}}``
+        shape.
     """
-    node, err = _parse_chem(formula, dialect, argument="formula")
+    spans = None
+    if with_spans:
+        node, spans, err = _parse_chem_with_spans(formula, dialect, argument="formula")
+    else:
+        node, err = _parse_chem(formula, dialect, argument="formula")
     if err is not None:
         return err
     structure, err = _build_structure(smiles, include_computed)
@@ -485,7 +676,7 @@ def check_molecule(formula: str, smiles: str, *, all_different: bool = True,
                                    all_different=all_different, budget=budget)
     except (UninterpretedSymbol, UnsupportedNode, ValueError) as exc:
         return _error(exc)
-    return {"ok": True, **_eval_payload(result)}
+    return {"ok": True, **_eval_payload(result, spans)}
 
 
 # ---------------------------------------------------------------------------
@@ -495,7 +686,8 @@ def check_molecule(formula: str, smiles: str, *, all_different: bool = True,
 def check_molecules(formula: str, smiles_list: List[str], *,
                     all_different: bool = True, dialect: str = "tptp_bare",
                     include_computed: bool = True,
-                    budget: Optional[int] = None) -> dict:
+                    budget: Optional[int] = None,
+                    with_spans: bool = False) -> dict:
     """:func:`check_molecule`, batched over a corpus — the core feedback
     loop: one call shows which positive examples a definition actually
     covers, without a round trip per molecule.
@@ -512,7 +704,7 @@ def check_molecules(formula: str, smiles_list: List[str], *,
     Args:
         formula: as :func:`check_molecule`.
         smiles_list: the molecules to check it against, in order.
-        all_different, dialect, include_computed, budget: as
+        all_different, dialect, include_computed, budget, with_spans: as
             :func:`check_molecule`.
 
     Returns:
@@ -527,7 +719,11 @@ def check_molecules(formula: str, smiles_list: List[str], *,
         flattened to a plain message here since these entries already live
         one level below the top-level ``ok``).
     """
-    node, err = _parse_chem(formula, dialect, argument="formula")
+    spans = None
+    if with_spans:
+        node, spans, err = _parse_chem_with_spans(formula, dialect, argument="formula")
+    else:
+        node, err = _parse_chem(formula, dialect, argument="formula")
     if err is not None:
         return err
 
@@ -550,7 +746,7 @@ def check_molecules(formula: str, smiles_list: List[str], *,
             results.append({"smiles": smiles, "ok": False, "error": str(exc)})
             counts["errors"] += 1
             continue
-        entry = {"smiles": smiles, "ok": True, **_eval_payload(result)}
+        entry = {"smiles": smiles, "ok": True, **_eval_payload(result, spans)}
         results.append(entry)
         if result.holds is True:
             counts["holds"] += 1
@@ -574,7 +770,8 @@ def explain_molecule_failure(formula: str, smiles: str, *,
                              all_different: bool = True,
                              dialect: str = "tptp_bare",
                              include_computed: bool = True,
-                             budget: Optional[int] = None) -> dict:
+                             budget: Optional[int] = None,
+                             with_spans: bool = False) -> dict:
     """The full counterexample-explanation view for ONE molecule — the piece
     a bare classifier does not give you (a plain model checker returns only
     proved/not-proved, never a witness).
@@ -589,7 +786,7 @@ def explain_molecule_failure(formula: str, smiles: str, *,
     fix (e.g. "the definition asks for a nitrogen but this molecule has
     none") instead of just re-generating blind.
 
-    Args: as :func:`check_molecule`.
+    Args: as :func:`check_molecule` (including ``with_spans``).
 
     Returns:
         On success: ``{"ok": True, "formula_unicode": str, "domain": [...],
@@ -599,7 +796,11 @@ def explain_molecule_failure(formula: str, smiles: str, *,
         exhausted/steps/witness/failing_conjunct}``. Same failure shapes as
         :func:`check_molecule` for a bad formula/SMILES/vocabulary mismatch.
     """
-    node, err = _parse_chem(formula, dialect, argument="formula")
+    spans = None
+    if with_spans:
+        node, spans, err = _parse_chem_with_spans(formula, dialect, argument="formula")
+    else:
+        node, err = _parse_chem(formula, dialect, argument="formula")
     if err is not None:
         return err
     structure, err = _build_structure(smiles, include_computed)
@@ -620,7 +821,7 @@ def explain_molecule_failure(formula: str, smiles: str, *,
         "atom_properties": {ind: _atom_notes(structure, ind)
                             for ind in structure.domain},
         "bonds": _bonds(structure),
-        **_eval_payload(result),
+        **_eval_payload(result, spans),
     }
 
 

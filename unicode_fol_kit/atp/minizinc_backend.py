@@ -180,9 +180,11 @@ rather than relying on the grammar's current shape staying that way forever.
 Second, it keeps predicates, functions and constants in three textually
 disjoint MiniZinc namespaces, matching how the kit's own
 :class:`~unicode_fol_kit.fol.signature.Signature` already keeps them apart
-conceptually. A constant's name may additionally be non-ASCII (Greek, e.g.
-``θ`` — MiniZinc identifiers are ASCII-only), so
-:func:`_mzn_const_name` reuses the kit's own
+conceptually. A predicate/function/constant/variable name may additionally be
+non-ASCII (Greek, e.g. ``θ``; or any other script the widened FOL grammar now
+accepts, e.g. ``świątek`` — MiniZinc identifiers are ASCII-only), so
+:func:`_mzn_pred_name`, :func:`_mzn_func_name`, :func:`_mzn_const_name`, and
+:func:`_mzn_var_name` all reuse the kit's own
 :func:`~unicode_fol_kit.fol._fol_nodes.constant_name_to_ascii` (the same
 transliteration :meth:`~unicode_fol_kit.fol.nodes.Constant.to_prover9` /
 ``to_tptp`` already use) rather than inventing a second one. That
@@ -190,9 +192,11 @@ transliteration is NOT injective in general (a literal ``c_theta`` and the
 Greek ``θ`` both fold to ``theta``), so :func:`to_minizinc` runs the exact
 same collision guard :func:`~unicode_fol_kit.atp._tptp_problem
 .generate_tptp_problem` already runs for its own (different) folding
-function, refusing with ``ValueError`` naming both colliding kit-level names
-rather than silently merging two distinct constants into one MiniZinc
-variable.
+function, separately for the predicate, function, and constant namespaces
+(NOT for the variable namespace — see :func:`_mzn_var_name`'s own docstring
+for why not), refusing with ``NotImplementedError`` naming both colliding
+kit-level names rather than silently merging two distinct symbols into one
+MiniZinc identifier.
 
 Output — a hand-written wire format, not ``--output-mode json``
 ---------------------------------------------------------------------
@@ -225,7 +229,7 @@ import subprocess
 import tempfile
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 from ..fol._fol_nodes import constant_name_to_ascii
 from ..fol.nodes import (
@@ -276,13 +280,28 @@ def minizinc_available() -> bool:
 # =============================================================================
 
 def _mzn_pred_name(name: str) -> str:
-    """Predicate ``name`` -> its MiniZinc identifier (see module docstring)."""
-    return f"p_{name}"
+    """Predicate ``name`` -> its MiniZinc identifier: ASCII-transliterated, then prefixed.
+
+    Reuses :func:`~unicode_fol_kit.fol._fol_nodes.constant_name_to_ascii`, exactly
+    like :func:`_mzn_const_name` — a predicate NAME token is not restricted to ASCII
+    any more than a constant one is (see ``fol/grammars/terminals.lark``: PREDICATE
+    admits any Unicode letter with ``str.isupper()``), and MiniZinc identifiers are
+    ASCII-only, so a raw ``p_świątek`` would be as illegal as an untransliterated
+    constant. See the module docstring's "Identifier scheme" section for why this can
+    collide across two distinct kit-level names and why :func:`to_minizinc` checks for
+    that separately (this function does not check on its own; it has no visibility
+    into sibling predicates).
+    """
+    return f"p_{constant_name_to_ascii(name)}"
 
 
 def _mzn_func_name(name: str) -> str:
-    """Function ``name`` -> its MiniZinc identifier (see module docstring)."""
-    return f"f_{name}"
+    """Function ``name`` -> its MiniZinc identifier: ASCII-transliterated, then prefixed.
+
+    Same reasoning and the same collision caveat as :func:`_mzn_pred_name` — see
+    the module docstring's "Identifier scheme" section.
+    """
+    return f"f_{constant_name_to_ascii(name)}"
 
 
 def _mzn_const_name(name: str) -> str:
@@ -298,8 +317,22 @@ def _mzn_const_name(name: str) -> str:
 
 
 def _mzn_var_name(name: str) -> str:
-    """Bound variable ``name`` -> its MiniZinc identifier (see module docstring)."""
-    return f"v_{name}"
+    """Bound variable ``name`` -> its MiniZinc identifier (see module docstring).
+
+    ASCII-transliterated like the predicate/function/constant names above: the
+    VARIABLE terminal (``fol/grammars/terminals.lark``) admits any Unicode letter,
+    so a raw non-ASCII variable name (e.g. ``ą``) would otherwise reach the
+    generated ``.mzn`` text verbatim as ``v_ą`` — not a legal MiniZinc identifier.
+    Unlike predicates/functions/constants this is not run through a collision
+    guard in :func:`to_minizinc`: a bound variable's MiniZinc name is used only
+    locally, inside the one ``forall``/``exists``/comprehension generator that
+    binds it (see ``_formula``/``_term``), never declared or looked up by a second
+    call site the way a predicate/function/constant's identifier is, and the
+    kit's VARIABLE terminal keeps a raw name to a single letter plus ASCII digits
+    — too small a space for the escape-based transliteration below to plausibly
+    collide two DISTINCT names inside one formula's nested binders.
+    """
+    return f"v_{constant_name_to_ascii(name)}"
 
 
 # The four arithmetic operators are legal Function names, but fragment_check
@@ -506,6 +539,50 @@ def _flatten_expr(mzn_name: str, arity: int) -> str:
     return f"show([{mzn_name}[{index}] | {generators}])"
 
 
+def _mzn_names_or_raise(
+    names: Iterable[str], namer: Callable[[str], str], kind: str,
+) -> Dict[str, str]:
+    """Map each raw ``name`` in ``names`` to ``namer(name)``, refusing a same-namespace
+    collision (two distinct kit-level ``kind`` symbols transliterating to the same
+    MiniZinc identifier).
+
+    Shared by :func:`to_minizinc`'s predicate, function, and constant declaration
+    loops — the SAME guard :func:`_mzn_const_name`'s docstring already described, now
+    applied identically to all three namespaces since ``constant_name_to_ascii`` is
+    reused (via :func:`_mzn_pred_name` / :func:`_mzn_func_name`) for predicate and
+    function names too. Deliberately not applied to the variable namespace — see
+    :func:`_mzn_var_name`'s own docstring for why a bound variable's MiniZinc name
+    does not need this guard.
+    """
+    out: Dict[str, str] = {}
+    seen: Dict[str, str] = {}
+    for name in sorted(names):
+        mzn = namer(name)
+        prior = seen.get(mzn)
+        if prior is not None and prior != name:
+            # NotImplementedError, not ValueError: this mirrors
+            # atp._tptp_problem.generate_tptp_problem's IDENTICAL collision
+            # guard for the (differently-folded) TPTP export, which raises
+            # the same type for the same reason -- an export whose folding
+            # is not injective for this particular pair of names is an
+            # EXPORT LIMITATION, not a malformed FiniteDomainProblem, and
+            # using the same exception type lets MinizincBackend.decide's
+            # existing "fragment this backend cannot encode" catch site
+            # handle it without a second, redundant except clause.
+            raise NotImplementedError(
+                f"to_minizinc: distinct {kind}s {prior!r} and {name!r} "
+                f"would both render as the MiniZinc identifier {mzn!r} "
+                "(constant_name_to_ascii is not injective) — refusing to "
+                "silently merge two distinct symbols; rename one of them "
+                "before exporting this problem. Mirrors "
+                "atp._tptp_problem.generate_tptp_problem's identical "
+                "collision guard for the TPTP export."
+            )
+        seen[mzn] = name
+        out[name] = mzn
+    return out
+
+
 def to_minizinc(problem: FiniteDomainProblem) -> str:
     """Render ``problem`` as a complete MiniZinc model — the text of an ``mzn`` file.
 
@@ -559,35 +636,9 @@ def to_minizinc(problem: FiniteDomainProblem) -> str:
 
     sig = problem.signature
 
-    pred_names: Dict[str, str] = {name: _mzn_pred_name(name) for name in sig.predicates}
-    func_names: Dict[str, str] = {name: _mzn_func_name(name) for name in sig.functions}
-
-    const_names: Dict[str, str] = {}
-    seen_mzn: Dict[str, str] = {}
-    for name in sorted(sig.constants):
-        mzn = _mzn_const_name(name)
-        prior = seen_mzn.get(mzn)
-        if prior is not None and prior != name:
-            # NotImplementedError, not ValueError: this mirrors
-            # atp._tptp_problem.generate_tptp_problem's IDENTICAL collision
-            # guard for the (differently-folded) TPTP export, which raises
-            # the same type for the same reason -- an export whose folding
-            # is not injective for this particular pair of names is an
-            # EXPORT LIMITATION, not a malformed FiniteDomainProblem, and
-            # using the same exception type lets MinizincBackend.decide's
-            # existing "fragment this backend cannot encode" catch site
-            # handle it without a second, redundant except clause.
-            raise NotImplementedError(
-                f"to_minizinc: distinct constants {prior!r} and {name!r} "
-                f"would both render as the MiniZinc identifier {mzn!r} "
-                "(constant_name_to_ascii is not injective) — refusing to "
-                "silently merge two distinct symbols; rename one of them "
-                "before exporting this problem. Mirrors "
-                "atp._tptp_problem.generate_tptp_problem's identical "
-                "collision guard for the TPTP export."
-            )
-        seen_mzn[mzn] = name
-        const_names[name] = mzn
+    pred_names = _mzn_names_or_raise(sig.predicates, _mzn_pred_name, "predicate")
+    func_names = _mzn_names_or_raise(sig.functions, _mzn_func_name, "function")
+    const_names = _mzn_names_or_raise(sig.constants, _mzn_const_name, "constant")
 
     needs_alldifferent = bool(problem.all_different and const_names)
 

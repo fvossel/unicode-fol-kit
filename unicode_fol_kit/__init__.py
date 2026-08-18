@@ -4,7 +4,10 @@ from .fol import (
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
     Count, Measure, Cardinality, Contrast,
     Z3Env,
+    node_at, replace_at,
     NamingError, ParsingError,
+    Span, UNKNOWN, NodeSpans, Path, SpanMap, SpannedFormula,
+    traverse, build_span_map, project_spans,
     SCHEMA_VERSION, serialize, deserialize,
     to_casl_spec, formula_to_casl,
     parse_casl_spec, CaslSpec, CaslImportError,
@@ -149,7 +152,7 @@ from . import api  # the seven-verb facade (api.parse_any / check / prove / …)
                    # namespaced on purpose: api.prove must not shadow the
                    # resolution prover's top-level `prove`
 
-__version__ = "0.22.0"
+__version__ = "0.23.0"
 
 __all__ = [
     "MSFLParser",
@@ -157,7 +160,10 @@ __all__ = [
     "Atom", "Not", "And", "Or", "Xor", "Implies", "Iff", "Quantifier",
     "Count", "Measure", "Cardinality", "Contrast",
     "Z3Env",
+    "node_at", "replace_at",
     "NamingError", "ParsingError",
+    "Span", "UNKNOWN", "NodeSpans", "Path", "SpanMap", "SpannedFormula",
+    "traverse", "build_span_map", "project_spans",
     "SCHEMA_VERSION", "serialize", "deserialize",
     "to_casl_spec", "formula_to_casl",
     "parse_casl_spec", "CaslSpec", "CaslImportError",

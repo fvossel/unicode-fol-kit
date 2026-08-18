@@ -97,7 +97,7 @@ Public API: :func:`qml_translate`, :func:`qml_axioms`, :func:`qml_is_valid`,
 """
 
 from functools import reduce
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from .nodes import (
     Node, Variable, Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
@@ -106,7 +106,8 @@ from .nodes import (
     Historically, Once, Previous, Since,
     Obligatory, Permitted, SortedQuantifier,
 )
-from ._symbol_names import SymbolNames
+from ._fol_nodes import constant_name_to_ascii
+from ._symbol_names import SymbolNames, dedupe
 
 # Guard / typing predicate names (the contract with the axiom set).
 _WORLD = "World"
@@ -1011,15 +1012,33 @@ _THF_RESERVED = frozenset({
 
 
 def _thf_name(name: str) -> str:
-    """Lower-case a predicate/constant/function name for a THF functor (NOT injective).
+    """Lower-case ASCII predicate/constant/function stem for a THF functor (NOT injective).
+
+    Non-ASCII characters are transliterated FIRST via
+    :func:`~unicode_fol_kit.fol._fol_nodes.constant_name_to_ascii` (ASCII passthrough;
+    Greek -> conventional name; anything else -> a reversible ``uXXXX`` escape) — THF
+    functors are ASCII-only (TPTP ``lower_word``), so a raw Unicode letter reaching this
+    far would be silent corruption, not sanitisation. A leading digit (which can also
+    now arise from a transliterated escape, though those always start with the ASCII
+    letter ``u``) is prefixed with ``p`` so the result is a legal lower identifier — TPTP
+    functors can never start with a digit, and unlike the predicate/constant/function
+    case this class had no digit guard before, since a THF functor name in this exporter
+    is always built from a Constant/Function/Atom name, and only Constant names (via the
+    kit's NAME terminal) can be digit-leading in the first place.
 
     Use :class:`_ThfNames` to get a per-formula *unique* functor — ``_thf_name`` alone
-    can map distinct symbols (``Ab`` / ``ab``) to the same functor.
+    can map distinct symbols (``Ab`` / ``ab``, or ``theta`` / the Greek ``θ``) to the
+    same functor.
     """
     if name in _THF_PRED_ALIAS:
         return _THF_PRED_ALIAS[name]
-    safe = "".join(c if (c.isalnum() or c == "_") else "_" for c in name)
-    return (safe[:1].lower() + safe[1:]) if safe else "p"
+    safe = "".join(c if (c.isalnum() or c == "_") else "_"
+                   for c in constant_name_to_ascii(name))
+    if not safe:
+        return "p"
+    if safe[0].isdigit():
+        safe = "p" + safe
+    return safe[:1].lower() + safe[1:]
 
 
 class _ThfNames(SymbolNames):
@@ -1033,12 +1052,36 @@ class _ThfNames(SymbolNames):
 
     def __init__(self, formula: Node, reserved=_THF_RESERVED):
         super().__init__(formula, _thf_name, _THF_PRED_ALIAS, reserved=reserved)
+        self._var_map: Dict[str, str] = {}
+        self._var_used: set = set()
+
+    def variable(self, name: str) -> str:
+        """Unique upper-case THF variable token for object-variable ``name``.
+
+        THF variable tokens are the whole (transliterated) name upper-cased — the
+        pre-existing convention this method preserves, including its one known
+        simplification: two source names differing only by case (``x``/``X``) still
+        fold onto the same token, since THF variables have no separate case-preserving
+        slot the way predicate/function/constant identifiers do. What this method adds
+        is (a) ASCII purity — a raw non-ASCII variable name would otherwise reach the
+        THF text verbatim (just upper-cased), which is exactly the same "isalnum() lets
+        Unicode letters through" gap :func:`_thf_name` had — and (b) de-collision via
+        :func:`~unicode_fol_kit.fol._symbol_names.dedupe`, so two DISTINCT source names
+        that only coincide AFTER transliteration (not the pre-existing case-fold above,
+        which is unaffected by this fix) do not collapse into one bound variable.
+        """
+        if name in self._var_map:
+            return self._var_map[name]
+        cand = dedupe(_thf_name(name).upper(), self._var_used)
+        self._var_map[name] = cand
+        return cand
 
 
 def _thf_term(node: Node, names: "_ThfNames") -> str:
-    """Render an individual term in THF (Variable → uppercase, else a unique functor)."""
+    """Render an individual term in THF (Variable → unique upper-case token, else a
+    unique functor)."""
     if isinstance(node, Variable):
-        return node.name.upper()
+        return names.variable(node.name)
     from .nodes import Constant, Number, Function
     if isinstance(node, Constant):
         return names.constant(node.name)
@@ -1074,7 +1117,7 @@ def _thf_lift(node: Node, names: "_ThfNames") -> str:
     if isinstance(node, Diamond):
         return f"( mdia @ {_thf_lift(node.formula, names)} )"
     if isinstance(node, Quantifier):
-        x = node.variable.name.upper()
+        x = names.variable(node.variable.name)
         binder = "mforall" if node.type in (_FORALL, "forall") else "mexists"
         return f"( {binder} @ ( ^ [{x}: $i] : {_thf_lift(node.formula, names)} ) )"
     raise NotImplementedError(

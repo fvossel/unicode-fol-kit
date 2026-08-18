@@ -41,6 +41,7 @@ Public API: :func:`to_thf_fol`, :func:`to_isabelle_fol`, :func:`to_thf_msfol`,
 
 from typing import Dict, List, Tuple
 
+from ..fol._fol_nodes import constant_name_to_ascii
 from ..fol._symbol_names import dedupe
 from ..fol._msfl_nodes import _reduce_nl_nodes
 from ..fol.nodes import (
@@ -63,20 +64,38 @@ _EXISTS = "∃"
 # ===========================================================================
 
 def _sanitize(name: str) -> str:
-    """Lower-case-initial alphanumeric/underscore functor stem for THF/Isabelle.
+    """Lower-case-initial ASCII alphanumeric/underscore functor stem for THF/Isabelle.
 
-    Equality/comparison glyphs map through ``_PRED_ALIAS``; every other character
-    that is neither alphanumeric nor underscore becomes an underscore. A leading
-    digit is prefixed with ``p`` so the result is a legal lower identifier.
+    Equality/comparison glyphs map through ``_PRED_ALIAS``. Every other name is
+    FIRST transliterated to ASCII with :func:`~unicode_fol_kit.fol._fol_nodes
+    .constant_name_to_ascii` — the same transliteration ``Constant.to_tptp`` /
+    ``to_prover9`` already use (ASCII passthrough; a Greek letter maps to its
+    conventional name; any other non-ASCII character becomes a reversible
+    ``uXXXX`` codepoint escape) — and only THEN run through the legacy
+    alnum-or-underscore filter. Since ``constant_name_to_ascii`` is the identity
+    on a string that is already pure ASCII, this changes nothing for a name that
+    was already legal: the underscore/digit-prefix behaviour below is exactly
+    what it was before. What it fixes is that ``str.isalnum()`` is ``True`` for
+    almost every Unicode letter (``ś``, ``中``, …), so the OLD filter alone let
+    those straight through as "harmless" — THF/Isabelle are ASCII-only formats,
+    so that was silent corruption, not sanitisation. A leading digit (which can
+    now also arise from a transliterated escape, though those always start with
+    the ASCII letter ``u``) is still prefixed with ``p`` so the result is a
+    legal lower identifier.
 
-    NOTE: this is *not* injective (e.g. ``'Ab'`` and ``'ab'`` both sanitise to
-    ``'ab'``). De-collision is the job of :class:`_SymbolResolver`, which routes
-    every declaration AND usage through a unique, valid identifier per symbol.
-    Do not emit ``_sanitize`` output directly for a declaration or a usage.
+    NOTE: this is *not* injective — neither the old filter (``'Ab'``/``'ab'``
+    collide) nor ``constant_name_to_ascii`` (a literal ``'theta'`` and the Greek
+    ``'θ'`` both fold to ``'theta'``) guarantee that. De-collision is the job of
+    :class:`_SymbolResolver` (predicates/functions/constants) and
+    :class:`_VarResolver` (variables), which route every declaration AND usage
+    through :func:`~unicode_fol_kit.fol._symbol_names.dedupe` to a unique, valid
+    identifier per symbol. Do not emit ``_sanitize`` output directly for a
+    declaration or a usage.
     """
     if name in _PRED_ALIAS:
         return _PRED_ALIAS[name]
-    safe = "".join(c if (c.isalnum() or c == "_") else "_" for c in name)
+    ascii_name = constant_name_to_ascii(name)
+    safe = "".join(c if (c.isalnum() or c == "_") else "_" for c in ascii_name)
     if not safe:
         return "p"
     if safe[0].isdigit():

@@ -29,10 +29,12 @@ import json
 
 from unicode_fol_kit import api
 from unicode_fol_kit.fol.nodes import (
-    And, Atom, Iff, Implies, Quantifier, Variable,
+    And, Atom, Function, Iff, Implies, Quantifier, Variable,
 )
 from unicode_fol_kit.fol.sanitize import NameMapping
-from unicode_fol_kit.fol.dialect_repair import DialectRepairResult, repair_formula
+from unicode_fol_kit.fol.dialect_repair import (
+    DialectRepairResult, _find_name_candidates, _is_legal_name, repair_formula,
+)
 
 
 def _kinds(result):
@@ -196,6 +198,102 @@ def test_sanitize_invalid_names_false_reports_the_parser_untouched():
     assert result.ok is False
     assert result.names == ()
     assert "renaming" not in result.issues[0].message
+
+
+# ---------------------------------------------------------------------------
+# Case 2, widened alphabet — a name legal in the (now Unicode-, underscore-,
+# and digit-leading-aware) grammar must never be treated as a case-2
+# candidate. ``_is_legal_name`` used to ask ``sanitize.py``'s frozen
+# ASCII-only patterns (see this module's import-time comment above
+# ``_legal_name_patterns``); a name like ``family_History`` — legal NAME
+# since the identifier widening, illegal under those old patterns because of
+# its underscore — would then be needlessly, and destructively, renamed to
+# ``FamilyHistory`` as a side effect of legitimately repairing some OTHER
+# invalid name in the same formula. ``_is_legal_name`` now asks
+# ``fol._identifiers`` — the SAME generated classes the grammar itself
+# lexes with — so it always agrees with what the parser actually accepts.
+# ---------------------------------------------------------------------------
+
+def test_is_legal_name_accepts_the_widened_shapes():
+    """Direct pin on the function this fix touched: an underscored name, a
+    digit-leading name, and a non-ASCII-letter name are each legal in the
+    (widened) NAME class, so ``_is_legal_name`` must say so. Reverting to
+    ``sanitize.py``'s ASCII-only patterns makes every one of these ``False``."""
+    assert _is_legal_name("family_History") is True
+    assert _is_legal_name("dani_Shapiro") is True
+    assert _is_legal_name("2008SummerOlympics") is True
+    assert _is_legal_name("świątek") is True
+
+
+def test_is_legal_name_still_rejects_a_genuinely_illegal_name():
+    """Negative control: the widening did not make everything legal — a
+    name with an internal comma and hyphen is legal in no symbol class."""
+    assert _is_legal_name("1,2-diacyl") is False
+
+
+def test_case2_candidate_scan_skips_an_already_legal_underscored_name():
+    """``family_History`` sits in functor position too (``Q(family_History(x))``
+    uses it as a function symbol — legal, see the ``NAME "(" termlist ")"``
+    grammar rule), right beside a genuinely invalid name. Only the invalid
+    one may come back as a candidate."""
+    candidates = _find_name_candidates(
+        "∀x (1,2-diacyl(x) → Q(family_History(x)))")
+
+    assert candidates == ["1,2-diacyl"]
+
+
+def test_case2_rename_preserves_an_already_legal_underscored_function_name():
+    """End-to-end: the genuinely invalid name is renamed, and
+    ``family_History`` — legal, used as a function symbol — is carried
+    through the repair byte-for-byte, not caught up in the rename."""
+    text = "∀x (1,2-diacyl(x) → Q(family_History(x)))"
+    x = Variable("x")
+    expected = Quantifier("∀", x, Implies(
+        Atom("P12diacyl", [x]),
+        Atom("Q", [Function("family_History", [x])])))
+
+    result = repair_formula(text)
+
+    assert result.ok is True
+    assert result.names == (("1,2-diacyl", "P12diacyl"),)
+    assert result.formula == expected
+    assert "family_History(x)" in result.repaired_text
+    assert api.parse_any(result.repaired_text).formula == expected
+
+
+def test_case2_rename_preserves_an_already_legal_digit_leading_function_name():
+    """Same shape, the digit-leading case (D5): ``2008SummerOlympics`` is a
+    legal NAME (never a PREDICATE, per D5) and must survive untouched."""
+    text = "∀x (1,2-diacyl(x) → Q(2008SummerOlympics(x)))"
+    x = Variable("x")
+    expected = Quantifier("∀", x, Implies(
+        Atom("P12diacyl", [x]),
+        Atom("Q", [Function("2008SummerOlympics", [x])])))
+
+    result = repair_formula(text)
+
+    assert result.ok is True
+    assert result.names == (("1,2-diacyl", "P12diacyl"),)
+    assert result.formula == expected
+
+
+def test_case2_does_not_blame_an_already_legal_name_it_cannot_repair():
+    """``family_History`` used where an ATOM is required (lowercase-initial,
+    so it is a NAME/function, never a PREDICATE — D3) cannot be repaired by
+    this module no matter what: it is legal, just legal in the wrong class
+    for this position. The fix's contract is narrower than "make it parse" —
+    it is "never touch a name that is already legal somewhere". So the
+    repair still fails (nothing here can fix a class mismatch), but the
+    failure must not mention, let alone rename, ``family_History`` — only
+    the genuinely invalid name is ever a candidate."""
+    text = "∀x (1,2-diacyl(x) → family_History(x))"
+
+    result = repair_formula(text)
+
+    assert result.ok is False
+    assert result.names == ()
+    assert "family_History" not in result.issues[0].message
+    assert "1,2-diacyl" in result.issues[0].message
 
 
 # ---------------------------------------------------------------------------

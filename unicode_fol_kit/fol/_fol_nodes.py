@@ -7,6 +7,8 @@ from dataclasses import dataclass, fields
 
 import z3
 
+from . import _identifiers
+
 _SORT = z3.DeclareSort("S")
 
 
@@ -114,7 +116,16 @@ class Node:
         """Render this node back to a parseable Unicode formula string.
 
         The result, re-parsed in the matching MSFLParser mode, yields a
-        structurally equal AST (parser round-trip). The renderer lives in
+        structurally equal AST (parser round-trip): ``parse(n.to_unicode_str())
+        == n``. For the classical FOL fragment (``∀ ∃ ¬ ∧ ∨ → ↔ ⊕`` and
+        predicates over constants/variables — no lambda, no modal, no
+        second-order) this is the B2 roundtrip guarantee, exercised
+        example-by-example in ``tests/test_to_unicode_str.py`` and, starting
+        from arbitrary hand-built nodes rather than parser output, in
+        ``tests/test_fol_fragment_roundtrip_b2.py`` (hand-picked
+        parenthesisation edge cases plus a seeded randomized property
+        search). This is part of this method's STABLE PUBLIC API contract —
+        see the module docstring of ``fol/nodes.py``. The renderer lives in
         _msfl_nodes.py (imported lazily to avoid a circular import) because it
         dispatches over both the FOL nodes here and the MSFL/lambda nodes there.
         """
@@ -269,6 +280,154 @@ class Node:
         emit(self)
         lines.append("}")
         return "\n".join(lines)
+
+
+# =========================
+# Public tree editing (path-addressed replacement) and PATH CONVENTION
+# =========================
+#
+# replace_at is the PUBLIC, node-type-generic counterpart to the private
+# atp.resolution._replace_at (a term-only helper restricted to Atom/Function
+# argument positions — see replace_at's own docstring for the exact
+# difference). It is built on the same structural machinery Node.map_children
+# already uses for every other whole-tree rewrite in this codebase (to_msfol,
+# _relativize, beta/eta reduction, scope resolution, …).
+#
+# PATH CONVENTION — the one thing traversal (fol.spans.traverse), span lookup
+# (fol.spans.SpanMap) and replace_at/node_at must all agree on (spec item
+# A2). A path is a tuple of non-negative ints, addressing a node relative to
+# some root: () addresses the root itself; (i, *rest) addresses rest inside
+# the root's i-th PATH CHILD. _path_children(node) IS Node._child_nodes()
+# (the SAME child order Node.walk/.map_children/.count/.depth already use)
+# for every node type EXCEPT Quantifier, whose bound `variable` is excluded:
+# a Quantifier's ONLY path child is its `formula`, at index 0.
+#
+# The exclusion is deliberate and spec-driven (fol.spans's module docstring,
+# "WHY THE BOUND VARIABLE IS EXCLUDED"): a quantifier's HEAD span already
+# covers its symbol together with its bound variable as one occurrence
+# ("∀ x"), so exposing the variable AGAIN as a separately path-addressable
+# child would double-count that one piece of source text. It mirrors how
+# Node._tree_parts()/to_dot already fold the bound variable into the node's
+# *label* rather than its *children* — here it is folded into the node's
+# *head span* rather than its *path children*, same idea, different API.
+# Scoped to Quantifier alone (not every binder — Count, Cardinality,
+# SortedQuantifier, Lambda, … keep the default, unexcluded view) because
+# Quantifier is the one binder the span layer's target FOL fragment covers;
+# widening the exclusion to every binder is a separate decision left to
+# whichever future change extends spans past that fragment.
+
+def _path_children(node: "Node") -> List["Node"]:
+    """The path-addressable children of ``node``, in path-index order — see
+    the PATH CONVENTION comment above."""
+    if isinstance(node, Quantifier):
+        return [node.formula]
+    return node._child_nodes()
+
+
+def node_at(root: "Node", path: Tuple[int, ...]) -> "Node":
+    """Return the node ``path`` addresses in ``root``'s tree (see the PATH
+    CONVENTION comment above ``_path_children``).
+
+    Raises ``IndexError`` if ``path`` does not address a node in this tree —
+    an index out of range at some prefix of ``path`` — never returns a guess.
+    """
+    node = root
+    for depth, idx in enumerate(path):
+        children = _path_children(node)
+        if not isinstance(idx, int) or not (0 <= idx < len(children)):
+            raise IndexError(
+                f"node_at: path {path!r} is invalid at position {depth} "
+                f"(index {idx!r}) — a {type(node).__name__} node has "
+                f"{len(children)} path child(ren) there."
+            )
+        node = children[idx]
+    return node
+
+
+def _replace_child_at(node: "Node", index: int, new_child: "Node") -> "Node":
+    """Rebuild ``node`` with its ``index``-th PATH child (see
+    ``_path_children``) replaced by ``new_child``; every other field is
+    copied verbatim and every other Node child is passed through BY
+    REFERENCE — the exact same object, not a copy.
+
+    A :class:`Quantifier` (whose one path child is its ``formula``, NOT
+    ``_child_nodes()``'s ``[variable, formula]``) is rebuilt directly via
+    ``Quantifier(node.type, node.variable, new_child)`` rather than through
+    ``map_children`` — ``map_children`` is defined over ``_child_nodes()``
+    and applies its function to the bound variable too (see its own
+    docstring), which is exactly the field this path convention excludes.
+    Every other node type's path children ARE ``_child_nodes()``, so
+    ``map_children`` (with a counting closure that substitutes only the
+    targeted slot; every other child call returns its argument unchanged,
+    passed through by reference) is both correct and guaranteed consistent
+    with ``_path_children``'s own indexing — same field walk, not a separate
+    reimplementation that could drift out of sync with it.
+    """
+    if isinstance(node, Quantifier):
+        if index != 0:
+            raise IndexError(
+                f"replace_at: Quantifier has exactly one path child (its "
+                f"formula, index 0); got index {index}")
+        return Quantifier(node.type, node.variable, new_child)
+
+    seen = 0
+
+    def fn(child):
+        nonlocal seen
+        this_index = seen
+        seen += 1
+        return new_child if this_index == index else child
+
+    return node.map_children(fn)
+
+
+def replace_at(root: "Node", path: Tuple[int, ...], new_node: "Node") -> "Node":
+    """Return a new tree: ``root`` with the subtree addressed by ``path``
+    replaced by ``new_node``. ``root`` and every node reachable from it are
+    left untouched — nodes are frozen dataclasses, so in-place mutation is
+    not even possible; ``replace_at`` only ever builds new node instances
+    along the spine from the root down to the replaced subtree.
+
+    ``path`` uses the PATH CONVENTION documented above ``_path_children``
+    (the same one :func:`node_at` and
+    :func:`unicode_fol_kit.fol.spans.traverse`/
+    :class:`~unicode_fol_kit.fol.spans.SpanMap` use) — in particular, a
+    :class:`Quantifier`'s bound variable is NOT reachable via any
+    ``replace_at`` path; its only path child is its ``formula``, at index 0.
+
+    STABILITY GUARANTEE (B1). For any path ``q`` that does not run through
+    the replaced subtree — ``q`` is not ``path``, not a prefix of ``path``
+    (an ancestor), and not extended by ``path`` (a descendant) — the node
+    reachable via ``q`` in the result is the SAME object (``is``) as the
+    node reachable via ``q`` in the original tree, because every node off
+    the root-to-``path`` spine is passed through by reference at each
+    rebuilt ancestor (see :func:`_replace_child_at`). Only the spine itself
+    — ``root`` and every proper prefix of ``path`` — is rebuilt (new
+    objects, since each now contains the replacement somewhere below it);
+    everything else in the tree is untouched.
+
+    Raises ``IndexError`` if any prefix of ``path`` runs off the tree — an
+    index that is out of range for the node's path children at that depth
+    (this also covers handing a non-empty path to a leaf node, whose path
+    children are always empty).
+    """
+    path = tuple(path)
+
+    def rec(node: "Node", depth: int) -> "Node":
+        if depth == len(path):
+            return new_node
+        idx = path[depth]
+        children = _path_children(node)
+        if not isinstance(idx, int) or not (0 <= idx < len(children)):
+            raise IndexError(
+                f"replace_at: path {path!r} is invalid at position {depth} "
+                f"(index {idx!r}) — a {type(node).__name__} node has "
+                f"{len(children)} path child(ren) there."
+            )
+        new_child = rec(children[idx], depth + 1)
+        return _replace_child_at(node, idx, new_child)
+
+    return rec(root, 0)
 
 
 # Term node class names — used by Node.subformulas to exclude atomic terms.
@@ -1469,8 +1628,13 @@ def parser_ops_for_mode(mode: str) -> List[ParserOp]:
 # aliases name tree nodes, these internal names are irrelevant to the produced
 # AST, so the template uses single uniform names (prefix, biimplication,
 # implication, until, same_level_ops). The %%...%% markers:
-#   %%TERMINAL_IMPORTS%%  the (...) list imported from .terminals
-#   %%TERMINAL_DEFS%%     extra named-terminal declarations (modal ops)
+#   %%TERMINAL_IMPORTS%%  the (...) list imported from .terminals (NUMBER,
+#                          FORALL, EXISTS, LAMBDA — the identifier terminals
+#                          PREDICATE/CONSTANT/NAME/VARIABLE/SORT are generated
+#                          by fol/_identifiers.py and land in TERMINAL_DEFS
+#                          instead; see that module's docstring for why)
+#   %%TERMINAL_DEFS%%     the generated identifier terminals, followed by any
+#                          extra named-terminal declarations (modal ops)
 #   %%BIIMPL_OPS%%        the ↔ alternative(s)
 #   %%IMPL_OPS%%          the → alternative(s)
 #   %%IMPL_BODY%%         rule the → level reduces to: "until" or "same_level_ops"
@@ -1561,16 +1725,23 @@ _CONST_ALTS_SORTED = (
 # Per-mode grammar configuration that is NOT operator-specific: the terminal
 # import list and whether constants are sorted. (The operators themselves come
 # from the registry.)
+#
+# PREDICATE, CONSTANT, NAME, VARIABLE, and (for the sorted modes) SORT used to
+# be listed here for %import, like NUMBER/FORALL/EXISTS/LAMBDA still are —
+# they are generated instead now (see fol/_identifiers.py's module docstring
+# for why) and spliced into %%TERMINAL_DEFS%% by build_grammar below, so this
+# import list carries only the terminals that are still declared verbatim in
+# fol/grammars/terminals.lark.
 _MODE_TERMINAL_IMPORTS = {
-    "fol":   "PREDICATE, CONSTANT, NAME, VARIABLE, NUMBER, FORALL, EXISTS, LAMBDA",
-    "msfol": "PREDICATE, CONSTANT, NAME, VARIABLE, NUMBER, SORT, FORALL, EXISTS, LAMBDA",
-    "msfl":  "PREDICATE, CONSTANT, NAME, VARIABLE, NUMBER, SORT, FORALL, EXISTS, LAMBDA",
-    "fl":    "PREDICATE, CONSTANT, NAME, VARIABLE, NUMBER, FORALL, EXISTS, LAMBDA",
-    "modal": "PREDICATE, CONSTANT, NAME, VARIABLE, NUMBER, FORALL, EXISTS, LAMBDA",
-    "second_order": "PREDICATE, CONSTANT, NAME, VARIABLE, NUMBER, FORALL, EXISTS, LAMBDA",
-    "dependence": "PREDICATE, CONSTANT, NAME, VARIABLE, NUMBER, FORALL, EXISTS, LAMBDA",
-    "linear": "PREDICATE, CONSTANT, NAME, VARIABLE, NUMBER, FORALL, EXISTS, LAMBDA",
-    "lambek": "PREDICATE, CONSTANT, NAME, VARIABLE, NUMBER, FORALL, EXISTS, LAMBDA",
+    "fol":   "NUMBER, FORALL, EXISTS, LAMBDA",
+    "msfol": "NUMBER, FORALL, EXISTS, LAMBDA",
+    "msfl":  "NUMBER, FORALL, EXISTS, LAMBDA",
+    "fl":    "NUMBER, FORALL, EXISTS, LAMBDA",
+    "modal": "NUMBER, FORALL, EXISTS, LAMBDA",
+    "second_order": "NUMBER, FORALL, EXISTS, LAMBDA",
+    "dependence": "NUMBER, FORALL, EXISTS, LAMBDA",
+    "linear": "NUMBER, FORALL, EXISTS, LAMBDA",
+    "lambek": "NUMBER, FORALL, EXISTS, LAMBDA",
 }
 
 _SORTED_MODES = frozenset({"msfol", "msfl"})
@@ -1626,7 +1797,12 @@ def build_grammar(mode: str) -> str:
         if op.terminal_def and op.terminal_name not in seen_terms:
             seen_terms.add(op.terminal_name)
             term_defs.append(op.terminal_def)
-    terminal_defs = ("\n".join(term_defs) + "\n") if term_defs else ""
+    # The generated identifier terminals (PREDICATE, CONSTANT, NAME, VARIABLE,
+    # and SORT for the sorted modes) go first, ahead of any modal/temporal
+    # operator terminal — see fol/_identifiers.py's module docstring for why
+    # they are generated rather than %import'd from terminals.lark.
+    identifier_defs = _identifiers.terminal_block(include_sort=mode in _SORTED_MODES)
+    terminal_defs = identifier_defs + (("\n".join(term_defs) + "\n") if term_defs else "")
 
     # --- until sub-level (modal only) ----------------------------------------
     # Determined first because it sets the implication body rule. ``op.grammar``

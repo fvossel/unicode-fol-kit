@@ -39,6 +39,13 @@ EXAMPLES = (
     ("variable-vs-constant", "fol", "P(x) ∧ P(alice)", "P(x) ∧ P(alice)"),
     ("function-term", "fol", "P(f(x))", "P(f(x))"),
     ("equality", "fol", "alice = bob", "alice = bob"),
+    ("non-ascii-letter", "fol", "LostTo(x, świątek)", "LostTo(x, świątek)"),
+    ("underscore-continuation", "fol", "Sibling(dani_Shapiro, family_History)",
+     "Sibling(dani_Shapiro, family_History)"),
+    ("digit-leading-name", "fol", "Hosted(beijing, 2008SummerOlympics)",
+     "Hosted(beijing, 2008SummerOlympics)"),
+    ("caseless-script-is-term-valued", "fol", "P(中文)", "P(中文)"),
+    ("greek-is-a-constant-not-a-name", "fol", "P(α)", "P(α)"),
     ("universal", "fol", "∀x (Dog(x) → Animal(x))", "∀x (Dog(x) → Animal(x))"),
     ("existential", "fol", "∃x (Dog(x) ∧ Black(x))", "∃x (Dog(x) ∧ Black(x))"),
     ("counting", "fol", "∃≥40 x Carbon(x)", "∃≥40 x Carbon(x)"),
@@ -98,25 +105,84 @@ def _naming() -> dict:
             "The kit's unicode syntax decides a symbol's KIND from its shape, "
             "with no declaration needed. Getting this wrong is the single "
             "most common cause of a formula that parses into something other "
-            "than what was meant, or fails to parse at all."),
+            "than what was meant, or fails to parse at all. The alphabet is "
+            "not ASCII-only: any Unicode letter can open an identifier (Greek "
+            "is the one carved-out exception — see 'greek_is_reserved' "
+            "below), so every rule here is stated in terms of 'letter', never "
+            "'a-z' or 'A-Z'."),
         "rules": [
-            {"kind": "variable", "shape": "one lowercase letter, optional digits",
-             "matches": ["x", "y", "a", "x1", "a1"],
+            {"kind": "classification",
+             "shape": "the identifier's FIRST character alone decides its "
+                      "kind, and nothing else does: str.isupper() true on "
+                      "that one character means predicate; anything else "
+                      "means term-valued (variable/name/constant). This is "
+                      "checked per-character on the running interpreter, so "
+                      "it holds for every script, not just Latin.",
+             "matches": ["Dog(x) — 'D' is upper-signalling, so PREDICATE",
+                         "dog — 'd' is not, so term-valued"],
+             "note": "A script with no upper/lower distinction at all — "
+                     "Chinese, Arabic, Hebrew, Devanagari, and most others — "
+                     "never satisfies str.isupper() for any of its letters, "
+                     "so a bare identifier from such a script is ALWAYS "
+                     "term-valued and can NEVER head an atom by itself. "
+                     "There is no separate 'caseless' rule to memorise — "
+                     "this is the ordinary classification rule applied "
+                     "honestly to an alphabet with no case to signal with. "
+                     "A predicate over a caseless-script domain still needs "
+                     "an uppercase-first name from a script that HAS case."},
+            {"kind": "variable",
+             "shape": "one term-valued letter (any script, cased or "
+                      "caseless), then optional trailing digits",
+             "matches": ["x", "y", "a", "x1", "a1", "ś", "中"],
              "note": "'a1' is a VARIABLE, not a constant — digits do not "
-                     "change the kind."},
-            {"kind": "constant", "shape": "lowercase word, at least two letters",
-             "matches": ["alice", "rex", "socrates"],
-             "note": "Use a multi-letter name whenever you mean a specific "
-                     "individual; 'a' would be read as a variable."},
-            {"kind": "predicate", "shape": "starts with an UPPERCASE letter",
-             "matches": ["P", "Dog", "PRED", "HasBond"],
-             "note": "'p(x)' does NOT parse as a predicate application in the "
-                     "unicode dialect."},
-            {"kind": "function", "shape": "lowercase name applied to arguments",
-             "matches": ["f(x)", "mother(alice)"],
-             "note": "A lowercase name followed by '(' is a function term; the "
-                     "same name standing alone is a variable or constant."},
+                     "change the kind. This is unchanged from a plain-ASCII "
+                     "reading of the rule; only the letter itself is no "
+                     "longer restricted to 'a'-'z'."},
+            {"kind": "constant",
+             "shape": "term-valued, at least two letters (any script) with "
+                      "one not first — OR one-or-more ASCII digits then a "
+                      "letter, then more of the same",
+             "matches": ["alice", "rex", "socrates", "中文", "świątek",
+                         "dani_Shapiro", "2008SummerOlympics"],
+             "note": "A digit-leading identifier ('2008SummerOlympics') is "
+                     "ALWAYS term-valued, never a predicate — digits carry "
+                     "no case to signal predicate-hood with. It is also "
+                     "never confused with a number: '2008' alone still "
+                     "lexes as NUMBER, only a trailing LETTER pulls a token "
+                     "into this class. From the second character on, an "
+                     "underscore is legal ('dani_Shapiro') — but never as "
+                     "the FIRST character of any identifier ('_foo' is a "
+                     "NamingError)."},
+            {"kind": "predicate",
+             "shape": "one uppercase-signalling letter (str.isupper() true), "
+                      "then letters/digits — never an underscore, never a "
+                      "digit first",
+             "matches": ["P", "Dog", "PRED", "HasBond", "Ś"],
+             "note": "'p(x)' does NOT parse as a predicate application in "
+                     "the unicode dialect, and neither does a caseless-"
+                     "script identifier standing alone ('中文(x)' is a "
+                     "Function term, not a complete formula) — see "
+                     "'classification' above."},
+            {"kind": "function", "shape": "a term-valued name applied to arguments",
+             "matches": ["f(x)", "mother(alice)", "2008SummerOlympics(x)"],
+             "note": "A term-valued name followed by '(' is a function term; "
+                     "the same name standing alone is a variable or "
+                     "constant."},
         ],
+        "greek_is_reserved": (
+            "Plain Unicode-letter widening does NOT extend to Greek and "
+            "Coptic (U+0370-U+03FF) or Greek Extended (U+1F00-U+1FFF): "
+            "'λ' opens a lambda term and 'μ' opens a measure term "
+            "regardless of position, and the plain lowercase Greek run "
+            "(αβγδεζηθικνξοπρστυφχψω) is a CONSTANT in its own right rather "
+            "than a letter eligible to start a multi-letter NAME or a "
+            "predicate — 'P(α)' parses α as one Constant, not as if it "
+            "were an ordinary term-valued letter. Greek UPPERCASE is not "
+            "eligible for predicate position either: it is excluded from "
+            "the widened classes entirely, not merely redirected, so 'Ω(x)' "
+            "is a NamingError, not a predicate application. If your "
+            "vocabulary needs a genuinely Greek-named predicate or "
+            "function, spell it in a different script."),
         "tptp_convention_is_inverted": (
             "In TPTP, lowercase is a predicate/function and UPPERCASE is a "
             "variable: 'p(X)' means predicate p applied to variable X. On "
@@ -124,7 +190,11 @@ def _naming() -> dict:
             "becomes 'C(a1)'. This is a faithful, injective renaming — but "
             "expect the case to flip when you read a formula back."),
         "examples": _examples("variable-vs-constant", "function-term",
-                              "equality", "tptp-lowercase-predicates"),
+                              "equality", "non-ascii-letter",
+                              "underscore-continuation", "digit-leading-name",
+                              "caseless-script-is-term-valued",
+                              "greek-is-a-constant-not-a-name",
+                              "tptp-lowercase-predicates"),
     }
 
 

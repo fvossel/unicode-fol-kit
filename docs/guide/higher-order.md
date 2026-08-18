@@ -734,8 +734,9 @@ from unicode_fol_kit.fol.nodes import Atom, Implies, Box
 from unicode_fol_kit.hol import modal_faithfulness_theory, modal_to_deep, check_theory
 from unicode_fol_kit.hol.deepshallow import AtomConsts
 
-# The deep embedding is propositional, so atoms are 0-ary (a bare lowercase name
-# parses as a hybrid-logic *nominal* in modal mode, not a propositional atom):
+# The deep embedding is propositional, so atoms are 0-ary (a bare term-valued
+# identifier parses as a hybrid-logic *nominal* in modal mode, not a
+# propositional atom):
 p, q = Atom("p", ()), Atom("q", ())
 k_axiom = Implies(Box(Implies(p, q)), Implies(Box(p), Box(q)))
 print(modal_to_deep(k_axiom, AtomConsts()))
