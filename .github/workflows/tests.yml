@@ -67,6 +67,7 @@ jobs:
       - name: Build E prover from source
         if: runner.os == 'Linux' && steps.cache-eprover.outputs.cache-hit != 'true'
         continue-on-error: true
+        timeout-minutes: 20
         run: |
           set -euxo pipefail
           curl -fsSL https://github.com/eprover/eprover/archive/refs/tags/E-3.5.1.tar.gz -o e.tar.gz
@@ -93,9 +94,17 @@ jobs:
       # version-skew failure mode whenever ubuntu-latest bumps swipl.
       # continue-on-error for the same reason as E: a network hiccup degrades
       # to "live ACE tests skip", visibly red in the log, not a lost run.
+      # The timeout is not decoration: `continue-on-error` catches a FAILING
+      # build, but not a HANGING one — and a hang here eats the job's whole
+      # 45-minute budget before the suite ever starts (measured: three legs
+      # of the v0.25.0 run died that way while apt stalled, with the same
+      # step taking 13-30 s two hours earlier). Capped, a hang degrades to
+      # exactly what a failure degrades to: the ACE live tests skip, the
+      # recorded fixtures still pin the routing, and the log stays loud.
       - name: Build APE from source
         if: runner.os == 'Linux'
         continue-on-error: true
+        timeout-minutes: 10
         run: |
           set -euxo pipefail
           sudo apt-get update
