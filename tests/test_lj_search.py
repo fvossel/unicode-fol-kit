@@ -230,38 +230,65 @@ def test_curated_invalid_agrees_int_valid_and_gmt(name, f):
     assert gmt_is_s4_valid(f, timeout=_GMT_TIMEOUT_INVALID) is False, name
 
 
-def test_the_gmt_mirror_matches_the_public_oracle():
-    """_gmt_verdict must collapse to gmt_is_s4_valid, or it is asking a different question.
+def test_the_gmt_mirror_asks_the_public_oracles_question(monkeypatch):
+    """_gmt_verdict must hand Z3 the SAME query gmt_is_s4_valid does.
 
     The mirror reaches past ``gmt_is_s4_valid`` into ``qml._validity_formula`` to keep
-    Z3's ``unknown`` visible. That is only legitimate as long as it builds the SAME
-    query; if the public route ever gains a parameter the mirror does not pass, this
-    battery would quietly start cross-checking something else. Collapsing ``unknown``
-    back into False is exactly what ``atp.z3_models.is_valid`` does, so the two must
-    agree on every formula -- valid and invalid alike -- at a shared budget.
+    Z3's ``unknown`` visible. That is only legitimate while it builds the same query;
+    if the public route ever gains a parameter the mirror does not pass, this battery
+    would quietly start cross-checking something else.
+
+    Pinned by INTERCEPTING the query, not by comparing verdicts. The first version of
+    this test ran both routes at the 2 s budget and demanded the same answer -- which
+    made it depend on two independently timed solver runs, so the one-off context
+    rebuild described at :func:`_gmt_verdict` could land on one of them and not the
+    other. It did, on four of five CI legs: ``Glivenko ¬¬Peirce`` came back True from
+    the mirror and False from the public call, a disagreement about the clock rather
+    than about the formula -- the exact confusion this whole change exists to remove,
+    reintroduced by its own guard. Comparing QUERIES has no clock in it, and ``Node``
+    is a frozen dataclass with structural equality, so ``==`` here is exact.
+
+    What this does not pin: the solver options. ``random_seed`` and the negation are
+    mirrored by hand from ``atp.z3_models.is_valid``, and a change there would not
+    redden this test -- only the query and the budget are checked.
     """
+    from unicode_fol_kit.atp import z3_models
+    from unicode_fol_kit.fol.qml import _validity_formula
+    from unicode_fol_kit.hol.intuitionistic import gmt_translate
+
+    seen = []
+    monkeypatch.setattr(
+        z3_models, "is_valid",
+        lambda formula, timeout=10000: seen.append((formula, timeout)) or False)
+
     checked = 0
     for name, f in _VALID + _INVALID:
-        mirrored = _gmt_verdict(f, _GMT_TIMEOUT_INVALID) is True
-        assert mirrored == gmt_is_s4_valid(f, timeout=_GMT_TIMEOUT_INVALID), name
+        seen.clear()
+        gmt_is_s4_valid(f, timeout=_GMT_TIMEOUT_INVALID)
+        assert len(seen) == 1, name
+        query, timeout = seen[0]
+        assert query == _validity_formula(gmt_translate(f), "constant", "S4"), name
+        assert timeout == _GMT_TIMEOUT_INVALID, name
         checked += 1
     assert checked >= 25
 
 
-def test_an_unanswerable_query_reads_as_unknown_not_as_refuted():
-    """The point of the split: a starved budget must yield None, never False.
+def test_an_unknown_from_z3_reads_as_unknown_not_as_refuted(monkeypatch):
+    """The point of the split: Z3 giving up must yield None, never False.
 
-    Without this the guard is untestable in the normal course of events -- the whole
-    reason the flake was rare is that the budget is starved only under load. A 1 ms
-    budget starves it on demand. ``⊥`` here is the surface atom (this file's ⊥
-    convention), so the query is a genuine S4 question rather than a triviality Z3
-    could answer before looking at the clock.
+    Forced rather than provoked. Starving the budget would provoke it, but only on a
+    machine slow enough on the day -- and a test for "a timeout is not a refutation"
+    whose own outcome is decided by timing is the bug it is meant to prevent. Patching
+    ``check`` to answer ``unknown`` pins the mapping itself.
     """
-    hard = Implies(Or(Not(Not(p)), Not(Not(q))), Not(Not(Or(p, q))))
-    assert _gmt_verdict(hard, 1) is None
-    # ... and the same query IS answerable once it has a budget, so the None above
-    # says "starved", not "unanswerable in principle".
-    assert _gmt_verdict(hard, _GMT_TIMEOUT_VALID) is True
+    import z3
+
+    trivial = Implies(p, p)
+    # Not vacuous: unpatched, this same call is a proof.
+    assert _gmt_verdict(trivial, _GMT_TIMEOUT_VALID) is True
+
+    monkeypatch.setattr(z3.Solver, "check", lambda self, *args: z3.unknown)
+    assert _gmt_verdict(trivial, _GMT_TIMEOUT_VALID) is None
 
 
 def test_curated_battery_has_at_least_25_entries():

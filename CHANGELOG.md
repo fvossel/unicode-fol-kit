@@ -33,12 +33,20 @@ and the retry budget went 20 s → 60 s only to make "unavailable" rarer. The sh
 `refuted` lead to the same expected verdict, so collapsing them costs nothing,
 and raising it would take the random differential from 30 s to about 285 s.
 
-Two tests guard the new helper. One pins the mirror against the public oracle
-over all 25+ curated formulas, so a parameter added to the public route cannot
-silently leave this battery cross-checking a different question. The other
-starves the budget to 1 ms and requires `None` rather than `False`, then answers
-the same query with a real budget — otherwise the guard would only ever be
-exercised by the load conditions that made the flake rare in the first place.
+Two tests guard the new helper, and neither of them consults a clock. One
+intercepts the query `gmt_is_s4_valid` hands to Z3 and requires the mirror to
+build that same query, for all 25+ curated formulas, so a parameter added to the
+public route cannot silently leave this battery cross-checking a different
+question. The other patches `check` to answer `unknown` and requires `None`
+rather than `False`.
+
+Both started out timing-based, and the first shape of the first one was flaky in
+exactly the way this section is about: it ran the two routes at the 2 s budget
+and demanded the same verdict, so the one-off context rebuild could land on one
+run and not the other. It did — `Glivenko ¬¬Peirce` came back True from the
+mirror and False from the public call on four of five CI legs, minutes after the
+tag. Corrected on main right after; the package code is untouched, so 0.23.2 on
+PyPI is unaffected and there is no 0.23.3 for it.
 
 ### Docs — the build is warning-free again
 
