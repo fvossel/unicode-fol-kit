@@ -79,6 +79,17 @@ autodoc_default_options = {
     "undoc-members": False,
     "show-inheritance": True,
     "member-order": "bysource",
+    # `SpanMap` lives in `fol.spans` and is RE-EXPORTED by `chem` (whose
+    # rename_with_spans / to_chemlog_names_with_spans carry a caller-supplied one
+    # across the rename). Because it is named in `chem.__all__`, `automodule` on
+    # that package documented it a second time as `unicode_fol_kit.chem.SpanMap` --
+    # and both descriptions register the same CANONICAL name
+    # `unicode_fol_kit.fol.spans.SpanMap`, which is the "duplicate object
+    # description" Sphinx reported. The class keeps its own page (generated from
+    # the `unicode_fol_kit.SpanMap` entry in api.md); this only stops the chem page
+    # from claiming to be a second home for it. `__all__` is untouched, so
+    # `from unicode_fol_kit.chem import SpanMap` and `import *` work as before.
+    "exclude-members": "SpanMap",
 }
 autodoc_typehints = "description"
 autodoc_member_order = "bysource"

@@ -33,6 +33,7 @@ from unicode_fol_kit.fol._msfl_nodes import (
 from unicode_fol_kit.fol._modal_nodes import Box
 from unicode_fol_kit.fol._so_nodes import SecondOrderQuantifier
 from unicode_fol_kit.fol import _identifiers
+from unicode_fol_kit.fol.naming import lex_for_message
 
 FOL = MSFLParser()
 
@@ -173,7 +174,7 @@ class TestConstantPriorityOverName:
     """
 
     def test_c_prefixed_ascii_constant_lexes_as_constant(self):
-        tokens = list(FOL.parser.lex("c_alpha"))
+        tokens = list(lex_for_message(FOL.parser, "c_alpha"))
         assert [t.type for t in tokens] == ["CONSTANT"]
 
     def test_c_prefixed_ascii_constant_parses_to_the_verbatim_name(self):
@@ -181,7 +182,7 @@ class TestConstantPriorityOverName:
 
     def test_c_prefixed_unicode_constant_lexes_as_constant(self):
         """(D6) 'the c_ form itself may also carry Unicode letters'."""
-        tokens = list(FOL.parser.lex("c_świątek"))
+        tokens = list(lex_for_message(FOL.parser, "c_świątek"))
         assert [t.type for t in tokens] == ["CONSTANT"]
 
     def test_c_prefixed_unicode_constant_parses(self):
@@ -222,10 +223,10 @@ class TestGreekAndOperatorGlyphsUnaffected:
             assert ch not in _identifiers.uppercase_class(), ch
 
     def test_lambda_lexes_as_lambda_not_as_an_identifier(self):
-        assert [t.type for t in FOL.parser.lex("λ")] == ["LAMBDA"]
+        assert [t.type for t in lex_for_message(FOL.parser, "λ")] == ["LAMBDA"]
 
     def test_greek_alpha_lexes_as_constant_not_as_a_predicate_or_name(self):
-        assert [t.type for t in FOL.parser.lex("α")] == ["CONSTANT"]
+        assert [t.type for t in lex_for_message(FOL.parser, "α")] == ["CONSTANT"]
 
 
 # ---------------------------------------------------------------------------

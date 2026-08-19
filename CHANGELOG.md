@@ -5,6 +5,222 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [0.23.2] - 2026-08-19
+
+A patch number for a release that changes how formulas are parsed. That is
+deliberate and it is worth saying out loud rather than burying: semantically
+this is a minor release. It ships under 0.23.2 by the maintainer's decision,
+so read the two sections below before upgrading if you depend on exact error
+strings or on `ⓄP` meaning something other than `Obligatory(P)`.
+
+### Tests — a Z3 timeout can no longer read as a disagreement
+
+`tests/test_lj_search.py` cross-checks its curated intuitionistic battery against
+three independent procedures, the third being the GMT→S4 translation decided by
+Z3. That third check went through `atp.z3_models.is_valid`, which folds Z3's
+`unknown` into `False`. Right for a validity oracle — a non-proof is not a proof —
+and wrong here, because it turns "Z3 ran out of budget" into "the procedures
+disagree", which is the one thing this battery exists to detect. Under eight-way
+xdist contention the battery therefore failed intermittently on a formula that
+answers in 8 ms when asked on its own.
+
+The budget is no longer what decides it. `_gmt_verdict` mirrors `is_valid`
+exactly — same negated query, same solver options, same random seed — and keeps
+the third answer: `True` (proved), `False` (counter-model), `None` (gave up).
+A timeout now reports as unavailable, a counter-model still fails immediately,
+and the retry budget went 20 s → 60 s only to make "unavailable" rarer. The short
+`_GMT_TIMEOUT_INVALID` (2 s) is unchanged: on the invalid side `unknown` and
+`refuted` lead to the same expected verdict, so collapsing them costs nothing,
+and raising it would take the random differential from 30 s to about 285 s.
+
+Two tests guard the new helper. One pins the mirror against the public oracle
+over all 25+ curated formulas, so a parameter added to the public route cannot
+silently leave this battery cross-checking a different question. The other
+starves the budget to 1 ms and requires `None` rather than `False`, then answers
+the same query with a real budget — otherwise the guard would only ever be
+exercised by the load conditions that made the flake rare in the first place.
+
+### Docs — the build is warning-free again
+
+Sphinx had been reporting one warning for a while: `duplicate object description
+of unicode_fol_kit.fol.spans.SpanMap`. `SpanMap` is defined in `fol.spans`,
+re-exported by `chem` (whose `rename_with_spans` / `to_chemlog_names_with_spans`
+carry a caller-supplied one across the rename), and named in `chem.__all__` —
+which is enough for `automodule` to describe it a second time, on the chem page.
+Both descriptions register the same canonical name, hence the warning, and the
+`[source]` link on the chem copy pointed at `fol/spans.py` anyway.
+
+The class keeps its own page and `chem.__all__` is untouched, so
+`from unicode_fol_kit.chem import SpanMap` and `import *` are unaffected; only
+the second description is gone.
+
+### `fol._identifiers` — an operator glyph is no longer an identifier character
+
+`Ⓞ` is the deontic Obligatory operator. Unicode also says `"Ⓞ".isupper()` is
+True, and since 0.23.0 that test is exactly how the kit decides "this character
+opens a PREDICATE". So `ⓄP` had two readings at once — `Obligatory(P)`, and the
+atom whose predicate is named `ⓄP` — and nothing chose between them on purpose.
+Asked for every derivation (`ambiguity="explicit"`), lark reported the node as
+ambiguous; asked for one, its Earley parser returned the operator reading while
+a table-driven lexer returns the other. Seven glyphs were in that state:
+`Ⓒ Ⓕ Ⓖ Ⓝ Ⓞ Ⓟ Ⓤ`.
+
+They are now carved out of every letter class, on the same rule and for the
+same reason as `λ` and `μ`: a glyph that is a registered operator ANYWHERE is
+not an identifier character ANYWHERE. The carve-out is a list of symbols the
+grammar already spends, not a swipe at a Unicode block — `Ⓐ`, the other circled
+capitals and the Roman numerals stay writable, and `tests/test_operator_glyphs.py`
+checks both halves against the LIVE registry, so a newly registered letter-like
+operator fails there instead of quietly becoming a name.
+
+What changes for you: `AⒸB` used to be one predicate named `AⒸB`; it is now
+`A Ⓒ B`, a Contrast. Every one of the 61 uses of these glyphs across the kit's
+own tests and docs was already an operator use, so nothing in the suite moved.
+
+The same applies inside a name, not just at its start: `FooⒸBar` was one
+predicate and is now a Contrast between two. An AST built directly with that
+name therefore no longer survives `to_unicode_str()` -> `parse()`. That is not
+new behaviour so much as seven more characters joining a set that already had
+members: the AST layer performs no name validation at all, so `Atom("Foo→Bar")`
+has always come back as `Implies(Foo, Bar)`, and `Atom("Foo Bar")` has always
+come back as a NamingError. If you construct atoms from unchecked strings, run
+them through `fol/sanitize.py` as before.
+
+Only SINGLE-character symbols are carved out. `K_`, `B_`, `Say_`, `Want_` open
+with ordinary capitals that obviously cannot be excluded, and do not need to
+be: their terminals cover the whole `K_alice`, so longest-match settles it with
+no ambiguous node.
+
+### `fol.msflparser` — LALR for the eight non-modal modes
+
+Earley is the right default for a grammar that needs it. This one does not:
+asked for every derivation, the classical grammar produces exactly one for all
+1260 parsable lines of the 1310-line FOLIO fixture. It was paying for a capability it never used.
+
+The eight non-modal modes are now parsed with `parser="lalr"`. Measured on the
+kit's own corpus, **30x to 50x** faster inside lark across the six modes that accept a corpus
+worth timing (`msfol` and `msfl` accept 6 FOLIO lines between them, FOLIO
+being unsorted, which is too few to time), and **200 -> 6513 formulas/second**
+end to end through `MSFLParser.parse`, 4.99 ms -> 0.154 ms per formula, a
+32.5x speedup. Median of seven runs with the garbage collector disabled, the
+"before" side being a real `MSFLParser` switched back to Earley rather than a
+reconstruction of the old path. Identical trees, identical accept/reject sets, and identical source
+spans — the last checked separately, because lark's `Tree.__eq__` ignores
+`meta` and `parse_with_spans()` reads exactly that: 4815 formula-level span comparisons
+across the eight modes, zero differences.
+
+`modal` keeps Earley, for a reason rather than out of caution. After the glyph
+carve-out above the two agree on every tree, but eight inputs in the kit's own
+corpus are still accepted by Earley and refused by the LALR table, all of one
+shape: a bare lowercase propositional atom or a nominal standing as a whole
+formula — `p→(q→p)`, `¬(p∧q)→(¬p∨¬q)`, `@i (P ∧ ◇j)`. Those are legal modal
+syntax, so moving that mode would be a silent narrowing of the language, not a
+speedup.
+
+The error model survives intact, and the mapping that keeps it was measured
+rather than guessed. Earley's dynamic lexer only offers tokens the parser can
+currently use, so a well-formed symbol in the wrong place never became a token
+— it stayed an unscannable character, and the kit raised `NamingError`. LALR
+tokenises first and refuses afterwards, so the same input arrives as
+`UnexpectedToken`. Over the 1310-line FOLIO fixture the two line up exactly, with no
+overlap in either direction:
+
+    Earley UnexpectedCharacters  ->  LALR UnexpectedToken, token != $END
+    Earley UnexpectedEOF         ->  LALR UnexpectedToken, token == $END
+
+So `$END` routes to `ParsingError` and everything else to `NamingError`,
+reported against the offending token's first character — the character Earley
+used to name, carried on a real `lark.UnexpectedCharacters` so the
+`UnexpectedInput` API `NamingError` inherits (`match_examples()` above all)
+keeps working. Over the 1310-line FOLIO fixture plus eight hand-written
+malformed shapes, 58 inputs are rejected in `fol` mode: **0 error-class
+changes**, 26 messages byte-identical, and 32 that differ, all of them `Incomplete formula … Expected: …`,
+where LALR knows precisely which tokens could continue and Earley over-listed;
+`tests/fixtures/folio_fol_strings_nonparsable.txt` carries 31 of them as a
+reviewed diff, with the same 50 lines rejected before and after. As a
+side-effect the narrower list stops leaking lark's internal `__ANON_5` terminal
+name into user-facing text.
+
+
+### `fol.naming` — a failed parse no longer rebuilds lark's lexer
+
+Reported from a campaign evaluating model-generated formulas next to vLLM: one
+failed parse took **185 s**. The same call takes 13 ms on the same kit, the
+same lark and the same Python. The only difference is whether the package
+`interegular` happens to be importable.
+
+Three things line up to produce that. `NamingError` names the token in FRONT of
+the offending character ("Invalid predicate 'Foo' - unexpected character ..."),
+so it tokenises the failing text a second time; lark's exception cannot supply
+that token, because the Earley scanner leaves `token_history` at None and knows
+only the character and the position. That second pass went through
+`Lark.lex()`, and formulas are parsed with `parser="earley"`, which lexes
+dynamically and keeps no standing lexer -- so `Lark.lex()` constructed a fresh
+`BasicLexer` on every call. And `BasicLexer.__init__` runs a terminal-collision
+check whenever `interegular` is importable, comparing every pair of
+same-priority terminal regexes. Since 0.23.0 the identifier terminals are
+generated at import from the running interpreter's Unicode tables, and
+comparing THOSE takes minutes -- not because the patterns are long (measured
+across all nine grammars, the largest is NAME at 4856 characters and the rest
+are 1.0 to 1.8 kB) but because interegular decides collisions by intersecting
+one finite automaton per pattern, and these range over most of the Unicode
+letter repertoire.
+
+Nobody asks for it. `interegular` arrives as a transitive dependency of vLLM
+via `outlines`, so every environment that evaluates model output has it without
+having requested it -- and failed parses are the normal case for model output,
+not the exception. The cost was also invisible: the call looks like an ordinary
+parse and takes four orders of magnitude longer, which reads as a hung worker.
+The reporting run lost an hour to it and then died with 187 OOM kills.
+
+The lexer used for error messages is now built once per parser and kept, with
+lark's validation switched off. Both halves earn their place: caching pays the
+check once per parser instead of once per failed formula, and skipping it
+removes the check altogether. Nothing is lost by skipping -- validation checks
+that the GRAMMAR is well formed (terminal regexes compile, no zero-width
+terminal, every `%ignore` name defined), which lark established when it built
+the parser, and it only ever raises or stays silent; it never influences which
+tokens come out. Verified rather than argued, on both routes and against every
+one of the nine distinct grammars the kit builds: token type, text and offsets
+identical on valid formulas, malformed ones and every proper prefix of both --
+2952 comparisons in the development differential, and 1971 in the regression
+test that ships with it (`test_tokens_match_larks_own_lexer`, whose corpus is
+the smaller of the two).
+
+Measured on the reporter's formula, with `interegular` present: 185.192 s for
+one failed parse before, and after -- across three repeats on an idle machine
+-- 0.013 to 0.028 s for the first failure, then 3.9 to 4.6 ms for each one
+after it. Without `interegular` the same path also improves, 13 ms -> about
+4 ms, because the scanner is no longer recompiled per failure.
+
+Building that lexer is allowed to fall back to `Lark.lex()` -- lark could
+rename its internals, or refuse a grammar only its own validation would have
+diagnosed -- but USING it is not, and that distinction is load-bearing. The
+first cut of this fix wrapped the whole thing in one `except Exception`, which
+also caught the `UnexpectedCharacters` raised by the malformed text itself and
+then retried through `Lark.lex()`: full price, for exactly the inputs the
+change exists to make cheap, ending in the same exception. Measured at one
+fallback per unlexable input before the split and none after.
+
+The reporter's own first suggestion -- drop the second tokenisation and read
+everything out of lark's exception -- was not taken, and deliberately so: with
+`token_history` at None it would cost every "Invalid predicate 'Foo'" message
+its name, leaving only the character and the offset. Naming the refused token
+is the reason `NamingError` exists; a model reading the error in order to retry
+needs to know which name was refused.
+
+`tests/test_error_path_speed.py` holds the line with a call count rather than a
+wall-clock number -- "the collision check never runs on the error path" is
+exactly what was wrong and is stable across machines. Its first test proves the
+probe fires by showing that lark's own route still trips it, so the rest cannot
+pass vacuously on a kit where the fix was reverted.
+
+Checked and NOT affected: the kit's five other lark parsers. The two LALR ones
+(`eval/datasets/proverqa`, `eval/datasets/willow`) pay the check once at import
+on small ASCII grammars, 0.089 s in total; the three Earley ones
+(`fol/prover9_input`, `fol/tptp_input` x2) build no `BasicLexer` at all and
+never call `lex()`.
+
 ## [0.23.1] - 2026-08-18
 
 ### `fol._identifiers` — the underscore reaches predicate position too

@@ -266,9 +266,45 @@ __all__ = [
     "terminal_block", "HUMAN_READABLE_PATTERNS",
 ]
 
+# Single-character operator glyphs that Unicode also classifies as uppercase
+# letters. Each is a registered operator symbol (``_fol_nodes.OPERATORS``), and
+# each satisfies ``str.isupper()`` — which is precisely the test this module
+# uses to decide "this opens a PREDICATE". Before 0.23.2 that made ``ⓄP`` two
+# things at once, ``Obligatory(P)`` and "the predicate named ⓄP", and only the
+# Earley parser's willingness to pick one hid it: asked for every derivation,
+# it reports the node as ambiguous, and a table-driven lexer takes the other
+# reading. Same rule as Greek below, for the same reason — a glyph that is an
+# operator ANYWHERE is not an identifier character ANYWHERE, even in a mode
+# where that operator is not registered.
+#
+# Only SINGLE-character symbols belong here. The multi-character ones (``K_``,
+# ``B_``, ``Say_``, ``Want_``) open with ordinary letters that obviously cannot
+# be carved out, and do not need to be: their terminals are longer than the
+# prefix they share with a name, so longest-match settles it — ``K_alice``
+# lexes as one KNOWS token, with no ambiguous node. Both halves of that are
+# checked in tests/test_operator_glyphs.py against the live registry, so a
+# newly registered letter-like operator fails there rather than silently
+# becoming a name.
+_OPERATOR_GLYPHS = (
+    0x24B8,  # Ⓒ CIRCLED LATIN CAPITAL LETTER C — Contrast, every classical mode
+    0x24BB,  # Ⓕ CIRCLED LATIN CAPITAL LETTER F — Eventually (temporal)
+    0x24BC,  # Ⓖ CIRCLED LATIN CAPITAL LETTER G — Always (temporal)
+    0x24C3,  # Ⓝ CIRCLED LATIN CAPITAL LETTER N — Next (temporal)
+    0x24C4,  # Ⓞ CIRCLED LATIN CAPITAL LETTER O — Obligatory (deontic)
+    0x24C5,  # Ⓟ CIRCLED LATIN CAPITAL LETTER P — Permitted (deontic)
+    0x24CA,  # Ⓤ CIRCLED LATIN CAPITAL LETTER U — Until (temporal)
+)
+
 # Greek and Coptic, Greek Extended, and the OHM SIGN — see the module
-# docstring's "WHY GREEK AND OHM ARE CARVED OUT" section.
-_EXCLUDED_RANGES = ((0x0370, 0x03FF), (0x1F00, 0x1FFF), (0x2126, 0x2126))
+# docstring's "WHY GREEK AND OHM ARE CARVED OUT" section — plus the operator
+# glyphs above. Note what is NOT here: the other circled capitals (Ⓐ, Ⓑ, …)
+# and the Roman numerals stay legal identifier characters, because they are
+# not operators. The carve-out is a list of symbols the grammar already
+# spends, not a swipe at a Unicode block.
+_EXCLUDED_RANGES = (
+    ((0x0370, 0x03FF), (0x1F00, 0x1FFF), (0x2126, 0x2126))
+    + tuple((cp, cp) for cp in _OPERATOR_GLYPHS)
+)
 
 # Plane 0 (BMP) through Plane 2 (CJK Extension B/C/... territory). Every
 # script this kit's test corpora (FOLIO included) actually exercise lives
@@ -408,11 +444,14 @@ def combining_class() -> str:
 # only, exclusively by the pattern-builders below.
 # ---------------------------------------------------------------------------
 
-def _greek_lookahead() -> str:
+def _excluded_lookahead() -> str:
     """``(?!...)`` excluding :data:`_EXCLUDED_RANGES` — built from that same
     tuple (never a second, hand-typed copy of the ranges), so it cannot
     silently drift from what ``_classes()`` already excludes from
-    upper/lower/combining/delta."""
+    upper/lower/combining/delta.
+
+    Named for what it does rather than for Greek: since 0.23.2 the tuple also
+    carries the single-character operator glyphs (Ⓞ, Ⓖ, Ⓒ, …)."""
     body = "".join(
         _escape(lo) if lo == hi else f"{_escape(lo)}-{_escape(hi)}"
         for lo, hi in _EXCLUDED_RANGES
@@ -471,7 +510,7 @@ def _letter_atom() -> str:
     modes, so there is no reason to re-format it every time."""
     upper_nonalpha = _classes().upper_nonalpha
     isalpha_branch = (
-        f"{_greek_lookahead()}{_delta_lookahead()}{_ceiling_lookahead()}"
+        f"{_excluded_lookahead()}{_delta_lookahead()}{_ceiling_lookahead()}"
         f"[^\\W\\d_]"
     )
     return f"(?:[{upper_nonalpha}]|{isalpha_branch})"

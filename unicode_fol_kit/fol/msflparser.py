@@ -181,6 +181,28 @@ _REGISTRY_MODE = {
 _PARSER_CACHE: dict = {}
 
 
+# Modes whose grammar still needs Earley. Everything else is parsed with LALR,
+# which on the kit's own corpus is 30-50x faster for identical trees, identical
+# accept/reject sets and identical source spans (4815 formula-level span
+# comparisons, zero differences) -- measured mode by mode, not assumed.
+#
+# `modal` is the one holdout, and for a specific reason rather than caution.
+# After the operator-glyph carve-out in fol/_identifiers.py the two agree on
+# every tree, but eight inputs in the kit's own corpus are still accepted by
+# Earley and refused by LALR, all of one shape: a bare lowercase propositional
+# atom or nominal standing as a whole formula -- `p→(q→p)`, `¬(p∧q)→(¬p∨¬q)`,
+# `@i (P → ◇j)`. Those are legal modal syntax that the modal grammar reaches
+# only through Earley's willingness to explore, so moving that mode would be a
+# silent narrowing of the language, not a speedup. It stays until the grammar
+# says what it means there.
+_EARLEY_MODES = frozenset({"modal"})
+
+
+def _parser_kind(mode: str) -> str:
+    return "earley" if mode in _EARLEY_MODES else "lalr"
+
+
+
 def _assemble_transformer(registry_mode: str) -> LambdaTransformer:
     """Build the Transformer for a registry mode from the parser registry.
 
@@ -654,7 +676,11 @@ class MSFLParser:
         # (VARIABLE-headed) function calls — see
         # _allow_single_letter_function_calls above.
         registry_mode = _REGISTRY_MODE[self._mode]
-        cache_key = (registry_mode, len(PARSER_OPS))
+        kind = _parser_kind(self._mode)
+        # The kind belongs in the key: two modes could share a registry mode
+        # while disagreeing about which parser serves them, and a cache that
+        # ignored that would hand one of them the other's parser.
+        cache_key = (registry_mode, len(PARSER_OPS), kind)
         parser = _PARSER_CACHE.get(cache_key)
         if parser is None:
             grammar_text = _allow_single_letter_function_calls(build_grammar(registry_mode))
@@ -666,14 +692,83 @@ class MSFLParser:
             # real example" section of this change's report) that Lark's Earley
             # parser populates it accurately, including for Tokens, without
             # needing anything beyond this flag.
-            parser = Lark(grammar_text, parser="earley",
+            parser = Lark(grammar_text, parser=kind,
                           import_paths=[str(_GRAMMARS_DIR)],
                           propagate_positions=True)
             _PARSER_CACHE[cache_key] = parser
         # self.parser is public: NamingError/ParsingError use parser.terminals and parser.lex()
         self.parser = parser
+        # LALR reports a token it cannot shift; Earley's dynamic lexer reported
+        # the same failure one level down, as a character it could not scan.
+        # _translate_token_failure below turns the former back into the latter
+        # so the error model does not depend on which parser serves the mode.
+        self._lalr = kind == "lalr"
         self._transformer = _assemble_transformer(registry_mode)
         self._registry_mode = registry_mode  # parse_with_spans re-derives its own transformer from this
+
+    def _token_failure(self, exc: UnexpectedToken, text: str):
+        """Turn lark's "cannot shift this token" into the kit's error model.
+
+        The model MSFLParser publishes is a two-way split: NamingError for a
+        lexer-level failure, ParsingError for a structurally incomplete
+        formula. Under Earley's dynamic lexer that split fell out of lark's own
+        exception types, because the lexer only ever offers tokens the parser
+        can currently use -- a well-formed symbol in the wrong place never
+        became a token at all, it stayed an unscannable character. A table
+        lexer has no such scruples: it tokenises first and the parser refuses
+        afterwards, so the SAME input arrives here as UnexpectedToken.
+
+        The translation is not a guess. Measured over the 1310-line FOLIO
+        fixture plus hand-written malformed shapes, the two parsers' failures
+        line up exactly, with no overlap in either direction:
+
+            Earley UnexpectedCharacters  ->  LALR UnexpectedToken, token != $END
+            Earley UnexpectedEOF         ->  LALR UnexpectedToken, token == $END
+
+        So $END means "the formula ended too early" (ParsingError) and anything
+        else means "this does not belong here" (NamingError), reported against
+        the offending token's FIRST CHARACTER and position -- which is the
+        character Earley used to name, on a real lark.UnexpectedCharacters so
+        that the UnexpectedInput API NamingError inherits (match_examples()
+        above all) keeps working. Of the 58 inputs rejected in fol mode, 26
+        messages come out byte-identical; the 32 that differ are all
+        "Incomplete formula ...
+        Expected: ...", where LALR knows the answer more precisely and stops
+        leaking an internal ``__ANON_5`` terminal name into user-facing text.
+
+        Earley parsers keep the old routing: their UnexpectedToken means
+        something else, and this mapping is calibrated for LALR only.
+        """
+        if not self._lalr:
+            return ParsingError(self.parser, exc, text, mode=self._mode)
+        if exc.token.type == "$END":
+            # Re-shaped as an end-of-input failure so ParsingError takes its
+            # "Incomplete formula" branch rather than reporting an unexpected
+            # token whose text is the empty string.
+            return ParsingError(self.parser, UnexpectedEOF(sorted(exc.expected)),
+                                text, mode=self._mode)
+        # A REAL lark.UnexpectedCharacters, not a stand-in with the four
+        # attributes NamingError happens to read. NamingError subclasses
+        # UnexpectedCharacters and copies the original's __dict__ onto itself,
+        # so callers inherit lark's UnexpectedInput API -- `match_examples()`
+        # above all, which classifies an error by re-parsing labelled examples
+        # and needs `state`, `considered_rules` and the rest. An audit caught
+        # the stand-in version of this: it left those attributes absent, so
+        # `err.match_examples(...)` raised AttributeError in the eight LALR
+        # modes while still working in modal. Building the real thing costs one
+        # slice of `text` and removes the whole class of question.
+        return NamingError(
+            self.parser,
+            UnexpectedCharacters(
+                text, exc.token.start_pos, exc.token.line, exc.token.column,
+                allowed=getattr(exc, "accepts", None) or exc.expected,
+                considered_tokens=None,
+                state=exc.state,
+                token_history=[exc.token],
+                terminals_by_name=self.parser.lexer_conf.terminals_by_name,
+                considered_rules=None,
+            ),
+            text, mode=self._mode)
 
     def parse(self, text: str) -> Node:
         """Parse a formula string and return an AST node.
@@ -695,7 +790,9 @@ class MSFLParser:
             return ast
         except UnexpectedCharacters as e:
             raise NamingError(self.parser, e, text, mode=self._mode)
-        except (UnexpectedToken, UnexpectedEOF) as e:
+        except UnexpectedToken as e:
+            raise self._token_failure(e, text)
+        except UnexpectedEOF as e:
             raise ParsingError(self.parser, e, text, mode=self._mode)
         except VisitError as e:
             # A transformer handler raised. Surface a ParsingError it produced
@@ -750,7 +847,9 @@ class MSFLParser:
             return SpannedFormula(ast, spans)
         except UnexpectedCharacters as e:
             raise NamingError(self.parser, e, text, mode=self._mode)
-        except (UnexpectedToken, UnexpectedEOF) as e:
+        except UnexpectedToken as e:
+            raise self._token_failure(e, text)
+        except UnexpectedEOF as e:
             raise ParsingError(self.parser, e, text, mode=self._mode)
         except VisitError as e:
             if isinstance(e.orig_exc, ParsingError):

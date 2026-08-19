@@ -126,6 +126,8 @@ parser.parse("中文(x)")   # → ParsingError — 中文(x) parses as a term (a
                           #   identifier can never head an atom on its own
 ```
 
+Seven characters are excluded even though Unicode calls them uppercase letters: `Ⓒ Ⓕ Ⓖ Ⓝ Ⓞ Ⓟ Ⓤ`. Each is a registered operator symbol — Contrast, Eventually, Always, Next, Obligatory, Permitted, Until — and letting them open an identifier gave `ⓄP` two readings at once. The rule is the same one `λ` and `μ` follow: a glyph that is an operator anywhere is not an identifier character anywhere. Only these seven; `Ⓐ`, the other circled capitals and the Roman numerals stay writable.
+
 A digit-leading identifier (`2008SummerOlympics`) is a `NAME`, never a
 number and never a predicate: `NUMBER` itself is unchanged (`2008` and
 `2.5` still lex as plain numbers), and nothing lets an atom's head start
@@ -682,6 +684,28 @@ parser.parse("(P(x) ∧ Q(x)) ∨ R(x)")
 #               right=Atom(predicate='Q', args=(Variable(name='x'),))),
 #      right=Atom(predicate='R', args=(Variable(name='x'),)))
 ```
+
+### Which parser is behind each mode
+
+The eight non-modal modes are parsed with lark's **LALR** parser; `modal` keeps **Earley**. This is an implementation detail in the sense that it changes nothing you can observe — identical ASTs, identical accept/reject sets, identical source spans — but it is worth knowing, because it is why parsing is fast.
+
+Earley exists to handle ambiguous grammars. This grammar is not ambiguous: asked for every derivation (`ambiguity="explicit"`), it produces exactly one for all 1260 parsable lines of the 1310-line FOLIO fixture. Since 0.23.2 the modes that do not need Earley no longer pay for it — measured 30× to 50× inside lark, and 200 → 6513 formulas/second end to end through `parse()` (4.99 ms → 0.154 ms per formula), median of seven runs with the garbage collector disabled.
+
+`modal` stays on Earley because eight shapes in the kit's own corpus are legal modal syntax the LALR table refuses — a bare lowercase propositional atom or a nominal standing as a whole formula, `p→(q→p)`, `@i (P ∧ ◇j)`. Narrowing the language is not a speedup.
+
+The error model is unchanged by the swap. A table lexer tokenises first and refuses afterwards, where Earley's dynamic lexer refused the character, so the same bad input reaches the kit as a different lark exception; `MSFLParser` maps it back. The split turned out to be exact rather than approximate: every input Earley rejected with `UnexpectedEOF` becomes an unshiftable `$END`, and every input it rejected with `UnexpectedCharacters` becomes an unshiftable token that is not `$END`. So `NamingError` and `ParsingError` still mean what this section says they mean, and no error changed class. Of the 58 rejected inputs in the measured corpus, 26 messages are byte-identical; the 32 that changed all say `Expected:` more precisely, because LALR knows exactly which tokens could continue the formula.
+
+### What a failed parse costs
+
+A `NamingError` names the token in front of the offending character (`Invalid predicate 'Foo' — unexpected character …`), which means the failing text is tokenised a second time to find that token. Lark's own exception cannot supply it: the Earley scanner records the character and the position and nothing about what came before.
+
+That second tokenisation used to be routed through `Lark.lex()`, and on this grammar that was a trap. Formulas are parsed with `parser="earley"`, which lexes dynamically and keeps no standing lexer, so `Lark.lex()` built a fresh one on *every* call — and lark runs a terminal-collision check when it constructs one, whenever the package `interegular` merely happens to be importable. The kit's identifier terminals are generated at import from the running interpreter's Unicode tables, and comparing every pair of same-priority ones took **minutes** — not because the patterns are long (the largest, `NAME`, is 4856 characters) but because `interegular` compares them by intersecting one finite automaton per pattern, and these range over most of the Unicode letter repertoire: one failed parse measured at 185 s with `interegular` present against 13 ms without it, same kit, same lark, same Python.
+
+Nobody installs `interegular` deliberately — it arrives as a transitive dependency of vLLM (via `outlines`), so any environment that evaluates model-generated formulas has it. And failed parses are the normal case for model output, not the exception.
+
+Since 0.23.2 the kit builds that lexer **once per parser** and **without lark's validation**, so the check never runs on the error path. A failed parse now costs about the same as a successful one — about 4 ms for the formula above, in either kind of environment. Nothing is lost by skipping validation: it checks that the *grammar* is well formed (terminal regexes compile, no zero-width terminal, every `%ignore` name defined), which lark already established when it built the parser; it only ever raises or stays silent, and never influences which tokens come out. `tests/test_error_path_speed.py` holds that line, and compares the two routes token for token across every grammar the kit builds.
+
+If you were working around this with a separate `interegular`-free environment for parsing, you no longer need to.
 
 ## Source spans: pointing a node back at its own text
 

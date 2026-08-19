@@ -9,45 +9,45 @@
 90	NamingError	SYNTAX_ERROR: Unexpected character ')' at position 78 after closing parenthesis ')'
 95	NamingError	SYNTAX_ERROR: Unexpected character ')' at position 78 after closing parenthesis ')'
 100	NamingError	SYNTAX_ERROR: Unexpected character ')' at position 78 after closing parenthesis ')'
-208	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: biconditional, closing parenthesis, conjunction, implication
-209	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: biconditional, closing parenthesis, conjunction, implication
-217	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: biconditional, closing parenthesis, conjunction, implication
-218	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: biconditional, closing parenthesis, conjunction, implication
-226	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: biconditional, closing parenthesis, conjunction, implication
-227	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: biconditional, closing parenthesis, conjunction, implication
-275	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: __ANON_5, biconditional, closing parenthesis, conjunction, disjunction, exclusive or, implication
-282	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: __ANON_5, biconditional, closing parenthesis, conjunction, disjunction, exclusive or, implication
-289	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: __ANON_5, biconditional, closing parenthesis, conjunction, disjunction, exclusive or, implication
+208	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
+209	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
+217	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
+218	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
+226	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
+227	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
+275	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
+282	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
+289	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
 321	NamingError	SYNTAX_ERROR: Unexpected character '∧' at position 65 after closing parenthesis ')'. Hint: Cannot mix conjunction (∧), disjunction (∨), and exclusive or (⊕) without parentheses
 327	NamingError	SYNTAX_ERROR: Unexpected character '∧' at position 65 after closing parenthesis ')'. Hint: Cannot mix conjunction (∧), disjunction (∨), and exclusive or (⊕) without parentheses
-392	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: __ANON_5, biconditional, closing parenthesis, conjunction, disjunction, exclusive or, implication, opening parenthesis
-399	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: __ANON_5, biconditional, closing parenthesis, conjunction, disjunction, exclusive or, implication, opening parenthesis
-406	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: __ANON_5, biconditional, closing parenthesis, conjunction, disjunction, exclusive or, implication, opening parenthesis
-497	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: __ANON_5, biconditional, closing parenthesis, conjunction, disjunction, exclusive or, implication
-505	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: __ANON_5, biconditional, closing parenthesis, conjunction, disjunction, exclusive or, implication
-513	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: __ANON_5, biconditional, closing parenthesis, conjunction, disjunction, exclusive or, implication
+392	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
+399	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
+406	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
+497	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
+505	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
+513	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
 549	NamingError	SYNTAX_ERROR: Unexpected character '⊕' at position 58 after closing parenthesis ')'. Hint: Cannot mix conjunction (∧), disjunction (∨), and exclusive or (⊕) without parentheses
-550	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: __ANON_5, biconditional, closing parenthesis, conjunction, disjunction, exclusive or, implication, opening parenthesis
+550	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
 555	NamingError	SYNTAX_ERROR: Unexpected character '⊕' at position 58 after closing parenthesis ')'. Hint: Cannot mix conjunction (∧), disjunction (∨), and exclusive or (⊕) without parentheses
 561	NamingError	SYNTAX_ERROR: Unexpected character '⊕' at position 58 after closing parenthesis ')'. Hint: Cannot mix conjunction (∧), disjunction (∨), and exclusive or (⊕) without parentheses
 565	NamingError	SYNTAX_ERROR: Unexpected character '⟷' at position 33 after closing parenthesis ')'
-599	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: __ANON_5, biconditional, closing parenthesis, conjunction, disjunction, exclusive or, implication
-610	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: __ANON_5, biconditional, closing parenthesis, conjunction, disjunction, exclusive or, implication
-621	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: __ANON_5, biconditional, closing parenthesis, conjunction, disjunction, exclusive or, implication
-718	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: __ANON_5, biconditional, closing parenthesis, conjunction, disjunction, exclusive or, implication, opening parenthesis
-725	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: __ANON_5, biconditional, closing parenthesis, conjunction, disjunction, exclusive or, implication, opening parenthesis
-732	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: __ANON_5, biconditional, closing parenthesis, conjunction, disjunction, exclusive or, implication, opening parenthesis
-799	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: __ANON_5, biconditional, closing parenthesis, conjunction, disjunction, exclusive or, implication
-805	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: __ANON_5, biconditional, closing parenthesis, conjunction, disjunction, exclusive or, implication
-811	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: __ANON_5, biconditional, closing parenthesis, conjunction, disjunction, exclusive or, implication
-944	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: biconditional, closing parenthesis, conjunction, implication
-950	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: biconditional, closing parenthesis, conjunction, implication
+599	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
+610	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
+621	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
+718	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
+725	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
+732	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
+799	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
+805	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
+811	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
+944	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
+950	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
 1025	NamingError	SYNTAX_ERROR: Unexpected character ')' at position 147 after closing parenthesis ')'
-1052	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: __ANON_5, biconditional, closing parenthesis, conjunction, disjunction, exclusive or, implication
+1052	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
 1143	NamingError	SYNTAX_ERROR: Unexpected character ')' at position 76 after closing parenthesis ')'
 1184	NamingError	SYNTAX_ERROR: Unexpected character ')' at position 72 after closing parenthesis ')'
-1186	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: __ANON_5, biconditional, closing parenthesis, conjunction, disjunction, exclusive or, implication, opening parenthesis
-1195	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: __ANON_5, biconditional, closing parenthesis, conjunction, disjunction, exclusive or, implication, opening parenthesis
-1204	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: __ANON_5, biconditional, closing parenthesis, conjunction, disjunction, exclusive or, implication, opening parenthesis
+1186	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
+1195	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
+1204	ParsingError	SYNTAX_ERROR: Incomplete formula - the input ended unexpectedly. Expected: closing parenthesis
 1247	NamingError	SYNTAX_ERROR: Unexpected character ')' at position 92 after closing parenthesis ')'
 1253	NamingError	SYNTAX_ERROR: Unexpected character ')' at position 92 after closing parenthesis ')'

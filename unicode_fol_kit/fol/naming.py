@@ -1,7 +1,159 @@
+import weakref
+from copy import copy
+
 from lark import Lark, UnexpectedCharacters, UnexpectedToken, UnexpectedEOF
 from lark.exceptions import ParseError
 
 from ._identifiers import HUMAN_READABLE_PATTERNS
+
+try:
+    from lark.lexer import BasicLexer as _BasicLexer, LexerThread as _LexerThread
+except ImportError:  # pragma: no cover - lark renamed its lexer internals
+    _BasicLexer = _LexerThread = None
+
+
+# --- Re-lexing the prefix of a failed parse ---------------------------------
+#
+# NamingError names the token in FRONT of the offending character ("Invalid
+# predicate 'Foo' - unexpected character ..."), so it has to tokenize the text
+# up to the failure point. The exception lark raises cannot supply that: the
+# Earley scanner leaves `token_history` at None, so all it knows is the
+# character and the position.
+#
+# The obvious way to get the rest, `Lark.lex()`, is a trap for this grammar:
+#
+#   * MSFL is parsed with parser="earley", which lexes dynamically and keeps no
+#     standing lexer, so `Lark.lex` finds no `self.lexer` and constructs a
+#     fresh BasicLexer on EVERY call;
+#   * BasicLexer.__init__ runs a terminal-collision check whenever the package
+#     `interegular` merely happens to be importable (lark/lexer.py, `if
+#     has_interegular:`), comparing every pair of same-priority terminal
+#     regexes;
+#   * PREDICATE/NAME/CONSTANT/VARIABLE/SORT are generated at import from the
+#     running interpreter's Unicode tables (see _identifiers.py), and comparing
+#     THOSE takes MINUTES: measured at 185 s for one failed parse where the
+#     same call takes 13 ms with interegular absent.
+#
+# Note what the third point does NOT say. The generated patterns are not
+# enormous as text -- measured across all nine grammars the kit builds, the
+# largest is NAME at 4856 characters and the rest are 1.0 to 1.8 kB. The cost
+# is not in their length. interegular decides collisions by building a finite
+# automaton per pattern and intersecting them pairwise, and these patterns
+# range over most of the Unicode letter repertoire, so the automata are wide
+# even where the source text is short. Do not "explain" this by their size:
+# an earlier draft of this comment did, and the number it quoted was left over
+# from the pre-0.23.0 enumerated character classes, which really were 192 kB.
+#
+# Nobody opts into that. `interegular` arrives as a transitive dependency of
+# vLLM (via outlines), so every environment that evaluates model-generated
+# formulas has it without asking, and model output fails to parse routinely
+# rather than exceptionally. The cost is also invisible: the call looks like an
+# ordinary parse and takes four orders of magnitude longer, which reads as a
+# hung worker, not as a slow error message.
+#
+# So the lexer used for messages is built ONCE per parser and kept, with
+# validation off. Both halves earn their place: caching pays the check once per
+# parser instead of once per failure, and skipping it removes the check
+# altogether. Nothing is lost by skipping. Validation checks that the GRAMMAR
+# is well formed -- terminal regexes compile, no terminal is zero-width, every
+# %ignore name is defined -- which lark already established when it built this
+# parser and which cannot change afterwards. It only ever raises or stays
+# silent; it never influences which tokens come out.
+_ERROR_LEXERS: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+
+# Cached in place of a lexer for a parser this module cannot serve, so the
+# decision is made once rather than re-attempted on every failed formula.
+_UNAVAILABLE = object()
+
+
+def _error_lexer(parser: Lark):
+    """The cached, validation-free lexer for `parser`, or None if lark's
+    internals are not shaped the way this module expects.
+
+    BUILDING the lexer is allowed to fail -- lark could rename its classes, or
+    reject a grammar that only its own validation would have diagnosed -- and
+    falling back to ``parser.lex`` covers that. USING it is not: see
+    ``lex_for_message``.
+
+    The cache READ and the cache WRITE are guarded separately from the
+    construction, and separately from each other. Not fussiness -- each guard
+    answers a different failure, and merging them breaks one of the two things
+    this function has to do at once:
+
+    * ``_ERROR_LEXERS`` is a WeakKeyDictionary, so it needs the parser to be
+      hashable and weak-referenceable. A lark that grew ``__slots__`` without
+      ``__weakref__``, or an ``__eq__`` without ``__hash__``, makes the lookup
+      itself raise TypeError -- and unguarded, that TypeError comes out of
+      every ``NamingError`` in place of the message, turning a syntax error
+      into a crash.
+    * One try around the whole body would swallow the construction failure
+      before the ``_UNAVAILABLE`` write, so the failed construction would be
+      retried on every single failed formula instead of once. That is not
+      hypothetical: it is what the first attempt at this guard did, caught by
+      ``test_a_grammar_lark_cannot_serve_is_only_attempted_once``.
+
+    Nothing in here lexes, so swallowing is safe throughout: the worst outcome
+    is the slow route, which is what the code did before this module existed.
+    """
+    try:
+        cached = _ERROR_LEXERS.get(parser)
+    except Exception:
+        # The cache itself cannot hold this parser. Nothing to remember, so
+        # every failed parse takes the slow route -- but it gets its message.
+        return None
+    if cached is not None:
+        return None if cached is _UNAVAILABLE else cached
+
+    lexer = None
+    try:
+        if (_BasicLexer is not None and _LexerThread is not None
+                and hasattr(_LexerThread, "from_text")
+                # postlex: Lark.lex feeds the token stream through it. The MSFL
+                # grammars declare none, and reproducing that stage here would
+                # be guesswork, so such a parser goes the long way round.
+                and parser.options.postlex is None):
+            conf = copy(parser.lexer_conf)
+            conf.skip_validation = True
+            candidate = _BasicLexer(conf)
+            # Force the scanner NOW rather than on first use. It compiles the
+            # terminal regexes, which is the one step validation would have
+            # diagnosed with a readable LexError; doing it inside this try
+            # means a grammar lark can only lex the slow way falls back here,
+            # where falling back is free, instead of raising re.error out of
+            # an error message. It also moves the compile off the first
+            # failure's critical path.
+            candidate.scanner
+            lexer = candidate
+    except Exception:
+        lexer = None
+
+    try:
+        _ERROR_LEXERS[parser] = lexer if lexer is not None else _UNAVAILABLE
+    except Exception:
+        pass
+    return lexer
+
+
+def lex_for_message(parser: Lark, text: str) -> list:
+    """Tokenize `text` the way the grammar does, for use in an error message.
+
+    Equivalent to ``list(parser.lex(text))`` but without lark's per-call
+    terminal-collision check -- see the comment above for why that check is
+    ruinous on a runtime-generated Unicode grammar.
+
+    Note what is NOT wrapped in a fallback: once a lexer exists, lexing runs
+    outside any try. Catching here would be actively harmful, because the
+    commonest failure is ``UnexpectedCharacters`` from `text` itself -- and
+    "catch it, then retry through ``parser.lex``" would reinstate the whole
+    cost this function exists to avoid, for exactly the malformed inputs that
+    make it matter, while ending in the same exception. ``parser.lex`` did not
+    swallow that exception either, so letting it through also keeps the
+    behaviour callers already had.
+    """
+    lexer = _error_lexer(parser)
+    if lexer is None:
+        return list(parser.lex(text))
+    return list(_LexerThread.from_text(lexer, text).lex(None))
 
 
 _SYMBOL_NAMES = {
@@ -138,7 +290,7 @@ class NamingError(UnexpectedCharacters):
 
         pos = original_exception.pos_in_stream
         prefix = formula[:pos] if pos is not None and pos >= 0 else formula
-        tokens = list(parser.lex(prefix))
+        tokens = lex_for_message(parser, prefix)
         last_token = tokens[-1] if tokens else None
 
         if last_token is None:

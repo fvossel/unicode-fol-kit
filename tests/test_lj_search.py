@@ -135,46 +135,88 @@ _INVALID = [
 # 285 s at a 20 s one.
 _GMT_TIMEOUT_INVALID = 2000
 
-# _GMT_TIMEOUT_VALID -- the RETRY budget used by _gmt_valid below.
-_GMT_TIMEOUT_VALID = 20000
+# _GMT_TIMEOUT_VALID -- the second budget used by _gmt_verdict's callers below.
+#
+# Raised 20 s -> 60 s in 0.23.2, together with the change that stopped a timeout from
+# being able to FAIL anything here (see _gmt_verdict). It is now only a bound on how
+# long this file waits before recording the third cross-check as unavailable, not a
+# correctness knob: the retry runs only when the 2 s attempt already came back
+# `unknown`, which is rare, and a True from either attempt is a proof either way.
+_GMT_TIMEOUT_VALID = 60000
 
 
-def _gmt_valid(f) -> bool:
-    """``gmt_is_s4_valid`` with one retry -- for queries whose expected answer is True.
+def _gmt_verdict(f, timeout: int):
+    """The GMT/S4 oracle with ``unknown`` kept DISTINCT: True / False / None.
 
-    On this side a timeout is a FALSE NEGATIVE, so the flat 2 s budget this file used
-    to apply everywhere made the curated battery fail for a reason that says nothing
-    about the logic. The cause, measured: roughly one ``gmt_is_s4_valid`` call per
-    PROCESS pays a one-off multi-second cost while Z3's global context crosses ~100 MB
-    and is rebuilt -- the call before it and the call after it both answer the SAME
-    formula in 0.03 s, and in isolation the formula answers in 0.01 s at every budget
-    from 500 ms to 60 s. Which call pays is fixed by how many Z3 queries the process
-    has already made, not by the formula, which is why this battery failed on a
-    DIFFERENT parameter from run to run, passed when the file was re-run alone, and
-    passed under ``pytest -n auto`` (each xdist worker is its own process). Reproduced
-    identically on 0.18.0 in a clean worktree, so it is a long-standing property of
-    the budget, not a regression.
+    True means Z3 proved the translation S4-valid, False means Z3 produced a
+    counter-model, and None means Z3 gave up inside ``timeout``.
 
-    A RETRY rather than simply a bigger number, because the rebuild completes during
-    the call that pays for it however long that takes, so the second call runs on the
-    cleaned-up context. That keeps this robust as the suite grows, instead of pinning
-    the file to a guess about how large the one-off cost can get.
+    :func:`unicode_fol_kit.atp.z3_models.is_valid`, which ``gmt_is_s4_valid`` goes
+    through, folds ``unknown`` into False. That is right for a validity oracle -- a
+    non-proof is not a proof -- and wrong for THIS battery, whose whole job is to
+    report disagreement between three independent procedures: it turns "Z3 ran out of
+    budget" into "the procedures disagree", which is precisely the false alarm that
+    made ``test_curated_valid_agrees_int_valid_and_gmt`` fail intermittently under
+    eight-way xdist contention while the formula answered in 8 ms on its own.
 
-    Sound: a True from Z3 is a proof and is returned immediately without a retry, so
-    this can never turn a genuine disagreement into a pass -- only a False is retried,
-    and only at a larger budget. The cost is one extra query in the rare pathological
-    case.
+    Bigger budgets only ever made that less likely, never impossible, because the
+    trigger is machine load rather than the formula (see the measurement in the
+    ``_gmt_valid`` history: roughly one call per PROCESS pays a one-off multi-second
+    cost as Z3's global context crosses ~100 MB and is rebuilt, and which call pays
+    is fixed by how many queries the process has already made). Distinguishing the
+    third answer removes the failure mode by construction instead.
+
+    This mirrors ``is_valid`` exactly -- same negated query, same solver options, same
+    random seed -- and differs only in not collapsing ``unknown``;
+    :func:`test_the_gmt_mirror_matches_the_public_oracle` pins the two together, so a
+    drift in either one is a red test rather than a silently different question.
     """
-    if gmt_is_s4_valid(f, timeout=_GMT_TIMEOUT_INVALID) is True:
+    from z3 import Not as _Z3Not, Solver as _Solver, sat as _sat, unsat as _unsat
+
+    from unicode_fol_kit.fol.qml import _validity_formula
+    from unicode_fol_kit.hol.intuitionistic import gmt_translate
+
+    # gmt_is_s4_valid(f, timeout=t) == qml_is_valid(gmt_translate(f), mode="constant",
+    # frame="S4", timeout=t) == is_valid(_validity_formula(...), timeout=t), with
+    # systems/bridges/temporal_closure all at their defaults.
+    solver = _Solver()
+    solver.set("timeout", timeout)
+    solver.set("random_seed", 42)
+    solver.add(_Z3Not(_validity_formula(gmt_translate(f), "constant", "S4").to_z3()))
+    result = solver.check()
+    if result == _unsat:
         return True
-    return gmt_is_s4_valid(f, timeout=_GMT_TIMEOUT_VALID)
+    if result == _sat:
+        return False
+    return None
+
+
+def _gmt_valid_or_unknown(f):
+    """:func:`_gmt_verdict` with one retry -- for queries whose expected answer is True.
+
+    A True is a proof and is returned immediately without a retry, so this can never
+    turn a genuine disagreement into a pass. A False is a counter-model and is likewise
+    returned at once, so a real regression still fails fast rather than after 62 s.
+    Only ``unknown`` is retried, and only at the larger budget.
+    """
+    verdict = _gmt_verdict(f, _GMT_TIMEOUT_INVALID)
+    if verdict is None:
+        verdict = _gmt_verdict(f, _GMT_TIMEOUT_VALID)
+    return verdict
 
 
 @pytest.mark.parametrize("name,f", _VALID, ids=[n for n, _ in _VALID])
 def test_curated_valid_agrees_int_valid_and_gmt(name, f):
     assert int_decide(f) is True, name
     assert int_valid(f, max_worlds=3) is True, name
-    assert _gmt_valid(f) is True, name
+    verdict = _gmt_valid_or_unknown(f)
+    if verdict is None:
+        pytest.skip(
+            f"{name}: the third cross-check had no answer -- Z3 returned `unknown` at "
+            f"{_GMT_TIMEOUT_INVALID} ms and again at {_GMT_TIMEOUT_VALID} ms. The two "
+            "assertions above ran and agreed, so nothing about this formula is in "
+            "doubt; only the independent S4/Z3 oracle went unheard.")
+    assert verdict is True, name
 
 
 @pytest.mark.parametrize("name,f", _INVALID, ids=[n for n, _ in _INVALID])
@@ -186,6 +228,40 @@ def test_curated_invalid_agrees_int_valid_and_gmt(name, f):
     # falls back to int_prove and gets it right regardless of max_worlds.
     assert int_valid(f, max_worlds=3) is False, name
     assert gmt_is_s4_valid(f, timeout=_GMT_TIMEOUT_INVALID) is False, name
+
+
+def test_the_gmt_mirror_matches_the_public_oracle():
+    """_gmt_verdict must collapse to gmt_is_s4_valid, or it is asking a different question.
+
+    The mirror reaches past ``gmt_is_s4_valid`` into ``qml._validity_formula`` to keep
+    Z3's ``unknown`` visible. That is only legitimate as long as it builds the SAME
+    query; if the public route ever gains a parameter the mirror does not pass, this
+    battery would quietly start cross-checking something else. Collapsing ``unknown``
+    back into False is exactly what ``atp.z3_models.is_valid`` does, so the two must
+    agree on every formula -- valid and invalid alike -- at a shared budget.
+    """
+    checked = 0
+    for name, f in _VALID + _INVALID:
+        mirrored = _gmt_verdict(f, _GMT_TIMEOUT_INVALID) is True
+        assert mirrored == gmt_is_s4_valid(f, timeout=_GMT_TIMEOUT_INVALID), name
+        checked += 1
+    assert checked >= 25
+
+
+def test_an_unanswerable_query_reads_as_unknown_not_as_refuted():
+    """The point of the split: a starved budget must yield None, never False.
+
+    Without this the guard is untestable in the normal course of events -- the whole
+    reason the flake was rare is that the budget is starved only under load. A 1 ms
+    budget starves it on demand. ``⊥`` here is the surface atom (this file's ⊥
+    convention), so the query is a genuine S4 question rather than a triviality Z3
+    could answer before looking at the clock.
+    """
+    hard = Implies(Or(Not(Not(p)), Not(Not(q))), Not(Not(Or(p, q))))
+    assert _gmt_verdict(hard, 1) is None
+    # ... and the same query IS answerable once it has a budget, so the None above
+    # says "starved", not "unanswerable in principle".
+    assert _gmt_verdict(hard, _GMT_TIMEOUT_VALID) is True
 
 
 def test_curated_battery_has_at_least_25_entries():
@@ -259,19 +335,25 @@ def test_random_differential_against_gmt_s4_oracle():
     for _ in range(100):
         f = _rand_prop(rng, rng.randint(1, 2), [And, Or, Implies, Iff, "not"])
         decided = int_decide(f)
-        # Route by the EXPECTED answer, for the asymmetry documented at _gmt_valid:
+        # Route by the EXPECTED answer, for the asymmetry documented at _gmt_verdict:
         # only a True can be lost to a timeout, so the retry is needed exactly where
         # True is expected. This does not weaken the differential. In the direction it
-        # is aimed at (int_decide says valid, the oracle refutes) the retry makes a
-        # real mismatch REPORTABLE instead of being timed out into a spurious failure.
-        # The other direction (int_decide says invalid, the oracle proves valid) stays
-        # bounded by the short budget -- but it already was at the previous flat 2 s,
-        # so nothing is lost relative to the old behaviour, and the short budget is
-        # what keeps this test at 30 s rather than 285 s. Measured on this seed: all 4
-        # valid formulas answer in <= 37 ms, and every one of the 14 budget-burning
-        # formulas is on the invalid side.
-        oracle = (_gmt_valid(f) if decided
-                  else gmt_is_s4_valid(f, timeout=_GMT_TIMEOUT_INVALID))
+        # is aimed at (int_decide says valid, the oracle refutes) the trichotomy makes
+        # a real mismatch REPORTABLE instead of being timed out into a spurious
+        # failure, and an unanswerable formula drops out of the comparison instead of
+        # being counted as a disagreement. The other direction (int_decide says
+        # invalid, the oracle proves valid) stays on the plain bool at the short
+        # budget: there `unknown` and `refuted` lead to the SAME expected verdict, so
+        # collapsing them costs nothing, and the short budget is what keeps this test
+        # at 30 s rather than 285 s. Measured on this seed: all 4 valid formulas
+        # answer in <= 37 ms, and every one of the 14 budget-burning formulas is on
+        # the invalid side.
+        if decided:
+            oracle = _gmt_valid_or_unknown(f)
+            if oracle is None:
+                continue
+        else:
+            oracle = gmt_is_s4_valid(f, timeout=_GMT_TIMEOUT_INVALID)
         assert decided == oracle, (
             f"int_decide/gmt_is_s4_valid disagree on {f.to_unicode_str()}")
         if decided:
