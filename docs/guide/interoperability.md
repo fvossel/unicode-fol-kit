@@ -322,6 +322,27 @@ cardinalities (`Card(g, <=, n)` — APE reads "at most" as the maximality
 list), values outside equalities, binary predicates over individuals
 (an ACE verb always carries an event), non-invertible names.
 
+Since 0.25.0 the reverse direction also takes FORMULAS.
+{func}`~unicode_fol_kit.drt.fol_to_drs` runs the standard translation
+backwards — it recognizes exactly the shape `drs_to_fol` emits and
+rebuilds the box structure, refusing everything outside that image by
+name ({class}`~unicode_fol_kit.drt.FolToDrsError`: modality,
+biconditionals, bare universals, formula-level counting, function terms,
+free variables). {func}`~unicode_fol_kit.ace.formula_to_ace` chains the
+two: "is this formula expressible as ACE?" becomes two refusal-checked
+steps, and a positive answer is a sentence:
+
+```python
+from unicode_fol_kit import MSFLParser
+from unicode_fol_kit.ace import formula_to_ace
+
+donkey = MSFLParser().parse(
+    "∀x1 ∀x2 ∀e1 (Farmer(x1) ∧ Donkey(x2) ∧ Own(e1, x1, x2)"
+    " → ∃e2 Beat(e2, x1, x2))")
+print(formula_to_ace(donkey).text)
+# → If a farmer X1 owns a donkey X2 then X1 beats X2.
+```
+
 {func}`~unicode_fol_kit.ace.chem_ulex` renders the ChemLog signature
 (`unicode_fol_kit.chem`) as such a user lexicon, so ACE can talk about
 molecules — "There is a carbon X1. X1 bonds an oxygen X2. X1 is

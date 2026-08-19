@@ -29,6 +29,11 @@ Modules
   standard translation into the kit's own FOL AST
   (:mod:`unicode_fol_kit.fol.nodes`), ready for ``unicode_fol_kit.api.prove`` /
   ``unicode_fol_kit.api.check``.
+* :mod:`unicode_fol_kit.drt.reverse` — :func:`~unicode_fol_kit.drt.reverse.fol_to_drs`,
+  the standard translation run BACKWARDS: rebuilds the box structure of any
+  formula in the export's image and refuses everything outside it by name
+  (:class:`~unicode_fol_kit.drt.reverse.FolToDrsError`) — the bridge that
+  lets ``ace.formula_to_ace`` answer "is this formula expressible as ACE?".
 
 Quick usage — the classic donkey sentence, entailed from its premises via Z3::
 
@@ -76,6 +81,7 @@ from .parser import (
 )
 from .resolve import resolve_anaphora, Resolution, ResolutionReport, PRONOUN
 from .export import drs_to_fol
+from .reverse import fol_to_drs, FolToDrsError
 
 __all__ = [
     "DRS", "Condition", "Pred", "Eq", "Neg", "Impl", "Or", "Card", "Part",
@@ -84,5 +90,5 @@ __all__ = [
     "parse_drs", "DRSSyntaxError",
     "parse_sbn", "SBNSyntaxError", "SBNMapping",
     "resolve_anaphora", "Resolution", "ResolutionReport", "PRONOUN",
-    "drs_to_fol",
+    "drs_to_fol", "fol_to_drs", "FolToDrsError",
 ]

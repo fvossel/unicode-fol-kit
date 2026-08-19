@@ -876,6 +876,8 @@ hypothesis refused rather than documented. See {doc}`guide/interoperability`.
    Card
    Part
    CARD_OPS
+   fol_to_drs
+   FolToDrsError
    parse_drs
    parse_sbn
    SBNMapping
@@ -911,7 +913,11 @@ real counting force since ACE-4/5: groups land on the `drt` core's
 Since ACE-6 the pipeline also runs backwards: `drs_to_ace` verbalizes a kit
 DRS as ACE text plus its user lexicon, `ace_round_trip` closes the loop
 through APE with a Z3 verdict, and `chem_ulex` speaks the ChemLog signature
-("a carbon", "bonds", "aromatic").
+("a carbon", "bonds", "aromatic"). `formula_to_ace` extends the reverse
+direction to FORMULAS: `drt.fol_to_drs` rebuilds the box structure of any
+formula in the standard translation's image (refusing the rest by name),
+then the verbalizer takes over — the two exceptions are the "is this
+expressible as ACE?" verdict.
 
 ```{eval-rst}
 .. currentmodule:: unicode_fol_kit.ace
@@ -930,6 +936,7 @@ through APE with a Z3 verdict, and `chem_ulex` speaks the ChemLog signature
    parse_ape_drs
    condition_statistics
    drs_to_ace
+   formula_to_ace
    ace_round_trip
    chem_ulex
    ace_kit_name

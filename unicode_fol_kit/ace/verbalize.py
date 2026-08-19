@@ -70,8 +70,8 @@ from ..drt.nodes import DRS, Card, Condition, Eq, Impl, Neg, Or, Part, Pred
 from .mapping import _kit_predicate, _named_constant, ace_to_drs
 from .runner import AceError
 
-__all__ = ["drs_to_ace", "ace_round_trip", "AceText", "AceRoundTrip",
-           "AceVerbalizationError"]
+__all__ = ["drs_to_ace", "formula_to_ace", "ace_round_trip", "AceText",
+           "AceRoundTrip", "AceVerbalizationError"]
 
 
 class AceVerbalizationError(AceError):
@@ -828,6 +828,24 @@ def _rewrite_neg(cond: Neg, v: _Verbalizer, env: Dict[str, _Np],
     rewritten = Impl(DRS(front_refs, tuple(front)),
                      DRS((), (Neg(DRS(back_only, (back,))),)))
     return _complex_clause(rewritten, v, env, depth)
+
+
+def formula_to_ace(formula) -> AceText:
+    """Is this FORMULA expressible as ACE? Convert it — or refuse by name.
+
+    Two refusal-checked steps: :func:`unicode_fol_kit.drt.fol_to_drs`
+    rebuilds the DRS the formula is the standard translation of (raising
+    :class:`~unicode_fol_kit.drt.FolToDrsError` for anything outside that
+    image — modality, bare universals, formula-level counting, function
+    terms), then :func:`drs_to_ace` verbalizes it (raising
+    :class:`AceVerbalizationError` for DRSs outside the probed ACE
+    fragment). So the two exceptions ARE the expressibility verdict, each
+    naming what exactly does not fit. The live self-check for the result
+    is ``ace_round_trip(fol_to_drs(formula))``.
+    """
+    from ..drt.reverse import fol_to_drs
+
+    return drs_to_ace(fol_to_drs(formula))
 
 
 # ---------------------------------------------------------------------------

@@ -5,6 +5,36 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [0.25.0] - 2026-08-19
+
+### `drt.reverse` / `ace.formula_to_ace` — "is this formula ACE?" gets an answer
+
+`fol_to_drs` runs the standard translation backwards: it recognizes the
+exact SHAPE `drs_to_fol` emits — outer ∃-chains for boxes,
+`∀-chain(antecedent → ∃-chain consequent)` for duplexes, `¬∃-chain` for
+negations, counting quantifiers over `Part_of` for `Card` — and rebuilds
+the box structure. The pinned inverse property is a fixed point:
+`drs_to_fol(fol_to_drs(drs_to_fol(d))) == drs_to_fol(d)` NODE-identically
+over every mappable corpus DRS and the hand-built shapes. Everything
+outside the image refuses by name (`FolToDrsError`): modal operators,
+biconditionals, bare universals (no box exports to `∀` without `→`),
+counting quantifiers with a non-`Part_of` matrix (the formula-level
+counting reading is strictly stronger than a `Card` condition), function
+and number terms in argument positions, free variables. Two documented
+canonicalizations, both semantically invisible: `Part_of` atoms return as
+the typed `Part` condition, and a strict `Card` bound returns shifted
+(`Card(g, >, 2)` → `Card(g, >=, 3)` — the same claim over natural
+counts).
+
+On top sits the one-liner the feature exists for:
+`ace.formula_to_ace(formula)` = `drs_to_ace(fol_to_drs(formula))` —
+"expressible as ACE?" becomes two refusal-checked steps whose exceptions
+ARE the verdict (`FolToDrsError`: not even a DRS; `AceVerbalizationError`:
+a DRS, but outside the probed ACE fragment), and whose positive answer is
+a sentence: the donkey formula comes back as "If a farmer X1 owns a
+donkey X2 then X1 beats X2.", live-checked through APE and Z3 like every
+other verbalization.
+
 ## [0.24.0] - 2026-08-19
 
 ### `ace` — Attempto Controlled English, via the external APE parser

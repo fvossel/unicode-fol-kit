@@ -78,6 +78,7 @@ from .runner import (
 from .translate import AceFormula, ace_drs_to_formula, ace_to_formula
 from .verbalize import (
     AceRoundTrip, AceText, AceVerbalizationError, ace_round_trip, drs_to_ace,
+    formula_to_ace,
 )
 from .chem_lexicon import ace_kit_name, chem_ulex
 
@@ -87,7 +88,8 @@ __all__ = [
     "ace_coverage", "map_ace_drs", "ace_drs_to_formula", "parse_ape_drs",
     "condition_statistics",
     # the reverse direction (ACE-6)
-    "drs_to_ace", "ace_round_trip", "chem_ulex", "ace_kit_name",
+    "drs_to_ace", "formula_to_ace", "ace_round_trip", "chem_ulex",
+    "ace_kit_name",
     # results and reports
     "ApeResult", "ApeMessage", "CoverageRow", "DrsMapping",
     "ConditionReport", "AceFormula", "AceText", "AceRoundTrip",

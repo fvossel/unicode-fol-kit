@@ -17,7 +17,7 @@ import pytest
 
 from unicode_fol_kit.ace import (
     ace_round_trip, ace_to_drs, ape_available, chem_ulex, drs_to_ace,
-    map_ace_drs, parse_ape_drs,
+    formula_to_ace, map_ace_drs, parse_ape_drs,
 )
 from unicode_fol_kit.ace.chem_lexicon import (
     CHEM_ADJECTIVES, CHEM_NOUNS, CHEM_UNSPEAKABLE, CHEM_VERBS, ace_kit_name,
@@ -194,6 +194,40 @@ def test_what_no_probed_surface_carries_is_refused_by_name(box, fragment):
 
 
 # ---------------------------------------------------------------------------
+# Offline: formula_to_ace — expressibility as two refusal-checked steps
+# ---------------------------------------------------------------------------
+
+def test_a_formula_in_the_drs_image_becomes_ace():
+    from unicode_fol_kit import MSFLParser
+    formula = MSFLParser().parse(
+        "∀x1 ∀x2 ∀e1 (Farmer(x1) ∧ Donkey(x2) ∧ Own(e1, x1, x2)"
+        " → ∃e2 Beat(e2, x1, x2))")
+    result = formula_to_ace(formula)
+    assert result.text == ("If a farmer X1 owns a donkey X2 then X1 "
+                           "beats X2.")
+
+
+def test_a_counting_formula_becomes_ace_through_the_card_reading():
+    from unicode_fol_kit import MSFLParser
+    formula = MSFLParser().parse(
+        "∃g1 (∃≥3 p1 Part_of(p1, g1) ∧ ∀x1 (Part_of(x1, g1) → Man(x1)))")
+    assert formula_to_ace(formula).text == "There are at least 3 mans X1."
+
+
+def test_formula_to_ace_refuses_in_two_named_stages():
+    from unicode_fol_kit import MSFLParser
+    from unicode_fol_kit.drt import FolToDrsError
+
+    # Stage 1: outside the DRS image (modality).
+    with pytest.raises(FolToDrsError, match="no classical DRS condition"):
+        formula_to_ace(MSFLParser(modal=True).parse("□∃e1 Wait(e1, john)"))
+    # Stage 2: a DRS, but outside the probed ACE fragment (upper bound).
+    with pytest.raises(AceVerbalizationError, match="no ACE surface"):
+        formula_to_ace(MSFLParser().parse(
+            "∃g1 (∃≤5 p1 Part_of(p1, g1) ∧ ∀x1 (Part_of(x1, g1) → Man(x1)))"))
+
+
+# ---------------------------------------------------------------------------
 # Offline: the chem lexicon tiles the signature
 # ---------------------------------------------------------------------------
 
@@ -259,6 +293,23 @@ def test_every_mappable_corpus_sentence_round_trips(row):
 def test_hand_built_boxes_round_trip(box):
     trip = ace_round_trip(parse_drs(box))
     assert trip.equivalent, trip.detail
+
+
+@live
+def test_a_formula_round_trips_through_ace():
+    # formula → DRS → ACE → APE → DRS → formula, Z3-equivalent: the whole
+    # chain the expressibility check promises.
+    from unicode_fol_kit import MSFLParser
+    from unicode_fol_kit.drt import fol_to_drs
+    from unicode_fol_kit.eval.equivalence import equivalent
+
+    formula = MSFLParser().parse(
+        "∀x1 ∀x2 ∀e1 (Farmer(x1) ∧ Donkey(x2) ∧ Own(e1, x1, x2)"
+        " → ∃e2 Beat(e2, x1, x2))")
+    trip = ace_round_trip(fol_to_drs(formula))
+    assert trip.equivalent, trip.detail
+    from unicode_fol_kit.drt import drs_to_fol
+    assert equivalent(formula, drs_to_fol(trip.back)).equivalent
 
 
 @live
