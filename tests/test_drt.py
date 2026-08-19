@@ -230,8 +230,12 @@ def test_parse_drs_refuses_missing_pipe():
 
 
 def test_parse_drs_refuses_illegal_token():
-    # A digit-leading token is neither a referent, constant, nor predicate name.
-    with pytest.raises(drt.DRSSyntaxError, match="unexpected character"):
+    # A digit-leading token is neither a referent, constant, nor predicate
+    # name. Since Card entered the grammar, bare digits ARE tokens (the
+    # cardinality position) — so the refusal moved from the tokenizer to
+    # the term position, but a number as a term argument stays refused.
+    with pytest.raises(drt.DRSSyntaxError,
+                       match="expected a referent, constant"):
         drt.parse_drs("[ | P(1x)]")
 
 

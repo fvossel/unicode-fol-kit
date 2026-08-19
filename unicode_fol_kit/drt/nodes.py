@@ -11,13 +11,27 @@ universal reading built into the conditional (see ``unicode_fol_kit.drt.export``
 that reading is forced rather than optional). Those omissions are deliberate scope limits
 of this kit subpackage, not oversights — see ``unicode_fol_kit.drt``'s package docstring.
 
-Conditions (five variants, matching Kamp & Reyle's own inventory)::
+Conditions (five classical variants matching Kamp & Reyle's own inventory, plus
+the two plural-DRT extensions of chapter 4 added in 0.24.0)::
 
     Pred(name, args)              # an atomic condition, e.g. Pred("Farmer", ("x",))
     Eq(a, b)                      # a = b
     Neg(drs)                      # ¬[drs]                (negation)
     Impl(antecedent, consequent)  # [antecedent] => [consequent]  (a "duplex condition")
     Or(left, right)               # [left] or [right]
+    Card(ref, op, n)              # |ref| op n            (group cardinality)
+    Part(member, group)           # member ∈ group        (renders/exports as Part_of)
+
+The plural pair is deliberately MINIMAL — measured against the ACE corpus, not
+designed in the abstract: ``Card`` + ``Part`` are what collective readings
+("John and Mary lift a table") and counted plurals ("at least 3 men wait")
+actually need, while DISTRIBUTION needs no operator of its own because it is
+the duplex condition applied to membership (``[x | Part_of(x, g)] => [ |
+...]`` — exactly what ACE's "each of" compiles to). What is still absent, and
+still deliberate: no maximality/abstraction (Kamp & Reyle's Σ — "exactly n"
+as a counting quantifier lives at the FORMULA level via
+``unicode_fol_kit.fol.nodes.Count``, see ``unicode_fol_kit.ace.translate``),
+no tense, no presupposition.
 
 ``DRS(referents, conditions)`` is the box itself: a frozen dataclass pairing a tuple of
 referent names with a tuple of conditions.
@@ -30,8 +44,9 @@ Every string that appears as a ``Pred``/``Eq`` argument is either a *discourse r
 its role explicitly, this module reuses the kit's OWN lexical convention for telling a FOL
 Variable from a Constant — see ``unicode_fol_kit/fol/grammars/terminals.lark``::
 
-    VARIABLE.1: /[a-z][0-9]*/                              # single lowercase letter + digits
-    NAME.2:     /[a-z][a-zA-Z0-9]*[a-zA-Z][a-zA-Z0-9]*/     # lowercase-initial, >= 2 letters
+    VARIABLE.1: /[a-z][0-9]*/                               # single lowercase letter + digits
+    NAME.2:     /[a-z][a-zA-Z0-9_]*[a-zA-Z][a-zA-Z0-9_]*/    # lowercase-initial, >= 2 LETTERS,
+                                                            # `_` in continuation (0.23.0/0.23.1)
     CONSTANT.3: /c_[a-zA-Z0-9]+/ | ...                      # explicit c_-prefixed form
 
 so here: a single lowercase letter optionally followed by digits (``x``, ``y``, ``z1``,
@@ -46,8 +61,10 @@ with the referent namespace (see ``unicode_fol_kit.drt.parser``). ``is_referent`
 classification; every other module in this subpackage (and ``unicode_fol_kit.drt.export``'s
 standard translation) uses them rather than re-deriving the rule.
 
-A predicate name (``Pred.name``) follows the kit's own PREDICATE convention: uppercase-
-initial, alphanumeric (``PREDICATE: /[A-Z][a-zA-Z0-9]*/`` in the same grammar file).
+A predicate name (``Pred.name``) follows the kit's own PREDICATE convention:
+uppercase-initial, then alphanumerics or underscores — since 0.23.1 the grammar's
+PREDICATE takes NAME's continuation class (which is how ``Has_bond_to`` and the rest
+of the chem vocabulary are writable), and this module follows the same rule.
 
 Global referent uniqueness (a deliberate simplification, not part of classical DRT)
 -------------------------------------------------------------------------------------
@@ -116,8 +133,11 @@ from dataclasses import dataclass
 from typing import Dict, Iterator, Tuple
 
 _REF_RE = re.compile(r"^[a-z][0-9]*$")
-_PRED_RE = re.compile(r"^[A-Z][a-zA-Z0-9]*$")
-_BARE_CONST_RE = re.compile(r"^[a-z][a-zA-Z0-9]*[a-zA-Z][a-zA-Z0-9]*$")
+_PRED_RE = re.compile(r"^[A-Z][a-zA-Z0-9_]*$")
+# Lowercase-initial, >= 2 LETTERS somewhere, continuation may include `_`
+# (0.23.0/0.23.1 widened the grammar's NAME the same way; verified against
+# the live parser: a_b, ab_, john_smith are constants; a_1, x_ are not).
+_BARE_CONST_RE = re.compile(r"^[a-z][a-zA-Z0-9_]*[a-zA-Z][a-zA-Z0-9_]*$")
 _EXPLICIT_CONST_RE = re.compile(r"^c_[a-zA-Z0-9]+$")
 
 
@@ -129,15 +149,22 @@ def is_referent(name: str) -> bool:
 
 
 def is_predicate_name(name: str) -> bool:
-    """True iff ``name`` is a legal predicate name (uppercase-initial, alphanumeric —
-    the kit's own PREDICATE convention)."""
+    """True iff ``name`` is a legal predicate name: uppercase-initial, then
+    alphanumerics or underscores — the kit's own PREDICATE convention. The
+    underscore is a CONTINUATION character (0.23.1 widened the grammar's
+    PREDICATE to NAME's continuation class precisely so that the chem
+    vocabulary's ``Has_bond_to`` is writable); this module tracked the old,
+    narrower rule until 0.24.0, which made every underscore predicate the
+    fol parser accepts unusable in a DRS."""
     return isinstance(name, str) and bool(_PRED_RE.fullmatch(name))
 
 
 def is_constant_name(name: str) -> bool:
     """True iff ``name`` is a legal constant name: either a bare lowercase-initial
-    name of >= 2 characters (the kit's NAME convention, e.g. ``john``) or the explicit
-    ``c_...`` form (the kit's CONSTANT convention, for names that don't fit NAME)."""
+    name with at least two LETTERS, underscores allowed in continuation (the kit's
+    NAME convention, e.g. ``john``, ``john_smith`` — but not ``a_1``, which has one
+    letter and would sit next to the referent namespace), or the explicit ``c_...``
+    form (the kit's CONSTANT convention, for names that don't fit NAME)."""
     return isinstance(name, str) and bool(
         _BARE_CONST_RE.fullmatch(name) or _EXPLICIT_CONST_RE.fullmatch(name))
 
@@ -186,8 +213,9 @@ class Pred(Condition):
         object.__setattr__(self, "args", tuple(self.args))
         if not is_predicate_name(self.name):
             raise ValueError(
-                f"Pred: predicate name {self.name!r} must be uppercase-initial "
-                f"alphanumeric (the kit PREDICATE convention, e.g. 'Farmer', 'Owns').")
+                f"Pred: predicate name {self.name!r} must be uppercase-initial, "
+                f"then alphanumerics/underscores (the kit PREDICATE convention, "
+                f"e.g. 'Farmer', 'Owns', 'Has_bond_to').")
         if not self.args:
             raise ValueError(
                 f"Pred({self.name!r}): needs at least one argument.")
@@ -217,6 +245,79 @@ class Eq(Condition):
 
     def to_box_notation(self) -> str:
         return f"{self.a} = {self.b}"
+
+
+#: The comparison operators :class:`Card` accepts, in kit spelling.
+CARD_OPS = ("=", ">=", "<=", ">", "<")
+
+
+@dataclass(frozen=True)
+class Card(Condition):
+    """A group-cardinality condition: ``|ref| op n``.
+
+    ``ref`` is the group's referent (or constant), ``op`` one of
+    :data:`CARD_OPS`, ``n`` a non-negative int. Semantics via the standard
+    translation (``unicode_fol_kit.drt.export``): the number of ``x`` with
+    ``Part_of(x, ref)`` stands in ``op`` to ``n``, rendered as the kit's
+    counting quantifier ``Count`` — so ``Card`` inherits ``Count``'s exact
+    first-order expansion on every backend. ``Card(ref, "<", 0)`` is refused
+    at construction: nothing has fewer than zero parts, and a condition that
+    is FALSE by spelling is a mistake, not a statement.
+
+    Box notation: ``Card(g, >=, 3)`` — unambiguous against a ``Pred`` named
+    ``Card`` because no legal ``Pred`` argument can be a bare comparison
+    operator or integer.
+    """
+
+    ref: str
+    op: str
+    n: int
+
+    def __post_init__(self):
+        _check_term_name(self.ref, context=f"Card({self.ref!r}, ...)")
+        if self.op not in CARD_OPS:
+            raise ValueError(
+                f"Card: op {self.op!r} must be one of {CARD_OPS}.")
+        if not isinstance(self.n, int) or isinstance(self.n, bool) or self.n < 0:
+            raise ValueError(f"Card: n must be a non-negative int, got {self.n!r}.")
+        if self.op == "<" and self.n == 0:
+            raise ValueError(
+                "Card: '< 0' is unsatisfiable by spelling — nothing has "
+                "fewer than zero parts.")
+
+    def to_dict(self) -> dict:
+        return {"_type": "Card", "ref": self.ref, "op": self.op, "n": self.n}
+
+    def to_box_notation(self) -> str:
+        return f"Card({self.ref}, {self.op}, {self.n})"
+
+
+@dataclass(frozen=True)
+class Part(Condition):
+    """A membership condition: ``member`` is a part of the group ``group``.
+
+    Renders — and exports — as the distinguished binary predicate
+    ``Part_of``, chosen over the bare ``Part`` because ACE's noun "part"
+    would otherwise produce a UNARY ``Part`` predicate next to a binary one,
+    and one symbol with two arities breaks every ASCII export route (TPTP,
+    Prover9, z3 declarations). A hand-written ``Pred("Part_of", (m, g))``
+    means exactly the same thing at the FOL level; the typed condition
+    exists so the export and the plural machinery can FIND membership
+    without string-matching predicate names.
+    """
+
+    member: str
+    group: str
+
+    def __post_init__(self):
+        _check_term_name(self.member, context=f"Part({self.member!r}, {self.group!r})")
+        _check_term_name(self.group, context=f"Part({self.member!r}, {self.group!r})")
+
+    def to_dict(self) -> dict:
+        return {"_type": "Part", "member": self.member, "group": self.group}
+
+    def to_box_notation(self) -> str:
+        return f"Part_of({self.member}, {self.group})"
 
 
 @dataclass(frozen=True)
@@ -362,6 +463,10 @@ class DRS:
                     args = cond.args
                 elif isinstance(cond, Eq):
                     args = (cond.a, cond.b)
+                elif isinstance(cond, Card):
+                    args = (cond.ref,)
+                elif isinstance(cond, Part):
+                    args = (cond.member, cond.group)
                 else:
                     continue
                 for a in args:

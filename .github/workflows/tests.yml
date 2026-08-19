@@ -83,5 +83,29 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           "$HOME/.local/bin/eprover" --version || echo "no working E: live tests will skip"
 
+      # APE (the Attempto ACE parser), pinned to the commit the recorded
+      # fixtures in tests/fixtures/ape_5f4d535_corpus_v1.json were captured
+      # from -- bump both together or neither (same rule as the E pin).
+      #
+      # Unlike E there is NO cache: the build is seconds (a Prolog qsave, not
+      # a C compile), and the saved state is bound to the exact SWI-Prolog
+      # that built it, so a cached binary would trade a ~15 s build for a
+      # version-skew failure mode whenever ubuntu-latest bumps swipl.
+      # continue-on-error for the same reason as E: a network hiccup degrades
+      # to "live ACE tests skip", visibly red in the log, not a lost run.
+      - name: Build APE from source
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends swi-prolog-nox
+          git clone https://github.com/Attempto/APE "$HOME/APE"
+          cd "$HOME/APE"
+          git checkout 5f4d5354a45fb772763bf1a9543f508f15b28982
+          make install
+          ./ape.exe -text "John waits." -solo tptp
+          echo "$HOME/APE" >> "$GITHUB_PATH"
+
       - name: Run the fast suite
         run: pytest -n auto -m "not isabelle_live and not hets_live"

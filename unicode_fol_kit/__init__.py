@@ -145,6 +145,7 @@ from . import dl   # the ALC description-logic subpackage (dl.concept_satisfiabl
 from . import comorphism   # logic-to-logic translation registry (Comorphism, …)
 from . import hets  # REST binding to a Dockerized HETS server (HetsClient, …)
 from . import drt  # Discourse Representation Theory (DRS, parse_drs, drs_to_fol, …)
+from . import ace  # Attempto Controlled English via the external APE parser (ace_to_fol, …)
 from . import prob  # exact probabilistic logic (Nilsson bounds, distribution semantics)
 from . import chem  # molecules as finite FOL structures (needs the [chem] extra)
 from . import ilp  # structures -> an ILP task, and the learned clause back
@@ -152,7 +153,7 @@ from . import api  # the seven-verb facade (api.parse_any / check / prove / …)
                    # namespaced on purpose: api.prove must not shadow the
                    # resolution prover's top-level `prove`
 
-__version__ = "0.23.2"
+__version__ = "0.24.0"
 
 __all__ = [
     "MSFLParser",

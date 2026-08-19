@@ -24,6 +24,7 @@ One rule governs all of them, and it is worth stating before the details:
 | LaTeX | {func}`~unicode_fol_kit.parse_latex` | |
 | CASL | {func}`~unicode_fol_kit.parse_casl_spec` | sorted; see below |
 | **Prolog / Datalog** | {func}`~unicode_fol_kit.parse_prolog_clause`, {func}`~unicode_fol_kit.parse_prolog_program`, {func}`~unicode_fol_kit.load_prolog` | **new**; see below |
+| **ACE (controlled English)** | {func}`~unicode_fol_kit.ace.ace_to_fol` | **new**; needs the external APE binary; see below |
 
 {func}`~unicode_fol_kit.api.parse_any` detects the dialect for you, and
 {func}`~unicode_fol_kit.detect_dialects` shows what it is considering:
@@ -143,6 +144,194 @@ inside a quoted atom. Two clauses sharing a head **are** alternatives, but only
 under the completion of the program, which is an assumption about the whole
 program rather than a fact about those two clauses. They come back separately
 and are not disjoined for you.
+
+## Attempto Controlled English
+
+[ACE](https://github.com/Attempto/APE) is a controlled natural language with
+exactly one reading per sentence — fixed by documented convention, not by a
+guesser — which makes English-shaped text a real input format rather than an
+NLP gamble. The kit drives the reference parser APE as an external subprocess
+(LGPL; install: `git clone https://github.com/Attempto/APE ~/APE && cd ~/APE
+&& make install`, needs SWI-Prolog — on Windows a WSL build is found
+automatically, and `$UFK_APE_CMD` overrides discovery):
+
+```python
+from unicode_fol_kit.ace import ace_to_fol
+
+for f in ace_to_fol("Every farmer who owns a donkey beats it."):
+    print(f.to_unicode_str())
+# → ∀a ∀b ∀c (Farmer(a) ∧ (Donkey(b) ∧ Predicate2(c, own, a, b)) → ∃d Predicate2(d, beat, a, b))
+```
+
+The donkey sentence arrives with the correct universal reading of its
+indefinite, events are explicit (neo-Davidsonian: `Predicate1/2/3` carry the
+event referent first), and cross-sentence anaphora ("A man waits. He sleeps.")
+resolves before translation.
+
+Three outcomes, none silent — this route refuses rather than mistranslates:
+
+- **not ACE** → `AceParseError` with APE's own diagnosis, down to a repair
+  hint (`"waitz"` → `"wait"`). APE's built-in lexicon is deliberately small;
+  the `ulex` parameter supplies missing words:
+  `ace_to_fol("A man whistles.", ulex="iv_finsg(whistles, whistle).")`.
+- **ACE, but beyond Attempto's own TPTP export** → `AceTptpUnsupportedError`
+  carrying the DRS: the four modal boxes (`must`/`can`/`should`/`may`),
+  negation as failure, questions and commands. A yes/no question is refused
+  for a subtler reason: APE renders it as a TPTP *conjecture*, and flattening
+  that role would silently turn "Does John wait?" into the claim that he
+  does. Routing all of these into the kit's modal family is milestone ACE-3.
+- **ACE, but the counting is inert** → *on this route* the formula comes back
+  with a reified `Object(b, man, countable, na, geq, 3)` atom instead of
+  counting force — that is Attempto's own TPTP export, kept verbatim;
+  {func}`~unicode_fol_kit.ace.ace_coverage` flags such sentences
+  (`reified_cardinality`). The DRS and formula routes below DO carry the
+  counting force since ACE-4/5.
+
+{func}`~unicode_fol_kit.ace.ace_coverage` runs any sentence list through the
+route and reports each sentence's fate (`ok` / `tptp_unsupported` /
+`tptp_unread` / `not_ace` / `infra`) — the kit's own 55-sentence corpus and
+its recorded per-sentence outcomes live in `tests/fixtures/ace_corpus_v1.tsv`
+and `tests/fixtures/ape_5f4d535_corpus_v1.json`.
+
+### The DRS route: `ace_to_drs`
+
+APE's own representation is a Discourse Representation Structure, and the kit
+has a DRS core — so since 0.24.0 the DRS itself is first-class.
+{func}`~unicode_fol_kit.ace.parse_ape_drs` reads APE's printed term 1:1
+(pinned by a byte-identical round-trip over the whole corpus), and
+{func}`~unicode_fol_kit.ace.ace_to_drs` maps it onto {mod}`unicode_fol_kit.drt`:
+
+```python
+from unicode_fol_kit.ace import ace_to_drs
+from unicode_fol_kit.drt import drs_to_fol
+
+drs = ace_to_drs("Every farmer who owns a donkey beats it.")
+print(drs_to_fol(drs).to_unicode_str())
+# → ∀x1 ∀x2 ∀e1 (Farmer(x1) ∧ Donkey(x2) ∧ Own(e1, x1, x2) → ∃e2 Beat(e2, x1, x2))
+```
+
+Verbs, nouns, adjectives and prepositions become kit predicates (`See(e1,
+x1, x2)` — events stay, neo-Davidsonian), the copula becomes equality with
+the be-event dropped (Attempto's own reference reading), proper names become
+constants. A sentence maps **completely or not at all**:
+{func}`~unicode_fol_kit.ace.map_ace_drs` returns a per-condition report
+(`DrsMapping.rows`) naming every condition's verdict, and
+{func}`~unicode_fol_kit.ace.condition_statistics` aggregates those verdicts
+over a corpus — on the kit's own corpus, 38 of 50 ACE sentences map
+completely, and every refusal names its reason and, where one exists, its
+carrier (modality, questions, the `exactly`/`at most` maximality and
+arithmetic → `ace_to_formula`; commands and negation as failure → honestly
+undecided).
+
+The mapping is pinned by a differential: for every corpus sentence both
+routes cover, `drs_to_fol` over the mapped DRS is Z3-equivalent to APE's own
+TPTP output read by the kit — two independent implementations of the
+standard translation, agreeing formula by formula.
+
+### The formula route: `ace_to_formula`
+
+What a classical DRS cannot hold, a kit formula can.
+{func}`~unicode_fol_kit.ace.ace_to_formula` translates straight to one
+formula, routing ACE's four modal boxes onto the kit's modal family —
+`must` → `□`, `can` → `◇` (alethic), `should` → `Ⓞ`, `may` → `Ⓟ` (deontic, a
+documented choice matching Attempto's recommendation/admissibility gloss):
+
+```python
+from unicode_fol_kit.ace import ace_to_formula
+
+print(ace_to_formula("Every man must wait.").formula.to_unicode_str())
+# → ∀x1 (Man(x1) → □∃e1 Wait(e1, x1))
+```
+
+The result re-parses identically through the kit's own modal parser and is a
+first-class citizen of the modal backends (`qml_is_valid`, tableaux,
+Isabelle). Questions keep their interrogative force instead of losing it:
+a wh-question yields an OPEN formula (`kind="wh_question"`, the queried
+variable named in `query_variables` — answering is model finding), a yes/no
+question a closed one (`kind="yesno_question"` — answering is an entailment
+check). Commands and negation as failure still refuse, with the same
+reasons on every route.
+
+### Plurals, counting, arithmetic (ACE-4/5)
+
+ACE reads an unmarked plural **collectively**: "At least 3 men wait."
+asserts one waiting *group* of at least three men, not three individual
+waits. The kit keeps that reading — the DRS core carries two plural-DRT
+conditions, `Card` (a group's cardinality bound) and `Part` (membership,
+exported as the binary `Part_of`), and `Card` lowers to the kit's counting
+quantifier on export:
+
+```python
+from unicode_fol_kit.ace import ace_to_drs
+from unicode_fol_kit.drt import drs_to_fol
+
+drs = ace_to_drs("At least 3 men wait.")
+print(drs.to_box_notation())
+# → [g1, e1 | Card(g1, >=, 3), [x1 | Part_of(x1, g1)] -> [ | Man(x1)], Wait(e1, g1)]
+print(drs_to_fol(drs).to_unicode_str())
+# → ∃g1 ∃e1 (∃≥3 p1 Part_of(p1, g1) ∧ ∀x1 (Part_of(x1, g1) → Man(x1)) ∧ Wait(e1, g1))
+```
+
+The strict operators shift exactly ("more than 2" and "at least 3" produce
+Z3-equivalent formulas), coordinations become closed groups ("John and
+Mary" → two `Part_of` atoms plus `Card(g, =, 2)`), and "each of"
+distributes through an ordinary duplex — no extra operator needed, and
+Z3 draws the distributed consequences.
+
+Two counting constructs live on the **formula route only**. The maximality
+of `exactly`/`at most` (APE's `[...]` list condition) becomes a counting
+quantifier over the whole scope — the *distributive* counting reading
+("Exactly 2 dogs bark." → `∃=2 g1 ∃e1 (Dog(g1) ∧ Bark(e1, g1))`: exactly
+two individual barkers; collective maximality is not first-order
+expressible, a documented choice at `translate.box_with_lists`). And
+arithmetic translates to kit terms — `"1 + 2 = 3."` → `1 + 2 = 3` — where
+the default backend deliberately reads `+` uninterpreted;
+{func}`~unicode_fol_kit.atp.z3_arith.is_valid_arith` decides the
+arithmetic fragment (proves `1 + 2 = 3`, refutes `1 + 2 = 4`).
+
+### The reverse direction: `drs_to_ace` (ACE-6)
+
+The pipeline also runs backwards. {func}`~unicode_fol_kit.ace.drs_to_ace`
+verbalizes a kit DRS as ACE text plus the APE user-lexicon entries that
+carry its content words, and {func}`~unicode_fol_kit.ace.ace_round_trip`
+is the machine self-check: the text goes back through APE and the mapping,
+and Z3 judges the result against the input — over the kit's corpus, every
+mappable sentence closes that loop.
+
+```python
+from unicode_fol_kit.ace import drs_to_ace, ace_round_trip
+from unicode_fol_kit.drt import parse_drs
+
+drs = parse_drs("[ | [x1 | Farmer(x1)] -> [e1 | Wait(e1, x1)]]")
+print(drs_to_ace(drs).text)
+# → If there is a farmer X1 then X1 waits.
+print(ace_round_trip(drs).equivalent)   # needs a live APE
+# → True
+```
+
+The claim is deliberately NOT "natural English" — it is that the text
+*means* the DRS, machine-checked. Surface forms are mechanical and
+lexicon-defined: the third-person singular and the plural add
+`s`/`es`/`ies`, underscores become hyphens (`Bond_to` → the verb
+`bond-to`), and "at least 3 mans" is intentional — the emitted
+`noun_pl(mans, man, neutr)` entry defines that surface, APE parses it, and
+the logical symbol underneath is exactly `man`. Everything the probed ACE
+fragment cannot carry back refuses by name
+({class}`~unicode_fol_kit.ace.AceVerbalizationError`): upper-bound
+cardinalities (`Card(g, <=, n)` — APE reads "at most" as the maximality
+list), values outside equalities, binary predicates over individuals
+(an ACE verb always carries an event), non-invertible names.
+
+{func}`~unicode_fol_kit.ace.chem_ulex` renders the ChemLog signature
+(`unicode_fol_kit.chem`) as such a user lexicon, so ACE can talk about
+molecules — "There is a carbon X1. X1 bonds an oxygen X2. X1 is
+aromatic." parses with the DRS carrying `c`, `bond`, `aromatic`. Two
+shape facts are documented rather than hidden: kit-side the symbols
+arrive capitalized ({func}`~unicode_fol_kit.ace.ace_kit_name` computes
+the spelling), and ACE verbs are neo-Davidsonian, so binary ChemLog
+relations arrive with an event argument (`Bond(e1, x1, x2)`); the three
+nullary net-charge predicates are unspeakable in ACE (a sentence needs a
+subject) and excluded by name.
 
 ## CASL
 

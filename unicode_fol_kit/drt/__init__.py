@@ -15,7 +15,7 @@ This subpackage implements exactly that core, and nothing beyond it — see "Sco
 Modules
 ---------
 * :mod:`unicode_fol_kit.drt.nodes` — the ``DRS`` data model (``referents``, ``conditions``)
-  and its five classical condition variants (``Pred``, ``Eq``, ``Neg``, ``Impl``, ``Or``),
+  and its condition variants — the five classical ones (``Pred``, ``Eq``, ``Neg``, ``Impl``, ``Or``) plus the 0.24.0 plural-DRT pair (``Card``, ``Part``) —
   plus the accessibility checker :meth:`~unicode_fol_kit.drt.nodes.DRS.validate`.
 * :mod:`unicode_fol_kit.drt.parser` — :func:`~unicode_fol_kit.drt.parser.parse_drs` for a
   compact hand-written box notation, and
@@ -67,7 +67,7 @@ See each module's docstring for the precise grammar/semantics decisions and thei
 """
 
 from .nodes import (
-    DRS, Condition, Pred, Eq, Neg, Impl, Or,
+    DRS, Card, CARD_OPS, Condition, Pred, Eq, Neg, Impl, Or, Part,
     is_referent, is_predicate_name, is_constant_name, walk_boxes,
 )
 from .parser import (
@@ -78,7 +78,8 @@ from .resolve import resolve_anaphora, Resolution, ResolutionReport, PRONOUN
 from .export import drs_to_fol
 
 __all__ = [
-    "DRS", "Condition", "Pred", "Eq", "Neg", "Impl", "Or",
+    "DRS", "Condition", "Pred", "Eq", "Neg", "Impl", "Or", "Card", "Part",
+    "CARD_OPS",
     "is_referent", "is_predicate_name", "is_constant_name", "walk_boxes",
     "parse_drs", "DRSSyntaxError",
     "parse_sbn", "SBNSyntaxError", "SBNMapping",

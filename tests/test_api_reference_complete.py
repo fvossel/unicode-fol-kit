@@ -27,7 +27,7 @@ DOCS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
 #: Subpackages whose ``__all__`` is part of the public surface. Anything a
 #: caller can import from ``unicode_fol_kit.<name>`` belongs in the reference.
 SUBPACKAGES = ["semantics", "eval", "prob", "chem", "ilp", "dl", "hets",
-               "drt", "hol", "atp", "fol", "comorphism"]
+               "drt", "ace", "hol", "atp", "fol", "comorphism"]
 
 #: Names in ``unicode_fol_kit.__all__`` that ARE subpackages. They are covered
 #: by the module section at the end of the page rather than by a name table.

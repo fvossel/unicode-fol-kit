@@ -1,0 +1,817 @@
+[
+ {
+  "tag": "svo-intransitive",
+  "sentence": "John waits.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a Predicate1(a, wait, John)"
+  ],
+  "drs": "drs([A],[predicate(A,wait,named('John'))-1/2])",
+  "tptp": "fof(f1, axiom, (\n? [A] : (predicate1(A,wait,'John')))).",
+  "messages": []
+ },
+ {
+  "tag": "svo-transitive",
+  "sentence": "Mary sees a dog.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a ∃b (Predicate2(a, see, Mary, b) ∧ Dog(b))"
+  ],
+  "drs": "drs([A,B],[object(A,dog,countable,na,eq,1)-1/4,predicate(B,see,named('Mary'),A)-1/2])",
+  "tptp": "fof(f1, axiom, (\n? [A,B] : ((predicate2(A,see,'Mary',B)) &\n(dog(B))))).",
+  "messages": []
+ },
+ {
+  "tag": "svo-ditransitive",
+  "sentence": "John gives Mary a book.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a ∃b (Predicate3(a, give, John, b, Mary) ∧ Book(b))"
+  ],
+  "drs": "drs([A,B],[object(A,book,countable,na,eq,1)-1/5,predicate(B,give,named('John'),A,named('Mary'))-1/2])",
+  "tptp": "fof(f1, axiom, (\n? [A,B] : ((predicate3(A,give,'John',B,'Mary')) &\n(book(B))))).",
+  "messages": []
+ },
+ {
+  "tag": "universal",
+  "sentence": "Every man waits.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∀a (Man(a) → ∃b Predicate1(b, wait, a))"
+  ],
+  "drs": "drs([],[=>(drs([A],[object(A,man,countable,na,eq,1)-1/2]),drs([B],[predicate(B,wait,A)-1/3]))])",
+  "tptp": "fof(f1, axiom, (\n! [A] : ((man(A))\n=> (? [B] : (predicate1(B,wait,A)))))).",
+  "messages": []
+ },
+ {
+  "tag": "universal-transitive",
+  "sentence": "Every man likes a car.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∀a (Man(a) → ∃b ∃c (Car(b) ∧ Predicate2(c, like, a, b)))"
+  ],
+  "drs": "drs([],[=>(drs([A],[object(A,man,countable,na,eq,1)-1/2]),drs([B,C],[object(B,car,countable,na,eq,1)-1/5,predicate(C,like,A,B)-1/3]))])",
+  "tptp": "fof(f1, axiom, (\n! [A] : ((man(A))\n=> (? [B,C] : ((car(B)) &\n(predicate2(C,like,A,B))))))).",
+  "messages": []
+ },
+ {
+  "tag": "no-quantifier",
+  "sentence": "No man waits.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∀a (Man(a) → ¬∃b Predicate1(b, wait, a))"
+  ],
+  "drs": "drs([],[=>(drs([A],[object(A,man,countable,na,eq,1)-1/2]),drs([],[-(drs([B],[predicate(B,wait,A)-1/3]))]))])",
+  "tptp": "fof(f1, axiom, (\n! [A] : ((man(A))\n=> (~(? [B] : (predicate1(B,wait,A))))))).",
+  "messages": []
+ },
+ {
+  "tag": "negation-verb",
+  "sentence": "John does not wait.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "¬∃a Predicate1(a, wait, John)"
+  ],
+  "drs": "drs([],[-(drs([A],[predicate(A,wait,named('John'))-1/4]))])",
+  "tptp": "fof(f1, axiom, (\n~(? [A] : (predicate1(A,wait,'John'))))).",
+  "messages": []
+ },
+ {
+  "tag": "negation-sentence",
+  "sentence": "It is false that John waits.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "¬∃a Predicate1(a, wait, John)"
+  ],
+  "drs": "drs([],[-(drs([A],[predicate(A,wait,named('John'))-1/6]))])",
+  "tptp": "fof(f1, axiom, (\n~(? [A] : (predicate1(A,wait,'John'))))).",
+  "messages": []
+ },
+ {
+  "tag": "if-then",
+  "sentence": "If a man sees a dog then the man waits.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∀a ∀b ∀c (Man(a) ∧ (Dog(b) ∧ Predicate2(c, see, a, b)) → ∃d Predicate1(d, wait, a))"
+  ],
+  "drs": "drs([],[=>(drs([A,B,C],[object(A,man,countable,na,eq,1)-1/3,object(B,dog,countable,na,eq,1)-1/6,predicate(C,see,A,B)-1/4]),drs([D],[predicate(D,wait,A)-1/10]))])",
+  "tptp": "fof(f1, axiom, (\n! [A,B,C] : (((man(A)) &\n((dog(B)) &\n(predicate2(C,see,A,B))))\n=> (? [D] : (predicate1(D,wait,A)))))).",
+  "messages": []
+ },
+ {
+  "tag": "or-sentences",
+  "sentence": "John waits or Mary waits.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a (Predicate1(a, wait, John) ∨ ∃b Predicate1(b, wait, Mary))"
+  ],
+  "drs": "drs([],[v(drs([A],[predicate(A,wait,named('John'))-1/2]),drs([B],[predicate(B,wait,named('Mary'))-1/5]))])",
+  "tptp": "fof(f1, axiom, (\n? [A] : ((predicate1(A,wait,'John'))\n| (? [B] : (predicate1(B,wait,'Mary')))))).",
+  "messages": []
+ },
+ {
+  "tag": "vp-conjunction",
+  "sentence": "John waits and sleeps.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a Predicate1(a, wait, John)",
+   "∃a Predicate1(a, sleep, John)"
+  ],
+  "drs": "drs([A,B],[predicate(A,wait,named('John'))-1/2,predicate(B,sleep,named('John'))-1/4])",
+  "tptp": "fof(f1, axiom, (\n? [A] : (predicate1(A,wait,'John')))).\n\nfof(f2, axiom, (\n? [A] : (predicate1(A,sleep,'John')))).",
+  "messages": []
+ },
+ {
+  "tag": "vp-disjunction",
+  "sentence": "John waits or runs.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a (Predicate1(a, wait, John) ∨ ∃b Predicate1(b, run, John))"
+  ],
+  "drs": "drs([],[v(drs([A],[predicate(A,wait,named('John'))-1/2]),drs([B],[predicate(B,run,named('John'))-1/4]))])",
+  "tptp": "fof(f1, axiom, (\n? [A] : ((predicate1(A,wait,'John'))\n| (? [B] : (predicate1(B,run,'John')))))).",
+  "messages": []
+ },
+ {
+  "tag": "donkey",
+  "sentence": "Every farmer who owns a donkey beats it.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∀a ∀b ∀c (Farmer(a) ∧ (Donkey(b) ∧ Predicate2(c, own, a, b)) → ∃d Predicate2(d, beat, a, b))"
+  ],
+  "drs": "drs([],[=>(drs([A,B,C],[object(A,farmer,countable,na,eq,1)-1/2,object(B,donkey,countable,na,eq,1)-1/6,predicate(C,own,A,B)-1/4]),drs([D],[predicate(D,beat,A,B)-1/7]))])",
+  "tptp": "fof(f1, axiom, (\n! [A,B,C] : (((farmer(A)) &\n((donkey(B)) &\n(predicate2(C,own,A,B))))\n=> (? [D] : (predicate2(D,beat,A,B)))))).",
+  "messages": []
+ },
+ {
+  "tag": "relative-clause",
+  "sentence": "A man who waits sleeps.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a ∃b ∃c (Predicate1(a, sleep, b) ∧ (Predicate1(c, wait, b) ∧ Man(b)))"
+  ],
+  "drs": "drs([A,B,C],[object(A,man,countable,na,eq,1)-1/2,predicate(B,wait,A)-1/4,predicate(C,sleep,A)-1/5])",
+  "tptp": "fof(f1, axiom, (\n? [A,B,C] : ((predicate1(A,sleep,B)) &\n((predicate1(C,wait,B)) &\n(man(B)))))).",
+  "messages": []
+ },
+ {
+  "tag": "anaphora-pronoun",
+  "sentence": "A man waits. He sleeps.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a ∃b ∃c (Predicate1(a, sleep, b) ∧ (Predicate1(c, wait, b) ∧ Man(b)))"
+  ],
+  "drs": "drs([A,B,C],[object(A,man,countable,na,eq,1)-1/2,predicate(B,wait,A)-1/3,predicate(C,sleep,A)-2/2])",
+  "tptp": "fof(f1, axiom, (\n? [A,B,C] : ((predicate1(A,sleep,B)) &\n((predicate1(C,wait,B)) &\n(man(B)))))).",
+  "messages": []
+ },
+ {
+  "tag": "anaphora-definite",
+  "sentence": "A man sees a dog. The dog barks.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a ∃b ∃c ∃d (Predicate1(a, bark, b) ∧ (Predicate2(c, see, d, b) ∧ (Dog(b) ∧ Man(d))))"
+  ],
+  "drs": "drs([A,B,C,D],[object(A,man,countable,na,eq,1)-1/2,object(B,dog,countable,na,eq,1)-1/5,predicate(C,see,A,B)-1/3,predicate(D,bark,B)-2/3])",
+  "tptp": "fof(f1, axiom, (\n? [A,B,C,D] : ((predicate1(A,bark,B)) &\n((predicate2(C,see,D,B)) &\n((dog(B)) &\n(man(D))))))).",
+  "messages": []
+ },
+ {
+  "tag": "anaphora-variable",
+  "sentence": "A man X waits. X sleeps.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a ∃b ∃c (Predicate1(a, sleep, b) ∧ (Predicate1(c, wait, b) ∧ Man(b)))"
+  ],
+  "drs": "drs([A,B,C],[object(A,man,countable,na,eq,1)-1/2,predicate(B,wait,A)-1/4,predicate(C,sleep,A)-2/2])",
+  "tptp": "fof(f1, axiom, (\n? [A,B,C] : ((predicate1(A,sleep,B)) &\n((predicate1(C,wait,B)) &\n(man(B)))))).",
+  "messages": []
+ },
+ {
+  "tag": "adjective",
+  "sentence": "A rich man waits.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a ∃b (Predicate1(a, wait, b) ∧ (Property1(b, rich, pos) ∧ Man(b)))"
+  ],
+  "drs": "drs([A,B],[object(A,man,countable,na,eq,1)-1/3,property(A,rich,pos)-1/2,predicate(B,wait,A)-1/4])",
+  "tptp": "fof(f1, axiom, (\n? [A,B] : ((predicate1(A,wait,B)) &\n((property1(B,rich,pos)) &\n(man(B)))))).",
+  "messages": []
+ },
+ {
+  "tag": "copula-adjective",
+  "sentence": "John is rich.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a (John = a ∧ Property1(a, rich, pos))"
+  ],
+  "drs": "drs([A,B],[property(A,rich,pos)-1/3,predicate(B,be,named('John'),A)-1/2])",
+  "tptp": "fof(f1, axiom, (\n? [A] : (('John'=A) &\n(property1(A,rich,pos))))).",
+  "messages": []
+ },
+ {
+  "tag": "copula-identity",
+  "sentence": "John is Mary's father.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a (John = a ∧ (Father(a) ∧ Relation(a, of, Mary)))"
+  ],
+  "drs": "drs([A,B],[relation(A,of,named('Mary'))-1/4,object(A,father,countable,na,eq,1)-1/6,predicate(B,be,named('John'),A)-1/2])",
+  "tptp": "fof(f1, axiom, (\n? [A] : (('John'=A) &\n((father(A)) &\n(relation(A,of,'Mary')))))).",
+  "messages": []
+ },
+ {
+  "tag": "genitive",
+  "sentence": "John's dog barks.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a ∃b (Predicate1(a, bark, b) ∧ (Dog(b) ∧ Relation(b, of, John)))"
+  ],
+  "drs": "drs([A,B],[relation(A,of,named('John'))-1/2,object(A,dog,countable,na,eq,1)-1/4,predicate(B,bark,A)-1/5])",
+  "tptp": "fof(f1, axiom, (\n? [A,B] : ((predicate1(A,bark,B)) &\n((dog(B)) &\n(relation(B,of,'John')))))).",
+  "messages": []
+ },
+ {
+  "tag": "of-relation",
+  "sentence": "A dog of a man barks.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a ∃b ∃c (Predicate1(a, bark, b) ∧ (Relation(b, of, c) ∧ (Man(c) ∧ Dog(b))))"
+  ],
+  "drs": "drs([A,B,C],[object(A,dog,countable,na,eq,1)-1/2,object(B,man,countable,na,eq,1)-1/5,relation(A,of,B)-1/3,predicate(C,bark,A)-1/6])",
+  "tptp": "fof(f1, axiom, (\n? [A,B,C] : ((predicate1(A,bark,B)) &\n((relation(B,of,C)) &\n((man(C)) &\n(dog(B))))))).",
+  "messages": []
+ },
+ {
+  "tag": "pp-modifier",
+  "sentence": "John waits in a garden.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a ∃b (Modifier_pp(a, in, b) ∧ (Predicate1(a, wait, John) ∧ Garden(b)))"
+  ],
+  "drs": "drs([A,B],[object(A,garden,countable,na,eq,1)-1/5,predicate(B,wait,named('John'))-1/2,modifier_pp(B,in,A)-1/3])",
+  "tptp": "fof(f1, axiom, (\n? [A,B] : ((modifier_pp(A,in,B)) &\n((predicate1(A,wait,'John')) &\n(garden(B)))))).",
+  "messages": []
+ },
+ {
+  "tag": "adverb",
+  "sentence": "John waits patiently.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a (Modifier_adv(a, patiently, pos) ∧ Predicate1(a, wait, John))"
+  ],
+  "drs": "drs([A],[predicate(A,wait,named('John'))-1/2,modifier_adv(A,patiently,pos)-1/3])",
+  "tptp": "fof(f1, axiom, (\n? [A] : ((modifier_adv(A,patiently,pos)) &\n(predicate1(A,wait,'John'))))).",
+  "messages": []
+ },
+ {
+  "tag": "adverb-pp-combined",
+  "sentence": "A dog barks loudly in a garden.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a ∃b ∃c (Modifier_adv(a, loudly, pos) ∧ (Modifier_pp(a, in, b) ∧ (Predicate1(a, bark, c) ∧ (Dog(c) ∧ Garden(b)))))"
+  ],
+  "drs": "drs([A,B,C],[object(A,dog,countable,na,eq,1)-1/2,object(B,garden,countable,na,eq,1)-1/7,predicate(C,bark,A)-1/3,modifier_pp(C,in,B)-1/5,modifier_adv(C,loudly,pos)-1/4])",
+  "tptp": "fof(f1, axiom, (\n? [A,B,C] : ((modifier_adv(A,loudly,pos)) &\n((modifier_pp(A,in,B)) &\n((predicate1(A,bark,C)) &\n((dog(C)) &\n(garden(B)))))))).",
+  "messages": []
+ },
+ {
+  "tag": "there-is",
+  "sentence": "There is a dog.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a Dog(a)"
+  ],
+  "drs": "drs([A],[object(A,dog,countable,na,eq,1)-1/4])",
+  "tptp": "fof(f1, axiom, (\n? [A] : (dog(A)))).",
+  "messages": []
+ },
+ {
+  "tag": "transitive-pp",
+  "sentence": "John looks at a dog.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a ∃b (Modifier_pp(a, at, b) ∧ (Predicate1(a, look, John) ∧ Dog(b)))"
+  ],
+  "drs": "drs([A,B],[object(A,dog,countable,na,eq,1)-1/5,predicate(B,look,named('John'))-1/2,modifier_pp(B,at,A)-1/3])",
+  "tptp": "fof(f1, axiom, (\n? [A,B] : ((modifier_pp(A,at,B)) &\n((predicate1(A,look,'John')) &\n(dog(B)))))).",
+  "messages": []
+ },
+ {
+  "tag": "possessive-own",
+  "sentence": "John sees his own dog.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a ∃b (Predicate2(a, see, John, b) ∧ (Dog(b) ∧ Relation(b, of, John)))"
+  ],
+  "drs": "drs([A,B],[relation(A,of,named('John'))-1/3,object(A,dog,countable,na,eq,1)-1/5,predicate(B,see,named('John'),A)-1/2])",
+  "tptp": "fof(f1, axiom, (\n? [A,B] : ((predicate2(A,see,'John',B)) &\n((dog(B)) &\n(relation(B,of,'John')))))).",
+  "messages": []
+ },
+ {
+  "tag": "two-sentences",
+  "sentence": "John waits. Mary sees a dog.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a Predicate1(a, wait, John)",
+   "∃a ∃b (Predicate2(a, see, Mary, b) ∧ Dog(b))"
+  ],
+  "drs": "drs([A,B,C],[predicate(A,wait,named('John'))-1/2,object(B,dog,countable,na,eq,1)-2/4,predicate(C,see,named('Mary'),B)-2/2])",
+  "tptp": "fof(f1, axiom, (\n? [A] : (predicate1(A,wait,'John')))).\n\nfof(f2, axiom, (\n? [A,B] : ((predicate2(A,see,'Mary',B)) &\n(dog(B))))).",
+  "messages": []
+ },
+ {
+  "tag": "comparative",
+  "sentence": "John is taller than Mary.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a (John = a ∧ Property2(a, tall, comp_than, Mary))"
+  ],
+  "drs": "drs([A,B],[property(A,tall,comp_than,named('Mary'))-1/3,predicate(B,be,named('John'),A)-1/2])",
+  "tptp": "fof(f1, axiom, (\n? [A] : (('John'=A) &\n(property2(A,tall,comp_than,'Mary'))))).",
+  "messages": []
+ },
+ {
+  "tag": "card-geq",
+  "sentence": "At least 3 men wait.",
+  "status": "ok",
+  "reified_cardinality": true,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a ∃b (Predicate1(a, wait, b) ∧ Object(b, man, countable, na, geq, 3))"
+  ],
+  "drs": "drs([A,B],[object(A,man,countable,na,geq,3)-1/4,predicate(B,wait,A)-1/5])",
+  "tptp": "fof(f1, axiom, (\n? [A,B] : ((predicate1(A,wait,B)) &\n(object(B,man,countable,na,geq,3))))).",
+  "messages": []
+ },
+ {
+  "tag": "card-exact",
+  "sentence": "Exactly 2 dogs bark.",
+  "status": "tptp_unsupported",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "ERROR: DRS condition not supported: [|]: tptp/4: [predicate(_3946,bark,_3950)-1/4,object(_3950,dog,countable,na,exactly,2)-1/3]",
+  "kit_formulas": [],
+  "drs": "drs([A,B],[[predicate(B,bark,A)-1/4,object(A,dog,countable,na,exactly,2)-1/3]])",
+  "tptp": "",
+  "messages": []
+ },
+ {
+  "tag": "card-leq",
+  "sentence": "At most 5 men wait.",
+  "status": "tptp_unsupported",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "ERROR: DRS condition not supported: [|]: tptp/4: [predicate(_3962,wait,_3966)-1/5,object(_3966,man,countable,na,leq,5)-1/4]",
+  "kit_formulas": [],
+  "drs": "drs([A,B],[[predicate(B,wait,A)-1/5,object(A,man,countable,na,leq,5)-1/4]])",
+  "tptp": "",
+  "messages": []
+ },
+ {
+  "tag": "card-plain",
+  "sentence": "3 men wait.",
+  "status": "ok",
+  "reified_cardinality": true,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a ∃b (Predicate1(a, wait, b) ∧ Object(b, man, countable, na, eq, 3))"
+  ],
+  "drs": "drs([A,B],[object(A,man,countable,na,eq,3)-1/2,predicate(B,wait,A)-1/3])",
+  "tptp": "fof(f1, axiom, (\n? [A,B] : ((predicate1(A,wait,B)) &\n(object(B,man,countable,na,eq,3))))).",
+  "messages": []
+ },
+ {
+  "tag": "card-greater",
+  "sentence": "More than 2 men wait.",
+  "status": "ok",
+  "reified_cardinality": true,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a ∃b (Predicate1(a, wait, b) ∧ Object(b, man, countable, na, greater, 2))"
+  ],
+  "drs": "drs([A,B],[object(A,man,countable,na,greater,2)-1/4,predicate(B,wait,A)-1/5])",
+  "tptp": "fof(f1, axiom, (\n? [A,B] : ((predicate1(A,wait,B)) &\n(object(B,man,countable,na,greater,2))))).",
+  "messages": []
+ },
+ {
+  "tag": "collective",
+  "sentence": "John and Mary lift a table.",
+  "status": "ok",
+  "reified_cardinality": true,
+  "tptp_repaired": true,
+  "detail": "",
+  "kit_formulas": [
+   "∃a ∃b ∃c (Object(a, na, countable, na, eq, 2) ∧ (Has_part(a, Mary) ∧ (Predicate2(b, lift, a, c) ∧ (Table(c) ∧ Has_part(a, John)))))"
+  ],
+  "drs": "drs([A,B,C],[has_part(C,named('John'))-1/'',object(A,table,countable,na,eq,1)-1/6,predicate(B,lift,C,A)-1/4,has_part(C,named('Mary'))-1/'',object(C,na,countable,na,eq,2)-1/''])",
+  "tptp": "fof(f1, axiom, (\n? [A,B,C] : ((object(A,na,countable,na,eq,2)) &\n((has_part(A,'Mary')) &\n((predicate2(B,lift,A,C)) &\n((table C) &\n(has_part(A,'John')))))))).",
+  "messages": []
+ },
+ {
+  "tag": "distributive-each-of",
+  "sentence": "Each of John and Mary waits.",
+  "status": "ok",
+  "reified_cardinality": true,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a (Object(a, na, countable, na, eq, 2) ∧ (Has_part(a, Mary) ∧ (∀b (Has_part(a, b) → ∃c Predicate1(c, wait, b)) ∧ Has_part(a, John))))"
+  ],
+  "drs": "drs([A],[has_part(A,named('John'))-1/'',=>(drs([B],[has_part(A,B)-1/1]),drs([C],[predicate(C,wait,B)-1/6])),has_part(A,named('Mary'))-1/'',object(A,na,countable,na,eq,2)-1/''])",
+  "tptp": "fof(f1, axiom, (\n? [A] : ((object(A,na,countable,na,eq,2)) &\n((has_part(A,'Mary')) &\n((! [B] : ((has_part(A,B))\n=> (? [C] : (predicate1(C,wait,B))))) &\n(has_part(A,'John'))))))).",
+  "messages": []
+ },
+ {
+  "tag": "number-copula",
+  "sentence": "John's age is 30.",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a (a = 30 ∧ (Age(a) ∧ Relation(a, of, John)))"
+  ],
+  "drs": "drs([A,B],[relation(A,of,named('John'))-1/2,object(A,age,countable,na,eq,1)-1/4,predicate(B,be,A,int(30))-1/5])",
+  "tptp": "fof(f1, axiom, (\n? [A] : ((A=30) &\n((age(A)) &\n(relation(A,of,'John')))))).",
+  "messages": []
+ },
+ {
+  "tag": "arithmetic",
+  "sentence": "1 + 2 = 3.",
+  "status": "tptp_unread",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "SYNTAX_ERROR: could not parse TPTP problem: No terminal matches '+' in the current parser context, at line 2 col 2",
+  "kit_formulas": [],
+  "drs": "drs([],[formula(expr(+,int(1),int(2)),=,int(3))-1/4])",
+  "tptp": "fof(f1, axiom, (\n1+2=3)).",
+  "messages": []
+ },
+ {
+  "tag": "mass-noun",
+  "sentence": "Some water is cold.",
+  "status": "ok",
+  "reified_cardinality": true,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a ∃b (a = b ∧ (Property1(b, cold, pos) ∧ Object(a, water, mass, na, na, na)))"
+  ],
+  "drs": "drs([A,B,C],[object(A,water,mass,na,na,na)-1/2,property(B,cold,pos)-1/4,predicate(C,be,A,B)-1/3])",
+  "tptp": "fof(f1, axiom, (\n? [A,B] : ((A=B) &\n((property1(B,cold,pos)) &\n(object(A,water,mass,na,na,na)))))).",
+  "messages": []
+ },
+ {
+  "tag": "string-value",
+  "sentence": "John's name is \"Johnny\".",
+  "status": "ok",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "",
+  "kit_formulas": [
+   "∃a (a = string(Johnny) ∧ (Name(a) ∧ Relation(a, of, John)))"
+  ],
+  "drs": "drs([A,B],[relation(A,of,named('John'))-1/2,object(A,name,countable,na,eq,1)-1/4,predicate(B,be,A,string('Johnny'))-1/5])",
+  "tptp": "fof(f1, axiom, (\n? [A] : ((A=string('Johnny')) &\n((name(A)) &\n(relation(A,of,'John')))))).",
+  "messages": []
+ },
+ {
+  "tag": "modal-must",
+  "sentence": "John must wait.",
+  "status": "tptp_unsupported",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "ERROR: DRS condition not supported: must: tptp/4: must(drs([_3930],[predicate(_3930,wait,named(John))-1/3]))",
+  "kit_formulas": [],
+  "drs": "drs([],[must(drs([A],[predicate(A,wait,named('John'))-1/3]))])",
+  "tptp": "",
+  "messages": []
+ },
+ {
+  "tag": "modal-can",
+  "sentence": "John can wait.",
+  "status": "tptp_unsupported",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "ERROR: DRS condition not supported: can: tptp/4: can(drs([_3930],[predicate(_3930,wait,named(John))-1/3]))",
+  "kit_formulas": [],
+  "drs": "drs([],[can(drs([A],[predicate(A,wait,named('John'))-1/3]))])",
+  "tptp": "",
+  "messages": []
+ },
+ {
+  "tag": "modal-should",
+  "sentence": "John should wait.",
+  "status": "tptp_unsupported",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "ERROR: DRS condition not supported: should: tptp/4: should(drs([_3930],[predicate(_3930,wait,named(John))-1/3]))",
+  "kit_formulas": [],
+  "drs": "drs([],[should(drs([A],[predicate(A,wait,named('John'))-1/3]))])",
+  "tptp": "",
+  "messages": []
+ },
+ {
+  "tag": "modal-may",
+  "sentence": "John may wait.",
+  "status": "tptp_unsupported",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "ERROR: DRS condition not supported: may: tptp/4: may(drs([_3930],[predicate(_3930,wait,named(John))-1/3]))",
+  "kit_formulas": [],
+  "drs": "drs([],[may(drs([A],[predicate(A,wait,named('John'))-1/3]))])",
+  "tptp": "",
+  "messages": []
+ },
+ {
+  "tag": "modal-universal",
+  "sentence": "Every man must wait.",
+  "status": "tptp_unsupported",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "ERROR: DRS condition not supported: must: tptp/4: must(drs([_4950],[predicate(_4950,wait,_4972)-1/4]))",
+  "kit_formulas": [],
+  "drs": "drs([],[=>(drs([A],[object(A,man,countable,na,eq,1)-1/2]),drs([],[must(drs([B],[predicate(B,wait,A)-1/4]))]))])",
+  "tptp": "",
+  "messages": []
+ },
+ {
+  "tag": "naf",
+  "sentence": "It is not provable that John waits.",
+  "status": "tptp_unsupported",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "ERROR: DRS condition not supported: ~: tptp/4: ~(drs([_3638],[predicate(_3638,wait,named(John))-1/7]))",
+  "kit_formulas": [],
+  "drs": "drs([],[~(drs([A],[predicate(A,wait,named('John'))-1/7]))])",
+  "tptp": "",
+  "messages": []
+ },
+ {
+  "tag": "question-who",
+  "sentence": "Who waits?",
+  "status": "tptp_unsupported",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "ERROR: DRS query/2 not supported: cond_to_tptp/2: query(_3298,who)",
+  "kit_formulas": [],
+  "drs": "drs([],[question(drs([A,B],[query(A,who)-1/1,predicate(B,wait,A)-1/2]))])",
+  "tptp": "",
+  "messages": []
+ },
+ {
+  "tag": "question-yesno",
+  "sentence": "Does John wait?",
+  "status": "tptp_unsupported",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "non-axiom fof role 'conjecture' (1 of 1 clauses)",
+  "kit_formulas": [],
+  "drs": "drs([],[question(drs([A],[predicate(A,wait,named('John'))-1/3]))])",
+  "tptp": "fof(f1, conjecture, (\n? [A] : (predicate1(A,wait,'John')))).",
+  "messages": []
+ },
+ {
+  "tag": "command",
+  "sentence": "John, wait!",
+  "status": "tptp_unsupported",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "ERROR: DRS condition not supported: command: tptp/4: command(drs([_3278],[predicate(_3278,wait,named(John))-1/3]))",
+  "kit_formulas": [],
+  "drs": "drs([],[command(drs([A],[predicate(A,wait,named('John'))-1/3]))])",
+  "tptp": "",
+  "messages": []
+ },
+ {
+  "tag": "possessive-unbound",
+  "sentence": "John sees his dog.",
+  "status": "not_ace",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "'Unresolved anaphor: his' -> 'Identify correct accessible antecedent.'",
+  "kit_formulas": [],
+  "drs": "drs([],[])",
+  "tptp": "",
+  "messages": [
+   {
+    "importance": "error",
+    "type": "anaphor",
+    "sentence": 1,
+    "token": 3,
+    "value": "Unresolved anaphor: his",
+    "repair": "Identify correct accessible antecedent."
+   }
+  ]
+ },
+ {
+  "tag": "lexicon-gap",
+  "sentence": "A man whistles.",
+  "status": "not_ace",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "'whistles' -> 'Use the prefix n:, v:, a: or p:.'",
+  "kit_formulas": [],
+  "drs": "drs([],[])",
+  "tptp": "",
+  "messages": [
+   {
+    "importance": "error",
+    "type": "word",
+    "sentence": 1,
+    "token": null,
+    "value": "whistles",
+    "repair": "Use the prefix n:, v:, a: or p:."
+   },
+   {
+    "importance": "error",
+    "type": "sentence",
+    "sentence": 1,
+    "token": 4,
+    "value": "A man whistles <>.",
+    "repair": "This is the first sentence that was not ACE. The sign <> indicates the position where parsing failed."
+   }
+  ]
+ },
+ {
+  "tag": "unknown-word",
+  "sentence": "Every man waitz.",
+  "status": "not_ace",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "'waitz' -> 'wait'",
+  "kit_formulas": [],
+  "drs": "drs([],[])",
+  "tptp": "",
+  "messages": [
+   {
+    "importance": "error",
+    "type": "word",
+    "sentence": 1,
+    "token": null,
+    "value": "waitz",
+    "repair": "wait"
+   },
+   {
+    "importance": "error",
+    "type": "sentence",
+    "sentence": 1,
+    "token": 3,
+    "value": "Every man <> waitz.",
+    "repair": "This is the first sentence that was not ACE. The sign <> indicates the position where parsing failed."
+   }
+  ]
+ },
+ {
+  "tag": "bare-plural",
+  "sentence": "Men wait.",
+  "status": "not_ace",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "'Men <> wait.' -> 'This is the first sentence that was not ACE. The sign <> indicates the position where parsing failed.'",
+  "kit_formulas": [],
+  "drs": "drs([],[])",
+  "tptp": "",
+  "messages": [
+   {
+    "importance": "warning",
+    "type": "word",
+    "sentence": 1,
+    "token": 1,
+    "value": "Men",
+    "repair": "Undefined word. Interpreted as a singular proper name."
+   },
+   {
+    "importance": "error",
+    "type": "sentence",
+    "sentence": 1,
+    "token": 2,
+    "value": "Men <> wait.",
+    "repair": "This is the first sentence that was not ACE. The sign <> indicates the position where parsing failed."
+   }
+  ]
+ },
+ {
+  "tag": "scrambled",
+  "sentence": "Man the waits.",
+  "status": "not_ace",
+  "reified_cardinality": false,
+  "tptp_repaired": false,
+  "detail": "'Man the waits <>.' -> 'This is the first sentence that was not ACE. The sign <> indicates the position where parsing failed.'",
+  "kit_formulas": [],
+  "drs": "drs([],[])",
+  "tptp": "",
+  "messages": [
+   {
+    "importance": "warning",
+    "type": "word",
+    "sentence": 1,
+    "token": 1,
+    "value": "Man",
+    "repair": "Undefined word. Interpreted as a singular proper name."
+   },
+   {
+    "importance": "error",
+    "type": "sentence",
+    "sentence": 1,
+    "token": 4,
+    "value": "Man the waits <>.",
+    "repair": "This is the first sentence that was not ACE. The sign <> indicates the position where parsing failed."
+   }
+  ]
+ }
+]

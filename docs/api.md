@@ -873,6 +873,9 @@ hypothesis refused rather than documented. See {doc}`guide/interoperability`.
    Eq
    Neg
    Impl
+   Card
+   Part
+   CARD_OPS
    parse_drs
    parse_sbn
    SBNMapping
@@ -887,6 +890,82 @@ hypothesis refused rather than documented. See {doc}`guide/interoperability`.
    is_predicate_name
    DRSSyntaxError
    SBNSyntaxError
+```
+
+## Attempto Controlled English (via APE)
+
+ACE text in, kit formulas out — driven through the external
+[APE](https://github.com/Attempto/APE) parser (LGPL, never vendored; see
+`unicode_fol_kit.ace.runner`'s module docstring for discovery and for what
+each outcome class means). Three routes share one vocabulary, pinned against
+each other by a Z3 differential over the recorded corpus: `ace_to_fol`
+(Attempto's own TPTP through the kit's reader), `ace_to_drs` (APE's DRS read
+1:1 and mapped onto the classical `drt` core, every condition reported) and
+`ace_to_formula` (straight to one kit formula — ACE's four modal boxes become
+□/◇/Ⓞ/Ⓟ, a wh-question an open formula, a yes/no question a closed one whose
+interrogative force survives on `kind`). Plurals and cardinalities carry
+real counting force since ACE-4/5: groups land on the `drt` core's
+`Card`/`Part` conditions (collective reading), the maximality of
+`exactly`/`at most` becomes a counting quantifier on the formula route, and
+`1 + 2 = 3` translates to kit arithmetic decidable by `is_valid_arith`.
+Since ACE-6 the pipeline also runs backwards: `drs_to_ace` verbalizes a kit
+DRS as ACE text plus its user lexicon, `ace_round_trip` closes the loop
+through APE with a Z3 verdict, and `chem_ulex` speaks the ChemLog signature
+("a carbon", "bonds", "aromatic").
+
+```{eval-rst}
+.. currentmodule:: unicode_fol_kit.ace
+
+.. autosummary::
+   :nosignatures:
+
+   ape_available
+   run_ape
+   ace_to_fol
+   ace_to_drs
+   ace_to_formula
+   ace_coverage
+   map_ace_drs
+   ace_drs_to_formula
+   parse_ape_drs
+   condition_statistics
+   drs_to_ace
+   ace_round_trip
+   chem_ulex
+   ace_kit_name
+   ApeResult
+   ApeMessage
+   CoverageRow
+   DrsMapping
+   ConditionReport
+   AceFormula
+   AceText
+   AceRoundTrip
+   AceDrs
+   AceVar
+   AceNamed
+   AceInt
+   AceReal
+   AceString
+   AceExpr
+   AceTermApp
+   AceAtom
+   AceNeg
+   AceNaf
+   AceImpl
+   AceOr
+   AceModal
+   AceQuestion
+   AceCommand
+   AceCondList
+   AceError
+   ApeUnavailableError
+   AceParseError
+   AceTptpUnsupportedError
+   AceTptpUnreadError
+   AceDrsUnreadError
+   AceUnsupportedError
+   AceVerbalizationError
 ```
 
 ## HETS, DOL and comorphisms
@@ -1055,6 +1134,7 @@ its submodules.
    hets
    comorphism
    drt
+   ace
    ilp
    prob
    mcp.syntax_spec

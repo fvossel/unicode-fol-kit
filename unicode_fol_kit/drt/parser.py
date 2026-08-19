@@ -30,12 +30,19 @@ exactly ``unicode_fol_kit.drt.nodes``'s ``is_referent`` / ``is_predicate_name`` 
                | box ("->" | "∨") box             # -> Impl(box, box) | Or(box, box)
 
     pred_cond := PRED "(" term ("," term)* ")"
+               | "Card" "(" term "," CMP "," NUMBER ")"   # -> Card (0.24.0; the operator
+               |                                          #    slot disambiguates against
+               |                                          #    a Pred merely NAMED Card)
+               | "Part_of" "(" term "," term ")"          # -> Part (0.24.0; exactly 2 args)
     eq_cond   := term "=" term
     term      := REF | CONST | STRING
+    CMP       := ">=" | "<=" | "=" | ">" | "<"
+    NUMBER    := /[0-9]+/
 
     REF       : a single lowercase letter optionally followed by digits (x, y, e12, ...)
     CONST     : a lowercase-initial bare identifier of >= 2 characters (john, daisy, ...)
-    PRED      : an uppercase-initial alphanumeric identifier (Farmer, Owns, ...)
+    PRED      : an uppercase-initial identifier, underscores allowed in
+                continuation (Farmer, Owns, Has_bond_to, ...)
     STRING    : a double-quoted literal ("John Doe") — sanitized to a legal CONST via
                 unicode_fol_kit.fol.sanitize.NameMapping (kept consistent within one
                 parse_drs call; not returned — see "Quoted constants" below)
@@ -141,7 +148,7 @@ from typing import Dict, List, Tuple, Union
 
 from ..fol.sanitize import NameMapping
 from .nodes import (
-    DRS, Condition, Pred, Eq, Neg, Impl, Or,
+    DRS, Card, Condition, Pred, Eq, Neg, Impl, Or, Part,
     is_referent, is_predicate_name, is_constant_name,
 )
 
@@ -186,6 +193,21 @@ def _tokenize_drs(text: str) -> List[_Token]:
             tokens.append(("ARROW", "->", i))
             i += 2
             continue
+        if ch in "<>":
+            if i + 1 < n and text[i + 1] == "=":
+                tokens.append(("CMP", ch + "=", i))
+                i += 2
+            else:
+                tokens.append(("CMP", ch, i))
+                i += 1
+            continue
+        if ch.isdigit():
+            j = i
+            while j < n and text[j].isdigit():
+                j += 1
+            tokens.append(("NUMBER", text[i:j], i))
+            i = j
+            continue
         if ch in _GLYPHS:
             tokens.append((_GLYPHS[ch], ch, i))
             i += 1
@@ -203,7 +225,12 @@ def _tokenize_drs(text: str) -> List[_Token]:
             continue
         if ch.isalpha():
             j = i
-            while j < n and text[j].isalnum():
+            # `_` is a word CONTINUATION character, never a start: the
+            # name validators below decide legality (Has_bond_to is a
+            # predicate, c_o1 a constant), the tokenizer only spans the
+            # word. Stopping at `_` instead would split `Has_bond_to`
+            # into three tokens and mis-parse it.
+            while j < n and (text[j].isalnum() or text[j] == "_"):
                 j += 1
             word = text[i:j]
             if is_predicate_name(word):
@@ -232,8 +259,8 @@ class _DRSParser:
         self._i = 0
         self._mapping = NameMapping()
 
-    def _peek(self) -> _Token:
-        return self._tokens[self._i]
+    def _peek(self, ahead: int = 0) -> _Token:
+        return self._tokens[min(self._i + ahead, len(self._tokens) - 1)]
 
     def _advance(self) -> _Token:
         tok = self._tokens[self._i]
@@ -343,14 +370,36 @@ class _DRSParser:
             f"expected a referent, constant, or quoted string but found "
             f"{'end of input' if t[0] == 'EOF' else repr(t[1])} at position {t[2]}")
 
-    def _pred_cond(self) -> Pred:
+    def _pred_cond(self) -> Condition:
         name = self._advance()[1]
         self._expect("LP", "'(' after the predicate name")
         args = [self._term()]
+        if name == "Card" and self._peek()[0] == "COMMA":
+            # Card(g, >=, 3): the second element is a comparison OPERATOR,
+            # which no legal term can be -- so peeking one token past the
+            # comma decides Card-vs-Pred without ambiguity, and a Pred that
+            # happens to be NAMED Card (term-shaped args only) still parses.
+            if self._peek(1)[0] in ("CMP", "EQ"):
+                self._advance()  # the comma
+                op = self._advance()[1]
+                self._expect("COMMA", "',' before the cardinality bound")
+                number = self._expect("NUMBER", "a non-negative integer bound")
+                self._expect("RP", "')'")
+                return Card(args[0], op, int(number[1]))
         while self._peek()[0] == "COMMA":
             self._advance()
             args.append(self._term())
         self._expect("RP", "')'")
+        if name == "Part_of":
+            # The typed membership condition (see nodes.Part): exactly two
+            # arguments, and a programmatically built Pred("Part_of", (m, g))
+            # re-parses as Part -- harmless on purpose, both export to the
+            # same Part_of atom.
+            if len(args) != 2:
+                raise self._error(
+                    f"Part_of takes exactly two arguments (member, group), "
+                    f"got {len(args)}")
+            return Part(args[0], args[1])
         return Pred(name, tuple(args))
 
     def _eq_cond(self) -> Eq:

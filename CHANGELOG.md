@@ -5,6 +5,250 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [0.24.0] - 2026-08-19
+
+### `ace` — Attempto Controlled English, via the external APE parser
+
+A new subpackage: ACE text in, kit formulas out. ACE is a controlled natural
+language with exactly one reading per sentence, fixed by documented
+convention — the reference parser APE resolves the donkey sentence, scope and
+cross-sentence anaphora before the kit ever sees a formula. APE is DRIVEN as
+an LGPL subprocess (pinned commit `5f4d535`, 2024-04-21), never vendored and
+never reimplemented, for the same reason the kit drives Isabelle, E and HETS:
+a partial APE clone would be an ACE-shaped language with undocumented
+differences, the worst possible property for a language whose entire point is
+fixed interpretation rules. Discovery mirrors the E-prover contract:
+`$UFK_APE_CMD` (a `wsl:` prefix forces the WSL route) → PATH → a WSL
+`ape.exe` → the documented build location `~/APE/ape.exe`, natively and in
+WSL, so `git clone … ~/APE && make install` works with zero configuration.
+
+`ace_to_fol(text)` returns one formula per `fof` clause of APE's own TPTP
+output through the kit's existing TPTP reader — the donkey sentence lands as
+`∀a ∀b ∀c (Farmer(a) ∧ (Donkey(b) ∧ Predicate2(c, own, a, b)) → ∃d
+Predicate2(d, beat, a, b))`, events explicit, `ulex=` supplying words APE's
+deliberately small built-in lexicon lacks. `ace_coverage(sentences)` reports
+each sentence's fate; `run_ape` exposes the raw DRS/TPTP/messages.
+
+The route refuses rather than mistranslates, and each refusal is measured,
+not assumed (a hand-written 55-sentence corpus and APE's recorded raw output
+for every one of them are committed as fixtures):
+
+- modality, negation as failure, wh-questions and commands are refused by
+  **Attempto's own** TPTP translator; they raise `AceTptpUnsupportedError`
+  carrying the DRS, which is exactly what the ACE-3 milestone will route
+  into the kit's modal family instead.
+- a yes/no question SURVIVES Attempto's export — as a TPTP **conjecture**;
+  dropping that role would have silently turned "Does John wait?" into the
+  assertion that he waits, so a non-axiom role raises too.
+- "1 + 2 = 3." comes out as `fof(f1, axiom, (1+2=3)).` — infix arithmetic
+  that is neither standard FOF nor in the kit reader's fragment: dedicated
+  `AceTptpUnreadError`, raw TPTP preserved (arithmetic reaches the kit via
+  the formula route — the ACE-4 section below).
+- a non-trivial cardinality survives only REIFIED *on this route* — "At
+  least 3 men wait." becomes one witness plus an inert `Object(…, geq, 3)`
+  atom with no counting force. `ace_coverage` flags such rows
+  (`reified_cardinality`); the DRS and formula routes below carry the
+  counting force instead.
+- one genuine APE bug, repaired with a proof of narrowness: in a COLLECTIVE
+  reading ("John and Mary lift a table.") APE prints the juxtaposed atom
+  `(table C)` — not TPTP. There is no legal TPTP in which a lower-word is
+  followed by a bare variable inside parentheses, so the repair regex can
+  only ever match the malformation; a test runs it over every other
+  recorded output (47 rows) and requires zero firings, and a second test
+  requires the RAW text to keep failing the reader, so an upstream fix
+  retires the repair loudly.
+
+CI builds APE on the Linux legs (seconds — a Prolog qsave, not a C compile;
+deliberately uncached, because the saved state is bound to the exact
+SWI-Prolog that built it). Without a binary the live tests skip and the
+recorded fixtures still pin the whole routing offline.
+
+### `ace.drs_reader` / `ace.mapping` — the DRS itself becomes first-class
+
+APE's native representation is a DRS, and the kit has a DRS core; from this
+release the two are connected. `parse_ape_drs` reads APE's printed term into
+a 1:1 object model — no renaming, no dropping, no semantic choices — pinned
+by a byte-identical round-trip over all 50 non-trivial corpus DRSs, plus a
+guard that the corpus actually exercises every condition shape (an atomic
+condition with its sentence/token index, `-`/`~`/`=>`/`v` boxes, the four
+modal boxes, `question`/`command`, and the list condition `exactly`/`at
+most` compile to).
+
+`ace_to_drs` then maps the pure fragment onto `drt`'s classical core, one
+vocabulary for everything: nouns/verbs/adjectives/adverbs/prepositions
+become kit predicates (events stay, neo-Davidsonian: `See(e1, x1, x2)`), a
+non-`pos` degree folds into the predicate name (`Tall_comp_than(x1, mary)`
+— no morphology is attempted), the copula becomes EQUALITY with the
+be-event dropped exactly as Attempto's own reference translation does it
+(guarded: a be-event something else talks about would be kept), proper
+names become constants (`john`; a name that would collide with the referent
+namespace takes the `c_` form), values become `c_` constants (`c_30`,
+`c_Johnny`). Referents are renamed by ROLE — events `e1…`, groups `g1…`,
+individuals `x1…` — via a pre-pass, so a name never depends on visit order.
+
+A sentence maps completely or not at all. `map_ace_drs` returns the
+per-condition report either way (`DrsMapping.rows`: verdict, reason,
+milestone, source position), and `condition_statistics` aggregates it over
+a corpus. That aggregate WAS the measured data basis for the ACE-5 core
+extension in this same release: it said Card/Part would redeem the group
+and cardinality conditions and that "each of" needs no operator of its own
+— which is exactly the shape `drt` grew (see below). What still refuses
+names its carrier — the `exactly`/`at most` list condition and arithmetic
+→ `ace_to_formula` — and commands and negation as failure refuse with no
+milestone at all, which is the honest "undecided".
+
+The correctness argument is a differential, not a review: for every corpus
+sentence BOTH routes cover (33 — see the ACE-4/5 section below for the
+five counted sentences excluded by name), `drs_to_fol` over the mapped DRS is
+Z3-equivalent to APE's own TPTP read by the kit's reader — two independent
+implementations of the standard translation, one in Zurich and one here,
+agreeing formula by formula. The vocabulary alignment that makes the
+comparison possible (`ace._align`, private) reuses the mapping's own name
+rules, so a wrong alignment rule makes sentences INequivalent and the test
+loud, never quietly green.
+
+### `ace.translate` — modality and questions reach the kit's logics
+
+`ace_to_formula` translates APE's DRS straight to ONE kit formula and
+carries exactly what the classical DRS core refuses. ACE's four modal boxes
+land on the kit's modal family — `must` → `□`, `can` → `◇` (alethic,
+Attempto's necessity/possibility gloss), `should` → `Ⓞ`, `may` → `Ⓟ`
+(deontic, Attempto's recommendation/admissibility gloss; the split is a
+documented choice, and relabeling is one rewrite away). Scope comes out
+right because APE's DRS fixes it: "Every man must wait." is
+`∀x1 (Man(x1) → □∃e1 Wait(e1, x1))`, universal outside, box inside. Every
+modal formula re-parses IDENTICALLY through the kit's own modal parser —
+the loop ACE text → APE → kit node → unicode syntax → parser → same node is
+closed and pinned — and a live test discharges `□φ → ◇φ` on a serial frame
+via `qml_is_valid` to show the nodes are first-class modal citizens.
+
+Questions keep their interrogative force instead of being flattened or
+refused: a wh-question yields an OPEN formula (`kind="wh_question"`,
+queried variables free and named with their question word — answering is
+model finding), a yes/no question a closed one (`kind="yesno_question"` —
+answering is entailment). A question mixed with assertions in one text
+refuses with "split the text": the merged box shares referents across the
+parts, and any split would either break a binding or quantify the premises
+into the question.
+
+The translator is the standard Kamp/Reyle translation re-instantiated over
+the 1:1 model (the duplex rule included), sharing the mapping's
+atomic-condition table — and a three-way differential welds it to the DRS
+route on all doubly-covered sentences (38 since the plural milestones
+below), which the mapping tests weld to Attempto's TPTP: three
+implementations, pairwise Z3-equivalent.
+
+### `drt` — the plural-DRT pair: `Card` and `Part` (ACE-5)
+
+The classical DRS core grows exactly two conditions, both first-class
+through the whole stack (constructor validation, box notation, `parse_drs`,
+`validate`, `to_dict`, export): `Card(ref, op, n)` bounds a group's
+cardinality (`=`, `>=`, `<=`, `>`, `<`; `Card(g, <, 0)` is refused at
+construction as unsatisfiable by spelling) and `Part(member, group)` states
+membership. `Part` renders and parses as the *binary* `Part_of` — a unary
+noun predicate `Part` ("a part") stays legal, and `parse_drs`
+disambiguates `Card` by the operator position, so a predicate merely named
+`Card` also survives. On export `Card` lowers to the kit's counting
+quantifier over a capture-checked fresh membership variable —
+`[g | Card(g, >=, 3)]` → `∃g ∃≥3 p1 Part_of(p1, g)` — with the strict ops
+shifted exactly (`> 2` IS `>= 3` over natural counts, `< 3` IS `<= 2`;
+pinned by Z3 in both directions: `>= 3` proves `>= 2` and refutes its
+converse). Deliberately NO `Dist` operator and NO maximality condition:
+"each of" arrives from APE as an ordinary duplex over the members (the
+data decided — nothing to add), and the `exactly`/`at most` maximality is
+a formula-level construct carried by the formula route below.
+
+### `ace` — plurals, cardinalities and arithmetic get their force (ACE-4/5)
+
+The counting gap named in every earlier refusal closes, keeping ACE's own
+collective reading of the unmarked plural: "At least 3 men wait." maps to
+`[g1, e1 | Card(g1, >=, 3), [x1 | Part_of(x1, g1)] -> [ | Man(x1)],
+Wait(e1, g1)]` — one waiting GROUP of at least three men, every member a
+man, not three individual waits. Coordinations become closed groups
+("John and Mary" → two `Part_of` atoms plus `Card(g1, =, 2)`), "each of"
+distributes through the duplex APE already emits (Z3 draws the
+consequence: John himself waits), and `has_part`/counted `object` shapes
+leave the refusal list — 38 of 50 ACE corpus sentences now map completely
+(was 33). The differential against Attempto's own TPTP EXCLUDES the five
+counted sentences by name, honestly: APE's reference export keeps
+cardinality reified (one witness plus an inert `object/6` annotation), so
+demanding equivalence there would demand our translation lose the counting
+force too; the exclusion list is welded to the fixture's
+`reified_cardinality` flag (mass-noun stays in — its reified object
+carries op `na`, nothing was lost).
+
+Two constructs land on the formula route only. The `[...]` list condition
+(`exactly`/`at most`) becomes a counting quantifier over the whole scope:
+"Exactly 2 dogs bark." → `∃=2 g1 ∃e1 (Dog(g1) ∧ Bark(e1, g1))` — the
+DISTRIBUTIVE counting reading (exactly two individual barkers), a
+documented semantic choice at `translate.box_with_lists`: collective
+maximality ("no third group") is not first-order expressible, and the
+mixed-list guards refuse anything whose reading would be ambiguous. And
+APE's `formula`/`expr` conditions translate to kit arithmetic —
+`"1 + 2 = 3."` → `1 + 2 = 3` with `+`/`-`/`*`/`/` as kit `Function` terms
+— where the default backend deliberately keeps `+` uninterpreted
+(measured) and `atp.z3_arith.is_valid_arith` decides the fragment (proves
+`1 + 2 = 3`, refutes `1 + 2 = 4`). The corpus grows its 55th sentence
+("More than 2 men wait.") to pin the strict-`greater` op live, and the
+fixture is re-recorded: 38 ok / 11 tptp_unsupported / 5 not_ace /
+1 tptp_unread.
+
+### `ace.verbalize` / `ace.chem_lexicon` — the pipeline runs backwards (ACE-6)
+
+`drs_to_ace` verbalizes a kit DRS as ACE text plus the APE user-lexicon
+entries that carry its content words, and `ace_round_trip` is the machine
+self-check: text back through APE and the mapping, judged by Z3 against
+the input. Every mappable corpus sentence closes that loop (38/38, pinned
+live in `tests/test_ace_verbalize.py`) — including the counting shapes
+("There are at least 3 mans X1. X1 wait."), coordinations ("John and Mary
+lift a table X1."), "each of", genitives, comparatives and value copulas.
+The claim is deliberately NOT natural English but MEANING, machine-checked:
+surface forms are mechanical and lexicon-defined (3sg/plural add
+`s`/`es`/`ies`, comparatives `er`/`r`/`ier`, underscores become hyphens —
+`Bond_to` is the verb `bond-to`; "3 mans" is intentional, its
+`noun_pl(mans, man, neutr)` entry defines the surface and the logical
+symbol underneath is exactly `man`). Every generation decision was probed
+against the live APE before being written, and two probes shaped the
+design: "It is false that A and B." DROPS `B` out of the negation scope —
+so a multi-clause negated box is rewritten as `∀(front → ¬back)` (a
+classical equivalence, re-checked per DRS by the round trip) — and "less
+than"/"at most" come back as the maximality list, so upper-bound `Card`
+conditions refuse rather than round-trip wrongly. Everything else outside
+the probed fragment refuses by name (`AceVerbalizationError`): values
+outside equalities, binary predicates over individuals (an ACE verb always
+carries an event), non-invertible names (the surface must map back to the
+SAME kit symbol through the mapping's own name rules — checked per name),
+groups beyond the three probed shapes, deep nesting.
+
+`chem_ulex` renders the ChemLog signature as such a user lexicon — ACE
+about molecules: "There is a carbon X1. X1 bonds an oxygen X2. X1 is
+aromatic." parses with the DRS carrying `c`, `bond`, `aromatic`. Elements
+and `atom` are nouns, atom properties adjectives, binary relations
+transitive verbs; a coverage test pins that the three tables plus the
+documented nullary exclusion (`net_charge_neutral` and friends — a
+sentence needs a subject) tile the signature EXACTLY, so signature drift
+lands loudly. Two shape facts are documented rather than hidden: kit-side
+the symbols arrive capitalized (`ace_kit_name` computes the spelling), and
+ACE verbs are neo-Davidsonian, so binary ChemLog relations arrive with an
+event argument (`Bond(e1, x1, x2)`) — projecting the event away is the
+caller's explicit step, never a silent one.
+
+### `drt` — the name conventions catch up with the 0.23.1 grammar
+
+Found by the ACE mapping, fixed at the root: 0.23.1 widened the GRAMMAR's
+PREDICATE and NAME to accept underscores in continuation (that is how the
+chem vocabulary's `Has_bond_to` is writable), but `drt.nodes` still
+enforced the pre-0.23.1 rules — so a predicate or constant the fol parser
+happily produces (`Has_bond_to`, `john_smith`) could not be put in a DRS,
+and `parse_drs`'s tokenizer split `Has_bond_to` at the first underscore.
+`is_predicate_name`, `is_constant_name` and the box-notation tokenizer now
+follow the live grammar (verified against the parser: `a_b`, `ab_`,
+`john_smith` are constants; `a_1` and `x_` are not, keeping the referent
+namespace clean). Same lesson as 0.23.1 itself: an evidence corpus only
+covers the positions that occur in it — the widening landed in the grammar
+and the chem tests, and the DRS position went unchecked until a comparative
+adjective needed `Tall_comp_than` in a box.
+
 ## [0.23.2] - 2026-08-19
 
 A patch number for a release that changes how formulas are parsed. That is

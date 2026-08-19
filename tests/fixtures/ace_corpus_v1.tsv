@@ -1,0 +1,70 @@
+# ACE corpus v1 — hand-written for this kit (no third-party texts), one
+# construct per line: TAG <TAB> SENTENCE(S). Systematically walks the ACE 6.7
+# construction inventory; every sentence was run through APE at commit
+# 5f4d5354 and its recorded fate lives in ape_5f4d535_corpus_v1.json (see
+# tests/test_ace_runner.py for how the two files pin each other).
+#
+# --- the pure fragment: expected to reach kit FOL via Attempto's own TPTP ---
+svo-intransitive	John waits.
+svo-transitive	Mary sees a dog.
+svo-ditransitive	John gives Mary a book.
+universal	Every man waits.
+universal-transitive	Every man likes a car.
+no-quantifier	No man waits.
+negation-verb	John does not wait.
+negation-sentence	It is false that John waits.
+if-then	If a man sees a dog then the man waits.
+or-sentences	John waits or Mary waits.
+vp-conjunction	John waits and sleeps.
+vp-disjunction	John waits or runs.
+donkey	Every farmer who owns a donkey beats it.
+relative-clause	A man who waits sleeps.
+anaphora-pronoun	A man waits. He sleeps.
+anaphora-definite	A man sees a dog. The dog barks.
+anaphora-variable	A man X waits. X sleeps.
+adjective	A rich man waits.
+copula-adjective	John is rich.
+copula-identity	John is Mary's father.
+genitive	John's dog barks.
+of-relation	A dog of a man barks.
+pp-modifier	John waits in a garden.
+adverb	John waits patiently.
+adverb-pp-combined	A dog barks loudly in a garden.
+there-is	There is a dog.
+transitive-pp	John looks at a dog.
+possessive-own	John sees his own dog.
+two-sentences	John waits. Mary sees a dog.
+comparative	John is taller than Mary.
+# --- plurals & numbers: ACE, but Attempto's TPTP reifies the counting ---
+card-geq	At least 3 men wait.
+card-exact	Exactly 2 dogs bark.
+card-leq	At most 5 men wait.
+card-plain	3 men wait.
+card-greater	More than 2 men wait.
+collective	John and Mary lift a table.
+distributive-each-of	Each of John and Mary waits.
+number-copula	John's age is 30.
+arithmetic	1 + 2 = 3.
+mass-noun	Some water is cold.
+string-value	John's name is "Johnny".
+# --- beyond FOL: ACE, but Attempto's TPTP translator refuses (ACE-3 terrain) ---
+modal-must	John must wait.
+modal-can	John can wait.
+modal-should	John should wait.
+modal-may	John may wait.
+modal-universal	Every man must wait.
+naf	It is not provable that John waits.
+question-who	Who waits?
+question-yesno	Does John wait?
+command	John, wait!
+# --- not ACE: rejected with diagnosis ---
+# (possessive-unbound pins an ACE CONVENTION: a bare possessive cannot bind
+# the same sentence's subject -- 'his own' can, see possessive-own above.
+# lexicon-gap pins that APE's small built-in lexicon, not ACE's grammar,
+# rejects a real English word; the ulex mechanism is the remedy and
+# test_ace_runner.py demonstrates it on exactly this sentence.)
+possessive-unbound	John sees his dog.
+lexicon-gap	A man whistles.
+unknown-word	Every man waitz.
+bare-plural	Men wait.
+scrambled	Man the waits.

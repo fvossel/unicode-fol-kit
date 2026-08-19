@@ -54,12 +54,47 @@ does no sanitization of its own: a non-referent argument becomes
 from typing import List
 
 from ..fol.nodes import (
-    Node, Variable, Constant, Atom,
+    Node, Variable, Constant, Atom, Count, Number,
     Not as _FNot, And as _FAnd, Or as _FOr, Implies, Quantifier,
 )
-from .nodes import DRS, Condition, Pred, Eq, Neg, Impl, Or, is_referent
+from .nodes import (
+    DRS, Card, Condition, Eq, Impl, Neg, Or, Part, Pred, is_referent,
+    walk_boxes,
+)
 
 __all__ = ["drs_to_fol"]
+
+
+class _FreshCounters:
+    """Fresh counting variables for :class:`Card` translations.
+
+    ``Card(g, ">=", 3)`` becomes ``∃≥3 p (Part_of(p, g))`` and the counting
+    variable ``p`` must collide with NOTHING the tree declares — a clash
+    would capture. Seeded once per :func:`drs_to_fol` call with every
+    declared referent, then hands out ``p1, p2, …`` skipping taken names.
+    (``Count`` binds its own variable, so two Cards may NOT share one name
+    if one ends up in the scope of the other's matrix — cheap to avoid by
+    never reusing any.)
+    """
+
+    def __init__(self, drs: DRS):
+        self.taken = {r for box, _ in walk_boxes(drs) for r in box.referents}
+        self.i = 0
+
+    def next(self) -> str:
+        while True:
+            self.i += 1
+            candidate = f"p{self.i}"
+            if candidate not in self.taken:
+                self.taken.add(candidate)
+                return candidate
+
+
+#: Card's kit-spelled ops onto Count's op codes; ``>``/``<`` shift the bound
+#: (``> n`` ≡ ``≥ n+1``; ``< n`` ≡ ``≤ n-1``, and ``< 0`` is refused at
+#: Card construction so the subtraction never goes negative).
+_CARD_TO_COUNT = {"=": ("eq", 0), ">=": ("ge", 0), "<=": ("le", 0),
+                  ">": ("ge", +1), "<": ("le", -1)}
 
 
 def _term(name: str) -> Node:
@@ -84,26 +119,35 @@ def _conjoin(parts: List[Node]) -> Node:
     return result
 
 
-def _translate_cond(cond: Condition) -> Node:
+def _translate_cond(cond: Condition, fresh: _FreshCounters) -> Node:
     if isinstance(cond, Pred):
         return Atom(cond.name, tuple(_term(a) for a in cond.args))
     if isinstance(cond, Eq):
         return Atom("=", (_term(cond.a), _term(cond.b)))
+    if isinstance(cond, Card):
+        op, shift = _CARD_TO_COUNT[cond.op]
+        counter = fresh.next()
+        return Count(op, Number(cond.n + shift), Variable(counter),
+                     Atom("Part_of", (Variable(counter), _term(cond.ref))))
+    if isinstance(cond, Part):
+        return Atom("Part_of", (_term(cond.member), _term(cond.group)))
     if isinstance(cond, Neg):
-        return _FNot(_translate_box(cond.drs))
+        return _FNot(_translate_box(cond.drs, fresh))
     if isinstance(cond, Impl):
-        antecedent = _conjoin([_translate_cond(c) for c in cond.antecedent.conditions])
-        result: Node = Implies(antecedent, _translate_box(cond.consequent))
+        antecedent = _conjoin([_translate_cond(c, fresh)
+                               for c in cond.antecedent.conditions])
+        result: Node = Implies(antecedent, _translate_box(cond.consequent, fresh))
         for r in reversed(cond.antecedent.referents):
             result = Quantifier("∀", Variable(r), result)
         return result
     if isinstance(cond, Or):
-        return _FOr(_translate_box(cond.left), _translate_box(cond.right))
+        return _FOr(_translate_box(cond.left, fresh),
+                    _translate_box(cond.right, fresh))
     raise TypeError(f"drs_to_fol: unsupported condition {type(cond).__name__}")
 
 
-def _translate_box(box: DRS) -> Node:
-    result: Node = _conjoin([_translate_cond(c) for c in box.conditions])
+def _translate_box(box: DRS, fresh: _FreshCounters) -> Node:
+    result: Node = _conjoin([_translate_cond(c, fresh) for c in box.conditions])
     for r in reversed(box.referents):
         result = Quantifier("∃", Variable(r), result)
     return result
@@ -121,4 +165,4 @@ def drs_to_fol(drs: DRS) -> Node:
     ``unicode_fol_kit.api.prove``.
     """
     drs.validate()
-    return _translate_box(drs)
+    return _translate_box(drs, _FreshCounters(drs))
