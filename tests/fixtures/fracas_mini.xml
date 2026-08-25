@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE fracas-problems SYSTEM "fracas-problems.dtd">
+
+<fracas-problems>
+
+<comment class="intro">
+  A SYNTHETIC fixture in the FraCaS XML shape. The sentences are written for
+  this test suite; no problem of the real problem set is reproduced here.
+  It exists to exercise the reader's structure handling, which the real file
+  cannot be committed to demonstrate: heading tracking and resets, premise
+  ordering by idx against document order, whitespace collapsing across
+  source lines, XML entities, every answer value including undef, the
+  nonstandard flag, and a problem with no question at all.
+</comment>
+
+<problem id="000" fracas_answer="yes">
+  <p idx="1"> A tester writes a fixture. </p>
+  <q> Does a tester write a fixture? </q>
+  <h> A tester writes a fixture. </h>
+  <a> Yes </a>
+</problem>
+
+<comment class="section">
+  1 FIRST TOPIC
+</comment>
+
+<comment class="subsection">
+  1.1 Plain Problems
+</comment>
+
+<problem id="001" fracas_answer="yes">
+  <p idx="1"> Every reader parses a file. </p>
+  <q> Does every reader parse a file? </q>
+  <h> Every reader parses a file. </h>
+  <a> Yes </a>
+  <why> Trivially, from the premise itself. </why>
+</problem>
+
+<comment class="subsection">
+  1.2 Several Premises
+</comment>
+
+<problem id="002" fracas_answer="unknown">
+  <p idx="2">
+    The second premise
+    spans two source lines.
+  </p>
+  <p idx="1"> The first premise stands earlier by idx, later in the file. </p>
+  <q> Is the order taken from idx? </q>
+  <h> The order is taken from idx. </h>
+  <a> Don&apos;t know </a>
+</problem>
+
+<comment class="subsubsection">
+  1.2.1 A Finer Level
+</comment>
+
+<problem id="003" fracas_answer="no">
+  <p idx="1"> No fixture is a corpus. </p>
+  <p idx="2"> This file is a fixture. </p>
+  <q> Is this file a corpus? </q>
+  <h> This file is a corpus. </h>
+  <a> No </a>
+  <note> Both premises are needed here. </note>
+</problem>
+
+<comment class="section">
+  2 SECOND TOPIC
+</comment>
+
+<comment class="subsection">
+  2.1 Odd Answers
+</comment>
+
+<problem id="004" fracas_answer="undef" fracas_nonstandard="true">
+  <p idx="1"> Some checks are strict. </p>
+  <q> Are all checks strict? </q>
+  <h> All checks are strict. </h>
+  <a> Not exactly </a>
+</problem>
+
+<comment class="subsection">
+  2.2 Missing Questions
+</comment>
+
+<problem id="005" fracas_answer="undef">
+  <p idx="1"> A premise stands alone, and 1 &lt; 2. </p>
+  <q> </q>
+  <h> </h>
+  <a> </a>
+</problem>
+
+</fracas-problems>

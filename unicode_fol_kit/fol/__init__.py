@@ -47,6 +47,11 @@ from .prolog_input import (
 from .sanitize import sanitize_names, sanitize_all, NameMapping
 from .verbalize import to_english
 from .derivation import CCGDerivation, reduction_derivation
+from .frames import (
+    AXIOM_ALIASES, FRAMES, FRAME_CONDITIONS, MODAL_AXIOMS,
+    UnsupportedFrameCondition, resolve_frame, geach_axiom,
+    holds_on_finite_frame, modal_axiom, unguarded_frame_axiom,
+)
 from .qml import (
     qml_translate, qml_axioms, qml_is_valid, qml_equivalent,
     to_thf_modal, to_isabelle_modal, BARCAN, CONVERSE_BARCAN, QML_BRIDGES,
@@ -74,6 +79,11 @@ from .signature import (
 )
 
 __all__ = [
+    # The shared modal frame registry — one table for every modal route.
+    "FRAMES", "FRAME_CONDITIONS", "MODAL_AXIOMS", "AXIOM_ALIASES",
+    "modal_axiom", "resolve_frame", "geach_axiom",
+    "holds_on_finite_frame", "unguarded_frame_axiom",
+    "UnsupportedFrameCondition",
     "MSFLParser",
     "Node", "Variable", "Constant", "Number", "Function",
     "Atom", "Not", "And", "Or", "Xor", "Implies", "Iff", "Quantifier",

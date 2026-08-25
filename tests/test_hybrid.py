@@ -292,8 +292,18 @@ def test_frame_sensitivity_four_schema_at_a_named_world():
 
 
 def test_unknown_frame_rejected():
-    with pytest.raises(ValueError, match="frame"):
-        hybrid_is_valid(mp.parse("@i i"), frame="KD45")
+    # Since the frame tables were unified (fol.frames), this route understands
+    # every named system the others do — KD45 among them — so the refusal is
+    # pinned on a name that is genuinely not a system.
+    with pytest.raises(ValueError, match="unknown frame"):
+        hybrid_is_valid(mp.parse("@i i"), frame="S99")
+
+
+def test_the_hybrid_route_shares_the_common_frame_table():
+    from unicode_fol_kit.fol.frames import FRAMES
+    from unicode_fol_kit.fol.modal_translation import _HYBRID_FRAMES
+
+    assert _HYBRID_FRAMES is FRAMES
 
 
 # --- cross-check: pure modal formulas must agree with the tableau oracle ---

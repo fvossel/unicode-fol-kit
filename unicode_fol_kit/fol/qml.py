@@ -107,6 +107,10 @@ from .nodes import (
     Obligatory, Permitted, SortedQuantifier,
 )
 from ._fol_nodes import constant_name_to_ascii
+from .frames import (
+    FRAME_CONDITIONS, FRAMES as _SHARED_FRAMES, UnsupportedFrameCondition,
+    resolve_frame, parse_geach,
+)
 from ._symbol_names import SymbolNames, dedupe
 
 # Guard / typing predicate names (the contract with the axiom set).
@@ -132,19 +136,75 @@ _FORALL = "∀"
 _EXISTS = "∃"
 _ACTUALIST_MODES = frozenset({"varying", "increasing", "cumulative", "decreasing"})
 _CONSTANT_MODES = frozenset({"constant", "possibilist"})
-_FRAMES = {
-    "K": (), "T": ("refl",), "S4": ("refl", "trans"),
-    "S5": ("refl", "trans", "sym"), "KD": ("serial",),
-    "KD45": ("serial", "trans", "eucl"),
-    "B": ("refl", "sym"),                          # Brouwer
-    "S4.2": ("refl", "trans", "directed"),         # convergent (.2)
-    "S4.3": ("refl", "trans", "connected"),        # no-branching / linear (.3)
-    # GL (Gödel–Löb provability) is transitive + Löb. It is NOT first-order
-    # definable, so qml_axioms rejects it (see the GL guard there); it is listed
-    # here only so the HIGHER-ORDER THF / Isabelle exporters, which share this
-    # table, accept frame="GL" and emit the Löb schema.
-    "GL": ("trans", "loeb"),
-}
+#: The named modal systems, shared with every other route (see
+#: :mod:`unicode_fol_kit.fol.frames`). A ``G(m,n,r,s)`` Scott–Lemmon spec is
+#: accepted as a frame name too; ``resolve_frame`` resolves both.
+_FRAMES = _SHARED_FRAMES
+
+
+def _resolve_frame(frame: str, *, route: str = "qml") -> tuple:
+    """The conditions of ``frame``, refusing what a FIRST-ORDER route cannot
+    express: the three non-first-order conditions (Löb, McKinsey, Grz) are
+    named as the scope boundary they are, with the higher-order routes that
+    DO carry them pointed at — never silently dropped, which would answer
+    about a larger frame class than the caller asked for."""
+    try:
+        conds = resolve_frame(frame)
+    except ValueError as exc:
+        raise ValueError(f"{route}: {exc}") from None
+    for cond in conds:
+        entry = FRAME_CONDITIONS.get(cond)
+        if entry is not None and not entry.first_order:
+            raise NotImplementedError(
+                f"{route}: the frame {frame!r} needs the condition {cond!r} "
+                f"({entry.description}), which the first-order embedding "
+                "cannot express. Use the higher-order embeddings "
+                "hol.thf_modal.to_thf_modal_full / "
+                "hol.isabelle_modal.to_isabelle_modal with the same frame — "
+                "they assert the schema itself.")
+    return conds
+
+
+def _geach_axiom(spec, W, R):
+    """The Scott–Lemmon condition of ``G(m,n,r,s)`` as a closed FO axiom::
+
+        ∀w,u,v (R^m(w,u) ∧ R^r(w,v) → ∃t (R^n(u,t) ∧ R^s(v,t)))
+
+    ``R^0(a,b)`` is ``a = b`` and ``R^k`` for ``k > 1`` chains ``k-1``
+    existentially bound intermediate worlds, each World-guarded like every
+    other world variable here. The axiom is closed over its own variables,
+    so it cannot capture anything in a translated formula.
+    """
+    counter = [0]
+
+    def path(a, b, k):
+        if k == 0:
+            return Atom("=", (a, b))
+        previous, mids, conj = a, [], None
+        for _ in range(k - 1):
+            z = Variable(f"_gz{counter[0]}")
+            counter[0] += 1
+            mids.append(z)
+            step = And(W(z), R(previous, z))
+            conj = step if conj is None else And(conj, step)
+            previous = z
+        body = R(previous, b)
+        if conj is not None:
+            body = And(conj, body)
+        for z in reversed(mids):
+            body = Quantifier(_EXISTS, z, body)
+        return body
+
+    w, u, v, s = (Variable("_gw"), Variable("_gu"), Variable("_gv"),
+                  Variable("_gt"))
+    antecedent = And(And(W(w), And(W(u), W(v))),
+                     And(path(w, u, spec.m), path(w, v, spec.r)))
+    consequent = Quantifier(_EXISTS, s, And(
+        W(s), And(path(u, s, spec.n), path(v, s, spec.s))))
+    body = Implies(antecedent, consequent)
+    for var in (v, u, w):
+        body = Quantifier(_FORALL, var, body)
+    return body
 
 
 class _Fresh:
@@ -727,14 +787,7 @@ def qml_axioms(mode: str = "constant", frame: str = "K", systems=None,
     ``Gφ → Fφ`` become underivable), so a ``False`` under it is not evidence about the
     oracle's temporal logic.
     """
-    if frame == "GL":
-        raise NotImplementedError(
-            "qml: the GL (Gödel–Löb provability) frame is transitive + converse-"
-            "well-founded, which is NOT first-order definable, so the Z3 embedding "
-            "cannot express it. Use the higher-order embeddings to_thf_modal / "
-            "to_isabelle_modal with frame='GL' (they assert the Löb schema in HOL).")
-    if frame not in _FRAMES:
-        raise ValueError(f"qml: unknown frame {frame!r} (use one of {sorted(_FRAMES)}).")
+    conds = _resolve_frame(frame)
     if mode not in _ACTUALIST_MODES and mode not in _CONSTANT_MODES:
         raise ValueError(
             f"qml: unknown mode {mode!r} (use one of "
@@ -764,7 +817,6 @@ def qml_axioms(mode: str = "constant", frame: str = "K", systems=None,
     axioms += [_relation_typing(rel)
                for rel in (_R_TEMPORAL, _R_NEXT, _R_DEONTIC) if rel in used]
 
-    conds = _FRAMES[frame]
     if "refl" in conds:
         axioms.append(fa(w, Implies(W(w), R(w, w))))
     if "trans" in conds:
@@ -788,6 +840,27 @@ def qml_axioms(mode: str = "constant", frame: str = "K", systems=None,
         axioms.append(fa(w, fa(v, fa(u, Implies(
             And(And(W(w), W(v)), And(W(u), And(R(w, v), R(w, u)))),
             Or(R(v, u), R(u, v)))))))
+    if "functional" in conds:
+        # CD: at most one successor. ∀w,v,u (Rwv ∧ Rwu → v = u).
+        axioms.append(fa(w, fa(v, fa(u, Implies(
+            And(And(W(w), W(v)), And(W(u), And(R(w, v), R(w, u)))),
+            Atom("=", (v, u)))))))
+    if "dense" in conds:
+        # C4: ∀w,v (Rwv → ∃u (Rwu ∧ Ruv)).
+        axioms.append(fa(w, fa(v, Implies(
+            And(And(W(w), W(v)), R(w, v)),
+            Quantifier(_EXISTS, u, And(W(u), And(R(w, u), R(u, v))))))))
+    if "shift_refl" in conds:
+        # Ṁ: ∀w,v (Rwv → Rvv) — every accessible world is reflexive.
+        axioms.append(fa(w, fa(v, Implies(
+            And(And(W(w), W(v)), R(w, v)), R(v, v)))))
+    if "empty" in conds:
+        # Ver: no accessible worlds at all, so □φ holds vacuously everywhere.
+        axioms.append(fa(w, fa(v, Not(R(w, v)))))
+    for cond in conds:
+        spec = parse_geach(cond)
+        if spec is not None:
+            axioms.append(_geach_axiom(spec, W, R))
 
     # inter-modality frame conditions (default-on; see the module docstring). Each block
     # fires only when its relation occurs, so a formula in the alethic fragment gets the
@@ -977,8 +1050,20 @@ _THF_FRAME = {
     "directed": "thf(directed, axiom, ( ! [W: mu, V: mu, U: mu] : ( ( ( r @ W @ V ) & ( r @ W @ U ) ) => ? [Z: mu] : ( ( r @ V @ Z ) & ( r @ U @ Z ) ) ) )).",
     # .3 no-branching: the successors of a world are linearly r-ordered.
     "connected": "thf(connected, axiom, ( ! [W: mu, V: mu, U: mu] : ( ( ( r @ W @ V ) & ( r @ W @ U ) ) => ( ( r @ V @ U ) | ( r @ U @ V ) ) ) )).",
-    # GL: the Löb schema □(□Φ → Φ) → □Φ, quantified over propositions Φ (HOL only).
+    # CD: at most one successor.
+    "functional": "thf(functional, axiom, ( ! [W: mu, V: mu, U: mu] : ( ( ( r @ W @ V ) & ( r @ W @ U ) ) => ( V = U ) ) )).",
+    # C4: dense.
+    "dense": "thf(dense, axiom, ( ! [W: mu, V: mu] : ( ( r @ W @ V ) => ? [U: mu] : ( ( r @ W @ U ) & ( r @ U @ V ) ) ) )).",
+    # Ṁ: every accessible world is reflexive.
+    "shift_refl": "thf(shift_refl, axiom, ( ! [W: mu, V: mu] : ( ( r @ W @ V ) => ( r @ V @ V ) ) )).",
+    # Ver: no accessible worlds at all.
+    "empty": "thf(empty_r, axiom, ( ! [W: mu, V: mu] : ~ ( r @ W @ V ) )).",
+    # The three schemas with NO first-order frame condition are asserted as
+    # schemas, quantified over propositions — which is exactly what the
+    # higher-order route can do and every first-order route cannot.
     "loeb": "thf(loeb, axiom, ( ! [Phi: mu > $o, W: mu] : ( ( mbox @ ( mimplies @ ( mbox @ Phi ) @ Phi ) @ W ) => ( mbox @ Phi @ W ) ) )).",
+    "mckinsey": "thf(mckinsey, axiom, ( ! [Phi: mu > $o, W: mu] : ( ( mbox @ ( mdia @ Phi ) @ W ) => ( mdia @ ( mbox @ Phi ) @ W ) ) )).",
+    "grz": "thf(grz, axiom, ( ! [Phi: mu > $o, W: mu] : ( ( mbox @ ( mimplies @ ( mbox @ ( mimplies @ Phi @ ( mbox @ Phi ) ) ) @ Phi ) @ W ) => ( Phi @ W ) ) )).",
 }
 
 _THF_DOMAIN = {

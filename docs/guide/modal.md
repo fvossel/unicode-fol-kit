@@ -300,7 +300,7 @@ print(st_custom.to_unicode_str())   # → '∀w0 (R(s, w0) → ¬∃w1 (R(w0, w1
 
 ## Deciding modal validity — the native tableau (0.9.0)
 
-`unicode_fol_kit.atp.modal_tableau` decides the propositional box/diamond family in-process with a **labelled** analytic tableau. The public entry points are `is_modal_valid`, `modal_decide`, `modal_countermodel`, `modal_prove`, and `modal_tableau_closed`; all take a `frame=` naming the alethic system, one of **K, T, D/KD, B/KB, K4, K45, S4, S5, KD45**.
+`unicode_fol_kit.atp.modal_tableau` decides the propositional box/diamond family in-process with a **labelled** analytic tableau. The public entry points are `is_modal_valid`, `modal_decide`, `modal_countermodel`, `modal_prove`, and `modal_tableau_closed`; all take a `frame=` naming the alethic system. The tableau has rules for reflexivity, transitivity, symmetry, seriality and euclideanness, so it decides **K, T, D/KD, B/KB/KTB, K4, K5, K45, KD4, KD5, S4, S5, KD45** — every other system in the shared registry (see below) is refused by name rather than silently widened.
 
 `is_modal_valid(φ, frame=…)` returns `True` only when the tableau for `¬φ` closes (a sound proof). The reflexivity axiom `□P → P` (the **T** schema) is valid over a reflexive frame but not over the minimal **K**:
 
@@ -712,6 +712,77 @@ loeb = Implies(Box(Implies(Box(p), p)), Box(p))   # □(□P → P) → □P
 modal_axiom_names(loeb, frame="GL")                                          # → ['r_trans', 'r_loeb']
 modal_axiom_names(Implies(Diamond(p), Box(Diamond(p))), frame="S5")          # → ['r_refl', 'r_trans', 'r_sym']
 modal_axiom_names(Implies(Box(p), Diamond(p)), frame="K")                    # → []
+```
+
+## The frame registry: one table, six routes
+
+Every route that reasons modally — the standard translation (`qml`), the
+labelled tableau, the finite-frame enumerator, natural deduction, the hybrid
+translation and the higher-order embeddings — reads the SAME table,
+{mod}`unicode_fol_kit.fol.frames`. That was not always so: each used to keep
+its own copy, which is how the tableau came to know `K45` while `qml` did
+not, and `qml` `S4.2` while the tableau did not.
+
+{data}`~unicode_fol_kit.fol.frames.FRAMES` lists the named systems, and
+{func}`~unicode_fol_kit.fol.frames.modal_axiom` gives you the schema of any
+named axiom, aliases included:
+
+```python
+from unicode_fol_kit.fol.frames import FRAMES, modal_axiom
+
+sorted(FRAMES)          # K, D/KD, T, KB, B/KTB, K4, K5, K45, KD4, KD5, KD45,
+                        # S4, S5, S4.1, S4.2, S4.3, KCD, KC4, KShift, Ver, GL, Grz
+modal_axiom("5").to_unicode_str()      # → '◇P → □◇P'
+modal_axiom("W") == modal_axiom("Loeb")     # → True  (one axiom, two names)
+modal_axiom("Alt2") == modal_axiom("Mshift")  # → True  (◇p→◇(p∧◇p) IS □(□p→p))
+```
+
+### The Scott–Lemmon family
+
+Most named conditions are instances of one schema. With the Geach
+coordinates `G(m, n, r, s)`:
+
+```text
+axiom      ◇^m □^n p → □^r ◇^s p
+condition  ∀w,u,v (w R^m u ∧ w R^r v → ∃t (u R^n t ∧ v R^s t))
+```
+
+reflexivity is `G(0,1,0,0)`, transitivity `G(0,1,2,0)`, symmetry
+`G(0,0,1,1)`, seriality `G(0,1,0,1)`, euclideanness `G(1,0,1,1)`,
+directedness `G(1,1,1,1)`, partial functionality (**CD**, `◇p → □p`)
+`G(1,0,1,0)` and density (**C4**, `□□p → □p`) `G(0,2,1,0)`. A spec is
+accepted directly as a frame name, which is what makes the infinite family
+reachable without a name per instance:
+
+```python
+from unicode_fol_kit import qml_is_valid
+from unicode_fol_kit.fol.frames import modal_axiom
+
+qml_is_valid(modal_axiom(".2"), frame="G(1,1,1,1)")   # → True
+qml_is_valid(modal_axiom(".2"), frame="G(0,1,0,0)")   # → False (that is just T)
+```
+
+### What each route can and cannot carry
+
+The correspondences are **brute-forced**, not asserted: for every
+first-order condition, over every frame on up to three worlds and every
+valuation, "the axiom is valid here" and "the condition holds here" must
+agree (`tests/test_modal_frame_registry.py`).
+
+Three axioms have no first-order frame condition at all — Löb (`GL`),
+McKinsey (`S4.1`) and Grzegorczyk (`Grz`) — so only the higher-order routes
+carry them, by asserting the schema itself over propositions. And the
+labelled tableau implements rules for five conditions (reflexive,
+transitive, symmetric, serial, euclidean); anything else it **refuses by
+name** rather than ignoring, because dropping `directed` from `S4.2` would
+answer about a larger frame class than you asked for:
+
+```python
+from unicode_fol_kit.atp.modal_tableau import is_modal_valid
+
+is_modal_valid(modal_axiom("T"), frame="S4.2")
+# → UnsupportedFrameCondition: the frame condition 'directed' … is not
+#   expressible here. … Use the first-order route fol.qml (Z3) …
 ```
 
 ## End-to-end: parse, decide, refute, translate

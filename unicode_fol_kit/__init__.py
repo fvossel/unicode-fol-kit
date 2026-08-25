@@ -54,6 +54,7 @@ from .fol import (
     qml_translate, qml_is_valid, qml_equivalent,
     to_thf_modal, to_isabelle_modal, BARCAN, CONVERSE_BARCAN, QML_BRIDGES,
 )
+from .fol.frames import UnsupportedFrameCondition, modal_axiom
 from .atp import (
     formulas_are_equivalent, check_logical_entailment,
     check_logical_entailment_vampire,
@@ -153,7 +154,7 @@ from . import api  # the seven-verb facade (api.parse_any / check / prove / …)
                    # namespaced on purpose: api.prove must not shadow the
                    # resolution prover's top-level `prove`
 
-__version__ = "0.25.0"
+__version__ = "0.26.0"
 
 __all__ = [
     "MSFLParser",
@@ -208,6 +209,11 @@ __all__ = [
     "parse_prover9", "parse_prover9_problem", "load_prover9", "Prover9Formula",
     "sanitize_names", "sanitize_all", "NameMapping",
     "qml_translate", "qml_is_valid", "qml_equivalent",
+    # The shared modal frame registry (one table for every modal route).
+    # Its two dict registries stay at their definition site,
+    # unicode_fol_kit.fol.frames — see docs/api.md on why a re-exported
+    # dict cannot carry its documentation.
+    "modal_axiom", "UnsupportedFrameCondition",
     "to_thf_modal", "to_isabelle_modal", "BARCAN", "CONVERSE_BARCAN",
     # The cross-family bridge registry for qml_is_valid(..., bridges=[...]). The
     # HOL routes accept the SAME three names from unicode_fol_kit.hol.BRIDGES,

@@ -80,6 +80,10 @@ from .nodes import (
     Obligatory, Permitted,
     Nominal, At,
 )
+from .frames import (
+    FRAMES as _SHARED_FRAMES, UnsupportedFrameCondition,
+    resolve_frame, unguarded_frame_axiom,
+)
 from ..semantics._modal_reject import (
     FUZZY_TYPES, LAMBDA_TYPES,
     reject_fuzzy, reject_lambda,
@@ -337,39 +341,29 @@ def standard_translation(formula: Node, world: str = "w") -> Node:
 
 # Frame classes hybrid_is_valid understands, as conditions on the ALETHIC
 # accessibility predicate R (the other modal families keep their minimal K
-# reading — no axioms are asserted for Rk_a / Rb_a / T / N / D here).
-_HYBRID_FRAMES = {
-    "K": (),
-    "T": ("refl",),
-    "S4": ("refl", "trans"),
-    "S5": ("refl", "sym", "trans"),
-}
+# reading — no axioms are asserted for Rk_a / Rb_a / T / N / D here). The
+# table is the shared registry (unicode_fol_kit.fol.frames), so this route
+# understands the same systems as every other one; conditions with no
+# first-order form are refused by name.
+_HYBRID_FRAMES = _SHARED_FRAMES
 
 
 def _frame_axioms(frame: str) -> List[Node]:
     """Return the first-order frame axioms over ``R`` for a named frame class.
 
-    K: none; T: reflexivity; S4: reflexivity + transitivity; S5: reflexivity +
-    symmetry + transitivity. The axioms are closed formulas over their own bound
-    variables, so they cannot capture anything in a translated formula.
+    ``frame`` is any system in the shared registry
+    (:mod:`unicode_fol_kit.fol.frames`) or a Scott–Lemmon spec like
+    ``"G(1,1,1,1)"``. The axioms are closed formulas over their own bound
+    variables, so they cannot capture anything in a translated formula. A
+    system needing a condition with no first-order frame condition (GL,
+    S4.1, Grz) is refused by name — this route is first-order.
     """
-    if frame not in _HYBRID_FRAMES:
-        raise ValueError(
-            f"hybrid_is_valid: unknown frame {frame!r} "
-            f"(use one of {sorted(_HYBRID_FRAMES)})."
-        )
-    u, v, t = Variable("u"), Variable("v"), Variable("t")
-    R = lambda a, b: Atom(_R_ALETHIC, [a, b])
-    fa = lambda var, body: Quantifier(_FORALL, var, body)
-    conds = _HYBRID_FRAMES[frame]
-    axioms: List[Node] = []
-    if "refl" in conds:
-        axioms.append(fa(u, R(u, u)))
-    if "sym" in conds:
-        axioms.append(fa(u, fa(v, Implies(R(u, v), R(v, u)))))
-    if "trans" in conds:
-        axioms.append(fa(u, fa(v, fa(t, Implies(And(R(u, v), R(v, t)), R(u, t))))))
-    return axioms
+    try:
+        conds = resolve_frame(frame)
+    except ValueError as exc:
+        raise ValueError(f"hybrid_is_valid: {exc}") from None
+    return [unguarded_frame_axiom(cond, _R_ALETHIC, prefix="_hw")
+            for cond in conds]
 
 
 def hybrid_is_valid(formula: Node, frame: str = "K", timeout: int = 10000) -> bool:

@@ -5,6 +5,106 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [0.26.0] - 2026-08-25
+
+### `fol.frames` — one modal frame table for six routes, correspondences checked
+
+Six routes reason modally here — the standard translation (`qml`), the
+labelled tableau, the finite-frame enumerator, natural deduction (`fitch`),
+the hybrid translation and the higher-order embeddings — and each carried
+its OWN copy of the frame table. They had drifted: the tableau knew `K45`
+and `qml` did not, `qml` knew `S4.2` and `S4.3` and the tableau did not,
+`fitch` and the hybrid route knew four systems between them. They now all
+read `fol.frames`, which says what a system consists of, what each condition
+means, and — the part that makes it checkable — which modal axiom each
+condition corresponds to.
+
+That correspondence is BRUTE-FORCED, not asserted: for every first-order
+condition, over every frame on up to three worlds and every valuation, "the
+axiom is valid on this frame" and "the frame satisfies the condition" must
+agree (`tests/test_modal_frame_registry.py`, ~2 s). It immediately paid for
+itself by correcting this repository's own note on `.3`: the exact
+correspondent of the `□(□p→q) ∨ □(□q→p)` form has NO "or v = u" escape —
+that weaker condition belongs to the `◇`-formulation — and the two coincide
+only over reflexive frames.
+
+New named conditions, each with its axiom: **CD** `◇p → □p` (partial
+functionality), **C4** `□□p → □p` (density), **Ṁ** `□(□p→p)`
+(shift-reflexivity — which is also what `◇p → ◇(p∧◇p)` corresponds to), and
+**Ver** `□p` (the empty relation). New systems: `K5`, `KB`, `KTB`, `KD4`,
+`KD5`, `KCD`, `KC4`, `KShift`, `Ver`, `S4.1` and `Grz`, alongside the ones
+that already existed — 24 in total, and `D`/`KD` and `B`/`KTB` are now
+accepted as the two spellings of one system.
+
+The **Scott–Lemmon (Geach) family** arrives whole rather than one name at a
+time: `G(m,n,r,s)` — the axiom `◇^m □^n p → □^r ◇^s p` with the condition
+`∀w,u,v (wR^m u ∧ wR^r v → ∃t (uR^n t ∧ vR^s t))` — is accepted wherever a
+frame name is, on every first-order route. Eight named conditions are
+instances of it (reflexivity `G(0,1,0,0)`, transitivity `G(0,1,2,0)`,
+symmetry `G(0,0,1,1)`, seriality `G(0,1,0,1)`, euclideanness `G(1,0,1,1)`,
+directedness `G(1,1,1,1)`, CD `G(1,0,1,0)`, C4 `G(0,2,1,0)`), and a test
+proves each generated schema picks the same frames as the hand-written
+axiom.
+
+Three axioms have no first-order frame condition at all — Löb (`GL`),
+McKinsey (`S4.1`) and Grzegorczyk (`Grz`). They are marked as such and
+carried ONLY by the higher-order routes, which assert the schema itself over
+propositions; both HOL exporters gained McKinsey and Grz alongside the Löb
+schema they already had. Every first-order route refuses them by name.
+
+The refusals are the other half of the work, and one of them closed a latent
+soundness hole: the finite enumerator's condition check tested the five
+conditions it knew and **silently ignored any other**, so a frame class it
+did not recognise would have widened to the ones it did — reporting
+countermodels the named system excludes. Unknown and non-first-order
+conditions now raise. The tableau likewise refuses what it has no rule for
+(density, functionality, directedness, connectedness, …) instead of dropping
+it, and names the route that does carry it.
+
+New public API: `modal_axiom("5")` builds a named axiom's schema (literature
+aliases included, so `W` and `Loeb`, `Q` and `C4`, `Alt1`/`Alt3` and `CD` are
+one axiom each) and `UnsupportedFrameCondition`, both at top level; the
+registries themselves — `FRAMES`, `FRAME_CONDITIONS`, `MODAL_AXIOMS`,
+`AXIOM_ALIASES` — are reached through `unicode_fol_kit.fol`. One letter is
+deliberately NOT
+accepted: `M` names T in some texts and shift-reflexivity in others, so the
+registry refuses it rather than picking a reading.
+
+### `eval.datasets.fracas` — the pure-NLI adapter, with the translation left to the caller
+
+FraCaS is the ninth dataset adapter and the first with NO logic annotation
+anywhere: premises, a hypothesis, and a three-valued answer. It earns its
+place because that answer maps onto the kit's own verdict without any
+interpretive glue — `yes` iff premises ⊨ h, `no` iff premises ⊨ ¬h,
+`unknown` otherwise — which makes it a reference target for an NL→logic
+pipeline whose TRANSLATION step lives outside this library:
+`solve_example(example, translate=…)` takes that step as an injected
+callable (a formula string or a kit node per sentence) and the kit only
+decides. Nothing in this package calls a model.
+
+The reader was verified against the canonical XML edition and re-measures
+what it documents: 346 problems, 536 premises (contiguous 1-based `idx`,
+read in index order, not document order), answers `yes` 203 / `unknown` 98
+/ `no` 33 / `undef` 12, 41 problems flagged `fracas_nonstandard`. Sections
+are not attributes but document-order comment markers, so headings are
+tracked while walking and every finer level is reset when a coarser one
+changes — a problem can never inherit a stale subsection. Four problems
+(276, 305, 309, 310) have an empty question AND hypothesis: they load with
+`nl_conclusion=None` rather than being dropped, and `solve_example` refuses
+them by name instead of scoring against an absent hypothesis. `undef` is
+likewise never filtered away on the loader's own initiative (`answers=` is
+how a caller drops it), and since there is no gold FOL, `audit_examples`
+reports these examples as ok VACUOUSLY — pinned in the tests so the vacuity
+stays a documented property.
+
+The source file carries no explicit licence statement, so it is not
+committed here: the tests run against a SYNTHETIC fixture in the same XML
+shape (heading resets, reversed `idx`, line-wrapped text, entities, a
+question-less problem), and an opt-in test re-measures the real distribution
+from `$UFK_FRACAS_XML`. `ace_census` completes the picture in the other
+direction: per SENTENCE, what APE accepts as controlled English, with its
+own diagnosis attached and no aggregate invented for you.
+
 ## [0.25.0] - 2026-08-19
 
 ### `drt.reverse` / `ace.formula_to_ace` — "is this formula ACE?" gets an answer

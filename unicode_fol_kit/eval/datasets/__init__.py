@@ -51,6 +51,17 @@ collected machine-readably in :data:`DATASET_INFO`):
   :func:`~unicode_fol_kit.eval.datasets.willow.repair_willow_formula`
   (NLTK-precedence reading, minimal renaming).
 
+- :mod:`~unicode_fol_kit.eval.datasets.fracas` — FraCaS: the one PURE-NLI
+  adapter, premises/hypothesis/three-valued answer with no logic annotation
+  anywhere (its gold ``yes``/``no``/``unknown`` maps onto ``⊨ h`` / ``⊨ ¬h``
+  / neither exactly, so it is a reference target for a translation step that
+  lives outside this library —
+  :func:`~unicode_fol_kit.eval.datasets.fracas.solve_example` takes that
+  translation as an injected callable). ``fol_premises`` is always empty, so
+  :func:`audit_examples` is vacuous on it;
+  :func:`~unicode_fol_kit.eval.datasets.fracas.ace_census` reports, per
+  sentence, what APE accepts as controlled English.
+
 Per-dataset helper functions (converters, solvers) deliberately live on
 their OWN modules rather than being re-exported here — two adapters
 legitimately name their solver ``solve_example``, and a package-level
@@ -60,11 +71,11 @@ Deliberately NOT adapted (verified 2026-08-12, so the omission is a decision,
 not an oversight): **AR-LSAT** (no logic annotation of any kind — Logic-LM
 generates a Z3-style DSL at inference time, which is neither gold data nor
 FOL; and the underlying LSAT passages are copyright-encumbered),
-**LogicalDeduction** (BIG-bench; pure NL ordering puzzles, no formal
-annotation — Logic-LM uses a runtime CSP DSL), and **FraCaS** (pure NL
-premise/hypothesis/label NLI with no logic field in its DTD; public domain
-and clean, so it would be the first candidate if this package ever grows a
-pure-NLI adapter without FOL expectations).
+and **LogicalDeduction** (BIG-bench; pure NL ordering puzzles, no formal
+annotation — Logic-LM uses a runtime CSP DSL). FraCaS was listed here for
+the same reason until it got the pure-NLI adapter above; its source file
+carries no explicit licence statement, so this repository ships a synthetic
+fixture and reads the real file from a caller-supplied path.
 
 No loader downloads anything — every one reads a LOCAL file the caller
 already obtained (some upstreams distribute JSON arrays; each adapter's
@@ -86,6 +97,7 @@ from .prontoqa import load_prontoqa
 from .proofwriter import load_proofwriter, load_proofwriter_structured
 from .logicnli import load_logicnli
 from .proverqa import load_proverqa
+from .fracas import load_fracas
 # C3PO is the first adapter whose gold is not a formula but an EXECUTABLE
 # membership decision: a definition is scored by model-checking it against
 # real molecule structures, so score_definition lives here beside the loader.
@@ -96,6 +108,6 @@ __all__ = [
     "load_folio", "load_malls", "load_groves", "load_willow",
     "load_prontoqa",
     "load_proofwriter", "load_proofwriter_structured",
-    "load_logicnli", "load_proverqa",
+    "load_logicnli", "load_proverqa", "load_fracas",
     "load_c3po", "score_definition", "DefinitionScore",
 ]

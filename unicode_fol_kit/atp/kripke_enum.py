@@ -87,7 +87,10 @@ from ..fol.nodes import (
     Next, Always, Eventually, Until, Historically, Once, Previous, Since,
 )
 from ..semantics.kripke import KripkeModel, satisfies_modal
-from .modal_tableau import _FRAMES, _check_frame
+from ..fol.frames import (
+    FRAME_CONDITIONS, FRAMES as _FRAMES, UnsupportedFrameCondition,
+    resolve_frame, holds_on_finite_frame,
+)
 from .protocol import ProverBackend, Verdict, REFUTED, UNKNOWN
 
 # Relation-name convention — must match semantics.kripke.KripkeModel exactly
@@ -155,6 +158,41 @@ def _collect(formula: Node) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
     return tuple(sorted(atoms)), tuple(sorted(families))
 
 
+def _check_frame(frame: str, systems: Optional[Dict[str, str]]) -> None:
+    """Resolve every frame this search will use, refusing what a FINITE frame
+    check cannot decide.
+
+    The enumerator carries every FIRST-ORDER condition in the shared registry
+    (a condition on a finite relation is directly checkable), which is more
+    than the labelled tableau's rule set — so it validates frames itself
+    rather than borrowing the tableau's stricter check. The three
+    non-first-order conditions (Löb, McKinsey, Grz) are refused by name: they
+    are not properties of a frame's relation at all, and enumerating frames
+    "satisfying" them would be enumerating nothing meaningful.
+    """
+    names = [frame]
+    for fam, sys in (systems or {}).items():
+        if fam not in ("epistemic", "doxastic", "deontic", "temporal"):
+            raise ValueError(
+                f"kripke_enum: unknown system family {fam!r} (use epistemic / "
+                "doxastic / deontic / temporal).")
+        names.append(sys)
+    for name in names:
+        try:
+            conds = resolve_frame(name)
+        except ValueError as exc:
+            raise ValueError(f"kripke_enum: {exc}") from None
+        for cond in conds:
+            entry = FRAME_CONDITIONS.get(cond)
+            if entry is not None and not entry.first_order:
+                raise UnsupportedFrameCondition(
+                    f"kripke_enum: the frame {name!r} needs the condition "
+                    f"{cond!r} ({entry.description}), which no finite frame "
+                    "check decides. Use the higher-order embeddings "
+                    "hol.isabelle_modal / hol.thf_modal, which assert the "
+                    "schema itself.")
+
+
 def _conditions_for(relname: str, frame: str, systems: Optional[Dict[str, str]]) -> Tuple[str, ...]:
     """Frame conditions for a relation name, mirroring ``modal_tableau._Ctx.conds``.
 
@@ -169,37 +207,30 @@ def _conditions_for(relname: str, frame: str, systems: Optional[Dict[str, str]])
     """
     systems = systems or {}
     if relname == _ALETHIC:
-        return _FRAMES[frame]
+        return resolve_frame(frame)
     if relname == _DEONTIC:
-        return _FRAMES[systems.get("deontic", "KD")]
+        return resolve_frame(systems.get("deontic", "KD"))
     if relname == _TEMPORAL:
-        return _FRAMES[systems.get("temporal", "K")]
+        return resolve_frame(systems.get("temporal", "K"))
     if relname.startswith(_KNOWS_PREFIX):
-        return _FRAMES[systems.get("epistemic", "K")]
+        return resolve_frame(systems.get("epistemic", "K"))
     if relname.startswith(_BELIEVES_PREFIX):
-        return _FRAMES[systems.get("doxastic", "K")]
+        return resolve_frame(systems.get("doxastic", "K"))
     return ()
 
 
 def _holds_conditions(edges: FrozenSet[Tuple[int, int]], n: int, conditions: Tuple[str, ...]) -> bool:
-    """True iff the edge set ``edges`` over ``range(n)`` satisfies every condition in ``conditions``."""
-    if "refl" in conditions and not all((w, w) in edges for w in range(n)):
-        return False
-    if "sym" in conditions and not all((b, a) in edges for (a, b) in edges):
-        return False
-    if "trans" in conditions:
-        for (a, b) in edges:
-            for (b2, c) in edges:
-                if b == b2 and (a, c) not in edges:
-                    return False
-    if "eucl" in conditions:
-        for (a, b) in edges:
-            for (a2, c) in edges:
-                if a == a2 and (b, c) not in edges:
-                    return False
-    if "serial" in conditions and not all(any((w, v) in edges for v in range(n)) for w in range(n)):
-        return False
-    return True
+    """True iff the edge set ``edges`` over ``range(n)`` satisfies every condition.
+
+    Delegates to :func:`unicode_fol_kit.fol.frames.holds_on_finite_frame`, the
+    checker the correspondence tests use as well. Delegating matters for
+    SOUNDNESS, not tidiness: this function used to test the five conditions it
+    knew and IGNORE any other, so a frame class it did not recognise silently
+    widened to the ones it did — and a countermodel the named system excludes
+    would have been reported as if it refuted the formula. An unknown or
+    non-first-order condition now raises instead.
+    """
+    return all(holds_on_finite_frame(cond, edges, n) for cond in conditions)
 
 
 @lru_cache(maxsize=None)

@@ -64,6 +64,10 @@ from ..fol.nodes import (
     Obligatory, Permitted,
     free_variables,
 )
+from ..fol.frames import (
+    FRAMES as _SHARED_FRAMES, UnsupportedFrameCondition,
+    resolve_frame, unguarded_frame_axiom,
+)
 from ..fol._msfl_nodes import _rename, _fresh_name, subst_slash_set
 
 
@@ -1178,49 +1182,21 @@ def _make_manyvalued_checker(canonical: str):
 
 _MODAL_SYSTEMS = {"k": "K", "t": "T", "s4": "S4", "s5": "S5", "modal": "K"}
 
-# Per frame class, the relational axioms its accessibility relation must satisfy.
-_FRAME_AXIOMS = {
-    "K": (),
-    "T": ("refl",),
-    "S4": ("refl", "trans"),
-    "S5": ("refl", "trans", "sym"),
-    "KD": ("serial",),          # deontic: serial, non-reflexive (no factivity)
-    "KD45": ("serial", "trans", "eucl"),  # doxastic: belief, non-factive
-}
+# Per frame class, the relational axioms its accessibility relation must
+# satisfy — the shared registry (unicode_fol_kit.fol.frames), so this route
+# understands exactly the systems every other route does. The axioms come
+# from that module's one first-order emitter as well: natural deduction over
+# the standard translation needs no sort guard, which is the same shape the
+# hybrid route uses.
+_FRAME_AXIOMS = _SHARED_FRAMES
 
 
-def _ax_refl(R):
-    x = Variable("wx")
-    return Quantifier("∀", x, Atom(R, [x, x]))
-
-
-def _ax_trans(R):
-    x, y, z = Variable("wx"), Variable("wy"), Variable("wz")
-    return Quantifier("∀", x, Quantifier("∀", y, Quantifier("∀", z,
-        Implies(And(Atom(R, [x, y]), Atom(R, [y, z])), Atom(R, [x, z])))))
-
-
-def _ax_sym(R):
-    x, y = Variable("wx"), Variable("wy")
-    return Quantifier("∀", x, Quantifier("∀", y,
-        Implies(Atom(R, [x, y]), Atom(R, [y, x]))))
-
-
-def _ax_eucl(R):
-    x, y, z = Variable("wx"), Variable("wy"), Variable("wz")
-    return Quantifier("∀", x, Quantifier("∀", y, Quantifier("∀", z,
-        Implies(And(Atom(R, [x, y]), Atom(R, [x, z])), Atom(R, [y, z])))))
-
-
-def _ax_serial(R):
-    x, y = Variable("wx"), Variable("wy")
-    return Quantifier("∀", x, Quantifier("∃", y, Atom(R, [x, y])))
-
-
-_AX_BUILDERS = {
-    "refl": _ax_refl, "trans": _ax_trans, "sym": _ax_sym,
-    "eucl": _ax_eucl, "serial": _ax_serial,
-}
+def _frame_axiom(kind: str, relation: str):
+    """One frame axiom over ``relation``, refusing by name what has no
+    first-order form (Löb, McKinsey, Grz — the GL / S4.1 / Grz systems);
+    those need the higher-order routes, and silently dropping them would
+    search for a proof in a weaker logic than the caller named."""
+    return unguarded_frame_axiom(kind, relation, prefix="w")
 
 
 def _collect_modal_frames(nodes, alethic_system):
@@ -1278,8 +1254,15 @@ def _make_modal_checker(alethic_system: str):
                                    f"translation; rename it")
         axioms: List[Node] = []
         for rel, fclass in frames.items():
-            for kind in _FRAME_AXIOMS[fclass]:
-                axioms.append(_AX_BUILDERS[kind](rel))
+            try:
+                conds = resolve_frame(fclass)
+            except ValueError as exc:
+                return (False, f"modal: {exc}")
+            for kind in conds:
+                try:
+                    axioms.append(_frame_axiom(kind, rel))
+                except UnsupportedFrameCondition as exc:
+                    return (False, f"modal: {exc}")
         try:
             from ..fol.modal_translation import standard_translation
             st_concl = standard_translation(_desugar_falsum(formula), world="w")

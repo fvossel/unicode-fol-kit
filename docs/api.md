@@ -384,6 +384,18 @@ different formulas, so it will not choose for you. See
 
 ## Modal, temporal, epistemic & deontic logic
 
+Every modal route — the standard translation, the labelled tableau, the
+finite-frame enumerator, natural deduction, the hybrid translation and the
+higher-order embeddings — reads ONE frame table,
+{mod}`unicode_fol_kit.fol.frames`: its `FRAMES` names the systems (24 of
+them), `FRAME_CONDITIONS` describes each condition together with the axiom it
+corresponds to (a correspondence brute-forced over every frame on up to three
+worlds), and `modal_axiom` builds the schema of a named axiom, literature
+aliases included. Both registries are documented at their definition site
+below. A Scott–Lemmon spec such as `"G(1,1,1,1)"` is accepted
+wherever a frame name is. What a route cannot express soundly it refuses with
+`UnsupportedFrameCondition` rather than ignoring.
+
 ```{eval-rst}
 .. autosummary::
    :toctree: _autosummary
@@ -398,6 +410,8 @@ different formulas, so it will not choose for you. See
    qml_is_valid
    qml_equivalent
    hybrid_is_valid
+   modal_axiom
+   UnsupportedFrameCondition
    announce
    box_announce
    diamond_announce
@@ -633,6 +647,23 @@ entry point can reach it.
    :nosignatures:
 
    QML_BRIDGES
+```
+
+```{eval-rst}
+.. currentmodule:: unicode_fol_kit.fol.frames
+
+.. autosummary::
+   :toctree: _autosummary
+   :nosignatures:
+
+   FRAMES
+   FRAME_CONDITIONS
+   MODAL_AXIOMS
+   AXIOM_ALIASES
+   resolve_frame
+   geach_axiom
+   holds_on_finite_frame
+   unguarded_frame_axiom
 ```
 
 ```{eval-rst}

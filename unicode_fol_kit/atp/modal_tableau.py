@@ -85,6 +85,10 @@ from ..fol.nodes import (
 from ..fol._modal_nodes import Announce, AnnounceDiamond
 from ..fol.pal import reduce_announcements
 from ..semantics.kripke import KripkeModel, satisfies_modal
+from ..fol.frames import (
+    FRAME_CONDITIONS, FRAMES as _SHARED_FRAMES,
+    UnsupportedFrameCondition, resolve_frame, require_supported,
+)
 from .fitch import is_falsum
 
 
@@ -97,21 +101,18 @@ _BELIEVES = "B:"
 _SAYS = "Say:"
 _WANTS = "Want:"
 
-# Named modal systems as frame-condition sets (mirrors fol.qml._FRAMES, with the
-# extra non-normal-of-T members B/KB/K4/K45 that a tableau handles uniformly).
-_FRAMES = {
-    "K": (),
-    "T": ("refl",),
-    "D": ("serial",),
-    "KD": ("serial",),
-    "B": ("refl", "sym"),
-    "KB": ("sym",),
-    "K4": ("trans",),
-    "K45": ("trans", "eucl"),
-    "S4": ("refl", "trans"),
-    "S5": ("refl", "trans", "sym"),
-    "KD45": ("serial", "trans", "eucl"),
-}
+#: The named modal systems, shared with every other route
+#: (:mod:`unicode_fol_kit.fol.frames`). This tableau implements the rules for
+#: five of the conditions in that registry — reflexivity, transitivity,
+#: symmetry, seriality, euclideanness — and REFUSES the rest by name
+#: (:data:`_TABLEAU_CONDITIONS` / :func:`_check_frame`): a labelled tableau
+#: for density or partial functionality needs rules this module does not
+#: have, and quietly dropping the condition would answer about a larger
+#: frame class than the caller asked for.
+_FRAMES = _SHARED_FRAMES
+
+#: The frame conditions this tableau has sound rules for.
+_TABLEAU_CONDITIONS = frozenset({"refl", "trans", "sym", "serial", "eucl"})
 
 # Operators needing least/greatest-fixpoint (eventuality) or converse-relation
 # machinery beyond this labelled tableau — routed to satisfies_modal / Isabelle.
@@ -614,28 +615,32 @@ def _check_bridges(bridges) -> None:
 
 
 def _check_frame(frame: str, systems) -> None:
-    if frame == "GL":
-        # Not a typo the user made — a genuine scope boundary, explained like
-        # qml.py's GL rejection rather than lumped into "unknown frame".
-        raise NotImplementedError(
-            "modal_tableau: the GL (Gödel–Löb provability) frame is transitive + "
-            "converse-well-founded; converse-well-foundedness is not expressible "
-            "by this tableau's finite relational frame rules. Use the "
-            "higher-order embeddings — hol.isabelle_modal.to_isabelle_modal / "
-            "isabelle_decide_modal or hol.thf_modal.to_thf_modal_full with "
-            "frame='GL' — which emit the Löb schema directly.")
-    if frame not in _FRAMES:
-        raise ValueError(
-            f"modal_tableau: unknown frame {frame!r} (use one of {sorted(_FRAMES)}).")
+    _check_one_frame(frame)
     for fam, sys in (systems or {}).items():
         if fam not in ("epistemic", "doxastic", "deontic", "temporal"):
             raise ValueError(
                 f"modal_tableau: unknown system family {fam!r} (use epistemic / "
                 "doxastic / deontic / temporal).")
-        if sys not in _FRAMES:
-            raise ValueError(
-                f"modal_tableau: unknown system {sys!r} for {fam} "
-                f"(use one of {sorted(_FRAMES)}).")
+        _check_one_frame(sys, what=f"system {sys!r} for {fam}")
+
+
+def _check_one_frame(frame: str, what: str = "") -> None:
+    """Resolve a frame name and refuse every condition this tableau has no
+    rule for — by name, with the route that does carry it named too."""
+    try:
+        conds = resolve_frame(frame)
+    except ValueError as exc:
+        raise ValueError(f"modal_tableau: {exc}") from None
+    require_supported(
+        f"modal_tableau ({what})" if what else "modal_tableau",
+        conds, _TABLEAU_CONDITIONS,
+        hint="This labelled tableau has rules for reflexivity, transitivity, "
+             "symmetry, seriality and euclideanness only. Use the "
+             "first-order route fol.qml (Z3) for the other first-order "
+             "conditions, or the higher-order embeddings — "
+             "hol.isabelle_modal.to_isabelle_modal / isabelle_decide_modal "
+             "and hol.thf_modal.to_thf_modal_full — for the ones that are "
+             "not first-order definable at all (GL, S4.1, Grz).")
 
 
 def _run(formulas, frame: str, systems, max_worlds: int, max_steps: int,

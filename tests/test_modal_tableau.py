@@ -222,7 +222,9 @@ def test_quantified_constructs_are_opaque_literals_not_crashes():
 def test_unknown_frame_and_system_rejected():
     with pytest.raises(ValueError, match="unknown frame"):
         is_modal_valid(Box(p), frame="S99")
-    with pytest.raises(ValueError, match="unknown system"):
+    # A system name is resolved through the shared frame registry now, so an
+    # unknown one reports as an unknown FRAME (same refusal, one vocabulary).
+    with pytest.raises(ValueError, match="unknown frame"):
         is_modal_valid(Box(p), systems={"epistemic": "Z9"})
     with pytest.raises(ValueError, match="unknown system family"):
         is_modal_valid(Box(p), systems={"alethic": "S4"})

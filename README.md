@@ -93,8 +93,10 @@ print(is_valid(phi))   # True
   canonical → vocabulary-aligned → solver, with a tri-state solver level and
   partial credit), AST-level symbol alignment, gold-formula self-audit, and
   adapters for **FOLIO, MALLS, GROVES, WillowNLtoFOL, ProntoQA, ProofWriter,
-  LogicNLI and ProverQA** — each with its upstream schema verified at the source
-  and its limitations documented instead of smoothed over.
+  LogicNLI, ProverQA and FraCaS** — each with its upstream schema verified at the
+  source and its limitations documented instead of smoothed over. FraCaS is the
+  pure-NLI one: no gold formulas at all, so the translation step is an injected
+  callable and the kit only decides.
 - **Countermodels that explain themselves.** `api.countermodel` returns a
   machine-readable witness *plus* a plain-English rendering ("The countermodel has
   2 possible worlds. … At world 0 the formula fails."), and refutation actually

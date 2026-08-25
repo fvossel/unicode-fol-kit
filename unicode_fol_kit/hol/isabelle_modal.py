@@ -132,24 +132,19 @@ from unicode_fol_kit.fol.nodes import (
 )
 from unicode_fol_kit.fol._fol_nodes import constant_name_to_ascii
 from unicode_fol_kit.fol._symbol_names import SymbolNames, dedupe
+from unicode_fol_kit.fol.frames import FRAMES as _SHARED_FRAMES
 
 # --------------------------------------------------------------------------- #
 # Configuration tables (kept in sync with qml.py / satisfies_modal).
 # --------------------------------------------------------------------------- #
 
-# Frame systems for the ALETHIC relation r (mirrors qml._FRAMES).
-_FRAMES = {
-    "K": (),
-    "T": ("refl",),
-    "S4": ("refl", "trans"),
-    "S5": ("refl", "trans", "sym"),
-    "KD": ("serial",),
-    "KD45": ("serial", "trans", "eucl"),
-    "B": ("refl", "sym"),                          # Brouwer
-    "S4.2": ("refl", "trans", "directed"),         # convergent (.2)
-    "S4.3": ("refl", "trans", "connected"),        # no-branching / linear (.3)
-    "GL": ("trans", "loeb"),                       # Gödel–Löb provability (Löb schema)
-}
+# Frame systems for the ALETHIC relation r — the shared registry
+# (unicode_fol_kit.fol.frames), so this route understands the same systems as
+# every other one. Being higher-order, it is the route that CAN carry the
+# three conditions with no first-order frame condition (Löb, McKinsey, Grz):
+# it asserts the schema itself, with the proposition universally generalised.
+_FRAMES = _SHARED_FRAMES
+
 
 _ACTUALIST_MODES = frozenset({"varying", "increasing", "cumulative", "decreasing"})
 _CONSTANT_MODES = frozenset({"constant", "possibilist"})
@@ -844,6 +839,31 @@ def _frame_axioms(frame: str) -> List[str]:
     if "connected" in conds:
         out.append('axiomatization where r_conn: '
                    '"r w v \\<Longrightarrow> r w u \\<Longrightarrow> r v u \\<or> r u v"')
+    if "functional" in conds:
+        # CD: at most one successor.
+        out.append('axiomatization where r_func: '
+                   '"r w v \\<Longrightarrow> r w u \\<Longrightarrow> v = u"')
+    if "dense" in conds:
+        out.append('axiomatization where r_dense: '
+                   '"r w v \\<Longrightarrow> \\<exists>u. r w u \\<and> r u v"')
+    if "shift_refl" in conds:
+        out.append('axiomatization where r_shift_refl: '
+                   '"r w v \\<Longrightarrow> r v v"')
+    if "empty" in conds:
+        out.append('axiomatization where r_empty: "\\<not> r w v"')
+    if "mckinsey" in conds:
+        # McKinsey (.1): the schema □◇P → ◇□P, P and w schematic. There is NO
+        # first-order frame condition for it, so the schema IS the axiom —
+        # which is precisely what a higher-order route can state.
+        out.append('axiomatization where r_mckinsey: '
+                   '"(\\<forall>v. r w v \\<longrightarrow> (\\<exists>u. r v u \\<and> P u)) \\<Longrightarrow> '
+                   '(\\<exists>v. r w v \\<and> (\\<forall>u. r v u \\<longrightarrow> P u))"')
+    if "grz" in conds:
+        # Grzegorczyk: □(□(P → □P) → P) → P, P and w schematic; likewise not
+        # first-order definable.
+        out.append('axiomatization where r_grz: '
+                   '"(\\<forall>v. r w v \\<longrightarrow> ((\\<forall>u. r v u \\<longrightarrow> (P u \\<longrightarrow> '
+                   '(\\<forall>z. r u z \\<longrightarrow> P z))) \\<longrightarrow> P v)) \\<Longrightarrow> P w"')
     if "loeb" in conds:
         # Gödel–Löb provability: the Löb schema □(□P → P) → □P (P, w free, i.e.
         # universally generalised). Stated over r directly so it needs no abbreviation;
