@@ -43,6 +43,8 @@ MODES = {
     "so": {"second_order": True}, "dependence": {"dependence": True},
     "linear": {"linear": True}, "lambek": {"lambek": True},
     "modal": {"modal": True},
+    "to": {"third_order": True},
+    "tomodal": {"third_order": True, "modal": True},
 }
 
 FOLIO = [l.strip() for l in
@@ -80,9 +82,16 @@ def test_each_mode_uses_the_intended_parser(mode, kwargs):
 
 
 def test_modal_is_the_only_holdout_and_it_is_deliberate():
-    """If this ever shrinks to nothing, the mode moved and the comment in
-    msflparser.py explaining why it could not needs deleting with it."""
-    assert _EARLEY_MODES == frozenset({"modal"})
+    """Earley is kept for the modal LANGUAGE, not for two unrelated modes.
+
+    ``tomodal`` is on the list only because it is the modal operator set
+    over a widened argument layer -- it inherits the language, so it
+    inherits the reason. If this ever shrinks to nothing, the mode moved
+    and the comment in msflparser.py explaining why it could not needs
+    deleting with it; if it ever GROWS to a mode that does not carry the
+    modal operators, that is a new claim and needs its own evidence."""
+    assert _EARLEY_MODES == frozenset({"modal", "tomodal"})
+    assert all(MODES[m].get("modal") for m in _EARLEY_MODES)
 
 
 def test_modal_still_accepts_what_only_earley_reaches():

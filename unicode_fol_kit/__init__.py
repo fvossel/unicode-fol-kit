@@ -34,6 +34,7 @@ from .fol import (
     Would, Might,
     Announce, AnnounceDiamond,
     SecondOrderQuantifier,
+    PredicateTerm, Signatures, analyse_signatures, MixedSlotError,
     free_variables,
     substitute, beta_reduce, ReductionLimitError,
     eta_reduce, beta_eta_normalize,
@@ -102,6 +103,7 @@ from .semantics import (
     KripkeModel, satisfies_modal, models_at, reflexive_transitive_closure,
     kleene_value, DESIGNATED,
     satisfies_so, holds,
+    satisfies_to, holds_to,
     so_find_model, so_find_countermodel, so_is_satisfiable_finite, so_is_valid_finite,
     truth_table, TruthTable, is_tautology, is_contradiction, is_satisfiable_tt,
     find_model, find_countermodel, is_satisfiable_finite, is_valid_finite,
@@ -141,6 +143,9 @@ from .hol import (
     to_isabelle_lambek, lambek_derivation_theory,
     to_thf_matrix, to_isabelle_matrix,
     to_thf_matrix_entailment, to_isabelle_matrix_entailment,
+    to_thf_to, to_isabelle_to,
+    to_thf_ho_modal, to_isabelle_ho_modal, isabelle_ho_modal_theory,
+    HoAxiom, HoGoal, UnsupportedHigherOrderNode,
 )
 from . import dl   # the ALC description-logic subpackage (dl.concept_satisfiable, …)
 from . import comorphism   # logic-to-logic translation registry (Comorphism, …)
@@ -154,7 +159,7 @@ from . import api  # the seven-verb facade (api.parse_any / check / prove / …)
                    # namespaced on purpose: api.prove must not shadow the
                    # resolution prover's top-level `prove`
 
-__version__ = "0.26.0"
+__version__ = "0.27.0"
 
 __all__ = [
     "MSFLParser",
@@ -194,6 +199,7 @@ __all__ = [
     "Would", "Might",
     "Announce", "AnnounceDiamond",
     "SecondOrderQuantifier",
+    "PredicateTerm", "Signatures", "analyse_signatures", "MixedSlotError",
     "free_variables",
     "substitute", "beta_reduce", "ReductionLimitError",
     "eta_reduce", "beta_eta_normalize",
@@ -232,6 +238,9 @@ __all__ = [
     "to_isabelle_lambek", "lambek_derivation_theory",
     "to_thf_matrix", "to_isabelle_matrix",
     "to_thf_matrix_entailment", "to_isabelle_matrix_entailment",
+    "to_thf_to", "to_isabelle_to",
+    "to_thf_ho_modal", "to_isabelle_ho_modal", "isabelle_ho_modal_theory",
+    "HoAxiom", "HoGoal", "UnsupportedHigherOrderNode",
     "dl",
     "prob",
     "chem",
@@ -299,6 +308,7 @@ __all__ = [
     "KripkeModel", "satisfies_modal", "models_at", "reflexive_transitive_closure",
     "kleene_value", "DESIGNATED",
     "satisfies_so", "holds",
+    "satisfies_to", "holds_to",
     "so_find_model", "so_find_countermodel",
     "so_is_satisfiable_finite", "so_is_valid_finite",
     "canonicalize", "exact_match",

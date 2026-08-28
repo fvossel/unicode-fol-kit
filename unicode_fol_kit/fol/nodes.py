@@ -89,6 +89,23 @@ from ._linear_nodes import (
     Tensor, With, OPlus, LinearImplies, OfCourse, One, Top, Zero,
 )
 from ._lambek_nodes import Product, Under, Over
+# Imported LAST: _ho_nodes clones the modal and second-order parser
+# registrations into the two third-order grammar modes, so every module
+# that registers an operator for those modes -- _hybrid_nodes included --
+# has to have run first.
+from ._ho_nodes import (
+    PredicateTerm, Signatures, analyse_signatures, MixedSlotError,
+    _clone_parser_ops,
+)
+
+# The two third-order grammar modes are their base modes' operator sets over a
+# widened argument layer, so they are assembled by CLONING rather than by
+# re-registering ~40 operators that would then drift. It happens here, and
+# happens last, because it can only be correct once every module that registers
+# an operator for "modal" or "second_order" has been imported -- which, at this
+# point in this file, they all have.
+_clone_parser_ops("third_order", ["second_order"])
+_clone_parser_ops("third_order_modal", ["modal", "second_order"])
 
 __all__ = [
     "Z3Env",
@@ -115,6 +132,7 @@ __all__ = [
     "Obligatory", "Permitted",
     "Would", "Might",
     "SecondOrderQuantifier",
+    "PredicateTerm", "Signatures", "analyse_signatures", "MixedSlotError",
     "free_variables",
     "substitute", "beta_reduce", "ReductionLimitError",
     "eta_reduce", "beta_eta_normalize",

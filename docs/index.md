@@ -51,6 +51,7 @@ guide/many-valued
 guide/fuzzy
 guide/intuitionistic
 guide/second-order
+guide/third-order
 guide/description-logic
 guide/hybrid
 guide/relevant

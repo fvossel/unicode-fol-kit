@@ -11,6 +11,11 @@ from ._fol_nodes import (
     register_parser_op, _fold_binary,
 )
 from ._team_nodes import SlashedExists
+# PredicateTerm is a term-level leaf like Variable/Constant, so the shared
+# renderers and the lambda-scope resolver here have to know it by name.
+# Safe to import at module scope: _ho_nodes reaches only _fol_nodes and
+# _so_nodes at import time, and takes its own Lambda dependency lazily.
+from ._ho_nodes import PredicateTerm
 
 _logger = logging.getLogger(__name__)
 
@@ -1146,6 +1151,11 @@ def _resolve(node: Node, bound: frozenset) -> Node:
     """Top-down resolver threading the frozenset of currently lambda-bound names."""
     if isinstance(node, Variable):
         return LambdaVar(node.name) if node.name in bound else node
+    if isinstance(node, PredicateTerm):
+        # A predicate name in ARGUMENT position, under a lambda binder of
+        # the same name: the binder captures it exactly as it captures an
+        # individual variable.
+        return LambdaVar(node.name) if node.name in bound else node
     if isinstance(node, (LambdaVar, Constant, Number, SortedConstant)):
         return node
     if isinstance(node, Lambda):
@@ -1332,7 +1342,7 @@ def _uni_term(node) -> str:
     same node.
     """
     cls = type(node).__name__
-    if cls in ("Variable", "LambdaVar", "Constant"):
+    if cls in ("Variable", "LambdaVar", "Constant", "PredicateTerm"):
         return node.name
     if cls == "Number":
         return str(node.value)
@@ -1369,7 +1379,8 @@ def _uni(node) -> str:
     cls = type(node).__name__
 
     if cls in ("Variable", "LambdaVar", "Constant", "Number", "SortedConstant",
-               "Function", "Measure", "Cardinality", "SortedCardinality"):
+               "Function", "Measure", "Cardinality", "SortedCardinality",
+               "PredicateTerm"):
         return _uni_term(node)
     if cls == "Atom":
         return _uni_atom(node)
@@ -1506,7 +1517,7 @@ def _latex_level2_child(node, parent_cls: str, side: str) -> str:
 
 def _latex_term(node) -> str:
     cls = type(node).__name__
-    if cls in ("Variable", "LambdaVar", "Constant"):
+    if cls in ("Variable", "LambdaVar", "Constant", "PredicateTerm"):
         return _latex_escape(node.name)
     if cls == "Number":
         return str(node.value)
@@ -1555,7 +1566,8 @@ def _latex(node) -> str:
     cls = type(node).__name__
 
     if cls in ("Variable", "LambdaVar", "Constant", "Number", "SortedConstant",
-               "Function", "Measure", "Cardinality", "SortedCardinality"):
+               "Function", "Measure", "Cardinality", "SortedCardinality",
+               "PredicateTerm"):
         return _latex_term(node)
     if cls == "Atom":
         return _latex_atom(node)

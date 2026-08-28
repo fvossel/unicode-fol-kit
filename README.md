@@ -121,7 +121,7 @@ print(verdict.status, verdict.backend, verdict.szs_status)  # proved z3 Theorem
 
 One parser class, `MSFLParser`, has **nine modes** (classical FOL, many-sorted FOL,
 many-sorted and single-sorted Łukasiewicz fuzzy logic, modal/temporal/epistemic/deontic/
-hybrid, second-order, team-semantic dependence/IF logic, intuitionistic linear logic,
+hybrid, second-order, third-order, team-semantic dependence/IF logic, intuitionistic linear logic,
 and the Lambek calculus) selected by constructor flags, with natural Unicode surface
 syntax (`∀ ∃ ∧ ∨ ¬ → ↔ ⊕ ⊗ □ ◇ @ ⊸ 𝟙 …`) and no ASCII fallbacks.
 
@@ -186,6 +186,7 @@ as unavailable rather than silently disappearing.
 | Many-valued K3 / LP / Belnap FDE | `truth_table`, `semantics.matrix` | `matrix_is_valid` / `matrix_entails` over any finite `TruthMatrix`, incl. THF/Isabelle export |
 | Intuitionistic | `int_valid` / `int_countermodel` | propositional **decision procedure** (`int_prove`/`int_decide`, G4ip) + bounded first-order Kripke search; LJ checker |
 | Second-order | `MSFLParser(second_order=True)` | `satisfies_so`, bounded `so_is_valid_finite` / `so_find_countermodel` |
+| Third-order (incl. modal) | `MSFLParser(third_order=True[, modal=True])` | a predicate whose ARGUMENT is a property (`Pos(G)`, `Pos(λx. ¬G(x))`); slot types inferred across a theory; `to_thf_to` / `to_isabelle_to` and the shallow modal embedding `hol.ho_modal`; `hol.goedel` checks Gödel's ontological argument both ways |
 | Description logic **ALC** | `unicode_fol_kit.dl` | `concept_satisfiable` / `subsumes` / `abox_consistent` (tableau, TBox + ABox); `parse_concept`/`parse_gci` plus `concept_to_fol`/`tbox_to_fol`/`abox_to_fol` reuse the FOL provers and Isabelle/THF exports |
 | Free · public-announcement · counterfactual · circumscription | `semantics.free_logic` / `dynamic_epistemic` / `conditional` / `nonmonotonic` | `free_is_valid`/`free_entails` (bounded search); `[φ!]ψ`/`⟨φ!⟩ψ` parse in modal mode and decide via `reduce_announcements`; `cf_valid` over Lewis V / VW / VC (`centering=`, default weakly centered); `minimal_entails` and the unbounded `circumscription_entails_so` |
 | Hybrid **H(@)** (nominals, `@i φ`) | `MSFLParser(modal=True)` | `KripkeModel(nominals=…)`, `hybrid_is_valid` per frame (standard translation + Z3) |

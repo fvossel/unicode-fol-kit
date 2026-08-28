@@ -376,15 +376,16 @@ isinstance(thf, str) and "thf" in thf   # → True   (a TPTP THF problem ready f
 
 ## Composing parser modes
 
-The four core parser modes form the `many_sorted` × `fuzzy` 2×2; the **modal** and **second-order** modes are each "classical unsorted FOL + one extension" and do not combine with sorts, fuzziness, or each other. The **dependence**, **linear**, and **lambek** modes are standalone logics (their connectives and semantics replace the classical ones), so they combine with nothing. The constructor rejects an unsupported combination with a clear `ValueError`. (The matrix, ALC, intuitionistic, relevant, and peripheral logics are separate subsystems, not parser flags.)
+The four core parser modes form the `many_sorted` × `fuzzy` 2×2; the **modal** and **second-order** modes are each "classical unsorted FOL + one extension" and do not combine with sorts, fuzziness, or each other. The **third-order** mode is the one that does combine: it CONTAINS second-order syntax (and so refuses to be asked for alongside it) and takes `modal=True` on top, which is how third-order modal logic is reached. The **dependence**, **linear**, and **lambek** modes are standalone logics (their connectives and semantics replace the classical ones), so they combine with nothing. The constructor rejects an unsupported combination with a clear `ValueError`. (The matrix, ALC, intuitionistic, relevant, and peripheral logics are separate subsystems, not parser flags.)
 
-| Combine… | with sorts | with fuzzy | with modal | with second-order |
-|---|---|---|---|---|
-| **base FOL** | ✅ MSFOL | ✅ FL | ✅ modal | ✅ second-order |
-| **sorts** | — | ✅ MSFL | ❌ | ❌ |
-| **fuzzy** | ✅ MSFL | — | ❌ | ❌ |
-| **modal** | ❌ | ❌ | — | ❌ |
-| **second-order** | ❌ | ❌ | ❌ | — |
+| Combine… | with sorts | with fuzzy | with modal | with second-order | with third-order |
+|---|---|---|---|---|---|
+| **base FOL** | ✅ MSFOL | ✅ FL | ✅ modal | ✅ second-order | ✅ third-order |
+| **sorts** | — | ✅ MSFL | ❌ | ❌ | ❌ |
+| **fuzzy** | ✅ MSFL | — | ❌ | ❌ | ❌ |
+| **modal** | ❌ | ❌ | — | ❌ | ✅ third-order modal |
+| **second-order** | ❌ | ❌ | ❌ | — | ❌ (contained in it) |
+| **third-order** | ❌ | ❌ | ✅ third-order modal | ❌ (contains it) | — |
 
 ## The frontier families
 

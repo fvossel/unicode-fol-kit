@@ -36,6 +36,15 @@ Modules:
   (including Belnap–Dunn FDE) via ``to_thf_matrix`` / ``to_isabelle_matrix``.
 - :mod:`~unicode_fol_kit.hol.secondorder` — second-order logic → THF / Isabelle
   (native higher-order predicate quantification; standard semantics).
+- :mod:`~unicode_fol_kit.hol.thirdorder` — CLASSICAL third-order logic → THF /
+  Isabelle: a predicate whose argument is a property (``Positive(G)``), typed by
+  inferring each argument slot from the formulas together.
+- :mod:`~unicode_fol_kit.hol.ho_modal` — third-order MODAL logic, via the shallow
+  embedding (propositions as functions from worlds), which is the setting Gödel's
+  ontological argument is stated in.
+- :mod:`~unicode_fol_kit.hol.goedel` — that argument as the third-order machinery's
+  proving ground: Scott's version (whose conclusions AND modal collapse are proved,
+  with a Nitpick model for consistency) and Gödel's own (which proves falsity).
 - :mod:`~unicode_fol_kit.hol.intuitionistic` — intuitionistic propositional logic → HOL
   via the Gödel–McKinsey–Tarski translation into S4 then the alethic SSE.
 - :mod:`~unicode_fol_kit.hol.deepshallow` — the **deep + maximal-shallow +
@@ -68,6 +77,11 @@ from .manyvalued import (
     to_thf_matrix_entailment, to_isabelle_matrix_entailment,
 )
 from .secondorder import to_thf_so, to_isabelle_so
+from .thirdorder import to_thf_to, to_isabelle_to
+from .ho_modal import (
+    to_thf_ho_modal, to_isabelle_ho_modal, isabelle_ho_modal_theory,
+    ho_modal_definitions, HoAxiom, HoGoal, UnsupportedHigherOrderNode,
+)
 from .intuitionistic import (
     gmt_translate, to_thf_intuitionistic, to_isabelle_intuitionistic,
     gmt_is_s4_valid, gmt_validity_matches_int_valid,
@@ -97,6 +111,9 @@ __all__ = [
     "to_thf_matrix", "to_isabelle_matrix",
     "to_thf_matrix_entailment", "to_isabelle_matrix_entailment",
     "to_thf_so", "to_isabelle_so",
+    "to_thf_to", "to_isabelle_to",
+    "to_thf_ho_modal", "to_isabelle_ho_modal", "isabelle_ho_modal_theory",
+    "ho_modal_definitions", "HoAxiom", "HoGoal", "UnsupportedHigherOrderNode",
     "gmt_translate", "to_thf_intuitionistic", "to_isabelle_intuitionistic",
     "gmt_is_s4_valid", "gmt_validity_matches_int_valid",
     "modal_faithfulness_theory", "modal_to_deep",

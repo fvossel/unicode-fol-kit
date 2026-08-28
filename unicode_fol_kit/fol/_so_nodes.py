@@ -179,7 +179,14 @@ def _second_order_quantifier_transform(items):
     quant = str(items[0])
     predname = str(items[1])
     body = items[2]
-    arity = _infer_so_arity(body, predname)
+    # Imported at call time, not at module scope: _ho_nodes is defined ON TOP of
+    # this module (it imports SecondOrderQuantifier and _infer_so_arity), so the
+    # dependency only closes once both are loaded — which, by the time any
+    # formula is parsed, they are. In a second-order body infer_bound_arity IS
+    # _infer_so_arity; it differs only where a property actually stands in an
+    # argument slot, which the second-order grammar cannot even express.
+    from ._ho_nodes import infer_bound_arity
+    arity = infer_bound_arity(body, predname)
     return SecondOrderQuantifier(quant, predname, arity, body)
 
 

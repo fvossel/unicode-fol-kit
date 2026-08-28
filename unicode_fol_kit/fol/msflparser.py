@@ -13,6 +13,9 @@ from ._fol_nodes import (
 )
 from ._modal_nodes import resolve_agent_variables
 from ._so_nodes import ConflictingArityError  # re-exported for callers/tests
+from ._ho_nodes import (  # PredicateTerm/MixedSlotError re-exported for callers
+    PredicateTerm, MixedSlotError, analyse_signatures,
+)
 from .naming import NamingError, ParsingError
 from .spans import (
     SpannedFormula,
@@ -114,6 +117,17 @@ class LambdaTransformer(FOLTransformer):
     _fol_nodes.py to avoid a circular import.
     """
 
+    def pred_arg_(self, items):
+        """Build a PredicateTerm from a PREDICATE token in ARGUMENT position.
+
+        Only the third-order modes' ``hoarg`` rule reaches this (see
+        ``_MODE_ATOM_EXTRA`` in _fol_nodes.py); in every other mode a predicate
+        name cannot appear as an argument at all. It lives here rather than on
+        FOLTransformer for the same reason ``lambda_`` does: PredicateTerm is
+        defined downstream of _fol_nodes.py.
+        """
+        return PredicateTerm(str(items[0]))
+
     def lambda_(self, items):
         # Grammar: LAMBDA (VARIABLE | NAME | PREDICATE) "." formula
         # LAMBDA is a named terminal, so it appears as items[0] (raw Token).
@@ -170,6 +184,7 @@ class LambdaTransformer(FOLTransformer):
 _REGISTRY_MODE = {
     "fol": "fol", "msfol": "msfol", "msfl": "msfl", "fl": "fl",
     "modal": "modal", "so": "second_order",
+    "to": "third_order", "tomodal": "third_order_modal",
     "dependence": "dependence", "linear": "linear", "lambek": "lambek",
 }
 
@@ -195,7 +210,20 @@ _PARSER_CACHE: dict = {}
 # only through Earley's willingness to explore, so moving that mode would be a
 # silent narrowing of the language, not a speedup. It stays until the grammar
 # says what it means there.
-_EARLEY_MODES = frozenset({"modal"})
+# ``tomodal`` inherits the modal mode's operators wholesale, so it inherits
+# the reason too. ``to`` (classical third order) does not, and parses with
+# LALR like the second-order mode it extends.
+_EARLEY_MODES = frozenset({"modal", "tomodal"})
+
+
+# Modes carrying the agent-indexed epistemic/doxastic operators, whose free
+# agent variables are resolved to named agents after the parse.
+_AGENT_MODES = frozenset({"modal", "tomodal"})
+
+# The third-order modes, whose formulas are TYPE-CHECKED after the parse:
+# an argument slot holds an individual or a property, never both, and only
+# these modes can express the difference in the first place.
+_THIRD_ORDER_MODES = frozenset({"to", "tomodal"})
 
 
 def _parser_kind(mode: str) -> str:
@@ -604,6 +632,15 @@ class MSFLParser:
             is an uppercase PREDICATE; the bound predicate's arity is inferred
             from its applications in the body). Cannot be combined with
             many_sorted, fuzzy, or modal in v1.
+        third_order: if True, parse second-order syntax extended with predicates
+            in ARGUMENT position — ``Positive(G)``, ``Essence(G, x)``,
+            ``Positive(λx. ¬G(x))``, which parse to an Atom over a
+            :class:`~unicode_fol_kit.fol.nodes.PredicateTerm` or a Lambda. This
+            is the level second-order quantification cannot reach, since it is a
+            change to the argument layer rather than another binder. Combines
+            with ``modal=True`` (third-order modal logic — the setting Gödel's
+            ontological argument is stated in); not with ``second_order`` (which
+            it contains), ``many_sorted`` or ``fuzzy``.
         dependence: if True, parse the team-semantic dependence/IF fragment —
             literals, ∧, splitting ∨, ∀/∃, dependence atoms ``=(x, y)``, and
             slashed existentials ``∃y/{x} φ``. Standalone (no other flag).
@@ -619,6 +656,8 @@ class MSFLParser:
         (False, True)  → FL:    Łukasiewicz operators, unsorted quantifiers/constants
         modal=True        → MODAL: classical unsorted FOL + modal/temporal/hybrid operators
         second_order=True → SO:    classical unsorted FOL + second-order quantifiers (∀P / ∃P)
+        third_order=True  → TO:    SO + predicates in argument position (Positive(G))
+        third_order+modal → TOM:   TO + the modal operator family
         dependence=True   → DEP:   team-semantic dependence/IF fragment
         linear=True       → ILL:   propositional intuitionistic linear logic
         lambek=True       → L:     Lambek-calculus category types
@@ -626,13 +665,14 @@ class MSFLParser:
 
     def __init__(self, many_sorted: bool = False, fuzzy: bool = False,
                  modal: bool = False, second_order: bool = False,
+                 third_order: bool = False,
                  dependence: bool = False, linear: bool = False,
                  lambek: bool = False):
         _exclusive = [name for name, flag in (
             ("dependence", dependence), ("linear", linear), ("lambek", lambek),
         ) if flag]
         if _exclusive and (many_sorted or fuzzy or modal or second_order
-                           or len(_exclusive) > 1):
+                           or third_order or len(_exclusive) > 1):
             raise ValueError(
                 f"{_exclusive[0]}=True cannot be combined with any other mode "
                 "flag; the dependence / linear / lambek modes are standalone "
@@ -644,12 +684,24 @@ class MSFLParser:
             self._mode = "linear"
         elif lambek:
             self._mode = "lambek"
+        elif third_order:
+            if many_sorted or fuzzy or second_order:
+                raise ValueError(
+                    "third_order=True cannot be combined with many_sorted, fuzzy, "
+                    "or second_order; third-order mode already CONTAINS "
+                    "second-order syntax (∀P / ∃P) and adds predicates in "
+                    "argument position on top of it. Combine it with modal=True "
+                    "for third-order modal logic."
+                )
+            self._mode = "tomodal" if modal else "to"
         elif second_order:
             if many_sorted or fuzzy or modal:
                 raise ValueError(
                     "second_order=True cannot be combined with many_sorted, fuzzy, "
                     "or modal in v1; second-order mode is classical unsorted FOL "
-                    "plus second-order quantifiers over predicate variables."
+                    "plus second-order quantifiers over predicate variables. Use "
+                    "third_order=True (optionally with modal=True) for the mode "
+                    "that does combine them."
                 )
             self._mode = "so"
         elif modal:
@@ -783,10 +835,16 @@ class MSFLParser:
             tree = self.parser.parse(text)
             ast = self._transformer.transform(tree)
             ast = resolve_lambda_scope(ast)
-            if self._mode == "modal":
+            if self._mode in _AGENT_MODES:
                 # A free epistemic/doxastic agent variable (K_a) denotes a named agent;
                 # only an agent bound by an enclosing quantifier stays a variable.
                 ast = resolve_agent_variables(ast)
+            if self._mode in _THIRD_ORDER_MODES:
+                # Well-typedness of the argument layer is a parse-time
+                # question here: the grammar admits both an individual and
+                # a property in the same slot, and only the signature
+                # analysis can see that one predicate got both.
+                analyse_signatures([ast])
             return ast
         except UnexpectedCharacters as e:
             raise NamingError(self.parser, e, text, mode=self._mode)
@@ -840,10 +898,12 @@ class MSFLParser:
             spans = build_span_map(pre_ast, id_extent, id_head)
             ast = resolve_lambda_scope(pre_ast)
             spans = project_spans(pre_ast, ast, spans)
-            if self._mode == "modal":
+            if self._mode in _AGENT_MODES:
                 post_ast = resolve_agent_variables(ast)
                 spans = project_spans(ast, post_ast, spans)
                 ast = post_ast
+            if self._mode in _THIRD_ORDER_MODES:
+                analyse_signatures([ast])
             return SpannedFormula(ast, spans)
         except UnexpectedCharacters as e:
             raise NamingError(self.parser, e, text, mode=self._mode)

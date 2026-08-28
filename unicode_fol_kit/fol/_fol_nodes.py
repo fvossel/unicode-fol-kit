@@ -1527,6 +1527,7 @@ _VALID_PARSE_LEVELS = frozenset({
 })
 
 _VALID_MODES = frozenset({"fol", "msfol", "msfl", "fl", "modal", "second_order",
+                          "higher_order",
                           "dependence", "linear", "lambek"})
 
 
@@ -1672,8 +1673,9 @@ _BASE_GRAMMAR_TEMPLATE = '''\
 ?quantifier: %%QUANT_OPS%%
 
 ?atom: infix_predicate
-     | PREDICATE "(" termlist ")"           -> atom_
+     | PREDICATE "(" %%ATOM_ARGS%% ")"           -> atom_
      | PREDICATE                            -> atom0_
+%%ATOM_EXTRA%%
 
 ?infix_predicate: term "<"  term            -> lt_
                 | term ">"  term            -> gt_
@@ -1739,6 +1741,8 @@ _MODE_TERMINAL_IMPORTS = {
     "fl":    "NUMBER, FORALL, EXISTS, LAMBDA",
     "modal": "NUMBER, FORALL, EXISTS, LAMBDA",
     "second_order": "NUMBER, FORALL, EXISTS, LAMBDA",
+    "third_order": "NUMBER, FORALL, EXISTS, LAMBDA",
+    "third_order_modal": "NUMBER, FORALL, EXISTS, LAMBDA",
     "dependence": "NUMBER, FORALL, EXISTS, LAMBDA",
     "linear": "NUMBER, FORALL, EXISTS, LAMBDA",
     "lambek": "NUMBER, FORALL, EXISTS, LAMBDA",
@@ -1774,7 +1778,43 @@ _MODE_TERM_EXTRA = {
     "fol": _TERM_EXTRA_CLASSICAL,
     "modal": _TERM_EXTRA_CLASSICAL,
     "second_order": _TERM_EXTRA_CLASSICAL,
+    "third_order": _TERM_EXTRA_CLASSICAL,
+    "third_order_modal": _TERM_EXTRA_CLASSICAL,
     "msfol": _TERM_EXTRA_SORTED,
+}
+
+
+# Per-mode ARGUMENT layer for a predicate application. Every mode but the
+# third-order ones takes an ordinary ``termlist``: a predicate's arguments
+# are INDIVIDUALS, so ``P(x)`` is the whole story and a predicate name in
+# argument position is a syntax error — which is exactly right for first-
+# and second-order syntax, where ``∀P φ`` binds P as the HEAD of an
+# application and never as an argument of one.
+#
+# The third-order modes widen that one position, and only that one: an
+# argument may also be a PREDICATE name or a λ-abstraction, i.e. a PROPERTY.
+# That is the whole syntactic content of "third order" — a predicate whose
+# argument is itself a predicate (``Positive(G)``, ``Essence(G, x)``,
+# ``Positive(λx. ¬G(x))``) — and it is why the level is not reachable by
+# adding another quantifier to second-order syntax. The matching handlers are
+# ``FOLTransformer.hoarglist`` (returns the argument list, exactly like
+# ``termlist``) and ``LambdaTransformer.pred_arg_`` (builds the PredicateTerm;
+# that one lives in msflparser.py because PredicateTerm is defined downstream
+# of this module).
+_MODE_ATOM_ARGS = {
+    "third_order": "hoarglist",
+    "third_order_modal": "hoarglist",
+}
+_ATOM_EXTRA_THIRD_ORDER = (
+    'hoarglist: hoarg ("," hoarg)*\n'
+    '\n'
+    '?hoarg: term\n'
+    '      | PREDICATE                            -> pred_arg_\n'
+    '      | lambda_'
+)
+_MODE_ATOM_EXTRA = {
+    "third_order": _ATOM_EXTRA_THIRD_ORDER,
+    "third_order_modal": _ATOM_EXTRA_THIRD_ORDER,
 }
 
 
@@ -1880,6 +1920,12 @@ def build_grammar(mode: str) -> str:
     grammar = grammar.replace("%%QUANT_OPS%%", quant_ops)
     grammar = grammar.replace("%%CONST_ALTS%%", const_alts)
     grammar = grammar.replace("%%TERM_EXTRA%%\n", (term_extra + "\n") if term_extra else "")
+    # The predicate-application argument layer: ``termlist`` (individuals
+    # only) for every mode but the third-order ones, which widen it to
+    # ``hoarglist`` and bring the two extra rules along with it.
+    grammar = grammar.replace("%%ATOM_ARGS%%", _MODE_ATOM_ARGS.get(mode, "termlist"))
+    atom_extra = _MODE_ATOM_EXTRA.get(mode, "")
+    grammar = grammar.replace("%%ATOM_EXTRA%%\n", (atom_extra + "\n") if atom_extra else "")
     return grammar
 
 
@@ -1978,6 +2024,18 @@ class FOLTransformer(Transformer):
 
     def termlist(self, items):
         """Transform term list."""
+        return items
+
+    def hoarglist(self, items):
+        """Transform a third-order argument list (individuals and/or properties).
+
+        The third-order modes' counterpart to :meth:`termlist`: same contract
+        (return the argument list for ``atom_`` to consume), but an entry may
+        be a PredicateTerm or a Lambda as well as an ordinary term. Unlike
+        ``?termlist`` this rule is NOT inlined by lark, so a one-argument
+        application arrives here as a one-element list rather than as a bare
+        node — ``atom_`` accepts either.
+        """
         return items
 
     def infix_predicate(self, items):

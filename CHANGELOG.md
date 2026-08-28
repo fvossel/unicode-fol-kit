@@ -5,6 +5,120 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/). Versioning is
 semantic, but the project is pre-1.0 (alpha): a **minor** release may contain
 breaking changes.
 
+## [0.27.0] - 2026-08-28
+
+### Third order: a predicate whose argument is a predicate
+
+Second-order syntax binds a predicate variable and then only ever APPLIES it.
+Third-order syntax puts one in ARGUMENT position — `Positive(G)`,
+`Essence(G, x)`, `Positive(λx. ¬G(x))` — which is a change to the argument
+layer, not another binder, and is why no amount of extra quantification reaches
+it. `MSFLParser(third_order=True)` parses that, and with `modal=True` on top,
+third-order MODAL logic. Both are their base modes over the widened slot: the
+classical one accepts exactly what `second_order` accepts plus predicate
+arguments, the modal one exactly what `modal` accepts plus both, and they are
+assembled by CLONING their base modes' operator registrations rather than
+re-declaring forty of them that would then drift apart — pinned by a test that
+compares the two operator sets outright.
+
+The new node is `PredicateTerm`, and it is deliberately NOT a nullary `Atom`:
+`Atom("G", [])` is the proposition G, `PredicateTerm("G")` is the property G,
+and conflating them is exactly the type error the third order exists to make
+visible. Every first-order back-end refuses it by name, as second-order
+quantification already did.
+
+**Types are inferred, across a theory rather than a formula.** Nothing in the
+surface syntax says whether a slot holds an individual or a property of arity
+k, and `Positive(G)` alone cannot say — but `Positive(G)` together with `G(x)`
+in another axiom of the same set does. `analyse_signatures` collects the
+constraints (an application fixes its head's arity, a λ-argument fixes its
+slot's by binder depth, a predicate in a slot links its arity to that slot's)
+and closes them under propagation, with bound predicate variables renamed apart
+first so two locally-bound `P`s are never mistaken for one symbol. Two failures
+are raised rather than papered over: a predicate applied at two arities, and
+`MixedSlotError` for a slot used once for an individual and once for a property
+(`Loves(x, y) ∧ Loves(x, G)`), which is checked at parse time. One case is
+defaulted and REPORTED: a property slot no evidence reaches gets arity 1 — the
+only reading on which such a formula says what it plainly means, where arity 0
+would silently retype it as a predicate over propositions — and which slots
+were guessed comes back in `Signatures.defaulted` and is printed as a comment
+in every emitted theory.
+
+`api.parse_any` tries the CLASSICAL third-order mode at the end of its ladder,
+after `fol`, `modal` and `second_order`. It is served by the same LALR table as
+`second_order`, so the only inputs it newly accepts are the ones with a
+predicate really standing in an argument slot — nothing previously detected as
+something else moves. The MODAL third-order mode is deliberately left off the
+ladder: it inherits `modal`'s Earley table, and with a second-order binder also
+available `∀ P(x)` parses there as a quantifier over the propositional atom `x`
+rather than failing as the malformed quantifier every other dialect reports,
+which is precisely the agreement the repair and error-routing machinery reads.
+
+`hol.thirdorder` exports the classical case (`to_thf_to`, `to_isabelle_to`);
+`hol.ho_modal` the modal one, through the shallow embedding the rest of the
+package uses — propositions as functions from worlds, `mall`/`mex` polymorphic
+so ONE pair of binders serves individual and property quantification and the
+orders are distinguished by the type at the binder. Its lifted vocabulary is
+emitted as Isabelle `abbreviation`s rather than `definition`s on purpose: an
+abbreviation is unfolded by the parser, so the automation sees through the
+embedding instead of having to unfold it first. Frame systems come from
+`fol.frames`, so a name means here what it means on the other six routes; a
+frame with no first-order condition (GL, S4.1, Grz) and every non-alethic modal
+family are refused BY NAME rather than dropped, since the parser accepts `K_a`
+for the same AST reason and a silently ignored operator would produce a theory
+that proves something else.
+
+### `hol.goedel` — Gödel's ontological argument, both readings, machine-checked
+
+The argument is the standard worked example of third-order modal logic because
+it cannot be stated in less, which makes it the sharpest available test of all
+of the above: the axioms are written in the kit's own Unicode syntax, exported
+by the kit's own emitter, and discharged by Isabelle, with nothing
+special-cased anywhere.
+
+Two variants, ONE conjunct apart — Scott's `Ess(P,x) ↔ P(x) ∧ …` against
+Gödel's own `Ess(P,x) ↔ …`. Under Scott's reading the emitted theory discharges
+`T1`, `C`, `T2` and `T3` (necessarily, a God-like being exists) and also `MC`,
+**modal collapse**: `φ → □φ` for every proposition, the argument's best-known
+and least comfortable consequence. It then runs Nitpick, which finds a genuine
+model — so those theorems hold because they FOLLOW, not because the axioms
+prove everything. Under Gödel's own reading the theory proves `False`: without
+the `P(x)` conjunct the empty property is vacuously an essence of every
+individual, and necessary existence then demands it be instantiated. The
+control sits on the other side, where `Ess(P, x) → P(x)` is provable and hence
+the empty property is an essence of NOTHING. Both check in about ten seconds on
+a local Isabelle (`tests/test_goedel.py`, marked `isabelle_live`).
+
+The Isar proofs are written out by hand and shipped as data; the kit emits the
+theory and hands it over. Nothing searches for a proof and nothing claims a
+result the caller has not run — which is also why the proofs are structured
+rather than one-line automation calls: at this order the one-liners do not
+finish, and a proof that takes ten minutes to not finish is not a check.
+
+### `semantics.thirdorder` — finite models, where an argument can be a property
+
+The counterpart of `satisfies_so` one level up, and the reason it is a separate
+evaluator rather than a flag: at second order a bound predicate variable is
+fully described by its ARITY, and at third order it is not. `Positive` and `G`
+can both have arity 1 and mean entirely different things, because `G`'s slot
+holds an individual and `Positive`'s holds a property. So `satisfies_to`
+enumerates over each bound symbol's SIGNATURE — from the same
+`analyse_signatures` the exporters use — and a λ in argument position is
+evaluated to its EXTENSION, which is the one place a λ has a reading here.
+
+That it is a CONSERVATIVE extension is checked rather than asserted: on a
+second-order formula `satisfies_to` and `satisfies_so` return the same verdict
+in every structure over a two-element domain, exhaustively, not on samples.
+
+The cost is not where the syntax suggests. A property variable is cheap
+(`2 ** n` interpretations — 32 on a five-element domain); a predicate OF
+properties is `2 ** (2 ** n)`: 16 for n = 2, 256 for 3, 65 536 for 4, about
+4·10⁹ for 5. `interpretation_count` gives that number without enumerating
+anything and `MAX_INTERPRETATIONS` refuses past roughly a million with a clear
+error rather than hanging. Beyond that, Nitpick through `check_theory` is what
+finds finite models at this order — which is exactly what the Gödel consistency
+check uses.
+
 ## [0.26.0] - 2026-08-25
 
 ### `fol.frames` — one modal frame table for six routes, correspondences checked

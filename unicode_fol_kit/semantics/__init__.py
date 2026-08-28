@@ -9,6 +9,12 @@ Two complementary evaluators:
   for sentences): the same Tarskian satisfaction extended with ∀P / ∃P over
   predicate variables, by brute-force enumeration of relations on a small finite
   domain.
+- **Third-order** finite-model semantics :func:`satisfies_to` (and
+  :func:`holds_to`): the level where an ARGUMENT can be a property —
+  ``Positive(G)``, ``Positive(λx. ¬G(x))`` — and a quantifier can range over
+  predicates OF properties. It enumerates over each bound symbol's argument
+  SIGNATURE rather than its arity, since at this level arity no longer says what
+  a predicate is.
 - The **Łukasiewicz fuzzy** evaluator :func:`evaluate`, which computes the truth
   degree in [0, 1] of an FL/MSFL formula under a valuation.
 """
@@ -17,6 +23,9 @@ from .tarski import Structure, term_value, satisfies, models
 from .secondorder import (
     satisfies_so, holds,
     so_find_model, so_find_countermodel, so_is_satisfiable_finite, so_is_valid_finite,
+)
+from .thirdorder import (
+    satisfies_to, holds_to, slot_values, all_interpretations, interpretation_count,
 )
 from .fuzzy import evaluate, ground_quantifiers
 from .tnorm import TNorm, get_tnorm, TNORMS, LUKASIEWICZ, GODEL, PRODUCT
@@ -78,6 +87,8 @@ __all__ = [
     "BudgetExhausted", "UninterpretedSymbol", "UnsupportedNode",
     # Second-order finite-model semantics (∀P / ∃P over predicate variables).
     "satisfies_so", "holds",
+    "satisfies_to", "holds_to",
+    "slot_values", "all_interpretations", "interpretation_count",
     "so_find_model", "so_find_countermodel",
     "so_is_satisfiable_finite", "so_is_valid_finite",
     "evaluate", "ground_quantifiers",

@@ -60,6 +60,19 @@ _UNICODE_MODES: Tuple[Tuple[str, dict], ...] = (
     ("fol", {}),
     ("modal", {"modal": True}),
     ("second_order", {"second_order": True}),
+    # Second-order syntax plus predicates in argument position, and NOTHING
+    # else: it is served by the same LALR table as the mode above it, so the
+    # only inputs it newly accepts are the ones with a predicate really standing
+    # in an argument slot -- which no mode above can express.
+    #
+    # Its MODAL sibling is deliberately NOT on the ladder. That one is served by
+    # Earley (inherited from `modal`, which needs it), and Earley reaches
+    # readings LALR does not: with a second-order binder available, "∀ P(x)" parses
+    # as a quantifier over the propositional atom `x` instead of failing. Every
+    # other dialect reports that string as the malformed quantifier it is, and
+    # the repair / error-routing machinery depends on their agreeing. Reach the
+    # mode explicitly with MSFLParser(third_order=True, modal=True).
+    ("third_order", {"third_order": True}),
     ("dependence", {"dependence": True}),
     ("msfol", {"many_sorted": True}),
     ("msfl", {"many_sorted": True, "fuzzy": True}),

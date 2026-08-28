@@ -151,7 +151,7 @@ there. Two deliberate exceptions:
    Permitted
 ```
 
-## AST: conditional, dynamic-epistemic, hybrid and second-order
+## AST: conditional, dynamic-epistemic, hybrid and higher-order
 
 ```{eval-rst}
 .. autosummary::
@@ -167,6 +167,24 @@ there. Two deliberate exceptions:
    Dependence
    SlashedExists
    SecondOrderQuantifier
+   PredicateTerm
+```
+
+`SecondOrderQuantifier` binds a predicate variable; `PredicateTerm` is the step
+above it — a predicate standing in ARGUMENT position, which is what makes a
+formula third-order. What each argument slot holds is not in the surface syntax
+and is inferred across a whole theory by `analyse_signatures`, which returns a
+`Signatures` and raises `MixedSlotError` for a slot used once for an individual
+and once for a property.
+
+```{eval-rst}
+.. autosummary::
+   :toctree: _autosummary
+   :nosignatures:
+
+   analyse_signatures
+   Signatures
+   MixedSlotError
 ```
 
 ## AST: substructural and many-valued connectives
@@ -483,6 +501,8 @@ wherever a frame name is. What a route cannot express soundly it refuses with
    MAX_TEAM_SEARCH
    dependence_to_eso
    satisfies_so
+   satisfies_to
+   holds_to
    so_find_model
    so_find_countermodel
    so_is_satisfiable_finite
@@ -637,6 +657,24 @@ entry point can reach it.
    :nosignatures:
 
    DEFAULT_MAX_WORLDS
+```
+
+The third-order evaluator ranges over each bound symbol's argument SIGNATURE
+rather than its arity, so what one slot can hold is its own question:
+`slot_values` answers it, `all_interpretations` yields every interpretation of a
+signature, and `interpretation_count` says how many there would be without
+enumerating any.
+
+```{eval-rst}
+.. currentmodule:: unicode_fol_kit.semantics.thirdorder
+
+.. autosummary::
+   :toctree: _autosummary
+   :nosignatures:
+
+   slot_values
+   all_interpretations
+   interpretation_count
 ```
 
 ```{eval-rst}
@@ -1053,6 +1091,15 @@ expressible as ACE?" verdict.
    to_isabelle_msfol
    to_thf_so
    to_isabelle_so
+   to_thf_to
+   to_isabelle_to
+   to_thf_ho_modal
+   to_isabelle_ho_modal
+   isabelle_ho_modal_theory
+   ho_modal_definitions
+   HoAxiom
+   HoGoal
+   UnsupportedHigherOrderNode
    to_thf_k3lp
    to_isabelle_k3lp
    to_thf_k3lp_entailment
