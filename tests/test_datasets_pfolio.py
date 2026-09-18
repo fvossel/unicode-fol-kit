@@ -355,6 +355,59 @@ def test_a_short_row_is_refused_by_name(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Line-break convention: a CRLF copy reads exactly like an LF copy
+# ---------------------------------------------------------------------------
+
+def _with_line_breaks(tmp_path, source, name, newline):
+    """``source`` with EVERY line break (row terminators and the ones inside
+    quoted cells alike) rewritten to ``newline`` — independent of how git
+    happened to check the fixture out."""
+    text = source.read_bytes().decode("utf-8")
+    text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", newline)
+    path = tmp_path / name
+    path.write_bytes(text.encode("utf-8"))
+    return path
+
+
+@pytest.mark.parametrize("newline", ["\r\n", "\r"])
+def test_a_crlf_copy_of_both_files_loads_exactly_like_the_lf_copy(tmp_path, newline):
+    # Found on the Windows CI leg: a git checkout with core.autocrlf turned
+    # the fixture's in-cell line breaks into \r\n, and every premise came out
+    # as "All ravens are black.\r". The LF copy is the reference; the CRLF
+    # (and bare-CR) copy must give equal examples, refusals included.
+    lf_p = _with_line_breaks(tmp_path, _PFOLIO, "p_lf.csv", "\n")
+    lf_f = _with_line_breaks(tmp_path, _FOLIO, "f_lf.csv", "\n")
+    other_p = _with_line_breaks(tmp_path, _PFOLIO, "p_other.csv", newline)
+    other_f = _with_line_breaks(tmp_path, _FOLIO, "f_other.csv", newline)
+    assert b"\r" not in lf_f.read_bytes()
+    assert newline.encode() in other_f.read_bytes()
+
+    reference = list(load_pfolio(lf_p, lf_f, on_refused="skip"))
+    assert [e.id for e in reference] == [e.id for e in _examples()]
+    assert list(load_pfolio(other_p, other_f, on_refused="skip")) == reference
+    assert pfolio_refusals(other_p, other_f) == pfolio_refusals(lf_p, lf_f)
+
+
+def test_a_crlf_line_break_inside_a_folio_cell_is_a_plain_line_break(tmp_path):
+    # Hand-built: one story, two premises and two conclusions, every in-cell
+    # break written as \r\n. No "\r" may survive into any field.
+    folio = _write_folio(tmp_path, [[
+        "0", "All ravens are black.\r\nRook is a raven.",
+        "Rook is black.\r\nRook is white.", "T\r\nF",
+        "∀x (Raven(x) → Black(x))\r\nRaven(rook)",
+        "Black(rook)\r\nWhite(rook)", "first\r\nsecond", "",
+    ]])
+    pfolio = _write_pfolio(tmp_path, [["0", "T", "", "", "", "", ""],
+                                      ["0", "F", "", "", "", "", ""]])
+    examples = list(load_pfolio(pfolio, folio, on_refused="skip"))
+    assert [e.nl_premises for e in examples] == [
+        ("All ravens are black.", "Rook is a raven.")] * 2
+    assert [e.nl_conclusion for e in examples] == ["Rook is black.", "Rook is white."]
+    assert [e.meta["folio_comments"] for e in examples] == ["first\nsecond"] * 2
+    assert not any("\r" in repr(e) for e in examples)
+
+
+# ---------------------------------------------------------------------------
 # The real, access-gated files -- opt-in only
 # ---------------------------------------------------------------------------
 

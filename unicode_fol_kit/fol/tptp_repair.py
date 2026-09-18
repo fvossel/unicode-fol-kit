@@ -718,7 +718,7 @@ def _skip_ws_and_comments(text: str, i: int) -> int:
         if c.isspace():
             i += 1
         elif c == "%":
-            while i < n and text[i] != "\n":
+            while i < n and text[i] not in "\r\n":
                 i += 1
         elif text[i:i + 2] == "/*":
             end = text.find("*/", i + 2)
@@ -761,7 +761,7 @@ def _depth_zero_stop(text: str, i: int, n: int, stop_at_comma: bool = False) -> 
             m += 1
             continue
         if c == "%":
-            while m < n and text[m] != "\n":
+            while m < n and text[m] not in "\r\n":
                 m += 1
             continue
         if text[m:m + 2] == "/*":

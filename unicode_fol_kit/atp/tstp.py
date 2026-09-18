@@ -93,7 +93,9 @@ __all__ = [
 # status line lacking the problem name still yields its value. The comment
 # marker set is [%#]: Vampire/Zipperposition print "% SZS status ...",
 # E prints "# SZS status ..." (E's TSTP comments use '#').
-_SZS_LINE_RE = re.compile(r"(?m)^[ \t]*[%#]+[ \t]*SZS\s+status\s+(\S+)")
+# A line starts at the text start or after ANY line break; (?m)^ alone only
+# knows LF, so a bare-CR transcript would hide its status line.
+_SZS_LINE_RE = re.compile(r"(?m)(?:^|(?<=\r))[ \t]*[%#]+[ \t]*SZS\s+status\s+(\S+)")
 
 
 def extract_szs_status(output: str) -> Optional[str]:
@@ -309,12 +311,17 @@ _OPEN = "(["
 _CLOSE = ")]"
 
 
+# A '%' comment ends at the first line break of ANY convention: text handed
+# over as a string (not read through a text-mode file) may use bare CR.
+_LINE_BREAK_RE = re.compile(r"\r\n?|\n")
+
+
 def _skip_comment(text: str, i: int, n: int) -> int:
     """If ``text[i:]`` starts a ``%`` line comment or ``/* */`` block comment,
     return the index just past it; otherwise return ``i`` unchanged."""
     if text[i] == "%":
-        j = text.find("\n", i)
-        return n if j == -1 else j + 1
+        m = _LINE_BREAK_RE.search(text, i)
+        return n if m is None else m.end()
     if text.startswith("/*", i):
         j = text.find("*/", i + 2)
         return n if j == -1 else j + 2

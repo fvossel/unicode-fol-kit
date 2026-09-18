@@ -586,6 +586,11 @@ def _split_respecting_quotes(s: str, lineno: int) -> List[str]:
     return tokens
 
 
+# Any line-break convention: a document handed over as a string may use CRLF
+# or a bare CR, and a bare-CR one would otherwise be ONE line, its nesting lost.
+_LINE_BREAK_RE = re.compile(r"\r\n?|\n")
+
+
 def _split_sbn_lines(text: str) -> List[Tuple[str, int, str]]:
     """Pass 1: strip comments (a PMB ``%%%``-prefixed generation-command header is just
     another ``%...`` comment under this rule) and blank lines. Returns ``(content,
@@ -595,7 +600,7 @@ def _split_sbn_lines(text: str) -> List[Tuple[str, int, str]]:
     :func:`_uses_connector_dialect` once the whole document has been split), so it is
     NOT validated here."""
     out: List[Tuple[str, int, str]] = []
-    for lineno, raw in enumerate(text.split("\n"), start=1):
+    for lineno, raw in enumerate(_LINE_BREAK_RE.split(text), start=1):
         line = raw.split("%", 1)[0]
         if not line.strip():
             continue

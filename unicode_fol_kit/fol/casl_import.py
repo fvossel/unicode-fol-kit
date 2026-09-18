@@ -272,10 +272,10 @@ _Token = namedtuple("_Token", "kind value line")
 # IFF before LT (both start with '<'), IMPLIES before EQ (both start with
 # '='), COMMENT before PERCENT_WORD (both start with '%').
 _TOKEN_SPEC = [
-    ("COMMENT", r"%%[^\n]*"),
+    ("COMMENT", r"%%[^\r\n]*"),
     ("PERCENT_WORD", r"%\S*"),
-    ("NEWLINE", r"\n"),
-    ("WS", r"[ \t\r]+"),
+    ("NEWLINE", r"\r\n?|\n"),
+    ("WS", r"[ \t]+"),
     ("ARROW_PARTIAL", r"->\?"),
     ("ARROW", r"->"),
     ("IFF", r"<=>"),

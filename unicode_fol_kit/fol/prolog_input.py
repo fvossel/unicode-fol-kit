@@ -146,6 +146,18 @@ _TOKEN_RE = re.compile(r"""
 """, re.VERBOSE)
 
 
+_LINE_BREAK_RE = re.compile(r"\r\n?|\n")
+
+
+def _past_line_comment(text: str, index: int) -> int:
+    """The index just past the '%' line comment starting at ``index``: past
+    the first line break of ANY convention (LF, CRLF or a bare CR -- text
+    handed over as a string, e.g. a learner's hypothesis, may use any), or
+    the end of ``text``."""
+    match = _LINE_BREAK_RE.search(text, index)
+    return len(text) if match is None else match.end()
+
+
 class _Reader:
     """Position-tracking token cursor over one clause's text."""
 
@@ -158,8 +170,7 @@ class _Reader:
                 index += 1
                 continue
             if text[index] == "%":                      # line comment
-                end = text.find("\n", index)
-                index = len(text) if end < 0 else end + 1
+                index = _past_line_comment(text, index)
                 continue
             match = _TOKEN_RE.match(text, index)
             if match is None:                           # pragma: no cover
@@ -461,8 +472,7 @@ def _split_clauses(text: str) -> List[str]:
             index += 1
             continue
         if character == "%":
-            end = text.find("\n", index)
-            index = len(text) if end < 0 else end + 1
+            index = _past_line_comment(text, index)
             continue
         if character == ".":
             following = text[index + 1] if index + 1 < len(text) else " "

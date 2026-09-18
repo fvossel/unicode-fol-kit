@@ -479,7 +479,8 @@ def _parse_qmltp_header(text: str) -> QmltpHeader:
 # defensive fallback for the rare tpi(...) whose payload WOULD otherwise
 # parse). This cheap pre-scan catches the real construct up front and
 # refuses it BY NAME instead.
-_TPI_STATEMENT_RE = re.compile(r"^\s*tpi\s*\(", re.MULTILINE)
+# (?:^|(?<=\r)): a line also starts after a bare CR, which (?m)^ ignores.
+_TPI_STATEMENT_RE = re.compile(r"(?:^|(?<=\r))\s*tpi\s*\(", re.MULTILINE)
 
 
 def parse_qmltp(text: str) -> QmltpProblem:

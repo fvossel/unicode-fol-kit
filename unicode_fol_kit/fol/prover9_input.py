@@ -154,7 +154,7 @@ NUMBER: /-?[0-9]+(\.[0-9]+)?/
 
 %import common.WS
 %ignore WS
-%ignore /%[^\n]*/
+%ignore /%[^\r\n]*/
 """
 
 _FORMULA_RULES = _FORMULA_RULES_TEMPLATE.format(atom_extra="", term_extra="", unit_term_extra="")
@@ -649,10 +649,10 @@ def parse_prover9(text: str, custom_ops=()) -> Node:
 
 
 # --- whole-file statement scanner (deterministic; see parse_prover9_problem) ---
-# A line comment runs from '%' to end of line. A statement is a run of text ending
+# A line comment runs from '%' to end of line (LF, CRLF or a bare CR). A statement is a run of text ending
 # at a '.' that terminates it — i.e. a '.' that is NOT the decimal point of a number
 # (``.`` immediately followed by a digit, preceded by a digit, stays inside the run).
-_P9_COMMENT_RE = re.compile(r"%[^\n]*")
+_P9_COMMENT_RE = re.compile(r"%[^\r\n]*")
 _P9_STATEMENT_RE = re.compile(r"[^.]*(?:\.[0-9][^.]*)*\.", re.DOTALL)
 # A top-level directive is ``set``/``clear``/``assign``/``op`` applied with parens.
 _P9_DIRECTIVES = frozenset({"set", "clear", "assign", "op"})

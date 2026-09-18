@@ -273,7 +273,7 @@ NUMBER: /-?[0-9]+(\.[0-9]+)?/
 
 %import common.WS
 %ignore WS
-%ignore /%[^\n]*/
+%ignore /%[^\r\n]*/
 %ignore /\/\*(.|\n)*?\*\//
 """
 

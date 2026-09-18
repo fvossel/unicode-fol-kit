@@ -7,6 +7,18 @@ breaking changes.
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-09-18
+
+### Fixed: P-FOLIO read a CRLF copy with a `` on every premise
+
+`eval.datasets.pfolio` reads both CSV files with `csv` and `newline=""`, as `csv` requires, so a quoted cell's line breaks reach the adapter verbatim. The real files break lines inside cells with a bare LF, but a copy that went through a CRLF-converting tool carries `
+` there, and every premise, conclusion and comment came back with a trailing `` (`"All ravens are black."`). A git checkout with `core.autocrlf` is exactly such a tool, which is how 0.28.0's Windows CI leg failed while every local and Linux run passed. Line breaks inside a cell are now read as `
+` whatever their convention; a test loads LF, CRLF and bare-CR copies of both fixtures and requires equal examples and refusals.
+
+### Fixed: a `%` comment in bare-CR text swallowed everything after it
+
+An audit of every text reader against LF, CRLF and bare-CR input found no other CRLF defect, because the file loaders open in text mode and Python normalises line breaks there. Text handed over as a string skips that normalisation, and every `%` line comment was bounded by LF alone. On text whose only line breaks are bare CRs, the first comment ran to the end of the input and the statements after it vanished or failed to parse. This affected `fol.tptp_input` (and `fol.qmltp_input`, which reuses its grammar), `fol.prover9_input` (the grammar and the whole-file comment stripper), `fol.prolog_input` (and with it `ilp` hypothesis read-back, whose learner output starts with a `%` banner), `fol.tptp_repair`'s statement splitter, `atp.tstp`'s comment skipper and its `SZS status` line search, `fol.casl_import`'s tokenizer (whose error line numbers now count every convention), and `drt.parser.parse_sbn`, which split lines on LF only and read a bare-CR document as one line. The QMLTP `tpi(...)` pre-scan also missed a directive after a bare CR, so the file fell through to an opaque syntax error instead of the refusal by name. `tests/test_line_breaks.py` runs each reader on one hand-written text in all three conventions; every bare-CR case fails on 0.28.0.
+
 ## [0.28.0] - 2026-09-18
 
 ### `fol.signature`, `fol.subsort_axioms`, `semantics.modelfinder`, CASL — a subsort relation, subset-semantics only

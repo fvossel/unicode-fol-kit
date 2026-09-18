@@ -18,5 +18,5 @@ keywords:
   - semantic-parsing
   - autoformalization
   - NL-to-FOL
-version: 0.28.0
+version: 0.28.1
 date-released: "2026-09-18"

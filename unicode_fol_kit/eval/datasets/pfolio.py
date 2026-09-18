@@ -219,6 +219,19 @@ class _FolioStory(NamedTuple):
     verified_by_prover: Optional[str]
 
 
+def _lf_cells(row: List[str]) -> List[str]:
+    """``row`` with every line break inside a cell rewritten to ``\\n``.
+
+    ``csv`` (read with ``newline=""``, as it must be) hands a quoted cell's
+    embedded line breaks through VERBATIM. The real files break lines inside
+    cells with a bare ``\\n``, but a copy that went through a CRLF-converting
+    tool (a git checkout with ``core.autocrlf``, a Windows editor) carries
+    ``\\r\\n`` there, and splitting that on ``\\n`` leaves a ``\\r`` glued
+    to every premise and conclusion. A line break inside a cell means the
+    same thing in either convention, so both files read identically."""
+    return [cell.replace("\r\n", "\n").replace("\r", "\n") for cell in row]
+
+
 def _split_field(cell: str) -> List[str]:
     """Newline-split ``cell``, trimming only WHOLLY-BLANK leading/trailing
     entries (a verified export artifact — see the module docstring). A
@@ -267,6 +280,7 @@ def _read_folio(path: Union[str, Path]) -> Tuple[Dict[int, _FolioStory], Dict[in
                 raise ValueError(
                     f"pfolio: {path} row {row_no} has {len(row)} fields, "
                     f"expected {len(_FOLIO_HEADER)}")
+            row = _lf_cells(row)
             raw_id = row[0].strip()
             if not raw_id.isdigit():
                 raise ValueError(
@@ -367,6 +381,7 @@ def _iter_pfolio_blocks(path: Union[str, Path]) -> Iterator[_RawBlock]:
                 raise ValueError(
                     f"pfolio: {path} row {row_no} has {len(row)} fields, "
                     f"expected {len(_PFOLIO_HEADER)}")
+            row = _lf_cells(row)
             story_id_raw = row[0].strip()
             if story_id_raw.isdigit():
                 if current is not None:
