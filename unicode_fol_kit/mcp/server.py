@@ -20,6 +20,20 @@ Design contract (see the package docstring for the why):
 The functions below are plain synchronous callables registered on an
 :class:`mcp.server.MCPServer`; they are importable and testable without any
 transport running.
+
+STABILITY POLICY (the registered tool SURFACE — names and input schemas):
+within a minor release line (0.N.x) a registered tool is never renamed or
+removed, and its ``input_schema`` (auto-derived by the ``mcp`` SDK from the
+function signature: property names, types, required-ness) only ever gains
+new OPTIONAL parameters — an existing parameter's name, type and
+required/optional flag are stable. Tool bodies are thin wrappers over
+:mod:`unicode_fol_kit.api`, so the payload *contents* already inherit that
+module's own STABILITY POLICY (see its docstring); this paragraph covers
+the tool *surface* specifically, which a schema/name-based MCP client
+depends on in a way a ``pip`` version pin cannot express for a JSON-RPC
+session. ``tests/test_mcp_stability.py`` pins the current tool-schema
+baseline (derived from a real ``list_tools()`` call) and fails with a
+readable diff on any surface drift.
 """
 
 from typing import List, Optional
@@ -179,6 +193,36 @@ def _parse(text: str, dialect: Optional[str], argument: str = "text"):
 
 def _error(exc: Exception) -> dict:
     return {"error": {"type": type(exc).__name__, "message": str(exc)}}
+
+
+def _normalize_converses(converses: List[dict]):
+    """JSON-dict converse declarations -> the internal tuple form.
+
+    ``converses`` (``compare_formulas``/``score_batch``'s own parameter) is
+    a list of ``{"a": [name, arity], "b": [name, arity], "permutation":
+    [...]}`` dicts — the JSON-friendly spelling of
+    :data:`unicode_fol_kit.eval.converses.ConverseDeclaration`. Raises
+    ``ValueError`` for a malformed entry (missing key, wrong shape) BEFORE
+    ``api.equivalent``/``eval.compute_fol_metrics`` ever see it; the
+    declaration's own semantic validity (arity match, permutation
+    bijectivity, no self-pair, …) is ``validate_converses``'s job, run
+    inside those calls — this function only bridges the wire shape.
+    """
+    normalized = []
+    for i, entry in enumerate(converses):
+        try:
+            a_name, a_arity = entry["a"]
+            b_name, b_arity = entry["b"]
+            permutation = entry["permutation"]
+            normalized.append((
+                (a_name, int(a_arity)), (b_name, int(b_arity)),
+                tuple(int(p) for p in permutation)))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(
+                f"converses[{i}]: expected "
+                '{"a": [name, arity], "b": [name, arity], "permutation": '
+                f'[...]}}, got {entry!r}') from exc
+    return normalized
 
 
 # --------------------------------------------------------------------------
@@ -442,12 +486,18 @@ def render(text: str, to: str = "tptp",
            dialect: Optional[str] = None) -> dict:
     """Render a formula in another concrete syntax.
 
-    ``to``: ``unicode`` / ``tptp`` / ``prover9`` / ``latex`` / ``casl``
-    (a bare CASL formula via ``formula_to_casl``) / ``json`` (the versioned
-    ``serialize`` envelope — the only target whose ``rendered`` is a dict,
-    not a string) / ``english`` (deterministic verbalization). A family
-    without the requested rendering surfaces its own
-    ``NotImplementedError``/``ValueError`` as a structured error.
+    ``to``: ``unicode`` / ``tptp`` / ``prover9`` / ``latex`` / ``smtlib``
+    (a standalone SMT-LIB2 problem: ``(set-logic ...)``, the declaration
+    preamble, and one ``(assert ...)`` — no premises through this tool; use
+    ``unicode_fol_kit.atp.z3_input.to_smtlib`` directly for an entailment
+    with premises) / ``casl`` (a bare CASL formula via ``formula_to_casl``)
+    / ``json`` (the versioned ``serialize`` envelope — the only target whose
+    ``rendered`` is a dict, not a string) / ``english`` (deterministic
+    verbalization). A family without the requested rendering surfaces its
+    own ``NotImplementedError``/``ValueError`` as a structured error — for
+    ``smtlib`` this is ``to_z3``'s own refusal (second/third-order,
+    modal/hybrid/linear/Lambek/team constructs have no first-order SMT-LIB2
+    encoding), named by construct, reused rather than reimplemented.
     """
     node, err = _parse(text, dialect)
     if err is not None:
@@ -461,6 +511,8 @@ def render(text: str, to: str = "tptp",
             rendered = node.to_prover9()
         elif to == "latex":
             rendered = node.to_latex()
+        elif to == "smtlib":
+            rendered = node.to_smtlib()
         elif to == "casl":
             from ..fol.casl_export import formula_to_casl
             rendered = formula_to_casl(node)
@@ -473,7 +525,7 @@ def render(text: str, to: str = "tptp",
         else:
             return _error(ValueError(
                 f"render: unknown target {to!r} (one of ['casl', 'english', "
-                f"'json', 'latex', 'prover9', 'tptp', 'unicode'])"))
+                f"'json', 'latex', 'prover9', 'smtlib', 'tptp', 'unicode'])"))
     except (ValueError, TypeError, NotImplementedError) as exc:
         return _error(exc)
     return {"ok": True, "to": to, "rendered": rendered}
@@ -509,7 +561,8 @@ def _vocabulary_diff(report_a, report_b) -> dict:
 
 
 def compare_formulas(predicted: str, gold: str, timeout_ms: int = 10000,
-                     dialect: Optional[str] = None) -> dict:
+                     dialect: Optional[str] = None,
+                     converses: Optional[List[dict]] = None) -> dict:
     """The full prediction-vs-gold error-analysis breakdown for one pair.
 
     Layers, strictest first: ``structural_equal`` (raw AST equality),
@@ -521,6 +574,27 @@ def compare_formulas(predicted: str, gold: str, timeout_ms: int = 10000,
     verdict dict, solver level included). ``vocabulary`` lists the symbols
     (``Name/arity`` for predicates/functions) each side uses and the other
     does not — the usual first stop when a match fails.
+
+    ``converses`` OPTIONALLY declares argument-permutation bridging axioms
+    — e.g. ``LovedBy(x, y) ↔ Loves(y, x)`` — honoured ONLY by the solver
+    level inside ``equivalence`` (see
+    :func:`unicode_fol_kit.eval.equivalence.equivalent`'s ``converses``
+    parameter and :mod:`unicode_fol_kit.eval.converses`); each entry is
+    ``{"a": [name, arity], "b": [name, arity], "permutation": [...]}``, e.g.
+    ``{"a": ["LovedBy", 2], "b": ["Loves", 2], "permutation": [1, 0]}``. A
+    malformed entry (missing key, wrong shape) comes back as the top-level
+    ``{"error": {...}}`` shape; a structurally invalid declaration (bad
+    arity/permutation, self-pair, …) instead lands inside
+    ``equivalence.error`` — the same place any other ``ValueError`` from the
+    equivalence call surfaces — since it is only caught once the axioms are
+    actually built. A modal ``predicted``/``gold`` pair with non-empty
+    ``converses`` also lands in ``equivalence.error`` (``equivalent()``
+    raises ``NotImplementedError`` there — no modal bridging route exists —
+    which this tool catches alongside ``ValueError``, never lets escape as a
+    raw exception). ``converse_axioms_applied`` lists the axioms that were
+    actually built (unicode-rendered, e.g.
+    ``"∀v0 ∀v1 (LovedBy(v0, v1) ↔ Loves(v1, v0))"``), or is ``None`` when no
+    ``converses`` were given.
     """
     from ..eval import (exact_match, align_symbols, aligned_exact_match)
     from ..eval.validate import validate
@@ -532,6 +606,13 @@ def compare_formulas(predicted: str, gold: str, timeout_ms: int = 10000,
     if err is not None:
         return err
 
+    converses_tuples = None
+    if converses:
+        try:
+            converses_tuples = _normalize_converses(converses)
+        except ValueError as exc:
+            return _error(exc)
+
     try:
         aligned = align_symbols(pred, ref)
         aligned_unicode = aligned.to_unicode_str()
@@ -539,9 +620,20 @@ def compare_formulas(predicted: str, gold: str, timeout_ms: int = 10000,
     except (ValueError, NotImplementedError):
         aligned_unicode = None           # family without alignment support
         aligned_ok = None
+
+    axioms_applied = None
     try:
-        equivalence = api.equivalent(pred, ref, timeout=timeout_ms).to_dict()
-    except ValueError as exc:
+        if converses_tuples:
+            from ..eval.converses import converse_axioms
+            axioms_applied = [ax.to_unicode_str()
+                              for ax in converse_axioms(converses_tuples)]
+        equivalence = api.equivalent(pred, ref, timeout=timeout_ms,
+                                     converses=converses_tuples).to_dict()
+    except (ValueError, NotImplementedError) as exc:
+        # NotImplementedError: a modal pair with a non-empty `converses` --
+        # equivalent() raises that deliberately (no modal bridging route
+        # exists), and it must land in the same structured `equivalence.error`
+        # shape as a ValueError, not escape as a raw exception over the wire.
         equivalence = {"error": str(exc)}
     return {
         "ok": True,
@@ -551,25 +643,41 @@ def compare_formulas(predicted: str, gold: str, timeout_ms: int = 10000,
         "aligned_predicted": aligned_unicode,
         "equivalence": equivalence,
         "vocabulary": _vocabulary_diff(validate(pred), validate(ref)),
+        "converse_axioms_applied": axioms_applied,
     }
 
 
 def score_batch(predictions: List[str], references: List[str],
-                method: str = "auto", timeout_ms: int = 10000) -> dict:
+                method: str = "auto", timeout_ms: int = 10000,
+                converses: Optional[List[dict]] = None) -> dict:
     """Corpus-level NL->FOL metrics over aligned prediction/reference lists.
 
     The six-key dict of ``eval.compute_fol_metrics``: ``exact_match``,
     ``equivalence_accuracy`` (honest — undecided pairs are NOT counted as
     refuted), ``mean_partial_credit``, ``parse_failure_rate``,
-    ``solver_unknown_rate``, ``n``.
+    ``solver_unknown_rate``, ``n``. ``converses`` (same JSON shape as
+    ``compare_formulas``'s own parameter — see its docstring) is forwarded
+    to every pair; when non-empty the dict gains a seventh key,
+    ``converse_matched_rate`` — the fraction of pairs the solver proved
+    equivalent USING the declared axioms, separately visible from (and
+    subtractable out of) ``equivalence_accuracy``. A malformed or
+    structurally invalid ``converses`` declaration, or a modal pair in the
+    batch hit with non-empty ``converses`` (``NotImplementedError`` — no
+    modal bridging route exists), surfaces as the top-level ``{"error":
+    {...}}`` shape rather than escaping as a raw exception.
     """
     from ..eval import compute_fol_metrics
 
     try:
+        converses_tuples = _normalize_converses(converses) if converses else None
         return {"ok": True,
                 **compute_fol_metrics(predictions, references,
-                                      method=method, timeout_ms=timeout_ms)}
-    except ValueError as exc:
+                                      method=method, timeout_ms=timeout_ms,
+                                      converses=converses_tuples)}
+    except (ValueError, NotImplementedError) as exc:
+        # NotImplementedError: same modal+converses case compare_formulas
+        # guards against above -- must return the tool's structured error
+        # shape (_error), never escape as a raw exception over the wire.
         return _error(exc)
 
 
@@ -779,7 +887,9 @@ def _exact_fraction(value, where: str):
 
 def probability_bounds(conclusion: str, constraints: List[dict],
                        max_atoms: int = 12,
-                       dialect: Optional[str] = None) -> dict:
+                       dialect: Optional[str] = None,
+                       strategy: str = "direct",
+                       max_columns: int = 500) -> dict:
     """Nilsson-style probabilistic entailment: tightest bounds on P(conclusion).
 
     Each constraint dict: ``{"formula": <text>}`` plus either
@@ -791,8 +901,23 @@ def probability_bounds(conclusion: str, constraints: List[dict],
     ``[lower, upper]`` interval (fraction strings, with float shadows for
     convenience) entailed by the constraint polytope — ``lower == upper ==
     1`` is classical entailment as a corner case.
+
+    ``strategy`` picks the solving ALGORITHM, never the semantics (see
+    :func:`unicode_fol_kit.prob.nilsson.entailment_bounds`): ``"direct"``
+    (the default, unchanged) enumerates all ``2^n`` worlds and is capped
+    by ``max_atoms`` (12 by default); ``"column_generation"`` never
+    materialises that many worlds, so it can go past ``max_atoms`` —
+    its own brake is ``max_columns`` (500 by default, raising a
+    structured error rather than ever returning an unproven bound).
+    Both strategies solve the identical linear program and agree
+    exactly (never a tolerance) wherever both can answer.
     """
     from ..prob import ProbConstraint, entailment_bounds
+
+    if strategy not in ("direct", "column_generation"):
+        return _error(ValueError(
+            f"probability_bounds: unknown strategy {strategy!r} "
+            "(one of ['direct', 'column_generation'])"))
 
     node, err = _parse(conclusion, dialect, argument="conclusion")
     if err is not None:
@@ -822,7 +947,9 @@ def probability_bounds(conclusion: str, constraints: List[dict],
                 hi = _exact_fraction(c.get("upper", 1),
                                      f"constraints[{i}].upper")
             parsed.append(ProbConstraint(fnode, lo, hi, given))
-        bounds = entailment_bounds(parsed, node, max_atoms=max_atoms)
+        bounds = entailment_bounds(parsed, node, max_atoms=max_atoms,
+                                   strategy=strategy,
+                                   max_columns=max_columns)
     except (ValueError, TypeError) as exc:
         return _error(exc)
     return {"ok": True, **bounds.to_dict(),
@@ -891,7 +1018,9 @@ def get_syntax_spec(topic: str = "overview",
     TPTP inverts the convention), ``dialects``, ``operators`` (precedence
     table), ``quantifiers`` (scope rules), ``counting`` (the cardinality
     quantifier and why it replaces long existential chains), ``chemistry``
-    (molecule-as-structure signature), ``errors`` (measured LLM failure modes,
+    (molecule-as-structure signature), ``description-logic`` (the ALC glyph
+    and OWL Manchester concept syntaxes the ``dl_*`` tools accept, plus their
+    TBox/ABox JSON row shapes), ``errors`` (measured LLM failure modes,
     each with a fix and the topic that explains it).
 
     Every parse failure this server returns carries a ``spec_topic`` naming
@@ -921,6 +1050,447 @@ def list_translations() -> dict:
     return {"edges": [{"name": e.name, "source": e.source,
                        "target": e.target, "lossy": e.lossy, "note": e.note}
                       for e in DEFAULT_REGISTRY.edges()]}
+
+
+# --------------------------------------------------------------------------
+# Description-logic (ALCHQ) reasoning tools — pure wiring over dl.tableau /
+# dl.classification, with input parsed by dl.parser (the ALC glyph syntax,
+# ``syntax="alc"``, default) or dl.owl_manchester (OWL 2 Manchester Syntax,
+# ``syntax="manchester"``). Conventions match every tool above: a bad
+# CONCEPT/AXIOM text is the uniform ``{"ok": False, "argument": ...,
+# "errors": [...], "spec_topic": "description-logic"}`` shape (whether the
+# grammar rejected it as :class:`~unicode_fol_kit.dl.ConceptSyntaxError` or
+# :class:`~unicode_fol_kit.dl.ManchesterSyntaxError` — including a
+# Manchester construct outside ALCHQ, e.g. ``value``/``Self``/``inverse``/a
+# nominal, which that parser rejects by NAME rather than a bare syntax
+# error); a documented, non-text exception —
+# :class:`~unicode_fol_kit.dl.NonSimpleRoleError` (a qualified number
+# restriction on a non-simple role) or the tableau's step-budget
+# ``RuntimeError`` — is ``{"error": {"type": ..., "message": ...}}``. A
+# :class:`Concept` has no ``to_dict()`` (see ``dl.concepts``), so results
+# carry it as ``*_unicode`` text (``Concept.to_unicode()``) rather than a
+# JSON AST, exactly like ``translate()``'s own ``alc`` branch above.
+# --------------------------------------------------------------------------
+
+def _check_dl_syntax(syntax: str):
+    """Validate ``syntax`` against the two dialects DL tools understand.
+
+    ``None`` on success. Otherwise the structured ``{"error": {...}}`` shape
+    (a caller/config mistake, not a bad concept TEXT). Callers whose
+    row-building loops may run zero iterations (an empty/absent
+    ``tbox``/``abox``, so :func:`_parse_dl` is never reached) MUST call this
+    unconditionally up front, or an invalid ``syntax`` is silently accepted
+    instead of refused.
+    """
+    if syntax in ("alc", "manchester"):
+        return None
+    return _error(ValueError(
+        f"dl: unknown syntax {syntax!r} (one of ['alc', 'manchester'])"))
+
+
+def _parse_dl(text: str, syntax: str, argument: str):
+    """Parse concept TEXT into a :class:`~unicode_fol_kit.dl.Concept`.
+
+    ``syntax="alc"`` (default) reads the glyph syntax via ``dl.parse_concept``;
+    ``syntax="manchester"`` reads OWL 2 Manchester Syntax via
+    ``dl.parse_manchester``. ``(concept, None)`` on success, ``(None,
+    error_dict)`` on failure — see this section's own header comment for the
+    two error shapes.
+    """
+    from .. import dl
+
+    if syntax == "alc":
+        try:
+            return dl.parse_concept(text), None
+        except dl.ConceptSyntaxError as exc:
+            return None, {"ok": False, "argument": argument,
+                          "errors": [{"dialect": "alc", "message": str(exc)}],
+                          "spec_topic": "description-logic"}
+    if syntax == "manchester":
+        try:
+            return dl.parse_manchester(text), None
+        except dl.ManchesterSyntaxError as exc:
+            return None, {"ok": False, "argument": argument,
+                          "errors": [{"dialect": "manchester", "message": str(exc)}],
+                          "spec_topic": "description-logic"}
+    return None, _check_dl_syntax(syntax)
+
+
+def _build_dl_tbox(rows, syntax: str, argument: str = "tbox"):
+    """Build a :class:`~unicode_fol_kit.dl.TBox` from JSON row dicts.
+
+    Each row is one of ``TBox``'s four axiom shapes: a general concept
+    inclusion ``{"sub": <text>, "sup": <text>}`` (``TBox.add``), an
+    equivalence ``{"equiv": [<text>, <text>]}`` (``TBox.add_equivalence``), a
+    role inclusion ``{"subrole": <role>, "suprole": <role>}``
+    (``TBox.add_role_inclusion`` — the RBox's role-hierarchy axiom, "H"), or
+    a transitivity declaration ``{"transitive": <role>}``
+    (``TBox.add_transitive_role`` — the RBox's "S"). ``rows`` ``None``/``[]``
+    is the empty TBox. ``(tbox, None)`` on success, ``(None, error_dict)`` on
+    the first failure: concept TEXT inside a row is parsed with
+    :func:`_parse_dl` under the same ``syntax`` (the uniform ``ok=False``
+    shape); a malformed row SHAPE (missing/unrecognised keys, a non-2-element
+    ``equiv``) is a caller/config mistake, reported as ``{"error": {...}}``.
+    """
+    from .. import dl
+
+    tbox = dl.TBox()
+    for i, row in enumerate(rows or []):
+        if not isinstance(row, dict):
+            return None, _error(ValueError(
+                f"{argument}[{i}]: expected an object, got {type(row).__name__}"))
+        if "sub" in row and "sup" in row:
+            sub, err = _parse_dl(row["sub"], syntax, f"{argument}[{i}].sub")
+            if err is not None:
+                return None, err
+            sup, err = _parse_dl(row["sup"], syntax, f"{argument}[{i}].sup")
+            if err is not None:
+                return None, err
+            tbox.add(sub, sup)
+        elif "equiv" in row:
+            pair = row["equiv"]
+            if not (isinstance(pair, list) and len(pair) == 2):
+                return None, _error(ValueError(
+                    f"{argument}[{i}].equiv: expected a 2-element list, got {pair!r}"))
+            c, err = _parse_dl(pair[0], syntax, f"{argument}[{i}].equiv[0]")
+            if err is not None:
+                return None, err
+            d, err = _parse_dl(pair[1], syntax, f"{argument}[{i}].equiv[1]")
+            if err is not None:
+                return None, err
+            tbox.add_equivalence(c, d)
+        elif "subrole" in row and "suprole" in row:
+            tbox.add_role_inclusion(row["subrole"], row["suprole"])
+        elif "transitive" in row:
+            tbox.add_transitive_role(row["transitive"])
+        else:
+            return None, _error(ValueError(
+                f"{argument}[{i}]: expected keys 'sub'+'sup', 'equiv', "
+                f"'subrole'+'suprole', or 'transitive', got {sorted(row)}"))
+    return tbox, None
+
+
+def _build_dl_abox(concepts, roles, distinct, syntax: str):
+    """Build a :class:`~unicode_fol_kit.dl.ABox` from JSON rows.
+
+    ``concepts``: ``[individual, concept_text]`` pairs (``ABox.assert_concept``).
+    ``roles``: ``[a, b, role]`` triples (``ABox.assert_role``). ``distinct``:
+    ``[a, b]`` pairs (``ABox.assert_distinct`` — the only thing that forces two
+    individuals apart, since this reasoner has no unique name assumption; see
+    :mod:`unicode_fol_kit.dl.tableau`'s "Qualified number restrictions"
+    section). ``(abox, None)`` on success, ``(None, error_dict)`` on the first
+    failure: a concept TEXT failure is the uniform ``ok=False`` shape
+    (argument ``"concepts[i][1]"``); a malformed row shape is
+    ``{"error": {...}}``.
+    """
+    from .. import dl
+
+    abox = dl.ABox()
+    for i, pair in enumerate(concepts or []):
+        if not (isinstance(pair, list) and len(pair) == 2):
+            return None, _error(ValueError(
+                f"concepts[{i}]: expected [individual, concept_text], got {pair!r}"))
+        individual, text = pair
+        if not isinstance(individual, str):
+            return None, _error(ValueError(
+                f"concepts[{i}][0]: individual name must be a str, got "
+                f"{type(individual).__name__}"))
+        concept, err = _parse_dl(text, syntax, f"concepts[{i}][1]")
+        if err is not None:
+            return None, err
+        abox.assert_concept(individual, concept)
+    for i, triple in enumerate(roles or []):
+        if not (isinstance(triple, list) and len(triple) == 3):
+            return None, _error(ValueError(
+                f"roles[{i}]: expected [a, b, role], got {triple!r}"))
+        a, b, role = triple
+        abox.assert_role(a, b, role)
+    for i, pair in enumerate(distinct or []):
+        if not (isinstance(pair, list) and len(pair) == 2):
+            return None, _error(ValueError(
+                f"distinct[{i}]: expected [a, b], got {pair!r}"))
+        a, b = pair
+        abox.assert_distinct(a, b)
+    return abox, None
+
+
+def dl_concept_satisfiable(concept: str, tbox: Optional[List[dict]] = None,
+                           syntax: str = "alc") -> dict:
+    """Is ``concept`` satisfiable with respect to ``tbox`` (the ALCHQ tableau)?
+
+    ``concept``/``tbox`` text and ``syntax`` follow this section's own header
+    comment; ``tbox`` rows follow :func:`_build_dl_tbox`.
+
+    Returns ``{"ok": True, "satisfiable": bool, "concept_unicode": str}``.
+    """
+    from .. import dl
+
+    c, err = _parse_dl(concept, syntax, "concept")
+    if err is not None:
+        return err
+    tb, err = _build_dl_tbox(tbox, syntax)
+    if err is not None:
+        return err
+    try:
+        satisfiable = dl.concept_satisfiable(c, tb)
+    except (dl.NonSimpleRoleError, RuntimeError) as exc:
+        return _error(exc)
+    return {"ok": True, "satisfiable": satisfiable, "concept_unicode": c.to_unicode()}
+
+
+def dl_subsumes(sub: str, sup: str, tbox: Optional[List[dict]] = None,
+                syntax: str = "alc") -> dict:
+    """Does ``tbox`` entail ``sub ⊑ sup`` (every model puts ``sub`` in ``sup``)?
+
+    Returns ``{"ok": True, "subsumes": bool, "sub_unicode": str, "sup_unicode": str}``.
+    """
+    from .. import dl
+
+    sub_c, err = _parse_dl(sub, syntax, "sub")
+    if err is not None:
+        return err
+    sup_c, err = _parse_dl(sup, syntax, "sup")
+    if err is not None:
+        return err
+    tb, err = _build_dl_tbox(tbox, syntax)
+    if err is not None:
+        return err
+    try:
+        holds = dl.subsumes(sub_c, sup_c, tb)
+    except (dl.NonSimpleRoleError, RuntimeError) as exc:
+        return _error(exc)
+    return {"ok": True, "subsumes": holds,
+            "sub_unicode": sub_c.to_unicode(), "sup_unicode": sup_c.to_unicode()}
+
+
+def dl_equivalent(c: str, d: str, tbox: Optional[List[dict]] = None,
+                  syntax: str = "alc") -> dict:
+    """Does ``tbox`` entail ``c ≡ d`` (mutual subsumption)?
+
+    Returns ``{"ok": True, "equivalent": bool, "c_unicode": str, "d_unicode": str}``.
+    """
+    from .. import dl
+
+    c_concept, err = _parse_dl(c, syntax, "c")
+    if err is not None:
+        return err
+    d_concept, err = _parse_dl(d, syntax, "d")
+    if err is not None:
+        return err
+    tb, err = _build_dl_tbox(tbox, syntax)
+    if err is not None:
+        return err
+    try:
+        holds = dl.equivalent(c_concept, d_concept, tb)
+    except (dl.NonSimpleRoleError, RuntimeError) as exc:
+        return _error(exc)
+    return {"ok": True, "equivalent": holds,
+            "c_unicode": c_concept.to_unicode(), "d_unicode": d_concept.to_unicode()}
+
+
+def dl_abox_consistent(concepts: List[List[str]],
+                       roles: Optional[List[List[str]]] = None,
+                       distinct: Optional[List[List[str]]] = None,
+                       tbox: Optional[List[dict]] = None,
+                       syntax: str = "alc") -> dict:
+    """Is the knowledge base ``(tbox, abox)`` consistent (does it have a model)?
+
+    ``concepts``/``roles``/``distinct`` build the ABox — see
+    :func:`_build_dl_abox`; ``tbox`` follows :func:`_build_dl_tbox`.
+
+    Returns ``{"ok": True, "consistent": bool}``.
+    """
+    from .. import dl
+
+    err = _check_dl_syntax(syntax)
+    if err is not None:
+        return err
+    abox, err = _build_dl_abox(concepts, roles, distinct, syntax)
+    if err is not None:
+        return err
+    tb, err = _build_dl_tbox(tbox, syntax)
+    if err is not None:
+        return err
+    try:
+        consistent = dl.abox_consistent(abox, tb)
+    except (dl.NonSimpleRoleError, RuntimeError) as exc:
+        return _error(exc)
+    return {"ok": True, "consistent": consistent}
+
+
+def dl_instance_check(individual: str, concept: str,
+                      concepts: List[List[str]],
+                      roles: Optional[List[List[str]]] = None,
+                      distinct: Optional[List[List[str]]] = None,
+                      tbox: Optional[List[dict]] = None,
+                      syntax: str = "alc") -> dict:
+    """Does the knowledge base entail ``individual : concept``?
+
+    Open-world (:func:`~unicode_fol_kit.dl.instance_check`'s own contract):
+    ``entailed=False`` means "not entailed", never "entailed to be false".
+    ``concepts``/``roles``/``distinct``/``tbox`` build the KB exactly like
+    :func:`dl_abox_consistent`; ``concept`` is the query, parsed the same way.
+
+    Returns ``{"ok": True, "entailed": bool, "individual": str,
+    "concept_unicode": str}``.
+    """
+    from .. import dl
+
+    query, err = _parse_dl(concept, syntax, "concept")
+    if err is not None:
+        return err
+    abox, err = _build_dl_abox(concepts, roles, distinct, syntax)
+    if err is not None:
+        return err
+    tb, err = _build_dl_tbox(tbox, syntax)
+    if err is not None:
+        return err
+    try:
+        entailed = dl.instance_check(abox, individual, query, tb)
+    except (dl.NonSimpleRoleError, RuntimeError) as exc:
+        return _error(exc)
+    return {"ok": True, "entailed": entailed, "individual": individual,
+            "concept_unicode": query.to_unicode()}
+
+
+def dl_instance_retrieval(concept: str, concepts: List[List[str]],
+                          roles: Optional[List[List[str]]] = None,
+                          distinct: Optional[List[List[str]]] = None,
+                          tbox: Optional[List[dict]] = None,
+                          syntax: str = "alc") -> dict:
+    """Every ABox individual the knowledge base entails is a ``concept``.
+
+    Sweeps :func:`~unicode_fol_kit.dl.instance_check` over every individual
+    named in the ABox — including one that appears only in a role assertion.
+    Arguments as :func:`dl_instance_check`.
+
+    Returns ``{"ok": True, "individuals": [str, ...], "concept_unicode": str}``
+    (``individuals`` sorted, for a deterministic payload).
+    """
+    from .. import dl
+
+    query, err = _parse_dl(concept, syntax, "concept")
+    if err is not None:
+        return err
+    abox, err = _build_dl_abox(concepts, roles, distinct, syntax)
+    if err is not None:
+        return err
+    tb, err = _build_dl_tbox(tbox, syntax)
+    if err is not None:
+        return err
+    try:
+        individuals = dl.instance_retrieval(abox, query, tb)
+    except (dl.NonSimpleRoleError, RuntimeError) as exc:
+        return _error(exc)
+    return {"ok": True, "individuals": sorted(individuals),
+            "concept_unicode": query.to_unicode()}
+
+
+def dl_classify(tbox: Optional[List[dict]] = None,
+                concepts: Optional[List[str]] = None,
+                syntax: str = "alc") -> dict:
+    """Classify every named concept of ``tbox`` into a subsumption hierarchy.
+
+    ``tbox`` follows :func:`_build_dl_tbox` (``None``/``[]`` classifies the
+    empty TBox — every concept is then its own isolated node). ``concepts``
+    is extra concept TEXT to bring names of interest into the vocabulary even
+    when they never occur in a ``tbox`` axiom (see
+    :func:`~unicode_fol_kit.dl.classify`'s own ``concepts`` parameter) —
+    parsed under the same ``syntax``.
+
+    Returns ``{"ok": True, "equivalents": {name: [str, ...]}, "parents":
+    {name: [str, ...]}, "children": {name: [str, ...]}, "ancestors": {name:
+    [str, ...]}}`` — :class:`~unicode_fol_kit.dl.Classification`'s frozensets
+    rendered as sorted lists for a deterministic JSON payload. ``equivalents``
+    is keyed by, and includes, the lexicographically smallest name in each
+    mutual-subsumption synonym class; ``parents``/``children`` are the
+    transitively-reduced Hasse diagram (direct super-/sub-concepts only);
+    ``ancestors`` is the full transitive closure.
+    """
+    from .. import dl
+
+    err = _check_dl_syntax(syntax)
+    if err is not None:
+        return err
+    tb, err = _build_dl_tbox(tbox, syntax)
+    if err is not None:
+        return err
+    extra = []
+    for i, text in enumerate(concepts or []):
+        concept, err = _parse_dl(text, syntax, f"concepts[{i}]")
+        if err is not None:
+            return err
+        extra.append(concept)
+    try:
+        result = dl.classify(tb, extra or None)
+    except (dl.NonSimpleRoleError, RuntimeError) as exc:
+        return _error(exc)
+    return {"ok": True,
+            "equivalents": {k: sorted(v) for k, v in result.equivalents.items()},
+            "parents": {k: sorted(v) for k, v in result.parents.items()},
+            "children": {k: sorted(v) for k, v in result.children.items()},
+            "ancestors": {k: sorted(v) for k, v in result.ancestors.items()}}
+
+
+def dl_parse_manchester(text: str, kind: str = "concept") -> dict:
+    """Parse OWL 2 Manchester Syntax text, three ways.
+
+    ``kind="concept"`` (default): a class expression via ``dl.parse_manchester``
+    — returns the parsed concept's unicode rendering plus a ``to_manchester``
+    round-trip (``dl.to_manchester(dl.parse_manchester(text))``), so a caller
+    can confirm ``text`` normalises the way it expects.
+    ``kind="axiom"``: a ``SubClassOf``/``EquivalentTo`` axiom via
+    ``dl.parse_manchester_axiom``.
+    ``kind="role_axiom"``: a ``SubPropertyOf``/``Characteristics: Transitive``
+    RBox axiom via ``dl.parse_manchester_role_axiom`` (see
+    :mod:`unicode_fol_kit.dl.tableau`'s "Role hierarchies and transitive
+    roles (RBox)").
+
+    Returns, on success: ``{"ok": True, "concept_unicode": str, "manchester":
+    str}`` (``kind="concept"``); ``{"ok": True, "kind": "subclass"|
+    "equivalent", "sub_unicode": str, "sup_unicode": str}`` (``kind="axiom"``);
+    ``{"ok": True, "kind": "subproperty", "sub_role": str, "super_role": str}``
+    or ``{"ok": True, "kind": "transitive", "role": str}`` (``kind="role_axiom"``).
+    Malformed/unsupported ``text`` is the uniform ``ok=False`` shape (see this
+    section's own header comment); an unknown ``kind`` is
+    ``{"error": {"type": "ValueError", ...}}``.
+    """
+    from .. import dl
+
+    if kind == "concept":
+        try:
+            concept = dl.parse_manchester(text)
+        except dl.ManchesterSyntaxError as exc:
+            return {"ok": False, "argument": "text",
+                    "errors": [{"dialect": "manchester", "message": str(exc)}],
+                    "spec_topic": "description-logic"}
+        return {"ok": True, "concept_unicode": concept.to_unicode(),
+                "manchester": dl.to_manchester(concept)}
+    if kind == "axiom":
+        try:
+            label, sub, sup = dl.parse_manchester_axiom(text)
+        except dl.ManchesterSyntaxError as exc:
+            return {"ok": False, "argument": "text",
+                    "errors": [{"dialect": "manchester", "message": str(exc)}],
+                    "spec_topic": "description-logic"}
+        return {"ok": True, "kind": label,
+                "sub_unicode": sub.to_unicode(), "sup_unicode": sup.to_unicode()}
+    if kind == "role_axiom":
+        try:
+            axiom = dl.parse_manchester_role_axiom(text)
+        except dl.ManchesterSyntaxError as exc:
+            return {"ok": False, "argument": "text",
+                    "errors": [{"dialect": "manchester", "message": str(exc)}],
+                    "spec_topic": "description-logic"}
+        if axiom[0] == "subproperty":
+            _, sub_role, super_role = axiom
+            return {"ok": True, "kind": "subproperty",
+                    "sub_role": sub_role, "super_role": super_role}
+        _, role = axiom
+        return {"ok": True, "kind": "transitive", "role": role}
+    return _error(ValueError(
+        f"dl_parse_manchester: unknown kind {kind!r} "
+        "(one of ['concept', 'axiom', 'role_axiom'])"))
 
 
 # --------------------------------------------------------------------------
@@ -959,7 +1529,15 @@ def create_server():
                # against them, failures explained (mcp.chem_tools).
                molecule_to_structure, check_molecule, check_molecules,
                explain_molecule_failure, simplify_definition,
-               chemical_signature):
+               chemical_signature,
+               # Description logic: ALCHQ tableau reasoning (concept
+               # satisfiability, subsumption, ABox consistency, instance/
+               # realization queries, TBox classification) plus OWL
+               # Manchester Syntax parsing — ALC glyph or Manchester input,
+               # selected by each tool's own `syntax` parameter.
+               dl_concept_satisfiable, dl_subsumes, dl_equivalent,
+               dl_abox_consistent, dl_instance_check, dl_instance_retrieval,
+               dl_classify, dl_parse_manchester):
         server.tool()(fn)
     return server
 

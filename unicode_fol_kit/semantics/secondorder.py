@@ -292,13 +292,30 @@ def _eval_second_order_quantifier(
     )
 
 
-def holds(formula: Node, structure: Structure) -> bool:
+def holds(formula: Node, structure: Structure, fast: bool = False) -> bool:
     """Convenience: ``satisfies_so(formula, structure, {}, {})`` for a sentence.
 
     Reads as "structure satisfies the (closed) second-order formula": the empty
     object assignment and empty predicate binding are appropriate when the
     formula has no free object or predicate variables.
+
+    Args:
+        fast: opt-in (default ``False``, which keeps every existing call's
+            behaviour byte-identical); when ``True``, checks via
+            :func:`~unicode_fol_kit.semantics.asp_models.asp_holds_so`
+            instead — ASP-grounded (clingo propagation prunes the search
+            instead of this module's brute-force ``2 ** (n ** k)``
+            enumeration; see that function's docstring) but restricted to
+            second-order sentences whose ``SecondOrderQuantifier``
+            occurrences form a single, same-polarity block (roadmap C24). A
+            ``formula`` outside that fragment raises ``ValueError`` naming
+            the offending construct (never a silent fallback to the
+            brute-force reading above); a missing ``clingo`` install (the
+            optional ``asp`` extra) raises too.
     """
+    if fast:
+        from .asp_models import asp_holds_so
+        return asp_holds_so(formula, structure)
     return satisfies_so(formula, structure, {}, {})
 
 
@@ -312,7 +329,10 @@ def holds(formula: Node, structure: Structure) -> bool:
 # symbols — the SO-quantified predicates are NOT interpreted by the structure, the
 # satisfies_so evaluator ranges them over every relation — and evaluates the SO
 # sentence in each. A found model/counter-model is genuine; "none up to size N" is
-# bounded evidence, not a proof.
+# bounded evidence, not a proof. The free-symbol enumeration (_so_structures below)
+# uses modelfinder's LNH symmetry-breaking generator (roadmap C23), so a
+# constant-heavy free signature is searched without the k! relabeling redundancy —
+# see _so_structures's docstring.
 
 
 def _so_bound_predicate_names(formula: Node) -> set:
@@ -332,56 +352,88 @@ def _so_signature(sentence: Node):
 
 
 def _so_structures(sentence: Node, max_size: int, max_candidates: int):
-    """Yield every candidate :class:`Structure` over domains ``1 .. max_size``."""
-    from .modelfinder import _interpretations, _candidate_count
+    """Yield every candidate :class:`Structure` over domains ``1 .. max_size``.
+
+    Enumerates the FREE-symbol part with :func:`modelfinder._canonical_interpretations`
+    (roadmap C23) instead of the plain :func:`modelfinder._interpretations`, so
+    ``so_find_model``/``so_find_countermodel`` inherit the LNH symmetry-breaking
+    reduction on constant assignments for free — no separate implementation needed
+    here (functions and predicates, including the SO-quantified ones
+    ``satisfies_so`` ranges over, stay exhaustive exactly as before; see that
+    generator's docstring for the full soundness argument and why functions are
+    NOT LNH-reduced). The pre-flight ``_candidate_count`` skip check is left as-is
+    (unlike ``modelfinder.find_model``'s own live-counted version) — this is the
+    "no separate implementation" scope the roadmap draws for this module.
+    """
+    from .modelfinder import _canonical_interpretations, _candidate_count
     sig = _so_signature(sentence)
     for k in range(1, max_size + 1):
         if _candidate_count(sig, k) > max_candidates:
             continue
         domain = tuple(range(k))
-        for constants, functions, predicates in _interpretations(sig, domain):
+        for constants, functions, predicates in _canonical_interpretations(sig, domain):
             yield Structure(domain, constants=constants,
                             functions=functions, predicates=predicates)
 
 
 def so_find_model(formula: Node, max_size: int = 3,
-                  max_candidates: int = MAX_RELATIONS) -> Optional[Structure]:
-    """Return a finite structure in which the SO ``formula`` holds, or None (bounded)."""
+                  max_candidates: int = MAX_RELATIONS, fast: bool = False) -> Optional[Structure]:
+    """Return a finite structure in which the SO ``formula`` holds, or None (bounded).
+
+    ``fast`` is passed straight through to :func:`holds` for each candidate
+    structure — see that function's ``fast`` parameter (opt-in, default
+    ``False`` keeps this byte-identical to before).
+    """
     from .modelfinder import _universal_closure
     sentence = _universal_closure(formula)
     for structure in _so_structures(sentence, max_size, max_candidates):
-        if holds(sentence, structure):
+        if holds(sentence, structure, fast=fast):
             return structure
     return None
 
 
 def so_find_countermodel(formula: Node, max_size: int = 3,
-                         max_candidates: int = MAX_RELATIONS) -> Optional[Structure]:
+                         max_candidates: int = MAX_RELATIONS, fast: bool = False) -> Optional[Structure]:
     """Return a finite structure in which the SO ``formula`` FAILS, or None (bounded).
 
     A returned structure witnesses that ``formula`` is not second-order valid (free
     object variables are universally closed, so it refutes the closed reading).
+
+    ``fast`` is passed straight through to :func:`holds` for each candidate
+    structure — see that function's ``fast`` parameter (opt-in, default
+    ``False`` keeps this byte-identical to before).
     """
     from .modelfinder import _universal_closure
     sentence = _universal_closure(formula)
     for structure in _so_structures(sentence, max_size, max_candidates):
-        if not holds(sentence, structure):
+        if not holds(sentence, structure, fast=fast):
             return structure
     return None
 
 
 def so_is_satisfiable_finite(formula: Node, max_size: int = 3,
-                             max_candidates: int = MAX_RELATIONS) -> bool:
-    """True iff the SO ``formula`` has a finite model of size ≤ ``max_size`` (bounded)."""
-    return so_find_model(formula, max_size, max_candidates) is not None
+                             max_candidates: int = MAX_RELATIONS, fast: bool = False) -> bool:
+    """True iff the SO ``formula`` has a finite model of size ≤ ``max_size`` (bounded).
+
+    ``fast``: see :func:`holds`'s parameter of the same name (opt-in, default
+    ``False`` keeps this byte-identical to before).
+    """
+    return so_find_model(formula, max_size, max_candidates, fast=fast) is not None
 
 
 def so_is_valid_finite(formula: Node, max_size: int = 3,
-                       max_candidates: int = MAX_RELATIONS) -> bool:
+                       max_candidates: int = MAX_RELATIONS, fast: bool = False) -> bool:
     """True iff no finite counter-model of the SO ``formula`` is found up to ``max_size``.
 
     Bounded and one-sided: ``True`` is strong evidence of second-order validity (not a
     proof — SO validity is not semi-decidable); ``False`` is a genuine refutation, with
     the witness available from :func:`so_find_countermodel`.
+
+    ``fast``: see :func:`holds`'s parameter of the same name (opt-in, default
+    ``False`` keeps this byte-identical to before) — each candidate structure
+    is then checked via
+    :func:`~unicode_fol_kit.semantics.asp_models.asp_holds_so` instead of the
+    brute-force :func:`satisfies_so`, restricted to the single-block SO
+    fragment that function accepts.
     """
-    return so_find_countermodel(formula, max_size, max_candidates) is None
+    return so_find_countermodel(formula, max_size, max_candidates, fast=fast) is None

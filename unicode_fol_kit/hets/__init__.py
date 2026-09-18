@@ -61,6 +61,11 @@ Modules
   graph (no DOL *parsing* — same emission-only cut as the rest of the
   CASL route; the importer for single basic specs is
   :func:`unicode_fol_kit.fol.casl_import.parse_casl_spec`).
+* :mod:`~unicode_fol_kit.hets.owl_backend` — a second, independent external
+  OWL 2 DL reasoner (FaCT++ via the server's ``Fact`` prover identifier),
+  over the ALCHQ + I + O fragment; mirrors
+  :mod:`~unicode_fol_kit.dl.owl_reasoner`'s function-per-namesake shape,
+  opt-in and never in a default chain.
 
 Kit formulas reach HETS through the Verdict layer:
 :class:`unicode_fol_kit.atp.hets_backend.HetsBackend` (registry name
@@ -72,11 +77,25 @@ back onto the kit's :class:`~unicode_fol_kit.atp.protocol.Verdict`.
 from .bridge import HETS_EDGE_PREFIX, register_hets_comorphisms
 from .client import HetsClient
 from .docker import HETS_IMAGE, HetsContainer, discover_hets_url, hets_available
-from .dol import DolSpec, to_dol_library
+from .dol import DolSpec, to_dol_library, to_dol_library_from_modal, sanitize_modal_identifiers
+from .owl_backend import (
+    hets_owl_available,
+    external_concept_satisfiable, external_concept_unsatisfiable,
+    external_subsumes, external_equivalent,
+    external_abox_consistent, external_instance_check, external_instance_retrieval,
+    external_realize, external_realize_all,
+    HetsOwlError,
+)
 
 __all__ = [
     "HetsClient",
     "HETS_IMAGE", "HetsContainer", "discover_hets_url", "hets_available",
     "HETS_EDGE_PREFIX", "register_hets_comorphisms",
-    "DolSpec", "to_dol_library",
+    "DolSpec", "to_dol_library", "to_dol_library_from_modal", "sanitize_modal_identifiers",
+    "hets_owl_available",
+    "external_concept_satisfiable", "external_concept_unsatisfiable",
+    "external_subsumes", "external_equivalent",
+    "external_abox_consistent", "external_instance_check", "external_instance_retrieval",
+    "external_realize", "external_realize_all",
+    "HetsOwlError",
 ]

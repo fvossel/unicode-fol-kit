@@ -17,7 +17,7 @@ from unicode_fol_kit.fol.nodes import (
     And, Or, Not, Implies, Quantifier,
     SecondOrderQuantifier,
 )
-from unicode_fol_kit.fol.naming import ParsingError
+from unicode_fol_kit.fol.naming import NamingError, ParsingError
 
 
 def PX(*vs):
@@ -40,9 +40,19 @@ class TestSecondOrderMode:
     def test_default_second_order_false(self):
         assert MSFLParser()._mode == "fol"
 
-    def test_so_with_many_sorted_raises(self):
-        with pytest.raises(ValueError):
-            MSFLParser(second_order=True, many_sorted=True)
+    def test_so_with_many_sorted_is_its_own_mode(self):
+        """Second-order + many-sorted used to be refused; it is now a mode.
+
+        The OBJECT quantifiers carry sorts; the predicate quantifier itself
+        stays unsorted (a sort is a domain of individuals, not of relations).
+        A bare unsorted object quantifier remains a syntax error there, so the
+        mode cannot silently accept unsorted second-order input."""
+        p = MSFLParser(second_order=True, many_sorted=True)
+        assert p._mode == "so_sorted"
+        f = p.parse("∀P ∀x:Human (P(x))")
+        assert f.to_unicode_str() == "∀P ∀x:Human P(x)"
+        with pytest.raises(NamingError):
+            p.parse("∀P ∀x (P(x))")
 
     def test_so_with_fuzzy_raises(self):
         with pytest.raises(ValueError):

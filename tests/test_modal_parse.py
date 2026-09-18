@@ -8,6 +8,7 @@ export-rejection contract (to_z3/to_prover9/to_tptp raise NotImplementedError).
 import pytest
 
 from unicode_fol_kit.fol.msflparser import MSFLParser
+from unicode_fol_kit.fol.naming import NamingError
 from unicode_fol_kit.fol.nodes import (
     Node,
     Atom, Variable, Constant,
@@ -36,9 +37,18 @@ class TestModalMode:
     def test_mode_string(self):
         assert MSFLParser(modal=True)._mode == "modal"
 
-    def test_modal_with_many_sorted_raises(self):
-        with pytest.raises(ValueError):
-            MSFLParser(modal=True, many_sorted=True)
+    def test_modal_with_many_sorted_is_its_own_mode(self):
+        """Modal + many-sorted used to be refused; it is now a mode of its own.
+
+        The combination parses sorted quantifiers under modal operators, and
+        only sorted ones -- a bare unsorted quantifier is still a syntax error
+        there, so the mode cannot silently accept unsorted modal input."""
+        p = MSFLParser(modal=True, many_sorted=True)
+        assert p._mode == "modal_sorted"
+        f = p.parse("□∀x:Human (Mortal(x))")
+        assert f.to_unicode_str() == "□∀x:Human Mortal(x)"
+        with pytest.raises(NamingError):
+            p.parse("□∀x (Mortal(x))")
 
     def test_modal_with_fuzzy_raises(self):
         with pytest.raises(ValueError):

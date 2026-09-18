@@ -100,7 +100,47 @@ theory = isabelle_ho_modal_theory(
 
 The lifted vocabulary is emitted as Isabelle `abbreviation`s, not `definition`s, on purpose: an abbreviation is unfolded by the parser, so `blast`/`metis` see through the embedding to plain HOL instead of having to unfold it first. `mall`/`mex` are polymorphic (`('a ⇒ sigma) ⇒ sigma`), so one pair of binders serves individual and property quantification alike — the orders are distinguished by the type at the binder, which is the embedding's own point.
 
-Frame systems come from the shared registry (`fol.frames`), so `"S5"` means here what it means everywhere else in the kit. Two things are refused **by name** rather than approximated: a frame whose condition is not first-order (`GL`, `S4.1`, `Grz` constrain propositions, not `R`), and every modal family but the alethic one — the parser accepts `K_a`, `Ⓞ`, `Ⓖ` because it is the same AST, and this embedding will not silently drop them.
+Frame systems come from the shared registry (`fol.frames`), so `"S5"` means here what it means everywhere else in the kit — including `GL`, `S4.1` and `Grz`, whose condition (Löb / McKinsey / Grzegorczyk) is not first-order-definable over `R`: those are stated as schemas over **propositions** rather than as conditions on `R`, exactly as `hol.isabelle_modal` states them at first order:
+
+```python
+from unicode_fol_kit import isabelle_ho_modal_theory, HoGoal
+
+theory = isabelle_ho_modal_theory(
+    "GL", (), [HoGoal("loeb", tom("□(□P→P)→□P"), proof="using R_loeb by blast")],
+    frame="GL",
+)
+"axiomatization where R_loeb:" in theory   # → True
+```
+
+One point of style in that port: the schema's own predicate `P` is bound **explicitly** — `axiomatization where R_loeb: "∀P::sigma. ∀x. …"` — rather than left free the way `hol.isabelle_modal`'s first-order `r_loeb` is. That first-order module gets away with a free schema variable via a side convention (it lower-cases every user predicate's leading character, so a free `P` can never collide with a user symbol); this module carries no such convention, and doesn't need one for a structural reason instead: `isabelle_ho_modal_theory` always emits the frame axioms *before* the signature's `consts` declarations, so a formula's own `Positive`/`Ess`/`P` is never yet declared as a constant at the point the frame schema is elaborated — Isabelle turns the frame axiom's free `P` into a schematic variable of that statement rather than resolving it to anything, which is exactly the generalisation an explicit `∀P` gives directly (confirmed live: reversing that order, so a user's `P` is declared first, does let a free schema variable stick to it and stall a proof for an unrelated proposition). The explicit binder is kept anyway as defense-in-depth against that emission order ever changing, and because it makes the schema's universal scope visible in the source text; the THF export states the same schema with an explicit `! [P: mu > $o]` for the same reason. On the THF side a user's own `P` could not collide with it anyway: THF constants have to be lower words (an upper-case initial makes a token a variable), so the exporters spell every free symbol as one — `P` becomes `p`, `Positive` becomes `positive` — renaming apart symbols that would coincide (`Pos` and `pos`) and any that would take one of the embedding's own names (`r`, `mu`, `mbox`, …).
+
+The embedding carries the whole non-counterfactual modal family the parser accepts: alethic `□`/`◇`, agent-indexed `K_a`/`B_a`/`Say_a`/`Want_a` (epistemic/doxastic/assertive/bouletic), deontic `Ⓞ`/`Ⓟ` (serial), temporal `Ⓖ`/`Ⓕ`/`Ⓝ`/`Ⓤ`/`⒮` and their past mirrors `⒣`/`⒫`/`⒴`, and hybrid nominals/`@`. `systems=` optionally constrains one or more of the four agent-indexed relations, the same way `frame=` constrains the alethic one:
+
+```python
+theory = isabelle_ho_modal_theory(
+    "Epistemic", (),
+    [HoGoal("t_thm", tom("K_a Pos(G) → Pos(G)"), proof="using Rk_refl by blast")],
+    systems={"epistemic": "T"},
+)
+"mknows" in theory and "Rk_refl" in theory   # → True
+```
+
+Two things stay refused **by name**: the Lewis counterfactuals `Would`/`Might` (`□→`/`◇→`), which read a similarity ordering of worlds rather than an accessibility relation — see `hol.isabelle_conditional` — and the group-epistemic operators `EverybodyKnows`/`DistributedKnowledge`/`CommonKnowledge` (`C_G` would need a transitive closure this embedding does not attempt).
+
+### Domain regime: `mode=`
+
+`mode=` (default `"constant"`, i.e. possibilist — unchanged from before this parameter existed) accepts `"varying"`/`"increasing"`/`"cumulative"`/`"decreasing"`, the same actualist vocabulary `hol.isabelle_modal` uses at first order. An actualist mode `existsAt`-guards INDIVIDUAL quantification (a plain `∀x`/`∃x`) — but **not** property quantification (`∀P`/`∃P`), which stays `mall`/`mex`, constant across worlds, in every mode. That is the one genuinely new judgment call this port makes: first order has no property quantifier to decide about, and the ontological-argument literature treats a property (unlike an individual) as not something that comes and goes with a world's domain.
+
+```python
+barcan = tom("∀x □∀y (Pos(G) → G(x))")
+constant = isabelle_ho_modal_theory("Dom", (), [HoGoal("g", barcan)])
+varying = isabelle_ho_modal_theory("Dom", (), [HoGoal("g", barcan)], mode="varying")
+"mall (\\<lambda>x::i." in constant     # → True  (default: unguarded, as before)
+"mforall (\\<lambda>x::i." in varying  # → True  (actualist: existsAt-guarded)
+"existsAt" in varying, "existsAt" in constant   # → (True, False)
+```
+
+Faithfulness to the domain regime is checked against the first-order embedding's own `qml_is_valid`: the classic Barcan formula and its converse diverge across `"constant"`/`"varying"`/`"increasing"`/`"decreasing"` exactly the same way at both orders, live-checked in `tests/test_ho_modal_actualist.py`.
 
 ## Gödel's ontological argument, both readings
 

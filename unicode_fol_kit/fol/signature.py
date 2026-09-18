@@ -34,10 +34,46 @@ projects a :class:`Signature` onto its loose dict convention for the
 classic unknown-symbol/arity diagnostics (keeping their did-you-mean
 suggestions) and ADDITIONALLY reports this module's sort-mismatch messages
 (``kind="sort_mismatch"`` entries) — see ``api.check``.
-``predicate_match`` and ``casl_export`` still keep their own
-independently-tested logic; rewriting them onto this carrier remains a
-separate, deliberate step. The module stays self-contained and importable
-on its own (``from unicode_fol_kit.fol.signature import Signature``).
+
+``predicate_match`` and ``casl_export`` keep their own independently-tested
+walks — a full rewrite onto :meth:`from_formulas` remains out of scope,
+because each has a genuine, load-bearing reason to differ (see below) — but
+they no longer duplicate this module's low-level bookkeeping:
+
+* :func:`inventory_of` is the LENIENT counterpart of :meth:`from_formulas`'s
+  own classification walk, factored out so
+  ``unicode_fol_kit.eval.predicate_match``'s ``_symbol_inventory`` (which
+  must never raise — it scores possibly-malformed model output, see that
+  module's docstring) can share it instead of maintaining a second,
+  independently-written ``node.walk()`` classification pass. Where
+  :meth:`from_formulas` REFUSES a vocabulary conflict, :func:`inventory_of`
+  keeps every conflicting entry side by side — see its own docstring.
+* the ARITY-conflict and constant/function name-clash REFUSAL itself (the
+  actual comparison-and-raise, as opposed to how each caller accumulates
+  the values being compared) is factored into the module-private
+  :func:`_check_single_valued` / :func:`_check_not_dual_use`, called by
+  both :meth:`from_formulas` and
+  :mod:`unicode_fol_kit.fol.casl_export`'s ``_analyze``. Each caller keeps
+  its OWN accumulation strategy and OWN message wording:
+  :meth:`from_formulas` collects the full set of arities/sorts seen for a
+  symbol across the whole batch before checking it once (so a three-way
+  conflict names every arity involved); ``casl_export._analyze`` checks
+  incrementally, per occurrence, against a running single recorded value
+  (so an arity conflict is reported — and the whole batch's sort-inference
+  union-find work is short-circuited — as soon as it is first seen, before
+  any later, unrelated formula in the batch is even walked). These are two
+  different, independently-justified accumulation policies (see
+  ``casl_export``'s own module docstring), not two implementations of one
+  policy — only the underlying "more than one distinct value is a
+  conflict" / "this name is claimed in the other namespace" predicates are
+  shared.
+* ``casl_export``'s per-argument-position sort inference (the
+  ``_UnionFind`` / ``_Signature`` union-find, and its ``default_sort``
+  total-resolution policy) stays exactly where it is, unshared — see the
+  "Signature.from_formulas — scope" section above for why.
+
+The module stays self-contained and importable on its own
+(``from unicode_fol_kit.fol.signature import Signature``).
 
 The api.check loose dict convention (verified against unicode_fol_kit/api.py)
 -------------------------------------------------------------------------------
@@ -87,7 +123,16 @@ the same content always serialise byte-identically):
         },
         "constants": {"alice": "Human", "unsorted_thing": None},
         "sorts": ["Human"],
+        "subsorts": {"Human": ["Animal"]},
     }
+
+``"subsorts"`` (present only when at least one edge is declared) is the
+CHILD-sort-to-DIRECT-parent-sorts mapping, JSON-rendered as name -> a
+sorted list of parent names (never the transitive closure — see the
+"Subsorting" section below for why only direct edges are the canonical
+form). :meth:`Signature.from_dict` reads it back the same shape, and every
+sort it mentions (child or parent) is unioned into :attr:`Signature.sorts`
+exactly like an ``arg_sorts``/``result_sort``/constant ``sort`` mention.
 
 :meth:`Signature.from_dict` recognises this rich per-entry shape (a ``dict``
 with the required key ``"arity"`` for predicates/functions, an optional
@@ -102,9 +147,10 @@ top-level ``"sorts"`` key (loose convention has none) supplies sort names not
 otherwise implied by any declaration — e.g. a sort with no symbol
 referencing it yet. Regardless of what ``"sorts"`` says, :attr:`Signature.sorts`
 always also contains every sort mentioned by any ``arg_sorts`` / ``result_sort``
-/ constant ``sort`` in the same dict — the two are unioned, never one silently
-overriding the other. An unrecognised TOP-LEVEL key (a typo like
-``"predicate"`` for ``"predicates"``) is refused rather than silently ignored.
+/ constant ``sort`` / ``subsorts`` in the same dict — the two are unioned,
+never one silently overriding the other. An unrecognised TOP-LEVEL key (a
+typo like ``"predicate"`` for ``"predicates"``) is refused rather than
+silently ignored.
 
 ``Signature`` constructed directly (the dataclass constructor, not
 ``from_dict``/``from_formulas``) does NOT perform this implied-sorts
@@ -230,6 +276,55 @@ built while walking, never checked against :attr:`Signature.constants`; an
 unbound (free) variable simply resolves to sort ``None`` and is silently
 skipped, exactly like an unbound one under a plain :class:`Quantifier`.
 
+Subsorting (``S < T``) — a subset-semantics reading, not full order-sorted algebra
+-----------------------------------------------------------------------------------
+:attr:`Signature.subsorts` declares a CHILD sort's DIRECT parent sorts —
+``{"Human": frozenset({"Animal"})}`` reads "Human is declared a subsort of
+Animal". The semantics is the plain SUBSET reading MSFOL relativisation
+already gives a single sort's own universe (see
+:mod:`unicode_fol_kit.semantics.modelfinder`'s "many-sorted" section): a
+subsort edge ``S < T`` means every structure's universe for ``S`` is a
+SUBSET of its universe for ``T`` — ``ext(S) ⊆ ext(T)`` — nothing more. This
+is deliberately NOT full CASL order-sorted algebra: there are no injection/
+retract functions, no ``x as S`` / ``x in S`` casts, and no operation/
+predicate overloading across the hierarchy — a symbol still has exactly one
+declared arity/argument-sort profile, subsort or not (see
+:mod:`unicode_fol_kit.fol.casl_import`'s identical scoping decision on the
+CASL side).
+
+``__post_init__`` computes the REFLEXIVE-TRANSITIVE closure of the declared
+DIRECT edges purely to answer :meth:`is_subsort` and to detect a cycle (a
+sort that is, directly or transitively, its own ancestor) — refused with
+:class:`ValueError` naming the cycle path. The closure is a private,
+derived cache (not a dataclass field, so it never participates in equality/
+repr/hashing); :attr:`Signature.subsorts` itself always stays exactly what
+was declared — the DIRECT edges only — which is what
+:func:`unicode_fol_kit.fol.to_fol` needs to emit the minimal axiom set (a
+transitive edge follows from chaining two direct ones' implications, so
+re-emitting it would be redundant, not wrong, but is avoided).
+
+:meth:`Signature.validate`'s two "declared vs. actual argument sort"
+violations (the ``predicate``/``function`` "argument ``i`` expects sort"
+messages above) accept a SUBSORT of the declared sort as well as an exact
+match — passing a ``Human``-sorted term where ``Animal`` is declared now
+validates clean once ``Human < Animal`` is declared, but NOT the reverse (an
+``Animal``-sorted term where ``Human`` is declared is still reported):
+subsort substitutability is one-directional, exactly like Liskov
+substitution. The two constant-sort-annotation checks (a
+:class:`SortedConstant` occurrence's own inline sort vs. its declared
+:attr:`ConstantDecl.sort`) stay EXACT-match — those compare one name's own
+two annotations for self-consistency, not a substitutability question.
+
+:meth:`Signature.merge` unions ``subsorts`` the same way it unions ``sorts``
+— per CHILD sort, the two sides' direct-parent sets are unioned (never
+flagged as conflicting merely for differing, since two DIFFERENT declared
+parent sets for the same child are both true constraints, not competing
+claims about a single fact the way two different arities would be). The one
+way a merge can still fail is if the UNION of both sides' edges creates a
+cycle that did not exist in either signature alone — caught by the same
+cycle check :meth:`__post_init__` runs on the merged result, so it is named
+exactly like any other cycle.
+
 Equality, immutability, and hashability
 ------------------------------------------
 :class:`PredicateDecl` / :class:`FunctionDecl` / :class:`ConstantDecl` are
@@ -253,14 +348,14 @@ here means immutable-by-construction, not usable as a ``dict``/``set`` key.
 
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
-from typing import Dict, FrozenSet, Iterable, List, Mapping, Optional, Tuple
+from typing import Dict, FrozenSet, Iterable, List, Mapping, Optional, Set, Tuple
 
 from .nodes import (
     Node, Atom, Function, Constant, SortedConstant, Variable,
     Quantifier, SortedQuantifier,
 )
 
-__all__ = ["Signature", "PredicateDecl", "FunctionDecl", "ConstantDecl"]
+__all__ = ["Signature", "PredicateDecl", "FunctionDecl", "ConstantDecl", "inventory_of"]
 
 
 # Comparison/equality predicates and arithmetic functions are the kit's
@@ -270,6 +365,99 @@ __all__ = ["Signature", "PredicateDecl", "FunctionDecl", "ConstantDecl"]
 # rather than an import.
 _BUILTIN_PREDS = frozenset({"=", "≠", "<", ">", "≤", "≥"})
 _BUILTIN_FUNCS = frozenset({"+", "-", "*", "/"})
+
+
+# =============================================================================
+# inventory_of — the LENIENT, non-raising counterpart of from_formulas
+# =============================================================================
+
+def inventory_of(node: Node):
+    """Return the lenient symbol inventory of ``node``: every user predicate/
+    function ``(name, arity)`` pair and every constant name reachable
+    anywhere in the tree — NEVER raising, unlike :meth:`Signature.from_formulas`.
+
+    This is the classification :meth:`Signature.from_formulas` would also
+    need to do, minus its refusals: a predicate or function used at two
+    different arities somewhere under ``node`` contributes TWO separate
+    ``(name, arity)`` entries to the returned set (rather than being
+    refused as a conflict), and a name used both as a bare constant and as
+    an applied function contributes to BOTH the constants set and the
+    functions set (rather than being refused as a namespace clash). It
+    exists for :mod:`unicode_fol_kit.eval.predicate_match`, whose whole
+    purpose is scoring possibly-malformed model output gracefully — a
+    genuine vocabulary conflict is exactly the kind of input it must still
+    align rather than reject (see that module's docstring).
+
+    Returns ``(predicates, functions, constants)`` — ``predicates`` /
+    ``functions`` are sets of ``(name, arity)`` pairs (the kit's built-in
+    operators, :data:`_BUILTIN_PREDS` / :data:`_BUILTIN_FUNCS`, excluded,
+    exactly like :meth:`from_formulas`'s classification); ``constants`` is
+    a set of names (:class:`Constant` and :class:`SortedConstant`
+    occurrences alike — a sorted constant's own inline sort annotation is
+    not part of this vocabulary-shape inventory).
+
+    The walk is :meth:`~unicode_fol_kit.fol.nodes.Node.walk` — every node in
+    the tree, pre-order, via the generic ``_child_nodes()`` recursion — so a
+    symbol nested under a modal operator, inside a counting quantifier's set
+    builder, or under any other construct this module does not itself know
+    about is still found. This flat "classify every node, regardless of
+    whether it sits in formula or term position" pass needs no
+    formula/term dispatch to be complete (unlike :meth:`from_formulas`'s own
+    walk, which routes a nested FORMULA field back through its
+    formula-walker for the same reason) — every ``Node``-valued field,
+    wherever it lives structurally, is a ``walk()`` stop in its own right.
+    """
+    predicates: Set[Tuple[str, int]] = set()
+    functions: Set[Tuple[str, int]] = set()
+    constants: Set[str] = set()
+    for n in node.walk():
+        if isinstance(n, Atom):
+            if n.predicate not in _BUILTIN_PREDS:
+                predicates.add((n.predicate, len(n.args)))
+        elif isinstance(n, Function):
+            if n.name not in _BUILTIN_FUNCS:
+                functions.add((n.name, len(n.args)))
+        elif isinstance(n, (Constant, SortedConstant)):
+            constants.add(n.name)
+    return predicates, functions, constants
+
+
+# =============================================================================
+# Shared refusal bookkeeping — used by this module's own from_formulas AND by
+# unicode_fol_kit.fol.casl_export's independently-tested _analyze pass (see
+# the module docstring's DESIGN NOTE for why only the comparison-and-raise
+# itself is shared, not each caller's accumulation strategy or wording).
+# =============================================================================
+
+def _check_single_valued(values, message: str):
+    """Return the sole element of ``values`` if every member is the same
+    value; raise ``ValueError(message)`` if ``values`` names more than one
+    distinct value.
+
+    ``values`` is never empty at either call site (both only call this once
+    a symbol has been recorded at least once). The shared "this symbol was
+    declared inconsistently" predicate: :meth:`Signature.from_formulas`
+    calls it once per symbol, over the FULL set of arities/sorts collected
+    across an entire formula batch; ``casl_export._analyze`` calls it
+    incrementally, per occurrence, over just ``{previously recorded value,
+    this occurrence's value}`` — so it can raise as soon as a conflict
+    first appears, before any later formula in the batch is even walked.
+    """
+    if len(values) > 1:
+        raise ValueError(message)
+    return next(iter(values))
+
+
+def _check_not_dual_use(name: str, other_namespace_names, message: str) -> None:
+    """Raise ``ValueError(message)`` iff ``name`` is a member of
+    ``other_namespace_names`` — the shared "used as both a constant and a
+    function" clash check behind both :meth:`Signature.from_formulas` and
+    ``casl_export._analyze``'s independent bookkeeping. Each caller keeps
+    its own message wording (the two modules describe the same underlying
+    fact in their own terms), so only the comparison is shared here.
+    """
+    if name in other_namespace_names:
+        raise ValueError(message)
 
 
 # =============================================================================
@@ -403,6 +591,86 @@ def _freeze_section(mapping, decl_cls, kind: str) -> Mapping:
     return MappingProxyType(out)
 
 
+def _freeze_subsorts(mapping) -> Mapping[str, FrozenSet[str]]:
+    """Validate and wrap the ``subsorts`` field as a read-only mapping of
+    child sort name -> a ``frozenset`` of its DIRECT parent sort names.
+
+    Refuses (``TypeError``) a non-mapping input, a non-``str`` child key, or
+    a per-child value that is not an iterable of ``str`` parent names.
+    Cycle detection happens separately, in :func:`_subsort_closure` (needs
+    the whole mapping built first).
+    """
+    if not isinstance(mapping, Mapping):
+        raise TypeError(
+            f"Signature: subsorts must be a dict, got {type(mapping).__name__}."
+        )
+    out = {}
+    for child, parents in mapping.items():
+        if not isinstance(child, str):
+            raise TypeError(
+                f"Signature: subsorts key must be a sort name (str), got "
+                f"{type(child).__name__}."
+            )
+        if isinstance(parents, str) or not isinstance(parents, Iterable):
+            raise TypeError(
+                f"Signature: subsorts[{child!r}] must be an iterable of "
+                f"parent sort names, got {type(parents).__name__}."
+            )
+        parent_set = frozenset(parents)
+        for p in parent_set:
+            if not isinstance(p, str):
+                raise TypeError(
+                    f"Signature: subsorts[{child!r}] entries must be sort "
+                    f"names (str), got {type(p).__name__}."
+                )
+        out[child] = parent_set
+    return MappingProxyType(out)
+
+
+def _subsort_closure(direct: Mapping[str, FrozenSet[str]]) -> Mapping[str, FrozenSet[str]]:
+    """Return the transitive (non-reflexive) closure of ``direct`` — child
+    sort name -> every ancestor reachable by chaining one or more edges.
+
+    Raises :class:`ValueError` naming the cycle (e.g. ``"A -> B -> A"``) if
+    ``direct`` is not a DAG — a sort declared, directly or transitively, as
+    its own ancestor is not a coherent subset relation (``ext(A) ⊆ ext(A)``
+    trivially, but a genuine cycle among two-or-more DISTINCT declared sorts
+    would force them to denote the exact same set, which this module refuses
+    loudly rather than silently accepting as "fine, just redundant").
+    """
+    memo: Dict[str, FrozenSet[str]] = {}
+
+    def closure_of(child: str, stack: Tuple[str, ...]) -> FrozenSet[str]:
+        if child in memo:
+            return memo[child]
+        if child in stack:
+            cycle = stack[stack.index(child):] + (child,)
+            raise ValueError(
+                f"Signature: subsorts has a cycle: {' -> '.join(cycle)}."
+            )
+        ancestors: Set[str] = set()
+        for parent in direct.get(child, frozenset()):
+            ancestors.add(parent)
+            ancestors |= closure_of(parent, stack + (child,))
+        memo[child] = frozenset(ancestors)
+        return memo[child]
+
+    for child in direct:
+        closure_of(child, ())
+    return MappingProxyType(memo)
+
+
+def _merge_subsorts(a: Mapping[str, FrozenSet[str]],
+                    b: Mapping[str, FrozenSet[str]]) -> Dict[str, FrozenSet[str]]:
+    """Union ``a`` and ``b``'s direct edges, per child sort — see
+    :meth:`Signature.merge`'s docstring for why two differing parent sets
+    for the same child are unioned rather than flagged as conflicting."""
+    out: Dict[str, Set[str]] = {child: set(parents) for child, parents in a.items()}
+    for child, parents in b.items():
+        out.setdefault(child, set()).update(parents)
+    return {child: frozenset(parents) for child, parents in out.items()}
+
+
 @dataclass(frozen=True)
 class Signature:
     """The kit's declared vocabulary: predicates, functions, constants, sorts.
@@ -418,6 +686,9 @@ class Signature:
     functions: Mapping[str, FunctionDecl] = field(default_factory=dict)
     constants: Mapping[str, ConstantDecl] = field(default_factory=dict)
     sorts: FrozenSet[str] = field(default_factory=frozenset)
+    #: child sort name -> its DIRECT declared parent sorts (never the
+    #: transitive closure — see the module docstring's "Subsorting" section).
+    subsorts: Mapping[str, FrozenSet[str]] = field(default_factory=dict)
 
     def __post_init__(self):
         object.__setattr__(
@@ -427,6 +698,9 @@ class Signature:
         object.__setattr__(
             self, "constants", _freeze_section(self.constants, ConstantDecl, "constant"))
         object.__setattr__(self, "sorts", frozenset(self.sorts))
+        direct = _freeze_subsorts(self.subsorts)
+        object.__setattr__(self, "subsorts", direct)
+        object.__setattr__(self, "_subsort_closure", _subsort_closure(direct))
 
     # -------------------------------------------------------------------
     # Constructors
@@ -457,6 +731,7 @@ class Signature:
         functions = _parse_symbol_section(
             d.get("functions", {}), FunctionDecl, "function", has_result_sort=True)
         constants = _parse_constants_section(d.get("constants", {}))
+        subsorts = _parse_subsorts_section(d.get("subsorts", {}))
 
         declared_sorts = d.get("sorts", ())
         if not isinstance(declared_sorts, (list, tuple, set, frozenset)):
@@ -464,9 +739,11 @@ class Signature:
                 f"Signature.from_dict: 'sorts' must be an iterable of names, "
                 f"got {type(declared_sorts).__name__}."
             )
-        sorts = set(declared_sorts) | _implied_sorts(predicates, functions, constants)
+        sorts = (set(declared_sorts) | _implied_sorts(predicates, functions, constants)
+                 | set(subsorts) | {p for parents in subsorts.values() for p in parents})
         return Signature(predicates=predicates, functions=functions,
-                         constants=constants, sorts=frozenset(sorts))
+                         constants=constants, sorts=frozenset(sorts),
+                         subsorts=subsorts)
 
     @staticmethod
     def from_formulas(formulas: Iterable[Node]) -> "Signature":
@@ -536,7 +813,8 @@ class Signature:
         clash = const_names & func_names
         if clash:
             name = sorted(clash)[0]
-            raise ValueError(
+            _check_not_dual_use(
+                name, func_names,
                 f"Signature.from_formulas: {name!r} is used both as a constant "
                 "and as a function across the given formulas — a Signature "
                 "cannot declare one name in both namespaces from usage alone."
@@ -544,31 +822,31 @@ class Signature:
 
         predicates = {}
         for name, arities in pred_arities.items():
-            if len(arities) > 1:
-                raise ValueError(
-                    f"Signature.from_formulas: predicate {name!r} used with "
-                    f"conflicting arities {tuple(sorted(arities))}."
-                )
-            predicates[name] = PredicateDecl(name, next(iter(arities)))
+            arity = _check_single_valued(
+                arities,
+                f"Signature.from_formulas: predicate {name!r} used with "
+                f"conflicting arities {tuple(sorted(arities))}."
+            )
+            predicates[name] = PredicateDecl(name, arity)
 
         functions = {}
         for name, arities in func_arities.items():
-            if len(arities) > 1:
-                raise ValueError(
-                    f"Signature.from_formulas: function {name!r} used with "
-                    f"conflicting arities {tuple(sorted(arities))}."
-                )
-            functions[name] = FunctionDecl(name, next(iter(arities)))
+            arity = _check_single_valued(
+                arities,
+                f"Signature.from_formulas: function {name!r} used with "
+                f"conflicting arities {tuple(sorted(arities))}."
+            )
+            functions[name] = FunctionDecl(name, arity)
 
         constants = {}
         for name in const_names:
             seen = const_sorts.get(name, set())
-            if len(seen) > 1:
-                raise ValueError(
-                    f"Signature.from_formulas: constant {name!r} used with "
-                    f"conflicting sorts {tuple(sorted(seen))}."
-                )
-            constants[name] = ConstantDecl(name, next(iter(seen)) if seen else None)
+            sort = _check_single_valued(
+                seen,
+                f"Signature.from_formulas: constant {name!r} used with "
+                f"conflicting sorts {tuple(sorted(seen))}."
+            ) if seen else None
+            constants[name] = ConstantDecl(name, sort)
 
         return Signature(predicates=predicates, functions=functions,
                          constants=constants, sorts=frozenset(literal_sorts))
@@ -600,11 +878,15 @@ class Signature:
             for name, decl in sorted(self.functions.items())
         }
         constants = {name: decl.sort for name, decl in sorted(self.constants.items())}
+        subsorts = {
+            child: sorted(parents) for child, parents in sorted(self.subsorts.items())
+        }
         return {
             "predicates": predicates,
             "functions": functions,
             "constants": constants,
             "sorts": sorted(self.sorts),
+            "subsorts": subsorts,
         }
 
     # -------------------------------------------------------------------
@@ -626,6 +908,24 @@ class Signature:
         return violations
 
     # -------------------------------------------------------------------
+    # Subsorting
+    # -------------------------------------------------------------------
+
+    def is_subsort(self, s: str, t: str) -> bool:
+        """True iff ``s`` is ``t`` itself, or a direct-or-transitive subsort
+        of ``t`` (reflexive-transitive lookup against the closure computed
+        in :meth:`__post_init__` from the declared direct edges).
+
+        Never symmetric: ``is_subsort("Human", "Animal")`` and
+        ``is_subsort("Animal", "Human")`` differ once only ``Human <
+        Animal`` is declared (see the module docstring's "Subsorting"
+        section).
+        """
+        if s == t:
+            return True
+        return t in self._subsort_closure.get(s, frozenset())
+
+    # -------------------------------------------------------------------
     # Combining
     # -------------------------------------------------------------------
 
@@ -639,20 +939,47 @@ class Signature:
         :class:`ValueError` naming the symbol and both declarations; a
         symbol declared identically by both sides merges without complaint.
         Sorts merge with a plain set union (a bare sort NAME can never
-        itself conflict with another).
+        itself conflict with another). ``subsorts`` merges the same way,
+        per-child-sort union of direct parents (see the module docstring's
+        "Subsorting" section for why two differing parent sets are never
+        themselves a conflict, and the one way a merge can still fail: the
+        union creating a cycle neither side had alone).
         """
         predicates = _merge_section(self.predicates, other.predicates, "predicate")
         functions = _merge_section(self.functions, other.functions, "function")
         constants = _merge_section(self.constants, other.constants, "constant")
+        subsorts = _merge_subsorts(self.subsorts, other.subsorts)
         return Signature(predicates=predicates, functions=functions,
-                         constants=constants, sorts=self.sorts | other.sorts)
+                         constants=constants, sorts=self.sorts | other.sorts,
+                         subsorts=subsorts)
 
 
 # =============================================================================
 # from_dict helpers
 # =============================================================================
 
-_ALLOWED_TOP_KEYS = frozenset({"predicates", "functions", "constants", "sorts"})
+_ALLOWED_TOP_KEYS = frozenset(
+    {"predicates", "functions", "constants", "sorts", "subsorts"})
+
+
+def _parse_subsorts_section(section) -> dict:
+    """Parse the ``subsorts`` section: name -> an iterable of direct parent
+    sort names. Cycle detection is left to :class:`Signature`'s own
+    ``__post_init__`` (needs the fully-assembled mapping)."""
+    if not isinstance(section, Mapping):
+        raise TypeError(
+            f"Signature.from_dict: 'subsorts' must be a dict, got "
+            f"{type(section).__name__}."
+        )
+    out = {}
+    for child, parents in section.items():
+        if not isinstance(parents, (list, tuple, set, frozenset)):
+            raise TypeError(
+                f"Signature.from_dict: subsorts[{child!r}] must be an "
+                f"iterable of parent sort names, got {type(parents).__name__}."
+            )
+        out[child] = frozenset(parents)
+    return out
 
 
 def _parse_symbol_section(section, decl_cls, kind: str, has_result_sort: bool) -> dict:
@@ -840,7 +1167,9 @@ def _check_atom(node: Atom, env: Dict[str, Optional[str]], sig: Signature,
         arg_sort = _term_sort(arg, env, sig, violations)
         if decl.arg_sorts is not None and i < len(decl.arg_sorts):
             declared = decl.arg_sorts[i]
-            if declared is not None and arg_sort is not None and declared != arg_sort:
+            if declared is not None and arg_sort is not None and not (
+                arg_sort == declared or sig.is_subsort(arg_sort, declared)
+            ):
                 violations.append(
                     f"predicate '{node.predicate}' argument {i + 1} expects "
                     f"sort '{declared}', got sort '{arg_sort}'"
@@ -891,7 +1220,9 @@ def _term_sort(node: Node, env: Dict[str, Optional[str]], sig: Signature,
             arg_sort = _term_sort(arg, env, sig, violations)
             if decl.arg_sorts is not None and i < len(decl.arg_sorts):
                 declared = decl.arg_sorts[i]
-                if declared is not None and arg_sort is not None and declared != arg_sort:
+                if declared is not None and arg_sort is not None and not (
+                    arg_sort == declared or sig.is_subsort(arg_sort, declared)
+                ):
                     violations.append(
                         f"function '{node.name}' argument {i + 1} expects "
                         f"sort '{declared}', got sort '{arg_sort}'"

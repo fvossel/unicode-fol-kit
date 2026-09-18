@@ -51,10 +51,33 @@ _EXPECTED_ALIASES = {
               "historically_", "once_", "previous_", "since_",
               "would_", "might_",
               "announce_", "announce_diamond_",
-              "nominal_", "at_"},
+              "everybody_knows_", "distributed_knowledge_", "common_knowledge_",
+              "nominal_", "at_", "down_"},
     "second_order": {"not_", "and_", "or_", "xor_", "implies_", "iff_",
                      "quantifier_", "second_order_quantifier_",
                      "count_", "contrast_"},
+    # modal_sorted / so_sorted (C3): "modal"/"second_order" cloned onto
+    # "msfol"'s SORTED quantifier/count/const/cardinality forms, with
+    # "modal"'s/"second_order"'s own UNSORTED quantifier_/count_ excluded
+    # (see fol/nodes.py's _clone_parser_ops_sorted) — so each is exactly its
+    # base mode's aliases, minus {quantifier_, count_}, plus msfol's sorted
+    # binder aliases (the classical connectives + contrast_ overlap and
+    # dedupe to one copy, same as third_order/third_order_modal already do).
+    "modal_sorted": {"not_", "and_", "or_", "xor_", "implies_", "iff_",
+                     "sorted_quantifier_", "sorted_const_", "contrast_",
+                     "sorted_count_", "sorted_cardinality_",
+                     "box_", "diamond_", "always_", "eventually_", "next_",
+                     "knows_", "believes_", "says_", "wants_",
+                     "obligatory_", "permitted_", "until_",
+                     "historically_", "once_", "previous_", "since_",
+                     "would_", "might_",
+                     "announce_", "announce_diamond_",
+                     "everybody_knows_", "distributed_knowledge_", "common_knowledge_",
+                     "nominal_", "at_", "down_"},
+    "so_sorted": {"not_", "and_", "or_", "xor_", "implies_", "iff_",
+                  "sorted_quantifier_", "sorted_const_", "contrast_",
+                  "sorted_count_", "sorted_cardinality_",
+                  "second_order_quantifier_"},
     "dependence": {"not_", "and_", "or_", "quantifier_", "dep_", "slashed_"},
     "linear": {"tensor_", "with_", "oplus_", "limp_", "ofcourse_", "one_",
                "top_", "zero_"},
@@ -69,6 +92,28 @@ def test_generated_grammar_is_wellformed_and_complete(reg_mode):
     Lark(grammar, parser="earley", import_paths=[str(_GDIR)])  # compiles cleanly
     aliases = set(build_transform_handlers(reg_mode))
     assert aliases == _EXPECTED_ALIASES[reg_mode]
+
+
+def test_down_inherited_by_modes_that_clone_modal_operators():
+    """N1 design decision, pinned: the ↓ binder (rule alias ``down_``) is
+    registered ONLY for ``"modal"`` (see fol._hybrid_nodes), exactly like
+    ``Nominal``/``At`` before it — and, exactly like ``Nominal``/``At``, it is
+    then picked up FOR FREE by every mode that clones "modal"'s operator set
+    wholesale: ``"third_order_modal"`` (tomodal, fol.nodes' plain
+    ``_clone_parser_ops``) and ``"modal_sorted"`` (fol.nodes'
+    ``_clone_parser_ops_sorted``, which excludes only the UNSORTED
+    quantifier_/count_ aliases — "down_" binds a Nominal, not an individual
+    variable, so it is not sort-specific and is not excluded). This is a
+    decision, not an accident: ↓ under a many-sorted individual domain or
+    inside a third-order formula is still ordinary state-variable binding
+    (only the bound name's NAMESPACE — hybrid nominals — is unsorted/
+    order-0), so inheriting it is the right default, the same one ``@``/bare
+    nominals already established."""
+    from unicode_fol_kit.fol._fol_nodes import parser_ops_for_mode
+    for mode in ("third_order_modal", "modal_sorted"):
+        aliases = {op.rule_alias for op in parser_ops_for_mode(mode)}
+        assert "down_" in aliases, (mode, sorted(aliases))
+        assert "nominal_" in aliases and "at_" in aliases, "sanity: hybrid ops present"
 
 
 def test_new_operator_self_registers_without_touching_parser():

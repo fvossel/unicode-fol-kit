@@ -1,4 +1,4 @@
-"""MCP server exposing the kit's seven-verb API as tools.
+"""MCP server exposing the kit's seven-verb API, and more, as tools.
 
 The Model Context Protocol (MCP) is the 2025/26 integration standard for
 giving LLM agents typed tool access. This subpackage puts the kit's core
@@ -15,11 +15,12 @@ Python SDK, >= 2.0). This subpackage is therefore NOT imported by
 (``from unicode_fol_kit.mcp import create_server``) or run the server with
 ``python -m unicode_fol_kit.mcp``.
 
-Every tool takes formula TEXT (any supported dialect, auto-detected via
-``api.parse_any``) and returns the same JSON-compatible dicts the Python
-API returns — nothing is invented at this layer; it is a thin, faithful
-projection of :mod:`unicode_fol_kit.api` plus one introspection tool
-(``list_backends``).
+Every tool takes TEXT (a formula in any supported dialect, auto-detected via
+``api.parse_any``; a SMILES string for the chemistry tools; a concept in the
+glyph or Manchester syntax for the ``dl_*`` tools) and returns the same
+JSON-compatible dicts the Python API returns — nothing is invented at this
+layer. The full tool list is in :mod:`unicode_fol_kit.mcp.server` and the MCP
+guide.
 """
 
 from .server import create_server, main

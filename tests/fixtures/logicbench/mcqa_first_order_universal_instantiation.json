@@ -1,0 +1,30 @@
+{
+  "type": "first_order_logic",
+  "axiom": "universal_instantiation",
+  "samples": [
+    {
+      "id": 1,
+      "context": "All students are required to take an examination in order to fulfill the requirements for their degree. reema, being a student, is also expected to fulfill the requirements.",
+      "question": "Based on the context, what conclusion would be deemed most suitable?",
+      "choices": {
+        "choice_1": "reema has already completed all the requirements for her degree",
+        "choice_2": "reema is responsible for fulfilling the requirements for someone else's degree",
+        "choice_3": "reema is exempted from taking the exam to complete her degree",
+        "choice_4": "reema need to take an exam to complete her degree"
+      },
+      "answer": "choice_4"
+    },
+    {
+      "id": 2,
+      "context": "All employees are required to follow a five-day work schedule. mohammed, being an employee, is expected to adhere to this policy.",
+      "question": "Based on the context, what conclusion would be deemed most suitable?",
+      "choices": {
+        "choice_1": "Sara, being an employee, is expected to adhere to this policy.",
+        "choice_2": "mohammed can choose to work only four days a week",
+        "choice_3": "John, being an employee, is not required to adhere to this policy.",
+        "choice_4": "mohammed have to work five days a week"
+      },
+      "answer": "choice_4"
+    }
+  ]
+}

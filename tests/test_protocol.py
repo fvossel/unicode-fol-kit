@@ -23,7 +23,9 @@ from unicode_fol_kit import (
     register_backend, get_backend, available_backends, default_chain,
     run_backend,
 )
-from unicode_fol_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, ERROR
+from unicode_fol_kit.atp.protocol import (
+    PROVED, REFUTED, UNKNOWN, ERROR, Z3Backend, z3_relevant_premises,
+)
 
 _P = MSFLParser()
 _MP = MSFLParser(modal=True)
@@ -140,12 +142,24 @@ def test_default_chains_cover_their_logics():
         assert default_chain("fol") == ("z3", "tableau", "resolution",
                                         "modelfinder")
     assert default_chain("modal") == ("modal-tableau", "kripke-enum", "qml")
+    # C10: five singleton chains, one per substructural/non-classical logic —
+    # see logic_backends' module docstring for why each is a lone entry
+    # rather than a multi-backend race.
+    assert default_chain("intuitionistic") == ("intuitionistic",)
+    assert default_chain("lambek") == ("lambek",)
+    assert default_chain("ill") == ("ill",)
+    assert default_chain("relevant") == ("relevant",)
+    assert default_chain("hybrid") == ("hybrid",)
     with pytest.raises(ValueError):
         default_chain("astrology")
 
 
 def test_internal_backends_are_always_available():
-    for name in default_chain("fol") + default_chain("modal"):
+    all_chains = (default_chain("fol") + default_chain("modal")
+                 + default_chain("intuitionistic") + default_chain("lambek")
+                 + default_chain("ill") + default_chain("relevant")
+                 + default_chain("hybrid"))
+    for name in all_chains:
         assert get_backend(name).available()
         assert name in available_backends()
 
@@ -191,3 +205,150 @@ def test_backend_crash_becomes_error_verdict():
     finally:
         from unicode_fol_kit.atp.protocol import _REGISTRY
         del _REGISTRY["crashy"]
+
+
+# ---------------------------------------------------------------------------
+# C12: Z3Backend's per-Solver assert_and_track unsat-core certificate
+# ---------------------------------------------------------------------------
+#
+# Z3Backend.decide now tracks each premise (tag "p<i>") and the negated goal
+# (tag "goal") individually instead of asserting one flat implication, so a
+# PROVED verdict carries Verdict.proof = {"kind": "z3_unsat_core", "core":
+# [...]} — an unsat CORE (sound, not necessarily minimal; see
+# z3_relevant_premises's docstring for the same caveat).
+
+_z3 = Z3Backend()
+
+
+def test_z3_proved_verdict_carries_an_unsat_core_proof():
+    v = run_backend("z3", _VALID)
+    assert v.status == PROVED
+    assert v.proof["kind"] == "z3_unsat_core"
+    # _VALID has no premises, so the only thing that CAN be tracked is the
+    # negated goal itself.
+    assert v.proof["core"] == ["goal"]
+
+
+def test_z3_refuted_and_unknown_verdicts_carry_no_proof():
+    assert run_backend("z3", _INVALID).proof is None                 # REFUTED
+    timed_out = run_backend("z3", _VALID, timeout=0)
+    # timeout=0 means "no budget" to Z3 -- must not raise, must not fabricate
+    # a proof either way.
+    assert timed_out.proof is None or timed_out.status == PROVED
+
+
+def test_z3_refuted_countermodel_never_leaks_the_tracking_tags():
+    """Regression: assert_and_track's own "goal"/"p<i>" tracking booleans are
+    themselves 0-ary Bool-sorted Z3 declarations, so a naive
+    `{d.name(): model[d] for d in model.decls()}` would leak them into the
+    countermodel witness as spurious extra keys indistinguishable from a
+    real symbol. _z3_model_assignment must filter them out by declaration
+    shape (name AND Bool-sort AND arity 0), never by hoping premises/formula
+    happen not to use those names."""
+    v = run_backend("z3", _INVALID)
+    assert v.status == REFUTED
+    assert set(v.countermodel["assignment"]) == {"P"}
+
+    premises = [_P.parse("P(a)")]
+    v2 = run_backend("z3", _P.parse("Q(a)"), premises)
+    assert v2.status == REFUTED
+    assert "goal" not in v2.countermodel["assignment"]
+    assert "p0" not in v2.countermodel["assignment"]
+
+    # Pathological but must not corrupt: a genuine kit-level CONSTANT named
+    # "goal" is lowercase-initial (legal per fol._identifiers) and therefore
+    # never Bool-sorted (constants live in the uninterpreted sort S, not
+    # Bool -- see Z3Env.get_symbol), so it is NEVER the same Z3 declaration
+    # shape as the tracking tag and must survive in the witness untouched.
+    weird_goal = _P.parse("Q(goal)")
+    v3 = run_backend("z3", weird_goal, [_P.parse("P(goal)")])
+    assert v3.status == REFUTED
+    assert "goal" in v3.countermodel["assignment"]           # the CONSTANT
+    assert v3.countermodel["assignment"]["goal"] != "True"   # not the tag's bool value
+
+
+class TestZ3RelevantPremises:
+    """C11's Z3-native leg: which premises did Z3 actually need?
+
+    Every expected value below was independently verified with a direct
+    ``z3.Solver().assert_and_track``/``unsat_core()`` experiment before being
+    pinned here (not derived from reading z3_relevant_premises's own code) --
+    see the function's docstring for the "sound, not necessarily minimal"
+    caveat these numbers respect.
+    """
+
+    def test_red_herring_premise_is_excluded(self):
+        # ∀x(Human(x)→Mortal(x)) and Human(socrates) are the textbook modus-
+        # ponens derivation of Mortal(socrates); Bird(tweety) shares no
+        # symbol with the rest of the problem, so no sound unsat core can
+        # ever need it.
+        premises = [_P.parse("∀x (Human(x) → Mortal(x))"),
+                   _P.parse("Human(socrates)"),
+                   _P.parse("Bird(tweety)")]
+        goal = _P.parse("Mortal(socrates)")
+        assert z3_relevant_premises(goal, premises) == (0, 1)
+
+    def test_syntactically_similar_but_irrelevant_premise_is_excluded(self):
+        # A THIRD premise sharing the Human(x) antecedent (∀x(Human(x)→Wise(x)))
+        # is syntactically close to the premise that IS needed but proves
+        # nothing about Mortal(socrates) -- a harder distractor than a
+        # disjoint-vocabulary red herring, stressing that exclusion is by
+        # actual logical necessity, not by "shares no symbols".
+        premises = [_P.parse("∀x (Human(x) → Mortal(x))"),
+                   _P.parse("Human(socrates)"),
+                   _P.parse("∀x (Human(x) → Wise(x))")]
+        goal = _P.parse("Mortal(socrates)")
+        assert z3_relevant_premises(goal, premises) == (0, 1)
+
+    def test_redundant_premise_never_forces_both(self):
+        # Mortal(socrates) alone already contradicts the negated goal; the
+        # second premise (a strictly STRONGER, independently sufficient
+        # restatement) is never required alongside it.
+        premises = [_P.parse("Mortal(socrates)"),
+                   _P.parse("Mortal(socrates) ∧ Human(socrates)")]
+        goal = _P.parse("Mortal(socrates)")
+        indices = z3_relevant_premises(goal, premises)
+        assert indices == (0,)   # never both -- see the docstring's caveat
+
+    def test_no_premises_needed_is_the_empty_tuple(self):
+        assert z3_relevant_premises(_VALID, []) == ()
+
+    def test_not_entailed_is_none_not_an_empty_or_full_set(self):
+        # P(a) alone does not entail Q(a) -- there is no "premises used"
+        # answer for a non-theorem.
+        assert z3_relevant_premises(_P.parse("Q(a)"), [_P.parse("P(a)")]) is None
+
+    def test_unsupported_fragment_is_none(self):
+        linear = MSFLParser(linear=True).parse("A ⊗ B")
+        assert z3_relevant_premises(linear, []) is None
+
+    def test_soundness_self_check_reproving_just_the_reported_subset(self):
+        """The independent second route the spec's test_oracle names: take
+        the reported subset, re-run Z3 (fresh, unrelated call) on ONLY those
+        premises plus the conclusion, and require it still PROVED -- catches
+        an unsound over-pruning bug regardless of which extraction path
+        produced the subset."""
+        premises = [_P.parse("∀x (Human(x) → Mortal(x))"),
+                   _P.parse("Human(socrates)"),
+                   _P.parse("Bird(tweety)")]
+        goal = _P.parse("Mortal(socrates)")
+        indices = z3_relevant_premises(goal, premises)
+        subset = [premises[i] for i in indices]
+        assert _z3.decide(goal, subset).status == PROVED
+
+
+def test_z3_backend_proof_core_agrees_with_z3_relevant_premises():
+    """The premise-only side of Z3Backend's own proof["core"] (its "p<i>"
+    tags, stripped of the always-present "goal" tag) must name exactly the
+    same premises z3_relevant_premises reports for the identical query --
+    both read the exact same _z3_track_and_check call shape (see that
+    function's docstring), so they must never drift apart."""
+    premises = [_P.parse("∀x (Human(x) → Mortal(x))"),
+               _P.parse("Human(socrates)"),
+               _P.parse("Bird(tweety)")]
+    goal = _P.parse("Mortal(socrates)")
+    v = _z3.decide(goal, premises)
+    assert v.status == PROVED
+    core_indices = tuple(sorted(
+        int(tag[1:]) for tag in v.proof["core"] if tag != "goal"))
+    assert core_indices == z3_relevant_premises(goal, premises) == (0, 1)

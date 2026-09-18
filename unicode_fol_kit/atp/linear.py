@@ -55,13 +55,16 @@ from itertools import product as _iproduct
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 from ..fol.nodes import Node, Tensor, With, OPlus, LinearImplies, OfCourse, One
-# Top/Zero are not yet re-exported by fol.nodes / the package __init__ (that
-# wiring lands centrally alongside the rest of the in-flight changes to those
-# files); the classes themselves — and the registrations that make ⊤/𝟘 parse
-# in "linear" mode — are fully live in _linear_nodes, so we import them
-# straight from there. render_ill_formula is _linear_nodes' safe substitute
-# for Node.to_unicode_str(), which cannot yet render a formula containing
-# Top/Zero (see that module's comment above its register_operator calls).
+# Top/Zero ARE re-exported by fol.nodes (and by the package __init__) —
+# fol.nodes.Top and fol._linear_nodes.Top are the same class object, verified
+# live. This import just goes straight to their defining module instead,
+# which is equally valid; it is grouped with render_ill_formula and
+# _ill_sort_key, which _linear_nodes defines and fol.nodes does not
+# re-export. render_ill_formula is _linear_nodes' fully-parenthesised
+# renderer, kept for the MSFLParser round-trip guarantee that buys it (see
+# that module's comment above its definition) — not to route around a
+# rendering gap: to_unicode_str()/to_latex() already render Top/Zero
+# correctly.
 from ..fol._linear_nodes import Top, Zero, render_ill_formula, _ill_sort_key
 from .sequent import SequentResult
 
@@ -90,9 +93,12 @@ class ILLSequent:
         """Render as ``A, B ⊢ C`` using each formula's Unicode form.
 
         Uses :func:`~unicode_fol_kit.fol._linear_nodes.render_ill_formula`
-        rather than ``Node.to_unicode_str()`` directly, since a formula built
-        from ``Top``/``Zero`` cannot yet go through the latter (see that
-        module's comment); for every other formula the two agree.
+        rather than ``Node.to_unicode_str()`` directly: the two always agree
+        on the rendered symbols (Top/Zero included), but render_ill_formula
+        fully parenthesises every compound subformula, which guarantees a
+        sequent's text re-parses to a structurally equal AST — a guarantee
+        to_unicode_str()'s precedence-based minimal parenthesisation does not
+        make in general (see that module's comment for a worked example).
         """
         left = ", ".join(render_ill_formula(f) for f in self.antecedent)
         return f"{left} ⊢ {render_ill_formula(self.succedent)}".strip()

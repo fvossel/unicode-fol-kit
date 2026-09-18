@@ -1,4 +1,4 @@
-"""Tests for the OWL 2 Manchester Syntax parser/renderer, ALC fragment
+"""Tests for the OWL 2 Manchester Syntax parser/renderer, ALCHQ fragment
 (unicode_fol_kit.dl.owl_manchester).
 
 Round-trip is the primary correctness property, exactly as in
@@ -13,12 +13,12 @@ exactly the lattice unicode_fol_kit.dl.concepts._PREC already uses
 apply the identical resolution/parenthesisation rule as the existing glyph
 parser, just spelling operators as keywords.
 
-Every rejection test below exercises real OWL 2 Manchester Syntax that is
-NOT ALC-expressible (cardinalities, value/Self restrictions, inverse roles,
-nominals, datatype facets); the kit's honesty convention requires a loud,
-precise ValueError naming the construct rather than a silent
-mistranslation, so each test asserts the offending construct's name (not
-just "some error") appears in the message.
+Qualified cardinalities are ALCQ and parse to number restrictions. Every
+rejection test below exercises real OWL 2 Manchester Syntax outside the
+supported fragment (value/Self restrictions, inverse roles, nominals, datatype
+facets); the kit's honesty convention requires a loud, precise ValueError
+naming the construct rather than a silent mistranslation, so each test asserts
+the offending construct's name (not just "some error") appears in the message.
 """
 
 import pytest
@@ -149,21 +149,23 @@ def test_whitespace_between_tokens_is_insignificant():
 
 
 # --------------------------------------------------------------------------- #
-# Rejections: real Manchester/OWL 2 syntax outside the ALC fragment. Every
-# case names its construct explicitly in the raised message.
+# Cardinalities, then rejections: real Manchester/OWL 2 syntax outside the
+# supported fragment. Every rejection names its construct in the message.
 # --------------------------------------------------------------------------- #
 
-@pytest.mark.parametrize("text, needle", [
-    ("r min 2 C", "min"),          # cardinality: at least 2 r-successors in C
-    ("r max 3 C", "max"),          # cardinality: at most 3
-    ("r exactly 1 C", "exactly"),  # cardinality: exactly 1
+@pytest.mark.parametrize("text, expected", [
+    # Qualified number restrictions are ALCQ, supported since the tableau learned
+    # them; `exactly n` is the conjunction of `min n` and `max n`, and an omitted
+    # filler is owl:Thing.
+    ("r min 2 C", dl.AtLeast(2, "r", dl.Atomic("C"))),
+    ("r max 3 C", dl.AtMost(3, "r", dl.Atomic("C"))),
+    ("r exactly 1 C", dl.And(dl.AtLeast(1, "r", dl.Atomic("C")),
+                             dl.AtMost(1, "r", dl.Atomic("C")))),
+    ("r min 2", dl.AtLeast(2, "r", dl.Top())),
 ])
-def test_cardinality_restrictions_are_rejected(text, needle):
-    with pytest.raises(ManchesterSyntaxError) as exc:
-        parse_manchester(text)
-    msg = str(exc.value)
-    assert "cardinality" in msg
-    assert needle in msg
+def test_cardinality_restrictions_parse_to_number_restrictions(text, expected):
+    assert parse_manchester(text) == expected
+    assert parse_manchester(to_manchester(expected)) == expected
 
 
 def test_value_restriction_is_rejected():

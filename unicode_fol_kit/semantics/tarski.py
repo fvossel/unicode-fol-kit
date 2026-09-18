@@ -16,6 +16,7 @@ quantifier ranges over the domain, the binding is added to a *copy* of the
 assignment for each candidate individual.
 """
 
+import html
 import operator
 from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Tuple, Union
 
@@ -70,7 +71,8 @@ class Structure:
         constants: maps a constant NAME (str) to an individual in the domain.
             Interprets both :class:`Constant` and :class:`SortedConstant`.
             :class:`Number` ``n`` defaults to the individual ``n`` unless the
-            name ``str(n)`` is overridden here.
+            name ``str(n)`` is overridden here — except where ``n`` is compared
+            with a cardinality, which always reads it as the numeral itself.
         functions: maps ``(name, arity)`` to either a Python callable
             ``(*args) -> individual`` or a plain dict ``{arg_tuple: individual}``.
             A dict is looked up by the tuple of evaluated argument individuals.
@@ -122,6 +124,44 @@ class Structure:
             f"sorts={self.sorts!r})"
         )
 
+    def _repr_html_(self) -> str:
+        """Jupyter/IPython rich-display hook: an HTML summary table.
+
+        Same conservative shape as :meth:`__repr__`: the (already fully
+        materialised, finite) domain and constant VALUES are shown, but
+        functions/predicates are represented by their ``(name, arity)`` KEYS
+        only — an interpretation may be a plain Python callable, and it is
+        never invoked here, exactly as ``__repr__`` already chooses not to
+        dump ``self.functions``/``self.predicates`` themselves. Every value is
+        rendered through ``repr()`` and HTML-escaped, since a domain
+        individual, constant name, or sort name may be an arbitrary
+        user-supplied string (e.g. containing ``<``/``>``/``&``).
+        """
+        def esc(value: Any) -> str:
+            return html.escape(repr(value))
+
+        def keys_html(mapping: Mapping[Tuple[str, int], Any]) -> str:
+            return ", ".join(html.escape(f"{name}/{arity}")
+                              for name, arity in sorted(mapping)) or "—"
+
+        constants_html = ", ".join(
+            f"{html.escape(name)} = {esc(value)}"
+            for name, value in sorted(self.constants.items())
+        ) or "—"
+        sorts_html = ", ".join(
+            f"{html.escape(name)} = {{{', '.join(esc(v) for v in universe)}}}"
+            for name, universe in sorted(self.sorts.items())
+        ) or "—"
+        rows = [
+            ("domain", ", ".join(esc(d) for d in self.domain) or "—"),
+            ("constants", constants_html),
+            ("functions", keys_html(self.functions)),
+            ("predicates", keys_html(self.predicates)),
+            ("sorts", sorts_html),
+        ]
+        body = "".join(f"<tr><th>{label}</th><td>{cell}</td></tr>" for label, cell in rows)
+        return f"<table><tbody>{body}</tbody></table>"
+
     def sort_universe(self, sort: str) -> Tuple[Any, ...]:
         """Return the universe of a named sort.
 
@@ -144,7 +184,8 @@ def term_value(term: Node, structure: Structure, assignment: Mapping[str, Any]) 
     - :class:`Variable` ``v`` → ``assignment[v.name]``.
     - :class:`Constant` / :class:`SortedConstant` ``c`` → ``structure.constants[c.name]``.
     - :class:`Number` ``n`` → ``structure.constants.get(str(n), n)`` (the literal
-      value itself by default).
+      value itself by default). A comparison with a cardinality bypasses this and
+      reads the numeral directly — see :func:`_operand_value`.
     - :class:`Function` → the interpreted function applied to the evaluated args;
       the interpretation may be a callable or a ``{arg_tuple: value}`` dict.
 
@@ -255,6 +296,29 @@ def _is_number(value: Any) -> bool:
     return not isinstance(value, bool) and isinstance(value, (int, float))
 
 
+def _compares_a_cardinality(atom: Atom) -> bool:
+    """Whether a comparison atom has a cardinality operand."""
+    return any(isinstance(a, (Cardinality, SortedCardinality)) for a in atom.args)
+
+
+def _operand_value(term: Node, structure: Structure, assignment: Mapping[str, Any],
+                   numeric: bool) -> Any:
+    """Evaluate one operand of a comparison.
+
+    Next to a cardinality (``numeric``), a :class:`Number` is the numeral it
+    spells, never whatever ``structure.constants`` maps its name to: the other
+    side is a count, so ``|{x : P(x)}| > 1`` asks about the number one. Reading
+    the literal through the constant table instead would let a structure that
+    interprets the name ``"1"`` as some other individual change the question —
+    and a model finder that enumerates interpretations for every numeral it sees
+    finds exactly such a structure, reporting a countermodel to a valid
+    entailment.
+    """
+    if numeric and isinstance(term, Number):
+        return term.value
+    return term_value(term, structure, assignment)
+
+
 def _order_value(atom: Atom, structure: Structure, assignment: Mapping[str, Any]) -> bool:
     """Truth value of a binary order comparison ``< > ≤ ≥``.
 
@@ -263,7 +327,9 @@ def _order_value(atom: Atom, structure: Structure, assignment: Mapping[str, Any]
     1. A :class:`Cardinality` operand forces the **numeric** reading. A cardinality
        is a natural number this evaluator computes itself, so there is no freedom
        left to a structure; routing it through a relation extension would be a
-       category error. A cardinality compared against a non-number raises.
+       category error. A :class:`Number` on the other side is read as the numeral
+       itself, not through ``structure.constants`` (see :func:`_operand_value`).
+       A cardinality compared against a non-number raises.
     2. Otherwise a **declared** extension wins. The order symbols are ordinary
        relation symbols of the language, and a structure may interpret ``<`` over
        its domain however it likes — that is also the reading ``to_z3`` /
@@ -280,9 +346,10 @@ def _order_value(atom: Atom, structure: Structure, assignment: Mapping[str, Any]
     inconsistency: a cardinality *is* a number, whereas a measure's values are
     whatever the structure says they are.
     """
-    left, right = (term_value(a, structure, assignment) for a in atom.args)
+    numeric = _compares_a_cardinality(atom)
+    left, right = (_operand_value(a, structure, assignment, numeric) for a in atom.args)
 
-    if any(isinstance(a, (Cardinality, SortedCardinality)) for a in atom.args):
+    if numeric:
         for value in (left, right):
             if not _is_number(value):
                 raise ValueError(
@@ -305,18 +372,18 @@ def _order_value(atom: Atom, structure: Structure, assignment: Mapping[str, Any]
 def _atom_value(atom: Atom, structure: Structure, assignment: Mapping[str, Any]) -> bool:
     """Compute the truth value of an atomic formula.
 
-    Equality ``=`` is identity of the two term values; ``≠`` is non-identity.
+    Equality ``=`` is identity of the two term values; ``≠`` is non-identity. When
+    one side is a cardinality, a :class:`Number` on the other is read as the
+    numeral itself, as for the order comparisons (see :func:`_operand_value`).
     A nullary predicate reads its bool from ``predicates[(name, 0)]``. A binary
     order comparison ``< > ≤ ≥`` is delegated to :func:`_order_value`. Every other
     predicate is true iff the tuple of argument values lies in its extension; a
     missing extension is the empty relation, hence false.
     """
-    if atom.predicate == "=" and len(atom.args) == 2:
-        return term_value(atom.args[0], structure, assignment) == \
-            term_value(atom.args[1], structure, assignment)
-    if atom.predicate == "≠" and len(atom.args) == 2:
-        return term_value(atom.args[0], structure, assignment) != \
-            term_value(atom.args[1], structure, assignment)
+    if atom.predicate in ("=", "≠") and len(atom.args) == 2:
+        numeric = _compares_a_cardinality(atom)
+        left, right = (_operand_value(a, structure, assignment, numeric) for a in atom.args)
+        return (left == right) if atom.predicate == "=" else (left != right)
 
     if not atom.args:
         return bool(structure.predicates.get((atom.predicate, 0), False))

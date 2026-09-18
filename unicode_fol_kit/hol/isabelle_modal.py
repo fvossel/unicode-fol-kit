@@ -120,7 +120,7 @@ and the constants :data:`ISABELLE_TACTICS` and :data:`BRIDGES`.
 """
 
 import re
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Sequence
 
 from unicode_fol_kit.fol.nodes import (
     Node, Variable, Constant, Number, Function,
@@ -131,7 +131,14 @@ from unicode_fol_kit.fol.nodes import (
     Obligatory, Permitted, SortedQuantifier,
 )
 from unicode_fol_kit.fol._fol_nodes import constant_name_to_ascii
+from unicode_fol_kit.fol._msfl_nodes import nonempty_sort_axioms
 from unicode_fol_kit.fol._symbol_names import SymbolNames, dedupe
+# Down (the ↓ binder, N1) is not yet re-exported through fol.nodes / fol's
+# public __init__ / the top-level unicode_fol_kit package (that three-file
+# edit is outside this change's file ownership — see the change's own
+# report); imported directly from its defining module in the meantime, the
+# same class object either import path would give.
+from unicode_fol_kit.fol._hybrid_nodes import Down
 from unicode_fol_kit.fol.frames import FRAMES as _SHARED_FRAMES
 
 # --------------------------------------------------------------------------- #
@@ -431,6 +438,16 @@ def _lift(node: Node, names: "_IsaNames") -> str:
         # @i φ: evaluate φ AT the named world, regardless of the current one.
         return (f"(\\<lambda>w. {_lift(node.formula, names)} "
                 f"{names.nominal(node.nominal.name)})")
+    if isinstance(node, Down):
+        raise NotImplementedError(
+            "to_isabelle_modal: the ↓ binder is not supported by this HOL "
+            "embedding — H(@,↓) validity is undecidable, and this emitter's "
+            "job (a lemma statement for Sledgehammer/a tactic) assumes a goal "
+            "shape a human or ATP proof search can be expected to close, not "
+            "an open research question. Use "
+            "unicode_fol_kit.fol.modal_translation.down_is_valid (Z3, "
+            "PROVED-only) or unicode_fol_kit.atp.kripke_enum.KripkeEnumBackend "
+            "/ modal_enum_search (bounded search, REFUTED-only) instead.")
 
     if isinstance(node, Quantifier):
         x = names.variable(node.variable.name)
@@ -580,6 +597,16 @@ def _scan(node: Node, sig: _Sig) -> None:
         sig.uses_hybrid = True
         _scan(node.formula, sig)
         return
+    if isinstance(node, Down):
+        raise NotImplementedError(
+            "to_isabelle_modal: the ↓ binder is not supported by this HOL "
+            "embedding — H(@,↓) validity is undecidable, and this emitter's "
+            "job (a lemma statement for Sledgehammer/a tactic) assumes a goal "
+            "shape a human or ATP proof search can be expected to close, not "
+            "an open research question. Use "
+            "unicode_fol_kit.fol.modal_translation.down_is_valid (Z3, "
+            "PROVED-only) or unicode_fol_kit.atp.kripke_enum.KripkeEnumBackend "
+            "/ modal_enum_search (bounded search, REFUTED-only) instead.")
     if isinstance(node, Quantifier):
         sig.has_quant = True
         _scan(node.formula, sig)
@@ -1158,10 +1185,56 @@ def _domain_axioms(mode: str) -> List[str]:
     return out
 
 
+def _sort_consts(original: Node, names: "_IsaNames") -> List[str]:
+    """Isabelle constant names of the sorts ``original`` quantifies over.
+
+    Takes the UNrelativized formula, because after ``_relativize`` a sort is no
+    longer distinguishable from any other unary predicate. Reuses
+    :func:`~unicode_fol_kit.fol._msfl_nodes.nonempty_sort_axioms`'s own scan (as
+    :func:`~unicode_fol_kit.fol.qml._sort_names_used` does) so this route and the
+    classical one can never disagree about which sorts a formula uses, then maps
+    each through the de-colliding resolver so the axiom names the same ``consts``
+    the lifted goal does. A sort the relativized formula never mentions as a
+    unary atom — it has no ``consts`` line — is skipped rather than referenced.
+    """
+    out: List[str] = []
+    for axiom in nonempty_sort_axioms(original):
+        const = names.pred.get((axiom.formula.predicate, 1))
+        if const is not None and const not in out:
+            out.append(const)
+    return out
+
+
+def _nonempty_sort_axioms(sorts: Sequence[str], mode: str) -> List[str]:
+    r"""Per-world non-emptiness for every sort the source formula quantifies over.
+
+    ``_relativize`` turns ``∀x:S φ`` into ``∀x (S(x) → φ)``, which leaves the sort
+    guard an ordinary WORLD-RELATIVE predicate — so without this axiom nothing
+    forces ``S`` to hold of anything at a world, and ``∀x:S P(x) → ∃x:S P(x)``
+    comes out unprovable here while the classical many-sorted routes call it
+    valid (``fol._msfl_nodes.nonempty_sort_axioms`` adds the same convention
+    there, and :func:`~unicode_fol_kit.fol.qml.qml_axioms` the same per-world
+    version). ``w`` is free, i.e. implicitly universally quantified over worlds
+    by ``axiomatization``, so the sort is non-empty at EVERY world, matching the
+    qml route rather than merely fixing the verdict at one.
+
+    Under an actualist ``mode`` the witness must also EXIST at the world: a
+    witness outside the local domain cannot instantiate the ``existsAt``-guarded
+    ``mexists``, so the bare version would not restore the entailment there.
+    """
+    out: List[str] = []
+    for i, sort in enumerate(sorts):
+        body = (f"\\<exists>x. existsAt x w \\<and> {sort} x w"
+                if mode not in _CONSTANT_MODES else f"\\<exists>x. {sort} x w")
+        out.append(f'axiomatization where nonempty_sort{i}: "{body}"')
+    return out
+
+
 def _collect_axioms(sig: "_Sig", frame: str, mode: str,
                     temporal_closure: bool, temporal_def: bool = False,
                     systems: Optional[dict] = None,
-                    bridges: Optional[Iterable[str]] = None) -> List[str]:
+                    bridges: Optional[Iterable[str]] = None,
+                    sorts: Sequence[str] = ()) -> List[str]:
     """All ``axiomatization where ...`` lines the theory emits, in emission order.
 
     Centralised so the proof emitter and :func:`modal_axiom_names` agree on exactly
@@ -1215,6 +1288,11 @@ def _collect_axioms(sig: "_Sig", frame: str, mode: str,
     axioms += _bridge_axioms(sig, bridges)
     if sig.has_quant:
         axioms += _domain_axioms(mode)
+    # After the domain axioms, so `existsAt` is already constrained when an
+    # actualist sort witness refers to it, and so every pre-existing
+    # modal_axiom_names result keeps its exact content and order (a formula
+    # with no many-sorted node yields no sorts and no extra line).
+    axioms += _nonempty_sort_axioms(sorts, mode)
     return axioms
 
 
@@ -1365,10 +1443,21 @@ def isabelle_modal_theory(
     # typo fails fast rather than after the formula has been scanned and lifted.
     requested_bridges = _validate_bridges(bridges, "to_isabelle_modal")
 
+    # A many-sorted formula (SortedQuantifier / SortedConstant) is relativized
+    # ONCE, here, into the guarded plain FOL fol.to_fol also builds (∀x:S φ ->
+    # ∀x (S(x) -> φ), etc.) — before _scan/_lift ever see it, rather than
+    # adding a recursive case to either: the resulting sort-guard atom is an
+    # ordinary unary predicate, which _scan/_lift already handle like any
+    # other atom (see fol.qml's module docstring for the identical choice and
+    # why "once, up front" also catches a SortedConstant anywhere in the
+    # formula, not only directly under a SortedQuantifier).
+    original = formula
+    formula = formula._relativize([])
+
     sig = _Sig()
     _scan(formula, sig)               # which modalities occur (relation/operator blocks)
     names = _IsaNames(formula)        # de-colliding constant names (decls + usages agree)
-    body = _lift(formula, names)  # may raise on SortedQuantifier — do before emitting.
+    body = _lift(formula, names)  # may raise on an unsupported node — do before emitting.
 
     lines: List[str] = []
     lines.append(f"theory {theory_name}")
@@ -1464,7 +1553,7 @@ def isabelle_modal_theory(
 
     # Axioms.
     axioms = _collect_axioms(sig, frame, mode, temporal_closure, temporal_def,
-                             systems, bridges)
+                             systems, bridges, _sort_consts(original, names))
     if axioms:
         lines += axioms
         lines.append("")
@@ -1507,9 +1596,14 @@ def modal_axiom_names(
     """
     _validate(mode, frame, "oops")
     sig = _Sig()
-    _scan(formula, sig)
-    return _axiom_names(_collect_axioms(sig, frame, mode, temporal_closure,
-                                        systems=systems, bridges=bridges))
+    # Relativize first, same as isabelle_modal_theory — _scan's has_quant flag
+    # only needs to know a quantifier occurs, sorted or not, and a sort guard
+    # is an ordinary atom to it either way; see that function's comment.
+    relativized = formula._relativize([])
+    _scan(relativized, sig)
+    return _axiom_names(_collect_axioms(
+        sig, frame, mode, temporal_closure, systems=systems, bridges=bridges,
+        sorts=_sort_consts(formula, _IsaNames(relativized))))
 
 
 def to_isabelle_modal(

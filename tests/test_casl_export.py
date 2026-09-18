@@ -186,6 +186,62 @@ def test_golden_zero_ary_predicate():
     assert to_casl_spec([rain]) == expected
 
 
+def test_golden_subsort_edge_emission():
+    """subsorts={'Human': frozenset({'Animal'})} emits one 'sort Human <
+    Animal' line right after the flat 'sorts' line (roadmap C4).
+
+    Hand-derivation: axiom is a plain unsorted Mortal(socrates) (Thing/
+    Thing throughout, per test_golden_pure_fol_one_sort's own derivation,
+    minus the Human predicate) -- declared_sorts from formula inference
+    alone would be just {'Thing'}; the subsort edge's own two sort names
+    ('Human', 'Animal') are ADDITIONALLY unioned in (they appear in no
+    formula), so the flat line lists all three, alphabetically. The
+    dedicated subsort line follows immediately, before the 'ops' block.
+    """
+    ax = Atom("Mortal", (Constant("socrates"),))
+    expected = (
+        "spec KitExport =\n"
+        "  sorts Animal, Human, Thing\n"
+        "  sort Human < Animal\n"
+        "  ops socrates : Thing\n"
+        "  preds Mortal : Thing\n"
+        "  . Mortal(socrates)\n"
+        "end"
+    )
+    assert to_casl_spec([ax], subsorts={"Human": frozenset({"Animal"})}) == expected
+
+
+def test_golden_two_subsort_edges_one_line_each_sorted_by_child_then_parent():
+    """Two edges for the SAME child (A < B, A < C) each get their own line,
+    sorted by (child, parent) -- never CASL's list-sharing form."""
+    ax = Atom("P", (Constant("a"),))
+    expected = (
+        "spec KitExport =\n"
+        "  sorts A, B, C, Thing\n"
+        "  sort A < B\n"
+        "  sort A < C\n"
+        "  ops a : Thing\n"
+        "  preds P : Thing\n"
+        "  . P(a)\n"
+        "end"
+    )
+    got = to_casl_spec([ax], subsorts={"A": frozenset({"B", "C"})})
+    assert got == expected
+
+
+def test_no_subsorts_argument_is_byte_identical_to_before_the_feature():
+    """Omitting subsorts (the default) must reproduce EXACTLY the golden
+    output test_golden_pure_fol_one_sort pins -- the new parameter changes
+    nothing when unused."""
+    ax1 = FOL.parse("∀x (Human(x) → Mortal(x))")
+    ax2 = FOL.parse("Human(socrates)")
+    cj = FOL.parse("Mortal(socrates)")
+    with_default = to_casl_spec([ax1, ax2], conjectures=[cj])
+    explicit_none = to_casl_spec([ax1, ax2], conjectures=[cj], subsorts=None)
+    explicit_empty = to_casl_spec([ax1, ax2], conjectures=[cj], subsorts={})
+    assert with_default == explicit_none == explicit_empty
+
+
 def test_determinism_two_calls_byte_identical():
     """Calling to_casl_spec twice on freshly-parsed, structurally-equal
     input must produce byte-identical text: every collection the emitter
@@ -353,6 +409,44 @@ def test_function_arity_conflict():
     ax2 = FOL.parse("∀x ∀y R(mother(x, y))")
     with pytest.raises(ValueError, match="conflicting arities"):
         to_casl_spec([ax1, ax2])
+
+
+def test_arity_and_dual_use_checks_are_genuinely_shared_with_signature():
+    """Roadmap item C5: casl_export._analyze must call the SAME
+    conflict-detection functions as Signature.from_formulas, not two
+    independently-written local copies that merely happen to agree today.
+    """
+    from unicode_fol_kit.fol import casl_export, signature
+    assert casl_export._check_single_valued is signature._check_single_valued
+    assert casl_export._check_not_dual_use is signature._check_not_dual_use
+
+
+def test_function_three_way_arity_conflict_reports_only_first_pairwise_clash():
+    """Function 'mother' at arity 1, then 2, then 3 across three axioms:
+    the raise fires on the SECOND axiom (1 vs 2) and never sees the third
+    occurrence's arity 3 — this exporter's arity check is incremental
+    (checked per occurrence, against a running single recorded value), NOT
+    a collect-the-whole-batch-then-report pass.
+
+    This is the deliberate counterpart of
+    ``test_signature.py::test_from_formulas_three_way_arity_conflict_names_
+    every_arity`` (which DOES name every arity, since ``Signature.
+    from_formulas`` collects the full set across the batch before
+    checking): the two modules share only the "more than one distinct
+    value is a conflict" comparison itself
+    (``unicode_fol_kit.fol.signature._check_single_valued``), not the
+    accumulation policy around it — see ``signature.py``'s module
+    docstring DESIGN NOTE and this module's own docstring for why the
+    policies genuinely differ (an arity conflict here must short-circuit
+    the shared union-find sort-inference walk as early as possible).
+    """
+    ax1 = FOL.parse("∀x Q(mother(x))")
+    ax2 = FOL.parse("∀x ∀y R(mother(x, y))")
+    ax3 = FOL.parse("∀x ∀y ∀z S(mother(x, y, z))")
+    with pytest.raises(
+        ValueError, match=r"conflicting arities 1 and 2"
+    ):
+        to_casl_spec([ax1, ax2, ax3])
 
 
 def test_constant_vs_function_name_conflict():
@@ -602,6 +696,21 @@ def test_keyword_default_sort_is_refused():
     formula = Quantifier("∀", Variable("x"), Atom("P", (Variable("x"),)))
     with pytest.raises(ValueError, match="sort name 'pred'"):
         formula_to_casl(formula, default_sort="pred")
+
+
+def test_keyword_subsort_child_name_is_refused():
+    """A subsorts key that is a CASL keyword ('sort') is checked exactly
+    like every other emitted sort name -- caught before ANY line is
+    emitted, even though it never appears in a formula."""
+    ax = Atom("P", (Constant("a"),))
+    with pytest.raises(ValueError, match="sort name 'sort'"):
+        to_casl_spec([ax], subsorts={"sort": frozenset({"Animal"})})
+
+
+def test_keyword_subsort_parent_name_is_refused():
+    ax = Atom("P", (Constant("a"),))
+    with pytest.raises(ValueError, match="sort name 'pred'"):
+        to_casl_spec([ax], subsorts={"Animal": frozenset({"pred"})})
 
 
 def test_malformed_identifier_is_refused_not_emitted():

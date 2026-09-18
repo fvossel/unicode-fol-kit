@@ -56,16 +56,24 @@ line-art), joined with single spaces. ``max_sentences`` caps the sentence
 count; content beyond the cap is dropped in the priority order documented on
 each ``_explain_*`` helper below (never reordered, so raising the cap never
 changes which sentences appear first — only how many spill over).
+
+:func:`explain_proof` is the same idea for the other side of a
+:class:`~unicode_fol_kit.atp.protocol.Verdict`: a proof of *validity* instead
+of a countermodel of invalidity. See its own docstring for the shapes it
+accepts.
 """
 
 from itertools import product
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from ..atp.tableau import TableauProof
+from ..atp.tstp import TstpDerivation
+from ..atp.twee_entailment import TweeProof
 from ..fol.nodes import Node
 from ..semantics.kripke import KripkeModel, satisfies_modal
 from ..semantics.tarski import Structure
 
-__all__ = ["explain_countermodel"]
+__all__ = ["explain_countermodel", "explain_proof"]
 
 #: Exceptions that mean "this evaluation attempt yielded no truth value" —
 #: caught around the optional world-0 formula check so the missing sentence is
@@ -402,4 +410,382 @@ def explain_countermodel(model: Any, formula: Optional[Node] = None, *,
         f"explain_countermodel: unsupported model type {type(model).__name__} — "
         "expected a KripkeModel, a Structure, a Z3 assignment dict, or a "
         "Verdict-layer witness dict with a 'kind' key."
+    )
+
+
+# ---------------------------------------------------------------------------
+# explain_proof — the validity-side counterpart of explain_countermodel
+# ---------------------------------------------------------------------------
+#
+# Five proof shapes actually reach ``Verdict.proof`` today (verified by
+# grepping every ``proof=`` assignment in ``unicode_fol_kit/atp/``):
+#
+# * :class:`~unicode_fol_kit.atp.tableau.TableauProof` — ``TableauBackend``.
+# * :class:`~unicode_fol_kit.atp.tstp.TstpDerivation` — ``VampireBackend`` and
+#   ``EProverBackend`` (same shape, one renderer covers both).
+# * :class:`~unicode_fol_kit.atp.twee_entailment.TweeProof` — ``TweeBackend``.
+# * ``{"kind": "z3_unsat_core", "core": [...]}`` — ``Z3Backend``.
+# * ``{"kind": "cvc5_alethe", "text": ..., "unsat_core": [...]}`` —
+#   :class:`~unicode_fol_kit.atp.cvc5_backend.Cvc5Backend`.
+#
+# The first three also round-trip through ``.to_dict()`` (the shape
+# ``Verdict.proof`` actually carries once a verdict has crossed the
+# process-pool boundary — see ``atp.portfolio._verdict_from_dict``); the last
+# two are ALWAYS plain dicts, since no richer dataclass wraps them. Every
+# renderer below therefore accepts both the typed instance and its dict via
+# the ``_field``/``_node_str`` helpers, and the five key sets are disjoint (a
+# ``"kind"`` key picks the two Z3/cvc5 shapes; among the rest, only
+# ``TableauProof`` carries ``"root_formulas"``/``"closures"``, only
+# ``TweeProof`` carries ``"axioms"``/``"lemmas"``/``"goal"``, and a bare
+# ``{"steps"}`` is ``TstpDerivation``) — see :func:`explain_proof`'s dispatch.
+#
+# Fitch ``Proof``/``Line``/``Justification`` chains (``atp.fitch_search``) are
+# deliberately NOT covered: no ``ProverBackend`` currently attaches one to
+# ``Verdict.proof``, so there is no live caller through the eval/atp protocol
+# layer to explain today — a natural follow-up once/if one is registered.
+
+def _field(obj: Any, key: str) -> Any:
+    """Read ``key`` from ``obj``, whether it is a proof dataclass instance or
+    the matching ``to_dict()``-shaped plain dict — both share field names, so
+    this is the one place that bridges "typed object" and "Verdict.proof
+    dict" for every renderer below."""
+    return obj[key] if isinstance(obj, dict) else getattr(obj, key)
+
+
+def _node_str(value: Any) -> str:
+    """Render a formula field as Unicode text — ``value`` is a :class:`Node`
+    when the caller passed typed proof objects, or a ``Node.to_dict()`` dict
+    when it passed the plain ``Verdict.proof`` dict."""
+    if isinstance(value, Node):
+        return value.to_unicode_str()
+    if isinstance(value, dict):
+        return Node.from_dict(value).to_unicode_str()
+    raise TypeError(
+        f"explain_proof: expected a Node or a Node.to_dict() dict, got "
+        f"{type(value).__name__}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# TableauProof branch
+# ---------------------------------------------------------------------------
+
+def _explain_tableau(proof: Any, max_sentences: int) -> str:
+    """Explain a tableau refutation.
+
+    Sentence priority (highest first):
+
+    1. Step count.
+    2. A sorted (by rule name) histogram of rule applications — omitted if
+       there are no steps (a tableau that closes at the root needs none).
+    3. Closed-branch count (``len(closures)``).
+    4. One sentence per closure, sorted by ``leaf_id``, naming the two
+       closing literals — or, for a self-closing branch (``literal`` is ⊥,
+       ``complement`` is ``None`` per :class:`TableauClosure`'s own
+       docstring), stating that directly rather than inventing a complement.
+    """
+    steps = list(_field(proof, "steps"))
+    closures = list(_field(proof, "closures"))
+
+    sentences: List[str] = [
+        f"The tableau proof has {_count_word(len(steps), 'step')}."
+    ]
+
+    histogram: Dict[str, int] = {}
+    for step in steps:
+        rule = _field(step, "rule")
+        histogram[rule] = histogram.get(rule, 0) + 1
+    if histogram:
+        parts = [f"{rule} ({count})" for rule, count in sorted(histogram.items())]
+        sentences.append(f"Rule usage: {', '.join(parts)}.")
+
+    branch_word = "closed branch" if len(closures) == 1 else "closed branches"
+    sentences.append(f"The proof has {len(closures)} {branch_word}.")
+
+    for closure in sorted(closures, key=lambda c: _field(c, "leaf_id")):
+        leaf_id = _field(closure, "leaf_id")
+        literal = _node_str(_field(closure, "literal"))
+        complement = _field(closure, "complement")
+        if complement is None:
+            sentences.append(f"Branch closing at node {leaf_id} closes directly on {literal}.")
+        else:
+            sentences.append(
+                f"Branch closing at node {leaf_id} closes {literal} against "
+                f"{_node_str(complement)}."
+            )
+
+    return " ".join(sentences[:max_sentences])
+
+
+# ---------------------------------------------------------------------------
+# TstpDerivation branch (Vampire and E — same shape, same renderer)
+# ---------------------------------------------------------------------------
+
+def _explain_tstp(proof: Any, max_sentences: int) -> str:
+    """Explain a TSTP derivation DAG.
+
+    Sentence priority (highest first):
+
+    1. Step count.
+    2. The sorted set of roles present (``axiom``, ``negated_conjecture``, …).
+    3. The final step's rule (or, if it names none, that it is an
+       unjustified leaf) together with its ancestor trace: a backward
+       breadth-first walk of the parent DAG rooted at the final step, listed
+       layer by layer — so a multi-level derivation names every ancestor
+       reached from the last step, not just one arbitrarily-chosen path.
+       A cited parent name absent from this derivation's own steps (e.g. an
+       external ``file(...)`` source never itself recorded) is left
+       unexpanded rather than guessed at.
+    """
+    steps = list(_field(proof, "steps"))
+    if not steps:
+        raise ValueError("explain_proof: TstpDerivation has no steps to explain.")
+
+    sentences: List[str] = [f"The derivation has {_count_word(len(steps), 'step')}."]
+
+    roles = sorted({_field(s, "role") for s in steps})
+    sentences.append(f"Roles present: {', '.join(roles)}.")
+
+    by_name = {_field(s, "name"): s for s in steps}
+    final = steps[-1]
+    final_name = _field(final, "name")
+    final_rule = _field(final, "rule")
+
+    if final_rule is None:
+        sentences.append(
+            f"The final step {final_name} is a leaf with no inference rule recorded."
+        )
+    else:
+        seen = {final_name}
+        order: List[str] = []
+        frontier = list(_field(final, "parents"))
+        while frontier:
+            next_frontier: List[str] = []
+            for name in frontier:
+                if name in seen:
+                    continue
+                seen.add(name)
+                order.append(name)
+                parent_step = by_name.get(name)
+                if parent_step is not None:
+                    next_frontier.extend(_field(parent_step, "parents"))
+            frontier = next_frontier
+        if order:
+            sentences.append(
+                f"The final step {final_name} applies {final_rule}, tracing "
+                f"back through {', '.join(order)}."
+            )
+        else:
+            sentences.append(
+                f"The final step {final_name} applies {final_rule} with no "
+                "recorded parents."
+            )
+
+    return " ".join(sentences[:max_sentences])
+
+
+# ---------------------------------------------------------------------------
+# TweeProof branch
+# ---------------------------------------------------------------------------
+
+def _format_twee_citation(citation: Any) -> str:
+    """Render one ``{ by axiom N (name) [R->L] }`` / ``{ by lemma N [R->L] }``
+    citation as ``"axiom N (name)"`` / ``"lemma N"``, with an " R->L" suffix
+    when the citation applies its equation right-to-left."""
+    kind = _field(citation, "kind")
+    number = _field(citation, "number")
+    name = _field(citation, "name")
+    text = f"{kind} {number}" + (f" ({name})" if name else "")
+    if _field(citation, "reversed"):
+        text += " R->L"
+    return text
+
+
+def _explain_twee(proof: Any, max_sentences: int) -> str:
+    """Explain a Twee equational proof.
+
+    Sentence priority (highest first):
+
+    1. Axiom and lemma counts.
+    2. The goal's own equation, by name.
+    3. The goal's rewrite chain, term by term.
+    4. The chain's citations, in step order — or an explicit "no citations"
+       sentence for the (degenerate, single-term) chain that has none.
+    """
+    axioms = list(_field(proof, "axioms"))
+    lemmas = list(_field(proof, "lemmas"))
+    goal = _field(proof, "goal")
+
+    sentences: List[str] = [
+        f"The proof uses {_count_word(len(axioms), 'axiom')} and "
+        f"{_count_word(len(lemmas), 'lemma')}."
+    ]
+
+    goal_name = _field(goal, "name")
+    equation = _field(goal, "equation")
+    sentences.append(
+        f"The goal ({goal_name}) states "
+        f"{_node_str(_field(equation, 'lhs'))} = {_node_str(_field(equation, 'rhs'))}."
+    )
+
+    chain = _field(goal, "chain")
+    terms = [_node_str(t) for t in _field(chain, "terms")]
+    sentences.append(f"It rewrites {' → '.join(terms)}.")
+
+    citations = list(_field(chain, "citations"))
+    if citations:
+        cite_strs = [_format_twee_citation(c) for c in citations]
+        sentences.append(f"Citations: {', '.join(cite_strs)}.")
+    else:
+        sentences.append("No citations are recorded for this chain.")
+
+    return " ".join(sentences[:max_sentences])
+
+
+# ---------------------------------------------------------------------------
+# Z3Backend's unsat-core proof dict
+# ---------------------------------------------------------------------------
+
+def _explain_z3_unsat_core(proof: Dict[str, Any], max_sentences: int) -> str:
+    """Explain ``{"kind": "z3_unsat_core", "core": [...]}``.
+
+    ``core`` is a sound but not necessarily minimal unsat core (see
+    ``Z3Backend.decide``'s own comment) — reported as exactly that, every
+    tracked name listed in the order Z3/the backend already sorted them.
+    """
+    core = list(proof.get("core") or [])
+    if not core:
+        return "Z3 refutes the goal via an empty unsat core."
+    sentences = [
+        f"Z3 refutes the goal via an unsat core of "
+        f"{_count_word(len(core), 'tracked term')}: {', '.join(_s(c) for c in core)}."
+    ]
+    return " ".join(sentences[:max_sentences])
+
+
+# ---------------------------------------------------------------------------
+# CVC5Backend's Alethe proof dict
+# ---------------------------------------------------------------------------
+
+def _explain_cvc5_alethe(proof: Dict[str, Any], max_sentences: int) -> str:
+    """Explain ``{"kind": "cvc5_alethe", "text": ..., "unsat_core": [...]}``.
+
+    ``text`` (the Alethe proof, best-effort — see ``Cvc5Backend.decide``'s own
+    comment) is summarised by its non-blank line count rather than quoted in
+    full; ``unsat_core`` is the same "sound, not necessarily minimal" shape as
+    Z3's. Either can be empty/``None`` without this being an error — both are
+    reported honestly rather than guessed at.
+    """
+    text = proof.get("text")
+    core = list(proof.get("unsat_core") or [])
+
+    sentences: List[str] = []
+    if text:
+        line_count = len([ln for ln in text.splitlines() if ln.strip()])
+        sentences.append(
+            f"cvc5 refutes the goal with an Alethe proof of "
+            f"{_count_word(line_count, 'line')}."
+        )
+    else:
+        sentences.append("cvc5 refutes the goal; no Alethe proof text was recorded.")
+
+    if core:
+        sentences.append(
+            f"Its unsat core cites {_count_word(len(core), 'term')}: "
+            f"{', '.join(_s(c) for c in core)}."
+        )
+    else:
+        sentences.append("Its unsat core is empty.")
+
+    return " ".join(sentences[:max_sentences])
+
+
+# ---------------------------------------------------------------------------
+# Public entry point
+# ---------------------------------------------------------------------------
+
+def explain_proof(proof: Any, *, max_sentences: int = 6) -> str:
+    """Render a proof as short, deterministic English sentences.
+
+    The validity-side counterpart of :func:`explain_countermodel`: where that
+    function explains why a formula is *not* valid (a witnessing structure),
+    this one explains why it *is* (a proof search's own record of how it
+    closed) — see the module docstring for the honesty/determinism
+    discipline both share.
+
+    Args:
+        proof: the proof to explain. One of:
+
+            - a :class:`~unicode_fol_kit.atp.tableau.TableauProof` (or its
+              ``.to_dict()``) — from ``TableauBackend``;
+            - a :class:`~unicode_fol_kit.atp.tstp.TstpDerivation` (or its
+              ``.to_dict()``) — from ``VampireBackend``/``EProverBackend``;
+            - a :class:`~unicode_fol_kit.atp.twee_entailment.TweeProof` (or
+              its ``.to_dict()``) — from ``TweeBackend``;
+            - ``{"kind": "z3_unsat_core", "core": [...]}`` — from
+              ``Z3Backend``;
+            - ``{"kind": "cvc5_alethe", "text": ..., "unsat_core": [...]}`` —
+              from ``Cvc5Backend``.
+
+            See the module-level comment above this section for how the five
+            shapes are told apart unambiguously.
+        max_sentences: upper bound on the number of sentences returned (at
+            least 1 is enforced). Content beyond the cap is dropped, not
+            summarised — see each ``_explain_*`` helper for the priority
+            order that decides what survives.
+
+    Returns:
+        A plain-text string: sentences separated by single spaces, no
+        Markdown, no embedded newlines (every value rendered into a sentence
+        is either a :meth:`Node.to_unicode_str` result or a Python string
+        already free of embedded newlines by construction). Calling this
+        twice on the same argument always returns the identical string.
+
+    Raises:
+        ValueError: ``proof`` is a :class:`TstpDerivation` (or its dict) with
+            no steps, or a dict carrying a ``"kind"`` this function does not
+            recognise, or a dict whose keys match none of the five accepted
+            shapes.
+        TypeError: ``proof`` is not one of the five accepted shapes at all.
+    """
+    max_sentences = max(1, max_sentences)
+
+    if isinstance(proof, TableauProof):
+        return _explain_tableau(proof, max_sentences)
+    if isinstance(proof, TstpDerivation):
+        return _explain_tstp(proof, max_sentences)
+    if isinstance(proof, TweeProof):
+        return _explain_twee(proof, max_sentences)
+
+    if isinstance(proof, dict):
+        keys = set(proof)
+        if "kind" in proof:
+            kind = proof["kind"]
+            if kind == "z3_unsat_core":
+                return _explain_z3_unsat_core(proof, max_sentences)
+            if kind == "cvc5_alethe":
+                return _explain_cvc5_alethe(proof, max_sentences)
+            raise ValueError(
+                f"explain_proof: unrecognised proof dict kind={kind!r} — "
+                "expected 'z3_unsat_core' or 'cvc5_alethe' "
+                f"(keys present: {sorted(keys)})."
+            )
+        if {"root_formulas", "steps", "closures"} <= keys:
+            return _explain_tableau(proof, max_sentences)
+        if keys == {"steps"}:
+            return _explain_tstp(proof, max_sentences)
+        if {"axioms", "lemmas", "goal"} <= keys:
+            return _explain_twee(proof, max_sentences)
+        raise ValueError(
+            "explain_proof: unrecognised proof dict shape — expected a "
+            "TableauProof ({'root_formulas','steps','closures'}), a "
+            "TstpDerivation ({'steps'}), a TweeProof "
+            "({'axioms','lemmas','goal'}), or a 'kind'-tagged Verdict-layer "
+            f"dict (keys present: {sorted(keys)})."
+        )
+
+    raise TypeError(
+        f"explain_proof: unsupported proof type {type(proof).__name__} — "
+        "expected a TableauProof, TstpDerivation, TweeProof, or one of the "
+        "'kind'-tagged Verdict-layer proof dicts (z3_unsat_core, cvc5_alethe)."
     )

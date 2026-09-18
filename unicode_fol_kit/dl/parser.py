@@ -1,24 +1,27 @@
-"""A string parser for ALC concepts, dual to :meth:`Concept.to_unicode`.
+"""A string parser for ALC(Q) concepts, dual to :meth:`Concept.to_unicode`.
 
 ``dl.concepts`` builds concepts only by Python construction (``dl.And(A,
 dl.Not(B))``); this module parses the glyph syntax that
 :meth:`~unicode_fol_kit.dl.concepts.Concept.to_unicode` emits back into a
 :class:`~unicode_fol_kit.dl.concepts.Concept`, so a rendered concept — or one
 typed by hand in the same notation — round-trips: ``parse_concept(c.to_unicode())
-== c`` for every constructor.
+== c`` for every constructor, including the qualified number restrictions
+``AtLeast``/``AtMost`` (≥n r.C / ≤n r.C).
 
 Grammar (loosest-binding first, matching ``concepts.py``'s ``_PREC`` table
-exactly — ⊔ at precedence 1, ⊓ at 2, ¬/∃/∀ at 3, atoms/⊤/⊥ at 4)::
+exactly — ⊔ at precedence 1, ⊓ at 2, ¬/∃/∀/≥/≤ at 3, atoms/⊤/⊥ at 4)::
 
     concept  := or
     or       := and ("⊔" and)*
     and      := unary ("⊓" unary)*
     unary    := "¬" unary
               | ("∃" | "∀") NAME "." unary
+              | ("≥" | "≤") NUMBER NAME "." unary
               | primary
     primary  := "⊤" | "⊥" | NAME | "(" concept ")"
     NAME     := a maximal run of characters that are none of: whitespace,
-                the glyphs ⊤ ⊥ ¬ ⊓ ⊔ ∃ ∀ ( ) . ⊑
+                the glyphs ⊤ ⊥ ¬ ⊓ ⊔ ∃ ∀ ≥ ≤ ( ) . ⊑
+    NUMBER   := a NAME token consisting only of ASCII digits
 
 A concept/role NAME may be any length and contain any characters outside
 that reserved set (digits, underscores, non-ASCII letters, …) — e.g.
@@ -26,7 +29,11 @@ that reserved set (digits, underscores, non-ASCII letters, …) — e.g.
 than the full ``concept``) is what makes ``∃r.∀s.C`` and ``¬¬C`` parse
 without parentheses while ``∃r.(C ⊓ D)`` requires them, mirroring
 ``concepts.py``'s ``_paren`` exactly — so the grammar is precedence-faithful
-by construction, not just by testing.
+by construction, not just by testing. ``≥``/``≤`` need a NUMBER token (the
+bound ``n``) between the glyph and the role name, rendered by
+``Concept.to_unicode`` with a mandatory space before the role name (``"≥2
+r.C"``, never ``"≥2r.C"``) so the tokenizer — which has no notion of a
+digit/letter boundary — can always split the two apart; see ``_unary`` below.
 
 This module intentionally implements a small hand-rolled recursive-descent
 parser rather than reusing the Lark-based registry machinery in
@@ -56,7 +63,9 @@ against hand-picked expected ``(Concept, Concept)`` pairs instead.
 
 from typing import List, Tuple
 
-from .concepts import Concept, Top, Bottom, Atomic, Not, And, Or, Exists, ForAll
+from .concepts import (
+    Concept, Top, Bottom, Atomic, Not, And, Or, Exists, ForAll, AtLeast, AtMost,
+)
 
 __all__ = ["parse_concept", "parse_gci", "ConceptSyntaxError"]
 
@@ -71,8 +80,8 @@ class ConceptSyntaxError(ValueError):
 
 _GLYPH_TOKENS = {
     "⊤": "TOP", "⊥": "BOT", "¬": "NOT", "⊓": "AND", "⊔": "OR",
-    "∃": "EXISTS", "∀": "FORALL", "(": "LPAREN", ")": "RPAREN",
-    ".": "DOT", "⊑": "SUBSUME",
+    "∃": "EXISTS", "∀": "FORALL", "≥": "ATLEAST", "≤": "ATMOST",
+    "(": "LPAREN", ")": "RPAREN", ".": "DOT", "⊑": "SUBSUME",
 }
 
 # A Token is (type: str, value: str, pos: int).
@@ -168,7 +177,25 @@ class _Parser:
             self._expect("DOT", "'.' after the role name")
             body = self._unary()
             return Exists(role, body) if ttype == "EXISTS" else ForAll(role, body)
+        if ttype in ("ATLEAST", "ATMOST"):
+            self._advance()
+            n = self._expect_number()
+            role = self._expect("NAME", "a role name")[1]
+            self._expect("DOT", "'.' after the role name")
+            body = self._unary()
+            return AtLeast(n, role, body) if ttype == "ATLEAST" else AtMost(n, role, body)
         return self._primary()
+
+    def _expect_number(self) -> int:
+        """Consume a NAME token of only ASCII digits (the ``n`` in ``≥n``/``≤n``)."""
+        tok = self._peek()
+        if tok[0] == "NAME" and tok[1].isdigit():
+            self._advance()
+            return int(tok[1])
+        found = "end of input" if tok[0] == "EOF" else f"{tok[1]!r}"
+        raise self._error(
+            f"parse_concept: expected a non-negative integer but found {found} "
+            f"at position {tok[2]}")
 
     def _primary(self) -> Concept:
         ttype, value, pos = self._peek()
@@ -189,7 +216,7 @@ class _Parser:
         found = "end of input" if ttype == "EOF" else f"{value!r}"
         raise self._error(
             f"parse_concept: unexpected {found} at position {pos}; expected "
-            "'⊤', '⊥', a concept name, '¬', '∃', '∀', or '('")
+            "'⊤', '⊥', a concept name, '¬', '∃', '∀', '≥', '≤', or '('")
 
     # -- entry points --------------------------------------------------- #
 
@@ -207,7 +234,7 @@ class _Parser:
 
 
 def parse_concept(text: str) -> Concept:
-    """Parse ``text`` (the ⊤ ⊥ ¬ ⊓ ⊔ ∃ ∀ glyph syntax) into a :class:`Concept`.
+    """Parse ``text`` (the ⊤ ⊥ ¬ ⊓ ⊔ ∃ ∀ ≥ ≤ glyph syntax) into a :class:`Concept`.
 
     Round-trips against :meth:`Concept.to_unicode`: ``parse_concept(c.to_unicode())
     == c`` for every concept ``c``. Raises :class:`ConceptSyntaxError` on

@@ -91,9 +91,28 @@ is undecidable, so this is **sound but bounded-incomplete** (Z3 may not close ev
 valid instance) — the model-theoretic partner is
 :func:`unicode_fol_kit.semantics.kripke.satisfies_modal` with per-world ``domains``.
 
+**Many-sorted formulas** (``SortedQuantifier``, ``∀x:S φ`` / ``∃x:S φ``) are handled by
+relativizing the WHOLE input formula once, at :func:`qml_translate`'s entry, into the
+guarded plain FOL ``fol.to_fol`` also builds (``∀x:S φ`` → ``∀x (S(x) → φ)``, ``∃x:S φ``
+→ ``∃x (S(x) ∧ φ)``) — before anything scans or translates it, so a ``SortedConstant``
+anywhere in the formula (not only directly under a ``SortedQuantifier``) is relativized
+too, and :func:`_signature_typing_facts` sees the resulting plain ``Constant`` like any
+other. ``ST``'s existing ``P(t̄) → P(t̄, w)`` rule then appends the world argument to the
+sort guard exactly as it does to every other atom — so a sort's guard predicate
+``S(x, w)`` comes out WORLD-RELATIVE (not rigid): an object can be ``S`` at one world and
+not at another, the same "actualist" reading the ``E``xistence guard already gives the
+object domain. :func:`qml_axioms` additionally emits, per sort the formula uses, the same
+"every sort is non-empty" assumption the classical routes make
+(:func:`~unicode_fol_kit.fol._msfl_nodes.nonempty_sort_axioms`) — extended PER WORLD here
+(``∀w (World(w) → ∃x (Object(x) [∧ E(x,w)] ∧ S(x,w)))``) to match the world-relative guard,
+mirroring the existing ``nonempty_dom`` axiom's shape — so e.g. ``∀x:S P(x) → ∃x:S P(x)``
+agrees with the classical Z3 verdict at every world, not just incidentally at one.
+
 Public API: :func:`qml_translate`, :func:`qml_axioms`, :func:`qml_is_valid`,
-:func:`qml_equivalent`, and the constants :data:`BARCAN`, :data:`CONVERSE_BARCAN`,
-:data:`QML_BRIDGES`.
+:func:`qml_equivalent`, :func:`qml_validity_formula` (the closed classical-FOL
+validity query itself, e.g. for :func:`unicode_fol_kit.hets.dol.to_dol_library_from_modal`
+to hand to the CASL/DOL/Hets route), and the constants :data:`BARCAN`,
+:data:`CONVERSE_BARCAN`, :data:`QML_BRIDGES`.
 """
 
 from functools import reduce
@@ -106,7 +125,9 @@ from .nodes import (
     Historically, Once, Previous, Since,
     Obligatory, Permitted, SortedQuantifier,
 )
+from ._hybrid_nodes import Down
 from ._fol_nodes import constant_name_to_ascii
+from ._msfl_nodes import nonempty_sort_axioms
 from .frames import (
     FRAME_CONDITIONS, FRAMES as _SHARED_FRAMES, UnsupportedFrameCondition,
     resolve_frame, parse_geach,
@@ -131,6 +152,38 @@ _R_KNOWS = "Rk"
 _R_BELIEVES = "Rb"
 _R_SAYS = "Rs"
 _R_WANTS = "Rw"
+
+# Every predicate name the translation itself emits. A USER predicate (or sort
+# guard) with one of these names used to be read as the translation's own
+# predicate once ST appended its world argument: a unary user ``R`` became
+# ``R(x, w)`` — the alethic accessibility relation — so ``R(alice) →
+# ◇R(alice)`` came out VALID in K, and a binary ``R`` crashed Z3 on the arity
+# clash. :func:`_user_predicate` keeps the two namespaces apart.
+_RESERVED_PREDICATES = frozenset({
+    _WORLD, _OBJECT, _E,
+    _R_ALETHIC, _R_TEMPORAL, _R_NEXT, _R_DEONTIC,
+    _R_KNOWS, _R_BELIEVES, _R_SAYS, _R_WANTS,
+})
+# U+00B7 MIDDLE DOT: punctuation, never part of an identifier the parsers
+# produce, and no reserved name ends in it.
+_USER_MARK = "·"
+
+
+def _user_predicate(name: str) -> str:
+    """The name a USER predicate (or sort guard) gets in the translation.
+
+    Unchanged unless the name, with any trailing ``·`` stripped, is one of
+    :data:`_RESERVED_PREDICATES`; then one ``·`` is appended. The map is
+    injective (a changed name ends in ``·`` and strips to a reserved name,
+    which no unchanged name does) and never yields a reserved name, so a user
+    predicate can no longer be confused with ``World``/``Object``/``E`` or an
+    accessibility relation — and every formula that does not use those names
+    translates byte-for-byte as before.
+    """
+    if name.rstrip(_USER_MARK) in _RESERVED_PREDICATES:
+        return name + _USER_MARK
+    return name
+
 
 _FORALL = "∀"
 _EXISTS = "∃"
@@ -288,8 +341,25 @@ def _box_agent(rel: str, agent: Node, w: Variable, body: Node, fresh: _Fresh, mo
 
 def _st(formula: Node, w: Variable, fresh: _Fresh, mode: str) -> Node:
     """The shallow-embedding translation ST(formula, w)."""
+    if isinstance(formula, Down):
+        # N1: this route already has no rule for plain hybrid nominals/@
+        # (they fall through to the generic "unsupported node type" below,
+        # naming themselves that way) — ↓ gets its OWN, named check ahead of
+        # that generic one because it additionally makes validity
+        # undecidable, which is worth saying explicitly rather than leaving
+        # a reader to infer it from "unsupported node type Down".
+        raise NotImplementedError(
+            "qml: the ↓ binder is outside this first-order-modal shallow "
+            "embedding (which does not cover hybrid logic at all — no "
+            "nominals/@ either — and, separately, ↓ makes validity "
+            "undecidable). Use "
+            "unicode_fol_kit.fol.modal_translation.down_is_valid "
+            "(propositional H(@,↓), Z3, PROVED-only) or "
+            "unicode_fol_kit.atp.kripke_enum.KripkeEnumBackend / "
+            "modal_enum_search (bounded search, REFUTED-only), or evaluate "
+            "directly with unicode_fol_kit.semantics.kripke.satisfies_modal.")
     if isinstance(formula, Atom):
-        return Atom(formula.predicate, list(formula.args) + [w])
+        return Atom(_user_predicate(formula.predicate), list(formula.args) + [w])
     if isinstance(formula, Not):
         return Not(_st(formula.formula, w, fresh, mode))
     if isinstance(formula, And):
@@ -360,7 +430,17 @@ def _st(formula: Node, w: Variable, fresh: _Fresh, mode: str) -> Node:
             "(inductive least-fixpoint msince) / to_thf_modal_full."
         )
     if isinstance(formula, SortedQuantifier):
-        raise NotImplementedError("qml: SortedQuantifier is not supported; use a plain ∀x/∃x.")
+        # Delegate to the guarded plain Quantifier _relativize builds, then
+        # translate THAT: _st's own Quantifier case adds the usual
+        # Object/E guard, and its Atom case appends the world argument to
+        # the sort guard atom exactly as it does to every other atom, so the
+        # two guards compose correctly with no special-casing here (see the
+        # module docstring's "Many-sorted formulas" section). Normally
+        # unreachable through the public entry points, which already
+        # relativize the WHOLE formula once up front (qml_translate) — kept
+        # as a defensive fallback for a direct/recursive _st call on an
+        # unrelativized sub-formula.
+        return _st(formula._relativize([]), w, fresh, mode)
     raise NotImplementedError(f"qml: unsupported node type {type(formula).__name__}.")
 
 
@@ -373,11 +453,16 @@ def qml_translate(formula: Node, mode: str = "constant", world: str = "w") -> No
 
     If ``world`` clashes with an object variable the formula binds, a fresh world name
     is substituted to prevent that quantifier from capturing the world parameter.
+
+    A many-sorted ``formula`` (``SortedQuantifier`` / ``SortedConstant``) is relativized
+    ONCE, here, before anything else runs — see the module docstring's "Many-sorted
+    formulas" section for what that does and does not assume.
     """
     if mode not in _ACTUALIST_MODES and mode not in _CONSTANT_MODES:
         raise ValueError(
             f"qml: unknown mode {mode!r} (use one of "
             f"{sorted(_ACTUALIST_MODES | _CONSTANT_MODES)}).")
+    formula = formula._relativize([])
     world = _pick_world_name(formula, world)
     fresh = _Fresh(_object_var_names(formula) | {world})
     return _st(formula, Variable(world), fresh, mode)
@@ -884,6 +969,23 @@ def qml_axioms(mode: str = "constant", frame: str = "K", systems=None,
     if mode in _ACTUALIST_MODES:
         axioms.append(fa(w, Implies(W(w), Quantifier(_EXISTS, x, And(O(x), E(x, w))))))
 
+    # non-empty SORTS (many-sorted formulas only): the same MSFOL convention
+    # fol._msfl_nodes.nonempty_sort_axioms enforces for the classical routes
+    # (every sort is non-empty), extended PER WORLD here because a sort guard
+    # is an ordinary, WORLD-RELATIVE atom once qml_translate's up-front
+    # relativisation feeds it through ST (see the module docstring's
+    # "Many-sorted formulas" section) — so ``∀x:S P(x) → ∃x:S P(x)`` agrees
+    # with the classical Z3-via-api.prove verdict at every world, not just
+    # incidentally at one. Gated on ``formula`` the same way
+    # _signature_typing_facts is: there is nothing to scan for sorts without one.
+    if formula is not None:
+        for name in _sort_names_used(formula):
+            s_guard = Atom(_user_predicate(name), [x, w])
+            witness = And(O(x), s_guard)
+            if mode in _ACTUALIST_MODES:
+                witness = And(And(O(x), E(x, w)), s_guard)
+            axioms.append(fa(w, Implies(W(w), Quantifier(_EXISTS, x, witness))))
+
     # domain-regime existence axioms.
     typed = lambda body: And(And(O(x), W(w)), And(W(v), body))
     if mode in ("increasing", "cumulative", "constant"):
@@ -910,6 +1012,18 @@ def qml_axioms(mode: str = "constant", frame: str = "K", systems=None,
     # relations' default frame blocks into scope (see the qml_axioms docstring).
     axioms += [_bridge_axiom(name) for name in bridge_names]
     return axioms
+
+
+def _sort_names_used(formula: Node) -> List[str]:
+    """Distinct sort names ``formula`` mentions, in first-occurrence order.
+
+    Reuses :func:`~unicode_fol_kit.fol._msfl_nodes.nonempty_sort_axioms`'s own
+    scan (each of its returned ``∃x (S(x))`` sentences names its sort as the
+    predicate of its body atom) rather than re-implementing "which of the four
+    many-sorted node types occur" here — so this route and the classical one
+    can never disagree about which sorts a formula uses.
+    """
+    return [axiom.formula.predicate for axiom in nonempty_sort_axioms(formula)]
 
 
 def _signature_typing_facts(formula: Node) -> List[Node]:
@@ -951,10 +1065,20 @@ def _validity_formula(formula: Node, mode: str, frame: str, systems=None,
     positional call in :mod:`unicode_fol_kit.atp.resolution` keeps working unchanged and
     inherits the gating.
     """
+    # The sort-name / relation-usage scan in qml_axioms needs the ORIGINAL,
+    # un-relativized ``formula`` (a SortedQuantifier/SortedConstant is what it
+    # looks for) — so that scan runs on ``formula`` itself, while everything
+    # downstream of it (typing facts, translation) runs on ONE relativized
+    # copy, so a SortedConstant gets typed as an Object exactly like a plain
+    # Constant would (see qml_translate's own up-front relativisation, which
+    # this pre-empts so _signature_typing_facts sees the same plain
+    # Constant qml_translate's translation will).
     axioms = qml_axioms(mode, frame, systems, formula=formula, bridges=bridges,
-                        temporal_closure=temporal_closure) + _signature_typing_facts(formula)
-    w = _pick_world_name(formula, "w")
-    body = Implies(Atom(_WORLD, [Variable(w)]), qml_translate(formula, mode, world=w))
+                        temporal_closure=temporal_closure)
+    relativized = formula._relativize([])
+    axioms += _signature_typing_facts(relativized)
+    w = _pick_world_name(relativized, "w")
+    body = Implies(Atom(_WORLD, [Variable(w)]), qml_translate(relativized, mode, world=w))
     closed = Quantifier(_FORALL, Variable(w), body)
     hyp = reduce(And, axioms)
     return Implies(hyp, closed)
@@ -990,6 +1114,44 @@ def qml_is_valid(formula: Node, mode: str = "constant", frame: str = "K",
     from ..atp.z3_models import is_valid
     return is_valid(_validity_formula(formula, mode, frame, systems, bridges=bridges,
                                       temporal_closure=temporal_closure), timeout=timeout)
+
+
+def qml_validity_formula(formula: Node, mode: str = "constant", frame: str = "K",
+                         systems=None, bridges=None,
+                         temporal_closure: bool = True) -> Node:
+    """Return the closed classical-FOL validity query :func:`qml_is_valid` decides,
+    as a :class:`Node` — the documented, public counterpart of the private
+    :func:`_validity_formula` this function simply delegates to (kept private and
+    unchanged, including its positional-argument shape, since
+    :mod:`unicode_fol_kit.atp.resolution` already calls it positionally).
+
+    ``⋀axioms ∧ ⋀typing-facts → ∀w (World(w) → ST(formula, w))`` — see
+    :func:`_validity_formula`'s own docstring for exactly what ``axioms`` and
+    ``typing-facts`` contain. The Node this returns is built ONLY from
+    :class:`Atom`/:class:`Not`/:class:`And`/:class:`Or`/:class:`Xor`/
+    :class:`Implies`/:class:`Iff`/:class:`Quantifier` and the term classes
+    :class:`Variable`/:class:`Constant`/:class:`Function` — i.e. exactly the
+    classical FOL fragment :mod:`unicode_fol_kit.fol.casl_export` accepts — so it
+    is ready to hand to :func:`~unicode_fol_kit.fol.casl_export.to_casl_spec`
+    directly, MODULO two details :mod:`unicode_fol_kit.hets.dol` handles for you:
+    this route's auto-generated fresh world/Geach variables (``_w0``, ``_gz0``, …)
+    start with an underscore, which is not a legal CASL identifier (cosmetic); and
+    an object-language ``=``/``≠`` inside a modal context comes out of ``_st``
+    world-relativized (its arity is no longer 2), so it is NOT CASL's own rigid,
+    always-binary identity and must not be handed to ``to_casl_spec`` under the
+    literal name ``=`` (semantic, not cosmetic — see ``hets.dol``'s own
+    module-level section comment for why this route already treats such an atom
+    as an uninterpreted, world-relative predicate, the same reading
+    ``Node.to_z3``/``satisfies_modal``/``hol.isabelle_modal``/``hol.thf_modal``
+    already give it). Use :func:`unicode_fol_kit.hets.dol.to_dol_library_from_modal`
+    — it calls this function, sanitises those names injectively (and aliases any
+    such ``=``/``≠`` atom), and renders the result as a complete DOL library over
+    :func:`~unicode_fol_kit.fol.casl_export.to_casl_spec` (see that module's own
+    docstring for the sanitisation contract) — rather than feeding this function's
+    raw output to ``to_casl_spec`` yourself.
+    """
+    return _validity_formula(formula, mode, frame, systems, bridges=bridges,
+                             temporal_closure=temporal_closure)
 
 
 def qml_equivalent(left: Node, right: Node, mode: str = "constant", frame: str = "K",
@@ -1180,6 +1342,16 @@ def _thf_term(node: Node, names: "_ThfNames") -> str:
 
 def _thf_lift(node: Node, names: "_ThfNames") -> str:
     """Render a modal formula as a THF term of type ``mu > $o``."""
+    if isinstance(node, Down):
+        # See the identical, more fully-explained guard in _st above — this
+        # basic THF export never covered hybrid logic either; hol.thf_modal
+        # (the full shallow embedding) gets its OWN ↓ guard, see that module.
+        raise NotImplementedError(
+            "to_thf_modal: the ↓ binder is outside the alethic □/◇ fragment "
+            "supported by this THF export (which does not cover hybrid logic "
+            "at all — no nominals/@ either); use "
+            "unicode_fol_kit.fol.modal_translation.down_is_valid or "
+            "unicode_fol_kit.atp.kripke_enum.KripkeEnumBackend instead.")
     if isinstance(node, Atom):
         # `=` / `≠` are uninterpreted world-relativized predicates (like any other),
         # NOT primitive HOL identity — so the THF meaning matches satisfies_modal.

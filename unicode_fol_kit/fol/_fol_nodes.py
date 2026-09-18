@@ -1,7 +1,7 @@
 """Z3 environment, base Node class, classical FOL nodes, registry, and Lark transformer."""
 
 import re
-from typing import List, Tuple, Union, Dict
+from typing import List, Optional, Tuple, Union, Dict
 from lark import Transformer
 from dataclasses import dataclass, fields
 
@@ -142,6 +142,46 @@ class Node:
         """
         from ._msfl_nodes import _latex
         return _latex(self)
+
+    def to_smtlib(self) -> str:
+        """Render this node as a standalone SMT-LIB2 problem (one ``(assert ...)``).
+
+        A one-line delegation to :func:`unicode_fol_kit.atp.z3_input.to_smtlib`
+        with no premises — the general, multi-premise/sanitisation-correct
+        exporter promoted from :class:`~unicode_fol_kit.atp.cvc5_backend
+        .Cvc5Backend`'s own already-proven translation; see that function's
+        docstring for what "sanitisation-correct" buys over a naive
+        ``to_z3()`` + ``z3.Solver.to_smt2()`` combination. Imported lazily
+        (like :meth:`to_latex`) because ``atp.z3_input`` imports from this
+        module's own package at load time — mirrors how :meth:`to_z3`
+        already crosses the fol/atp module boundary, just one hop further.
+
+        Raises:
+            NotImplementedError: this node (or a descendant) uses a construct
+                with no first-order SMT-LIB2 encoding — the same refusal
+                :meth:`to_z3` raises for it.
+        """
+        from ..atp.z3_input import to_smtlib as _to_smtlib
+        return _to_smtlib(self)
+
+    def _repr_latex_(self) -> Optional[str]:
+        """Jupyter/IPython rich-display hook: LaTeX math-mode rendering.
+
+        Wraps :meth:`to_latex` in ``$$...$$`` (display math). MUST NOT raise —
+        IPython's formatter machinery treats an exception from a ``_repr_*_``
+        method as a hard failure of that cell's output, not as "fall back to
+        the next formatter". :meth:`to_latex` refuses loudly (``TypeError`` /
+        ``NotImplementedError``) for a node it cannot render, e.g. a
+        third-party ``Node`` subclass the LaTeX dispatcher has never heard of;
+        here that refusal is swallowed and reported as "no LaTeX
+        representation" (``None``) instead, so IPython falls back to the
+        plain ``repr()`` of the node rather than showing a traceback in a
+        notebook cell.
+        """
+        try:
+            return f"$${self.to_latex()}$$"
+        except Exception:
+            return None
 
     def tree_str(self) -> str:
         """Render the AST as a multi-line ASCII tree using ├──/└── connectors."""

@@ -24,12 +24,29 @@ to classical FOL with :func:`unicode_fol_kit.fol.nodes.to_fol`; the sort guards
 introduced there become uninterpreted predicates over the numeric sort. Lambda
 nodes have no first-order meaning and raise ``TypeError`` (beta-reduce and
 lambda-eliminate them first).
+
+**Many-sorted (MSFOL) soundness.** A sort guard is just an uninterpreted
+predicate over the (real/int) numeric sort once lowered — nothing stops Z3
+from interpreting it as always-false, even though the numeric domain itself
+is infinite, and MSFOL, by convention, never gives a sort an EMPTY universe
+(see the classical-reasoning guide's many-sorted section). The three
+`*_arith` decision functions below close that gap exactly like
+:mod:`unicode_fol_kit.atp.z3_models` does for the default uninterpreted-sort
+translation: they add
+``unicode_fol_kit.fol._msfl_nodes.nonempty_sort_axioms(formula)``, translated
+with :func:`to_z3_arith` through the SAME :class:`ArithEnv` as ``formula``
+itself (so a sort's guard predicate is the identical Z3 declaration in both
+places), as extra unconditional assertions — never folded inside
+:func:`to_z3_arith` itself, which stays polarity-blind and shared with every
+other caller. Empty for an unsorted formula, so behaviour there is
+unchanged.
 """
 
 from typing import Dict, Optional
 
 import z3
 
+from ..fol._msfl_nodes import nonempty_sort_axioms
 from ..fol.nodes import (
     Node, to_fol,
     Variable, Constant, Number, Function,
@@ -220,12 +237,24 @@ def _solver(timeout: int) -> z3.Solver:
     return solver
 
 
+def _nonempty_sort_assertions(formula: Node, env: ArithEnv):
+    """Translate ``nonempty_sort_axioms(formula)`` through ``env``.
+
+    Threading the SAME env through the axioms and ``formula`` itself is what
+    makes a sort's guard predicate resolve to the identical Z3 declaration in
+    both places — see the module docstring. Empty for an unsorted formula.
+    """
+    return [to_z3_arith(axiom, env) for axiom in nonempty_sort_axioms(formula)]
+
+
 def is_satisfiable_arith(formula: Node, sort: str = "real", timeout: int = 10000) -> bool:
     """Return True iff ``formula`` has a model under interpreted arithmetic.
 
     Translates with :func:`to_z3_arith` and asks Z3 for a model. A Z3 ``unknown``
     result (e.g. a hard quantified formula hitting ``timeout`` milliseconds) is
-    treated as not-known-satisfiable and returns False.
+    treated as not-known-satisfiable and returns False. A many-sorted
+    ``formula``'s sorts are asserted non-empty alongside it — see the module
+    docstring.
 
     Args:
         formula: the formula to check.
@@ -233,7 +262,10 @@ def is_satisfiable_arith(formula: Node, sort: str = "real", timeout: int = 10000
         timeout: solver timeout in milliseconds.
     """
     solver = _solver(timeout)
-    solver.add(to_z3_arith(formula, sort=sort))
+    env = ArithEnv(sort)
+    solver.add(to_z3_arith(formula, env))
+    for assertion in _nonempty_sort_assertions(formula, env):
+        solver.add(assertion)
     return solver.check() == z3.sat
 
 
@@ -242,7 +274,9 @@ def is_valid_arith(formula: Node, sort: str = "real", timeout: int = 10000) -> b
 
     A formula is valid exactly when its negation is unsatisfiable, so this asks
     Z3 to refute ``¬formula``. A Z3 ``unknown`` result (e.g. hitting ``timeout``
-    milliseconds) is treated as not-known-valid and returns False.
+    milliseconds) is treated as not-known-valid and returns False. A
+    many-sorted ``formula``'s sorts are asserted non-empty as extra, UNNEGATED
+    premises alongside the negated goal — see the module docstring.
 
     Args:
         formula: the formula to check.
@@ -250,7 +284,10 @@ def is_valid_arith(formula: Node, sort: str = "real", timeout: int = 10000) -> b
         timeout: solver timeout in milliseconds.
     """
     solver = _solver(timeout)
-    solver.add(z3.Not(to_z3_arith(formula, sort=sort)))
+    env = ArithEnv(sort)
+    for assertion in _nonempty_sort_assertions(formula, env):
+        solver.add(assertion)
+    solver.add(z3.Not(to_z3_arith(formula, env)))
     return solver.check() == z3.unsat
 
 
@@ -261,7 +298,8 @@ def get_model_arith(formula: Node, sort: str = "real", timeout: int = 10000) -> 
     constants, plus any uninterpreted functions/predicates) to the string form of
     its interpretation — e.g. ``{"x": "1"}`` for ``x + 1 = 2 ∧ x > 0``. Returns
     None when the formula is unsatisfiable or Z3 cannot decide it within
-    ``timeout`` milliseconds.
+    ``timeout`` milliseconds. A many-sorted ``formula``'s sorts are asserted
+    non-empty alongside it — see the module docstring.
 
     Args:
         formula: the formula to solve.
@@ -269,7 +307,10 @@ def get_model_arith(formula: Node, sort: str = "real", timeout: int = 10000) -> 
         timeout: solver timeout in milliseconds.
     """
     solver = _solver(timeout)
-    solver.add(to_z3_arith(formula, sort=sort))
+    env = ArithEnv(sort)
+    solver.add(to_z3_arith(formula, env))
+    for assertion in _nonempty_sort_assertions(formula, env):
+        solver.add(assertion)
     if solver.check() != z3.sat:
         return None
     model = solver.model()

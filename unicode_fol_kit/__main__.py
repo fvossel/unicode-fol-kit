@@ -94,6 +94,8 @@ def _render(node, fmt: str) -> str:
         return node.to_tptp()
     if fmt == "prover9":
         return node.to_prover9()
+    if fmt == "smtlib":
+        return node.to_smtlib()
     if fmt == "json":
         from .fol.serialize import serialize
         return json.dumps(serialize(node))
@@ -126,7 +128,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--to",
         dest="to",
-        choices=["tree", "unicode", "latex", "tptp", "prover9", "json", "dot"],
+        choices=["tree", "unicode", "latex", "tptp", "prover9", "smtlib", "json", "dot"],
         default="tree",
         help="output rendering (default: tree)",
     )

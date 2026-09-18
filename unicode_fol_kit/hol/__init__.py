@@ -25,9 +25,18 @@ Modules:
   (agent-indexed epistemic/doxastic, deontic, temporal), extending the alethic-only
   ``qml.to_thf_modal``.
 - :mod:`~unicode_fol_kit.hol.classical` — FOL and MSFOL → THF / Isabelle.
+- :mod:`~unicode_fol_kit.hol.free` — free logic (negative/positive policies;
+  supervaluation explicitly refused) → THF / Isabelle, via two uninterpreted
+  guard predicates ``D`` (denotes) / ``E!`` (exists) over a single flat
+  individual type, plus the runner's ``isabelle_decide_free``.
 - :mod:`~unicode_fol_kit.hol.isabelle_relevant` — relevant logic B (Routley–Meyer
-  shallow embedding, frame conditions as lemma premises) + the runner's
+  shallow embedding, frame conditions as lemma premises) → Isabelle
+  (``to_isabelle_relevant``) / THF (``to_thf_relevant``), plus the runner's
   ``isabelle_decide_relevant``.
+- :mod:`~unicode_fol_kit.hol.isabelle_conditional` — the Lewis counterfactuals
+  ``□→``/``◇→`` (sphere-system shallow embedding, ``nested``/centering as lemma
+  premises) → Isabelle (``to_isabelle_conditional``, ``isabelle_conditional_theory``)
+  / THF (``to_thf_conditional``), plus the runner's ``isabelle_decide_counterfactual``.
 - :mod:`~unicode_fol_kit.hol.isabelle_substructural` — ILL / Lambek **derivation
   replay**: the sequent rules as an ``inductive`` derivability predicate and the
   concrete Python-found derivation replayed as a machine-checked lemma.
@@ -59,17 +68,21 @@ from .isabelle_modal import (
 )
 from .isabelle_runner import (
     find_isabelle, isabelle_available, isabelle_decide_modal, isabelle_decide_fol,
-    isabelle_decide_counterfactual, isabelle_decide_relevant,
+    isabelle_decide_counterfactual, isabelle_decide_relevant, isabelle_decide_free,
     check_theory, IsabelleInstall, IsabelleNotAvailable, BuildResult,
     ModalVerdict, FolVerdict, DEFAULT_METHODS,
 )
-from .isabelle_relevant import to_isabelle_relevant
+from .isabelle_relevant import to_isabelle_relevant, to_thf_relevant
+from .isabelle_conditional import (
+    to_isabelle_conditional, isabelle_conditional_theory, to_thf_conditional,
+)
 from .isabelle_substructural import (
     to_isabelle_ill, ill_derivation_theory,
     to_isabelle_lambek, lambek_derivation_theory,
 )
 from .thf_modal import to_thf_modal_full, thf_full_definitions, thf_full_frame_axioms
 from .classical import to_thf_fol, to_isabelle_fol, to_thf_msfol, to_isabelle_msfol
+from .free import to_thf_free, to_isabelle_free, free_theory
 from .manyvalued import (
     to_thf_k3lp, to_isabelle_k3lp,
     to_thf_k3lp_entailment, to_isabelle_k3lp_entailment, SYSTEMS,
@@ -91,6 +104,7 @@ from .deepshallow import (
     intuitionistic_faithfulness_theory, int_to_deep,
     conditional_faithfulness_theory, counterfactual_to_deep,
     relevant_faithfulness_theory, rel_to_deep,
+    qml_deep_faithfulness_theory, qml_to_deep,
 )
 
 __all__ = [
@@ -98,14 +112,16 @@ __all__ = [
     "modal_axiom_names", "BRIDGES",
     "find_isabelle", "isabelle_available", "isabelle_decide_modal",
     "isabelle_decide_fol", "isabelle_decide_counterfactual",
-    "isabelle_decide_relevant", "check_theory",
+    "isabelle_decide_relevant", "isabelle_decide_free", "check_theory",
     "IsabelleInstall", "IsabelleNotAvailable", "BuildResult",
     "ModalVerdict", "FolVerdict", "DEFAULT_METHODS",
-    "to_isabelle_relevant",
+    "to_isabelle_relevant", "to_thf_relevant",
+    "to_isabelle_conditional", "isabelle_conditional_theory", "to_thf_conditional",
     "to_isabelle_ill", "ill_derivation_theory",
     "to_isabelle_lambek", "lambek_derivation_theory",
     "to_thf_modal_full", "thf_full_definitions", "thf_full_frame_axioms",
     "to_thf_fol", "to_isabelle_fol", "to_thf_msfol", "to_isabelle_msfol",
+    "to_thf_free", "to_isabelle_free", "free_theory",
     "to_thf_k3lp", "to_isabelle_k3lp",
     "to_thf_k3lp_entailment", "to_isabelle_k3lp_entailment", "SYSTEMS",
     "to_thf_matrix", "to_isabelle_matrix",
@@ -120,4 +136,5 @@ __all__ = [
     "intuitionistic_faithfulness_theory", "int_to_deep",
     "conditional_faithfulness_theory", "counterfactual_to_deep",
     "relevant_faithfulness_theory", "rel_to_deep",
+    "qml_deep_faithfulness_theory", "qml_to_deep",
 ]

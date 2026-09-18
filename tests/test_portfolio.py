@@ -29,7 +29,7 @@ from concurrent.futures import Future
 import pytest
 
 from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.atp.portfolio import portfolio_prove
+from unicode_fol_kit.atp.portfolio import _verdict_from_dict, portfolio_prove
 from unicode_fol_kit.atp.protocol import (
     BackendUnavailable, ProverBackend, Verdict, _REGISTRY, register_backend,
 )
@@ -120,6 +120,44 @@ def test_jobs_1_never_spawns_a_process_pool():
         assert v.backend == "fake-liar"
     finally:
         del _REGISTRY["fake-liar"]
+
+
+# ---------------------------------------------------------------------------
+# K1 regression: _verdict_from_dict must round-trip EVERY Verdict field
+# ---------------------------------------------------------------------------
+#
+# Found by review: the jobs>1 process-pool path reconstructs a Verdict from
+# its own to_dict() dict (workers return plain, picklable dicts — see
+# _worker_decide's docstring), and _verdict_from_dict silently dropped
+# relevant_premises (and, before this item, would have dropped the new
+# solver_version too) because it named fields one at a time instead of
+# reading Verdict.to_dict()'s own key set. A Verdict with every field
+# populated is round-tripped and required to compare identical.
+
+def test_verdict_from_dict_round_trips_every_field():
+    v = Verdict(
+        status="proved", backend="z3", logic="fol", reason=None,
+        szs_status="Theorem", wall_time=1.25,
+        solver_version="Vampire 4.8 (commit deadbeef)",
+        countermodel={"kind": "z3_model", "assignment": {"x": "a"}},
+        proof={"kind": "z3_unsat_core", "core": ["goal", "p0"]},
+        detail="some detail", agreement=("z3", "cvc5"),
+        relevant_premises=(0, 2),
+    )
+    d = v.to_dict()
+    # Every field is genuinely non-default, so a dropped field would show up
+    # as a mismatch below rather than accidentally matching a default.
+    assert d["reason"] is None                      # the one field left at its default
+    assert _verdict_from_dict(d).to_dict() == d
+
+
+def test_verdict_from_dict_round_trips_relevant_premises_none_and_empty():
+    """relevant_premises has THREE distinct meaningful states — None ("nobody
+    computed it"), () ("computed: no premise was needed"), and a non-empty
+    tuple — and a naive `tuple(d["relevant_premises"])` would crash on None."""
+    for value in (None, (), (1, 3, 5)):
+        d = Verdict("proved", "z3", relevant_premises=value).to_dict()
+        assert _verdict_from_dict(d).relevant_premises == value
 
 
 # ---------------------------------------------------------------------------

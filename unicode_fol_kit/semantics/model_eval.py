@@ -100,19 +100,60 @@ and the node's own contract says every export treats it as ``∧``, so reading
 it any other way here would invent a semantics that contract denies), ``Or``,
 ``Xor``, ``Implies``, ``Iff``, ``Quantifier`` (``forall``/``exists``, ASCII or
 ``∀``/``∃``), ``Count`` (``ge``/``le``/``eq``) and ``Cardinality``
-(``|{v : φ}|``, in a comparison — see below). Argument positions accept only
-``Variable`` (via ``assignment``) and ``Constant`` (via
-:attr:`FiniteStructure.constants`) — no ``Function`` terms, since a
-:class:`FiniteStructure` interprets predicates, not functions. Anything else
-(modal/epistemic/temporal operators, Łukasiewicz/fuzzy connectives, lambda
-terms, second-order quantifiers, sorted/many-sorted nodes, ``Measure``, ...)
-is refused LOUDLY with :class:`UnsupportedNode` rather than silently
-approximated — this kit never guesses at semantics it was not told to
-implement. ``SortedCount`` was weighed deliberately rather than just skipped:
-it needs a sort universe to range over, and :class:`FiniteStructure` has no
-``sorts`` concept at all (unlike ``tarski.Structure``) — inventing one here
-would mean extending the shared structure contract, out of bounds for this
-module.
+(``|{v : φ}|``, in a comparison — see below). Argument positions accept
+``Variable`` (via ``assignment``), ``Constant`` (via
+:attr:`FiniteStructure.constants`) and, as of the case described below,
+``Function``. Anything else (modal/epistemic/temporal operators,
+Łukasiewicz/fuzzy connectives, lambda terms, second-order quantifiers,
+sorted/many-sorted nodes, ``Measure``, ...) is refused LOUDLY with
+:class:`UnsupportedNode` rather than silently approximated — this kit never
+guesses at semantics it was not told to implement. ``SortedCount`` was
+weighed deliberately rather than just skipped: it needs a sort universe to
+range over, and :class:`FiniteStructure` has no ``sorts`` concept at all
+(unlike ``tarski.Structure``) — inventing one here would mean extending the
+shared structure contract, out of bounds for this module.
+
+**``Function`` terms.** A :class:`FiniteStructure` interprets a function
+symbol ``f``/``k`` the same way
+:func:`~unicode_fol_kit.atp.finite_domain.structure_from_solution` already
+builds one: as a ``(name, k+1)`` "total relation" extension (the ``k``
+arguments, then the result). :func:`_function_value` reads ``f(t1,...,tk)``
+off that relation — the unique row whose leading ``k`` components equal the
+(recursively evaluated, so nested composition ``f(g(x))`` needs no special
+case) arguments — and refuses LOUDLY, by :class:`ValueError`, if no such row
+exists (the function is PARTIAL on these arguments in a hand-built structure)
+or more than one does (the relation is not FUNCTIONAL): a hand-built
+:class:`FiniteStructure` that puts a partial/non-functional relation under a
+function's key is refused, never silently misread. A ``computed`` function
+relation is supported too (searched over the whole domain for the unique
+witness, mirroring :func:`_reverse_neighbors`'s identical treatment of a
+computed binary predicate — see :func:`_function_value`'s own docstring for
+the full account, including why this reuses :func:`_holds`'s
+:class:`UninterpretedSymbol` pattern for a function this structure does not
+interpret at all). Candidate generation (design decision #2 above) is
+UNAFFECTED: :func:`_variable_candidates`/:func:`_resolved_individual` only
+ever recognise a BARE ``Variable``/``Constant`` occurrence, so a variable
+that occurs only inside a ``Function`` argument (``p(f(x))``) is never
+narrowed by the heuristic — it simply falls back to the documented
+full-domain scan for that variable (see :func:`_resolved_individual`'s own
+docstring for why this stays sound rather than an argument for extending the
+heuristic to peer inside a ``Function``). And the two arithmetic-adjacent
+concerns this addition could in principle have reopened both stay closed by
+construction, not by a new check here: (1) the four arithmetic operator names
+``+``/``-``/``*``/``/`` are excluded from
+:meth:`~unicode_fol_kit.fol.signature.Signature.from_formulas`'s
+``functions`` section (the ``_BUILTIN_FUNCS`` carve-out), so a structure
+built via :func:`~unicode_fol_kit.atp.finite_domain.structure_from_solution`
+never has an extension for them and :func:`_function_value` reports them
+UNINTERPRETED like any other undeclared symbol — no name-based refusal is
+needed in this module; (2) a ``Function`` term is evaluated ONLY by
+:func:`_term_value`/:func:`_function_value`, which answer with individuals,
+and NEVER by :func:`_numeric_value`, which answers with integers and only
+ever receives the operand syntactically marked ``Cardinality``/``Number`` —
+the two paths share no lookup, so this cannot reintroduce the kind of
+numeral-read-as-a-structure-constant confusion
+:mod:`~unicode_fol_kit.semantics.tarski` had to fix for a bare ``Number``
+next to a ``Cardinality`` (see the "Two kinds of term value" bullet below).
 
 **Two kinds of term value, kept apart.** ``Cardinality`` denotes a NATURAL
 NUMBER, not a domain individual, and every term in an ARGUMENT position must
@@ -120,15 +161,20 @@ denote an individual (that is what makes it usable as a predicate argument).
 Admitting numbers everywhere really would be a redesign. It is not needed:
 over a finite structure a numeric term can only occur as an operand of a
 COMPARISON, so the two notions never have to mix. :func:`_term_value` still
-answers with individuals and still refuses ``Cardinality``;
-:func:`_numeric_value` answers with integers and is reached only from the
-comparison branch of :func:`_atom_value`, which switches on the syntactic
-shape of the operands. ``|{v : φ}|`` is then simply counted over the domain —
-the same "counting is decidable on a finite structure" that makes ``Count``
-native here, one level down at the term. This is what lets the finite-domain
-backends (:mod:`unicode_fol_kit.atp.clingo_backend`) have their answers
-CHECKED: a solver that decides a cardinality comparison is of no use if the
-kit cannot verify the model it returns.
+answers with individuals (now including ``Function``'s result — see above)
+and still refuses ``Cardinality``; :func:`_numeric_value` answers with
+integers and is reached only from the comparison branch of
+:func:`_atom_value`, which switches on the syntactic shape of the operands —
+a ``Function`` term compared against a ``Cardinality`` (``f(a) > |{x :
+P(x)}|``) reaches :func:`_numeric_value` on the ``Function`` operand and is
+refused there ("does not denote a number"), the identical reading already
+given to comparing a domain individual with a bare numeral. ``|{v : φ}|`` is
+then simply counted over the domain — the same "counting is decidable on a
+finite structure" that makes ``Count`` native here, one level down at the
+term. This is what lets the finite-domain backends
+(:mod:`unicode_fol_kit.atp.clingo_backend`) have their answers CHECKED: a
+solver that decides a cardinality comparison is of no use if the kit cannot
+verify the model it returns.
 
 **``all_different`` — a SEMANTICS switch, not a performance knob.** Under
 plain FOL semantics (``all_different=False``, the default), two separately
@@ -232,7 +278,7 @@ from typing import Dict, FrozenSet, List, Mapping, Optional, Tuple
 
 from .structures import FiniteStructure, Individual, Key
 from ..fol.nodes import (
-    Node, Variable, Constant, Number, Cardinality,
+    Node, Variable, Constant, Number, Cardinality, Function,
     Atom, Not, And, Contrast, Or, Xor, Implies, Iff, Quantifier, Count,
 )
 
@@ -334,7 +380,7 @@ class _Ctx:
     a cache to the (frozen, unowned-by-us) structure object itself."""
 
     __slots__ = ("budget", "steps", "all_different", "reverse_cache",
-                 "harvest_cache")
+                 "harvest_cache", "function_cache")
 
     def __init__(self, budget: Optional[int], all_different: bool):
         self.budget = budget
@@ -347,6 +393,15 @@ class _Ctx:
         #: by full recursive descent, on every single step. Keyed by the node
         #: itself (nodes are frozen and hashable), scoped to one call.
         self.harvest_cache: Dict[Node, List[Atom]] = {}
+        #: (name, arity+1) -> {input_tuple: result} for a STORED function
+        #: extension — built once (see :func:`_function_value`) rather than
+        #: re-scanned on every occurrence of the same function symbol, the
+        #: same reasoning as ``reverse_cache`` for a stored binary relation.
+        #: A COMPUTED function key is deliberately never cached here — see
+        #: :func:`_function_value`'s own docstring, mirroring
+        #: :func:`_reverse_neighbors`'s identical choice for a computed
+        #: binary predicate.
+        self.function_cache: Dict[Key, Dict[Tuple[Individual, ...], Individual]] = {}
 
     def tick(self) -> None:
         self.steps += 1
@@ -366,11 +421,17 @@ def _extend(assignment: Assignment, name: str, value: Individual) -> Dict[str, I
 # Terms and atoms
 # ---------------------------------------------------------------------------
 
-def _term_value(term: Node, structure: FiniteStructure, assignment: Assignment) -> Individual:
-    """Evaluate a TERM to an individual. Only ``Variable`` and ``Constant`` are
-    supported (see the module docstring) — a :class:`FiniteStructure`
-    interprets predicates, not functions, so ``Function``/``Number``/other
-    term nodes have nothing to evaluate against and are refused."""
+def _term_value(term: Node, structure: FiniteStructure, assignment: Assignment,
+                ctx: "_Ctx") -> Individual:
+    """Evaluate a TERM to an individual. ``Variable``, ``Constant`` and
+    ``Function`` are supported (see the module docstring) — a
+    :class:`FiniteStructure` interprets predicates AND, as of the ``Function``
+    case below, functions (read off the ``(name, arity+1)`` total-relation
+    extension :func:`~unicode_fol_kit.atp.finite_domain.structure_from_solution`
+    already builds); ``Number``/``Cardinality``/``Measure`` denote NUMBERS,
+    not individuals, and have nothing to evaluate against here — see
+    :func:`_numeric_value` for those, and the module docstring's "Two kinds
+    of term value, kept apart" for why the two are never merged."""
     if isinstance(term, Variable):
         if term.name not in assignment:
             raise ValueError(
@@ -386,10 +447,109 @@ def _term_value(term: Node, structure: FiniteStructure, assignment: Assignment) 
                 symbol=term.name, arity=None,
             )
         return structure.constants[term.name]
+    if isinstance(term, Function):
+        return _function_value(term, structure, assignment, ctx)
     raise UnsupportedNode(
         f"model_eval: term node {type(term).__name__} is not supported — only "
-        "Variable and Constant terms are evaluated (no Function/Number/"
+        "Variable, Constant and Function terms are evaluated (no Number/"
         "Cardinality/Measure terms; see the module docstring)."
+    )
+
+
+def _function_value(term: Function, structure: FiniteStructure, assignment: Assignment,
+                    ctx: "_Ctx") -> Individual:
+    """Evaluate a ``Function`` TERM ``f(t1,...,tk)`` to the individual it denotes.
+
+    Arguments are evaluated recursively through :func:`_term_value` FIRST —
+    which is also what makes nested composition (``f(g(x))``) just work, via
+    ordinary Python recursion, with no special-casing here. The function
+    itself is then read off the SAME ``(name, arity+1)`` "total relation"
+    :func:`~unicode_fol_kit.atp.finite_domain.structure_from_solution` already
+    reconstructs for a function symbol (inputs, then result — see that
+    function's own docstring): the unique row whose leading ``k`` components
+    equal the evaluated arguments supplies the result.
+
+    A STORED extension is indexed into a plain ``{inputs: result}`` dict ONCE
+    per ``(name, arity+1)`` key and cached in ``ctx.function_cache`` for the
+    rest of this evaluation call (mirroring ``reverse_cache`` for a stored
+    binary relation) — building that index is also where FUNCTIONALITY is
+    checked: two different rows sharing the same input tuple is a defect in a
+    hand-built structure (a genuine solver-produced structure already passed
+    :func:`~unicode_fol_kit.atp.finite_domain.structure_from_solution`'s own
+    functionality check, so this can only fire for a structure built by hand
+    with a broken ``Function``-shaped extension). A COMPUTED relation cannot
+    be inverted this way (an opaque callable has no rows to scan) and is
+    instead searched over the WHOLE domain for the individual ``y`` with
+    ``computed(*args, y)`` true — uncached, the identical trade-off
+    :func:`_reverse_neighbors` already makes for a computed binary predicate,
+    for the identical reason. Either way, ANYTHING other than exactly one
+    matching result — none (the function is PARTIAL on these arguments) or
+    more than one (the relation is not FUNCTIONAL) — is refused loudly with a
+    named :class:`ValueError`, mirroring :func:`_holds`'s
+    :class:`UninterpretedSymbol` pattern for "this structure does not say
+    what I need it to": a hand-built :class:`FiniteStructure` that puts a
+    partial or non-functional relation under a function's key must be
+    refused, not silently misread as picking an arbitrary row or as
+    "uninterpreted".
+
+    An entirely UNINTERPRETED function symbol (neither stored nor computed —
+    this is what a genuinely arithmetic name like ``+``/``-``/``*``/``/``
+    hits: :meth:`~unicode_fol_kit.fol.signature.Signature.from_formulas`
+    never declares them as user functions, so a structure built via
+    :func:`~unicode_fol_kit.atp.finite_domain.structure_from_solution` never
+    has an extension for them either — this evaluator needs no special check
+    of its own to keep them refused, see the module docstring) raises
+    :class:`UninterpretedSymbol` exactly like an uninterpreted predicate.
+    """
+    args = tuple(_term_value(a, structure, assignment, ctx) for a in term.args)
+    name = term.name
+    k = len(args)
+    key = (name, k + 1)
+
+    if key in structure.extensions:
+        graph = ctx.function_cache.get(key)
+        if graph is None:
+            graph = {}
+            for row in structure.extensions[key]:
+                inputs, result = row[:-1], row[-1]
+                if inputs in graph and graph[inputs] != result:
+                    raise ValueError(
+                        f"model_eval: function {name!r}/{k} is not FUNCTIONAL "
+                        f"in this structure — both {graph[inputs]!r} and "
+                        f"{result!r} are claimed as the result for "
+                        f"{name}{inputs} (a hand-built FiniteStructure must "
+                        "obey the same 'exactly one result per input tuple' "
+                        "contract structure_from_solution enforces on a "
+                        "solver's own output)."
+                    )
+                graph[inputs] = result
+            ctx.function_cache[key] = graph
+        if args not in graph:
+            raise ValueError(
+                f"model_eval: function {name!r}/{k} has no result for "
+                f"{name}{args} in this structure — it must be TOTAL (a row "
+                "for every input tuple), the other half of the "
+                "structure_from_solution contract a hand-built structure "
+                "must also obey."
+            )
+        return graph[args]
+
+    if key in structure.computed:
+        decide = structure.computed[key]
+        matches = tuple(y for y in structure.domain if decide(*args, y))
+        if len(matches) != 1:
+            raise ValueError(
+                f"model_eval: function {name!r}/{k} is not a total function "
+                f"in this structure — {name}{args} has {len(matches)} "
+                f"result(s) ({matches!r}) among this structure's computed "
+                f"{name!r}/{key[1]} relation, not exactly one."
+            )
+        return matches[0]
+
+    raise UninterpretedSymbol(
+        f"model_eval: function {name!r}/{k} is not interpreted by this "
+        f"structure (known: {[f'{n}/{a}' for n, a in structure.signature()]}).",
+        symbol=name, arity=k,
     )
 
 
@@ -479,11 +639,11 @@ def _atom_value(atom: Atom, structure: FiniteStructure, assignment: Assignment,
                                bound_existentials, ctx)
         return _ORDER_OPS[atom.predicate](left, right)
     if atom.predicate in ("=", "≠") and len(atom.args) == 2:
-        left_i = _term_value(atom.args[0], structure, assignment)
-        right_i = _term_value(atom.args[1], structure, assignment)
+        left_i = _term_value(atom.args[0], structure, assignment, ctx)
+        right_i = _term_value(atom.args[1], structure, assignment, ctx)
         same = left_i == right_i
         return same if atom.predicate == "=" else not same
-    args = tuple(_term_value(a, structure, assignment) for a in atom.args)
+    args = tuple(_term_value(a, structure, assignment, ctx) for a in atom.args)
     return _holds(structure, atom.predicate, args)
 
 
@@ -510,7 +670,23 @@ def _resolved_individual(
     (yet) resolvable. Not an error path: candidate generation is a heuristic
     that simply skips an atom it cannot yet use — :func:`_term_value` is what
     enforces free-variable/uninterpreted-constant errors during real
-    evaluation."""
+    evaluation.
+
+    Deliberately returns ``None`` — "not yet resolvable" — for a
+    :class:`Function` term such as ``f(y)``, even when ``y`` is itself bound:
+    this helper only ever recognises a BARE ``Constant``/``Variable``, never
+    evaluates a ``Function`` to find its value. That keeps candidate
+    generation SOUND with no extra reasoning needed here — a variable that
+    occurs only inside a ``Function`` argument (``rel(f(x), y)``, or a unary
+    atom ``p(f(x))``) is simply never narrowed by :func:`_variable_candidates`
+    (its own ``isinstance(t, Variable)`` checks reject a ``Function``-wrapped
+    occurrence the same way they reject any other non-bare term), so such a
+    variable always falls back to the full-domain scan documented in
+    :func:`_variable_candidates`'s own docstring — correct, just not indexed.
+    Peering INSIDE a ``Function`` argument to narrow the candidate set would
+    need its own soundness argument (the indexing heuristic was designed and
+    proven sound only for predicate atoms over bare terms — see the module
+    docstring) and is not attempted here."""
     if isinstance(term, Constant) and term.name in structure.constants:
         return structure.constants[term.name]
     if isinstance(term, Variable) and term.name in assignment:
@@ -559,7 +735,17 @@ def _variable_candidates(
     domain order: the intersection of every unary/binary constraint on it
     harvested from ``body`` (see :func:`_harvest_atoms`). Falls back to the
     WHOLE domain if nothing usable was found — still correct (every candidate
-    is fully re-checked by evaluating the whole body), just not narrowed."""
+    is fully re-checked by evaluating the whole body), just not narrowed.
+
+    This heuristic was designed and proven sound only for a harvested atom
+    whose argument is a BARE ``Variable``/``Constant`` — the ``isinstance(t,
+    Variable)`` checks below simply do not match a ``Function``-wrapped
+    occurrence (``p(f(x))``, ``rel(f(x), y)``), so such an atom contributes
+    NO narrowing for ``x`` (see :func:`_resolved_individual`'s own docstring
+    for the fuller argument) and ``x`` falls through to the documented
+    full-domain-scan fallback above instead — still sound (never narrows
+    WRONG), just not indexed. Extending the heuristic to peer inside a
+    ``Function`` argument is deliberately NOT attempted here."""
     harvested = ctx.harvest_cache.get(body)
     if harvested is None:
         harvested = _harvest_atoms(body)

@@ -33,7 +33,8 @@ Design notes:
 Public API: :class:`Sequent`, :class:`Derivation`, :class:`SequentResult`, the
 helpers :func:`sequent`, :func:`derive`, :func:`axiom`, the comprehension wrapper
 :class:`Comprehension`, and the checkers :func:`check_sequent_proof` /
-:func:`verify_sequent_proof`, plus :func:`render_sequent_proof`.
+:func:`verify_sequent_proof`, plus :func:`render_sequent_proof` /
+:meth:`Derivation.to_html`.
 """
 
 from collections import Counter
@@ -47,6 +48,7 @@ from ..fol.nodes import (
 )
 from ..fol._msfl_nodes import _rename, _fresh_name
 from .fitch import _subst_var, _free_vars, _is_term, _q_kind, _VAR_BINDERS
+from ._html import esc_html, html_page
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +176,17 @@ class Derivation:
     def render(self) -> str:
         """Render this derivation as an indented proof tree."""
         return render_sequent_proof(self)
+
+    def to_html(self, title: str = "Sequent derivation") -> str:
+        """Render as a self-contained, theme-aware HTML page.
+
+        Same idiom as :meth:`unicode_fol_kit.fol.derivation.CCGDerivation.to_html`
+        (and the same tree-of-blocks layout): each node's premises sit above an
+        inference bar with the rule name — and, when present, the instantiation
+        term / eigenvariable / comprehension — to its right, exactly as
+        :func:`render_sequent_proof` surfaces ``extra`` in its bracketed label.
+        """
+        return html_page(title, _html_sequent_page(self), _SEQUENT_CSS)
 
 
 def _extra_to_dict(e):
@@ -950,3 +963,61 @@ def render_sequent_proof(derivation: "Derivation", indent: int = 0) -> str:
     for premise in derivation.premises:
         lines.append(render_sequent_proof(premise, indent + 1))
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Rendering: self-contained HTML page (mirrors CCGDerivation.to_html's idiom)
+# ---------------------------------------------------------------------------
+
+_SEQUENT_CSS = """
+.scroll{overflow-x:auto;padding:26px 8px}
+.fig{width:max-content;min-width:100%;padding:0 28px;
+  font-family:"Cambria Math","Times New Roman",Times,serif;font-size:14px}
+.nd{display:inline-flex;flex-direction:column;align-items:center;vertical-align:bottom}
+.pr{display:flex;align-items:flex-end;justify-content:center;gap:26px}
+.bar{position:relative;align-self:stretch;border-top:1.3px solid var(--bar);margin-top:4px}
+.lbl{position:absolute;left:100%;top:-3px;padding-left:6px;white-space:nowrap;text-align:left}
+.r{font-size:11px;font-style:italic;color:var(--accent)}
+.ex{font-size:9.5px;color:var(--muted)}
+.cn{padding-top:4px;text-align:center;white-space:nowrap;color:var(--ink)}
+.leaf{padding:0 4px}
+.leaflbl{margin-top:2px;text-align:center;white-space:nowrap}
+"""
+
+
+def _rule_label_html(d: "Derivation") -> str:
+    """The ``.r``/``.ex`` pair for one node: the rule name, plus its ``extra``
+    annotation (instantiation term / eigenvariable / comprehension) beneath it,
+    exactly as :func:`render_sequent_proof`'s bracketed ``[rule extra]`` label."""
+    extra = _fmt_extra(d.extra).strip()
+    ex_html = ('<span class="ex">%s</span>' % esc_html(extra)) if extra else ""
+    return '<span class="r">%s</span>%s' % (esc_html(d.rule), ex_html)
+
+
+def _html_sequent(d: "Derivation") -> str:
+    """Render one derivation node, recursively, mirroring
+    ``CCGDerivation._node_html``'s ``.nd``/``.pr``/``.bar``/``.cn`` tree layout —
+    generalised from CCG's binary ``forward``/``backward`` to ``d.premises``'
+    arbitrary arity, which the flex-row-of-blocks pattern already tolerates.
+
+    A leaf (no premises, e.g. an ``Ax`` axiom) has no inference bar to attach
+    the rule label to, so it is shown as the sequent with the label stacked
+    below it instead of to a bar's right.
+    """
+    if not d.premises:
+        return ('<div class="nd leaf"><div class="cn">%s</div>'
+                '<div class="leaflbl">%s</div></div>'
+                % (esc_html(str(d.conclusion)), _rule_label_html(d)))
+    prem = "".join(_html_sequent(p) for p in d.premises)
+    return (
+        '<div class="nd"><div class="pr">%s</div>'
+        '<div class="bar"><span class="lbl">%s</span></div>'
+        '<div class="cn">%s</div></div>'
+        % (prem, _rule_label_html(d), esc_html(str(d.conclusion)))
+    )
+
+
+def _html_sequent_page(d: "Derivation") -> str:
+    """The ``<body>`` content for :meth:`Derivation.to_html`: the recursive tree
+    wrapped in the same ``scroll``/``fig`` scaffolding CCG's page uses."""
+    return '<div class="scroll"><div class="fig">%s</div></div>' % _html_sequent(d)

@@ -1,0 +1,44 @@
+% Captured verbatim from `vampire --proof tptp --avatar off` (Vampire 5.0.1,
+% local WSL install) proving {a = b, p(a)} |- p(b); the file(...) path was
+% shortened to 'du.p' for readability. Exercises 'definition_unfolding' (f9,
+% 2 parents) -- a rule this module deliberately does NOT check (it is a
+% preprocessing rewrite, not one of the core calculus rules, and is outside
+% both this module's trusted and checked tables) -- so the whole derivation
+% must come back unverified, naming 'definition_unfolding'.
+% SZS status Theorem for du
+% SZS output start Proof for du
+fof(f1,axiom,(
+  a = b),
+  file('du.p',unknown)).
+fof(f2,axiom,(
+  p(a)),
+  file('du.p',unknown)).
+fof(f3,conjecture,(
+  p(b)),
+  file('du.p',unknown)).
+fof(f4,negated_conjecture,(
+  ~p(b)),
+  inference(negated_conjecture,[status(cth)],[f3])).
+fof(f5,plain,(
+  ~p(b)),
+  inference(flattening,[],[f4])).
+fof(f6,plain,(
+  a = b),
+  inference(cnf_transformation,[],[f1])).
+fof(f7,plain,(
+  p(a)),
+  inference(cnf_transformation,[],[f2])).
+fof(f8,plain,(
+  ~p(b)),
+  inference(cnf_transformation,[],[f5])).
+fof(f9,plain,(
+  p(b)),
+  inference(definition_unfolding,[],[f7,f6])).
+fof(f10,plain,(
+  $false),
+  inference(forward_subsumption_resolution,[],[f9,f8])).
+% SZS output end Proof for du
+% ------------------------------
+% Termination reason: Refutation
+% Time elapsed: 0.018 s
+% ------------------------------

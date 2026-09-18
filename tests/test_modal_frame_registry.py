@@ -131,17 +131,119 @@ def test_a_geach_spec_and_its_named_condition_pick_the_same_frames(spec,
 
 
 # ---------------------------------------------------------------------------
-# Non-first-order conditions are refused, not approximated
+# Non-first-order conditions: no first-order AXIOM, but a finite frame CHECK
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("condition", _NOT_FIRST_ORDER)
-def test_a_non_first_order_condition_has_no_finite_check_and_no_axiom(
+def test_a_non_first_order_condition_still_has_no_first_order_axiom(
         condition):
+    """Löb/McKinsey/Grz have no first-order frame axiom at every
+    cardinality — ``unguarded_frame_axiom`` (used by ``fitch`` and
+    ``modal_translation``) keeps refusing them, unchanged by the finite-frame
+    check below."""
     assert set(_NOT_FIRST_ORDER) == {"loeb", "mckinsey", "grz"}
     with pytest.raises(UnsupportedFrameCondition):
-        holds_on_finite_frame(condition, frozenset(), 1)
-    with pytest.raises(UnsupportedFrameCondition):
         unguarded_frame_axiom(condition)
+
+
+@pytest.mark.parametrize("condition", _NOT_FIRST_ORDER)
+def test_a_non_first_order_condition_still_has_a_finite_frame_check(
+        condition):
+    """Unlike the axiom above, ``holds_on_finite_frame`` DOES decide these
+    three — via their finite structural characterisation (irreflexive /
+    antisymmetric / terminal-reachable) — and returns a plain bool rather
+    than raising. See ``tests/test_finite_frame_conditions.py`` for the
+    brute-force correctness argument."""
+    assert isinstance(holds_on_finite_frame(condition, frozenset(), 1), bool)
+
+
+# ---------------------------------------------------------------------------
+# The finite-frame correspondence for Löb / Grz / McKinsey, brute-forced the
+# same way as every first-order condition above (``_frames`` / ``_valid_on``)
+# but with the conditions COMBINED exactly as the ``FRAMES`` entries that use
+# them combine them (``GL`` = trans+loeb, ``Grz`` = refl+trans+grz, ``S4.1``
+# = refl+trans+mckinsey), and extended to four worlds — each sweep finishes
+# in a few seconds. This is what atp/kripke_enum.py now relies on: it
+# decides these three exactly by delegating to ``holds_on_finite_frame``.
+# ---------------------------------------------------------------------------
+
+def _combined_holds(conditions, edges, n):
+    return all(holds_on_finite_frame(c, edges, n) for c in conditions)
+
+
+def _disagreements_over(conditions, axiom, atoms, max_worlds=4, scope=None):
+    """Like the module-level ``_disagreements``, but ``conditions`` is a
+    TUPLE checked together (as a ``FRAMES`` entry combines them), and, if
+    ``scope`` is given, restricted to frames that also satisfy it."""
+    out = []
+    for n in range(1, max_worlds + 1):
+        for edges in _frames(n):
+            if scope is not None and not _combined_holds(scope, edges, n):
+                continue
+            if _valid_on(axiom, edges, n, atoms) != _combined_holds(
+                    conditions, edges, n):
+                out.append((n, sorted(edges)))
+                if len(out) >= 3:
+                    return out
+    return out
+
+
+def test_loeb_frames_are_exactly_transitive_and_irreflexive():
+    """Gödel–Löb, brute-forced on every frame up to 4 worlds: the Löb schema
+    is valid on a frame iff the frame is transitive AND irreflexive — the
+    standard finite characterisation (Boolos), and exactly what
+    ``FRAMES["GL"] = ("trans", "loeb")`` combines."""
+    bad = _disagreements_over(("trans", "loeb"), modal_axiom("Loeb"), ("P",))
+    assert not bad, f"Loeb disagrees with transitive+irreflexive on {bad}"
+
+
+def test_grz_frames_are_exactly_reflexive_transitive_and_antisymmetric():
+    """Grzegorczyk, brute-forced on every frame up to 4 worlds: valid iff the
+    frame is a finite partial order — exactly what
+    ``FRAMES["Grz"] = ("refl", "trans", "grz")`` combines.
+
+    The SAME sweep also serves as the non-vacuity control the module
+    docstring promises for every correspondence here (see
+    ``test_the_correspondence_check_can_still_see_a_difference`` above):
+    refl+trans ALONE — the OLD, wrong ``FRAME_CONDITIONS["grz"].description``
+    before this fix — must disagree with genuine Grz-validity, and by an
+    EXACT, hand-verified count (1 frame at 2 worlds, 10 at 3, 136 at 4;
+    reproduced independently outside this test suite), so a green result
+    above cannot be an accident of a vacuous condition.
+    """
+    axiom = modal_axiom("Grz")
+    bad_full = []
+    control_mismatches = {2: 0, 3: 0, 4: 0}
+    for n in range(1, 5):
+        for edges in _frames(n):
+            valid = _valid_on(axiom, edges, n, ("P",))
+            if valid != _combined_holds(("refl", "trans", "grz"), edges, n):
+                if len(bad_full) < 3:
+                    bad_full.append((n, sorted(edges)))
+            if n in control_mismatches:
+                if valid != _combined_holds(("refl", "trans"), edges, n):
+                    control_mismatches[n] += 1
+    assert not bad_full, (
+        f"Grz disagrees with refl+trans+antisymmetric on {bad_full}")
+    assert control_mismatches == {2: 1, 3: 10, 4: 136}, (
+        "refl+trans alone (antisymmetry dropped) must disagree with genuine "
+        f"Grz-validity exactly this often; got {control_mismatches}")
+
+
+def test_mckinsey_on_preorders_is_exactly_terminal_reachability():
+    """McKinsey, restricted to preorders (refl+trans) — the only generality
+    ``FRAMES["S4.1"] = ("refl", "trans", "mckinsey")`` ever uses it in, and
+    the scope :func:`unicode_fol_kit.fol.frames._named_holds`'s ``mckinsey``
+    branch is documented and verified for — brute-forced up to 4 worlds:
+    valid iff every world reaches some terminal point (a world whose only
+    successor is itself). Frames outside this scope (not refl+trans) are
+    skipped: the registry never asks ``holds_on_finite_frame("mckinsey", …)``
+    about one, so no claim is made about them (see the ``fol/frames.py``
+    module docstring, "What is NOT first-order definable")."""
+    bad = _disagreements_over(
+        ("refl", "trans", "mckinsey"), modal_axiom("McKinsey"), ("P",),
+        scope=("refl", "trans"))
+    assert not bad, f"McKinsey disagrees on preorders on {bad}"
 
 
 # ---------------------------------------------------------------------------
@@ -292,14 +394,18 @@ def test_the_tableau_refuses_what_it_has_no_rule_for(frame, condition):
 
 @pytest.mark.parametrize("frame", ["GL", "S4.1", "Grz"])
 def test_every_first_order_route_refuses_the_non_first_order_systems(frame):
-    from unicode_fol_kit.atp.kripke_enum import modal_enum_search
+    """The routes that emit a SINGLE first-order sentence over frames of
+    every cardinality still refuse GL/S4.1/Grz by name.
+    ``atp.kripke_enum.modal_enum_search`` is deliberately NOT in this loop
+    any more: it is a bounded finite-model enumerator, not a first-order
+    route, and it now decides (refutes) these three directly — see
+    ``tests/test_finite_frame_conditions.py``."""
     from unicode_fol_kit.fol.modal_translation import hybrid_is_valid
     from unicode_fol_kit.fol.qml import qml_is_valid
 
     formula = modal_axiom("T")
     for call in (lambda: qml_is_valid(formula, frame=frame),
-                 lambda: hybrid_is_valid(formula, frame=frame),
-                 lambda: modal_enum_search(formula, frame=frame)):
+                 lambda: hybrid_is_valid(formula, frame=frame)):
         with pytest.raises(NotImplementedError):
             call()
 

@@ -2,6 +2,7 @@
 
 import logging
 from dataclasses import dataclass, is_dataclass, replace
+from typing import List, Tuple, TYPE_CHECKING
 
 from ._fol_nodes import (
     Node, Z3Env, Variable, Constant, Number, Function,
@@ -16,6 +17,13 @@ from ._team_nodes import SlashedExists
 # Safe to import at module scope: _ho_nodes reaches only _fol_nodes and
 # _so_nodes at import time, and takes its own Lambda dependency lazily.
 from ._ho_nodes import PredicateTerm
+
+if TYPE_CHECKING:
+    # Type-hint only: a real (runtime) import here would be circular
+    # (signature.py imports from .nodes, which re-exports the classes this
+    # module defines) — see subsort_axioms's own docstring for why a Signature
+    # is instead duck-typed at runtime (only its .subsorts mapping is read).
+    from .signature import Signature
 
 _logger = logging.getLogger(__name__)
 
@@ -1249,6 +1257,12 @@ _UNI_BASE_PREC = {
     # a prefix-level operand); they are not in the operator registry because no
     # registered fixity can express the bracket-delimited two-argument shape.
     "Announce": 4, "AnnounceDiamond": 4,
+    # Group-epistemic operators E_{…}/D_{…}/C_{…} are prefix operators over a
+    # variable-length agent list, which no registered fixity expresses either.
+    "EverybodyKnows": 4, "DistributedKnowledge": 4, "CommonKnowledge": 4,
+    # The ↓ binder: same binding tightness as a plain quantifier (it IS one,
+    # structurally — see fol._hybrid_nodes.Down's docstring).
+    "Down": 4,
 }
 
 # The same-level binary group (∧ ∨ ⊗ ⊕, grammar precedence 3) is identified by
@@ -1431,6 +1445,10 @@ def _uni(node) -> str:
     if cls == "Nominal":
         # A hybrid nominal renders as its bare (NAME-legal) name.
         return node.name
+    if cls == "Down":
+        # ↓x.body  (binds as tightly as a quantifier — see _UNI_BASE_PREC; the
+        # "." separator mirrors the grammar and Lambda's own "λx. body").
+        return f"↓{node.variable.name}." + _uni_wrap(node.formula, 4)
     if cls == "One":
         # The multiplicative unit of the linear mode.
         return "𝟙"
@@ -1440,10 +1458,11 @@ def _uni(node) -> str:
     if cls == "Zero":
         # The additive falsity of the linear mode.
         return "𝟘"
-    if cls in ("Announce", "AnnounceDiamond"):
-        # PAL announcements render via their own bracket-delimited form
-        # ([φ!]ψ / ⟨φ!⟩ψ); precedence for the enclosing slot comes from
-        # _UNI_BASE_PREC above.
+    if cls in ("Announce", "AnnounceDiamond",
+               "EverybodyKnows", "DistributedKnowledge", "CommonKnowledge"):
+        # PAL announcements ([φ!]ψ / ⟨φ!⟩ψ) and the group-epistemic prefixes
+        # (E_{a,b} φ …) render via their own methods; precedence for the
+        # enclosing slot comes from _UNI_BASE_PREC above.
         return node.to_unicode_str()
     if cls == "Dependence":
         # The dependence atom =(t1, …, tn); terms render at the term level.
@@ -1611,14 +1630,19 @@ def _latex(node) -> str:
                 + _latex_wrap(node.formula, 4))
     if cls == "Nominal":
         return f"\\mathsf{{{_latex_escape(node.name)}}}"
+    if cls == "Down":
+        return (f"\\downarrow {_latex_escape(node.variable.name)}.\\, "
+                + _latex_wrap(node.formula, 4))
     if cls == "One":
         return "\\mathbf{1}"
     if cls == "Top":
         return "\\top"
     if cls == "Zero":
         return "\\mathbf{0}"
-    if cls in ("Announce", "AnnounceDiamond"):
-        # PAL announcements render via their own bracket-delimited LaTeX form.
+    if cls in ("Announce", "AnnounceDiamond",
+               "EverybodyKnows", "DistributedKnowledge", "CommonKnowledge"):
+        # PAL announcements and group-epistemic prefixes render via their own
+        # LaTeX methods.
         return node.to_latex()
     if cls == "Dependence":
         return "{=}(" + ", ".join(_latex_term(a) for a in node.args) + ")"
@@ -1683,6 +1707,35 @@ def _reduce_nl_nodes(n: Node) -> Node:
     return n
 
 
+def subsort_axioms(signature: "Signature") -> Tuple[Node, ...]:
+    """Return one ``∀x (S(x) → T(x))`` sentence per DIRECT subsort edge ``S < T``.
+
+    The subsort counterpart of :func:`nonempty_sort_axioms`, under the SAME
+    contract: a caller deciding sorted input against a
+    :class:`~unicode_fol_kit.fol.signature.Signature` that declares subsorts
+    adds these as their OWN extra, top-level, never-negated assumptions --
+    premises for a validity/entailment check, extra conjuncts for a
+    satisfiability check -- e.g.
+    ``api.prove(goal, [*premises, *subsort_axioms(sig)])``. They are never
+    folded into :func:`to_fol`'s per-formula translation: an axiom conjoined
+    onto the formula being PROVED becomes something the prover has to prove
+    too, and ``∀x (S(x) → T(x))`` is not valid, so every validity check would
+    come back refuted.
+
+    ``S``/``T`` are the same 1-ary guard predicate names
+    :meth:`SortedQuantifier._relativize` uses for sort membership, so the
+    axioms constrain exactly the predicates a relativised formula reads,
+    nothing else. Only DIRECT edges are emitted: a transitive edge ``S < U``
+    via ``S < T < U`` follows by chaining the two implications. Deterministic
+    ``(child, parent)`` order; an empty tuple for a signature without
+    subsorts. Duck-typed: only ``signature.subsorts`` is read.
+    """
+    x = Variable("x")
+    return tuple(Quantifier("∀", x, Implies(Atom(child, [x]), Atom(parent, [x])))
+                 for child in sorted(signature.subsorts)
+                 for parent in sorted(signature.subsorts[child]))
+
+
 def to_fol(node: Node, include_sort_facts: bool = False) -> Node:
     """Reduce an MSFL (or plain FOL) node to a purely classical FOL node.
 
@@ -1697,6 +1750,11 @@ def to_fol(node: Node, include_sort_facts: bool = False) -> Node:
        ``Count`` (including a relativized ``SortedCount``) via the
        distinct-witnesses encoding, so the returned node honours the
        "classical FOL constructs only" contract for those inputs too.
+
+    Background facts about sorts are deliberately NOT folded in here, because
+    this reduction is polarity-blind: sort non-emptiness and a Signature's
+    subsort edges come from :func:`nonempty_sort_axioms` and
+    :func:`subsort_axioms`, which a caller adds as separate premises.
 
     Args:
         node: any Node (MSFL or classical FOL).
@@ -1721,5 +1779,73 @@ def to_fol(node: Node, include_sort_facts: bool = False) -> Node:
         conj = dedup[0]
         for f in dedup[1:]:
             conj = And(conj, f)
-        return And(conj, fol)
+        fol = And(conj, fol)
     return fol
+
+
+# =========================
+# Sort non-emptiness axioms
+# =========================
+
+#: The four many-sorted node types that carry a ``.sort: str`` field — the
+#: same set :func:`~unicode_fol_kit.atp.finite_domain.lower_msfol` scans for.
+_SORTED_NODE_TYPES = (SortedQuantifier, SortedConstant, SortedCount, SortedCardinality)
+
+
+def nonempty_sort_axioms(*sentences: Node) -> Tuple[Node, ...]:
+    """Return one ``∃x (S(x))`` sentence per distinct sort name in ``sentences``.
+
+    Many-sorted FOL (MSFOL), by convention, never gives a sort an EMPTY
+    universe (see the classical-reasoning guide's many-sorted section, and
+    :func:`~unicode_fol_kit.semantics.modelfinder._nonempty_subsets`, which
+    enumerates only non-empty subsets of the domain as a sort's universe).
+    ``to_fol``'s own relativisation above — ``∀x:S φ`` becomes
+    ``∀x (S(x) → φ)``, ``∃x:S φ`` becomes ``∃x (S(x) ∧ φ)`` — carries NO such
+    guarantee by itself: a classical decision procedure remains free to make
+    ``S`` empty, which makes every ``∀x:S φ`` vacuously TRUE and can turn an
+    otherwise-valid many-sorted entailment into a spurious countermodel (an
+    empty-sort "model" no legal MSFOL structure would ever be), or turn a
+    genuinely unsatisfiable many-sorted theory satisfiable.
+
+    This is the ONE place that gap is closed, factored out of
+    :func:`~unicode_fol_kit.atp.finite_domain.lower_msfol` (the ASP/CP
+    backends' own many-sorted front door, which builds exactly these
+    sentences) so every OTHER route deciding sorted input through ``to_fol``
+    — directly, or via a node's own ``to_z3``/``to_prover9``/``to_tptp``
+    auto-reduction — can reuse the identical construction instead of
+    drifting apart. A caller must add the returned sentences as their OWN
+    extra, top-level, NEVER-negated assumptions alongside whatever it is
+    deciding — on the premise side for a validity/entailment check (an extra
+    assumption the goal may rely on), as an extra asserted conjunct for a
+    satisfiability/model-finding check — and never fold them INSIDE the
+    per-formula translation itself: ``to_fol``/``to_z3``/``to_prover9``/
+    ``to_tptp`` are polarity-blind (the very same node translates the same
+    way whether it sits under a positive or a negated position), so an extra
+    existential planted inside one of them would land under the WRONG
+    polarity whenever the sorted node is itself under a negation, and would
+    be duplicated once per occurrence of the sort besides.
+
+    Every one of the four many-sorted node types (:class:`SortedQuantifier`,
+    :class:`SortedConstant`, :class:`SortedCount`, :class:`SortedCardinality`)
+    carries a ``.sort: str`` field; this walks every sentence for all four,
+    collecting distinct sort names in first-occurrence order (stable, so
+    re-running this on the same input returns the same sentences in the same
+    order), and returns one bound sentence ``∃x (S(x))`` per name — using the
+    SAME predicate name ``to_fol``'s own relativisation uses for that sort's
+    guard atom, so asserting this alongside the relativised sentences
+    constrains exactly the predicate they read, nothing else.
+
+    Returns an EMPTY tuple when no sentence contains any of the four sorted
+    node types — the same no-op signal :func:`lower_msfol` uses to guarantee
+    a fully unsorted caller sees byte-identical solver input.
+    """
+    sort_names: List[str] = []
+    for s in sentences:
+        for node in s.walk():
+            if isinstance(node, _SORTED_NODE_TYPES) and node.sort not in sort_names:
+                sort_names.append(node.sort)
+    return tuple(
+        Quantifier("∃", Variable(f"_msfol_{name}_witness"),
+                  Atom(name, [Variable(f"_msfol_{name}_witness")]))
+        for name in sort_names
+    )

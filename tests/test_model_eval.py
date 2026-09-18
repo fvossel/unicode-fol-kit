@@ -44,7 +44,7 @@ from unicode_fol_kit.semantics.model_eval import (
     evaluate, evaluate_detailed,
 )
 from unicode_fol_kit.fol.nodes import (
-    Variable, Constant, Number, Function,
+    Variable, Constant, Number, Function, Cardinality,
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier, Count,
     Box, WeakConjunction,
 )
@@ -439,13 +439,140 @@ class TestErrors:
             evaluate(WeakConjunction(Atom("c", [X]), Atom("c", [X])), ETHANOL,
                      assignment={"x": "c1"})
 
-    def test_function_term_is_refused(self):
-        with pytest.raises(UnsupportedNode):
-            evaluate(Atom("c", [Function("f", [Constant("c1")])]), ETHANOL)
+    def test_uninterpreted_function_term_raises_uninterpreted_not_unsupported(self):
+        # 'f' is not among ETHANOL's declared symbols at all -- since Function
+        # terms are now SUPPORTED (see TestFunctionTerms below), the right
+        # error is UninterpretedSymbol ("this structure doesn't say what I
+        # need"), not UnsupportedNode ("this evaluator never heard of this
+        # node type") -- the same distinction an uninterpreted predicate
+        # already gets.
+        with pytest.raises(UninterpretedSymbol) as exc_info:
+            evaluate(Atom("c", [Function("f", [X])]), ETHANOL, assignment={"x": "c1"})
+        assert exc_info.value.symbol == "f"
+        assert exc_info.value.arity == 1
 
     def test_free_variable_raises(self):
         with pytest.raises(ValueError):
             evaluate(Atom("c", [Y]), ETHANOL, assignment={"x": "c1"})  # y is unbound
+
+
+# ---------------------------------------------------------------------------
+# Function terms (the C26 addition): individual-denoting, recursively
+# composed, read off a FiniteStructure's (name, arity+1) total-relation
+# extension -- the same shape atp.finite_domain.structure_from_solution
+# already builds. A fresh 3-cycle fixture is used here (not ETHANOL, which
+# declares no function symbol) purely because its table is trivial to check
+# by eye.
+# ---------------------------------------------------------------------------
+
+# f: "0"->"1"->"2"->"0" (a 3-cycle over a fresh {0,1,2} domain); p holds only
+# of "1" = f("0"), so p(f(x)) is a hand-checkable way to combine a Function
+# result with an ordinary predicate.
+_CYCLE = FiniteStructure(
+    domain=("0", "1", "2"),
+    extensions={
+        ("f", 2): {("0", "1"), ("1", "2"), ("2", "0")},
+        ("p", 1): {("1",)},
+    },
+)
+
+
+class TestFunctionTerms:
+    def test_simple_application(self):
+        # f(0) = 1 by the table above -- f(x)=y is True only at (x=0, y=1).
+        formula = Atom("=", [Function("f", [X]), Y])
+        assert evaluate(formula, _CYCLE, assignment={"x": "0", "y": "1"}) is True
+        assert evaluate(formula, _CYCLE, assignment={"x": "0", "y": "2"}) is False
+
+    def test_nested_composition(self):
+        # f(f(x)): x="0" -> f("0")="1" -> f("1")="2". So f(f(0))=2, not 0 or 1
+        # -- nested Function composition needs no special case, it is
+        # ordinary recursion through _term_value/_function_value.
+        formula = Atom("=", [Function("f", [Function("f", [X])]), Y])
+        assert evaluate(formula, _CYCLE, assignment={"x": "0", "y": "2"}) is True
+        assert evaluate(formula, _CYCLE, assignment={"x": "0", "y": "0"}) is False
+
+    def test_full_cycle_holds_universally(self):
+        # f(f(f(x))) = x for every x -- the defining property of a 3-cycle,
+        # so this must hold for ALL THREE domain individuals, not just one.
+        triple = Function("f", [Function("f", [Function("f", [X])])])
+        formula = Quantifier("forall", X, Atom("=", [triple, X]))
+        assert evaluate(formula, _CYCLE) is True
+
+    def test_function_result_used_as_predicate_argument(self):
+        # p holds only of "1" = f("0") -- so p(f(x)) is true exactly at x=0,
+        # false at x=1 (f(1)=2, p(2) is False) and x=2 (f(2)=0, p(0) is False).
+        formula = Atom("p", [Function("f", [X])])
+        assert evaluate(formula, _CYCLE, assignment={"x": "0"}) is True
+        assert evaluate(formula, _CYCLE, assignment={"x": "1"}) is False
+        assert evaluate(formula, _CYCLE, assignment={"x": "2"}) is False
+
+    def test_existential_over_function_result(self):
+        # ∃x p(f(x)) -- true, witnessed by x="0" (f("0")="1", p("1") holds).
+        formula = Quantifier("exists", X, Atom("p", [Function("f", [X])]))
+        assert evaluate(formula, _CYCLE) is True
+
+    def test_uninterpreted_function_symbol_raises_uninterpreted(self):
+        with pytest.raises(UninterpretedSymbol) as exc_info:
+            evaluate(Atom("=", [Function("g", [X]), X]), _CYCLE, assignment={"x": "0"})
+        assert exc_info.value.symbol == "g"
+        assert exc_info.value.arity == 1
+
+    def test_partial_function_relation_is_refused(self):
+        # f has a row for "0" only -- PARTIAL, not TOTAL -- a defect only a
+        # hand-built structure can have (structure_from_solution enforces
+        # totality on a solver's own output; see atp/finite_domain.py).
+        partial = FiniteStructure(domain=("0", "1"), extensions={("f", 2): {("0", "1")}})
+        with pytest.raises(ValueError, match="TOTAL"):
+            evaluate(Atom("=", [Function("f", [X]), X]), partial, assignment={"x": "1"})
+
+    def test_non_functional_relation_is_refused(self):
+        # f has TWO different rows for the SAME input "0" -- not FUNCTIONAL.
+        broken = FiniteStructure(
+            domain=("0", "1"), extensions={("f", 2): {("0", "0"), ("0", "1")}})
+        with pytest.raises(ValueError, match="FUNCTIONAL"):
+            evaluate(Atom("=", [Function("f", [X]), X]), broken, assignment={"x": "0"})
+
+    def test_computed_function_relation(self):
+        # f(x) = (x+1) mod 2, expressed as a CALLABLE rather than a stored
+        # extension -- mirrors _reverse_neighbors' identical support for a
+        # computed BINARY predicate (see that function's own docstring).
+        computed = FiniteStructure(
+            domain=("0", "1"),
+            computed={("f", 2): lambda a, b: (int(a) + 1) % 2 == int(b)},
+        )
+        formula = Atom("=", [Function("f", [X]), Y])
+        assert evaluate(formula, computed, assignment={"x": "0", "y": "1"}) is True
+        assert evaluate(formula, computed, assignment={"x": "0", "y": "0"}) is False
+
+    def test_computed_function_relation_with_no_witness_is_refused(self):
+        # A callable that is never true for ANY y at x="0" -- the function is
+        # not total under this (deliberately broken) computed relation.
+        broken = FiniteStructure(domain=("0", "1"),
+                                 computed={("f", 2): lambda a, b: False})
+        with pytest.raises(ValueError, match="not a total function"):
+            evaluate(Atom("=", [Function("f", [X]), X]), broken, assignment={"x": "0"})
+
+    def test_arithmetic_operator_name_stays_naturally_uninterpreted(self):
+        # '+' is excluded from Signature.from_formulas's `functions` section
+        # everywhere this evaluator is actually reached from the finite-
+        # domain pipeline (see the module docstring's own account of why
+        # this needs no special-case refusal here) -- a structure that
+        # simply never declares '+' makes it an ordinary uninterpreted
+        # function, like any other undeclared symbol.
+        with pytest.raises(UninterpretedSymbol) as exc_info:
+            evaluate(Atom("=", [Function("+", [X, X]), X]), _CYCLE, assignment={"x": "0"})
+        assert exc_info.value.symbol == "+"
+
+    def test_function_term_compared_with_cardinality_is_refused(self):
+        # A Function term denotes an INDIVIDUAL, never a number -- comparing
+        # it with a Cardinality has no reading, the identical refusal a bare
+        # domain individual already gets against a numeral (see the module
+        # docstring's "Two kinds of term value" section).
+        card = Cardinality(X, Atom("p", [X]))
+        formula = Atom(">", [Function("f", [X]), card])
+        with pytest.raises(UnsupportedNode, match="does not denote a number"):
+            evaluate(formula, _CYCLE, assignment={"x": "0"})
 
 
 # ---------------------------------------------------------------------------
@@ -540,16 +667,31 @@ class TestExplanations:
 
 _UNARY = ("p", "q")
 _BINARY = ("r",)
+#: The one function symbol the random corpus exercises (arity 1, so its
+#: FiniteStructure extension is stored at ("f", 2) — see _random_structure).
+_FUNC_UNARY = ("f",)
 
 
-def _to_tarski_structure(fs: FiniteStructure) -> tarski.Structure:
+def _to_tarski_structure(fs: FiniteStructure, func_names=()) -> tarski.Structure:
     """Adapt a (stored-extension-only) FiniteStructure into a tarski.Structure
-    with the SAME domain and predicate extensions, for cross-checking. No new
-    evaluation logic here — just a data adapter between two existing,
-    independently implemented structure representations."""
-    predicates = {key: set(rows) for key, rows in fs.extensions.items()}
+    with the SAME domain, predicate extensions AND function extensions, for
+    cross-checking. No new evaluation logic here — just a data adapter
+    between two existing, independently implemented structure
+    representations. ``func_names`` names which stored ``(name, arity+1)``
+    extension keys are FUNCTIONS rather than ordinary predicates — a
+    FiniteStructure does not itself distinguish the two namespaces (see its
+    own docstring), so the caller must say which is which, exactly the way
+    ``atp.finite_domain.structure_from_solution`` uses a ``Signature`` to
+    make that same call."""
+    predicates = {key: set(rows) for key, rows in fs.extensions.items()
+                 if key[0] not in func_names}
+    functions = {}
+    for name in func_names:
+        key = (name, 2)     # arity-1 function stored as an arity-2 relation
+        if key in fs.extensions:
+            functions[(name, 1)] = {row[:-1]: row[-1] for row in fs.extensions[key]}
     return tarski.Structure(domain=fs.domain, constants=dict(fs.constants),
-                             predicates=predicates)
+                             functions=functions, predicates=predicates)
 
 
 def _random_structure(rng: random.Random, domain) -> FiniteStructure:
@@ -558,20 +700,36 @@ def _random_structure(rng: random.Random, domain) -> FiniteStructure:
         ext[(u, 1)] = {(d,) for d in domain if rng.random() < 0.5}
     for b in _BINARY:
         ext[(b, 2)] = {(a, c) for a in domain for c in domain if rng.random() < 0.3}
+    for f in _FUNC_UNARY:
+        # A TOTAL function: exactly one (d, result) row per domain element —
+        # the set comprehension below never produces two rows sharing the
+        # same `d`, since `domain` iterates each individual once.
+        ext[(f, 2)] = {(d, rng.choice(domain)) for d in domain}
     return FiniteStructure(domain=domain, extensions=ext)
 
 
+def _random_term(rng: random.Random, bound_vars, depth: int = 2):
+    """A bare bound variable, or — with modest, depth-limited probability —
+    ``f`` applied to a recursively-built term, so the corpus exercises
+    ``Function`` terms (including nested composition, ``f(f(x))``) alongside
+    plain variables, without ever going unboundedly deep."""
+    if depth <= 0 or rng.random() < 0.6:
+        return Variable(rng.choice(bound_vars))
+    return Function("f", [_random_term(rng, bound_vars, depth - 1)])
+
+
 def _random_formula(rng: random.Random, bound_vars, depth, fresh_counter):
-    """A random closed formula over _UNARY/_BINARY predicates and the
+    """A random closed formula over _UNARY/_BINARY predicates (their
+    arguments possibly ``f``-wrapped, see _random_term) and the
     connectives/quantifiers/Count this module supports. ``fresh_counter`` is
     a 1-element list used as a mutable int to keep bound-variable names
     globally unique (avoids incidental shadowing, which both evaluators
     handle correctly but which would complicate reasoning about the test)."""
     if bound_vars and (depth <= 0 or rng.random() < 0.35):
         if rng.random() < 0.6:
-            return Atom(rng.choice(_UNARY), [Variable(rng.choice(bound_vars))])
-        v1, v2 = rng.choice(bound_vars), rng.choice(bound_vars)
-        return Atom(rng.choice(_BINARY), [Variable(v1), Variable(v2)])
+            return Atom(rng.choice(_UNARY), [_random_term(rng, bound_vars)])
+        v1, v2 = _random_term(rng, bound_vars), _random_term(rng, bound_vars)
+        return Atom(rng.choice(_BINARY), [v1, v2])
 
     kinds = (["forall", "exists", "count"] if not bound_vars else
              ["not", "and", "or", "implies", "iff", "xor", "forall", "exists", "count"])
@@ -606,7 +764,8 @@ class TestDifferentialVsTarski:
         for i in range(25):
             fs = _random_structure(rng, domain)
             formula = _random_formula(rng, [], 4, fresh_counter)
-            expected = tarski.satisfies(formula, _to_tarski_structure(fs), {})
+            expected = tarski.satisfies(
+                formula, _to_tarski_structure(fs, func_names=_FUNC_UNARY), {})
             actual = evaluate(formula, fs)
             assert actual == expected, (
                 f"case {i}: model_eval={actual} tarski={expected} "

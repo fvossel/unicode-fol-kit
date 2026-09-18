@@ -26,6 +26,22 @@ can decide, from cheap structural checks to a solver call:
   * ``auto``             — the ladder above, cheapest first, stopping at the
                            first level that answers ``True``.
 
+An OPT-IN ``converses`` argument additionally lets a caller declare
+argument-permutation bridging axioms — e.g. ``LovedBy(x, y) ↔ Loves(y, x)`` —
+that the SOLVER level asserts as extra premises (see
+:mod:`unicode_fol_kit.eval.converses`). Only ``method="solver"``/``"auto"``
+ever honour it (a structural level would silently ignore a declared axiom it
+cannot consume, which is refused rather than allowed); the result is tagged
+with its own ``method_used`` value, ``"solver_modulo_converses"``, never
+merged into plain ``"solver"`` so a consumer can always tell whether a
+verdict relied on caller-declared bridges. This kit's whole classical Z3
+export uses exactly one Z3 sort for every term (see
+``eval.converses``'s module docstring), so a declared axiom for a
+``(name, arity)`` predicate pair interns to the identical Z3 function the
+compared formulas themselves use — many-sorted (``SortedQuantifier``) input
+included; ``tests/test_converses.py`` proves this end-to-end rather than just
+asserting it.
+
 Every result is an :class:`EquivalenceResult` whose ``to_dict()`` is
 JSON-compatible, so pipelines and LLM repair loops can consume it without
 extra parsing.
@@ -41,6 +57,7 @@ the exact rubric.
 from dataclasses import dataclass
 from typing import Optional
 
+from unicode_fol_kit.fol._msfl_nodes import nonempty_sort_axioms
 from unicode_fol_kit.fol.nodes import (
     Node, Iff, Quantifier, SortedQuantifier,
 )
@@ -65,7 +82,16 @@ class EquivalenceResult:
         iff the strongest level that ran refuted it; ``None`` if undecided.
         Truthiness follows this field.
     ``method_used``
-        the level that produced the headline verdict.
+        the level that produced the headline verdict. Almost always one of
+        ``"exact"`` / ``"canonical"`` / ``"predicate_align"`` / ``"solver"``
+        (matching the ``method`` argument's own vocabulary); the one
+        exception is ``"solver_modulo_converses"`` — set instead of
+        ``"solver"`` exactly when the caller passed a non-empty
+        ``converses`` AND the solver level ran, regardless of the tri-state
+        outcome, so a consumer can always tell a plain solver verdict from
+        one that relied on caller-declared converse axioms (see
+        :func:`equivalent`'s ``converses`` parameter and
+        :mod:`unicode_fol_kit.eval.converses`).
     ``syntax_equal`` / ``structurally_equal`` / ``aligned_equal``
         the three rungs of the structural ladder: ``==``, canonical form,
         and alignment followed by canonical form.
@@ -174,22 +200,42 @@ def _has_object_quantifier(node: Node) -> bool:
     return any(isinstance(n, (Quantifier, SortedQuantifier)) for n in node.walk())
 
 
-def _solver_tristate(f1: Node, f2: Node, timeout: int, frame: str, systems):
+def _solver_tristate(f1: Node, f2: Node, timeout: int, frame: str, systems,
+                     converse_axioms: tuple = ()):
     """Return ``(verdict, counterexample)`` for genuine logical equivalence.
 
     Classical route: Z3 on ``¬(φ ↔ ψ)`` — ``unsat`` proves equivalence, ``sat``
     refutes it (the model is the counterexample), ``unknown`` stays ``None``.
+    Many-sorted input: ``nonempty_sort_axioms(f1, f2)`` is asserted as extra,
+    UNNEGATED premises alongside ``¬(φ ↔ ψ)`` — the same soundness fix
+    :mod:`unicode_fol_kit.atp.z3_models`/``atp.protocol.Z3Backend`` apply,
+    needed here for the identical reason: MSFOL, by convention, never gives a
+    sort an empty universe, and ``to_z3()``'s relativisation alone carries no
+    such guarantee (see the classical-reasoning guide's many-sorted section).
+    Empty for an unsorted pair, so behaviour there is unchanged.
+    ``converse_axioms`` (see :mod:`unicode_fol_kit.eval.converses`) are
+    asserted the same way — extra, UNNEGATED premises alongside
+    ``¬(φ ↔ ψ)`` — before that negated goal is added, so ``solver.add`` sees
+    every premise (non-emptiness AND converse) ahead of the goal it bridges.
+    Empty by default, so behaviour is unchanged unless a caller opts in.
     Modal route: ``modal_decide(Iff(φ, ψ))`` for the propositional fragment
     (tri-state; a Kripke counter-model witnesses refutation); quantified or
     tableau-rejected modal formulas fall back to ``qml_equivalent`` — sound but
     bounded-incomplete, so its ``False`` is reported as ``None`` (not proven),
-    never as a refutation.
+    never as a refutation. ``converse_axioms`` has no modal route at all —
+    see the ``NotImplementedError`` below, raised before either modal branch
+    runs.
     """
     from unicode_fol_kit.atp.modal_tableau import has_modal
 
     iff = Iff(f1, f2)
 
     if has_modal(iff):
+        if converse_axioms:
+            raise NotImplementedError(
+                "equivalent: converses is not supported for modal formulas "
+                "-- declared converse bridging axioms are only honoured by "
+                "the classical/MSFOL Z3 route")
         from unicode_fol_kit.fol.qml import qml_equivalent
 
         if not _has_object_quantifier(iff):
@@ -220,11 +266,17 @@ def _solver_tristate(f1: Node, f2: Node, timeout: int, frame: str, systems):
 
     try:
         phi, psi = f1.to_z3(), f2.to_z3()
+        nonempty = [axiom.to_z3() for axiom in nonempty_sort_axioms(f1, f2)]
+        converses_z3 = [axiom.to_z3() for axiom in converse_axioms]
     except NotImplementedError:
         return None, None                         # no Z3 image for this family
     solver = Solver()
     solver.set("timeout", timeout)
     solver.set("random_seed", 42)
+    for axiom in nonempty:
+        solver.add(axiom)
+    for axiom in converses_z3:
+        solver.add(axiom)
     solver.add(_ZNot(phi == psi))
     res = solver.check()
     if res == unsat:
@@ -273,7 +325,8 @@ def _partial_credit(prediction: Node, reference: Node, verdict: Optional[bool],
 
 def equivalent(prediction: Node, reference: Node, *, method: str = "auto",
                timeout: int = 10000, max_norm_distance: float = 0.6,
-               frame: str = "K", systems=None) -> EquivalenceResult:
+               frame: str = "K", systems=None,
+               converses=None) -> EquivalenceResult:
     """Decide whether ``prediction`` and ``reference`` are equivalent.
 
     Args:
@@ -289,6 +342,22 @@ def equivalent(prediction: Node, reference: Node, *, method: str = "auto",
             :func:`~unicode_fol_kit.eval.predicate_match.align_symbols`).
         frame / systems: modal frame class and per-family systems, forwarded
             to the modal deciders; ignored for classical formulas.
+        converses: an OPT-IN, default-``None`` sequence of
+            :data:`~unicode_fol_kit.eval.converses.ConverseDeclaration`
+            (``(a_key, b_key, permutation)`` triples — see that module) —
+            e.g. ``[(("LovedBy", 2), ("Loves", 2), (1, 0))]`` to bridge
+            ``LovedBy(x, y) ↔ Loves(y, x)``. ``None``/empty is a strict no-op
+            (byte-identical behaviour to calling without this argument).
+            Non-empty requires ``method`` in ``{"solver", "auto"}`` —
+            ``ValueError`` immediately otherwise, since the structural levels
+            never reach the solver and would silently ignore a declared
+            axiom instead of honouring it. When the solver level runs with
+            non-empty ``converses``, the axioms are asserted as extra
+            premises and the result's ``method_used`` is
+            ``"solver_modulo_converses"`` instead of ``"solver"`` — its own
+            category, never merged into plain solver verdicts. A modal
+            formula pair with non-empty ``converses`` raises
+            :class:`NotImplementedError` (no modal bridging route exists).
 
     Returns:
         An :class:`EquivalenceResult`. Note the asymmetry of the levels: the
@@ -302,6 +371,17 @@ def equivalent(prediction: Node, reference: Node, *, method: str = "auto",
 
     from .canonical import exact_match
     from .predicate_match import aligned_exact_match
+
+    axioms: tuple = ()
+    if converses:
+        if method in ("exact", "canonical", "predicate_align"):
+            raise ValueError(
+                f"equivalent: converses requires method in "
+                f"{{'solver', 'auto'}} (got {method!r}) — a declared "
+                "converse axiom is honoured only by the solver level; a "
+                "structural method would silently ignore it")
+        from .converses import converse_axioms as _converse_axioms
+        axioms = _converse_axioms(converses)
 
     if method == "exact":
         eq = prediction == reference
@@ -321,10 +401,12 @@ def equivalent(prediction: Node, reference: Node, *, method: str = "auto",
             aligned_equal=eq)
 
     if method == "solver":
-        verdict, cex = _solver_tristate(prediction, reference, timeout, frame, systems)
+        verdict, cex = _solver_tristate(prediction, reference, timeout, frame,
+                                        systems, axioms)
         pc, components = _partial_credit(prediction, reference, verdict, max_norm_distance)
+        method_used = "solver_modulo_converses" if axioms else "solver"
         return EquivalenceResult(
-            equivalent=verdict, method_used="solver",
+            equivalent=verdict, method_used=method_used,
             logically_equivalent=verdict, counterexample=cex,
             partial_credit=pc, partial_credit_components=components)
 
@@ -352,10 +434,12 @@ def equivalent(prediction: Node, reference: Node, *, method: str = "auto",
             syntax_equal=False, structurally_equal=False, aligned_equal=True,
             partial_credit=1.0)
 
-    verdict, cex = _solver_tristate(prediction, reference, timeout, frame, systems)
+    verdict, cex = _solver_tristate(prediction, reference, timeout, frame,
+                                    systems, axioms)
     pc, components = _partial_credit(prediction, reference, verdict, max_norm_distance)
+    method_used = "solver_modulo_converses" if axioms else "solver"
     return EquivalenceResult(
-        equivalent=verdict, method_used="solver",
+        equivalent=verdict, method_used=method_used,
         syntax_equal=False, structurally_equal=False, aligned_equal=False,
         logically_equivalent=verdict, counterexample=cex,
         partial_credit=pc, partial_credit_components=components)

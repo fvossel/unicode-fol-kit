@@ -10,6 +10,13 @@ The three files Popper reads, from structures the kit already has:
 ``bias.pl``
     ``head_pred`` / ``body_pred`` declarations plus the size bounds.
 
+:meth:`IlpTask.write_aleph` emits Aleph's own, genuinely different, three-file
+layout (``<stem>.b``/``.f``/``.n``) instead — see :meth:`IlpTask.aleph_bias_text`
+and :meth:`IlpTask.aleph_examples_text` for what changes and why. Everything
+below this point — the encoding checks, the individual-naming scheme, the
+background facts themselves — is shared between both learners; only the bias
+and example RENDERINGS are learner-specific.
+
 Every check that the EXAMPLES and the VOCABULARY can be encoded soundly runs in
 :meth:`IlpTask.__post_init__` — before a file exists, so a task that has been
 constructed is a task whose encoding has been checked. Two refusals necessarily
@@ -453,6 +460,28 @@ class IlpTask:
             lines.append(line)
         return "\n".join(lines) + "\n"
 
+    def aleph_examples_text(self, label: bool) -> str:
+        """Aleph's ``.f``/``.n`` convention: bare ground atoms, one per line.
+
+        ``target(e).``, one line per example of the given ``label`` — no
+        ``pos(...)``/``neg(...)`` wrapper, genuinely different from
+        :meth:`examples_text`: Aleph's positive and negative examples live in
+        two SEPARATE files (``.f`` and ``.n``), so the label is which file the
+        text goes into rather than which functor wraps the atom. Call it
+        twice, ``True`` then ``False``, for the two halves — exactly what
+        :meth:`write_aleph` does.
+        """
+        target = to_prolog_atom(self.target)
+        lines = []
+        for example in self.examples:
+            if example.label != label:
+                continue
+            line = f"{target}({example.atom})."
+            if example.note:
+                line += f"  {_comment(example.note)}"
+            lines.append(line)
+        return "\n".join(lines) + "\n"
+
     def bias_text(self) -> str:
         """``bias.pl``: the head and body declarations plus the size bounds."""
         lines = [f"head_pred({to_prolog_atom(self.target)},1).",
@@ -462,6 +491,86 @@ class IlpTask:
         lines += [f"max_vars({self.max_vars}).",
                   f"max_body({self.max_body}).",
                   f"max_clauses({self.max_clauses})."]
+        lines += list(self.extra_bias)
+        return "\n".join(lines) + "\n"
+
+    def aleph_bias_text(self) -> str:
+        """Aleph's mode/determination bias — the alternative to :meth:`bias_text`.
+
+        Aleph's ``modeh``/``modeb`` declarations carry a per-argument mode
+        (``+Type`` bound, ``-Type`` free, ``#Type`` ground) that a real user
+        derives from what each argument of each predicate actually MEANS.
+        :class:`FiniteStructure` has no such per-argument sort to read that
+        from — every argument is just "an individual" — so this method
+        applies one fixed, documented CONVENTION instead of inferring
+        anything: every body predicate's first argument is bound
+        (``+individual``) and every remaining argument is free
+        (``-individual``); a unary predicate gets ``+individual`` alone. This
+        happens to be exactly right for a functional-style fact
+        (``c(X)`` — "X is a carbon") and merely usable, not meaningful, for a
+        genuinely relational one (``bDOUBLE(X,Y)`` carries no sense in which
+        one endpoint is more "input" than the other) — stated here rather
+        than silently presented as if the mode meant something it does not.
+        The head is always ``modeh(1, target(+example))`` (:attr:`target` is
+        arity 1 by construction) and the membership predicate gets its own
+        hand-written line, since its first argument is the example rather
+        than an individual: ``modeb(*, membership(+example,-individual))``.
+        Every ``modeh``/``modeb`` recall is left unbounded (``1`` for the
+        head, since exactly one head atom is ever matched per example;
+        ``*`` for every body literal), matching how Popper's own bias carries
+        no recall bound at all.
+
+        One ``determination(target/1, pred/arity)`` line follows per body
+        predicate, membership included — Aleph's other half of the bias,
+        telling it which predicates may appear in a clause for ``target``
+        at all.
+
+        :attr:`max_body` is the one Popper size bound with a real Aleph
+        analog (the number of literals in a clause body) and becomes
+        ``:- set(clauselength, N).``. :attr:`max_vars` and :attr:`max_clauses`
+        do NOT: Aleph has no per-clause bound on distinct variables, and its
+        clause count comes from the outer covering loop of ``induce/0``
+        (repeatedly saturate-and-reduce on whatever positive examples are
+        still uncovered), not from anything written into a bias file. Rather
+        than drop them or fake an equivalent, both are named in a comment so
+        a reader checking this file against the ``IlpTask`` that produced it
+        finds an explanation, not a silent gap.
+
+        :attr:`extra_bias` is appended verbatim, exactly as in
+        :meth:`bias_text` — the field is deliberately learner-agnostic (its
+        own docstring's example, a ``type(...)`` declaration, is itself
+        Aleph syntax) and unvalidated, since the learner is the authority on
+        its own bias language.
+
+        This mode/determination bias, together with :meth:`background_text`
+        as Aleph's combined background-and-bias file, was checked against a
+        real Aleph (the SWI-Prolog ``aleph`` pack, ``aleph_orig.pl``): the
+        emitted ``.b``/``.f``/``.n`` triple loads without a type/1 fact of any
+        kind — ``+example``/``-individual`` bind purely from resolving the
+        actual background predicates during saturation, never from
+        enumerating a declared type — and ``induce`` learns the intended
+        target clause. See ``tests/test_ilp_aleph.py`` for the harness (it
+        skips, rather than fails, where Aleph is not installed).
+        """
+        target = to_prolog_atom(self.target)
+        membership = to_prolog_atom(self.membership)
+        lines = [f":- modeh(1, {target}(+example))."]
+        lines.append(f":- modeb(*, {membership}(+example,-individual)).")
+        for name, arity in self.body_predicates:
+            atom = to_prolog_atom(name)
+            args = ",".join(["+individual"] + ["-individual"] * (arity - 1))
+            lines.append(f":- modeb(*, {atom}({args})).")
+        lines.append(f":- determination({target}/1, {membership}/2).")
+        for name, arity in self.body_predicates:
+            lines.append(
+                f":- determination({target}/1, {to_prolog_atom(name)}/{arity}).")
+        lines.append(
+            f"% max_vars({self.max_vars}) and max_clauses({self.max_clauses}) "
+            "have no single-clause Aleph equivalent: Aleph's clause count "
+            "comes from its own covering loop (induce/0), not a bound in "
+            "this file, and max_vars bounds a Popper-specific search Aleph "
+            "does not expose per clause.")
+        lines.append(f":- set(clauselength, {self.max_body}).")
         lines += list(self.extra_bias)
         return "\n".join(lines) + "\n"
 
@@ -494,6 +603,47 @@ class IlpTask:
         paths = {}
         for stem, text in rendered:
             path = os.path.join(directory, f"{stem}.pl")
+            with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+                handle.write(text)
+            paths[stem] = path
+        return paths
+
+    def write_aleph(self, directory: str, filestem: str = "task") -> Dict[str, str]:
+        """Write Aleph's ``<filestem>.b``/``.f``/``.n`` into ``directory``.
+
+        Aleph's own file layout, parallel to :meth:`write`'s Popper layout
+        but genuinely different, not just renamed: ``<filestem>.b`` carries
+        BOTH the background facts and the mode/determination bias — Aleph
+        reads background knowledge and bias declarations from the same file
+        — so it is :meth:`background_text` and :meth:`aleph_bias_text`
+        concatenated (with a blank line between the two sections), where
+        :meth:`write` keeps those in two separate files (``bk.pl``,
+        ``bias.pl``). ``<filestem>.f`` and ``<filestem>.n`` are the positive
+        and negative halves of :meth:`aleph_examples_text`.
+
+        Same discipline as :meth:`write` throughout: the PARENT of
+        ``directory`` must already exist, every file is RENDERED before the
+        directory is created so a refused rendering leaves nothing behind,
+        and every file is written with ``\\n`` line endings on every
+        platform.
+
+        Returns:
+            ``{"b": path, "f": path, "n": path}``.
+        """
+        parent = os.path.dirname(os.path.abspath(directory))
+        if not os.path.isdir(parent):
+            raise IlpEncodingError(
+                f"IlpTask.write_aleph: the parent directory {parent!r} does "
+                "not exist")
+        rendered = (
+            ("b", self.background_text() + "\n" + self.aleph_bias_text()),
+            ("f", self.aleph_examples_text(True)),
+            ("n", self.aleph_examples_text(False)),
+        )
+        os.makedirs(directory, exist_ok=True)
+        paths = {}
+        for stem, text in rendered:
+            path = os.path.join(directory, f"{filestem}.{stem}")
             with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
                 handle.write(text)
             paths[stem] = path

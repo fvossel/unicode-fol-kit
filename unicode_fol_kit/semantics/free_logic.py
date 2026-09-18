@@ -33,11 +33,15 @@ outer domain. Three policies for an atom that contains a **non-denoting** term:
   precisification search this policy runs (:data:`SUPERVALUATION_MAX_GAPS`).
 
 Beyond single-model checking, :func:`free_find_model`, :func:`free_countermodel`,
-:func:`free_is_valid` and :func:`free_entails` add a Mace4-style **bounded exhaustive
+:func:`free_is_valid` and :func:`free_entails` add a Mace4-style **bounded
 search** over ``FreeModel``\ s, in the style of
 :mod:`~unicode_fol_kit.semantics.modelfinder`: every outer domain size up to a bound,
 every existing/outer split, every partial constant/function assignment, and every
 predicate extension. See their docstrings for the honest bounded-search contract.
+By default (``symmetry_breaking=True``) the partial constant assignment is
+LNH-canonical rather than exhaustive — the same symmetry-breaking pass
+:mod:`~unicode_fol_kit.semantics.modelfinder` applies (roadmap C23); see
+``_search``'s docstring.
 
 Public API: :class:`FreeModel`, :data:`NONDENOTING`, :data:`SUPERVALUATION_MAX_GAPS`,
 :func:`free_satisfies`, :func:`free_holds`, :func:`free_find_model`,
@@ -52,6 +56,7 @@ from ..fol.nodes import (
     Node, Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
     Variable, Constant, Number, Function,
 )
+from .modelfinder import _lnh_choices
 
 # Sentinel returned by term evaluation when a term has no referent.
 NONDENOTING = object()
@@ -338,6 +343,13 @@ def _supervaluate(formula: Node, model: FreeModel, assignment: Mapping[str, Any]
 # Bounded model search — the Mace4-style partner of free_satisfies, in the
 # style of semantics/modelfinder.py (read it first: _Signature, _candidate_count,
 # _interpretations, find_model / find_countermodel / is_valid_finite).
+#
+# Symmetry breaking (roadmap C23, ``symmetry_breaking=True`` below, the default):
+# hand-ports modelfinder's LNH generator to this module's PARTIAL constant tables
+# — see ``_canonical_constant_assignments`` and ``_canonical_candidate_models``,
+# and ``modelfinder._canonical_interpretations``'s docstring for the full
+# soundness argument (and the hand-checked counterexample showing why functions
+# are deliberately NOT also LNH-reduced here, for the identical reason).
 # ---------------------------------------------------------------------------
 
 #: A partial function's table has, per argument tuple, (n+1) choices (one of the n
@@ -443,6 +455,64 @@ def _candidate_count(n_constants: int, functions: set, predicates: set,
     return total
 
 
+def _canonical_constant_count(n_slots: int, k: int) -> int:
+    """The EXACT number of LNH-canonical PARTIAL constant assignments
+    :func:`_canonical_constant_assignments` yields for ``n_slots`` constant names
+    over a ``k``-element domain — computed analytically (``O(n_slots * k)``
+    arithmetic, no enumeration), mirroring
+    :func:`~unicode_fol_kit.semantics.modelfinder._lnh_constant_count`'s DP but with
+    the extra "non-denoting" (``None``) option :func:`_canonical_constant_assignments`
+    offers at every cell alongside :func:`~unicode_fol_kit.semantics.modelfinder._lnh_choices`'s
+    domain-value range — a cell can go non-denoting, repeat one of the ``j``
+    already-used domain values, or (if ``j < k``) introduce the next unused one.
+    ``None`` is never subject to the relabeling argument (a term either denotes an
+    outer-domain element or it does not, independent of which permutation would
+    rename that element were it to denote one — see
+    :func:`_canonical_constant_assignments`'s docstring), so it is simply one more
+    option per cell, orthogonal to ``j``. Hand-checked for n_slots=1,k=1 -> 2 in
+    ``tests/test_modelfinder_symmetry.py``.
+    """
+    if n_slots == 0:
+        return 1
+    dp = [1] * (k + 1)
+    for _ in range(n_slots):
+        new_dp = [0] * (k + 1)
+        for j in range(k + 1):
+            total = (1 + j) * dp[j]        # non-denoting, or repeat a used value
+            if j < k:
+                total += dp[j + 1]          # or introduce the next still-unused one
+            new_dp[j] = total
+        dp = new_dp
+    return dp[0]
+
+
+def _canonical_candidate_count(n_constants: int, functions: set, predicates: set,
+                               k: int, domain_split: str) -> int:
+    """The EXACT number of FreeModel candidates :func:`_canonical_candidate_models`
+    yields for this signature over an outer domain of size ``k`` — the analytic
+    pre-flight count backing :func:`_search`'s "skip this size" check when
+    ``symmetry_breaking=True``, playing the same role :func:`_candidate_count` plays
+    for the unbroken enumeration (see
+    :func:`~unicode_fol_kit.semantics.modelfinder._canonical_candidate_count` for the
+    classical-FOL analogue). Only the constants factor changes, via
+    :func:`_canonical_constant_count`; functions and predicates keep the exact same
+    raw factors :func:`_candidate_count` uses, because
+    :func:`_canonical_candidate_models` leaves those fully exhaustive. Being exact
+    means this alone decides whether a size is searched — a signature with few or no
+    constants (where LNH cannot reduce anything) is skipped exactly as cheaply as it
+    was before symmetry breaking existed, instead of live-enumerating candidates and
+    calling :func:`free_satisfies` on each up to ``max_candidates`` before finding
+    that out.
+    """
+    splits = (1 << k) if domain_split == "any" else 1
+    total = splits * _canonical_constant_count(n_constants, k)
+    for _, arity in functions:
+        total *= (k + 1) ** (k ** arity)
+    for _, arity in predicates:
+        total *= 1 << (k ** arity)
+    return total
+
+
 def _existing_subsets(domain: Tuple[Any, ...], domain_split: str):
     """Yield every candidate ``existing`` set for ``domain`` under ``domain_split``.
 
@@ -524,17 +594,94 @@ def _candidate_models(domain, const_names, func_sig, pred_sig, domain_split):
                                     functions=functions, predicates=predicates)
 
 
+def _canonical_constant_assignments(domain: Tuple[Any, ...], const_names: List[str]):
+    """Yield every partial constant assignment, LNH-canonical (roadmap C23).
+
+    The free-logic analogue of ``modelfinder._canonical_interpretations``,
+    restricted — like it — to CONSTANTS only; see that function's docstring for
+    the hand-checked counterexample showing why a flat per-cell LNH cap is sound
+    for an argument-free cell (a constant) but NOT for a function's table (its
+    cells are indexed by argument tuples that are themselves domain elements,
+    subject to the same relabeling as the stored value).
+
+    Each cell is offered, in this order: "non-denoting" first (never subject to
+    the relabeling argument at all — a term either denotes some outer-domain
+    element or it does not, independent of *which* permutation would rename that
+    element were it to denote one), then :func:`~unicode_fol_kit.semantics.modelfinder._lnh_choices`'s
+    domain-value range: an already-used domain value, or the smallest still-unused
+    one. Functions, predicates and the existing/outer split are exhaustively
+    enumerated around this generator by the caller
+    (:func:`_canonical_candidate_models`), exactly as
+    ``modelfinder._canonical_interpretations`` leaves functions and predicates
+    untouched — see its docstring for why that keeps the search complete.
+    """
+    k = len(domain)
+    n = len(const_names)
+
+    def backtrack(i: int, next_new: int, values: list):
+        if i == n:
+            yield {name: domain[v] for name, v in zip(const_names, values) if v is not None}
+            return
+        for v in (None,) + tuple(_lnh_choices(next_new, k)):
+            values.append(v)
+            new_next = next_new + 1 if (v is not None and v == next_new) else next_new
+            yield from backtrack(i + 1, new_next, values)
+            values.pop()
+
+    yield from backtrack(0, 0, [])
+
+
+def _canonical_candidate_models(domain, const_names, func_sig, pred_sig, domain_split):
+    """Yield every FreeModel candidate with LNH-canonical constants (roadmap C23).
+
+    Mirrors :func:`_candidate_models`, but the constant assignment comes from
+    :func:`_canonical_constant_assignments` instead of the exhaustive
+    :func:`_constant_assignments`; functions, predicates and the existing/outer
+    split stay fully exhaustive (see that function's docstring, and
+    ``modelfinder._canonical_interpretations``'s, for why that keeps the search
+    sound and complete).
+    """
+    for existing in _existing_subsets(domain, domain_split):
+        for constants in _canonical_constant_assignments(domain, const_names):
+            for functions in _function_interpretations(domain, func_sig):
+                for predicates in _predicate_interpretations(domain, pred_sig):
+                    yield FreeModel(outer=domain, existing=existing, constants=constants,
+                                    functions=functions, predicates=predicates)
+
+
 def _search(formulas: Sequence[Node], max_size: int, policy: str, domain_split: str,
-           max_candidates: int) -> Optional[FreeModel]:
+           max_candidates: int, symmetry_breaking: bool = True) -> Optional[FreeModel]:
     """Return the first FreeModel making every one of ``formulas`` true, or None.
 
     Each formula is closed with :func:`_universal_closure` independently (mirrors
     modelfinder.find_model), the signature (constants/functions/predicates) is
     collected from the closed formulas jointly, and every domain size ``1..max_size``
-    is tried in turn, skipping sizes whose candidate count exceeds
-    ``max_candidates``. If EVERY size in range is skipped, nothing was actually
-    searched, so a bare ``None`` would misleadingly look like a completed bounded
-    search — this raises instead (see the arity/message in the ValueError).
+    is tried in turn.
+
+    ``symmetry_breaking`` (default True, roadmap C23) enumerates constants with
+    :func:`_canonical_candidate_models` (LNH — see its docstring) instead of the
+    plain :func:`_candidate_models`. Because the LNH-reduced candidate count for a
+    size can be far below the analytic ``_candidate_count`` estimate, this path
+    uses :func:`_canonical_candidate_count` for the pre-flight "skip this size"
+    check instead — the EXACT count of what the canonical generator will yield,
+    computed analytically (``O(n_constants * domain size)`` arithmetic, no
+    enumeration, no ``free_satisfies`` calls), mirroring
+    ``modelfinder.find_model``'s own analytic pre-flight. This is deliberately an
+    O(1)-per-size check, not a live count of the generator: a signature with few or
+    no constants (where LNH cannot reduce anything — functions and predicates stay
+    fully exhaustive either way) is skipped exactly as cheaply as it was before
+    symmetry breaking existed, instead of paying to enumerate and call
+    ``free_satisfies`` on up to ``max_candidates`` models on every size just to
+    discover that a function- or predicate-dominated signature was never going to
+    fit the budget. A size counts as genuinely searched (``tried_any_size = True``
+    below) only if its exact canonical count is ``<= max_candidates`` (so it is
+    always FULLY enumerated, never truncated mid-generator), so the honesty
+    contract below is unchanged: if every size still ends up skipped, nothing was
+    actually searched, and a bare ``None`` would misleadingly look like a completed
+    bounded search — this raises instead (see the arity/message in the
+    ValueError). With ``symmetry_breaking=False`` the search is byte-for-byte the
+    original exhaustive one (the analytic pre-flight check, then
+    :func:`_candidate_models`).
     """
     if policy not in ("negative", "positive", "supervaluation"):
         raise ValueError(
@@ -566,10 +713,20 @@ def _search(formulas: Sequence[Node], max_size: int, policy: str, domain_split: 
 
     tried_any_size = False
     for k in range(1, max_size + 1):
+        domain = tuple(range(k))
+        if symmetry_breaking:
+            if _canonical_candidate_count(len(const_names), functions, predicates,
+                                          k, domain_split) > max_candidates:
+                continue
+            tried_any_size = True
+            for model in _canonical_candidate_models(domain, const_names, func_sig,
+                                                      pred_sig, domain_split):
+                if all(free_satisfies(f, model, {}, policy) for f in closed):
+                    return model
+            continue
         if _candidate_count(len(const_names), functions, predicates, k, domain_split) > max_candidates:
             continue
         tried_any_size = True
-        domain = tuple(range(k))
         for model in _candidate_models(domain, const_names, func_sig, pred_sig, domain_split):
             if all(free_satisfies(f, model, {}, policy) for f in closed):
                 return model
@@ -585,10 +742,11 @@ def _search(formulas: Sequence[Node], max_size: int, policy: str, domain_split: 
 
 def free_find_model(formula: Node, max_size: int = 3, *, policy: str = "negative",
                     domain_split: str = "any",
-                    max_candidates: int = MAX_CANDIDATES) -> Optional[FreeModel]:
+                    max_candidates: int = MAX_CANDIDATES,
+                    symmetry_breaking: bool = True) -> Optional[FreeModel]:
     """Return a FreeModel satisfying ``formula``, or None.
 
-    EXHAUSTIVE, Mace4-style search (see
+    Mace4-style search (see
     :func:`~unicode_fol_kit.semantics.modelfinder.find_model`) over outer domain
     sizes ``1..max_size``: for each size, every existing/outer split (``domain_split``
     — ``"any"`` tries every subset including empty ``existing``; ``"total"`` forces
@@ -600,28 +758,40 @@ def free_find_model(formula: Node, max_size: int = 3, *, policy: str = "negative
     arity exceeds :data:`MAX_FUNCTION_ARITY` is rejected outright (see :func:`_search`).
     ``None`` means "none found within the bounds", not "unsatisfiable" — free FOL is
     exactly as undecidable as classical FOL.
+
+    ``symmetry_breaking`` (default True, roadmap C23) enumerates CONSTANT
+    assignments with the LNH generator instead of exhaustively — see
+    :func:`_search`'s docstring for the live-counted budget it uses instead of the
+    plain pre-flight check, and
+    :func:`~unicode_fol_kit.semantics.modelfinder._canonical_interpretations`'s
+    docstring for why this stays sound and complete, and why FUNCTIONS are
+    deliberately not also LNH-reduced.
     """
-    return _search([formula], max_size, policy, domain_split, max_candidates)
+    return _search([formula], max_size, policy, domain_split, max_candidates, symmetry_breaking)
 
 
 def free_countermodel(formula: Node, max_size: int = 3, *, policy: str = "negative",
                       domain_split: str = "any",
-                      max_candidates: int = MAX_CANDIDATES) -> Optional[FreeModel]:
+                      max_candidates: int = MAX_CANDIDATES,
+                      symmetry_breaking: bool = True) -> Optional[FreeModel]:
     """Return a FreeModel where ``formula`` is FALSE (a witness against its validity), or None.
 
-    Searches for a model of ``¬formula`` exactly like :func:`free_find_model`; the
-    search's success check (``free_satisfies`` of the negation) already verifies the
-    returned model, so a non-None result is a definitive refutation of validity — the
-    same verify-before-return discipline as
+    Searches for a model of ``¬formula`` exactly like :func:`free_find_model`
+    (including its ``symmetry_breaking``); the search's success check
+    (``free_satisfies`` of the negation) already verifies the returned model, so a
+    non-None result is a definitive refutation of validity — the same
+    verify-before-return discipline as
     :func:`~unicode_fol_kit.semantics.relevant.rel_countermodel` /
     :func:`~unicode_fol_kit.semantics.conditional.cf_countermodel`.
     """
-    return _search([Not(formula)], max_size, policy, domain_split, max_candidates)
+    return _search([Not(formula)], max_size, policy, domain_split, max_candidates,
+                   symmetry_breaking)
 
 
 def free_is_valid(formula: Node, max_size: int = 3, *, policy: str = "negative",
                   domain_split: str = "any",
-                  max_candidates: int = MAX_CANDIDATES) -> bool:
+                  max_candidates: int = MAX_CANDIDATES,
+                  symmetry_breaking: bool = True) -> bool:
     """Return True iff no free-logic countermodel to ``formula`` is found within the bound.
 
     HONEST CONTRACT (mirroring
@@ -635,12 +805,14 @@ def free_is_valid(formula: Node, max_size: int = 3, *, policy: str = "negative",
     ``max_size`` never turns a ``False`` into a ``True``, only ever the reverse.
     """
     return free_countermodel(formula, max_size, policy=policy, domain_split=domain_split,
-                             max_candidates=max_candidates) is None
+                             max_candidates=max_candidates,
+                             symmetry_breaking=symmetry_breaking) is None
 
 
 def free_entails(premises: Sequence[Node], conclusion: Node, max_size: int = 3, *,
                  policy: str = "negative", domain_split: str = "any",
-                 max_candidates: int = MAX_CANDIDATES) -> bool:
+                 max_candidates: int = MAX_CANDIDATES,
+                 symmetry_breaking: bool = True) -> bool:
     """Return True iff no bounded FreeModel satisfies every premise but not ``conclusion``.
 
     Same honest contract as :func:`free_is_valid`: a ``False`` is backed by a
@@ -654,4 +826,4 @@ def free_entails(premises: Sequence[Node], conclusion: Node, max_size: int = 3, 
     the intended reading.
     """
     return _search(list(premises) + [Not(conclusion)], max_size, policy, domain_split,
-                   max_candidates) is None
+                   max_candidates, symmetry_breaking) is None

@@ -17,9 +17,10 @@ One rule governs all of them, and it is worth stating before the details:
 
 | Source | Entry point | Notes |
 |---|---|---|
-| TPTP (FOF/CNF) | {func}`~unicode_fol_kit.parse_tptp_formula`, {func}`~unicode_fol_kit.parse_tptp`, {func}`~unicode_fol_kit.load_tptp` | single-quoted atoms supported; `parse_tptp_problem` also keeps SZS header metadata |
-| Prover9 / LADR | {func}`~unicode_fol_kit.parse_prover9`, {func}`~unicode_fol_kit.load_prover9` | statement scanner, not a lenient grammar — a missing `end_of_list` is an error, not a silent degradation |
-| SMT-LIB 2 | {func}`~unicode_fol_kit.parse_smtlib`, {func}`~unicode_fol_kit.load_smtlib` | several assertions fold into their conjunction |
+| TPTP (FOF/CNF) | {func}`~unicode_fol_kit.parse_tptp_formula`, {func}`~unicode_fol_kit.parse_tptp`, {func}`~unicode_fol_kit.load_tptp` | single-quoted atoms supported; `parse_tptp_problem` also keeps SZS header metadata; `load_tptp`/`load_tptp_problem`/`load_tff_problem` resolve `include(...)` directives — see below |
+| **TPTP TF0 (typed)** | {func}`~unicode_fol_kit.fol.tptp_input.parse_tff_problem` | **new**; many-sorted `tff` — see below |
+| Prover9 / LADR | {func}`~unicode_fol_kit.parse_prover9`, {func}`~unicode_fol_kit.load_prover9` | statement scanner, not a lenient grammar — a missing `end_of_list` is an error, not a silent degradation; a genuinely new `op(...)` operator declaration is applied to later formulas — see below |
+| SMT-LIB 2 | {func}`~unicode_fol_kit.parse_smtlib`, {func}`~unicode_fol_kit.load_smtlib` | several assertions fold into their conjunction; **writing** is new — see below |
 | Z3 expressions | {func}`~unicode_fol_kit.from_z3` | in memory, no text round trip |
 | LaTeX | {func}`~unicode_fol_kit.parse_latex` | |
 | CASL | {func}`~unicode_fol_kit.parse_casl_spec` | sorted; see below |
@@ -41,6 +42,51 @@ print(detect_dialects("all x (P(x) -> Q(x))."))
 Prolog is deliberately **not** in that ladder. `p(a).` is a legal fragment of
 several of these dialects at once, and a wrong guess would be silent — ask for
 the Prolog reader by name.
+
+## Prover9: applying `op(...)` operator declarations
+
+Prover9's `op(precedence, type, symbol)` directive declares a new operator —
+Prover9's own manual documents the default table and the eight type keywords
+(`infix`, `infix_left`, `infix_right`, `prefix`, `prefix_paren`, `postfix`,
+`postfix_paren`, `ordinary`; the Prolog reader's `xfx`/`yfx`/`xfy`/`fy`/`fx`
+under different names). {func}`~unicode_fol_kit.parse_prover9_problem` /
+{func}`~unicode_fol_kit.load_prover9` apply a genuinely *new* declaration to
+every formula parsed after it in the same file:
+
+```python
+from unicode_fol_kit import parse_prover9_problem
+
+text = """
+op(650, infix, before).
+formulas(sos).
+  all X all Y (X before Y -> -(Y before X)).
+  a before b.
+end_of_list.
+formulas(goals).
+  -(b before a).
+end_of_list.
+"""
+for rec in parse_prover9_problem(text):
+    print(rec.role, "|", rec.formula.to_unicode_str())
+# sos   | ∀x ∀y (before(x, y) → ¬before(y, x))
+# sos   | before(a, b)
+# goals | ¬before(b, a)
+```
+
+`before` becomes a new predicate-like (`Atom`-producing) infix operator
+because 650 sits between Prover9's arithmetic tier (500) and its comparison
+tier (700); a declaration below 500 instead becomes a `Function`-producing
+term operator. Two things are refused — by name, as a
+`unicode_fol_kit.fol.prover9_input.Prover9ParsingError` — regardless of
+whether the operator is ever used: **redeclaring an existing built-in**
+(`op(500, infix, "+")`, say) and **redeclaring a symbol the same file already
+declared**; a malformed directive (wrong arity, a non-integer precedence, an
+unknown type keyword, an unsupported symbol) is refused the same way. A
+precedence this reader has no splice point for (it ties a built-in tier, or
+sits at/above the quantifier tier) is accepted but left inert — recorded
+against future redeclaration, but never applied, so a formula that tries to
+use it as an operator still fails to parse, just at that later point rather
+than at the declaration.
 
 ## Prolog and Datalog
 
@@ -144,6 +190,80 @@ inside a quoted atom. Two clauses sharing a head **are** alternatives, but only
 under the completion of the program, which is an assumption about the whole
 program rather than a fact about those two clauses. They come back separately
 and are not disjoined for you.
+
+### Exporting back to Prolog
+
+`fol.prolog_export.formula_to_prolog_clause` is the return leg: a formula
+BUILT to look like a fact or a definite/normal clause goes back out as
+Prolog text, `parse_prolog_clause`'s own `mode="clause"` reading run in
+reverse. It is not a general `to_prolog()` — Prolog can only hold a narrow
+shape, so most formulas are refused by name rather than approximated.
+
+```python
+from unicode_fol_kit import parse_prolog_clause
+from unicode_fol_kit.fol.prolog_export import formula_to_prolog_clause
+
+clause = "amide(A) :- carbon(C), nitrogen(N), bond(C, N), in(A, C)."
+node = parse_prolog_clause(clause)
+print(node.to_unicode_str())
+# → ∀a ∀c ∀n (Carbon(c) ∧ Nitrogen(n) ∧ Bond(c, n) ∧ In(a, c) → Amide(a))
+
+text = formula_to_prolog_clause(node)
+print(text)
+# → amide(V0) :- carbon(V1), nitrogen(V2), bond(V1, V2), in(V0, V1).
+```
+
+Every variable is renamed to a fresh `V0`, `V1`, ... — Prolog variable
+spelling is scoped to one clause and carries no meaning beyond identity — in
+the SAME alphabetical order `parse_prolog_clause` itself closes them in, so
+reading the text back lands on the identical quantifier nesting:
+
+```python
+print(parse_prolog_clause(text).to_unicode_str())
+# → ∀v0 ∀v1 ∀v2 (Carbon(v1) ∧ Nitrogen(v2) ∧ Bond(v1, v2) ∧ In(v0, v1) → Amide(v0))
+```
+
+A disjunctive head, a variable that occurs only in the head (not
+range-restricted), a nested quantifier, or anything outside classical FOL is
+refused **by name**:
+
+```python
+from unicode_fol_kit.fol.nodes import Atom, Implies, Or, Quantifier, Variable
+from unicode_fol_kit.fol.prolog_export import PrologExportError
+
+x = Variable("x")
+bad = Quantifier("∀", x, Implies(Atom("Q", [x]),
+                                 Or(Atom("P", [x]), Atom("R", [x]))))
+try:
+    formula_to_prolog_clause(bad)
+except PrologExportError as exc:
+    print(str(exc).split(": ", 1)[-1][:56])
+# → the head of a rule must be a single atom, got Or ('P(x) 
+```
+
+`negation_as_failure="classical"` mirrors the importer's own opt-in, and the
+same warning applies in reverse: passing it makes the round trip
+syntactically faithful, but `\+ G` still only agrees with `¬G` when the
+Prolog program is complete for `G` — see
+{func}`~unicode_fol_kit.fol.prolog_export.formula_to_prolog_clause`'s module
+docstring for exactly when that holds, and when it does not.
+
+```python
+node = parse_prolog_clause("p(A) :- q(A), \\+ r(A).",
+                           negation_as_failure="classical")
+try:
+    formula_to_prolog_clause(node)
+except PrologExportError as exc:
+    print("refused:", "closed world assumption" in str(exc))
+# → refused: True
+
+print(formula_to_prolog_clause(node, negation_as_failure="classical"))
+# → p(V0) :- q(V0), \+ r(V0).
+```
+
+`formula_to_prolog_program` renders several clauses at once, splitting a
+top-level `∧` the way `parse_prolog_program` reads several clauses back
+separately rather than disjoined.
 
 ## Attempto Controlled English
 
@@ -354,6 +474,69 @@ relations arrive with an event argument (`Bond(e1, x1, x2)`); the three
 nullary net-charge predicates are unspeakable in ACE (a sentence needs a
 subject) and excluded by name.
 
+## SMT-LIB2 writing
+
+Reading (the table above) folds several assertions into one conjunction.
+Writing goes the other way, one formula — or several — per `(assert ...)`:
+{func}`~unicode_fol_kit.atp.z3_input.to_smtlib` (premises plus a goal) and its
+single-formula convenience form `Node.to_smtlib()` (no premises).
+
+A naive `Node.to_z3()` + `z3.Solver.to_smt2()` combination is not sound enough
+to build this on directly. Z3's own serialiser pipe-quotes almost every
+illegal symbol name automatically — a non-ASCII name round-trips correctly
+with no help at all — but it silently emits TWO kinds of name *unquoted*: one
+that is pure ASCII and starts with a digit (`2008SummerOlympics`), and one
+that IS an SMT-LIB2 `<reserved>` word used as a symbol (`let`) — producing
+`.smt2` text that fails to parse back. `to_smtlib` reuses the sanitiser
+{class}`~unicode_fol_kit.Cvc5Backend` already proves against Z3's own parser
+(one shared name map across every premise and the goal, so a symbol renames
+consistently everywhere it occurs) instead of solving this a second time:
+
+```python
+from unicode_fol_kit import MSFLParser
+from unicode_fol_kit.atp.z3_input import to_smtlib
+
+p = MSFLParser()
+premises = [p.parse("∀x (P(x) → Q(x))"), p.parse("P(alice)")]
+goal = p.parse("Q(alice)")
+print(to_smtlib(goal, premises))
+```
+
+```text
+(set-logic ALL)
+; benchmark generated from python API
+(set-info :status unknown)
+(declare-sort S 0)
+(declare-fun Q (S) Bool)
+(declare-fun P (S) Bool)
+(declare-fun alice () S)
+(assert
+ (forall ((x S) )(let (($x10 (Q x)))
+ (let (($x11 (P x)))
+ (=> $x11 $x10))))
+ )
+(assert
+ (P alice))
+(assert
+ (Q alice))
+(check-sat)
+```
+
+Every premise gets its own assertion ahead of the goal's — more useful as a
+standalone problem than one folded `(∧ premises) → goal` implication, and
+what `parse_smtlib` reads back: one {class}`~unicode_fol_kit.Node` per
+top-level `assert`. Refusal is inherited, not reimplemented: a construct that
+`to_z3()` itself has no encoding for (second-order quantification, a modal
+operator, ...) raises the exact same `NotImplementedError` from `to_smtlib`
+too, naming the construct, with one sentence appended pointing at SMT-LIB2
+export specifically.
+
+This page's read table has entry points for every format the kit imports;
+several formats besides SMT-LIB2 also have an export function without a
+matching entry here yet (TPTP/Prover9/LaTeX are `Node` methods, documented at
+their own class rather than per-format) — worth a follow-up pass, not folded
+into this one.
+
 ## CASL
 
 CASL is the Common Algebraic Specification Language — the sorted specification
@@ -389,6 +572,176 @@ print([axiom.to_unicode_str() for axiom in spec.axioms])
 
 Unsorted formulas are exported over a single `default_sort` (`Thing` unless you
 say otherwise); a genuinely sorted MSFOL formula keeps its sorts.
+
+### Subsorting
+
+A `Signature`'s optional `subsorts` — a child sort mapped to its direct
+declared parents, read with plain subset semantics (`S < T` means `⟦S⟧ ⊆
+⟦T⟧`, nothing more) — round-trips through CASL's own native `sort S < T`
+syntax. `to_casl_spec(..., subsorts=sig.subsorts)` emits one `sort <child> <
+<parent>` line per direct edge (both sort names are declared even if a
+formula never mentions one of them), and `parse_casl_spec` reads the same
+declarations — including the list form `sort S1, S2 < T` — back into the
+identical `subsorts` mapping on the parsed spec's `Signature`:
+
+```python
+from unicode_fol_kit import MSFLParser, to_casl_spec, parse_casl_spec, Signature
+
+msfol = MSFLParser(many_sorted=True)
+phi = msfol.parse("∀x:Animal Mortal(x)")
+sig = Signature.from_dict({"subsorts": {"Human": ["Animal"], "Animal": ["Thing"]}})
+
+spec = to_casl_spec([phi], spec_name="Ontology", subsorts=sig.subsorts)
+print(spec)
+```
+
+```text
+spec Ontology =
+  sorts Animal, Human, Thing
+  sort Animal < Thing
+  sort Human < Animal
+  preds Mortal : Animal
+  . forall x : Animal . Mortal(x)
+end
+```
+
+```python
+parsed = parse_casl_spec(spec)
+dict(parsed.signature.subsorts)
+# → {'Animal': frozenset({'Thing'}), 'Human': frozenset({'Animal'})}
+```
+
+Only the plain subset reading round-trips this way: a partial function, a
+free/generated type, or overloading a predicate/operation across the
+hierarchy stays refused on import exactly as it was before subsorting was
+added — subsorting adds one new accepted declaration shape, not a wider
+CASL fragment.
+
+## TF0 (typed TPTP)
+
+TPTP's classical `fof` dialect has no notion of sorts: exporting a many-sorted
+formula through `Node.to_tptp` turns each sort into an ordinary guard predicate
+(`∀x:Human φ` becomes `![X]: (human(X) => φ)`). {mod}`unicode_fol_kit.atp.tptp_tff`
+writes the OTHER TPTP dialect instead — **TF0**, monomorphic typed first-order
+TPTP — where a sort is a genuine `tff` type, not a predicate:
+
+```python
+from unicode_fol_kit import MSFLParser
+from unicode_fol_kit.atp.tptp_tff import generate_tff_problem
+
+MSFOL = MSFLParser(many_sorted=True)
+premises = [MSFOL.parse("∀x:Human Mortal(x)"), MSFOL.parse("Human(socrates:Human)")]
+conclusion = MSFOL.parse("Mortal(socrates:Human)")
+print(generate_tff_problem(premises, conclusion))
+```
+
+```text
+tff(sort_decl_1, type, human: $tType ).
+tff(const_decl_2, type, socrates: human ).
+tff(pred_decl_3, type, human: human > $o ).
+tff(pred_decl_4, type, mortal: human > $o ).
+tff(premise_1, axiom, (![X: human]: mortal(X)) ).
+tff(premise_2, axiom, human(socrates) ).
+tff(goal, conjecture, mortal(socrates) ).
+```
+
+And it reads back, recovering the declared {class}`~unicode_fol_kit.fol.signature.Signature`
+alongside the formulas — a sort name round-trips exactly, and a bare constant
+occurrence is promoted back to a `SortedConstant` wherever its own separate
+`type` declaration gave it a concrete sort (a formula body has no room to say
+that inline; only a bound variable does):
+
+```python
+from unicode_fol_kit.fol.tptp_input import parse_tff_problem
+
+sig, formulas = parse_tff_problem(generate_tff_problem(premises, conclusion))
+print(sig.predicates["Mortal"])
+for f in formulas:
+    print(f.role, f.formula.to_unicode_str())
+```
+
+```text
+PredicateDecl(name='Mortal', arity=1, arg_sorts=('Human',))
+axiom ∀x:Human Mortal(x)
+axiom Human(socrates:Human)
+conjecture Mortal(socrates:Human)
+```
+
+Scope is deliberately narrow: THF (higher-order TPTP), TF1 polymorphism
+(`!> [...] : ...`, type variables), and TPTP's built-in arithmetic sorts
+(`$int`/`$rat`/`$real`) are each refused **by name**, on both the writer and
+the reader — never silently narrowed to something they are not.
+{mod}`~unicode_fol_kit.atp.vampire_entailment` and
+{mod}`~unicode_fol_kit.atp.eprover_backend` (E, Zipperposition) auto-select
+this route the moment a sorted node shows up anywhere in the premises or the
+conclusion — pass `tff=True`/`tff=False` to force one route explicitly.
+
+One subtlety worth knowing before trusting a "not entailed" verdict from the
+classical `fof` route: TPTP TF0 quantifiers range over **non-empty** types (and
+this kit's own many-sorted model finder already assumes the same — every sort
+gets a non-empty universe), so `∀x:S φ ⊢ ∃x:S φ` is a theorem under `tff` even
+with no witness of sort `S` anywhere in the problem. The classical guard-atom
+export does not add a matching non-emptiness axiom for a sort with no witness
+constant, so it can — correctly, given what it actually asserts — fail to prove
+the same inference. Give a sort at least one witnessed member (a
+`SortedConstant`, or a premise that supplies one) and the two routes agree.
+
+## `include` directives
+
+A TPTP problem often pulls its shared axioms in from a separate file rather
+than repeating them: `include('animals.ax').` — or, TPTP-library style,
+`include('Axioms/SET001+0.ax')`, a path relative to a *library root*, not
+to the referring problem file. {func}`~unicode_fol_kit.load_tptp` (and
+{func}`~unicode_fol_kit.load_tptp_problem`,
+{func}`~unicode_fol_kit.fol.tptp_input.load_tff_problem`) resolve these —
+{func}`~unicode_fol_kit.parse_tptp_formula` never does, since a single bare
+formula has no "including file" to resolve one relative to:
+
+```python
+import os, tempfile
+
+root = tempfile.mkdtemp()
+with open(os.path.join(root, "animals.ax"), "w") as f:
+    f.write(
+        "fof(dog_is_animal, axiom, ![X]: (dog(X) => animal(X))).\n"
+        "fof(rex_is_dog, axiom, dog(rex)).\n"
+    )
+with open(os.path.join(root, "problem.p"), "w") as f:
+    f.write(
+        "include('animals.ax').\n"
+        "fof(goal, conjecture, animal(rex)).\n"
+    )
+
+from unicode_fol_kit import load_tptp
+
+for record in load_tptp(os.path.join(root, "problem.p")):
+    print(record.name, record.role, record.formula.to_unicode_str())
+```
+
+```text
+dog_is_animal axiom ∀x (Dog(x) → Animal(x))
+rex_is_dog axiom Dog(rex)
+goal conjecture Animal(rex)
+```
+
+`animals.ax`'s two axioms are spliced in exactly where the `include`
+appeared. Resolution tries, in order: the including file's own directory,
+then each root in `search_paths` (`load_tptp(path, search_paths=(...))`),
+then `os.environ["TPTP"]` if set — the convention external TPTP tooling
+itself uses for the library root. `include('path', [name1, name2])`
+imports only those formulas, by their own TPTP statement name. A missing
+file, an unresolvable name, or a circular include chain (`A` includes `B`
+includes `A`) each raise `TptpParsingError` naming the path or chain, never
+silently drop or loop; {func}`~unicode_fol_kit.fol.tptp_input.parse_tff_problem`
+and `load_tff_problem` resolve them too, except a
+selection list cannot be applied to an included file that itself declares
+TFF vocabulary (a `tff(name, type, ...).` statement) — its own statement
+name isn't tracked separately from the symbol it declares, so that
+combination is refused by name rather than guessed at. The optional 4th
+(`source`)/5th (`useful_info`) annotation fields of any statement —
+`fof(name, role, formula, file(...), [...])` — parse and are silently
+discarded, in every reader (`fof`/`cnf`/`tff` alike): this reader models a
+statement's FORMULA, never its provenance metadata.
 
 ## HETS
 
@@ -455,6 +808,146 @@ print(len(edges), edges[:3])
 
 The edges are **discovered, not hardcoded**: what you get depends on the HETS
 build you are talking to.
+
+### Quantified modal logic, via `fol.qml`
+
+CASL/DOL have no modal operators of their own — {mod}`unicode_fol_kit.fol.casl_export`
+refuses `Box`/`Diamond`/… by name, on purpose (see that module's own
+docstring). But {mod}`unicode_fol_kit.fol.qml` already translates the kit's
+full first-order modal fragment (alethic/temporal/deontic/per-agent
+epistemic-doxastic/PAL) down to plain classical FOL — the *standard
+translation* Z3 already decides for {func}`~unicode_fol_kit.fol.qml.qml_is_valid`
+— so a modal formula CAN reach HETS, by translating it first:
+{func}`unicode_fol_kit.hets.dol.to_dol_library_from_modal` composes that
+translation, an identifier-sanitising rename (`qml`'s own fresh world
+variables like `_w0` are not legal CASL identifiers — this fixes exactly
+that, injectively, and nothing else), and the plain CASL exporter above into
+one uploadable `.dol` library:
+
+```python
+from unicode_fol_kit.fol.nodes import Atom, Box, Implies
+from unicode_fol_kit.fol.qml import qml_is_valid
+from unicode_fol_kit.hets.dol import to_dol_library_from_modal
+
+P = Atom("P", ())
+t_axiom = Implies(Box(P), P)                  # □P → P, valid on a REFLEXIVE frame
+
+print(qml_is_valid(t_axiom, frame="T"))       # Z3's own verdict, for comparison
+print(to_dol_library_from_modal(t_axiom, frame="T", spec_name="TAxiom",
+                                library_name="ModalLib"))
+```
+
+```text
+True
+library ModalLib
+logic CASL
+
+spec TAxiom =
+  sorts Thing
+  preds E : Thing * Thing;
+        Object : Thing;
+        P : Thing;
+        R : Thing * Thing;
+        World : Thing
+  . ((((((((forall t : Thing . not (World(t) /\ Object(t))) /\ (exists w : Thing . World(w))) /\ (exists x : Thing . Object(x))) /\ (forall w : Thing . forall v : Thing . (R(w, v) => (World(w) /\ World(v))))) /\ (forall x : Thing . forall w : Thing . (E(x, w) => (Object(x) /\ World(w))))) /\ (forall w : Thing . (World(w) => R(w, w)))) /\ (forall x : Thing . forall w : Thing . forall v : Thing . (((Object(x) /\ World(w)) /\ (World(v) /\ (E(x, w) /\ R(w, v)))) => E(x, v)))) /\ (forall x : Thing . forall w : Thing . forall v : Thing . (((Object(x) /\ World(w)) /\ (World(v) /\ (E(x, v) /\ R(w, v)))) => E(x, w)))) => (forall w : Thing . (World(w) => ((forall w0 : Thing . ((World(w0) /\ R(w, w0)) => P(w0))) => P(w)))) %implied
+end
+```
+
+Uploaded to a running HETS, this proves the same way any other CASL spec
+does:
+
+```python
+# doctest: +SKIP  — needs Docker
+from unicode_fol_kit.hets.docker import discover_hets_url
+from unicode_fol_kit.hets.client import HetsClient
+
+url, container = discover_hets_url(start_container=True)
+client = HetsClient(url)
+lib = to_dol_library_from_modal(t_axiom, frame="T", spec_name="TAxiom",
+                                library_name="ModalLib")
+iri = client.upload(lib, "t_axiom.dol")
+print(client.prove(iri, "TAxiom", reasoner="SPASS")[0]["result"])
+```
+
+```text
+Proved
+```
+
+`mode=`/`frame=`/`systems=`/`bridges=`/`temporal_closure=` all forward
+straight through to {func}`~unicode_fol_kit.fol.qml.qml_validity_formula`, so
+Barcan/converse-Barcan under a domain regime, an S5 knowledge system, a
+Geach frame, or a cross-family bridge each reach HETS exactly like the plain
+alethic case above. Scoped to exactly what `fol.qml` already translates — no
+native `logic Modal` CASL institution is added; a construct that module
+itself refuses (`Until`/`Since`, the `↓` binder, a non-first-order frame
+condition such as Löb/McKinsey/Grz) is refused here too, by the same name,
+unchanged.
+
+An object-language `=`/`≠` inside a modal formula is one detail worth
+calling out on its own. `fol.qml` appends the current-world argument to
+**every** atom it translates, `=`/`≠` included, so `a = b` under a `Box`
+comes out of the translation as a *ternary* atom — not CASL's own fixed,
+rigid, always-binary identity. `to_dol_library_from_modal` renames such an
+atom to a fresh, uninterpreted predicate (`weq`/`wneq`) rather than handing
+it to CASL under the literal name `=`, matching how `qml_is_valid`'s own Z3
+check, the Kripke model checker, and the Isabelle/THF modal exporters all
+already read a world-relativized equality:
+
+```python
+from unicode_fol_kit.fol.nodes import Atom, Box, Constant, Implies
+
+a, b = Constant("a"), Constant("b")
+eq_axiom = Implies(Box(Atom("=", [a, b])), Atom("=", [a, b]))   # □(a=b) → a=b
+
+print(qml_is_valid(eq_axiom, frame="T"))   # True — the T-schema, on an atomic sentence
+lib = to_dol_library_from_modal(eq_axiom, frame="T", spec_name="EqT",
+                                library_name="EqLib")
+print(lib)
+```
+
+```text
+True
+library EqLib
+logic CASL
+
+spec EqT =
+  sorts Thing
+  ops a : Thing;
+      b : Thing
+  preds E : Thing * Thing;
+        Object : Thing;
+        R : Thing * Thing;
+        World : Thing;
+        weq : Thing * Thing * Thing
+  . ((((((((((forall t : Thing . not (World(t) /\ Object(t))) /\ (exists w : Thing . World(w))) /\ (exists x : Thing . Object(x))) /\ (forall w : Thing . forall v : Thing . (R(w, v) => (World(w) /\ World(v))))) /\ (forall x : Thing . forall w : Thing . (E(x, w) => (Object(x) /\ World(w))))) /\ (forall w : Thing . (World(w) => R(w, w)))) /\ (forall x : Thing . forall w : Thing . forall v : Thing . (((Object(x) /\ World(w)) /\ (World(v) /\ (E(x, w) /\ R(w, v)))) => E(x, v)))) /\ (forall x : Thing . forall w : Thing . forall v : Thing . (((Object(x) /\ World(w)) /\ (World(v) /\ (E(x, v) /\ R(w, v)))) => E(x, w)))) /\ Object(a)) /\ Object(b)) => (forall w : Thing . (World(w) => ((forall w0 : Thing . ((World(w0) /\ R(w, w0)) => weq(a, b, w0))) => weq(a, b, w)))) %implied
+end
+```
+
+`sanitize_modal_identifiers` (the renaming step above, exposed publicly so it
+can also be used standalone — e.g. to inspect the sanitised `Node` itself, or
+to unit-test the renaming in isolation from CASL rendering) refuses loudly,
+rather than silently mis-renaming, if it is ever handed a *genuinely* binary
+`≠` atom directly — one that never went through `fol.qml`'s world-
+relativization at all (`_st` always makes a world-relativized `≠` atom
+ternary or wider, so this can only happen by bypassing
+`to_dol_library_from_modal`/`qml_validity_formula`, e.g. while unit-testing
+the renaming step on a hand-built atom). Unlike `=`, CASL has no native
+disequality connective at any arity, so there is no rigid fallback to give
+it:
+
+```python
+from unicode_fol_kit.fol.nodes import Atom, Constant
+from unicode_fol_kit.hets.dol import sanitize_modal_identifiers
+
+a, b = Constant("a"), Constant("b")
+sanitize_modal_identifiers(Atom("≠", [a, b]))   # never world-relativized
+```
+
+```text
+NotImplementedError: hets.dol: sanitize_modal_identifiers cannot rename a
+genuinely 2-ary '≠' atom -- CASL has no native disequality connective, at
+any arity, ...
+```
 
 ## Inductive logic programming: the other direction
 
@@ -524,6 +1017,63 @@ A third guard falls out of the same reasoning: a **0-ary** predicate cannot be
 attached to one example, so it would hold globally. It is excluded from an
 inferred vocabulary (visibly, and noted in the emitted file) and refused if
 named explicitly.
+
+### Aleph: the other file layout
+
+Popper's three files (`bk.pl`/`exs.pl`/`bias.pl`) are one convention; Aleph
+reads a genuinely different one — `modeh`/`modeb` mode declarations plus
+`determination/2` instead of `head_pred`/`body_pred`, positive and negative
+examples in *separate* files (`.f`/`.n`) as bare atoms rather than one file
+wrapped in `pos(...)`/`neg(...)`, and background knowledge sharing a file
+with the bias rather than living apart from it. `IlpTask.write_aleph`
+produces that layout from the exact same task — the facts, the individual
+naming, every encoding check are unchanged; only the bias and example
+*renderings* differ:
+
+```python
+print(task.aleph_bias_text(), end="")
+# → :- modeh(1, amide(+example)).
+# → :- modeb(*, atom_in(+example,-individual)).
+# → :- modeb(*, bDOUBLE(+individual,-individual)).
+# → :- modeb(*, bSINGLE(+individual,-individual)).
+# → :- modeb(*, c(+individual)).
+# → :- modeb(*, n(+individual)).
+# → :- modeb(*, o(+individual)).
+# → :- determination(amide/1, atom_in/2).
+# → :- determination(amide/1, bDOUBLE/2).
+# → :- determination(amide/1, bSINGLE/2).
+# → :- determination(amide/1, c/1).
+# → :- determination(amide/1, n/1).
+# → :- determination(amide/1, o/1).
+# → % max_vars(6) and max_clauses(1) have no single-clause Aleph equivalent: ...
+# → :- set(clauselength, 8).
+print(task.aleph_examples_text(True), end="")
+# → amide(m1).
+print(task.aleph_examples_text(False), end="")
+# → amide(m2).
+```
+
+`task.write_aleph(directory)` puts these into `task.b` (background facts and
+bias, concatenated — Aleph's own convention), `task.f` and `task.n`.
+
+The mode line for every body predicate follows one fixed, documented
+convention rather than anything inferred: `FiniteStructure` carries no
+per-argument sort to derive a real mode pattern from, so the first argument
+is always bound (`+individual`) and every remaining argument is free
+(`-individual`) — exactly right for a functional fact like `c(X)`, merely
+usable for a genuinely symmetric one like `bDOUBLE(X, Y)`. `max_body`
+translates to Aleph's `clauselength` bound; `max_vars` and `max_clauses` have
+no single-clause equivalent (Aleph's clause count comes from `induce`'s own
+covering loop, not from a bias file) and are named in a comment rather than
+silently dropped.
+
+This was checked against a real Aleph — the SWI-Prolog `aleph` pack's
+`aleph_orig.pl` — not just by eye: the emitted `.b`/`.f`/`.n` triple loads
+with no `example/1` or `individual/1` type fact anywhere (`+example` and
+`+individual` bind purely from resolving the actual background predicates
+during saturation, never from enumerating a declared type), and `induce`
+learns the intended target clause from it. `tests/test_ilp_aleph.py` carries
+that check as a test, skip-gated on Aleph being installed.
 
 ### Reading the clause back
 

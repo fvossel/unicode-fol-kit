@@ -4,13 +4,24 @@ Two independent extensions of the epistemic Kripke machinery in
 :mod:`unicode_fol_kit.semantics.kripke` and
 :mod:`unicode_fol_kit.semantics.dynamic_epistemic`:
 
-1. **Common knowledge** — :func:`everybody_knows` (E_G φ, "everyone in G knows
-   φ") and :func:`common_knowledge_holds` (C_G φ, "φ is common knowledge in
-   G"), evaluated directly on an existing
+1. **Group epistemic operators** — :func:`everybody_knows` (E_G φ, "everyone
+   in G knows φ"), :func:`common_knowledge_holds` (C_G φ, "φ is common
+   knowledge in G"), and :func:`distributed_knowledge_holds` (D_G φ, "φ is
+   DISTRIBUTED knowledge in G" — pooling every agent's information via the
+   INTERSECTION, rather than the union, of their relations), evaluated
+   directly on an existing
    :class:`~unicode_fol_kit.semantics.kripke.KripkeModel` at a world, using the
    model's ``"K:" + agent`` relations (the SAME naming convention
    :mod:`kripke` itself uses for ``Knows`` — see that module's docstring for
-   the contract).
+   the contract). All three are also reachable as first-class AST nodes
+   (:class:`~unicode_fol_kit.fol._modal_nodes.EverybodyKnows` /
+   :class:`~unicode_fol_kit.fol._modal_nodes.CommonKnowledge` /
+   :class:`~unicode_fol_kit.fol._modal_nodes.DistributedKnowledge`, parsed
+   from ``E_{a,b,…}``/``C_{a,b,…}``/``D_{a,b,…}`` surface syntax), with
+   :func:`~unicode_fol_kit.semantics.kripke.satisfies_modal` dispatching
+   straight into the three functions here — the same "thin AST wrapper"
+   pattern :class:`~unicode_fol_kit.fol._modal_nodes.Announce` already uses
+   for :func:`~unicode_fol_kit.semantics.dynamic_epistemic.announce`.
 
 2. **BMS action models** (Baltag, Moss & Solecki 1998, "The Logic of Public
    Announcements, Common Knowledge, and Private Suspicions", TARK; see also
@@ -94,8 +105,94 @@ def everybody_knows(model: KripkeModel, world: World, group: Iterable[str], form
     immediately). An empty group makes E_∅ φ vacuously TRUE at every world
     (the union relation is empty, so "holds at every successor" holds
     vacuously) — the same convention an empty conjunction always gets.
+
+    The full FHMV strength ordering this module's three group notions sit in,
+    strongest first: ``C_G φ → E_G φ → K_a φ → D_G φ`` (``a ∈ G``, any
+    agent) — :func:`common_knowledge_holds` is the strongest, E_G here sits
+    in the middle (``E_G φ → K_a φ``: everyone knowing φ entails any ONE of
+    them knowing it, since the union relation is a SUPERSET of each
+    individual ``R_a``, so a box over it is a stronger constraint), and
+    :func:`distributed_knowledge_holds` (D_G) is the weakest (see that
+    function's docstring for why). None of the converses is a theorem.
     """
     successors = {w2 for (w1, w2) in _group_relation(model, group) if w1 == world}
+    return all(satisfies_modal(formula, model, w2) for w2 in successors)
+
+
+def _group_intersection(model: KripkeModel, group: Iterable[str]) -> Set[Edge]:
+    """Return the INTERSECTION of the ``"K:"+agent`` edge sets for every agent in ``group``.
+
+    This is the accessibility relation ``R_G = ⋂_{a∈G} R_a`` that
+    :func:`distributed_knowledge_holds` is built from — the mirror of
+    :func:`_group_relation`'s UNION, one line different (``&=`` instead of
+    ``|=``). ``group`` is materialised into a list first (not consumed
+    lazily): unlike a union, an intersection needs to know it has SEEN every
+    member before it can report a final answer, and the empty-group case
+    below needs to inspect it before iterating relations at all.
+    """
+    agents = list(group)
+    if not agents:
+        raise ValueError(
+            "_group_intersection: an empty group has no well-defined "
+            "intersection here — see distributed_knowledge_holds's docstring "
+            "for why this stays a refusal rather than the 'universal relation' "
+            "convention an empty intersection carries in set theory."
+        )
+    inter: Optional[Set[Edge]] = None
+    for agent in agents:
+        edges = model.relation(_KNOWS_PREFIX + agent)
+        inter = set(edges) if inter is None else (inter & edges)
+    return inter
+
+
+def distributed_knowledge_holds(model: KripkeModel, world: World, group: Iterable[str], formula: Node) -> bool:
+    """Return whether D_G φ ("φ is DISTRIBUTED knowledge in ``group``") holds at ``world``.
+
+    Distributed knowledge pools every agent's individual information: D_G φ
+    holds at ``world`` iff φ holds at every world reachable by a SINGLE edge
+    of the INTERSECTION relation ``R_G = ⋂_{a∈G} R_a`` (Fagin, Halpern, Moses
+    & Vardi, *Reasoning About Knowledge*, MIT Press 1995, ch. 2) — the
+    one-step group operator built from intersection rather than
+    :func:`everybody_knows`'s union, mirroring :func:`_group_relation` /
+    :func:`_group_intersection`'s own shared structure.
+
+    D_G is the LOGICALLY WEAKEST of the three group notions (the one every
+    other one entails, never the reverse) — precisely BECAUSE pooling via
+    intersection can only SHRINK the reachable set relative to any single
+    agent's own relation (``R_G ⊆ R_a`` for every ``a ∈ G``, so a universal
+    claim over the smaller ``R_G`` is easier to satisfy than one over the
+    bigger ``R_a``): ``K_a φ → D_G φ`` for every ``a ∈ G``, and transitively
+    (via :func:`everybody_knows`'s ``E_G φ → K_a φ``) also ``E_G φ → D_G φ``
+    and ``C_G φ → D_G φ`` are theorems, while none of the converses is. This
+    is not a contradiction of "distributed knowledge pools richer
+    information than any individual" — D_G φ can hold even when NO single
+    K_a φ does (the group's COMBINED relations can rule out a possibility no
+    one agent's relation alone rules out), it is simply that, as a FORMAL
+    CONSTRAINT on φ, quantifying over the smaller intersection relation is
+    the weakest of the four readings, not the strongest.
+
+    ``group`` is any iterable of agent name strings, consumed once into the
+    intersection.
+
+    EMPTY-GROUP CONVENTION — deliberately NOT the same as
+    :func:`everybody_knows` / :func:`common_knowledge_holds`: an intersection
+    over an empty family of relations is, by the usual set-theoretic
+    convention, the UNIVERSAL relation (every pair of worlds), so a
+    vacuously-permissive reading of ``D_∅ φ`` would demand φ true at
+    LITERALLY EVERY world of the model — a degenerate, almost certainly
+    unintended answer for what "the distributed knowledge of no one" should
+    mean, unlike the union operators' empty-conjunction "vacuously true"
+    reading (which stays a sensible, bounded claim: nothing is asserted about
+    any OTHER world). Rather than silently return that near-universal
+    verdict, this function raises ``ValueError`` for an empty group — the
+    kit's refuse-loudly ethos applied to a case where "the obvious extension
+    of the convention" would be actively misleading. (:class:`DistributedKnowledge`
+    in :mod:`unicode_fol_kit.fol._modal_nodes` mirrors this at CONSTRUCTION
+    time already, so the parsed/AST route can never reach this function with
+    an empty group in the first place; this check remains here too for a
+    caller using the function directly, per :func:`_group_intersection`.)
+    """
+    successors = {w2 for (w1, w2) in _group_intersection(model, group) if w1 == world}
     return all(satisfies_modal(formula, model, w2) for w2 in successors)
 
 

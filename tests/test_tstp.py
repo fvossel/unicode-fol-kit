@@ -14,6 +14,7 @@ hand-built and reasoned about in each test's docstring/comment (no snapshot
 tests — every expected value has a stated reason).
 """
 
+from pathlib import Path
 from typing import Tuple
 
 import pytest
@@ -27,6 +28,15 @@ from unicode_fol_kit.atp.tstp import (
 from unicode_fol_kit.atp.vampire_entailment import check_entailment_vampire_detailed
 
 _FOL = MSFLParser()
+
+
+def _recorded(name: str) -> str:
+    """Verbatim stdout of a real E 3.5.1 run, shared with
+    test_eprover_zipperposition.py's identical helper (see
+    tests/fixtures/eprover_3_5_1_*.txt — captured under EProverBackend's own
+    ``--auto --tstp-format --proof-object -s --cpu-limit=N`` arguments)."""
+    path = Path(__file__).parent / "fixtures" / f"eprover_3_5_1_{name}.txt"
+    return path.read_text(encoding="utf-8")
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -387,6 +397,185 @@ class TestParseTstpDerivation:
         dumped = json.dumps(d.to_dict())
         assert "f11" in dumped
         assert "forward_subsumption_resolution" in dumped
+
+
+# ---------------------------------------------------------------------------
+# C11's TSTP-derivation leg: _deep_ancestor_names and relevant_premises_from_tstp
+# -- all offline, on RECORDED and hand-built TSTP text, per the roadmap spec's
+# own requirement that the ancestor walk be tested this way (independent of
+# any live prover run).
+# ---------------------------------------------------------------------------
+
+from unicode_fol_kit.atp.tstp import _deep_ancestor_names, _relevant_axiom_names
+from unicode_fol_kit.atp.tstp import relevant_premises_from_tstp
+
+
+class TestDeepAncestorNames:
+    def test_non_inference_source_is_a_leaf(self):
+        assert _deep_ancestor_names(None) == frozenset()
+        assert _deep_ancestor_names("file('mp.p',unknown)") == frozenset()
+
+    def test_flat_bare_name_parents_agree_with_parse_source(self):
+        """When nothing is nested, the deep walk must read the SAME bare
+        names _parse_source already does (see test_plain_numeric_parents_are_kept
+        above) -- it is a strict SUPERSET only when something is nested."""
+        assert (_deep_ancestor_names("inference(cnf_transformation,[],[7,8])")
+               == frozenset({"7", "8"}))
+
+    def test_compound_theory_marker_contributes_no_name_but_does_not_drop_siblings(self):
+        """The exact shape _parse_source drops WHOLESALE (pinned by
+        test_nested_inference_parents_that_are_compound_terms_are_dropped
+        above): here the sibling bare names in the SAME list must still come
+        through, unlike _parse_source's all-or-nothing behaviour."""
+        text = "inference(para,[status(thm)],[96,78,theory(equality)])"
+        assert _deep_ancestor_names(text) == frozenset({"96", "78"})
+
+    def test_recurses_into_a_singly_nested_inference(self):
+        text = "inference(cn,[status(thm)],[inference(rw,[status(thm)],[c_0_7,c_0_8])])"
+        assert _deep_ancestor_names(text) == frozenset({"c_0_7", "c_0_8"})
+
+    def test_recurses_through_three_levels_exactly_like_e_prover_c_0_6(self):
+        """Verbatim shape from tests/fixtures/eprover_3_5_1_theorem.txt's
+        c_0_6 statement (E's own fof_nnf/variable_rename administrative
+        chain, which never gets its own c_0_N name at each level) -- this is
+        EXACTLY the case _parse_source drops to () entirely."""
+        text = ("inference(fof_nnf,[status(thm)],"
+               "[inference(variable_rename,[status(thm)],"
+               "[inference(fof_nnf,[status(thm)],[premise_2])])])")
+        assert _deep_ancestor_names(text) == frozenset({"premise_2"})
+
+    def test_mixed_nested_and_bare_siblings(self):
+        text = ("inference(cn,[status(thm)],"
+               "[inference(rw,[status(thm)],[inference(spm,[status(thm)],"
+               "[c_0_7, c_0_8]), c_0_9])])")
+        # Verbatim shape of the recorded fixture's sink step (c_0_10) --
+        # hand-traced in this module's docstring comment.
+        assert _deep_ancestor_names(text) == frozenset({"c_0_7", "c_0_8", "c_0_9"})
+
+
+class TestRelevantAxiomNamesAndPremises:
+    def test_recorded_e_prover_theorem_fixture_both_premises_needed(self):
+        """The real, recorded E 3.5.1 derivation (tests/fixtures/
+        eprover_3_5_1_theorem.txt) -- both premise_1 and premise_2 feed the
+        sink through E's own nested administrative inference chain (c_0_6
+        especially, hand-traced above); this is the exact live-shape
+        regression the spec's TSTP leg exists to fix (TstpStep.parents alone
+        would lose premise_2 behind that nesting)."""
+        text = _recorded("theorem")
+        assert _relevant_axiom_names(text) == frozenset({"premise_1", "premise_2"})
+        assert relevant_premises_from_tstp(text, n_premises=2) == (0, 1)
+
+    def test_vampire_style_leaf_names_are_not_premise_named_so_none(self):
+        """Vampire renames every statement to its OWN f1/f2/... scheme --
+        verified live against Vampire 5.0.1 -- so even though f1/f2 ARE genuinely the two axiom
+        leaves the refutation needed, relevant_premises_from_tstp must
+        refuse (None), not guess that f1↦premise_1/f2↦premise_2 by position."""
+        assert _relevant_axiom_names(_THEOREM_OUTPUT) == frozenset({"f1", "f2"})
+        assert relevant_premises_from_tstp(_THEOREM_OUTPUT, n_premises=2) is None
+
+    def test_no_fof_or_cnf_statements_is_none(self):
+        assert _relevant_axiom_names("") is None
+        assert relevant_premises_from_tstp("no proof here", n_premises=2) is None
+
+    def test_countersatisfiable_fixture_is_not_a_refutation_so_none(self):
+        """No $false step exists: E printed a Saturation report for a
+        non-theorem, not a refutation, so no premise can be relevant to a
+        proof -- even though the report's own clauses do descend from
+        premise_1."""
+        text = _recorded("countersatisfiable")
+        assert _relevant_axiom_names(text) is None
+        assert relevant_premises_from_tstp(text, n_premises=2) is None
+
+    def test_a_derivation_without_false_is_none_however_it_is_shaped(self):
+        """A chain premise_1 -> derived that never reaches $false derives
+        nothing contradictory; guessing an "end of the DAG" instead would
+        report premise_1 as relevant to a proof that is not there."""
+        text = (
+            "fof(premise_1, axiom, (human(socrates)), file('x.p', premise_1)).\n"
+            "fof(premise_2, axiom, (bird(tweety)), file('x.p', premise_2)).\n"
+            "fof(derived, plain, (mortal(socrates)),"
+            "inference(resolution,[status(thm)],[premise_1])).\n"
+        )
+        assert _relevant_axiom_names(text) is None
+        assert relevant_premises_from_tstp(text, n_premises=2) is None
+
+    def test_two_disjoint_refutations_report_the_union(self):
+        """Two $false steps resting on different premises: premise_1 and
+        premise_2 both state p, the negated conjecture is ~p, and each sink
+        resolves one of them against it -- two genuine refutations. Each leaf
+        set is sufficient, so their union is too; the result is documented as
+        sufficient, not minimal. Picking one of them would be a choice the
+        text gives no ground for; refusing would discard a correct answer."""
+        text = (
+            "fof(premise_1, axiom, (p), file('x.p', premise_1)).\n"
+            "fof(premise_2, axiom, (p), file('x.p', premise_2)).\n"
+            "fof(neg, negated_conjecture, (~ p), file('x.p', neg)).\n"
+            "fof(sink1, plain, $false,"
+            "inference(resolution,[status(thm)],[premise_1,neg])).\n"
+            "fof(sink2, plain, $false,"
+            "inference(resolution,[status(thm)],[premise_2,neg])).\n"
+        )
+        assert _relevant_axiom_names(text) == frozenset({"premise_1", "premise_2"})
+        assert relevant_premises_from_tstp(text, n_premises=2) == (0, 1)
+
+    def test_a_cited_but_undefined_step_name_is_none(self):
+        """A derivation excerpt that cites a step name never itself defined
+        anywhere in the text -- an incomplete/truncated excerpt -- must
+        refuse rather than silently treat the missing name as a dead end."""
+        text = ("fof(sink,plain,$false,"
+               "inference(r,[status(thm)],[missing_step])).")
+        assert relevant_premises_from_tstp(text, n_premises=1) is None
+
+    def test_axiom_leaf_outside_the_premise_naming_convention_is_none(self):
+        text = ("fof(weird_axiom_name,axiom,p(a),file('x.p',unknown)).\n"
+               "fof(sink,plain,$false,"
+               "inference(r,[status(thm)],[weird_axiom_name])).")
+        assert relevant_premises_from_tstp(text, n_premises=1) is None
+
+    def test_out_of_range_premise_index_is_none(self):
+        """premise_5 with only 2 premises supplied means this module's own
+        naming convention was evidently not what produced this text (a stale
+        n_premises, or text from an unrelated run) -- refuse, don't clamp."""
+        text = ("fof(premise_5,axiom,p(a),file('x.p',unknown)).\n"
+               "fof(sink,plain,$false,"
+               "inference(r,[status(thm)],[premise_5])).")
+        assert relevant_premises_from_tstp(text, n_premises=2) is None
+
+    def test_hand_built_two_of_three_with_a_red_herring(self):
+        """Independent, offline pin of the ancestor-walk ALGORITHM itself
+        (not going through any recorded prover run): three premise_N
+        axioms, premise_3 never cited by anything -- a textbook red herring,
+        the same fixture shape used for z3_relevant_premises/cvc5's
+        minimality tests, expressed directly as TSTP text."""
+        text = (
+            "fof(goal,conjecture,mortal(socrates),file('x.p',goal)).\n"
+            "fof(premise_1,axiom,![X]:(human(X)=>mortal(X)),file('x.p',premise_1)).\n"
+            "fof(premise_2,axiom,human(socrates),file('x.p',premise_2)).\n"
+            "fof(premise_3,axiom,bird(tweety),file('x.p',premise_3)).\n"
+            "fof(neg,negated_conjecture,~mortal(socrates),"
+            "inference(negated_conjecture,[status(cth)],[goal])).\n"
+            "cnf(c1,plain,mortal(socrates),"
+            "inference(resolution,[status(thm)],[premise_1,premise_2])).\n"
+            "fof(sink,plain,$false,"
+            "inference(cn,[status(thm)],[c1,neg])).\n"
+        )
+        assert relevant_premises_from_tstp(text, n_premises=3) == (0, 1)
+
+    def test_hand_built_redundant_premises_neither_forced_alone(self):
+        """Two premise_N axioms that are each cited directly by the sink --
+        the walk must report BOTH names that ARE reachable, without
+        fabricating a preference; this pins the walk's behaviour on a
+        derivation shape where the SINK itself already names two leaves
+        directly (as opposed to Z3/cvc5's solver-level 'need not use both'
+        minimality, which is a property of THEIR search, not of this purely
+        structural graph walk)."""
+        text = (
+            "fof(premise_1,axiom,mortal(socrates),file('x.p',premise_1)).\n"
+            "fof(premise_2,axiom,human(socrates),file('x.p',premise_2)).\n"
+            "fof(sink,plain,$false,"
+            "inference(cn,[status(thm)],[premise_1,premise_2])).\n"
+        )
+        assert relevant_premises_from_tstp(text, n_premises=2) == (0, 1)
 
 
 # ---------------------------------------------------------------------------

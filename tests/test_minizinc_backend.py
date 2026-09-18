@@ -220,17 +220,21 @@ def test_to_minizinc_rejects_fragment_check_failure():
         to_minizinc(FiniteDomainProblem((goal,), 2))
 
 
-def test_arithmetic_function_symbol_is_refused_by_the_gate():
-    """``+`` is a Function node like any other, so the shared gate stops it
-    for the same reason it stops ``f``: no structure can hold its
-    interpretation. The renderer keeps its own arithmetic refusal as a second
-    line of defence for a caller that builds a FiniteDomainProblem by hand and
-    skips the gate, but that path is no longer reachable through decide()."""
+def test_arithmetic_function_symbol_is_refused_by_the_renderer_not_the_gate():
+    """``+`` is a ``Function`` node like any other, so the shared gate admits
+    it (``Function`` is generally encodable now) — but ``+``/``-``/``*``/``/``
+    stay refused regardless, LIVE, inside :func:`to_minizinc` itself:
+    ``Signature.from_formulas`` never declares them as user functions (the
+    ``_BUILTIN_FUNCS`` carve-out), and :func:`_term`'s ``Function`` branch
+    checks these four names before it ever consults the declared functions,
+    so the refusal fires from :func:`to_minizinc`'s own rendering loop, not
+    from the fragment gate that stops an unrelated node type like ``Box``."""
     x = Variable("x")
     goal = Quantifier("forall", x, Atom("=", (Function("+", (x, x)), x)))
 
-    assert fragment_check((goal,)) is not None
-    with pytest.raises(NotImplementedError):
+    assert fragment_check((goal,)) is None    # admitted -- Function generally
+
+    with pytest.raises(NotImplementedError, match="arithmetic function symbol"):
         to_minizinc(FiniteDomainProblem((goal,), 2))
 
 
@@ -278,13 +282,12 @@ def test_to_minizinc_rejects_predicate_name_collision():
 
 
 def test_to_minizinc_rejects_function_name_collision():
-    # A live `Function` NODE in a sentence is refused upstream by
-    # fragment_check itself (see test_functions_never_reach_the_renderer),
-    # so the only way to reach to_minizinc's own function-declaration code
-    # -- the "second line of defence for a caller that builds a
-    # FiniteDomainProblem by hand and skips the gate" the module docstring
-    # describes -- is a hand-built Signature that declares two functions
-    # without any Function node in the sentence list.
+    # A hand-built Signature declares two functions that transliterate to the
+    # same MiniZinc identifier, with no Function node in the SENTENCE list at
+    # all mentioning either -- exercising to_minizinc's own declaration-time
+    # collision guard directly, independent of whatever the sentences happen
+    # to use (see test_to_minizinc_rejects_predicate_name_collision above for
+    # the analogous predicate-namespace case).
     from unicode_fol_kit.fol.signature import FunctionDecl, PredicateDecl
     sig = Signature(
         predicates={"P": PredicateDecl("P", 1)},
@@ -371,19 +374,19 @@ def test_render_connectives_and_alldifferent_matches_fixture():
     assert rendered == _read_fixture("connectives_and_alldifferent_size3.mzn")
 
 
-def test_functions_never_reach_the_renderer():
-    """The renderer COULD encode a unary function as ``array[DOM] of var
-    DOM`` — but it is never asked to. The shared gate refuses function
-    symbols upstream, because ``FiniteStructure`` has no slot for a function
-    interpretation and a model containing one could therefore never be
-    checked back. An encoder that produced a model nobody can verify is worse
-    than one that declines, so the refusal is the feature."""
+def test_function_terms_reach_the_renderer_and_declare_an_array():
+    """The gate admits ``Function`` generally now, so the renderer's own
+    ``array[DOM] of var DOM`` encoding for a unary function symbol (see the
+    module docstring's "Encoding — arrays and generators" section) is
+    genuinely exercised on an ordinary search, not merely kept in reserve."""
     x = Variable("x")
     goal = Quantifier("exists", x, Atom("=", (Function("f", (x,)), x)))
 
-    message = fragment_check((goal,))
-    assert message is not None
-    assert "Function" in message and "FiniteStructure" in message
+    assert fragment_check((goal,)) is None
+
+    rendered = to_minizinc(FiniteDomainProblem((goal,), 2))
+    assert "array[DOM] of var DOM: f_f;" in rendered
+    assert "f_f[" in rendered      # the application f(x) itself, in a constraint
 
 
 def test_render_contrast_matches_fixture():
@@ -811,15 +814,21 @@ def test_decide_infra_when_no_recognised_status_or_solution(monkeypatch):
     assert v.reason == "infra"
 
 
-def test_decide_infra_when_verify_model_cannot_confirm_a_function_bearing_solution(monkeypatch):
-    """A Function-bearing sentence is refused BEFORE the solver runs, and the
-    refusal is `unsupported` rather than a late `infra` error.
+def test_decide_refuted_with_a_verified_function_bearing_countermodel(monkeypatch):
+    """A Function-bearing sentence now runs the FULL pipeline end to end:
+    admitted at the gate, rendered as a MiniZinc array, solved (by the fake
+    below), reconstructed, and independently re-verified — a genuine
+    REFUTED, not the ``UNKNOWN``/``"unsupported"`` this used to be refused
+    with before the C26 closure (see the module docstring's opening).
 
-    The distinction matters to a caller: `unsupported` says "this fragment is
-    outside the backend" and is stable across machines, while `infra` says
-    "something went wrong here and now" and invites a retry. Nothing about a
-    function symbol will ever succeed on a retry, so reporting it as infra
-    would be misleading."""
+    The ``sample_stdout_sat_function_gap.txt`` fixture (``f_f = [0, 1]``, per
+    ``test_parse_solution_sat_function_gap_fixture`` above) decodes to the
+    IDENTITY function over a 2-element domain: ``f(0)=0``, ``f(1)=1`` — so
+    ``f`` genuinely HAS a fixed point, meaning ``func_goal = ∃x (f(x)=x)`` is
+    hand-derivably TRUE in the reconstructed structure, and so is
+    ``Not(Not(func_goal))`` (the actual sentence searched — double negation
+    from ``decide()``'s own ``Not(formula)`` convention, see the comment
+    below)."""
     x = Variable("x")
     func_goal = Quantifier("exists", x, Atom("=", (Function("f", (x,)), x)))
     monkeypatch.setattr(
@@ -827,12 +836,20 @@ def test_decide_infra_when_verify_model_cannot_confirm_a_function_bearing_soluti
         _fake_run_at_size(2, _read_fixture("sample_stdout_sat_function_gap.txt")))
     backend = MinizincBackend()
     # formula = Not(func_goal) so the searched sentence Not(formula) contains
-    # the Function occurrence (a double negation -- irrelevant to the gap,
-    # which is about the Function node, not the negation depth).
+    # the Function occurrence (a double negation -- irrelevant to the shape
+    # of the gap this test used to pin, and now irrelevant to the closure it
+    # pins instead).
     v = backend.decide(Not(func_goal), [], max_size=2, minizinc_path="FAKE")
-    assert v.status == UNKNOWN
-    assert v.reason == "unsupported"
-    assert "Function" in v.detail
+    assert v.status == REFUTED
+    assert v.reason is None
+    assert v.countermodel["kind"] == "finite_structure"
+
+    structure = structure_from_dict(v.countermodel["data"])
+    assert structure.domain == ("0", "1")
+    assert structure.extensions[("f", 2)] == frozenset({("0", "0"), ("1", "1")})
+
+    # Independent re-check, not trusting decide()'s own internal verify step.
+    assert verify_model(structure, (Not(Not(func_goal)),)) is None
 
 
 def test_decide_infra_when_all_different_is_violated_by_the_solution(monkeypatch):

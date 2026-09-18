@@ -14,7 +14,14 @@ world; the modal rules move between worlds:
 
 The box/diamond family handled here is exactly the one with a single accessibility
 relation: alethic ``□``/``◇``, epistemic ``K_a``, doxastic ``B_a``, deontic
-``O``/``P``, and the one-step temporal ``X`` (``Next``). The relation names match the
+``O``/``P``, and the one-step temporal ``X`` (``Next``). Two of the three
+GROUP-epistemic operators join that family too: ``EverybodyKnows`` (E_G, alpha-
+reduced into one ``Knows`` box per agent) and ``DistributedKnowledge`` (D_G, a box
+over the intersection of the group's per-agent relations, POSITIVE occurrences
+only — see the comment above ``_distributed_relname``). ``CommonKnowledge`` (C_G)
+needs the reflexive-transitive closure of a union relation, the same
+least/greatest-fixpoint machinery ``Always``/``Eventually``/``Until`` need, so it
+is rejected the same way they are (below). The relation names match the
 :class:`~unicode_fol_kit.semantics.kripke.KripkeModel` convention
 (``"alethic"`` / ``"K:"+a`` / ``"B:"+a`` / ``"deontic"`` / ``"temporal"``), so an open
 branch is read off directly as a Kripke counter-model. The temporal *closure*
@@ -76,6 +83,7 @@ from typing import List, Optional, Tuple
 from ..fol.nodes import (
     Node, Atom, Not, And, Or, Xor, Implies, Iff, Contrast,
     Box, Diamond, Knows, Believes, Says, Wants, Obligatory, Permitted,
+    EverybodyKnows, DistributedKnowledge, CommonKnowledge,
     Next, Always, Eventually, Until,
     Historically, Once, Previous, Since,
     Nominal, At, Would, Might,
@@ -83,6 +91,12 @@ from ..fol.nodes import (
     Cardinality, SortedCardinality, SecondOrderQuantifier,
 )
 from ..fol._modal_nodes import Announce, AnnounceDiamond
+# Down (the ↓ binder, N1) is not yet re-exported through fol.nodes / fol's
+# public __init__ / the top-level unicode_fol_kit package (that three-file
+# edit is outside this change's file ownership — see the change's own
+# report); imported directly from its defining module in the meantime, the
+# same class object either import path would give.
+from ..fol._hybrid_nodes import Down
 from ..fol.pal import reduce_announcements
 from ..semantics.kripke import KripkeModel, satisfies_modal
 from ..fol.frames import (
@@ -124,6 +138,111 @@ def _agent_key(agent: Node) -> str:
     return getattr(agent, "name", None) or agent.to_unicode_str()
 
 
+# ---------------------------------------------------------------------------
+# Distributed knowledge (D_G): a box over the INTERSECTION of the group's
+# per-agent "K:"+agent relations.
+# ---------------------------------------------------------------------------
+#
+# Every OTHER box/diamond rule here acts on ONE named relation (`_apply_boxes`
+# just pushes a box's body to `b.rels[relname]`'s successors; `_frame_close`
+# closes ONE relation's edges under its own frame conditions). Distributed
+# knowledge needs a box over several relations' INTERSECTION at once, which
+# is not a relation _frame_close (or anything else here) already builds. The
+# fix is additive rather than new machinery in the search loop itself: a D_G
+# box is filed under a SYNTHETIC relation name that encodes its own
+# constituent "K:"+agent names (`_distributed_relname`), and `_close_distributed`
+# — run to fixpoint alongside `_frame_close`/`_apply_boxes` in `_solve` — keeps
+# that synthetic relation's edge set equal to the intersection of its
+# constituents' CURRENT edges every round (constituents only ever GROW during
+# search — frame closure, or a nested diamond inside one of them — so this
+# recompute is monotonic and terminates for exactly the reason `_frame_close`'s
+# own transitive closure does). satisfies_modal itself never reads a "D∩:…"
+# key — semantics.action_models.distributed_knowledge_holds recomputes the
+# SAME intersection directly from "K:"+agent — so the synthetic name is purely
+# an internal tableau bookkeeping device; `_build_model` happening to carry it
+# along into the returned KripkeModel is harmless (an extra relation entry
+# nothing downstream queries).
+#
+# A constituent "K:"+agent relation must also be FRAME-CLOSED under the
+# caller's requested epistemic system (S5 reflexivity, etc.) even when the
+# agent is mentioned nowhere else in the formula — otherwise D_G's box would
+# quantify over an intersection of relations the search never applied the
+# requested frame conditions to, which is unsound the moment any of those
+# conditions matters (e.g. S5 factivity: D_a P → P needs "K:a" reflexive).
+# `_frame_close` only ever looks at `_relnames(b)` (`b.rels`'s keys plus box
+# relation names), so `_close_distributed` REGISTERS each constituent in
+# `b.rels` (even with no edges yet) the first time it sees a synthetic D∩ key
+# — this alone makes the constituent "live" for the next `_frame_close` pass,
+# which is why the registration also reports `changed`: the `_solve` fixpoint
+# loop (`_frame_close` / `_close_distributed` / `_apply_boxes`) must run one
+# more round for that newly-live relation to actually pick up its reflexive/
+# transitive/etc. edges before the intersection is (re)computed from them.
+#
+# Only the POSITIVE (box) occurrence of D_G is given a rule: the negated form
+# ¬D_G φ (a diamond over the intersection) would need a fresh witness world
+# added to EVERY constituent relation at once — the generic diamond rule in
+# `_solve` adds an edge to exactly ONE named relation, and adding it only to
+# the synthetic key would just be erased by the next `_close_distributed`
+# pass (it is not yet in every constituent). Rather than special-case the
+# generic diamond-witness step for one synthetic relation family, ¬D_G is left
+# `"unsupported"` (inert, sound, see `_expand_simple`) — this still decides
+# every validity of the shape `D_G φ → …` (the useful direction: D_G occurs
+# POSITIVELY once its negation-as-premise is pushed through), which is what
+# the box rule below is for.
+_DISTRIBUTED_PREFIX = "D∩:"
+_DISTRIBUTED_SEP = "|"
+
+
+def _distributed_relname(agent_keys) -> str:
+    """Synthetic relation name for a D_G box: encodes its own "K:"+agent
+    constituents (sorted, so the same group always yields the same key)."""
+    names = sorted(_KNOWS + a for a in agent_keys)
+    return _DISTRIBUTED_PREFIX + _DISTRIBUTED_SEP.join(names)
+
+
+def _distributed_constituents(relname: str):
+    """Return the constituent relation names a synthetic D∩ key encodes, or
+    None if ``relname`` is not one (an ordinary relation name never starts
+    with "D∩:", since that prefix is not producible by any agent name — agent
+    names lex as VARIABLE/NAME, which cannot contain "∩")."""
+    if not relname.startswith(_DISTRIBUTED_PREFIX):
+        return None
+    return relname[len(_DISTRIBUTED_PREFIX):].split(_DISTRIBUTED_SEP)
+
+
+def _close_distributed(b: "_Branch") -> bool:
+    """Recompute every synthetic D∩ relation as the intersection of its
+    constituents' CURRENT edges; return True iff any edge set changed.
+
+    Also REGISTERS every constituent "K:"+agent relation in ``b.rels`` (with
+    no edges, if it has none yet) the first time it is seen — this makes it
+    'live' for `_frame_close` (see the module comment above), which is what
+    lets an agent whose only mention is inside this D_G box still receive the
+    caller's requested epistemic frame conditions (S5 reflexivity and so on).
+    Registering a previously-absent constituent counts as a change so the
+    `_solve` fixpoint loop runs `_frame_close` again before the intersection
+    below is treated as final.
+    """
+    changed = False
+    for relname in list(_relnames(b)):
+        constituents = _distributed_constituents(relname)
+        if constituents is None:
+            continue
+        for name in constituents:
+            if name not in b.rels:
+                b.rels[name] = set()
+                changed = True
+        inter = None
+        for name in constituents:
+            edges = b.rels.get(name, set())
+            inter = set(edges) if inter is None else (inter & edges)
+        inter = inter if inter is not None else set()
+        if b.rels.get(relname) != inter:
+            b.rels[relname] = inter
+            changed = True
+    return changed
+
+
 def _neg(f: Node) -> Node:
     """Return the complementary formula of ``f`` (``¬φ`` ↔ ``φ``)."""
     return f.formula if isinstance(f, Not) else Not(f)
@@ -140,15 +259,32 @@ def has_modal(node: Node) -> bool:
     pre-pass — see :func:`_run`) instead of a generic no-rule error.
     """
     modal = (Box, Diamond, Knows, Believes, Says, Wants, Obligatory, Permitted,
+             EverybodyKnows, DistributedKnowledge, CommonKnowledge,
              Next, Always, Eventually, Until,
              Historically, Once, Previous, Since,
-             Nominal, At, Would, Might, Announce, AnnounceDiamond)
+             Nominal, At, Down, Would, Might, Announce, AnnounceDiamond)
     return any(isinstance(n, modal) for n in node.walk())
 
 
 def _contains_hybrid(node: Node) -> bool:
     """True iff ``node`` contains a hybrid construct (a Nominal or an At)."""
     return any(isinstance(n, (Nominal, At)) for n in node.walk())
+
+
+def _contains_down(node: Node) -> bool:
+    """True iff ``node`` contains the ↓ binder (N1).
+
+    ``Down.variable`` is itself a :class:`Nominal` (see fol._hybrid_nodes'
+    module docstring), which means ``_contains_hybrid`` above already
+    detects every ``Down``-containing formula with ZERO extra code (the
+    generic ``Node._child_nodes``/``walk`` traversal is field-VALUE-typed,
+    not field-NAME-typed, so it walks straight into ``Down.variable`` too).
+    This function exists ONLY so ``_run`` can raise a ↓-SPECIFIC,
+    undecidability-naming message ahead of that generic one — Down must
+    never fall through to a generic branch (or even a correct-but-vaguer
+    one) unnoticed.
+    """
+    return any(isinstance(n, Down) for n in node.walk())
 
 
 def _contains_counterfactual(node: Node) -> bool:
@@ -200,6 +336,26 @@ def _decompose(f: Node):
         return ("box", _SAYS + _agent_key(f.agent), f.formula)
     if isinstance(f, Wants):
         return ("box", _WANTS + _agent_key(f.agent), f.formula)
+    if isinstance(f, EverybodyKnows):
+        # E_G φ ≡ ⋀_{a∈G} K_a φ: an ALPHA reduction into one Knows(a, φ) per
+        # agent, each of which the loop re-decomposes into its own box rule
+        # on the NEXT pass — no new relation-key machinery needed (see the
+        # module-level comment above _distributed_relname for why D_G, unlike
+        # E_G, does need one). An empty group alpha-reduces to [] (no
+        # components), which the caller treats as "nothing new asserted" —
+        # correctly vacuous, matching everybody_knows's own convention.
+        return ("alpha", [Knows(a, f.formula) for a in f.group])
+    if isinstance(f, DistributedKnowledge):
+        # D_G φ: a genuine box, over the SYNTHETIC intersection relation
+        # _close_distributed keeps in sync (see the module-level comment).
+        agents = tuple(_agent_key(a) for a in f.group)
+        return ("box", _distributed_relname(agents), f.formula)
+    if isinstance(f, CommonKnowledge):
+        # C_G needs the reflexive-transitive closure of a union relation —
+        # an induction/fixpoint rule this labelled tableau does not have, the
+        # same G/F/U precedent below. Inert, never a wrong verdict (see
+        # _expand_simple's "unsupported" branch).
+        return ("unsupported", f)
     if isinstance(f, Obligatory):
         return ("box", _DEONTIC, f.formula)
     if isinstance(f, Permitted):
@@ -259,6 +415,25 @@ def _decompose(f: Node):
             return ("dia", _SAYS + _agent_key(g.agent), Not(g.formula))
         if isinstance(g, Wants):
             return ("dia", _WANTS + _agent_key(g.agent), Not(g.formula))
+        if isinstance(g, EverybodyKnows):
+            # ¬E_G φ ≡ ⋁_{a∈G} ¬K_a φ: a BETA branch, one option per agent,
+            # each a single Not(Knows(a,φ)) component — which this SAME
+            # negation section already turns into a diamond rule on its own
+            # next pass (the `if isinstance(g, Knows)` case just above,
+            # reached because `_decompose` is called again on each freshly
+            # asserted Not(Knows(...))). An empty group beta-branches into
+            # ZERO options, which `_solve`'s beta handling immediately reports
+            # "closed" (no branch to keep the tableau open) — the correct
+            # verdict, since ¬E_∅ φ negates an always-vacuously-true E_∅ φ and
+            # so is itself unsatisfiable.
+            return ("beta", [[Not(Knows(a, g.formula))] for a in g.group])
+        if isinstance(g, DistributedKnowledge):
+            # ¬D_G φ (a diamond over the intersection relation) has no rule
+            # here — see the module-level comment above _distributed_relname
+            # for why. Inert, sound.
+            return ("unsupported", f)
+        if isinstance(g, CommonKnowledge):
+            return ("unsupported", f)
         if isinstance(g, Obligatory):
             return ("dia", _DEONTIC, Not(g.formula))
         if isinstance(g, Permitted):
@@ -529,6 +704,8 @@ def _solve(b: _Branch, ctx: _Ctx):
                 progressed = True
             if _frame_close(b, ctx):
                 progressed = True
+            if _close_distributed(b):
+                progressed = True
             if _apply_boxes(b):
                 progressed = True
             if _closes(b):
@@ -640,7 +817,10 @@ def _check_one_frame(frame: str, what: str = "") -> None:
              "conditions, or the higher-order embeddings — "
              "hol.isabelle_modal.to_isabelle_modal / isabelle_decide_modal "
              "and hol.thf_modal.to_thf_modal_full — for the ones that are "
-             "not first-order definable at all (GL, S4.1, Grz).")
+             "not first-order definable at all (GL, S4.1, Grz); for a "
+             "bounded REFUTATION (not a proof) of those three, "
+             "atp.kripke_enum.modal_enum_search decides them directly via "
+             "their finite frame characterisation.")
 
 
 def _run(formulas, frame: str, systems, max_worlds: int, max_steps: int,
@@ -670,6 +850,22 @@ def _run(formulas, frame: str, systems, max_worlds: int, max_steps: int,
     _check_frame(frame, systems)
     _check_bridges(bridges)
     for f in formulas:
+        if _contains_down(f):
+            # Checked BEFORE the general hybrid-constructs guard below so a
+            # ↓-formula gets its own clear, undecidability-naming message
+            # (N1) rather than being lumped under the general nominals/@
+            # rejection — even though _contains_hybrid would ALSO already
+            # catch it for free (Down.variable is a Nominal, walked
+            # automatically — see _contains_down's own docstring).
+            raise NotImplementedError(
+                "modal_tableau: the ↓ binder is not supported by this labelled "
+                "tableau — H(@,↓) validity is undecidable, and this tableau's "
+                "rule set (like hybrid_is_valid's Z3 route) only ever "
+                "soundly-and-completely covers DECIDABLE fragments. Use "
+                "fol.modal_translation.down_is_valid (Z3, PROVED-only) or "
+                "atp.kripke_enum.KripkeEnumBackend / modal_enum_search "
+                "(bounded search, REFUTED-only), or evaluate directly with "
+                "semantics.kripke.satisfies_modal.")
         if _contains_hybrid(f):
             raise NotImplementedError(
                 "modal_tableau: hybrid constructs (nominals/@) are not supported "

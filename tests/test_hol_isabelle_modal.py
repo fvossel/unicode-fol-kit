@@ -15,7 +15,7 @@ import re
 import pytest
 
 from unicode_fol_kit.hol.isabelle_modal import (
-    to_isabelle_modal, isabelle_modal_theory, ISABELLE_TACTICS,
+    to_isabelle_modal, isabelle_modal_theory, ISABELLE_TACTICS, modal_axiom_names,
 )
 
 from unicode_fol_kit.fol.nodes import (
@@ -319,13 +319,61 @@ def test_until_since_theory_loads_and_proves_live():
     assert r2.ok, r2.output[-2000:]
 
 
+@pytest.mark.isabelle_live
+@pytest.mark.skipif(
+    not isabelle_available(),
+    reason="no Isabelle installation found (set UFK_ISABELLE_HOME / ISABELLE_HOME)")
+def test_non_empty_sort_axiom_is_what_closes_the_sorted_schema_live():
+    """Real Isabelle confirms the sort non-emptiness axiom is load-bearing.
+
+    ``∀x:Human P(x) → ∃x:Human P(x)`` is what ``api.prove`` calls valid, so the
+    emitted theory has to close it too or this route disagrees with the
+    classical one on a modal-free sorted formula. Relativization alone does not
+    get there -- the guard is just an atom, and nothing says it holds of
+    anything -- so both directions are checked: WITH the axiom in scope blast
+    closes the lemma, WITHOUT it blast fails. The second half is the part that
+    would silently rot if the axiom were ever dropped again.
+    """
+    f = SortedQuantifier("∀", x, "Human", Atom("P", [x]))
+    g = SortedQuantifier("∃", x, "Human", Atom("P", [x]))
+    schema = Implies(f, g)
+
+    names = modal_axiom_names(schema)
+    assert "nonempty_sort0" in names, names
+    with_axiom = isabelle_modal_theory(
+        schema, theory_name="SortedNonEmptyLive",
+        proof="  using " + " ".join(names) + " by blast")
+    r = check_theory(with_axiom, "SortedNonEmptyLive", session_timeout=300)
+    assert r.ok, r.output[-2000:]
+
+    without_axiom = isabelle_modal_theory(
+        schema, theory_name="SortedNoAxiomLive", proof="  by blast")
+    r2 = check_theory(without_axiom, "SortedNoAxiomLive", session_timeout=300)
+    assert not r2.ok, "blast closed the schema without the axiom — it is not load-bearing"
+
+
 # --------------------------------------------------------------------------- #
 # Errors / unsupported.
 # --------------------------------------------------------------------------- #
 
-def test_sorted_quantifier_rejected():
-    with pytest.raises(NotImplementedError):
-        to_isabelle_modal(SortedQuantifier("∀", x, "Nat", Atom("A", [x])))
+def test_sorted_quantifier_is_relativized_with_a_non_empty_sort():
+    """A sorted quantifier is no longer refused: it is relativized to a guard atom.
+
+    ∀x:Nat A(x) becomes the guarded ∀x (Nat(x) → A(x)) — an ordinary unary
+    predicate ``nat`` in the emitted signature — and the sort gets the same
+    non-emptiness convention the classical many-sorted routes use
+    (``fol._msfl_nodes.nonempty_sort_axioms``), stated per world here because the
+    guard is world-relative. Without that axiom the theory would not prove
+    ∀x:S P(x) → ∃x:S P(x), which ``api.prove`` calls valid.
+    """
+    thy = to_isabelle_modal(SortedQuantifier("∀", x, "Nat", Atom("A", [x])))
+    assert 'consts nat :: "e \\<Rightarrow> i \\<Rightarrow> bool"' in thy
+    assert "mforall (\\<lambda>x. (mimp (nat x) (a x)))" in thy
+    assert 'axiomatization where nonempty_sort0: "\\<exists>x. nat x w"' in thy
+    assert "nonempty_sort0" in modal_axiom_names(
+        SortedQuantifier("∀", x, "Nat", Atom("A", [x])))
+    # an unsorted formula gains no such axiom.
+    assert "nonempty_sort" not in to_isabelle_modal(Quantifier("∀", x, Atom("A", [x])))
 
 
 def test_bad_frame():

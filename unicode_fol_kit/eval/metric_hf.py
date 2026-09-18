@@ -67,6 +67,7 @@ numbers instead of one "accuracy":
   the solver, or any level of the ladder, at all).
 """
 
+import importlib.util
 from typing import List
 
 from .equivalence import equivalent
@@ -78,15 +79,22 @@ __all__ = ["compute_fol_metrics", "FolEquivalence", "load"]
 # compute_fol_metrics -- works with or without the `evaluate` package.
 # ---------------------------------------------------------------------------
 
-def _score_pair(prediction: str, reference: str, method: str, timeout_ms: int) -> dict:
+def _score_pair(prediction: str, reference: str, method: str, timeout_ms: int,
+                converses=None) -> dict:
     """Score ONE ``(prediction, reference)`` pair. Never raises.
 
     Returns ``{"parse_failure", "syntax_equal", "equivalent_true",
-    "partial_credit", "solver_unknown"}`` (all bool except
-    ``partial_credit``, a float). A parse failure on either side reports
-    every field at its floor (``False`` / ``0.0``) — see the module
-    docstring's honesty-contract section for why that floor, not a skip, is
-    the correct score for text that never became a formula.
+    "partial_credit", "solver_unknown", "method_used"}`` (all bool except
+    ``partial_credit``, a float, and ``method_used``, a str or ``None``). A
+    parse failure on either side reports every bool/float field at its floor
+    (``False`` / ``0.0``, ``method_used=None``) — see the module docstring's
+    honesty-contract section for why that floor, not a skip, is the correct
+    score for text that never became a formula.
+
+    ``converses`` (see :mod:`unicode_fol_kit.eval.converses`) is forwarded
+    to :func:`~unicode_fol_kit.eval.equivalence.equivalent` unchanged;
+    ``method_used`` is carried back out so :func:`compute_fol_metrics` can
+    compute ``converse_matched_rate`` without recomputing the verdict.
 
     ``syntax_equal`` is computed directly as ``prediction_formula ==
     reference_formula`` rather than read off
@@ -116,17 +124,20 @@ def _score_pair(prediction: str, reference: str, method: str, timeout_ms: int) -
             "equivalent_true": False,
             "partial_credit": 0.0,
             "solver_unknown": False,
+            "method_used": None,
         }
 
     result = equivalent(pred_parsed.formula, ref_parsed.formula,
-                        method=method, timeout=timeout_ms)
+                        method=method, timeout=timeout_ms, converses=converses)
 
-    # method_used == "solver" happens exactly when the ladder reached the
-    # solver level -- both for method="solver" directly and for the "auto"
-    # ladder's fallthrough (see equivalent()'s auto branch: it ALWAYS labels
-    # the solver fallthrough method_used="solver", whether the tri-state
-    # verdict came back True, False, or None).
-    solver_unknown = result.method_used == "solver" and result.equivalent is None
+    # method_used in {"solver", "solver_modulo_converses"} happens exactly
+    # when the ladder reached the solver level -- both for method="solver"
+    # directly and for the "auto" ladder's fallthrough (see equivalent()'s
+    # auto branch: it ALWAYS labels the solver fallthrough this way, whether
+    # the tri-state verdict came back True, False, or None) -- the latter
+    # tag only ever appears when `converses` was non-empty.
+    solver_unknown = (result.method_used in ("solver", "solver_modulo_converses")
+                      and result.equivalent is None)
 
     return {
         "parse_failure": False,
@@ -134,11 +145,13 @@ def _score_pair(prediction: str, reference: str, method: str, timeout_ms: int) -
         "equivalent_true": result.equivalent is True,
         "partial_credit": result.partial_credit if result.partial_credit is not None else 0.0,
         "solver_unknown": solver_unknown,
+        "method_used": result.method_used,
     }
 
 
 def compute_fol_metrics(predictions: List[str], references: List[str], *,
-                        method: str = "auto", timeout_ms: int = 10000) -> dict:
+                        method: str = "auto", timeout_ms: int = 10000,
+                        converses=None) -> dict:
     """Score a batch of NL→FOL predictions against references, per-pair.
 
     Args:
@@ -152,9 +165,16 @@ def compute_fol_metrics(predictions: List[str], references: List[str], *,
             (the default: the full ladder, cheapest level first).
         timeout_ms: forwarded as ``equivalent()``'s ``timeout`` (milliseconds)
             for every pair's solver call.
+        converses: OPT-IN, default ``None`` — forwarded unchanged to
+            :func:`~unicode_fol_kit.eval.equivalence.equivalent` for every
+            pair (see that function's ``converses`` parameter and
+            :mod:`unicode_fol_kit.eval.converses`). ``None``/empty leaves the
+            returned dict's KEY SET unchanged (required — see
+            ``tests/test_metric_hf.py``'s full-dict-equality asserts); a
+            non-empty sequence adds the ``converse_matched_rate`` key below.
 
     Returns:
-        A dict with six keys:
+        A dict with six keys (seven when ``converses`` is non-empty):
 
         * ``exact_match`` — fraction of pairs whose parsed formulas are
           AST-equal (``==``); ``0.0`` for an unparseable pair.
@@ -174,19 +194,58 @@ def compute_fol_metrics(predictions: List[str], references: List[str], *,
           Always ``0.0`` for ``method`` values that never invoke the solver
           (``"exact"``/``"canonical"``/``"predicate_align"``).
         * ``n`` — the batch size (``len(predictions)``).
+        * ``converse_matched_rate`` — ONLY present when ``converses`` is
+          non-empty: the fraction of pairs where the solver level ran WITH
+          the declared axioms (``method_used == "solver_modulo_converses"``)
+          AND proved equivalence (``equivalent is True``). A separately
+          visible, subtractable slice of ``equivalence_accuracy`` — never
+          folded into it silently, matching this module's honesty-contract
+          convention for ``solver_unknown_rate`` above.
 
     Raises:
         ValueError: ``predictions`` and ``references`` have different
-            lengths.
+            lengths; a malformed ``converses`` declaration (checked
+            unconditionally, including for an empty batch); or a non-empty
+            ``converses`` combined with a ``method`` that cannot honour it
+            (``"exact"``/``"canonical"``/``"predicate_align"`` — also
+            checked unconditionally, matching :func:`~unicode_fol_kit.eval
+            .equivalence.equivalent`'s own check for ``n >= 1``).
     """
     if len(predictions) != len(references):
         raise ValueError(
             "compute_fol_metrics: predictions and references must have the "
             f"same length (got {len(predictions)} and {len(references)})")
 
+    if converses:
+        # Validate unconditionally, even for an empty batch: _score_pair (the
+        # only other call site that would reach validate_converses, via
+        # equivalent()) never runs when n == 0, so without this a malformed
+        # declaration would silently pass through the n == 0 branch below
+        # instead of raising -- see this function's own documented contract
+        # ("Raises: ValueError ... a malformed converses declaration").
+        from .converses import validate_converses
+        validate_converses(converses)
+        # Mirror equivalent()'s own method-gating check (equivalence.py:
+        # "converses requires method in {'solver', 'auto'}") unconditionally
+        # too, for the same reason: that check normally runs inside
+        # equivalent() via _score_pair, which never executes when n == 0, so
+        # without this a solver-incompatible method combined with a
+        # (structurally valid) converses declaration would raise for n >= 1
+        # but silently return zeroed metrics for n == 0 -- same declaration,
+        # same method, different n, different behaviour. Kept as an exact
+        # duplicate of equivalent()'s wording (not just "the same class of
+        # error") so a caller sees one consistent message regardless of
+        # which code path raised it.
+        if method in ("exact", "canonical", "predicate_align"):
+            raise ValueError(
+                f"equivalent: converses requires method in "
+                f"{{'solver', 'auto'}} (got {method!r}) — a declared "
+                "converse axiom is honoured only by the solver level; a "
+                "structural method would silently ignore it")
+
     n = len(predictions)
     if n == 0:
-        return {
+        result = {
             "exact_match": 0.0,
             "equivalence_accuracy": 0.0,
             "mean_partial_credit": 0.0,
@@ -194,11 +253,14 @@ def compute_fol_metrics(predictions: List[str], references: List[str], *,
             "solver_unknown_rate": 0.0,
             "n": 0,
         }
+        if converses:
+            result["converse_matched_rate"] = 0.0
+        return result
 
-    scores = [_score_pair(p, r, method, timeout_ms)
+    scores = [_score_pair(p, r, method, timeout_ms, converses)
              for p, r in zip(predictions, references)]
 
-    return {
+    result = {
         "exact_match": sum(s["syntax_equal"] for s in scores) / n,
         "equivalence_accuracy": sum(s["equivalent_true"] for s in scores) / n,
         "mean_partial_credit": sum(s["partial_credit"] for s in scores) / n,
@@ -206,6 +268,11 @@ def compute_fol_metrics(predictions: List[str], references: List[str], *,
         "solver_unknown_rate": sum(s["solver_unknown"] for s in scores) / n,
         "n": n,
     }
+    if converses:
+        result["converse_matched_rate"] = sum(
+            s["method_used"] == "solver_modulo_converses" and s["equivalent_true"]
+            for s in scores) / n
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -215,16 +282,16 @@ def compute_fol_metrics(predictions: List[str], references: List[str], *,
 # `evaluate` is NOT a hard dependency of this module: importing metric_hf.py
 # must succeed on a machine that never installed it (mirroring how
 # atp/cvc5_backend.py's Cvc5Backend stays importable without cvc5 -- see that
-# module's docstring). Only *instantiating* FolEquivalence requires it.
+# module's docstring). Only *instantiating* FolEquivalence requires it -- and,
+# unlike the eager `try: import evaluate / except ImportError` this used to
+# do, that import must not happen just because metric_hf.py itself was
+# imported (`evaluate` drags in `datasets`, together well over a second of
+# import time -- see the module docstring's own claim, which this section
+# makes actually true). `_HAS_EVALUATE` below is pure discovery -- no import
+# -- mirroring atp/cvc5_backend.py's `Cvc5Backend.available()`.
 
-try:
-    import evaluate as _evaluate
-    import datasets as _hf_datasets
-    _HAS_EVALUATE = True
-except ImportError:
-    _evaluate = None
-    _hf_datasets = None
-    _HAS_EVALUATE = False
+_HAS_EVALUATE = (importlib.util.find_spec("evaluate") is not None and
+                 importlib.util.find_spec("datasets") is not None)
 
 
 _INSTALL_HINT = (
@@ -273,7 +340,40 @@ Examples:
     {'exact_match': 0.0, 'equivalence_accuracy': 1.0, ...}
 """
 
-if _HAS_EVALUATE:
+# `FolEquivalence` itself is built lazily: the class body subclasses
+# `evaluate.Metric`, so merely *defining* it needs `evaluate` (and, for
+# `_info`'s `datasets.Features`, `datasets`) already imported. Building it
+# eagerly at module scope -- even behind an `if _HAS_EVALUATE:` -- would
+# import both packages the moment metric_hf.py is imported, which is
+# exactly the cost this module's docstring already claims does NOT happen.
+# `_build_fol_equivalence_class` does the real import (and only it pays that
+# cost, once, on first use) and caches the resulting class in
+# `_fol_equivalence_class`; the module-level `__getattr__` below (PEP 562)
+# routes both `metric_hf.FolEquivalence` and
+# `from ... import FolEquivalence` through it transparently.
+
+_fol_equivalence_class = None
+
+
+def _build_fol_equivalence_class():
+    """Import ``evaluate``/``datasets`` and return the real ``FolEquivalence``
+    class, building it once and caching it for every later call.
+
+    Raises:
+        ImportError: with the install hint, if ``evaluate``/``datasets`` are
+            not installed (or fail to import for any other reason) --
+            mirroring the message the pre-lazy fallback stub used to raise
+            from ``FolEquivalence.__init__``.
+    """
+    global _fol_equivalence_class
+    if _fol_equivalence_class is not None:
+        return _fol_equivalence_class
+
+    try:
+        import evaluate as _evaluate
+        import datasets as _hf_datasets
+    except ImportError:
+        raise ImportError(_INSTALL_HINT) from None
 
     class FolEquivalence(_evaluate.Metric):
         """``evaluate.Metric`` wrapper around :func:`compute_fol_metrics`.
@@ -286,7 +386,15 @@ if _HAS_EVALUATE:
         what the returned numbers mean.
         """
 
-        def _info(self) -> "_evaluate.MetricInfo":
+        def _info(self):
+            # Returns evaluate.MetricInfo. Deliberately NOT annotated with a
+            # `-> "_evaluate.MetricInfo"` string forward reference: `_evaluate`
+            # is a local variable of the enclosing `_build_fol_equivalence_class`
+            # (that is what keeps the import lazy -- see the section comment
+            # above), not a module global, so `typing.get_type_hints()` would
+            # raise NameError trying to resolve it. Nothing in this codebase
+            # or its test suite calls `get_type_hints` on this method; the
+            # type is documented here in prose instead.
             return _evaluate.MetricInfo(
                 description=_DESCRIPTION,
                 citation="",
@@ -305,28 +413,46 @@ if _HAS_EVALUATE:
             return compute_fol_metrics(list(predictions), list(references),
                                        method=method, timeout_ms=timeout_ms)
 
-else:
+    # Built inside a function, so Python's default __qualname__ would be
+    # "_build_fol_equivalence_class.<locals>.FolEquivalence" -- reset it to
+    # the plain module-level name so anything that reads it (repr, pickling
+    # by reference, which resolves "module.qualname" via getattr and so
+    # works fine through __getattr__ below) sees the same identifier a
+    # module-scoped class definition would have had.
+    FolEquivalence.__qualname__ = "FolEquivalence"
 
-    class FolEquivalence:   # type: ignore[no-redef]
-        """Stand-in for :class:`FolEquivalence` when ``evaluate`` is absent.
-
-        Importing this module never requires ``evaluate`` (see the module
-        docstring) — only constructing this class does, and it fails loudly
-        with the install hint rather than silently degrading. Use
-        :func:`compute_fol_metrics` directly to get the same scores without
-        the optional dependency.
-        """
-
-        def __init__(self, *args, **kwargs):
-            raise ImportError(_INSTALL_HINT)
+    _fol_equivalence_class = FolEquivalence
+    return _fol_equivalence_class
 
 
-def load() -> "FolEquivalence":
+def __getattr__(name: str):
+    """PEP 562 module-level attribute hook.
+
+    Only ``FolEquivalence`` is handled specially: accessing
+    ``metric_hf.FolEquivalence`` (attribute access, ``from ... import
+    FolEquivalence``, or ``dir()``-following tools) builds -- and, on every
+    call after the first, just returns the cached -- real class via
+    :func:`_build_fol_equivalence_class`, so `evaluate`/`datasets` are only
+    ever imported when this name is actually touched, never merely because
+    this module was.
+    """
+    if name == "FolEquivalence":
+        return _build_fol_equivalence_class()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def load():
     """Return a ready-to-use :class:`FolEquivalence` instance.
 
     Mirrors the shape of ``evaluate.load("metric_name")`` for callers used
     to that entry point. Raises :class:`ImportError` (with the install
-    hint) if the optional ``evaluate`` package is not installed — use
+    hint) if the optional ``evaluate`` package is not installed -- use
     :func:`compute_fol_metrics` directly in that case.
+
+    Not annotated ``-> "FolEquivalence"``: that name is only ever reachable
+    through the module-level ``__getattr__`` above (never bound as a true
+    module global -- that is what keeps it lazy), so a string forward
+    reference to it would raise NameError from ``typing.get_type_hints()``.
+    The return type is documented here in prose instead.
     """
-    return FolEquivalence()
+    return _build_fol_equivalence_class()()

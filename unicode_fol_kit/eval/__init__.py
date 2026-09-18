@@ -19,7 +19,14 @@
   :func:`exact_match` they quotient out BOTH vocabulary and structural noise.
 - :func:`explain_countermodel` renders any countermodel witness (Kripke,
   Tarski structure, Z3 assignment, Verdict-layer dict) as a few short,
-  deterministic English sentences.
+  deterministic English sentences; :func:`explain_proof` is its validity-side
+  counterpart, rendering a recorded proof object (tableau, TSTP derivation,
+  Twee proof, Z3 unsat core, cvc5 Alethe proof) the same way.
+- :func:`~unicode_fol_kit.eval.converses.validate_converses` /
+  :func:`~unicode_fol_kit.eval.converses.converse_axioms` let a caller declare
+  that two predicates name the same relation with their arguments permuted
+  (:data:`~unicode_fol_kit.eval.converses.ConverseDeclaration`), an opt-in
+  bridge consumed only by :func:`equivalent`'s solver level.
 - :func:`batch_decide` runs the prover chain over many formulas with a
   content-addressed cache, process parallelism, and JSONL results.
 - :mod:`~unicode_fol_kit.eval.datasets` holds the NL→logic benchmark
@@ -37,8 +44,9 @@ from .predicate_match import (
     aligned_exact_match,
 )
 from .equivalence import EquivalenceResult, equivalent
-from .explain import explain_countermodel
+from .explain import explain_countermodel, explain_proof
 from .metric_hf import compute_fol_metrics
+from .converses import ConverseDeclaration, validate_converses, converse_axioms
 from .theory_check import (
     Definitions, CyclicDefinition, UnfoldDepthExceeded,
     dependency_graph, find_cycles, unfold,
@@ -54,6 +62,11 @@ from .generality import (
 )
 from .batch import batch_decide
 from .chem_batch import check_definitions, ChemBatchResult
+from .exercise_gen import (
+    ValidInvalidPair, generate_valid_invalid_pair,
+    EntailmentExercise, generate_entailment_with_proof,
+    ModelSizeExercise, generate_theory_with_model_size,
+)
 from . import datasets   # NL→logic benchmark adapters (datasets.load_folio, …)
 
 __all__ = [
@@ -63,8 +76,12 @@ __all__ = [
     "formulas_are_identical", "match_predicates", "formulas_are_matched_identical",
     "align_symbols", "aligned_exact_match",
     "EquivalenceResult", "equivalent",
-    "explain_countermodel",
+    "explain_countermodel", "explain_proof",
     "compute_fol_metrics",
+    # Declared converse/argument-permutation axioms — an opt-in equivalence
+    # bridge consumed only by `equivalent`'s solver level (see
+    # unicode_fol_kit.eval.converses).
+    "ConverseDeclaration", "validate_converses", "converse_axioms",
     # Deductive checks over a set of predicate DEFINITIONS: cycles, dead
     # (unsatisfiable) definitions, subclass ⊨ superclass — with a
     # countermodel whenever the answer is "no", not just "not proved".
@@ -80,5 +97,10 @@ __all__ = [
     "StrictlyStrongerResult", "strictly_stronger",
     "VacuousSpecialisationResult", "is_vacuous_specialisation",
     "batch_decide",
+    # Constructively-generated, independently-checked practice exercises --
+    # no LLM anywhere (unicode_fol_kit.eval.exercise_gen).
+    "ValidInvalidPair", "generate_valid_invalid_pair",
+    "EntailmentExercise", "generate_entailment_with_proof",
+    "ModelSizeExercise", "generate_theory_with_model_size",
     "datasets",
 ]

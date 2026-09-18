@@ -1,0 +1,49 @@
+% Captured verbatim from `vampire --proof tptp --avatar off` (Vampire 5.0.1,
+% local WSL install) proving {? [X] : ! [Y] : r(X,Y)} |- ? [X] : r(X,X); the
+% file(...) path was shortened to 'sk.p' for readability. Exercises
+% 'skolemisation' (f6): its SECOND parent, f5, is not itself an
+% inference(...) step but an `introduced(definition,[],[skolem_symbol_
+% introduction])`-sourced statement -- a leaf per this module's rule (its
+% source is not `inference(...)`), but one that states the Skolemization
+% axiom schema, not one of the caller's own premises. This module does not
+% special-case that shape (see tstp_check.py's module docstring on
+% Skolemization) -- it is exactly the same leaf-matching check as any other
+% leaf, and it correctly FAILS to match the caller's supplied premise, so the
+% whole derivation comes back unverified naming that leaf. This is the
+% intended, conservative behaviour, not a bug: this module does not certify
+% Skolemization's soundness (see the 'trusted clausification-leaf boundary'
+% section of the module docstring).
+% SZS status Theorem for sk
+% SZS output start Proof for sk
+fof(f1,axiom,(
+  ? [X0] : ! [X1] : r(X0,X1)),
+  file('sk.p',unknown)).
+fof(f2,conjecture,(
+  ? [X0] : r(X0,X0)),
+  file('sk.p',unknown)).
+fof(f3,negated_conjecture,(
+  ~? [X0] : r(X0,X0)),
+  inference(negated_conjecture,[status(cth)],[f2])).
+fof(f4,plain,(
+  ! [X0] : ~r(X0,X0)),
+  inference(ennf_transformation,[],[f3])).
+fof(f5,plain,(
+  ? [X0] : ! [X1] : r(X0,X1) => ! [X1] : r(sK0,X1)),
+  introduced(definition,[],[skolem_symbol_introduction])).
+fof(f6,plain,(
+  ! [X1] : r(sK0,X1)),
+  inference(skolemisation,[status(esa),new_symbols(skolem,[sK0])],[f1,f5])).
+fof(f7,plain,(
+  ( ! [X1] : (r(sK0,X1)) )),
+  inference(cnf_transformation,[],[f6])).
+fof(f8,plain,(
+  ( ! [X0] : (~r(X0,X0)) )),
+  inference(cnf_transformation,[],[f4])).
+fof(f9,plain,(
+  $false),
+  inference(resolution,[],[f7,f8])).
+% SZS output end Proof for sk
+% ------------------------------
+% Termination reason: Refutation
+% Time elapsed: 0.041 s
+% ------------------------------

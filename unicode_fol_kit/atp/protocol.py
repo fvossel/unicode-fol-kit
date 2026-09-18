@@ -43,6 +43,7 @@ __all__ = [
     "Verdict", "BackendUnavailable", "ProverBackend",
     "register_backend", "get_backend", "available_backends", "default_chain",
     "run_backend",
+    "z3_relevant_premises",
 ]
 
 # ---------------------------------------------------------------------------
@@ -103,10 +104,35 @@ class Verdict:
     * countermodel: JSON-able witness for REFUTED (shape is backend-specific
       but always a dict with a ``"kind"`` key), else ``None``.
     * proof: JSON-able proof object where the backend yields one, else None.
+      A ``"kind": "z3_unsat_core"`` or ``"kind": "cvc5_alethe"`` proof
+      carries an unsat CORE — sound (re-asserting just that subset is still
+      unsat) but not necessarily MINIMAL (the underlying solver is free to
+      track more than the smallest sufficient subset) — see
+      :func:`z3_relevant_premises` for the same caveat on the dedicated
+      premise-relevance query.
     * detail: short free-text note (method that closed it, bound that was
       hit, tried-backends summary, …).
     * agreement: backend names that reported the SAME status, filled by the
       portfolio layer; a single-backend verdict lists just its own.
+    * relevant_premises: 0-based indices into the caller's ``premises`` that
+      a premise-relevance query found necessary for a PROVED verdict (see
+      :func:`z3_relevant_premises`, :mod:`atp.tstp`'s ancestor walk, and
+      :mod:`atp.eprover_backend`'s ``eprover_relevant_premises``); ``None``
+      when nobody computed it (the default) — NOT a claim that every premise
+      was needed. Like ``proof``'s unsat core, a reported set is sound but
+      not guaranteed minimal.
+    * solver_version: the underlying external tool's own version string
+      (Vampire's/Prover9's/E's/Zipperposition's ``--version`` banner, the
+      reachable HETS server's ``GET /version`` text, the installed ``cvc5``
+      package's distribution version), captured once per process per
+      backend/binary and reported here unchanged — see
+      :meth:`ProverBackend.solver_version` and :func:`_binary_version` for
+      the memoization contract. ``None`` for the kit's own internal
+      backends (Z3/tableau/resolution/modelfinder/QML/…, which have no
+      external tool to version) and for an external backend whose version
+      lookup itself failed or found nothing (the tool's PROOF/DISPROOF
+      verdict is unaffected either way — a missing version string is never
+      grounds to downgrade a sound answer).
     """
 
     status: str
@@ -119,6 +145,9 @@ class Verdict:
     proof: Optional[dict] = None
     detail: Optional[str] = None
     agreement: Tuple[str, ...] = ()
+    relevant_premises: Optional[Tuple[int, ...]] = None
+    # New fields go last: positional construction by callers must keep working.
+    solver_version: Optional[str] = None
 
     def __post_init__(self):
         if self.status not in STATUSES:
@@ -149,6 +178,9 @@ class Verdict:
             "proof": self.proof,
             "detail": self.detail,
             "agreement": list(self.agreement),
+            "relevant_premises": (list(self.relevant_premises)
+                                  if self.relevant_premises is not None else None),
+            "solver_version": self.solver_version,
         }
 
 
@@ -196,6 +228,92 @@ class ProverBackend(ABC):
                timeout: int = 10000, **options) -> Verdict:
         """Decide ``premises ⊨ formula`` and return a :class:`Verdict`."""
 
+    def solver_version(self) -> Optional[str]:
+        """The underlying external tool's own version string, or ``None``.
+
+        Default (this base implementation): always ``None`` — the kit's own
+        internal calculi and semantic searches (Z3 aside: its Python BINDING
+        version is not "the solver's version" in the sense this method
+        means, and :class:`Z3Backend` does not override this) have no
+        external tool to version. An external backend overrides this with a
+        lookup that is PROCESS-LOCAL MEMOIZED (see :func:`_binary_version`
+        for the subprocess-spawning backends, and each override's own
+        docstring for the HETS/cvc5 routes) — probed at most once per
+        distinct binary/server/package for the life of this process, so
+        neither this method nor :meth:`decide` (which populates
+        ``Verdict.solver_version`` from it) ever pays a second lookup.
+        Never raises and never changes any verdict's status/reason — this
+        is provenance only, queried both from ``decide()`` and, independently,
+        from :func:`unicode_fol_kit.eval.batch.batch_decide`'s cache key (so
+        a solver upgrade invalidates stale cache entries).
+        """
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Solver-version provenance: a process-local memoized ``--version`` lookup,
+# shared by every subprocess-spawning backend below (Vampire, Prover9, and —
+# via atp.eprover_backend's own import of this function — E/Zipperposition).
+# HETS (an HTTP server, not a spawned binary) and cvc5 (a pip binding, not a
+# spawned binary) have their own analogous, separately-memoized routes in
+# their own modules (hets_backend.py, cvc5_backend.py) — see
+# ProverBackend.solver_version's docstring.
+# ---------------------------------------------------------------------------
+
+#: (command, use_wsl) -> the tool's version string, or None on a failed
+#: lookup — a MISS is cached too (never retried), matching item 5's "never
+#: spawn a subprocess per decide() call after the first" requirement.
+#: Deliberately separate from atp.eprover_backend._DISCOVERY_CACHE: discovery
+#: (does a binary exist at all?) and version (what does it print?) answer
+#: different questions and can fail independently — collapsing them into one
+#: cache would make a version-lookup failure look like the binary vanished,
+#: or vice versa.
+_VERSION_CACHE: Dict[Tuple[str, bool], Optional[str]] = {}
+
+
+def _binary_version(command: str, use_wsl: bool,
+                    args: Tuple[str, ...] = ("--version",)) -> Optional[str]:
+    """Process-local memoized ``<command> <args>`` version lookup.
+
+    Spawns the subprocess (through ``wsl.exe`` when ``use_wsl``) at most ONCE
+    per ``(command, use_wsl)`` pair for the life of this process; every
+    later call for the same pair — including one that failed — returns the
+    cached result without spawning again. On a ZERO exit, returns the first
+    non-blank line of stdout, falling back to stderr (some tools print
+    version banners there), stripped. ``None`` on any failure: binary
+    missing, a timeout, WSL unreachable, a non-zero exit — an unrecognized
+    flag commonly prints an error/usage line to stdout or stderr on a
+    non-zero exit, and accepting that text as a version string would be
+    worse than reporting no provenance at all (mirrors the returncode check
+    :func:`unicode_fol_kit.atp.eprover_backend._discover` already applies to
+    its own subprocess probe) — OR the banner not being valid text under
+    ``subprocess.run(..., text=True)``'s decoding (``UnicodeError``, e.g. a
+    tool that writes a non-UTF-8 locale-encoded byte in its ``--version``
+    output): decoding happens INSIDE ``subprocess.run`` here, so this is
+    caught exactly like any other failure to read the banner, never left to
+    propagate as a bare ``ValueError`` out of a caller's ``decide()``. This
+    is best-effort provenance, so nothing here ever raises or turns into an
+    ERROR verdict.
+    """
+    key = (command, use_wsl)
+    if key in _VERSION_CACHE:
+        return _VERSION_CACHE[key]
+
+    import subprocess
+
+    result: Optional[str] = None
+    try:
+        cmd = ["wsl.exe", command, *args] if use_wsl else [command, *args]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        if proc.returncode == 0:
+            text = (proc.stdout or "").strip() or (proc.stderr or "").strip()
+            if text:
+                result = text.splitlines()[0].strip()
+    except (OSError, subprocess.TimeoutExpired, UnicodeError):
+        result = None
+    _VERSION_CACHE[key] = result
+    return result
+
 
 def _implication(formula: Node, premises: Sequence[Node]) -> Node:
     """Fold ``premises ⊨ φ`` into the single formula ``(∧ premises) → φ``."""
@@ -215,12 +333,175 @@ def _timed(fn):
     return result, time.perf_counter() - start
 
 
+def _z3_nonempty_sort_axioms(formula: Node, premises: Sequence[Node]) -> list:
+    """``nonempty_sort_axioms(formula, *premises)``, each translated via ``to_z3()``.
+
+    Shared by :class:`Z3Backend` and :func:`z3_relevant_premises` so both
+    decide the exact same many-sorted entailment — see
+    :func:`_z3_track_and_check`'s ``z3_nonempty_sort_axioms`` parameter for
+    why these are added UNTRACKED rather than as more ``p<i>``-tagged
+    premises. Empty for an unsorted query.
+    """
+    from ..fol._msfl_nodes import nonempty_sort_axioms
+    return [axiom.to_z3() for axiom in nonempty_sort_axioms(formula, *premises)]
+
+
 # ---------------------------------------------------------------------------
 # Internal backends: the kit's own calculi and semantic searches
 # ---------------------------------------------------------------------------
 
+def _z3_track_and_check(z3_formula, z3_premises: Sequence, timeout: int,
+                        z3_nonempty_sort_axioms: Sequence = ()):
+    """Run ONE per-call Z3 ``Solver``, tracking every assertion by name.
+
+    Asserts ``Not(z3_formula)`` under the tag ``"goal"`` and each of
+    ``z3_premises`` under ``"p<i>"`` (0-based), via ``assert_and_track``,
+    with ``unsat_core=True`` set on THIS solver instance only — never
+    ``z3.set_param(proof=True)``, which is a process-wide global that would
+    change solving behaviour for every other Z3 consumer in the kit
+    (semantics evaluators, dl, chem, finite-model, modal/second/third-order
+    — anything sharing the module-level ``_SORT``/default context in
+    ``fol/_fol_nodes.py``) for the rest of the process.
+
+    ``z3_nonempty_sort_axioms`` (see
+    :func:`~unicode_fol_kit.fol._msfl_nodes.nonempty_sort_axioms`) are added
+    with a plain, UNTRACKED ``solver.add`` — they are background MSFOL
+    convention (every sort is non-empty), never one of the caller's own
+    premises, so they must never gain a ``p<i>`` tag: that would make an
+    untranslatable, caller-invisible synthetic sentence show up in
+    :class:`Z3Backend`'s ``proof`` unsat core or in
+    :func:`z3_relevant_premises`'s reported indices, which are defined purely
+    over the CALLER's own ``premises`` list. Empty (the default) for an
+    unsorted query, so the solver call is byte-for-byte the same as before
+    this parameter existed.
+
+    Built once and shared by :class:`Z3Backend` (C12: a per-verdict
+    ``z3_unsat_core`` proof certificate) and :func:`z3_relevant_premises`
+    (C11: which premises a PROVED entailment actually needed) so both read
+    the exact same assert-and-track call shape rather than drifting apart —
+    including, now, the identical non-emptiness axioms, so the two can never
+    disagree about whether a many-sorted entailment holds.
+
+    Returns ``(result, solver)`` — ``result`` is Z3's own
+    ``sat``/``unsat``/``unknown``; on ``unsat``, ``solver.unsat_core()``
+    holds the tracked-name subset Z3 actually used. That subset is SOUND
+    (re-asserting just it is still unsat) but not necessarily MINIMAL (Z3's
+    core extraction is not obliged to find the smallest one) — callers that
+    need "used" language should say "relevant"/"a sufficient subset", never
+    "the minimal set".
+    """
+    from z3 import Solver, Not as _ZNot, Bool
+
+    solver = Solver()
+    solver.set("timeout", timeout)
+    solver.set("random_seed", 42)
+    solver.set(unsat_core=True)
+    for axiom in z3_nonempty_sort_axioms:
+        solver.add(axiom)
+    for i, p in enumerate(z3_premises):
+        solver.assert_and_track(p, Bool(f"p{i}"))
+    solver.assert_and_track(_ZNot(z3_formula), Bool("goal"))
+    return solver.check(), solver
+
+
+def _z3_model_assignment(model, n_premises: int) -> Dict[str, str]:
+    """Read a satisfying ``z3.ModelRef`` back into a ``{name: value}`` dict.
+
+    ``assert_and_track``'s own tracking booleans (``"goal"``, ``"p0"``, …
+    — see :func:`_z3_track_and_check`) are themselves 0-ary Bool-sorted Z3
+    declarations, so they show up in ``model.decls()`` right alongside the
+    formula's real symbols and would otherwise leak into a REFUTED verdict's
+    witness as spurious extra keys. They are excluded here by declaration
+    shape, not by hoping for no name clash: a kit-level PREDICATE can never
+    collide (the parser only ever emits an uppercase-initial name for one —
+    see ``fol._identifiers``), and a kit-level CONSTANT named ``"goal"`` or
+    ``"p0"`` is never Bool-sorted (constants live in the uninterpreted sort
+    ``S`` — see ``Z3Env.get_symbol``), so only a genuine tracking tag is ever
+    both same-named AND Bool-sorted-arity-0 — the exact combination checked
+    below.
+    """
+    from z3 import BoolSort
+
+    tag_names = {"goal", *(f"p{i}" for i in range(n_premises))}
+    assignment = {}
+    for d in model.decls():
+        name = str(d.name())
+        if name in tag_names and d.arity() == 0 and d.range() == BoolSort():
+            continue
+        assignment[name] = str(model[d])
+    return assignment
+
+
+def z3_relevant_premises(formula: Node, premises: Sequence[Node] = (),
+                         timeout: int = 10000) -> Optional[Tuple[int, ...]]:
+    """Which of ``premises`` did Z3 actually need to prove ``⊨ formula``?
+
+    Runs the same :func:`_z3_track_and_check` per-``Solver`` assert-and-track
+    call :class:`Z3Backend` uses for its own ``proof`` certificate — including
+    the same many-sorted non-emptiness axioms when ``formula``/``premises``
+    use a sort (:func:`_z3_nonempty_sort_axioms`), so this always agrees with
+    :class:`Z3Backend` about whether the entailment holds — but reports only
+    the premise side of the core, as 0-based indices into ``premises`` (never
+    including the ``"goal"`` tag itself — the negated conclusion is always
+    "needed" trivially, so it carries no information about which PREMISES
+    were relevant; the non-emptiness axioms are untracked, so they can never
+    appear in the core either — see :func:`_z3_track_and_check`).
+
+    Args:
+        formula: the goal.
+        premises: candidate premises (same fragment ``Z3Backend``/
+            ``Node.to_z3`` decides — uninterpreted sort + equality, no
+            arithmetic; substructural nodes are outside it).
+        timeout: milliseconds, forwarded to the solver exactly as
+            ``Z3Backend.decide`` forwards its own ``timeout``.
+
+    Returns:
+        A sorted tuple of 0-based premise indices, or ``None`` when there is
+        nothing sound to report: the entailment does not hold (Z3 finds it
+        SAT or times out UNKNOWN — there is no "used premises" answer for a
+        non-theorem), or the fragment is unsupported (``to_z3`` raises
+        ``NotImplementedError`` on ``formula`` or any premise). ``None`` is
+        the honest "don't know" answer here, never a guessed subset.
+
+        The returned set is SOUND but not necessarily MINIMAL — see
+        :func:`_z3_track_and_check`'s docstring; a genuinely redundant
+        premise (one that, alone, already suffices) need not appear
+        alongside the other route to the same conclusion, but two premises
+        that are each independently sufficient are not guaranteed to be
+        pruned down to a single one either — only that the returned subset
+        itself is enough.
+    """
+    premises = list(premises)
+    try:
+        z3_formula = formula.to_z3()
+        z3_premises = [p.to_z3() for p in premises]
+        z3_nonempty = _z3_nonempty_sort_axioms(formula, premises)
+    except NotImplementedError:
+        return None
+
+    from z3 import unsat
+
+    res, solver = _z3_track_and_check(z3_formula, z3_premises, timeout, z3_nonempty)
+    if res != unsat:
+        return None
+    core = {str(tag) for tag in solver.unsat_core()}
+    indices = sorted(int(tag[1:]) for tag in core
+                     if tag != "goal" and tag.startswith("p") and tag[1:].isdigit())
+    return tuple(indices)
+
+
 class Z3Backend(ProverBackend):
-    """Classical FOL/MSFOL via Z3 — tri-state, with a model on refutation."""
+    """Classical FOL/MSFOL via Z3 — tri-state, with a model on refutation.
+
+    Many-sorted input: a sort's non-emptiness (the MSFOL convention — see
+    the classical-reasoning guide's many-sorted section) is asserted as an
+    extra, untracked, UNNEGATED premise alongside ``premises`` — see
+    :func:`_z3_nonempty_sort_axioms` and :func:`_z3_track_and_check` — never
+    folded inside ``Node.to_z3()`` itself, which stays polarity-blind. This
+    is what makes a REFUTED verdict's countermodel always a legal MSFOL
+    structure (no sort empty) instead of exploiting an empty-sort loophole
+    ``semantics.modelfinder`` never considers.
+    """
 
     name = "z3"
     logics = frozenset({"fol"})
@@ -231,28 +512,27 @@ class Z3Backend(ProverBackend):
 
     def decide(self, formula: Node, premises: Sequence[Node] = (),
                timeout: int = 10000, **options) -> Verdict:
-        from z3 import Solver, Not as _ZNot, sat, unsat
+        from z3 import sat, unsat
 
-        goal = _implication(formula, premises)
+        premises = list(premises)
         try:
-            z3_goal = goal.to_z3()
+            z3_formula = formula.to_z3()
+            z3_premises = [p.to_z3() for p in premises]
+            z3_nonempty = _z3_nonempty_sort_axioms(formula, premises)
         except NotImplementedError as exc:
             return Verdict(UNKNOWN, self.name, reason="unsupported", detail=str(exc))
 
-        def run():
-            solver = Solver()
-            solver.set("timeout", timeout)
-            solver.set("random_seed", 42)
-            solver.add(_ZNot(z3_goal))
-            res = solver.check()
-            return res, solver
-
-        (res, solver), elapsed = _timed(run)
+        (res, solver), elapsed = _timed(
+            lambda: _z3_track_and_check(z3_formula, z3_premises, timeout, z3_nonempty))
         if res == unsat:
-            return Verdict(PROVED, self.name, wall_time=elapsed)
+            # A tracked-name unsat core, per _z3_track_and_check's docstring:
+            # sound (re-asserting just these is still unsat, see the C12
+            # soundness self-check test) but not necessarily minimal.
+            core = sorted(str(tag) for tag in solver.unsat_core())
+            proof = {"kind": "z3_unsat_core", "core": core}
+            return Verdict(PROVED, self.name, wall_time=elapsed, proof=proof)
         if res == sat:
-            model = solver.model()
-            assignment = {str(d.name()): str(model[d]) for d in model.decls()}
+            assignment = _z3_model_assignment(solver.model(), len(z3_premises))
             return Verdict(REFUTED, self.name, wall_time=elapsed,
                            countermodel={"kind": "z3_model", "assignment": assignment})
         why = solver.reason_unknown()
@@ -395,7 +675,13 @@ class ModalTableauBackend(ProverBackend):
             return Verdict(UNKNOWN, self.name, logic="modal", reason="unsupported",
                            wall_time=elapsed,
                            detail="temporal closure operators (G/F/U/…) have no "
-                                  "tableau rule — use the qml or isabelle backend")
+                                  "tableau rule here for the kit's general Kripke "
+                                  "frame — for the STANDARD linear-time reading, "
+                                  "the 'ltl-tableau' backend (atp.ltl_tableau) is "
+                                  "a complete decision procedure and the "
+                                  "definitive route; 'qml' and 'isabelle' decide "
+                                  "the general (possibly non-linear) frame "
+                                  "instead, soundly but not completely")
         return Verdict(UNKNOWN, self.name, logic="modal", reason="bound_hit",
                        wall_time=elapsed,
                        detail="tableau budget exhausted (max_worlds/max_steps)")
@@ -444,6 +730,13 @@ class IsabelleBackend(ProverBackend):
     ``isabelle build`` (minutes of wall time), so it runs only when requested
     by name. ``ModalVerdict``/``FolVerdict`` map 1:1 onto :class:`Verdict`
     (their ``infra_error`` becomes reason="infra" detail on UNKNOWN).
+
+    The classical route decides with ``native_equality=True``: ``=`` is HOL
+    identity, as in every other backend's semantics. With the embedding's
+    uninterpreted ``feq`` a nitpick countermodel is one for FOL *without*
+    identity, so ``∀x (x = x)`` came back REFUTED. Passing
+    ``native_equality=False`` is refused for that reason. The modal route is
+    unaffected: the Kripke evaluator reads ``s = t`` as an ordinary atom.
     """
 
     name = "isabelle"
@@ -465,7 +758,14 @@ class IsabelleBackend(ProverBackend):
             verdict, elapsed = _timed(lambda: isabelle_decide_modal(goal, **options))
         else:
             from ..hol.isabelle_runner import isabelle_decide_fol
-            verdict, elapsed = _timed(lambda: isabelle_decide_fol(goal, **options))
+            if not options.pop("native_equality", True):
+                raise ValueError(
+                    "isabelle backend: native_equality=False would decide FOL without "
+                    "identity (uninterpreted feq), so a REFUTED verdict could contradict "
+                    "every other backend; call hol.isabelle_runner.isabelle_decide_fol "
+                    "directly for that reading.")
+            verdict, elapsed = _timed(
+                lambda: isabelle_decide_fol(goal, native_equality=True, **options))
 
         if verdict.status == "valid":
             return Verdict(PROVED, self.name, logic=logic, wall_time=elapsed,
@@ -496,6 +796,22 @@ class Prover9Backend(ProverBackend):
     def available(self) -> bool:
         return self._binary() is not None
 
+    def solver_version(self) -> Optional[str]:
+        """Prover9's ``--version`` banner (first line), for whichever binary
+        discovery (``$UFK_PROVER9``/PATH) resolves to right now — the same
+        default :meth:`available` uses. Memoized per binary for the life of
+        the process via :func:`_binary_version`. ``None`` when no binary is
+        currently discoverable; a per-call ``prover9_path=`` override is
+        reflected in THAT call's own ``Verdict.solver_version`` (see
+        :meth:`decide`), not here — see :func:`_binary_version`'s
+        module-level docstring section for why this method answers for the
+        default binary only.
+        """
+        path = self._binary()
+        if path is None:
+            return None
+        return _binary_version(path, False)
+
     def decide(self, formula: Node, premises: Sequence[Node] = (),
                timeout: int = 10000, **options) -> Verdict:
         from .prover9_entailment import check_logical_entailment
@@ -504,16 +820,21 @@ class Prover9Backend(ProverBackend):
         if path is None:
             raise BackendUnavailable(
                 "prover9: no binary found (set $UFK_PROVER9 or put 'prover9' on PATH)")
+        solver_version = _binary_version(path, False)
         try:
             proved, elapsed = _timed(
                 lambda: check_logical_entailment(list(premises), formula, path))
         except NotImplementedError as exc:
-            return Verdict(UNKNOWN, self.name, reason="unsupported", detail=str(exc))
+            return Verdict(UNKNOWN, self.name, reason="unsupported",
+                           solver_version=solver_version, detail=str(exc))
         except OSError as exc:
-            return Verdict(ERROR, self.name, reason="infra", detail=str(exc))
+            return Verdict(ERROR, self.name, reason="infra",
+                           solver_version=solver_version, detail=str(exc))
         if proved:
-            return Verdict(PROVED, self.name, wall_time=elapsed)
+            return Verdict(PROVED, self.name, wall_time=elapsed,
+                           solver_version=solver_version)
         return Verdict(UNKNOWN, self.name, reason="incomplete", wall_time=elapsed,
+                       solver_version=solver_version,
                        detail="Prover9 found no proof (its exit does not certify invalidity)")
 
 
@@ -544,6 +865,26 @@ class VampireBackend(ProverBackend):
     def available(self) -> bool:
         return self._binary() is not None
 
+    def solver_version(self) -> Optional[str]:
+        """Vampire's ``--version`` banner (first line), for whichever binary
+        discovery (``$UFK_VAMPIRE``/PATH, ``$UFK_VAMPIRE_WSL``) resolves to
+        right now — the same default :meth:`available` uses. Memoized per
+        ``(binary, use_wsl)`` for the life of the process via
+        :func:`_binary_version`. ``None`` when no binary is currently
+        discoverable; a per-call ``vampire_path=``/``use_wsl=`` override is
+        reflected in THAT call's own ``Verdict.solver_version`` (see
+        :meth:`decide`), not here — see :func:`_binary_version`'s
+        module-level docstring section for why this method answers for the
+        default binary only.
+        """
+        import os
+
+        path = self._binary()
+        if path is None:
+            return None
+        use_wsl = os.environ.get("UFK_VAMPIRE_WSL") == "1"
+        return _binary_version(path, use_wsl)
+
     def decide(self, formula: Node, premises: Sequence[Node] = (),
                timeout: int = 10000, **options) -> Verdict:
         import os
@@ -554,19 +895,22 @@ class VampireBackend(ProverBackend):
             raise BackendUnavailable(
                 "vampire: no binary found (set $UFK_VAMPIRE or put 'vampire' on PATH)")
         use_wsl = options.pop("use_wsl", os.environ.get("UFK_VAMPIRE_WSL") == "1")
+        solver_version = _binary_version(path, use_wsl)
         try:
             result, elapsed = _timed(lambda: check_entailment_vampire_detailed(
                 list(premises), formula, path,
                 timeout=max(1, timeout // 1000), use_wsl=use_wsl))
         except NotImplementedError as exc:
-            return Verdict(UNKNOWN, self.name, reason="unsupported", detail=str(exc))
+            return Verdict(UNKNOWN, self.name, reason="unsupported",
+                           solver_version=solver_version, detail=str(exc))
         except OSError as exc:
-            return Verdict(ERROR, self.name, reason="infra", detail=str(exc))
+            return Verdict(ERROR, self.name, reason="infra",
+                           solver_version=solver_version, detail=str(exc))
         status, reason, szs = result["status"], result["reason"], result["szs_status"]
         detail = (f"SZS status {szs}" if szs is not None
                   else "no SZS status line in Vampire's output")
         return Verdict(status, self.name, reason=reason, szs_status=szs,
-                       wall_time=elapsed,
+                       wall_time=elapsed, solver_version=solver_version,
                        proof=result["derivation"] if status == PROVED else None,
                        detail=detail)
 
@@ -613,13 +957,21 @@ from .eprover_backend import EProverBackend, ZipperpositionBackend  # noqa: E402
 from .hets_backend import HetsBackend          # noqa: E402
 from .kripke_enum import KripkeEnumBackend     # noqa: E402
 from .leo3_backend import Leo3Backend          # noqa: E402
+from .ltl_tableau import LtlTableauBackend     # noqa: E402
 from .minizinc_backend import MinizincBackend  # noqa: E402
 from .nanocop_backend import NanocopBackend    # noqa: E402
 from .twee_backend import TweeBackend          # noqa: E402
+# Five individually-reasoned per-logic adapters (C10) — see logic_backends'
+# module docstring for why these are NOT a uniform bulk registration.
+from .logic_backends import (                  # noqa: E402
+    IntBackend, LambekBackend, IllBackend, RelevantBackend, HybridBackend,
+)
 
 for _b in (ClingoBackend(), Cvc5Backend(), EProverBackend(), HetsBackend(),
-           KripkeEnumBackend(), Leo3Backend(), MinizincBackend(),
-           NanocopBackend(), TweeBackend(), ZipperpositionBackend()):
+           KripkeEnumBackend(), Leo3Backend(), LtlTableauBackend(), MinizincBackend(),
+           NanocopBackend(), TweeBackend(), ZipperpositionBackend(),
+           IntBackend(), LambekBackend(), IllBackend(), RelevantBackend(),
+           HybridBackend()):
     register_backend(_b)
 
 
@@ -649,9 +1001,20 @@ def available_backends(logic: Optional[str] = None) -> Tuple[str, ...]:
 # tableau reports those unsupported, qml is proof-only), and its bounded
 # enumeration settles the refutation side before qml's Z3 call can burn its
 # full timeout failing to prove an invalid goal.
+#
+# The five substructural/non-classical entries (C10) are each a SINGLETON
+# chain: every one of these logics currently has exactly one decision route
+# in the kit, so there is no actual "portfolio race" to order here (unlike
+# "fol"/"modal" above) — see logic_backends' module docstring for why these
+# five are individually-reasoned adapters, not a uniform bulk registration.
 _DEFAULT_CHAINS = {
     "fol": ("z3", "tableau", "resolution", "modelfinder"),
     "modal": ("modal-tableau", "kripke-enum", "qml"),
+    "intuitionistic": ("intuitionistic",),
+    "lambek": ("lambek",),
+    "ill": ("ill",),
+    "relevant": ("relevant",),
+    "hybrid": ("hybrid",),
 }
 
 

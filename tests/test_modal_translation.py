@@ -349,3 +349,31 @@ def test_lambda_rejected():
     """A lambda node raises NotImplementedError."""
     with pytest.raises(NotImplementedError):
         standard_translation(Lambda(LambdaVar("x"), P))
+
+
+# ---------------------------------------------------------------------------
+# A propositional atom named like an accessibility relation (R, T, N, D, or an
+# agent-indexed Rk_/Rb_/Rs_/Rw_ name) used to become that relation once the
+# world argument was appended — R(w) next to the binary R(w, v) — and crashed
+# Z3. It is now renamed with a trailing U+00B7; expected values by hand.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("text,expected", [
+    ("□R → □R", True),
+    ("R → ◇R", False),      # a dead end refutes it
+    ("R → □R", False),      # a successor where R fails refutes it
+    ("□(N → N)", True),
+])
+def test_atom_named_like_a_relation_is_decided_not_crashed(text, expected):
+    from unicode_fol_kit.fol.modal_translation import hybrid_is_valid
+    from unicode_fol_kit.fol.msflparser import MSFLParser
+    assert hybrid_is_valid(MSFLParser(modal=True).parse(text)) is expected
+
+
+def test_only_colliding_atoms_are_renamed():
+    from unicode_fol_kit.fol.msflparser import MSFLParser
+    parse = MSFLParser(modal=True).parse
+    assert standard_translation(parse("R → ◇R"), world="w").to_unicode_str() == \
+        "R·(w) → ∃w0 (R(w, w0) ∧ R·(w0))"
+    assert standard_translation(parse("P → ◇P"), world="w").to_unicode_str() == \
+        "P(w) → ∃w0 (R(w, w0) ∧ P(w0))"

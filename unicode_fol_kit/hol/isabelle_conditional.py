@@ -74,6 +74,7 @@ from ..fol.nodes import (
     Variable, Quantifier,
 )
 from .deepshallow._common import AtomConsts, theory_name_ok
+from ._ho_common import ThfNames
 from ..semantics.conditional import CENTERING_LEVELS, check_centering  # noqa: F401
 
 #: The Isabelle type of an embedded formula: a predicate on worlds.
@@ -332,3 +333,220 @@ def isabelle_conditional_theory(formula: Node, *,
     body.append("")
     body.append("end")
     return "\n".join(body) + "\n"
+
+
+# --------------------------------------------------------------------------
+# THF
+# --------------------------------------------------------------------------
+#
+# The THF sibling of the theory above: the same shallow embedding over the
+# sphere system ``Sel``, for a higher-order ATP (Leo-III, Vampire-THF,
+# Satallax) instead of Isabelle. ``Sel : w > (w>$o) > $o`` is a legal TH0
+# uninterpreted constant -- :mod:`unicode_fol_kit.hol.thf_modal`'s
+# ``muntil``/``msince`` already quantify over an identically-shaped ``mu>$o``
+# variable, so this needs no new expressiveness from TH0, just a
+# differently-typed free symbol. ``nested``/the chosen centering premise stay
+# PREMISES of the conjecture rather than axioms, for the same reason they stay
+# premises on the Isabelle side (see the module docstring).
+#
+# TWO differences from a line-for-line transcription of ``_PREAMBLE``, both
+# for the same reason (measured by hand with a battery of THF micro-examples
+# in the scratchpad -- see the matching comment in isabelle_relevant.py, whose
+# THF side hit the identical issue first):
+#
+# 1. ``nested``/``weakly_centered``/``strongly_centered`` are declared NULLARY
+#    (``$o``, not ``(w>(w>$o)>$o) > $o``) and characterised by a ``<=>``
+#    biconditional that mentions ``sel`` DIRECTLY, rather than as a schema
+#    parameterised over an arbitrary sphere-function ``Sp`` (the Isabelle
+#    side's ``sph => bool``, applied to ``Sel`` only at use). This embedding
+#    only ever needs them applied to the ONE fixed ``sel`` constant, so
+#    nothing is lost by stating that instance directly; what is gained is that
+#    unfolding a nullary ``<=>`` is ordinary clausification, while unfolding a
+#    ``=``-defined, then-applied function value needs higher-order
+#    superposition Vampire's default portfolio did not close in 60s even for
+#    trivial goals.
+# 2. ``NegC``/``AndC``/``OrC``/``ImpC``/``IffC``/``CondC`` are not
+#    freestanding combinators :func:`_thf_encode` would APPLY to
+#    already-built ``tau`` terms; :func:`_thf_encode` instead THREADS the
+#    current world through the recursion and renders ``φ`` at that world
+#    directly with native THF ``&``/``|``/``~``/``=>``/``<=>`` (only
+#    ``CondC``'s own ``?[S:w>$o]``/``![S:w>$o]`` sphere quantifiers are
+#    genuinely higher-order, and a BOUND variable applied to an argument needs
+#    no reduction, unlike a NAMED combinator that must first be unfolded).
+# Both changes are meaning-preserving -- the same shallow truth conditions,
+# just not indirected through a rewrite Vampire's default strategy struggled
+# to perform -- and mirror isabelle_relevant.py's own THF side exactly.
+
+#: The embedding's own functors, pre-claimed so no user atom's THF stem can
+#: collide with them (see hol._ho_common.ThfNames).
+_THF_RESERVED = ("w", "sel", "nested", "weakly_centered", "strongly_centered")
+
+_THF_PRELUDE = [
+    "% Lewis counterfactual conditionals (box-arrow / diamond-arrow) -> THF.",
+    "% Shallow embedding: a formula is true/false AT A WORLD, over the",
+    "% similarity ordering `sel`; `nested` and the chosen centering level are",
+    "% PREMISES of the conjecture, never axioms -- see isabelle_conditional.py's",
+    "% module docstring, _PREAMBLE, and the comment above _THF_PRELUDE for why",
+    "% nested/weakly_centered/strongly_centered are stated directly of `sel`",
+    "% and the connectives are inlined at each world rather than routed",
+    "% through separately-declared NegC/AndC/OrC/ImpC/IffC/CondC combinators.",
+    "thf(w_type, type, ( w : $tType )).",
+    "thf(sel_type, type, ( sel : w > ( w > $o ) > $o )).",
+    "thf(nested_type, type, ( nested : $o )).",
+    "thf(nested_def, definition, ( nested <=> "
+    "( ! [X: w, S: w > $o, T: w > $o] : "
+    "( ( ( sel @ X @ S ) & ( sel @ X @ T ) ) => "
+    "( ( ! [U: w] : ( ( S @ U ) => ( T @ U ) ) ) "
+    "| ( ! [U: w] : ( ( T @ U ) => ( S @ U ) ) ) ) ) ) )).",
+    "thf(weakly_centered_type, type, ( weakly_centered : $o )).",
+    "thf(weakly_centered_def, definition, ( weakly_centered <=> "
+    "( ! [X: w] : "
+    "( ( ? [S: w > $o] : ( ( sel @ X @ S ) & ( S @ X ) ) ) "
+    "& ( ! [S: w > $o] : ( ( sel @ X @ S ) => "
+    "( ( ? [U: w] : ( S @ U ) ) => ( S @ X ) ) ) ) ) ) )).",
+    "thf(strongly_centered_type, type, ( strongly_centered : $o )).",
+    "thf(strongly_centered_def, definition, ( strongly_centered <=> "
+    "( ! [X: w] : ( sel @ X @ ( ^ [U: w] : ( U = X ) ) ) ) )).",
+]
+
+#: Level -> the extra THF premise, or ``None`` for Lewis's bare V (no premise).
+#: ``nested``/``weakly_centered``/``strongly_centered`` are nullary here (see
+#: the comment above ``_THF_PRELUDE``), so unlike ``_CENTERING_PREMISE`` the
+#: premise names carry no ``@ sel``.
+_THF_CENTERING_PREMISE: Dict[str, Optional[str]] = {
+    "none": None,
+    "weak": "weakly_centered",
+    "strong": "strongly_centered",
+}
+
+
+def _thf_would_at(left: Node, right: Node, world: str,
+                  names: ThfNames, depth: int) -> str:
+    """The world-threaded rendering of ``left □→ right`` (CondC) at ``world``.
+
+    CondC's own case split (:func:`_encode`'s ``Would`` clause via
+    ``_CONNECTIVES``, unchanged): some sphere of ``world`` permits ``left``
+    and has ``right`` throughout its ``left``-worlds, or no sphere of
+    ``world`` holds a ``left``-world at all (the vacuous case). ``S``/``U``
+    are named from ``depth`` for the same reason
+    :func:`unicode_fol_kit.hol.isabelle_relevant._thf_implies_at`'s ``Y``/``Z``
+    are: sibling ``□→`` nodes may reuse the token freely, while a
+    NESTED one (reached through ``left``/``right``, always recursed at
+    ``depth + 1``) never reuses an ancestor's.
+
+    Also for the same reason ``_thf_implies_at`` gives: this deliberately
+    parallels :mod:`unicode_fol_kit.hol.ho_modal`'s plain ``f"W{depth}"`` world
+    binders, not :func:`~unicode_fol_kit.hol._ho_common.bound_token`, which
+    renames a USER-level binder apart from other same-named user binders in
+    scope -- a case that cannot arise here, since :func:`_thf_encode` rejects
+    every node with a user-level binder (``Quantifier``/``Variable``) before
+    reaching a ``Would``. ``S{depth}``/``U{depth}`` name this embedding's OWN
+    sphere/world quantifiers, the same role ``ho_modal.py``'s ``W{depth}``
+    plays for its own.
+    """
+    s, u = f"S{depth}", f"U{depth}"
+    left_at_u = _thf_encode(left, u, names, depth + 1)
+    right_at_u = _thf_encode(right, u, names, depth + 1)
+    nonvacuous = (f"( ? [{s}: w > $o] : "
+                  f"( ( sel @ {world} @ {s} ) "
+                  f"& ( ? [{u}: w] : ( ( {s} @ {u} ) & {left_at_u} ) ) "
+                  f"& ( ! [{u}: w] : ( ( {s} @ {u} ) => "
+                  f"( {left_at_u} => {right_at_u} ) ) ) ) )")
+    vacuous = (f"( ! [{s}: w > $o] : ( ( sel @ {world} @ {s} ) => "
+               f"( ! [{u}: w] : ( ( {s} @ {u} ) => ( ~ {left_at_u} ) ) ) ) )")
+    return f"( {nonvacuous} | {vacuous} )"
+
+
+def _thf_encode(formula: Node, world: str, names: ThfNames, depth: int = 0) -> str:
+    """Recursive worker for :func:`to_thf_conditional`: ``formula`` rendered TRUE AT ``world``.
+
+    Mirrors :func:`_encode`'s own recursion (same refusals, same ``Xor``/
+    ``Might`` desugaring) but threads ``world`` instead of building a
+    free-standing ``tau`` term -- see the comment above ``_THF_PRELUDE``.
+    """
+    if isinstance(formula, Atom):
+        if not _atom_is_propositional(formula):
+            raise NotImplementedError(
+                "to_thf_conditional: atom with a free variable is first-order; "
+                "the sphere embedding is propositional.")
+        functor = names.functor("predicate", formula.to_unicode_str())
+        return f"( {functor} @ {world} )"
+    if isinstance(formula, (Quantifier, Variable)):
+        raise NotImplementedError(
+            "to_thf_conditional: quantifiers/variables are first-order; the "
+            "sphere embedding is propositional.")
+    if isinstance(formula, Not):
+        return f"( ~ {_thf_encode(formula.formula, world, names, depth)} )"
+    if isinstance(formula, And):
+        return (f"( {_thf_encode(formula.left, world, names, depth)} & "
+                f"{_thf_encode(formula.right, world, names, depth)} )")
+    if isinstance(formula, Or):
+        return (f"( {_thf_encode(formula.left, world, names, depth)} | "
+                f"{_thf_encode(formula.right, world, names, depth)} )")
+    if isinstance(formula, Implies):
+        return (f"( {_thf_encode(formula.left, world, names, depth)} => "
+                f"{_thf_encode(formula.right, world, names, depth)} )")
+    if isinstance(formula, Iff):
+        return (f"( {_thf_encode(formula.left, world, names, depth)} <=> "
+                f"{_thf_encode(formula.right, world, names, depth)} )")
+    if isinstance(formula, Xor):
+        return (f"( ~ ( {_thf_encode(formula.left, world, names, depth)} <=> "
+                f"{_thf_encode(formula.right, world, names, depth)} ) )")
+    if isinstance(formula, Would):
+        return _thf_would_at(formula.left, formula.right, world, names, depth)
+    if isinstance(formula, Might):
+        # ◇→ is the dual ¬(A □→ ¬B) -- no case of its own, matching
+        # _encode's derivation of it exactly.
+        return f"( ~ {_thf_would_at(formula.left, Not(formula.right), world, names, depth)} )"
+    raise NotImplementedError(
+        f"to_thf_conditional: unsupported node type "
+        f"{type(formula).__name__}. The sphere semantics reads a similarity "
+        "ordering, not an accessibility relation, so the modal operators "
+        "belong to hol.thf_modal instead.")
+
+
+def to_thf_conditional(formula: Node, *, centering: str = "weak") -> str:
+    r"""Emit a self-contained THF (TH0) problem asserting ``formula``'s counterfactual validity.
+
+    The THF sibling of :func:`isabelle_conditional_theory`: the same shallow
+    embedding over the sphere system ``Sel``, for a higher-order ATP (Leo-III,
+    Vampire-THF, Satallax) instead of Isabelle. The conjecture is
+    ``nested => <centering premise> => ![X:w] : φ_at(X)`` -- validity over
+    every nested sphere system meeting the requested centering level, matching
+    :func:`isabelle_conditional_theory`'s goal and
+    :func:`unicode_fol_kit.semantics.conditional.cf_valid` (see the comment
+    above ``_THF_PRELUDE`` for why ``φ_at(X)`` is rendered inline rather than
+    as a combinator applied to ``X``, and why the centering premises are
+    nullary). As elsewhere in the toolkit, this function only emits the
+    problem; it does not run a prover.
+
+    Args:
+        formula: the AST node to encode -- ``¬ ∧ ∨ → ↔ □→ ◇→`` over nullary
+            propositional atoms (``Xor`` desugars to ``¬(A ↔ B)``, ``◇→`` to
+            ``¬(A □→ ¬B)``, exactly as :func:`to_isabelle_conditional` derives
+            them).
+        centering: ``"none"`` (V) / ``"weak"`` (VW, default) / ``"strong"``
+            (VC) -- see :func:`isabelle_conditional_theory`. The default
+            matches :func:`~unicode_fol_kit.semantics.conditional.cf_valid`'s.
+
+    Raises:
+        ValueError: on an unknown ``centering`` level.
+        NotImplementedError: propagated from :func:`_thf_encode` -- a
+            quantifier, a first-order atom, or a modal operator, mirroring
+            :func:`to_isabelle_conditional`'s own refusal.
+    """
+    check_centering(centering)
+    names = ThfNames(reserved=_THF_RESERVED)
+    body = _thf_encode(formula, "X", names)
+    lines = list(_THF_PRELUDE)
+    for label in sorted({atom.to_unicode_str() for atom in formula.atoms()}):
+        functor = names.functor("predicate", label)
+        lines.append(f"thf({functor}_type, type, ( {functor} : w > $o )).")
+    conclusion = f"( ! [X: w] : {body} )"
+    extra = _THF_CENTERING_PREMISE[centering]
+    if extra is None:
+        goal_body = f"( nested => {conclusion} )"
+    else:
+        goal_body = f"( nested => ( {extra} => {conclusion} ) )"
+    lines.append(f"thf(goal, conjecture, {goal_body}).")
+    return "\n".join(lines) + "\n"

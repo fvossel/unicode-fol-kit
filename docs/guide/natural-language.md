@@ -454,3 +454,64 @@ conservative extension of classical FOL: it reinterprets the connectives, and it
 rejects the comparison atoms (`μ(x,d) > μ(y,d)`, `|…| > …`) and the classical conjunction
 that `Contrast` and the counting encoding rely on. Admitting them there would produce
 parse-only nodes with no truth semantics, so a clean rejection is the honest boundary.
+
+## ACE: verbalizing modal/deontic formulas as controlled English (ACE-7)
+
+{doc}`interoperability` covers the full Attempto Controlled English (ACE) pipeline —
+`unicode_fol_kit.ace`, driven through the external APE parser. This section covers just
+its modal/deontic REVERSE direction: turning a `Box`/`Diamond`/`Obligatory`/`Permitted`
+formula back into ACE text, on top of the classical `formula_to_ace`/`drs_to_ace`
+machinery ACE-6 already provides.
+
+`unicode_fol_kit.ace.reverse_modal.fol_to_modal_drs` recognizes exactly the two shapes
+ACE's modal surface can carry — Attempto's own reading puts the modal auxiliary INSIDE
+the verb phrase ("John **must** wait."), never as a sentence-level paraphrase:
+
+- a modality wrapping a WHOLE formula (`ModalBox`) — "John must wait.";
+- a modality nested in a duplex's CONSEQUENT (`ModalImpl`) — "Every man must wait.",
+  which the verbalizer renders as the equivalent if-then donkey surface, the same relation
+  classical ACE-6 duplexes already have between Attempto's own phrasing and the kit's:
+
+```python
+from unicode_fol_kit import MSFLParser
+from unicode_fol_kit.ace import modal_formula_to_ace, modal_ace_round_trip
+
+modal = MSFLParser(modal=True)
+
+f = modal.parse("□∃e1 Wait(e1, john)")
+modal_formula_to_ace(f).text
+# → 'John must wait.'
+
+g = modal.parse("∀x1 (Man(x1) → □∃e1 Wait(e1, x1))")
+modal_formula_to_ace(g).text
+# → 'If there is a man X1 then X1 must wait.'
+
+trip = modal_ace_round_trip(f)     # formula → ACE → APE → formula, live
+trip.equivalent                    # → True
+```
+
+`modal_ace_round_trip` judges the loop with
+{func}`~unicode_fol_kit.eval.equivalence.equivalent` rather than raw Z3: a modal `Node`
+has no direct Z3 export, and `equivalent` already routes a modal pair through the modal
+tableau (propositional fragment) or the QML embedding (quantified, as here) — see
+{doc}`quantified-modal` for that machinery. Every OTHER modal placement — mixed with a
+classical conjunct, nested inside another modality, sitting in a duplex's antecedent
+instead of its consequent — is refused by the same message `drt.reverse.fol_to_drs`
+already gives a bare modal node it does not expect, since the reverse translator falls
+straight through to that classical route unchanged. Question and command generation stay
+deferred, matching the forward direction's own documented scope.
+
+The modal auxiliary itself only ever attaches to an EVENT-anchored verb clause (that is
+where "must"/"can"/"should"/"may" sits in the ACE surface), so a modal box whose sole
+clause would instead come from a bare noun introduction, a predicative constant, an
+equality or a comparative is refused by name rather than silently losing the modality:
+
+```python
+modal_formula_to_ace(modal.parse("□Man(john)"))
+# → AceVerbalizationError: drs_to_ace: a modal box with 1 clause(s) under its
+#   modality is outside the probed ACE fragment — only a single verb clause
+#   has been measured under a modal auxiliary ('must'/'can'/'should'/'may')
+```
+
+Without this check `"John is a man."` would come back for `□Man(john)` with no trace of
+"must" — verbalizable-looking but no longer equivalent to the source formula.

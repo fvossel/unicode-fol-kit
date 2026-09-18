@@ -54,8 +54,13 @@ pytest.importorskip("clingo")
 from unicode_fol_kit.fol._fol_nodes import (
     Atom, And, Or, Not, Implies, Quantifier, Variable, Constant, Cardinality, Contrast,
 )
+from unicode_fol_kit.fol._so_nodes import SecondOrderQuantifier
 from unicode_fol_kit.semantics.nonmonotonic import minimal_models
-from unicode_fol_kit.semantics.asp_models import asp_minimal_models, asp_find_model
+from unicode_fol_kit.semantics.asp_models import (
+    asp_minimal_models, asp_find_model,
+    _AspEncoder, _so_quantifier_chain,
+)
+from unicode_fol_kit.semantics.modelfinder import _Signature
 from unicode_fol_kit.semantics.tarski import Structure
 
 A, B, C = Constant("a"), Constant("b"), Constant("c")
@@ -361,3 +366,157 @@ class TestFragmentGateAndValidation:
             assert "size" in str(e)
         else:
             raise AssertionError("expected ValueError for size=True")
+
+
+# =============================================================================
+# roadmap C24 -- the single-block second-order machinery this module adds
+# (asp_holds_so, emit_fixed_facts, _so_quantifier_chain) is exercised
+# end-to-end, differentially against secondorder.satisfies_so, in
+# tests/test_asp_so.py. This section covers the lower-level pieces this file
+# already owns: emit_fixed_facts pinning ground facts by hand (not just
+# through asp_holds_so's own solve), and _so_quantifier_chain's return shape.
+# =============================================================================
+
+class TestSoQuantifierChain:
+    def test_no_second_order_quantifier_returns_none(self):
+        assert _so_quantifier_chain(Atom("P", (A,))) == (None, [])
+
+    def test_single_node_chain(self):
+        node = SecondOrderQuantifier("∃", "P", 1, Atom("P", (A,)))
+        block_type, chain = _so_quantifier_chain(node)
+        assert block_type == "exists"
+        assert chain == [node]
+
+    def test_two_level_forall_chain_in_outer_to_inner_order(self):
+        # Mirrors circumscription_formula's own shape with two circumscribed
+        # predicates: SOQ(∀,P1,SOQ(∀,P2,body)).
+        inner = SecondOrderQuantifier("∀", "P2", 1, Atom("P2", (A,)))
+        outer = SecondOrderQuantifier("∀", "P1", 1, inner)
+        block_type, chain = _so_quantifier_chain(outer)
+        assert block_type == "forall"
+        assert chain == [outer, inner]  # outer-to-inner, not the reverse
+
+    def test_mixed_polarity_raises(self):
+        node = SecondOrderQuantifier("∀", "P", 1,
+                                     SecondOrderQuantifier("∃", "Q", 1, Atom("P", (A,))))
+        try:
+            _so_quantifier_chain(node)
+        except ValueError as e:
+            assert "∀" in str(e) and "∃" in str(e)
+        else:
+            raise AssertionError("expected ValueError for mixed polarity")
+
+
+class TestEmitFixedFacts:
+    """Direct (non-solving) checks that emit_fixed_facts pins the RIGHT ground
+    facts for the fixed part and leaves the SO-bound name(s) as a free choice
+    -- read the generated program text by hand rather than going through a
+    full asp_holds_so solve, so a wrong program shape cannot hide behind a
+    coincidentally-correct final boolean.
+    """
+
+    def test_fixed_predicate_becomes_ground_facts_not_a_choice(self):
+        sig = _Signature()
+        sig.predicates = {("P", 1), ("Q", 1)}
+        enc = _AspEncoder(2)
+        enc.declare_signature(sig)
+        structure = Structure((0, 1), predicates={("Q", 1): {(0,)}})
+        index_of = {0: 0, 1: 1}
+        enc.emit_fixed_facts(structure, index_of, free_predicates={("P", 1)})
+        program = "\n".join(enc.rules)
+        q_asp = enc.pred_asp[("Q", 1)]
+        p_asp = enc.pred_asp[("P", 1)]
+        # Q is fixed: exactly the one ground fact for index 0, and no choice
+        # rule (no '{' brace) for q_asp anywhere in the program.
+        assert f"{q_asp}(0)." in program
+        assert f"{{{q_asp}" not in program
+        # P is the SO-bound name: a free choice rule, no ground fact for it.
+        assert f"{{{p_asp}(" in program
+        assert f"{p_asp}(0)." not in program and f"{p_asp}(1)." not in program
+
+    def test_fixed_constant_and_function_are_pinned(self):
+        sig = _Signature()
+        sig.constants = {"a"}
+        sig.functions = {("f", 1)}
+        enc = _AspEncoder(2)
+        enc.declare_signature(sig)
+        structure = Structure((0, 1), constants={"a": 1}, functions={("f", 1): {(0,): 1, (1,): 0}})
+        index_of = {0: 0, 1: 1}
+        enc.emit_fixed_facts(structure, index_of, free_predicates=set())
+        program = "\n".join(enc.rules)
+        k_asp = enc.const_asp["a"]
+        f_asp = enc.func_asp[("f", 1)]
+        assert f"{k_asp}(1)." in program
+        assert f"{f_asp}(0,1)." in program and f"{f_asp}(1,0)." in program
+        # Pinned, not chosen: no '1 { ... } 1' choice rule for either.
+        assert f"1 {{ {k_asp}" not in program
+        assert f"1 {{ {f_asp}" not in program
+
+    def test_arity_zero_predicate_pinned_by_presence_or_absence_of_fact(self):
+        sig = _Signature()
+        sig.predicates = {("Flag", 0)}
+        enc_true = _AspEncoder(1)
+        enc_true.declare_signature(sig)
+        enc_true.emit_fixed_facts(Structure((0,), predicates={("Flag", 0): True}), {0: 0}, set())
+        flag_asp = enc_true.pred_asp[("Flag", 0)]
+        assert f"{flag_asp}." in "\n".join(enc_true.rules)
+
+        enc_false = _AspEncoder(1)
+        enc_false.declare_signature(sig)
+        enc_false.emit_fixed_facts(Structure((0,), predicates={("Flag", 0): False}), {0: 0}, set())
+        assert f"{flag_asp}." not in "\n".join(enc_false.rules)
+
+    def test_undeclared_order_comparison_pins_the_numeric_relation(self):
+        # Regression for the C24 review finding: a structure that declares NO
+        # extension for '<' must NOT be pinned to the empty relation here --
+        # tarski._order_value's third reading (both operands are numbers)
+        # still applies, so on a numeric domain '<' must come out as the
+        # REAL '<' relation between the domain's own individuals, not empty.
+        sig = _Signature()
+        sig.predicates = {("<", 2)}
+        enc = _AspEncoder(3)
+        enc.declare_signature(sig)
+        structure = Structure((0, 1, 2))  # no predicates at all -- '<' undeclared
+        index_of = {0: 0, 1: 1, 2: 2}
+        enc.emit_fixed_facts(structure, index_of, free_predicates=set())
+        program = "\n".join(enc.rules)
+        lt_asp = enc.pred_asp[("<", 2)]
+        # Hand-derived: 0<1, 0<2, 1<2 hold; the 6 other ordered pairs (incl.
+        # every (x,x)) do not.
+        for i, j in [(0, 1), (0, 2), (1, 2)]:
+            assert f"{lt_asp}({i},{j})." in program
+        for i, j in [(0, 0), (1, 0), (1, 1), (2, 0), (2, 1), (2, 2)]:
+            assert f"{lt_asp}({i},{j})." not in program
+        # Still pinned, not chosen: no choice-rule brace for lt_asp.
+        assert f"{{{lt_asp}" not in program
+
+    def test_undeclared_order_comparison_on_non_numeric_domain_stays_empty(self):
+        # Mirrors _order_value's OWN fallback: no declared extension AND the
+        # domain individuals are not numbers -> the empty relation (false),
+        # exactly emit_base_facts's "missing means empty" reading elsewhere.
+        sig = _Signature()
+        sig.predicates = {("<", 2)}
+        enc = _AspEncoder(2)
+        enc.declare_signature(sig)
+        structure = Structure(("alice", "bob"))
+        index_of = {"alice": 0, "bob": 1}
+        enc.emit_fixed_facts(structure, index_of, free_predicates=set())
+        program = "\n".join(enc.rules)
+        lt_asp = enc.pred_asp[("<", 2)]
+        for i, j in [(0, 0), (0, 1), (1, 0), (1, 1)]:
+            assert f"{lt_asp}({i},{j})." not in program
+
+    def test_declared_order_comparison_extension_still_wins(self):
+        # A DECLARED extension (even the empty one) takes precedence over the
+        # numeric fallback -- _order_value's rule (2) beats rule (3).
+        sig = _Signature()
+        sig.predicates = {("<", 2)}
+        enc = _AspEncoder(2)
+        enc.declare_signature(sig)
+        structure = Structure((0, 1), predicates={("<", 2): set()})
+        index_of = {0: 0, 1: 1}
+        enc.emit_fixed_facts(structure, index_of, free_predicates=set())
+        program = "\n".join(enc.rules)
+        lt_asp = enc.pred_asp[("<", 2)]
+        # 0<1 numerically, but the DECLARED extension is empty -- must stay empty.
+        assert f"{lt_asp}(0,1)." not in program

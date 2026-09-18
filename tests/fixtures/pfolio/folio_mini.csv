@@ -1,0 +1,32 @@
+,Premises - NL,Conclusions - NL,Truth Values,Premises - FOL,Conclusions - FOL,Comments,Verified by Prover
+0,"All ravens are black.
+Rook is a raven.","Rook is black.
+Rook is white.","T
+F","∀x (Raven(x) → Black(x))
+Raven(rook)","Black(rook)
+White(rook)","extra brackets?
+second note",
+1,"Every cat sleeps often.
+Milo is a cat.","
+Milo sleeps often.
+Milo never sleeps.","
+T
+U","∀x (Cat(x) → SleepsOften(x))
+Cat(milo)","SleepsOften(milo)
+¬SleepsOften(milo)",,
+2,"Every dog barks.
+Rex is a dog.","Rex barks.
+Rex is silent.","T
+F
+","∀x (Dog(x) → Barks(x))
+Dog(rex)","Barks(rex)
+¬Barks(rex)",,
+3,Some bird flies.,"Tweety flies.
+Tweety is a bird.
+Tweety is happy.",T,∃x (Bird(x) ∧ Flies(x)),Flies(tweety),,
+4,Every fish swims.,Nemo swims.,T,∀x (Fish(x) → Swims(x)),Swims(nemo),,
+6,All students study.,Ann studies.,T,∀x (Student(x) → Studies(x)),Studies(ann),,
+7,No lie is true.,This statement is a lie.,F,∀x (Lie(x) → ¬True(x)),Lie(thisStatement),,
+8,"All cats nap in the afternoon.
+Milo is a cat.",Milo is asleep.,T,"∀x (Cat(x) → NapsInAfternoon(x))
+Cat(milo)",Asleep(milo),,

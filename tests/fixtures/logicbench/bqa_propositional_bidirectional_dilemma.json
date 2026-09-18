@@ -1,0 +1,28 @@
+{
+  "type": "propositional_logic",
+  "axiom": "bidirectional_dilemma",
+  "samples": [
+    {
+      "id": 1,
+      "context": "If I watch my diet, I will maintain good health. If I consume excessive junk food, I will become more susceptible to illnesses. We know that either I am committed to watching my diet or I am not prone to illnesses, but it is uncertain which of these statements is true. It is possible that I am only dedicated to maintaining a healthy diet, or alternatively, I may not be prone to illnesses, or even both statements could be true.",
+      "qa_pairs": [
+        {
+          "question": "Can we say at least one of the following must always be true? (a) i will stay healthy and (b) i don't eat too much junk food",
+          "answer": "yes"
+        },
+        {
+          "question": "Can we say at least one of the following must always be true? (a) i won't stay healthy and (b) i eat too much junk food",
+          "answer": "no"
+        },
+        {
+          "question": "Can we say at least one of the following must always be true? (a) i will stay healthy and (b) i eat too much junk food",
+          "answer": "no"
+        },
+        {
+          "question": "Can we say at least one of the following must always be true? (a) i won't stay healthy and (b) i don't eat too much junk food",
+          "answer": "no"
+        }
+      ]
+    }
+  ]
+}

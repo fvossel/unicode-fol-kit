@@ -30,14 +30,72 @@ stripped and the ``\\'`` / ``\\\\`` escapes unescaped. The resulting names may c
 characters that are not legal MSFLParser tokens, so call
 :func:`unicode_fol_kit.fol.sanitize_names` before re-parsing the rendered Unicode.
 
-Scope: the first-order ``fof`` fragment and ``cnf`` clauses. Typed (``tff``/``thf``)
-formulas, ``include`` directives, and the optional 4th/5th annotation fields of a
-statement are out of scope.
+Scope: the first-order ``fof`` fragment, ``cnf`` clauses, and TF0 (monomorphic
+typed first-order) ``tff`` — see :func:`parse_tff_problem` below for the typed
+half. ``include('path')`` / ``include('path', [name, ...])`` directives are
+resolved by every file/load entry point (see "Includes" below); the optional
+4th (``source``)/5th (``useful_info``) annotation fields of a statement parse
+and are discarded. THF (higher-order TPTP), TF1 polymorphism (type
+variables, ``!>``), and TPTP's built-in arithmetic sorts (``$int``/``$rat``/
+``$real``) remain out of scope — each is refused LOUDLY, naming the
+construct, rather than silently narrowed (see :func:`parse_tff_problem`'s
+docstring for exactly which constructs raise where).
+
+Includes
+--------
+:func:`parse_tptp`, :func:`parse_tptp_problem` and :func:`parse_tff_problem`
+take an optional ``base_dir`` (the directory an ``include(...)`` inside
+``text`` resolves relative to first) and ``search_paths`` (further roots
+tried next, in order — the TPTP-library convention: ``include(
+'Axioms/SET001+0.ax')`` is root-relative, not relative to whatever file
+referred to it). ``os.environ["TPTP"]``, if set, is ALSO tried as a root,
+after ``search_paths`` — the same convention external TPTP tooling uses to
+locate the library. ``base_dir=None`` (the default) means "no including
+file's directory is known": an ``include`` then raises
+:class:`TptpParsingError` naming the directive rather than guessing, which
+keeps every existing bare-text caller — :func:`parse_tptp_formula` included,
+which never resolves includes at all, since a single bare formula has no
+"including file" — byte-identical by default.
+
+:func:`load_tptp`, :func:`load_tptp_problem` and :func:`load_tff_problem`
+set ``base_dir`` to the loaded file's own directory automatically (so a
+sibling include resolves with no extra argument) and seed cycle detection
+with the loaded file's own path, so a chain that loops back to the very
+file you started from is caught, not only a cycle confined to files reached
+purely via nested includes. A selection list (``include('path', [name1,
+name2])``) imports only those formulas, matched by their own TPTP statement
+name, and refuses a name absent from the included file; a missing include
+file names the path and every root tried; a circular include chain names
+the whole chain. A selection list on a file that also declares TFF
+vocabulary (a ``tff(name, type, ...).`` statement) is refused — see
+:func:`parse_tff_problem`'s docstring.
+
+TF0 (``tff``) reading, in brief
+--------------------------------
+:func:`parse_tptp` / :func:`parse_tptp_formula` / :func:`load_tptp` now also
+accept ``tff(name, axiom|conjecture|..., <formula>).`` statements (typed
+quantifiers ``! [X: sort] : φ`` / ``? [X: sort] : φ`` build
+:class:`~unicode_fol_kit.fol.nodes.SortedQuantifier`; an untyped ``! [X] : φ``
+still builds a plain :class:`~unicode_fol_kit.fol.nodes.Quantifier`, exactly
+as before — this is purely additive). A ``tff(name, type, ...).`` TYPE
+DECLARATION, however, has no ``TptpFormula`` shape to return (it declares
+vocabulary, not a formula), so :func:`parse_tptp` refuses a problem
+containing one, naming :func:`parse_tff_problem` as the function that reads
+it: that function returns the declared
+:class:`~unicode_fol_kit.fol.signature.Signature` ALONGSIDE the formulas,
+and additionally promotes a plain :class:`~unicode_fol_kit.fol.nodes.Constant`
+occurrence to a :class:`~unicode_fol_kit.fol.nodes.SortedConstant` wherever
+that name was declared with a concrete (non-``$i``) sort — recovering the
+same AST shape :func:`~unicode_fol_kit.atp.tptp_tff.generate_tff_problem`
+started from, since a TFF formula BODY carries no inline sort annotation for
+a constant occurrence (only a bound variable does; a constant's sort lives
+solely in its separate ``type`` declaration).
 """
 
+import os
 import re
-from dataclasses import dataclass
-from typing import Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
 
 from lark import Lark, Transformer
 from lark.exceptions import VisitError
@@ -45,8 +103,10 @@ from lark.exceptions import VisitError
 from .nodes import (
     Node, Variable, Constant, Number, Function,
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
+    SortedQuantifier, SortedConstant,
 )
 from .naming import ParsingError
+from .signature import Signature, PredicateDecl, FunctionDecl, ConstantDecl
 
 
 class TptpParsingError(ParsingError):
@@ -79,10 +139,50 @@ class TptpFormula:
     formula: Node
 
 
+@dataclass(frozen=True)
+class _IncludeDirective:
+    """One parsed ``include('path').`` / ``include('path', [n1, n2]).`` directive.
+
+    Internal only: ``file()`` (see :class:`_TptpTransformer`) returns these
+    interleaved with :class:`TptpFormula` / TF0 declaration records in
+    source order, and :func:`_resolve_includes` splices each one, in place,
+    with the (recursively resolved) statements of the file it names, before
+    any public function ever sees one. ``selection`` is ``None`` when no
+    ``[...]`` name list was given (import everything from the included
+    file), else the tuple of names to import selectively.
+    """
+
+    file_name: str
+    selection: Optional[Tuple[str, ...]]
+
+
 _GRAMMAR = r"""
-file: stmt+
-stmt: LOWER "(" fof_name "," LOWER "," formula ")" "."
+file: (stmt | include_stmt)+
+stmt: LOWER "(" fof_name "," LOWER "," formula ["," annotation_term ["," annotation_term]] ")" "."
+    | LOWER "(" fof_name "," LOWER "," tff_type_decl ["," annotation_term ["," annotation_term]] ")" "."  -> stmt_type
 fof_name: LOWER | NUMBER
+
+// --- include directives: "include('path')." / "include('path', [n1,n2])." ---
+// Resolved by _resolve_includes AFTER transforming (splicing in the named
+// file's own statements), never during parsing -- see that function and the
+// module docstring's "Includes" section.
+include_stmt: "include" "(" (LOWER | SQ) ["," "[" name_list "]"] ")" "."
+name_list: fof_name ("," fof_name)*
+
+// --- the optional 4th (source) / 5th (useful_info) annotation fields ---
+// Accepted syntactically and discarded -- see _TptpTransformer.stmt /
+// .stmt_type. Not TPTP's full "general_term" grammar (no THF-shaped terms,
+// no arithmetic expressions), just enough to admit the shapes real TPTP
+// files use for these two fields: a functor application (`file(...)`,
+// `inference(...)`), a bracketed list of either, or a bare atom/variable/
+// number/quoted string.
+annotation_term: LOWER "(" annotation_term_list ")"
+                | "[" [annotation_term_list] "]"
+                | LOWER
+                | SQ
+                | VAR
+                | NUMBER
+annotation_term_list: annotation_term ("," annotation_term)*
 
 ?formula: equiv
 ?equiv: imp
@@ -103,7 +203,11 @@ fof_name: LOWER | NUMBER
       | "(" formula ")"
       | atom
 
-varlist: VAR ("," VAR)*
+// A TFF quantifier's variable may carry an explicit ":" sort. A plain,
+// untyped "! [X] : ..." still round-trips (typed_var's optional sort is
+// simply absent) -- shared unmodified by fof/cnf too, see module docstring.
+varlist: typed_var ("," typed_var)*
+typed_var: VAR (":" tff_atomic_type)?
 
 ?atom: term "=" term    -> equality
      | term "!=" term   -> disequality
@@ -124,10 +228,47 @@ varlist: VAR ("," VAR)*
 
 termlist: term ("," term)*
 
+// --- TF0 type declarations: "tff(name, type, <tff_type_decl>)." ---
+// (TF1 polymorphism and THF are NOT extensions of this: tff_poly_decl below
+// always raises, and "thf(" is refused at the statement-keyword check —
+// see the module docstring and _TptpTransformer.stmt_type/tff_poly_decl.)
+tff_type_decl: (LOWER | SQ) ":" tff_top_type
+
+?tff_top_type: DOLLAR_TTYPE                              -> tff_sort_decl
+             | "!>" "[" tyvarlist "]" ":" tff_poly_monotype -> tff_poly_decl
+             | tff_mapping_type                            -> tff_symbol_decl
+             | tff_atomic_type                             -> tff_nullary_decl
+
+tyvarlist: VAR ("," VAR)*
+
+// The TF1 polymorphic body ("!> [A] : (A > A)" and similar) is parsed only
+// so tff_poly_decl below can raise a NAMED refusal instead of a generic
+// parse failure -- a type VARIABLE (VAR) is otherwise never a legal atomic
+// type (see tff_atomic_type), so this sub-grammar is kept separate rather
+// than widening the ordinary (monomorphic) one. Never given transformer
+// methods: tff_poly_decl discards its children unconditionally.
+?tff_poly_monotype: tff_poly_atomic_type
+                   | "(" tff_poly_mapping_type ")"
+tff_poly_mapping_type: tff_poly_domain ">" tff_poly_atomic_type
+tff_poly_domain: tff_poly_atomic_type
+               | "(" tff_poly_xprod ")"
+tff_poly_xprod: tff_poly_atomic_type ("*" tff_poly_atomic_type)+
+tff_poly_atomic_type: LOWER | SQ | DOLLARWORD | VAR
+
+tff_mapping_type: tff_domain ">" tff_atomic_type
+?tff_domain: tff_atomic_type          -> domain_single
+           | "(" tff_xprod ")"        -> domain_prod
+tff_xprod: tff_atomic_type ("*" tff_atomic_type)+
+
+tff_atomic_type: LOWER      -> plain_type
+                | SQ         -> plain_type
+                | DOLLARWORD -> dollar_type
+
 VAR: /[A-Z][A-Za-z0-9_]*/
 LOWER: /[a-z][A-Za-z0-9_]*/
 SQ: /'(\\.|[^'\\])*'/
 DOLLARWORD: /\$[a-z_]+/
+DOLLAR_TTYPE.2: "$tType"
 NUMBER: /-?[0-9]+(\.[0-9]+)?/
 
 %import common.WS
@@ -159,6 +300,79 @@ def _functor_name(token) -> str:
     return s
 
 
+# =============================================================================
+# TF0 type declarations: parsed shapes and atomic-type resolution
+# =============================================================================
+
+_ARITHMETIC_SORTS = frozenset({"$int", "$rat", "$real"})
+
+
+@dataclass(frozen=True)
+class _TffSortDecl:
+    """A parsed ``tff(name, type, S: $tType).`` sort declaration."""
+
+    name: str
+
+
+@dataclass(frozen=True)
+class _TffPredDecl:
+    """A parsed predicate type declaration: name, and each argument's
+    resolved sort (``None`` for ``$i``, else a capitalised kit-level sort
+    name -- see :func:`_resolve_type_str`)."""
+
+    name: str
+    arg_sorts: Tuple[Optional[str], ...]
+
+
+@dataclass(frozen=True)
+class _TffFuncDecl:
+    """A parsed function/constant type declaration (``arg_sorts == ()``
+    means a 0-ary function, i.e. a constant, in :func:`parse_tff_problem`'s
+    Signature assembly)."""
+
+    name: str
+    arg_sorts: Tuple[Optional[str], ...]
+    result_sort: Optional[str]
+
+
+def _resolve_type_str(type_str: str, *, context: str) -> Optional[str]:
+    """Return the kit-level sort name for one TFF atomic-type string, or
+    ``None`` for ``"$i"`` (TPTP's default individual type -- "no sort
+    annotation needed", matching a plain unsorted :class:`Quantifier` /
+    :class:`Constant`). ``context`` (e.g. ``"a quantified variable's"``,
+    ``"an argument of 'p''s"``) is spliced into the error message naming
+    WHERE the offending type was used.
+
+    Raises:
+        TptpParsingError: the type is ``"$o"`` (boolean may only appear as
+            a PREDICATE's own overall result type -- never a variable's,
+            argument's, or function-result type) or an unrecognised
+            ``"$..."`` built-in.
+        NotImplementedError: the type is ``"$int"``/``"$rat"``/``"$real"``
+            -- TPTP's arithmetic sorts, out of scope for this TF0-only
+            reader (see module docstring).
+    """
+    if type_str == "$i":
+        return None
+    if type_str == "$o":
+        raise TptpParsingError(
+            f"SYNTAX_ERROR: '$o' (boolean) cannot be {context} type -- only "
+            "a predicate's own overall result may be $o."
+        )
+    if type_str in _ARITHMETIC_SORTS:
+        raise NotImplementedError(
+            f"TF0 reader: {context} type {type_str!r} needs TPTP's "
+            "arithmetic sorts ($int/$rat/$real), which are out of scope for "
+            "this TF0-only reader (see module docstring 'Scope')."
+        )
+    if type_str.startswith("$"):
+        raise TptpParsingError(
+            f"SYNTAX_ERROR: unsupported TPTP built-in type {type_str!r} as "
+            f"{context} type."
+        )
+    return _cap(type_str)
+
+
 class _TptpTransformer(Transformer):
     """Turn the Lark parse tree into the toolkit AST."""
 
@@ -168,16 +382,66 @@ class _TptpTransformer(Transformer):
 
     def stmt(self, items):
         keyword = str(items[0])
-        if keyword not in ("fof", "cnf"):
+        if keyword == "thf":
+            raise TptpParsingError(
+                "SYNTAX_ERROR: THF (higher-order TPTP) is out of scope for "
+                "this reader; only fof, cnf, and tff (TF0, monomorphic) are "
+                "supported."
+            )
+        if keyword not in ("fof", "cnf", "tff"):
             raise TptpParsingError(
                 f"SYNTAX_ERROR: unsupported TPTP statement '{keyword}' "
-                "(only fof and cnf are supported)."
+                "(only fof, cnf, and tff are supported)."
             )
         name, role, formula = str(items[1]), str(items[2]), items[3]
+        # items[4] / items[5]: the optional 4th (source) / 5th (useful_info)
+        # annotation fields (None when absent -- see the grammar's
+        # annotation_term rule). This reader models the statement's own
+        # FORMULA, never its provenance/derivation metadata -- accepted
+        # syntactically, discarded here.
         return TptpFormula(name, role, formula)
+
+    def stmt_type(self, items):
+        """A ``tff(name, type, <decl>).`` type-declaration statement.
+
+        Returns one of :class:`_TffSortDecl` / :class:`_TffPredDecl` /
+        :class:`_TffFuncDecl` — never a :class:`TptpFormula`, since a type
+        declaration declares vocabulary, not a formula. Only
+        :func:`parse_tff_problem` consumes these; :func:`parse_tptp` refuses
+        a problem containing one (see that function). ``items[4]``/
+        ``items[5]`` (the optional annotation fields) are discarded exactly
+        like :meth:`stmt` discards them.
+        """
+        keyword, name, role, decl = str(items[0]), str(items[1]), str(items[2]), items[3]
+        if keyword == "thf":
+            raise TptpParsingError(
+                "SYNTAX_ERROR: THF (higher-order TPTP) is out of scope for "
+                "this reader; only fof, cnf, and tff (TF0, monomorphic) are "
+                "supported."
+            )
+        if keyword != "tff":
+            raise TptpParsingError(
+                f"SYNTAX_ERROR: a type declaration (role 'type') is only "
+                f"valid inside a 'tff(...)' statement, got '{keyword}(...)'."
+            )
+        if role != "type":
+            raise TptpParsingError(
+                f"SYNTAX_ERROR: expected role 'type' for a TFF type "
+                f"declaration, got {role!r}."
+            )
+        return decl
 
     def fof_name(self, items):
         return str(items[0])
+
+    # --- include directives (spliced in by _resolve_includes, post-parse) ---
+    def include_stmt(self, items):
+        file_tok, names = items
+        selection = tuple(names) if names is not None else None
+        return _IncludeDirective(_functor_name(file_tok), selection)
+
+    def name_list(self, items):
+        return list(items)
 
     # --- connectives ---
     def iff(self, items):
@@ -216,12 +480,37 @@ class _TptpTransformer(Transformer):
         return self._quantify("∃", items[0], items[1])
 
     def _quantify(self, qtype, variables, body):
+        # Each element of `variables` is either a plain Variable (untyped,
+        # from a bare typed_var with no ":sort") or a (Variable, sort) pair
+        # (typed_var's optional sort was present) -- see typed_var below.
         for var in reversed(variables):
-            body = Quantifier(qtype, var, body)
+            if isinstance(var, tuple):
+                bound, sort = var
+                body = SortedQuantifier(qtype, bound, sort, body)
+            else:
+                body = Quantifier(qtype, var, body)
         return body
 
     def varlist(self, items):
-        return [Variable(str(tok).lower()) for tok in items]
+        return list(items)
+
+    def typed_var(self, items):
+        """One quantifier variable, optionally TFF-typed: ``X`` or ``X: sort``.
+
+        Returns a bare :class:`Variable` (untyped -- matches fof/cnf's
+        pre-existing behaviour exactly) when no ``: sort`` was given, or a
+        ``(Variable, sort)`` pair when one was -- :meth:`_quantify` turns the
+        pair into a :class:`SortedQuantifier` binder. ``$i`` resolves to
+        "untyped" (a bare :class:`Variable`), matching TPTP's own "no type
+        given" default; ``$o``/arithmetic sorts/``$tType`` are refused (see
+        :func:`_resolve_type_str`).
+        """
+        if len(items) == 1:
+            return Variable(str(items[0]).lower())
+        var_tok, type_str = items
+        sort = _resolve_type_str(type_str, context="a quantified variable's")
+        var = Variable(str(var_tok).lower())
+        return var if sort is None else (var, sort)
 
     # --- atoms ---
     def equality(self, items):
@@ -277,6 +566,61 @@ class _TptpTransformer(Transformer):
     def termlist(self, items):
         return list(items)
 
+    # --- TF0 type declarations ---
+    def tff_type_decl(self, items):
+        name_tok, shape_payload = items
+        name = _functor_name(name_tok)
+        shape, payload = shape_payload
+        if shape == "sort":
+            return _TffSortDecl(_cap(name))
+        if shape == "nullary":
+            if payload == "$o":
+                return _TffPredDecl(_cap(name), ())
+            return _TffFuncDecl(name, (), _resolve_type_str(payload, context="this symbol's"))
+        if shape == "mapping":
+            domain, result = payload
+            arg_sorts = tuple(
+                _resolve_type_str(t, context=f"an argument of {name!r}'s") for t in domain)
+            if result == "$o":
+                return _TffPredDecl(_cap(name), arg_sorts)
+            return _TffFuncDecl(
+                name, arg_sorts, _resolve_type_str(result, context=f"{name!r}'s result"))
+        raise AssertionError(f"tff_type_decl: unreachable shape {shape!r}")  # pragma: no cover
+
+    def tff_sort_decl(self, items):
+        return ("sort", None)
+
+    def tff_poly_decl(self, items):
+        raise NotImplementedError(
+            "TF0 reader: TF1 polymorphic type declarations ('!> [...] : ...') "
+            "are out of scope for this monomorphic TF0-only reader."
+        )
+
+    def tff_symbol_decl(self, items):
+        return ("mapping", items[0])
+
+    def tff_nullary_decl(self, items):
+        return ("nullary", items[0])
+
+    def tff_mapping_type(self, items):
+        domain, result = items
+        return (domain, result)
+
+    def domain_single(self, items):
+        return (items[0],)
+
+    def domain_prod(self, items):
+        return items[0]
+
+    def tff_xprod(self, items):
+        return tuple(items)
+
+    def plain_type(self, items):
+        return _functor_name(items[0])
+
+    def dollar_type(self, items):
+        return str(items[0])
+
 
 _FORMULA_PARSER = Lark(_GRAMMAR, start="formula", parser="earley")
 _FILE_PARSER = Lark(_GRAMMAR, start="file", parser="earley")
@@ -295,9 +639,183 @@ def _parse(text: str, parser: Lark, what: str):
         return _TRANSFORMER.transform(tree)
     except VisitError as exc:
         original = exc.orig_exc
-        if isinstance(original, ParsingError):
+        # NotImplementedError alongside ParsingError: the TF0-scope refusals
+        # (TF1 polymorphism, $int/$rat/$real -- see _resolve_type_str /
+        # tff_poly_decl) are meant to surface as NotImplementedError, not get
+        # folded into a generic SYNTAX_ERROR string, so its type must survive
+        # this unwrap exactly like ParsingError's already does.
+        if isinstance(original, (ParsingError, NotImplementedError)):
             raise original
         raise TptpParsingError(f"SYNTAX_ERROR: in TPTP {what}: {original}")
+
+
+# =============================================================================
+# Include resolution — shared by parse_tptp / parse_tptp_problem /
+# parse_tff_problem and their load_* siblings (see the module docstring's
+# "Includes" section).
+# =============================================================================
+
+def _locate_include(file_name: str, base_dir: str, search_paths) -> str:
+    """Resolve one ``include(file_name)`` directive to an existing file path.
+
+    Tried in order: (1) ``base_dir/file_name`` (relative to the file
+    containing the include directive itself), (2) each root in
+    ``search_paths`` joined with ``file_name``, in order, then (3)
+    ``os.environ["TPTP"]`` joined with ``file_name``, if that environment
+    variable is set — the de facto TPTP-library convention (an include like
+    ``include('Axioms/SET001+0.ax')`` is root-relative, not relative to
+    whatever problem file referred to it).
+
+    Raises:
+        TptpParsingError: none of the tried candidates exist — names the
+            include's path and every candidate location tried.
+    """
+    roots = [base_dir, *search_paths]
+    tptp_env = os.environ.get("TPTP")
+    if tptp_env:
+        roots.append(tptp_env)
+    tried = []
+    for root in roots:
+        candidate = os.path.join(root, file_name)
+        tried.append(candidate)
+        if os.path.isfile(candidate):
+            return candidate
+    raise TptpParsingError(
+        f"SYNTAX_ERROR: include({file_name!r}) could not be found -- tried: "
+        + ", ".join(repr(t) for t in tried) + "."
+    )
+
+
+def _apply_selection(items: list, selection: Tuple[str, ...], file_name: str) -> list:
+    """Filter an included file's already-resolved ``items`` down to
+    ``selection``, by each :class:`TptpFormula`'s own TPTP statement name,
+    in the order ``selection`` names them (not the file's own order).
+
+    Raises:
+        TptpParsingError: ``items`` contains anything other than
+            :class:`TptpFormula` records (a TF0 type declaration — its own
+            statement name is not tracked separately from the symbol it
+            declares, see :class:`_TffSortDecl`/:class:`_TffPredDecl`/
+            :class:`_TffFuncDecl`, so a selection list cannot be matched
+            against it), or ``selection`` names something absent from the
+            included file.
+    """
+    non_formula = [item for item in items if not isinstance(item, TptpFormula)]
+    if non_formula:
+        raise TptpParsingError(
+            f"SYNTAX_ERROR: include({file_name!r}, [...]) cannot use a "
+            "selection list on a file that declares TFF vocabulary (a "
+            "'tff(name, type, ...).' statement) -- its own statement name "
+            "is not tracked separately from the symbol it declares, so a "
+            "selection list cannot be matched against it; include the "
+            "whole file (drop the selection list) instead."
+        )
+    by_name = {}
+    for formula in items:
+        by_name.setdefault(formula.name, formula)
+    selected = []
+    for name in selection:
+        if name not in by_name:
+            raise TptpParsingError(
+                f"SYNTAX_ERROR: include({file_name!r}, [...]) selects "
+                f"{name!r}, which is not a formula name in {file_name!r} "
+                f"(available: {sorted(by_name)!r})."
+            )
+        selected.append(by_name[name])
+    return selected
+
+
+def _resolve_includes(items: list, base_dir: Optional[str], search_paths,
+                       chain: Tuple[Tuple[str, str], ...]) -> list:
+    """Recursively splice every :class:`_IncludeDirective` in ``items`` with
+    the (itself include-resolved) statements of the file it names, in place
+    — preserving surrounding statement order.
+
+    ``chain`` is the tuple of ``(name_as_written, real_path)`` pairs for
+    every include currently "open" (the stack of files that led here),
+    used both to detect a cycle (a repeated ``real_path``) and to name the
+    full trail in the resulting error. :func:`_load_and_resolve` seeds it
+    with the loaded file's own path; a bare-text :func:`parse_tptp` call
+    starts it empty.
+
+    Raises:
+        TptpParsingError: an include is encountered with ``base_dir=None``
+            (no including file's directory is known — see the module
+            docstring), the named file cannot be found (see
+            :func:`_locate_include`), or the chain cycles back to a file
+            already open.
+    """
+    resolved = []
+    for item in items:
+        if not isinstance(item, _IncludeDirective):
+            resolved.append(item)
+            continue
+        if base_dir is None:
+            raise TptpParsingError(
+                f"SYNTAX_ERROR: include({item.file_name!r}) cannot be "
+                "resolved -- no including file's directory is known "
+                "(base_dir=None, the default, for bare text); read the "
+                "problem via load_tptp / load_tptp_problem / "
+                "load_tff_problem, or pass base_dir explicitly."
+            )
+        path = _locate_include(item.file_name, base_dir, search_paths)
+        real = os.path.realpath(path)
+        if any(real == seen_real for _seen_name, seen_real in chain):
+            trail = " -> ".join(repr(name) for name, _real in chain)
+            raise TptpParsingError(
+                f"SYNTAX_ERROR: circular include: {trail} -> "
+                f"{item.file_name!r}."
+            )
+        with open(path, "r", encoding="utf-8") as handle:
+            sub_text = handle.read()
+        sub_items = _parse(sub_text, _FILE_PARSER, "problem")
+        sub_resolved = _resolve_includes(
+            sub_items, os.path.dirname(path), search_paths,
+            chain + ((item.file_name, real),))
+        if item.selection is not None:
+            sub_resolved = _apply_selection(sub_resolved, item.selection, item.file_name)
+        resolved.extend(sub_resolved)
+    return resolved
+
+
+def _finalize_formulas(items: list) -> list:
+    """Confirm every item in an include-resolved ``items`` list is a
+    :class:`TptpFormula` — the shared tail of :func:`parse_tptp` /
+    :func:`load_tptp` / :func:`parse_tptp_problem` / :func:`load_tptp_problem`,
+    none of which can represent a TF0 type declaration."""
+    for item in items:
+        if not isinstance(item, TptpFormula):
+            raise TptpParsingError(
+                "SYNTAX_ERROR: this problem contains a TFF type declaration "
+                "('tff(name, type, ...).'), which parse_tptp/load_tptp cannot "
+                "represent as a TptpFormula — use parse_tff_problem() instead, "
+                "which returns the declared Signature alongside the formulas."
+            )
+    return items
+
+
+def _load_and_resolve(path: str, search_paths) -> Tuple[list, str]:
+    """Read ``path``, parse it, and resolve its includes with the cycle
+    ``chain`` (see :func:`_resolve_includes`) seeded by ``path`` itself —
+    so a chain that loops back to the very file
+    :func:`load_tptp`/:func:`load_tptp_problem`/:func:`load_tff_problem`
+    started from is caught, not only a cycle confined to files reached
+    purely via nested includes.
+
+    Returns:
+        ``(items, text)`` — ``items`` fully include-resolved (no
+        :class:`_IncludeDirective` survives), ``text`` the loaded file's own
+        raw contents (for :func:`load_tptp_problem`'s header scan, which
+        reads only the top-level file's ``%`` comments, never an included
+        file's).
+    """
+    real_path = os.path.realpath(path)
+    with open(path, "r", encoding="utf-8") as handle:
+        text = handle.read()
+    items = _parse(text, _FILE_PARSER, "problem")
+    items = _resolve_includes(
+        items, os.path.dirname(path), search_paths, ((path, real_path),))
+    return items, text
 
 
 def parse_tptp_formula(text: str) -> Node:
@@ -315,33 +833,217 @@ def parse_tptp_formula(text: str) -> Node:
     return _parse(text, _FORMULA_PARSER, "formula")
 
 
-def parse_tptp(text: str) -> list:
+def parse_tptp(text: str, *, base_dir: Optional[str] = None, search_paths=()) -> list:
     """Parse a whole TPTP problem into a list of :class:`TptpFormula` records.
 
     Args:
-        text: the contents of a TPTP problem — one or more ``fof(...)`` / ``cnf(...)``
-            statements (``%`` line comments and ``/* */`` block comments are ignored).
+        text: the contents of a TPTP problem — one or more ``fof(...)`` /
+            ``cnf(...)`` / ``tff(...)`` statements, and/or ``include(...)``
+            directives (``%`` line comments and ``/* */`` block comments are
+            ignored). A ``tff`` AXIOM/CONJECTURE/... statement is accepted
+            exactly like ``fof`` (its typed quantifiers build
+            :class:`~unicode_fol_kit.fol.nodes.SortedQuantifier`), but a
+            ``tff(name, type, ...).`` TYPE DECLARATION is not (see
+            ``Raises`` below).
+        base_dir: the directory an ``include(...)`` in ``text`` resolves
+            relative to first. ``None`` (the default) means "no including
+            file's directory is known" — an ``include`` then raises (see
+            ``Raises``); :func:`load_tptp` sets this to the loaded file's
+            own directory automatically. See the module docstring's
+            "Includes" section for the full resolution order.
+        search_paths: further roots tried, in order, after ``base_dir``,
+            for an ``include`` not found relative to it (plus
+            ``os.environ["TPTP"]``, if set) — see "Includes".
 
     Returns:
-        A list of :class:`TptpFormula` ``(name, role, formula)`` in source order.
+        A list of :class:`TptpFormula` ``(name, role, formula)`` in source
+        order, with every ``include`` spliced in at its own position.
 
     Raises:
-        ParsingError: if the text is not a well-formed TPTP problem.
+        ParsingError: if the text is not a well-formed TPTP problem, if it
+            contains a ``tff(name, type, ...).`` type declaration — this
+            function has no ``TptpFormula`` shape to return a type
+            declaration as; use :func:`parse_tff_problem` instead, which
+            returns the declared :class:`~unicode_fol_kit.fol.signature
+            .Signature` alongside the formulas — or if an ``include``
+            cannot be resolved (``base_dir=None``, a missing file, or a
+            circular chain; see "Includes").
     """
-    return _parse(text, _FILE_PARSER, "problem")
+    items = _parse(text, _FILE_PARSER, "problem")
+    items = _resolve_includes(items, base_dir, search_paths, ())
+    return _finalize_formulas(items)
 
 
-def load_tptp(path: str) -> list:
+def load_tptp(path: str, *, search_paths=()) -> list:
     """Read a TPTP problem file and :func:`parse_tptp` its contents.
 
     Args:
-        path: path to a ``.p`` / ``.tptp`` file.
+        path: path to a ``.p`` / ``.tptp`` file. Every ``include(...)`` it
+            contains resolves relative to ``path``'s own directory first
+            (then ``search_paths`` — see :func:`parse_tptp`), and a cycle
+            back to ``path`` itself is caught, not only one confined to
+            files reached purely via nested includes.
+        search_paths: see :func:`parse_tptp`.
 
     Returns:
         A list of :class:`TptpFormula` records.
     """
-    with open(path, "r", encoding="utf-8") as handle:
-        return parse_tptp(handle.read())
+    items, _text = _load_and_resolve(path, search_paths)
+    return _finalize_formulas(items)
+
+
+def _conflict(kind: str, name: str, existing, new) -> TptpParsingError:
+    return TptpParsingError(
+        f"SYNTAX_ERROR: {kind} '{name}' is declared more than once with "
+        f"different types ({existing!r} vs {new!r})."
+    )
+
+
+def _build_signature_and_formulas(items: list) -> Tuple[Signature, List[TptpFormula]]:
+    """The shared, include-resolution-independent guts of
+    :func:`parse_tff_problem` / :func:`load_tff_problem`: split an already
+    include-resolved ``items`` list into a
+    :class:`~unicode_fol_kit.fol.signature.Signature` and promoted formulas.
+    See :func:`parse_tff_problem` for the full contract."""
+    decls = [i for i in items if not isinstance(i, TptpFormula)]
+    formulas = [i for i in items if isinstance(i, TptpFormula)]
+
+    sorts: set = set()
+    predicates: Dict[str, PredicateDecl] = {}
+    functions: Dict[str, FunctionDecl] = {}
+    constants: Dict[str, ConstantDecl] = {}
+    const_sorts: Dict[str, str] = {}
+
+    for d in decls:
+        if isinstance(d, _TffSortDecl):
+            sorts.add(d.name)
+        elif isinstance(d, _TffPredDecl):
+            new_decl = PredicateDecl(d.name, len(d.arg_sorts), d.arg_sorts)
+            existing = predicates.get(d.name)
+            if existing is not None and existing != new_decl:
+                raise _conflict("predicate", d.name, existing, new_decl)
+            predicates[d.name] = new_decl
+        elif isinstance(d, _TffFuncDecl):
+            if not d.arg_sorts:
+                new_const = ConstantDecl(d.name, d.result_sort)
+                existing_const = constants.get(d.name)
+                if existing_const is not None and existing_const != new_const:
+                    raise _conflict("constant", d.name, existing_const, new_const)
+                constants[d.name] = new_const
+                if d.result_sort is not None:
+                    const_sorts[d.name] = d.result_sort
+            else:
+                new_func = FunctionDecl(d.name, len(d.arg_sorts), d.arg_sorts, d.result_sort)
+                existing_func = functions.get(d.name)
+                if existing_func is not None and existing_func != new_func:
+                    raise _conflict("function", d.name, existing_func, new_func)
+                functions[d.name] = new_func
+        else:  # pragma: no cover -- file/stmt_type can only produce the three above
+            raise AssertionError(f"parse_tff_problem: unreachable decl type {type(d).__name__!r}")
+
+    for decl in predicates.values():
+        sorts.update(s for s in decl.arg_sorts if s is not None)
+    for decl in functions.values():
+        sorts.update(s for s in decl.arg_sorts if s is not None)
+        if decl.result_sort is not None:
+            sorts.add(decl.result_sort)
+    for decl in constants.values():
+        if decl.sort is not None:
+            sorts.add(decl.sort)
+    for f in formulas:
+        for n in f.formula.walk():
+            if isinstance(n, SortedQuantifier):
+                sorts.add(n.sort)
+
+    signature = Signature(predicates=predicates, functions=functions,
+                          constants=constants, sorts=frozenset(sorts))
+
+    def _promote(node: Node) -> Node:
+        node = node.map_children(_promote)
+        if isinstance(node, Constant) and node.name in const_sorts:
+            return SortedConstant(node.name, const_sorts[node.name])
+        return node
+
+    promoted = [TptpFormula(f.name, f.role, _promote(f.formula)) for f in formulas]
+    return signature, promoted
+
+
+def parse_tff_problem(
+    text: str, *, base_dir: Optional[str] = None, search_paths=()
+) -> Tuple[Signature, List[TptpFormula]]:
+    """Parse a whole TF0 (monomorphic typed) TPTP ``tff`` problem.
+
+    The typed sibling of :func:`parse_tptp`: reads every ``tff(name, type,
+    ...).`` TYPE DECLARATION into a :class:`~unicode_fol_kit.fol.signature
+    .Signature` (one entry per declared sort/predicate/function/constant —
+    an argument or result type of ``$i`` resolves to ``None`` — "no concrete
+    sort", TPTP's own default — everything else to the corresponding
+    capitalised kit-level sort name), and every other statement
+    (``axiom``/``conjecture``/...) into a :class:`TptpFormula` exactly like
+    :func:`parse_tptp` does, EXTRA step: any bare
+    :class:`~unicode_fol_kit.fol.nodes.Constant` occurrence in a formula
+    whose name was declared with a concrete sort is promoted to a
+    :class:`~unicode_fol_kit.fol.nodes.SortedConstant` — a TFF formula BODY
+    carries no inline sort annotation for a constant (only a bound variable
+    does, via ``X: sort``), so this is the only place that information can
+    be recovered and reattached to the AST.
+
+    ``include(...)`` directives are resolved exactly like :func:`parse_tptp`
+    (splicing recursively, ``base_dir``/``search_paths`` work the same way —
+    see the module docstring's "Includes" section) — WITH ONE RESTRICTION: a
+    ``include('path', [name1, ...])`` selection list can only be applied to
+    an included file that is itself pure ``fof``/``cnf``/``tff`` FORMULAS,
+    never one that also declares TFF vocabulary (a ``tff(name, type,
+    ...).`` statement) — a type declaration's own statement name is not
+    tracked separately from the symbol it declares (see
+    :class:`_TffSortDecl`/:class:`_TffPredDecl`/:class:`_TffFuncDecl`), so a
+    selection list cannot be matched against it; that combination raises
+    (see ``Raises``). A *whole-file* include (no selection list) always
+    works, decls and formulas alike.
+
+    Args:
+        text: the contents of a TF0 TPTP problem — a mix of
+            ``tff(name, type, Sym: Type).`` declarations,
+            ``tff(name, axiom|conjecture|..., <formula>).`` statements, and
+            ``include(...)`` directives (``fof``/``cnf`` statements may also
+            appear; their formulas are included unchanged, exactly as
+            :func:`parse_tptp` would read them).
+        base_dir: see :func:`parse_tptp`; :func:`load_tff_problem` sets this
+            automatically.
+        search_paths: see :func:`parse_tptp`.
+
+    Returns:
+        ``(signature, formulas)`` — ``formulas`` in source order (type
+        declarations are consumed into ``signature``, not returned as
+        formulas). ``signature.sorts`` also includes every sort named by a
+        :class:`~unicode_fol_kit.fol.nodes.SortedQuantifier` occurring in
+        the formulas even if that sort was never separately declared with
+        its own ``$tType`` statement (real TF0 files always do, but this
+        keeps the reader lenient rather than dropping information).
+
+    Raises:
+        ParsingError: the text is not a well-formed TPTP problem, the same
+            symbol is declared twice with two DIFFERENT types, or an
+            ``include`` cannot be resolved (unresolvable path, circular
+            chain, or a selection list combined with TFF vocabulary, all as
+            described above).
+        NotImplementedError: a type declaration uses TF1 polymorphism
+            (``!> [...] : ...``) or one of TPTP's arithmetic sorts
+            (``$int``/``$rat``/``$real``) — see :func:`_resolve_type_str` /
+            ``_TptpTransformer.tff_poly_decl``.
+    """
+    items = _parse(text, _FILE_PARSER, "problem")
+    items = _resolve_includes(items, base_dir, search_paths, ())
+    return _build_signature_and_formulas(items)
+
+
+def load_tff_problem(path: str, *, search_paths=()) -> Tuple[Signature, List[TptpFormula]]:
+    """Read a TF0 TPTP problem file and :func:`parse_tff_problem` its
+    contents, resolving ``include(...)`` directives exactly like
+    :func:`load_tptp` (``base_dir`` set to ``path``'s own directory, cycle
+    detection seeded with ``path`` itself — see :func:`load_tptp`)."""
+    items, _text = _load_and_resolve(path, search_paths)
+    return _build_signature_and_formulas(items)
 
 
 # ---------------------------------------------------------------------------
@@ -475,41 +1177,56 @@ def _parse_tptp_header(text: str) -> TptpHeader:
     )
 
 
-def parse_tptp_problem(text: str) -> TptpProblem:
+def parse_tptp_problem(
+    text: str, *, base_dir: Optional[str] = None, search_paths=()
+) -> TptpProblem:
     """Parse a whole TPTP problem into its formulas *and* its header metadata.
 
     Combines :func:`parse_tptp` (formula parsing, delegated to unchanged) with an
     independent raw-text scan for the standard ``%`` header block (see
     :func:`_parse_tptp_header`) — the two do not interact, so ``formulas`` here is
-    exactly what :func:`parse_tptp` returns for the same ``text`` (same order, same
-    :class:`TptpFormula` records), just wrapped in a tuple alongside the header.
+    exactly what :func:`parse_tptp` returns for the same ``text``/``base_dir``/
+    ``search_paths`` (same order, same :class:`TptpFormula` records — every
+    ``include`` spliced in), just wrapped in a tuple alongside the header.
+    The header scan itself only ever reads ``text``'s OWN ``%`` lines, never
+    an included file's.
 
     Args:
         text: the contents of a TPTP problem file.
+        base_dir: see :func:`parse_tptp`; :func:`load_tptp_problem` sets
+            this automatically.
+        search_paths: see :func:`parse_tptp`.
 
     Returns:
         A :class:`TptpProblem` with ``formulas`` (in source order) and ``header``.
 
     Raises:
-        ParsingError: if the text is not a well-formed TPTP problem (same conditions
-            as :func:`parse_tptp`; the header scan alone never raises).
+        ParsingError: if the text is not a well-formed TPTP problem, or an
+            ``include`` cannot be resolved (same conditions as
+            :func:`parse_tptp`; the header scan alone never raises).
     """
     return TptpProblem(
-        formulas=tuple(parse_tptp(text)),
+        formulas=tuple(parse_tptp(text, base_dir=base_dir, search_paths=search_paths)),
         header=_parse_tptp_header(text),
     )
 
 
-def load_tptp_problem(path: str) -> TptpProblem:
+def load_tptp_problem(path: str, *, search_paths=()) -> TptpProblem:
     """Read a TPTP problem file and :func:`parse_tptp_problem` its contents.
 
-    Mirrors :func:`load_tptp`'s file handling (whole-file read, UTF-8).
+    Mirrors :func:`load_tptp`'s file handling (whole-file read, UTF-8,
+    ``base_dir``/cycle-chain seeded from ``path`` itself — see
+    :func:`load_tptp`).
 
     Args:
         path: path to a ``.p`` / ``.tptp`` file.
+        search_paths: see :func:`parse_tptp`.
 
     Returns:
         A :class:`TptpProblem`.
     """
-    with open(path, "r", encoding="utf-8") as handle:
-        return parse_tptp_problem(handle.read())
+    items, text = _load_and_resolve(path, search_paths)
+    return TptpProblem(
+        formulas=tuple(_finalize_formulas(items)),
+        header=_parse_tptp_header(text),
+    )

@@ -15,6 +15,8 @@ from ..fol.nodes import (
     Node, Atom, Quantifier, SecondOrderQuantifier, PredicateTerm,
     Variable, Constant, Function, LambdaVar, Lambda,
 )
+from ..fol._symbol_names import dedupe
+from ..fol.qml import _thf_name
 
 
 class UnsupportedHigherOrderNode(NotImplementedError):
@@ -153,3 +155,53 @@ def free_individuals(formulas: Sequence[Node]) -> Set[str]:
     for formula in formulas:
         walk(formula, frozenset())
     return found
+
+
+class ThfNames:
+    """THF identifiers for one problem emitted by a third-order exporter.
+
+    A THF constant and an annotated formula's name must be a lower word: an
+    upper-case initial makes a token a VARIABLE, so the kit's ``Positive``/``G``
+    written out verbatim is not a constant at all and the problem does not parse.
+    Free symbols therefore go through the kit's THF stem (ASCII, lower-case
+    initial) and are made unique — keyed by ``(kind, name)``, because THF has one
+    namespace for predicates, individuals and functions, and pushed off
+    ``reserved`` (the embedding's own functors) so ``G`` and ``g``, or a user
+    predicate named ``r``, cannot collide with each other or with the
+    accessibility relation.
+    """
+
+    def __init__(self, reserved: Sequence[str] = ()):
+        self._used: Set[str] = set(reserved)
+        self._functors: Dict[Tuple[str, str], str] = {}
+        self._units: Set[str] = set()
+
+    def functor(self, kind: str, name: str) -> str:
+        """The unique THF constant for the free symbol ``name`` of ``kind``."""
+        key = (kind, name)
+        if key not in self._functors:
+            self._functors[key] = dedupe(_thf_name(name), self._used)
+        return self._functors[key]
+
+    def unit(self, name: str) -> str:
+        """Claim a unique annotated-formula name derived from ``name``."""
+        return dedupe(_thf_name(name), self._units)
+
+
+def bound_token(name: str, suffix: str, scope: Dict[str, str]) -> str:
+    """An upper-case THF variable token for a binder of ``name``.
+
+    ``scope`` maps each source name bound further out to its token. The result
+    differs from every one of those tokens: ``x`` and ``X`` share a stem, and
+    reusing it for an inner binder of a DIFFERENT name would capture the outer
+    variable's occurrences inside the body.
+    """
+    stem = _thf_name(name).upper()
+    if not stem[:1].isalpha():
+        stem = "V" + stem
+    stem += suffix
+    taken = set(scope.values())
+    token, i = stem, 2
+    while token in taken:
+        token, i = f"{stem}{i}", i + 1
+    return token

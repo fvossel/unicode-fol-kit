@@ -34,10 +34,26 @@ gate by class-NAME membership in :data:`_ALLOWED_CASL_NODES` rather than an
 kit's node modules — the gate is meant to reject everything not explicitly
 allow-listed, and a name-set is the form that stays correct (rejects) when a
 new node class is added elsewhere in the kit and nobody updates this module.
-A future richer bridge for the non-classical logics may route through DOL
-(the Distributed Ontology, Modelling and Specification Language, CoFI's
-heterogeneous layer over CASL/OWL/etc.) instead of a direct CASL emitter —
-this module does not attempt that.
+A richer bridge for one non-classical logic — quantified modal logic — DOES
+exist, and goes through DOL (the Distributed Ontology, Modelling and
+Specification Language, CoFI's heterogeneous layer over CASL/OWL/etc.)
+rather than a native "logic Modal" CASL institution:
+:func:`unicode_fol_kit.fol.qml.qml_validity_formula` already lowers a modal
+formula to exactly this module's classical fragment (the shallow, first-order
+"standard translation" — see that module's own docstring), and
+:func:`unicode_fol_kit.hets.dol.to_dol_library_from_modal` composes that
+translation with THIS module's :func:`to_casl_spec` (sanitising ``qml``'s
+auto-generated identifiers first, since those are not always legal CASL, and
+aliasing any world-relativized ``=``/``≠`` atom the translation produces to a
+fresh uninterpreted predicate, since THIS module's own equality atom is
+always rigid and exactly 2-ary — see ``hets.dol``'s own docstring for both
+contracts) to hand the result to Hets as a DOL library. This module's OWN
+fragment gate — and its own exactly-2-ary ``=`` check — is unaffected: it
+still refuses every non-classical node, and every malformed equality atom,
+it always refused (see :func:`_check_fragment` and :func:`_infer_formula`);
+the bridge works by translating the modal formula down to this fragment
+BEFORE it ever reaches here, not by widening what this exporter itself
+accepts.
 
 ``Number`` is deliberately EXCLUDED even though it is a term the classical
 grammar can trivially produce (``NUMBER`` is a term-layer alternative), because
@@ -170,9 +186,15 @@ Formula emission rules (exact, classical two-valued reading)
 ``to_casl_spec`` output shape (see the module's tests for the byte-exact
 golden cases): a ``spec <name> =`` header; an optional ``sorts`` line (only
 if at least one sort is used) with every distinct sort name, alphabetically,
-comma-separated on one line; an optional ``ops`` block (constants AND
-functions merged into ONE alphabetically-sorted list — a constant's ``ops``
-entry is ``name : Sort``, a function's is ``name : Sort1 * … -> Result``);
+comma-separated on one line; when ``subsorts`` is given (see below), one
+further ``sort <child> < <parent>`` line per DIRECT edge, in
+``(child, parent)`` order — one line per edge even when a child has several
+parents or several children share one parent, never CASL's list-sharing form
+(``sort S1, S2 < T``), which keeps the emitted grammar a strict subset of
+what :mod:`unicode_fol_kit.fol.casl_import` already parses one edge at a
+time; an optional ``ops`` block (constants AND functions merged into ONE
+alphabetically-sorted list — a constant's ``ops`` entry is ``name : Sort``,
+a function's is ``name : Sort1 * … -> Result``);
 an optional ``preds`` block (``name : Sort1 * … * Sortn``, or ``name : ()``
 for a nullary predicate), alphabetically; each axiom as its own ``. <formula>``
 line, each conjecture as its own ``. <formula> %implied`` line (the ``%implied``
@@ -186,10 +208,18 @@ input always produces byte-identical output.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Sequence, Set, Tuple, Union
+from typing import Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Set, Tuple, Union
 import re
 
 from .nodes import Node
+# Shared arity-conflict / constant-vs-function name-clash refusal, factored
+# out into unicode_fol_kit.fol.signature so this module's independently-
+# accumulated bookkeeping (see _Signature's docstring) and Signature.
+# from_formulas's own arity/name-clash refusals come from one tested
+# comparison-and-raise, even though each keeps its own accumulation
+# strategy and message wording — see signature.py's module docstring's
+# DESIGN NOTE.
+from .signature import _check_single_valued, _check_not_dual_use
 
 __all__ = ["to_casl_spec", "formula_to_casl"]
 
@@ -227,12 +257,17 @@ def _check_fragment(formula: Node) -> None:
                 "many-sorted FOL fragment this exporter covers (only Atom, "
                 "Not, And, Or, Xor, Implies, Iff, Quantifier, SortedQuantifier, "
                 "and the term classes Variable, Constant, SortedConstant, "
-                "Function are CASL-expressible here). Non-classical logics "
-                "(modal/temporal/epistemic operators, counting/measure/"
+                "Function are CASL-expressible here). Quantified modal logic "
+                "already has a route to CASL/DOL/Hets: translate the RAW modal "
+                "formula first with unicode_fol_kit.fol.qml.qml_validity_formula "
+                "(the standard translation to this classical fragment), then "
+                "hand it to unicode_fol_kit.hets.dol.to_dol_library_from_modal — "
+                "do not pass a modal node (Box/Diamond/…) to this exporter "
+                "directly. Every other non-classical logic (counting/measure/"
                 "cardinality, second-order quantification, linear/Lambek/"
-                "team-semantic connectives, …) may later be routed through a "
-                "DOL (Distributed Ontology Language) heterogeneous "
-                "translation instead of a direct CASL emitter."
+                "team-semantic connectives, …) has no such route yet and may "
+                "later be routed through a DOL (Distributed Ontology Language) "
+                "heterogeneous translation instead of a direct CASL emitter."
             )
 
 
@@ -428,8 +463,7 @@ def _infer_term(node: Node, env: Dict[str, str], sig: _Signature) -> _Slot:
 
     if cls in ("Constant", "SortedConstant"):
         name = node.name
-        if name in sig.func_names:
-            raise ValueError(_CONST_VS_FUNCTION.format(name=name))
+        _check_not_dual_use(name, sig.func_names, _CONST_VS_FUNCTION.format(name=name))
         sig.const_names.add(name)
         slot: _Slot = ("const", name)
         if cls == "SortedConstant":
@@ -439,12 +473,12 @@ def _infer_term(node: Node, env: Dict[str, str], sig: _Signature) -> _Slot:
 
     if cls == "Function":
         name = node.name
-        if name in sig.const_names:
-            raise ValueError(_CONST_VS_FUNCTION.format(name=name))
+        _check_not_dual_use(name, sig.const_names, _CONST_VS_FUNCTION.format(name=name))
         arity = len(node.args)
         prev = sig.func_arity.get(name)
-        if prev is not None and prev != arity:
-            raise ValueError(
+        if prev is not None:
+            _check_single_valued(
+                {prev, arity},
                 f"CASL export: function '{name}' used with conflicting "
                 f"arities {prev} and {arity}."
             )
@@ -483,8 +517,9 @@ def _infer_formula(node: Node, env: Dict[str, str], sig: _Signature) -> None:
             return
         arity = len(node.args)
         prev = sig.pred_arity.get(node.predicate)
-        if prev is not None and prev != arity:
-            raise ValueError(
+        if prev is not None:
+            _check_single_valued(
+                {prev, arity},
                 f"CASL export: predicate '{node.predicate}' used with "
                 f"conflicting arities {prev} and {arity}."
             )
@@ -787,6 +822,7 @@ def to_casl_spec(
     conjectures: Iterable[Node] = (),
     spec_name: str = "KitExport",
     default_sort: str = "Thing",
+    subsorts: Optional[Mapping[str, FrozenSet[str]]] = None,
 ) -> str:
     """Render ``axioms`` and ``conjectures`` as one complete CASL basic spec:
     ``spec <spec_name> = … end``, Hets-parsable ASCII text.
@@ -801,11 +837,25 @@ def to_casl_spec(
     sections are emitted only when non-empty, sorted alphabetically by
     symbol name (``ops`` merges constants and functions into one list).
 
+    ``subsorts`` (default ``None``, no subsort declarations emitted) is the
+    child-sort-to-DIRECT-parent-sorts mapping — the same shape as
+    :attr:`~unicode_fol_kit.fol.signature.Signature.subsorts`, and typically
+    passed as exactly that attribute — completing the round trip with
+    :func:`unicode_fol_kit.fol.casl_import.parse_casl_spec`, which reads
+    ``sort <child> < <parent>`` back into the identical mapping. Unlike
+    every other declaration here, a subsort edge is NOT inferred from the
+    formulas (nothing about ``S < T`` is derivable from how ``S``/``T`` are
+    USED in an axiom), so both sort names in every edge are added to the
+    ``sorts`` line even if neither appears in any formula, and both are
+    checked against the CASL reserved-word list exactly like every other
+    emitted sort name (see the module docstring's "Reserved words" section).
+
     Raises:
         ValueError: neither ``axioms`` nor ``conjectures`` contains any
             formula; ``spec_name`` is not a simple identifier or collides
-            with a CASL keyword; or any of the sort-inference / identifier
-            refusals documented on :func:`formula_to_casl` above.
+            with a CASL keyword; a sort name in ``subsorts`` is reserved; or
+            any of the sort-inference / identifier refusals documented on
+            :func:`formula_to_casl` above.
         NotImplementedError: as :func:`formula_to_casl`.
     """
     _validate_spec_name(spec_name)
@@ -817,9 +867,19 @@ def to_casl_spec(
             "CASL export: to_casl_spec needs at least one axiom or "
             "conjecture; an empty spec has no formulas to export."
         )
+    subsorts = subsorts or {}
+    subsort_edges: List[Tuple[str, str]] = sorted(
+        (child, parent) for child, parents in subsorts.items() for parent in parents
+    )
+    for child, parent in subsort_edges:
+        _check_reserved(child, "sort")
+        _check_reserved(parent, "sort")
 
     sig = _analyze(all_formulas, default_sort)
     declared_sorts: Set[str] = set(sig.literal_sorts)
+    for child, parent in subsort_edges:
+        declared_sorts.add(child)
+        declared_sorts.add(parent)
 
     op_entries: List[Tuple[str, str]] = []
     for name in sorted(sig.func_names):
@@ -847,6 +907,8 @@ def to_casl_spec(
     lines = [f"spec {spec_name} ="]
     if declared_sorts:
         lines.append("  sorts " + ", ".join(sorted(declared_sorts)))
+    for child, parent in subsort_edges:
+        lines.append(f"  sort {child} < {parent}")
     if op_entries:
         lines.append(_render_block("ops", op_entries))
     if pred_entries:

@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "unicode-fol-kit"
-version = "0.27.0"
+version = "0.28.0"
 description = "Parser and toolkit for first-order logic formulas using Unicode operators"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 authors = [
-    { name = "Felix Vossel", email = "felixvossel@gmail.com" },
+    { name = "Felix Vossel", email = "fvossel@uos.de" },
 ]
 keywords = ["logic", "fol", "first-order-logic", "parser", "lukasiewicz", "lambda-calculus"]
 classifiers = [
@@ -87,6 +87,27 @@ cp = [
     # unavailable and every other backend is unaffected.
     "minizinc>=0.9",
 ]
+owl = [
+    # unicode_fol_kit.dl.owl_reasoner — the external OWL 2 DL route: owlready2
+    # drives the bundled HermiT reasoner over a whole ontology, for the
+    # constructs the in-house ALCHQ(S) tableau refuses (inverse roles,
+    # nominals) and as an independent oracle on the fragment it does decide.
+    # HermiT is a JAR, so a JVM must be on PATH as well (Java 8 or newer);
+    # owl_reasoner_available() checks for both. owlready2 is LGPL-3.0-or-later
+    # (this kit is MIT): it is an optional, separately installed dependency
+    # that the kit only imports, never vendors or links statically.
+    "owlready2>=0.46",
+]
+lint = [
+    # Pins mypy for the CI `typecheck` job (.github/workflows/tests.yml)
+    # and its local equivalent, `python tools/mypy_ratchet.py`. An EXACT
+    # pin, not a range: a moving mypy version changing its own inference is
+    # a false-failure source unrelated to any code change -- same reasoning
+    # as the E-prover/APE pins in tests.yml. tools/mypy_baseline.json is
+    # generated against this exact version; bump both together
+    # (`pip install -e .[lint]` then `python tools/mypy_ratchet.py --update`).
+    "mypy==2.3.1",
+]
 
 [project.urls]
 Documentation = "https://unicode-fol-kit.readthedocs.io/"
@@ -117,7 +138,40 @@ markers = [
     # (unicode_fol_kit.hets), gated by hets_available() and skipped automatically
     # when no server is reachable. Run explicitly and SERIALLY: `pytest -m hets_live`.
     "hets_live: exercises a real HETS server via unicode_fol_kit.hets (Docker-backed REST; skipped automatically when hets_available() is False)",
+    # Same convention again, for the external OWL 2 DL route: each test spawns
+    # HermiT in a JVM through owlready2 (see the `owl` extra), so these are
+    # skipped automatically unless owl_reasoner_available() finds both. Unlike
+    # isabelle_live they are seconds, not minutes, and safe under `-n`.
+    "owl_live: exercises a real owlready2 + HermiT installation via unicode_fol_kit.dl.owl_reasoner (skipped automatically when owl_reasoner_available() is False)",
+    # Same convention again, for the Lean 4 route: each test spawns `lean` as a
+    # subprocess to elaborate (and, for a hand-written proof, kernel-check) the
+    # emitted file, gated by lean_available() (checks UFK_LEAN_HOME / PATH /
+    # ~/.elan/bin) and skipped automatically when no toolchain is found. Each
+    # elaboration is its own short-lived process (no shared JVM/session state
+    # the way Isabelle's builds have), so -- unlike isabelle_live -- these are
+    # safe under `-n`.
+    "lean_live: exercises a real Lean 4 installation via hol.lean (subprocess elaboration; skipped automatically when lean_available() is False)",
 ]
+
+[tool.mypy]
+python_version = "3.10"
+packages = ["unicode_fol_kit"]
+ignore_missing_imports = true
+# rdkit's PEP 561 stub package (rdkit-stubs) has shipped releases whose
+# generated .pyi files contain outright syntax errors (observed: a
+# duplicated, misordered parameter list in Chem/rdmolfiles.pyi under rdkit
+# 2026.3.5) -- a BLOCKING error that aborts mypy's whole run (exit code 2,
+# before every file is even reached) and that neither ignore_errors nor a
+# per-module follow_imports = "skip" override can silence (verified: both
+# leave the crash in place, since the stub is parsed regardless of either
+# setting). Disabling PEP 561 site-packages discovery sidesteps it: every
+# third-party import then falls back to Any under ignore_missing_imports
+# above, instead of being consulted for real type info. See
+# tools/mypy_ratchet.py's module docstring for the full account -- this is
+# a deliberate trade-off (this project's own code is checked exactly as
+# strictly either way; only third-party call-signature fidelity is
+# reduced), not a silent loosening of the gate itself.
+no_site_packages = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["unicode_fol_kit"]

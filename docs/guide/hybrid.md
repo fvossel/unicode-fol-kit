@@ -5,7 +5,7 @@ Plain modal logic can say *"somewhere accessible, P holds"* (`◇P`) — but it 
 - a **nominal** `i` — an atomic formula true at *exactly one* world, thereby naming it;
 - the **satisfaction operator** `@i φ` — "at the world named `i`, `φ` holds", evaluated *there* no matter where you currently stand.
 
-Together they buy things plain modal logic cannot express: asserting facts about a *specific* world from anywhere (`@i P`), asserting **world equality** (`@i j` — "the worlds named `i` and `j` are the same"), and pinning frame properties to named points (`(◇i ∧ @i P) → ◇P`). H(@) over **K** stays decidable — the undecidable `↓` binder is deliberately not in the kit (see the boundary section below).
+Together they buy things plain modal logic cannot express: asserting facts about a *specific* world from anywhere (`@i P`), asserting **world equality** (`@i j` — "the worlds named `i` and `j` are the same"), and pinning frame properties to named points (`(◇i ∧ @i P) → ◇P`). H(@) over **K** stays decidable. Adding the **↓** binder (`↓x.φ` — "name the current world `x`, then continue") gives the full hybrid language **H(@,↓)**, which the kit also supports, through three separate, honestly-scoped routes rather than one bare-bool check — see {ref}`full-hybrid-logic-h-the-binder` below.
 
 ## Syntax
 
@@ -143,7 +143,6 @@ On pure modal input (no nominals) `hybrid_is_valid` agrees with the native table
 
 ## The honest boundary
 
-- **The `↓` binder is deliberately out of scope.** Full hybrid logic adds `↓x φ` ("name the current world x and continue"), which makes validity **undecidable**; H(@) without it stays decidable. There is no `↓` node in the kit.
 - **The modal tableau rejects hybrid input** — cleanly, never with a wrong verdict. A labelled tableau would need extra rules to honour a nominal's name-exactly-one-world constraint (treating it as an ordinary atom would wrongly refute `@i i`), so `is_modal_valid`, `modal_decide`, `modal_prove`, `modal_countermodel`, and `modal_tableau_closed` all raise on nominals:
 
 ```python
@@ -157,3 +156,73 @@ is_modal_valid(mp.parse("@i P → P"))
 - **The direct classical exporters reject too** (`Nominal(…).to_z3()` and friends raise): a nominal is world-relative, so the *sanctioned* routes into classical reasoning are the standard translation and `hybrid_is_valid`.
 
 For the plain modal machinery these constructs extend — Kripke models, the standard translation, the tableau, frames — see {doc}`modal`; for quantified modal logic see {doc}`quantified-modal`.
+
+(full-hybrid-logic-h-the-binder)=
+## Full hybrid logic H(@,↓): the ↓ binder
+
+`↓x.φ` **binds the state variable `x` to the CURRENT world**, then evaluates `φ` — which may refer back to `x`, exactly the way it would refer to a nominal, via a bare occurrence or `@x`. This is strictly more expressive than H(@): a plain nominal names a world *fixed in advance by the model*, but `↓x` names *whichever world evaluation happens to be visiting right now* — so `↓x.□¬x` ("name here `x`; every successor differs from `x`") states **irreflexivity of the current world** as a single formula, something no fixed nominal assignment can express. `↓x` parses and renders like any other binder (`AST` node `Down`, grammar level `quantifier`, same precedence as `∀`/`∃`):
+
+```python
+from unicode_fol_kit import MSFLParser, KripkeModel, satisfies_modal, standard_translation
+
+mp = MSFLParser(modal=True)
+
+irreflexive = mp.parse("↓x.□¬x")
+irreflexive
+# → Down(variable=Nominal(name='x'), formula=Box(formula=Not(formula=Nominal(name='x'))))
+irreflexive.to_unicode_str()          # → '↓x.□¬x'   (round-trips: mp.parse(...) == irreflexive)
+
+m = KripkeModel({0, 1}, {"alethic": {(0, 1), (1, 1)}})   # world 1 has a self-loop, world 0 does not
+satisfies_modal(irreflexive, m, 0)    # → True   (world 0 has no self-loop)
+satisfies_modal(irreflexive, m, 1)    # → False  (world 1 DOES have one)
+```
+
+Adding `↓` to H(@) gives full **H(@,↓)**, whose validity is **UNDECIDABLE** (Areces, Blackburn & Marx 1999) — but the standard translation stays *meaning-preserving* for it (this is exactly the theorem that defines the "bounded fragment"), so nothing here silently approximates: each of the three routes below is honest about exactly what it can and cannot decide, instead of collapsing PROVED/REFUTED/UNKNOWN into one bare bool the way `hybrid_is_valid` safely can for the *decidable* H(@) fragment.
+
+### Three routes, honestly scoped
+
+| route | what it decides | never wrong about |
+| --- | --- | --- |
+| `satisfies_modal` (route A) | truth of `↓`, at a GIVEN finite model | everything — the ground truth; always terminates |
+| `down_is_valid(formula, frame=…)` (Z3) | validity — **PROVED only** | a `PROVED` verdict (sound: depends only on Z3's soundness, never on completeness for this undecidable fragment) |
+| `atp.kripke_enum.KripkeEnumBackend` / `modal_enum_search` (bounded search) | validity — **REFUTED only** | a `REFUTED` verdict (every countermodel is independently re-checked with `satisfies_modal`); exhausting the search is *never* a validity proof |
+
+```python
+from unicode_fol_kit.fol.modal_translation import down_is_valid
+from unicode_fol_kit.atp.kripke_enum import modal_enum_search
+from unicode_fol_kit.atp.hybrid_down import down_decide
+
+standard_translation(irreflexive).to_unicode_str()
+# → '∀w0 (R(w, w0) → ¬w0 = w)'   -- exactly the FO irreflexivity condition, hand-derivable
+
+down_is_valid(irreflexive, frame="K").status      # → 'unknown'  (K does not force irreflexivity)
+
+reflexive = mp.parse("↓x.◇x")
+down_is_valid(reflexive, frame="T").status         # → 'proved'   (T IS reflexive, by definition)
+down_is_valid(reflexive, frame="K").status          # → 'unknown'  (never REFUTED — see its own docstring)
+
+result = modal_enum_search(reflexive, frame="K", max_worlds=2)
+result.model                                        # → KripkeModel(worlds={0}, relations={'alethic': set()}, …)
+satisfies_modal(reflexive, result.model, 0)         # → False   (independently re-verified — a genuine countermodel)
+
+# down_decide runs down_is_valid first, then KripkeEnumBackend if needed, and
+# returns whichever route actually settled the question:
+down_decide(reflexive, frame="K", max_worlds=2).status   # → 'refuted'
+```
+
+`↓x.(@x p ↔ p)` is a tautology over **every** frame/valuation (worked out by hand: `@x` re-anchors at `x`, and `↓x` just bound `x` to the *current* world — so "`p` at `x`" and bare "`p`" ask the identical question); `↓x.↓x.φ` makes the outer binding entirely inert (the inner `↓x` rebinds first); `↓x.(P ∧ ↓y.@x Q)` (`y ≠ x`) shows the inner binder canNOT capture the outer `@x`. `tests/test_hybrid_down.py` checks all of these — including a brute-force sweep over every relation/valuation on 1–3 worlds, cross-checked against an independent, from-scratch reference evaluator, not just `satisfies_modal` agreeing with itself.
+
+### `↓` is refused, by name, wherever it cannot be decided
+
+Every route that is only sound because it is scoped to a *decidable* fragment refuses a `↓`-formula explicitly, rather than silently deciding a larger logic than it was built for: `hybrid_is_valid` (its bare-bool contract needs H(@)'s decidability — see its own docstring), the modal tableau's five entry points (`is_modal_valid` / `modal_decide` / `modal_prove` / `modal_countermodel` / `modal_tableau_closed`), `fol.qml` (`qml_translate` / `qml_is_valid` / `to_thf_modal`), and the HOL/THF shallow embeddings (`hol.isabelle_modal.to_isabelle_modal`, `hol.thf_modal.to_thf_modal_full`, `hol.ho_modal`'s third-order routes):
+
+```python
+from unicode_fol_kit.fol.modal_translation import hybrid_is_valid
+
+hybrid_is_valid(irreflexive)
+# raises NotImplementedError: hybrid_is_valid: the ↓ binder (Down) makes hybrid
+# validity undecidable, so this bare-bool, PROVED-and-REFUTED-conflating check
+# cannot honestly answer for it. Use down_is_valid …
+```
+
+`Down(…).to_z3()` / `.to_prover9()` / `.to_tptp()` raise the same way, naming `down_is_valid` / `KripkeEnumBackend` as the sanctioned routes. `standard_translation` itself does NOT raise on `↓` — it threads a `↓`-bound name to the current-world term (no fresh quantifier introduced), which is exactly what makes `down_is_valid` possible in the first place.

@@ -117,6 +117,70 @@ is_valid(parser.parse("(Human(socrates) ∧ ∀x (Human(x) → Mortal(x))) → M
 is_satisfiable(parser.parse("∀x (P(x) → Q(x)) ∧ P(a) ∧ ¬Q(a)"))  # → False (the entailment holds)
 ```
 
+### Many-sorted quantifiers (MSFOL) and sort non-emptiness
+
+A `SortedQuantifier`/`SortedConstant`/`SortedCount` is relativised to plain classical FOL before it reaches Z3 (`∀x:S φ` → `∀x (S(x) → φ)`, `∃x:S φ` → `∃x (S(x) ∧ φ)`), but that relativisation alone says nothing about whether `S` is empty. **This kit's MSFOL convention is that no sort is ever empty** — the same convention the finite model finder enforces (`semantics.modelfinder`: a sort's universe is always a *non-empty* subset of the domain) and TPTP TF0 guarantees natively. `is_satisfiable` / `is_valid` / `get_model` — and every other classical decision route in the kit (`prove`/`countermodel`, `cvc5`, Prover9, the TPTP `fof` export, and `eval.equivalence.equivalent`'s solver level) — assert one `∃x (S(x))` sentence per sort mentioned, so a solver is never allowed to "cheat" an otherwise-valid many-sorted formula by making a sort's extension empty:
+
+```python
+msfol = MSFLParser(many_sorted=True)
+
+# Valid ONLY because Human is non-empty: the antecedent's "for all" is a
+# strictly stronger claim than the consequent's "there exists" precisely
+# because at least one Human is guaranteed to exist.
+is_valid(msfol.parse("(∀x:Human Mortal(x)) → ∃x:Human Mortal(x)"))          # → True
+
+# "every Ghost is P" together with "every Ghost is not-P" is unsatisfiable
+# — a witness Ghost would have to be both P and not-P. (Without the
+# non-emptiness assumption a solver could instead make Ghost's extension
+# empty, satisfying both universals vacuously — this is what a solver is
+# no longer allowed to do.)
+is_satisfiable(msfol.parse("∀x:Ghost P(x) ∧ ∀x:Ghost ¬P(x)"))               # → False
+
+from unicode_fol_kit import api
+api.prove(msfol.parse("(∀x:Human Mortal(x)) → ∃x:Human Mortal(x)"), backends=["z3"]).status  # → 'proved'
+```
+
+The non-emptiness sentences are added as their own extra, top-level, never-negated assumptions alongside whatever is being decided — never folded inside the per-formula translation itself (`Node.to_z3`/`to_prover9`/`to_tptp` stay polarity-blind, exactly as before). For a `get_model`/`is_satisfiable` call this means an extra asserted conjunct; for `is_valid`/entailment it means an extra premise. A REFUTED verdict's countermodel is therefore always a legal MSFOL structure (every sort non-empty) — never a spurious empty-sort one `semantics.modelfinder` would refuse to consider a model at all. An unsorted formula is completely unaffected: the extra sentences are empty, so the solver call (and its result) is byte-identical to a formula with no sorts. The arithmetic-aware `is_valid_arith` / `is_satisfiable_arith` / `get_model_arith` below carry the identical assumption — a sort guard is still just an uninterpreted predicate once lowered, even over the (infinite) real/int numeric sort.
+
+### Subsorting (S < T)
+
+`Signature` can additionally declare a **subsort** relation between sorts (`subsorts={"Human": frozenset({"Animal"})}`, a child sort mapped to its direct declared parents), read with subset semantics: `S < T` means `⟦S⟧ ⊆ ⟦T⟧`, nothing more — no injection/coercion functions, no casts, no operation or predicate overloading across the hierarchy, unlike full CASL order-sorted algebra. `Signature.is_subsort(s, t)` answers the reflexive-transitive closure of the declared direct edges (cycle-checked at construction time), and it is deliberately one-directional: `is_subsort("Human", "Animal")` and `is_subsort("Animal", "Human")` differ the moment only `Human < Animal` is declared.
+
+Three routes honour a declared `subsorts` mapping when asked to:
+
+```python
+from unicode_fol_kit import Signature, MSFLParser, subsort_axioms, api
+from unicode_fol_kit.semantics.modelfinder import find_countermodel
+
+sig = Signature.from_dict({
+    "predicates": {"Mortal": {"arity": 1, "arg_sorts": ["Thing"]}},
+    "sorts": ["Human", "Animal", "Thing"],
+    "subsorts": {"Human": ["Animal"], "Animal": ["Thing"]},
+})
+sig.is_subsort("Human", "Thing")   # → True (transitive)
+sig.is_subsort("Thing", "Human")   # → False (not symmetric)
+
+msfol = MSFLParser(many_sorted=True)
+premise = msfol.parse("∀x:Animal Mortal(x)")
+goal = msfol.parse("∀x:Human Mortal(x)")
+
+# Without the subsort edge, the Human and Animal guard predicates are
+# unrelated, so the inference does not go through:
+api.prove(goal, [premise]).status                          # → 'refuted'
+
+# subsort_axioms gives one ∀x (S(x) → T(x)) per DIRECT edge, added as extra
+# premises -- the same contract as nonempty_sort_axioms:
+[a.to_unicode_str() for a in subsort_axioms(sig)]
+# → ['∀x (Animal(x) → Thing(x))', '∀x (Human(x) → Animal(x))']
+api.prove(goal, [premise, *subsort_axioms(sig)]).status    # → 'proved'
+
+# semantics.modelfinder's subsorts= kwarg gives the model finder the same
+# guarantee, agreeing with the route above:
+find_countermodel([premise], goal, subsorts=sig.subsorts)  # → None (no countermodel)
+```
+
+`find_model`/`is_satisfiable_finite`/`is_valid_finite` take the identical `subsorts=` mapping and filter the sorted search space against its FULL transitive closure — computed once per search and checked against every sort pair the theory actually scans, not just the direct edges. `fol.casl_export.to_casl_spec` and `fol.casl_import.parse_casl_spec` complete the round trip through CASL's own `sort S < T` syntax: `to_casl_spec([premise], subsorts=sig.subsorts)` emits `sort Animal < Thing` / `sort Human < Animal` lines, and `parse_casl_spec` reads them back into the identical `subsorts` mapping. The axioms are premises, never part of `to_fol`'s own output: that translation is polarity-blind, and an axiom conjoined onto the formula being proved would itself have to be proved. Omitting `subsorts` everywhere reproduces every route's prior behaviour byte-for-byte; routes that take no signature at all (the TPTP exporters, the ASP/CP lowering) are unchanged.
+
 ### Arithmetic-aware solving
 
 The default `is_satisfiable` / `to_z3` treat everything as one uninterpreted sort, so arithmetic terms are opaque. The `*_arith` variants instead interpret `+ - * /` and the comparisons over a numeric sort (`"real"` by default, or `"int"`), so the solver can actually reason about numbers.
@@ -211,6 +275,206 @@ check_logical_entailment_vampire(premises, conclusion, vampire_path="/usr/bin/va
 ```
 
 On Windows a Linux Vampire installed in WSL can be driven with `use_wsl=True` (the temp problem file's path is translated to its `/mnt/...` form automatically). Every premise and the conclusion must be a closed sentence — Vampire rejects free variables, and recall that a single lowercase letter like `x` is a *variable*, so a constant individual needs a multi-character name (`socrates`) or the `c_`-prefix.
+
+### Native typed arithmetic for Vampire/E (TFA)
+
+By default, Vampire/E see `+ - * /` and `< > ≤ ≥` as plain TPTP dollar-word symbols with no type attached — they cannot activate their *native* arithmetic decision procedures on them, the exact same gap `is_satisfiable`/`to_z3` have relative to `is_satisfiable_arith`/`to_z3_arith` (see "Arithmetic-aware solving" above). Passing `sort="real"` or `sort="int"` to `check_logical_entailment_vampire`, `check_entailment_vampire_detailed`, or the equivalent E functions in `unicode_fol_kit.atp.eprover_backend` switches the exported problem to TPTP's own typed dialect (`tff`, with genuine `$real`/`$int` declarations) instead — mirroring `is_valid_arith`'s/`is_satisfiable_arith`'s own single-numeric-sort design: the WHOLE problem lives in one caller-chosen numeric sort, and an ordinary (non-arithmetic) predicate/function/constant is simply declared over that same sort rather than guessed at.
+
+```python
+# doctest: +SKIP  — requires an installed Vampire binary; not executed in CI/docs
+from unicode_fol_kit import MSFLParser, check_logical_entailment_vampire
+
+parser = MSFLParser()
+
+check_logical_entailment_vampire(
+    [], parser.parse("∀x (x * 2 = x + x)"),
+    vampire_path="vampire", use_wsl=True, sort="real")    # → True
+
+# $int vs $real genuinely changes the answer: every integer > 0 is ≥ 1
+# (no integer strictly between 0 and 1), but 0.5 is a real counterexample.
+check_logical_entailment_vampire(
+    [], parser.parse("∀x (x > 0 → x ≥ 1)"),
+    vampire_path="vampire", use_wsl=True, sort="int")     # → True
+check_logical_entailment_vampire(
+    [], parser.parse("∀x (x > 0 → x ≥ 1)"),
+    vampire_path="vampire", use_wsl=True, sort="real")    # → False
+```
+
+An ordinary predicate coexists with the arithmetic facts in the same problem, declared over the same numeric sort:
+
+```python
+# doctest: +SKIP  — requires an installed Vampire binary; not executed in CI/docs
+from unicode_fol_kit.atp.vampire_entailment import check_entailment_vampire_detailed
+
+premises = [parser.parse("Prime(seven) ∧ seven + 3 = 10")]
+result = check_entailment_vampire_detailed(
+    premises, parser.parse("Prime(seven)"),
+    vampire_path="vampire", use_wsl=True, sort="int")
+result["status"], result["szs_status"]    # → ('proved', 'Theorem')
+```
+
+A formula that mixes the numeric sort with a genuinely different one (a `SortedQuantifier`/`SortedConstant`) is refused loudly rather than guessed at — use the many-sorted `tff` route (`sort` omitted, an implicit `SortedQuantifier` present) for that case instead. TFF also has one flat symbol table (unlike the classical `fof` route, where syntactic position alone tells a predicate from a function apart), so a predicate and a function/constant that would render as the same TPTP identifier — `Price(x)` alongside `price(x)`, say, both folding to `price` — is refused for the same reason, rather than silently emitting two conflicting type declarations for one name.
+
+## Proof objects from external provers (TSTP)
+
+The section above only asks a prover *whether* an entailment holds. TPTP-family provers (Vampire, E, …) can also be asked to print the *proof itself*, as annotated **TSTP** text — a sequence of `fof`/`cnf` statements, each citing the rule and parent statements it followed from:
+
+```text
+cnf(name, role, formula, inference(rule, [status(thm)], [parent, ...])).
+```
+
+`atp.tstp` reads this text into a proof DAG and `atp.tstp_check` re-derives it independently (Robinson unification and Z3 entailment checks it does not share code with any searcher or with the prover that produced the text); `atp.tstp.to_tstp` goes the other way, turning a derivation the kit has already certified into the same TSTP text.
+
+### Reading and checking a Vampire/E proof
+
+`extract_szs_status` pulls the `% SZS status ...` verdict line out of raw prover stdout, `parse_tstp_derivation` turns the `fof`/`cnf` statements into a `TstpDerivation`, and `check_tstp_derivation` re-derives every step from scratch — clausification/normalisation steps by Z3 entailment (`unknown`/timeout never counts as a pass), the core calculus rules (resolution, factoring, superposition, demodulation, equality resolution, subsumption resolution) by an independent from-scratch unifier and alpha-variant search, and a leaf statement by alpha-equivalence against the caller's own premises/conclusion:
+
+```python
+from unicode_fol_kit import extract_szs_status, parse_tstp_derivation, check_tstp_derivation
+from unicode_fol_kit.fol.tptp_input import parse_tptp_formula
+
+# Captured from `vampire --proof tptp --avatar off` (Vampire 5.0.1) proving
+# {∀X (X=a → q(X))} ⊢ q(a).
+vampire_proof = """\
+% SZS status Theorem for er
+% SZS output start Proof for er
+fof(f1,axiom,( ! [X0] : (X0 = a => q(X0))), file('er.p',unknown)).
+fof(f2,conjecture,( q(a)), file('er.p',unknown)).
+fof(f3,negated_conjecture,( ~q(a)), inference(negated_conjecture,[status(cth)],[f2])).
+fof(f4,plain,( ~q(a)), inference(flattening,[],[f3])).
+fof(f5,plain,( ! [X0] : (q(X0) | a != X0)), inference(ennf_transformation,[],[f1])).
+fof(f6,plain,( ( ! [X0] : (q(X0) | a != X0) )), inference(cnf_transformation,[],[f5])).
+fof(f7,plain,( ~q(a)), inference(cnf_transformation,[],[f4])).
+fof(f8,plain,( q(a)), inference(equality_resolution,[],[f6])).
+fof(f9,plain,( $false), inference(forward_subsumption_resolution,[],[f8,f7])).
+% SZS output end Proof for er
+"""
+
+extract_szs_status(vampire_proof)                       # → 'Theorem'
+
+d = parse_tstp_derivation(vampire_proof)
+[s.name for s in d.steps]                                # → ['f1', 'f2', ..., 'f9']
+
+premises = [parse_tptp_formula("! [X] : (X = a => q(X))")]
+conclusion = parse_tptp_formula("q(a)")
+r = check_tstp_derivation(d, premises, conclusion)
+(r.verified, r.refuted)                                   # → (True, True)
+```
+
+A **fake** proof is rejected, not merely "not confirmed" — `c3` below claims that resolving `{p(a)}` against `{¬p(a)}` gives `q(b)`; the real resolvent (mgu `{}`, both literals ground) is the *empty* clause, so the independent re-derivation finds no complementary-literal pair whose mgu produces the stated clause:
+
+```python
+fake_proof = """\
+cnf(c1, plain, p(a)).
+cnf(c2, plain, ~p(a)).
+cnf(c3, plain, q(b), inference(resolution, [status(thm)], [c1, c2])).
+"""
+fake = parse_tstp_derivation(fake_proof)
+fake_premises = [parse_tptp_formula("p(a)"), parse_tptp_formula("~p(a)")]
+fr = check_tstp_derivation(fake, fake_premises, None, query="refutation")
+(fr.verified, fr.error)
+# → (False, "step 'c3' (checked): 'resolution': no complementary-polarity
+#            literal pair's mgu produces the stated clause")
+```
+
+`query="refutation"` (used above, no `conclusion`) is for a derivation that already folds `premises ∧ ¬conclusion` into one clause set with no separate conjecture — the framing `atp.resolution` and the writer below both use; `query="conjecture"` (the default, used for the Vampire example) is for a derivation that poses the conclusion as its own `conjecture`-role leaf, exactly what Vampire/E print.
+
+### Writing a TSTP proof from a certified derivation
+
+`atp.tstp.to_tstp` is the write-side companion: it serialises a `ResolutionStep`/`ResolutionDerivation` (the same proof-object shape `atp.resolution_check.verify_resolution_proof` independently checks — see [Equality via paramodulation](#equality-via-paramodulation) above) as annotated TSTP `cnf(...)` text. It does **not** let the kit export a proof its own search "discovered" — `prove`/`refute` return a bare `bool` and build no derivation trace — it serialises whatever `ResolutionDerivation` the kit has already **certified**, regardless of who built it (a hand-authored fixture, or one transcribed from elsewhere and checked):
+
+```python
+from unicode_fol_kit import ResolutionStep, ResolutionDerivation, verify_resolution_proof
+from unicode_fol_kit.atp.tstp import to_tstp
+from unicode_fol_kit.fol.nodes import Atom, Not, Constant
+
+a = Constant("a")
+def P(*args): return Atom("P", list(args))
+
+# {P(a)}, {¬P(a)} resolve directly to the empty clause.
+inputs = (frozenset({P(a)}), frozenset({Not(P(a))}))
+steps = (
+    ResolutionStep(1, frozenset({P(a)}), "input"),
+    ResolutionStep(2, frozenset({Not(P(a))}), "input"),
+    ResolutionStep(3, frozenset(), "resolve", (1, 2)),
+)
+deriv = ResolutionDerivation(inputs, steps)
+verify_resolution_proof(deriv).ok                         # → True (certified first)
+
+print(to_tstp(deriv))
+# cnf(c1, plain, p(a)).
+# cnf(c2, plain, ~(p(a))).
+# cnf(c3, plain, $false, inference(resolution, [status(thm)], [c1, c2])).
+```
+
+`to_tstp` refuses an **uncertified** derivation loudly (`ValueError`, never silently serialising a bogus step), and the text it produces reads back through the SAME `parse_tstp_derivation` used above:
+
+```python
+roundtrip = parse_tstp_derivation(to_tstp(deriv))
+[(s.name, s.rule, s.parents) for s in roundtrip.steps]
+# → [('c1', None, ()), ('c2', None, ()), ('c3', 'resolution', ('c1', 'c2'))]
+```
+
+An `"input"` step (0 parents) carries no `inference(...)` source at all — matching how `parse_tstp_derivation` reads a leaf statement — and the kit's own rule names are mapped onto whichever TSTP token `atp.tstp_check`'s checked-rule tables actually dispatch to a matching re-derivation (`resolve`→`resolution`, `factor`→`factoring`, `paramodulate`→`superposition`, `demodulate`→`rw`, `reflexivity`→`equality_resolution` — TSTP does not standardise this vocabulary, so any stable string would parse, but these are the ones `check_tstp_derivation` can actually re-derive rather than merely accept as unchecked). Non-ASCII, digit-leading, or case-colliding kit-level symbol names are sanitised the same way `atp._tptp_problem.generate_tptp_problem_with_mapping` sanitises a TPTP problem file; passing that call's own returned mapping in via `to_tstp(deriv, name_map=mapping)` keeps a proof's symbol spellings identical to a problem file already exported for the same premises.
+
+A `name_map` passed in this way does not have to cover every symbol the derivation uses — a symbol it does not cover is still sanitised, never emitted unchanged, even when a caller's mapping was built from an unrelated problem:
+
+```python
+from unicode_fol_kit.atp._tptp_problem import generate_tptp_problem_with_mapping
+
+# A mapping built for a DIFFERENT problem -- it knows "Foo"/"a", nothing else.
+_, mapping = generate_tptp_problem_with_mapping(
+    [Atom("Foo", [Constant("a")])], Atom("Foo", [Constant("a")])
+)
+
+# This derivation's own constant, "9lives", is digit-leading and absent
+# from `mapping` -- to_tstp still sanitises it instead of passing it
+# through illegally.
+nine = Constant("9lives")
+c1, c2 = frozenset({P(nine)}), frozenset({Not(P(nine))})
+gap_deriv = ResolutionDerivation(
+    (c1, c2),
+    (ResolutionStep(1, c1, "input"),
+     ResolutionStep(2, c2, "input"),
+     ResolutionStep(3, frozenset(), "resolve", (1, 2))))
+verify_resolution_proof(gap_deriv).ok                     # → True
+
+print(to_tstp(gap_deriv, name_map=mapping))
+# cnf(c1, plain, p(n9lives)).
+# cnf(c2, plain, ~(p(n9lives))).
+# cnf(c3, plain, $false, inference(resolution, [status(thm)], [c1, c2])).
+```
+
+A symbol that is *already* TPTP-legal on its own is still checked against its namespace's own round-trip-safe case (predicates conventionally upper-case-initial, constants/functions conventionally lower-case-initial) before being treated as an untouched identity — a lower-case predicate such as `bar` is legal TPTP syntax, but `atp.tstp`'s own reader (`fol.tptp_input`) upper-cases a parsed predicate's first character *unconditionally* on import, so passing `bar` straight through unchanged would make it come back as the different name `Bar`, silently:
+
+```python
+from unicode_fol_kit.atp.tstp import apply_reverse_tptp
+from unicode_fol_kit.atp._tptp_problem import TptpNameMap
+
+case_deriv = ResolutionDerivation(
+    (frozenset({Atom("bar", [a])}), frozenset({Not(Atom("bar", [a]))})),
+    (ResolutionStep(1, frozenset({Atom("bar", [a])}), "input"),
+     ResolutionStep(2, frozenset({Not(Atom("bar", [a]))}), "input"),
+     ResolutionStep(3, frozenset(), "resolve", (1, 2))))
+verify_resolution_proof(case_deriv).ok                    # → True
+
+text = to_tstp(case_deriv)
+print(text)
+# cnf(c1, plain, bar(a)).
+# cnf(c2, plain, ~(bar(a))).
+# cnf(c3, plain, $false, inference(resolution, [status(thm)], [c1, c2])).
+
+parsed = parse_tstp_derivation(text)
+parsed.steps[0].formula
+# → Atom(predicate='Bar', args=(Constant(name='a'),))  -- the reader always
+#   upper-cases a parsed predicate's first letter, whatever was printed
+
+apply_reverse_tptp(parsed.steps[0].formula, TptpNameMap(predicate={"bar": "Bar"}))
+# → Atom(predicate='bar', args=(Constant(name='a'),))  -- to_tstp chose
+#   exactly this token internally, so "bar" -- not "Bar" -- comes back
+```
+
+`to_tstp` internally chose the token `Bar` for `bar` (not the identity `bar → bar` a plain ASCII-legality check alone would pick), precisely so the reader's own upper-casing on import maps straight back to the original spelling — the rendered TEXT above looks identical either way, since `Node.to_tptp` folds only the first character on export regardless of which token was chosen; only the round trip through the reader reveals the difference. The same case check applies to constants and functions, in the opposite direction (their kit-level convention is lower-case-initial, and unlike a predicate's first letter, the reader never folds a constant/function name's case at all on import — so an unchecked upper-case-initial constant would be unrecoverable outright, not merely differently cased).
 
 ## Natural deduction (Fitch proofs)
 
@@ -331,7 +595,14 @@ result.error_line  # → 2
 result.error       # → 'line 2: →E: needs an implication φ→ψ and its antecedent φ, concluding ψ'
 ```
 
-A `Proof` also renders itself: `proof.to_fitch()` (Unicode or `ascii=True`) and `proof.to_latex_fitch()` produce the same output as `render_fitch` / `render_latex_fitch`.
+A `Proof` also renders itself: `proof.to_fitch()` (Unicode or `ascii=True`) and `proof.to_latex_fitch()` produce the same output as `render_fitch` / `render_latex_fitch`. `proof.to_html()` renders the same proof as a self-contained, theme-aware HTML page — the same idiom that `CCGDerivation.to_html()` (see the [derivation-trees guide](derivations.md)) established: a numbered line gutter, one nested bar per open subproof (the vertical Fitch scope bars, via `border-left`), and a horizontal rule under the premises and under each assumption, styled with CSS custom properties honouring both `prefers-color-scheme: dark` and an explicit `data-theme` override:
+
+```python
+html = proof.to_html()
+html.startswith("<!doctype html>"), "prefers-color-scheme:dark" in html  # → (True, True)
+
+open("hs_proof.html", "w", encoding="utf-8").write(html)
+```
 
 **Non-classical logics.** Pass `logic=` to check a proof under a different consequence relation. In the three-valued **K3**/**LP** logics each step is certified against the many-valued decision procedure, so the paraconsistency facts come out correctly — in **LP** modus ponens is *not* valid, and the checker rejects a proof that uses it:
 
@@ -484,6 +755,15 @@ res.ok, str(res.endsequent), res.error_rule   # → (True, 'P ∧ Q ⊢ Q ∧ P'
 ```
 
 The rule set is `Ax`; the structural rules `WL`/`WR`, `CL`/`CR`, `Cut`; the connective rules `¬L`/`¬R`, `∧L`/`∧R`, `∨L`/`∨R`, `→L`/`→R`, `↔L`/`↔R`, `⊕L`/`⊕R`; the quantifier rules `∀L`/`∀R`, `∃L`/`∃R` (with the eigenvariable condition on `∀R`/`∃L`); and the second-order rules `∀²L`/`∀²R`, `∃²L`/`∃²R` — the second-order rules instantiate a bound predicate variable with a `Comprehension` term `λx̄.ψ` or use a fresh predicate eigenvariable. The instantiation term / eigenvariable / comprehension goes in `extra=[…]`. Full second-order validity is not recursively enumerable, so `check_sequent_proof` is a *checker*, not a complete prover.
+
+`derivation.to_html()` renders the same derivation tree as a self-contained, theme-aware HTML page, in the same CCG-idiom `Proof.to_html()` above uses: each node's premises sit above an inference bar with the rule name (and, when present, the instantiation term / eigenvariable / comprehension) to its right — the Gentzen bar-tree picture of the same indented text `render_sequent_proof` prints:
+
+```python
+html = comm.to_html()
+html.startswith("<!doctype html>"), "data-theme=dark" in html  # → (True, True)
+
+open("comm.html", "w", encoding="utf-8").write(html)
+```
 
 ## Sequent calculus — intuitionistic LJ
 

@@ -124,3 +124,21 @@ def test_isabelle_decide_fol_invalid():
     v = isabelle_decide_fol(Implies(pa, qa), card="1-3",
                             prove_timeout=40, refute_timeout=40)
     assert v.status == "invalid", v.refute_output[-800:]
+
+
+def test_isabelle_backend_reads_equality_as_identity():
+    # Regression: through api.prove the classical route used the uninterpreted
+    # feq, so reflexivity came back REFUTED while z3 proves it.
+    from unicode_fol_kit import api
+    from unicode_fol_kit.fol.nodes import And
+    y = Variable("y")
+    refl = Quantifier("∀", x, Atom("=", [x, x]))
+    congruence = Quantifier("∀", x, Quantifier("∀", y, Implies(
+        And(Atom("=", [x, y]), Atom("P", [x])), Atom("P", [y]))))
+    everything_equal = Quantifier("∀", x, Quantifier("∀", y, Atom("=", [x, y])))
+    for formula, expected in [(refl, "proved"), (congruence, "proved"),
+                              (everything_equal, "refuted")]:
+        assert api.prove(formula).status == expected
+        verdict = api.prove(formula, backends=["isabelle"], card="1-3",
+                            prove_timeout=60, refute_timeout=60)
+        assert verdict.status == expected, (formula.to_unicode_str(), verdict)

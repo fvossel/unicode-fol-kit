@@ -48,8 +48,24 @@ Three named axioms have no first-order frame condition at all: Löb
 (``□(□p→p)→□p``, the GL system), McKinsey (``□◇p→◇□p``, S4.1) and
 Grzegorczyk (``□(□(p→□p)→p)→p``, Grz). They are marked
 ``first_order=False`` and carried ONLY by the higher-order routes, which
-assert the schema itself, quantified over propositions. Every first-order
-route refuses them by name — the boundary is stated, never approximated.
+assert the schema itself, quantified over propositions. Every route that
+reasons over an unbounded domain of worlds via a single first-order sentence
+(:mod:`unicode_fol_kit.fol.qml`, :mod:`unicode_fol_kit.fol.modal_translation`,
+:mod:`unicode_fol_kit.atp.fitch`, the labelled tableau) refuses them by name
+— the boundary is stated, never approximated.
+
+On a *finite, bounded* frame each of the three still has a purely
+STRUCTURAL characterisation instead of a first-order sentence — irreflexive
+(Löb, alongside the separately-listed "trans"), antisymmetric (Grz,
+alongside "refl"/"trans") and "every world reaches some terminal point, a
+world whose only successor is itself" (McKinsey, as the registry only ever
+uses it: alongside "refl"/"trans", i.e. restricted to preorders). That is
+what lets :func:`holds_on_finite_frame` decide all three and
+:mod:`unicode_fol_kit.atp.kripke_enum` refute them by bounded finite-model
+search — checked, not merely claimed, in ``tests/test_modal_frame_registry.py``
+and ``tests/test_finite_frame_conditions.py``. It does not make them
+first-order over frames of every cardinality, so :func:`unguarded_frame_axiom`
+and the routes named above still refuse them exactly as before.
 """
 
 from typing import Callable, Dict, FrozenSet, Iterable, Optional, Tuple
@@ -305,9 +321,14 @@ FRAME_CONDITIONS: Dict[str, FrameCondition] = {
         "McKinsey schema □◇p → ◇□p itself", first_order=False),
     "grz": FrameCondition(
         "grz", "Grz",
-        "reflexive + transitive + no infinite ascending chains of distinct "
-        "worlds — NOT first-order definable; the higher-order routes assert "
-        "the Grzegorczyk schema itself", first_order=False),
+        "reflexive + transitive + antisymmetric (a partial order) — NOT "
+        "first-order definable over frames of every cardinality (this finite "
+        "characterisation, checked by holds_on_finite_frame, replaces the "
+        "vacuous-on-finite-frames 'no infinite ascending chain' condition; "
+        "antisymmetry is the load-bearing part — refl+trans alone is NOT "
+        "enough, e.g. the two-world full cluster is refl+trans but not "
+        "antisymmetric and fails the Grz schema); the higher-order routes "
+        "assert the Grzegorczyk schema itself", first_order=False),
 }
 
 
@@ -343,15 +364,18 @@ FRAMES: Dict[str, Tuple[str, ...]] = {
     "KD45": ("serial", "trans", "eucl"),
     "S4": ("refl", "trans"),
     "S5": ("refl", "trans", "sym"),
-    "S4.1": ("refl", "trans", "mckinsey"),      # + McKinsey (HOL routes only)
+    "S4.1": ("refl", "trans", "mckinsey"),      # + McKinsey (HOL routes prove;
+                                                 # kripke_enum refutes, bounded)
     "S4.2": ("refl", "trans", "directed"),      # convergent (.2)
     "S4.3": ("refl", "trans", "connected"),     # no-branching (.3)
     "KCD": ("functional",),                     # ◇p → □p
     "KC4": ("dense",),                          # □□p → □p
     "KShift": ("shift_refl",),                  # □(□p → p)
     "Ver": ("empty",),                          # □p — the Verum system
-    "GL": ("trans", "loeb"),                    # HOL routes only
-    "Grz": ("refl", "trans", "grz"),            # HOL routes only
+    "GL": ("trans", "loeb"),                    # HOL routes prove; kripke_enum
+                                                 # refutes, bounded
+    "Grz": ("refl", "trans", "grz"),            # HOL routes prove; kripke_enum
+                                                 # refutes, bounded
 }
 
 
@@ -419,21 +443,31 @@ def holds_on_finite_frame(condition: str, edges: FrozenSet[Tuple[int, int]],
     """Does the finite frame ``(range(n), edges)`` satisfy ``condition``?
 
     Every FIRST-ORDER condition in :data:`FRAME_CONDITIONS` is decided here,
-    Geach specs included. The three non-first-order conditions raise
-    :class:`UnsupportedFrameCondition`: they are not conditions on a frame's
-    relation that a finite check could settle, and pretending otherwise is
-    exactly the silent-approximation failure this module exists to prevent.
+    Geach specs included. The three conditions marked ``first_order=False``
+    (``"loeb"``, ``"grz"``, ``"mckinsey"``) are decided here TOO, via the
+    structural characterisation each has on a finite frame instead of a
+    first-order sentence valid at every cardinality: ``"loeb"`` checks
+    irreflexivity (combined with the separately-listed ``"trans"`` by the
+    ``"GL"`` system, that is "transitive + irreflexive", the standard
+    finite Gödel–Löb characterisation), ``"grz"`` checks antisymmetry
+    (combined with ``"refl"``/``"trans"`` by the ``"Grz"`` system, that is a
+    finite partial order), and ``"mckinsey"`` checks "every world reaches
+    some terminal point, a world whose only successor is itself" — the
+    registry only ever uses ``"mckinsey"`` alongside ``"refl"``/``"trans"``
+    (``"S4.1"``), i.e. restricted to preorders, and the characterisation is
+    scoped to exactly that generality. Delegating a finite check to
+    ``entry.geach is None`` → :func:`_named_holds` covers all three, since
+    none of them is a Geach instance. This does NOT make them first-order
+    over frames of every cardinality — :func:`unguarded_frame_axiom` and the
+    routes that reason over an unbounded domain of worlds still refuse them
+    by name (see the module docstring). An unknown condition name still
+    raises :class:`ValueError`.
     """
     spec = parse_geach(condition)
     if spec is None:
         entry = FRAME_CONDITIONS.get(condition)
         if entry is None:
             raise ValueError(f"frames: unknown frame condition {condition!r}")
-        if not entry.first_order:
-            raise UnsupportedFrameCondition(
-                f"frames: {condition!r} ({entry.description}) is not a "
-                "first-order frame condition, so no finite frame check "
-                "decides it")
         if entry.geach is None:
             return _named_holds(condition, edges, n)
         spec = entry.geach
@@ -453,7 +487,10 @@ def holds_on_finite_frame(condition: str, edges: FrozenSet[Tuple[int, int]],
 
 def _named_holds(condition: str, edges: FrozenSet[Tuple[int, int]],
                  n: int) -> bool:
-    """The first-order conditions that are not Geach instances."""
+    """The conditions that are not Geach instances: the hand-written
+    first-order ones, plus the finite-frame structural checks for the three
+    conditions with no first-order frame axiom at every cardinality (Löb,
+    Grz, McKinsey — see :func:`holds_on_finite_frame`'s docstring)."""
     if condition == "connected":
         return all(not ((w, v) in edges and (w, u) in edges)
                    or (v, u) in edges or (u, v) in edges
@@ -462,6 +499,33 @@ def _named_holds(condition: str, edges: FrozenSet[Tuple[int, int]],
         return all((v, v) in edges for (_w, v) in edges)
     if condition == "empty":
         return not edges
+    if condition == "loeb":
+        # Gödel–Löb, finite characterisation: irreflexive. Combined with the
+        # "trans" the "GL" system supplies separately, this is "transitive +
+        # irreflexive" — on a FINITE frame that is exactly "transitive +
+        # converse well-founded" (a cycle, which transitivity would collapse
+        # into a self-loop, is the only way a finite domain could fail to be
+        # well-founded, and irreflexivity forbids self-loops).
+        return all((w, w) not in edges for w in range(n))
+    if condition == "grz":
+        # Grzegorczyk, finite characterisation: antisymmetric. Combined with
+        # "refl"/"trans" the "Grz" system supplies separately, this is a
+        # finite partial order — "no infinite strictly-ascending chain" is
+        # automatic once the frame is finite, so antisymmetry is the only
+        # load-bearing extra condition (see FRAME_CONDITIONS["grz"]).
+        return all(w == v for w in range(n) for v in range(n)
+                   if (w, v) in edges and (v, w) in edges)
+    if condition == "mckinsey":
+        # McKinsey, restricted to preorders — the only generality the
+        # registry ever needs it in (alongside "refl"/"trans" via "S4.1"):
+        # every world reaches some terminal point, a world whose only
+        # successor is itself. One R-step suffices for "reaches" because the
+        # frame is transitive, so R already contains every multi-step path.
+        def _is_terminal(v: int) -> bool:
+            successors = {u for (w2, u) in edges if w2 == v}
+            return successors == {v}
+        return all(any((w, v) in edges and _is_terminal(v) for v in range(n))
+                   for w in range(n))
     raise ValueError(f"frames: unknown frame condition {condition!r}")
 
 

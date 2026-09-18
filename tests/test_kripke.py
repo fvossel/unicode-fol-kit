@@ -12,12 +12,18 @@ import pytest
 from unicode_fol_kit.semantics.kripke import (
     KripkeModel, satisfies_modal, models_at, reflexive_transitive_closure,
 )
+from unicode_fol_kit.semantics.action_models import (
+    everybody_knows, distributed_knowledge_holds, common_knowledge_holds,
+)
 from unicode_fol_kit.fol.nodes import (
     Atom, Constant, Not, And, Or, Implies, Iff,
     Box, Diamond, Knows, Believes,
     Always, Eventually, Next, Until,
     Quantifier, Variable, SortedQuantifier,
     LukNegation, Lambda, LambdaVar,
+)
+from unicode_fol_kit.fol._modal_nodes import (
+    EverybodyKnows, DistributedKnowledge, CommonKnowledge,
 )
 
 P = Atom("P", [])
@@ -156,6 +162,58 @@ def test_knows_and_believes_use_distinct_relations():
     assert satisfies_modal(Knows("bob", P), model, 0) is True
     # A different agent with no relation: universal over empty => vacuously true.
     assert satisfies_modal(Knows("carol", Atom("Z", [])), model, 0) is True
+
+
+# ---------------------------------------------------------------------------
+# Group epistemic dispatch (EverybodyKnows/DistributedKnowledge/CommonKnowledge
+# -> semantics.action_models): a THIN wiring test, hand-computed on one small
+# frame -- the semantics themselves (union/intersection/closure) are the
+# action_models functions' own responsibility and are tested exhaustively in
+# tests/test_action_models.py and tests/test_group_epistemic.py.
+# ---------------------------------------------------------------------------
+
+def test_group_operators_dispatch_to_action_models():
+    """Hand-computed on one small frame: K:a -> {0,1} (P true both), K:b ->
+    {0,2} (P true at 0, false at 2), from world 0.
+
+    - E_{a,b} P: union successors {0,1,2} -- P false at 2 -- FALSE.
+    - D_{a,b} P: intersection successors {0} only -- P true there -- TRUE.
+    - C_{a,b} P: reflexive-transitive closure from 0 over the union is
+      {0,1,2} (2 reachable via the union edge (0,2)) -- P false at 2 --
+      FALSE, same reachable set as E_G here since the union graph from 0 is
+      already fully explored in one step.
+    """
+    model = KripkeModel(
+        worlds={0, 1, 2},
+        relations={"K:a": {(0, 0), (0, 1)}, "K:b": {(0, 0), (0, 2)}},
+        valuation={0: {"P"}, 1: {"P"}, 2: set()},
+    )
+    assert satisfies_modal(EverybodyKnows(("a", "b"), P), model, 0) is False
+    assert satisfies_modal(DistributedKnowledge(("a", "b"), P), model, 0) is True
+    assert satisfies_modal(CommonKnowledge(("a", "b"), P), model, 0) is False
+
+
+def test_group_operators_agree_with_direct_action_models_calls():
+    """The dispatch is a THIN wrapper: satisfies_modal(node, ...) must equal
+    calling the matching semantics.action_models function directly with the
+    same agent-name list, on every world of a random small frame."""
+    rng = random.Random(20260917)
+    for _ in range(30):
+        n_worlds = rng.randint(1, 4)
+        worlds = list(range(n_worlds))
+        relations = {
+            f"K:{a}": {(x, y) for x in worlds for y in worlds if rng.random() < 0.5}
+            for a in ("a", "b")
+        }
+        valuation = {w: ({"P"} if rng.random() < 0.5 else set()) for w in worlds}
+        model = KripkeModel(worlds=worlds, relations=relations, valuation=valuation)
+        for w in worlds:
+            assert (satisfies_modal(EverybodyKnows(("a", "b"), P), model, w)
+                    == everybody_knows(model, w, ["a", "b"], P))
+            assert (satisfies_modal(DistributedKnowledge(("a", "b"), P), model, w)
+                    == distributed_knowledge_holds(model, w, ["a", "b"], P))
+            assert (satisfies_modal(CommonKnowledge(("a", "b"), P), model, w)
+                    == common_knowledge_holds(model, w, ["a", "b"], P))
 
 
 # ---------------------------------------------------------------------------
@@ -373,11 +431,27 @@ def test_quantifier_shadowing_not_captured():
     assert satisfies_modal(Quantifier("∀", x, Box(Quantifier("∃", x, A(x)))), m3, 0) is True
 
 
-def test_sorted_quantifier_rejected():
-    """A sorted quantifier is rejected."""
+def test_sorted_quantifier_ranges_over_its_sort_only():
+    """A sorted quantifier is evaluated by relativizing it to the sort predicate.
+
+    The evaluator used to refuse SortedQuantifier outright; it now reads
+    ∀x:nat P(x) as ∀x (nat(x) → P(x)) and ∃x:nat P(x) as ∃x (nat(x) ∧ P(x)).
+    The domain is {a, b} with only a in the sort and only P(a) true, so both
+    verdicts below are wrong unless b really is excluded by the guard.
+    """
+    x = Variable("x")
+    m = KripkeModel(worlds={0}, valuation={0: {"P(a)", "nat(a)"}}, domain={"a", "b"})
+    assert satisfies_modal(SortedQuantifier("∀", x, "nat", Atom("P", [x])), m, 0) is True
+    assert satisfies_modal(SortedQuantifier("∃", x, "nat", Atom("P", [x])), m, 0) is True
+    # Q holds nowhere, so the universal over the same sort is False, not vacuous.
+    assert satisfies_modal(SortedQuantifier("∀", x, "nat", Atom("Q", [x])), m, 0) is False
+
+
+def test_sorted_quantifier_needs_a_domain():
+    """Relativized, a sorted quantifier is an object quantifier: it needs a domain."""
     f = SortedQuantifier("∀", Variable("x"), "nat", Atom("P", [Variable("x")]))
     model = KripkeModel(worlds={0})
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(ValueError, match="no object domains"):
         satisfies_modal(f, model, 0)
 
 

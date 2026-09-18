@@ -447,6 +447,116 @@ def test_extra_bias_lines_go_through_verbatim():
         "max_clauses(1).\nenable_recursion.\ntype(c,(atom,)).\n")
 
 
+# ---------------------------------------------------------------------------
+# Aleph's bias/example syntax — a second emission path, same underlying task.
+# See tests/test_ilp_aleph.py for the differential re-parse cross-check and
+# the (skip-gated) live-Aleph confirmation.
+# ---------------------------------------------------------------------------
+
+def test_aleph_bias_declares_modes_determinations_and_the_clauselength_bound():
+    """Hand-derived from Aleph's own manual syntax: one ``modeh`` for the
+    target, one ``modeb`` for membership (``+example`` in, ``-individual``
+    out — its arguments are NOT the ``+individual``/``-individual``
+    convention the other body predicates get, because its first argument is
+    the example, not an individual), then one ``modeb`` per body predicate
+    under the documented +first/-rest convention, then one ``determination``
+    per body predicate (membership included), then the ``max_body`` ->
+    ``clauselength`` translation with ``max_vars``/``max_clauses`` named in a
+    comment instead of silently dropped."""
+    assert a_task().aleph_bias_text() == (
+        ":- modeh(1, amide(+example)).\n"
+        ":- modeb(*, atom_in(+example,-individual)).\n"
+        ":- modeb(*, bDOUBLE(+individual,-individual)).\n"
+        ":- modeb(*, bSINGLE(+individual,-individual)).\n"
+        ":- modeb(*, c(+individual)).\n"
+        ":- modeb(*, n(+individual)).\n"
+        ":- modeb(*, o(+individual)).\n"
+        ":- determination(amide/1, atom_in/2).\n"
+        ":- determination(amide/1, bDOUBLE/2).\n"
+        ":- determination(amide/1, bSINGLE/2).\n"
+        ":- determination(amide/1, c/1).\n"
+        ":- determination(amide/1, n/1).\n"
+        ":- determination(amide/1, o/1).\n"
+        "% max_vars(6) and max_clauses(1) have no single-clause Aleph "
+        "equivalent: Aleph's clause count comes from its own covering loop "
+        "(induce/0), not a bound in this file, and max_vars bounds a "
+        "Popper-specific search Aleph does not expose per clause.\n"
+        ":- set(clauselength, 8).\n")
+
+
+def test_aleph_bias_arity_three_predicate_gets_one_bound_two_free_arguments():
+    """The documented convention (first argument bound, the rest free) for a
+    ternary body predicate: ``like(+individual,-individual,-individual)``,
+    not the binary-only shape the fixture above happens to exercise."""
+    structure_yes = FiniteStructure(
+        domain=("a1", "b1", "c1"),
+        extensions={("like", 3): [("a1", "b1", "c1")]})
+    structure_no = FiniteStructure(domain=("a1",), extensions={("like", 3): []})
+    task = IlpTask("t", [Example("m1", structure_yes, True),
+                         Example("m2", structure_no, False)],
+                  body_predicates=[("like", 3)])
+
+    assert ":- modeb(*, like(+individual,-individual,-individual)).\n" \
+        in task.aleph_bias_text()
+    assert ":- determination(t/1, like/3).\n" in task.aleph_bias_text()
+
+
+def test_aleph_bias_extra_lines_go_through_verbatim_after_the_set_line():
+    task = a_task(extra_bias=["enable_recursion.", "type(c,(atom,))."])
+
+    assert task.aleph_bias_text().endswith(
+        ":- set(clauselength, 8).\nenable_recursion.\ntype(c,(atom,)).\n")
+
+
+def test_aleph_examples_are_bare_atoms_split_by_label_not_pos_neg_wrapped():
+    task = a_task()
+
+    assert task.aleph_examples_text(True) == "amide(m1).\n"
+    assert task.aleph_examples_text(False) == "amide(m2).\n"
+
+
+def test_aleph_examples_keep_the_note_as_a_trailing_comment():
+    task = IlpTask("amide", [Example("m1", amide_like(), True, "NCC(=O)NCC(=O)O"),
+                             Example("m2", acid_like(), False, "CC(=O)O")])
+
+    assert task.aleph_examples_text(True) == (
+        "amide(m1).  % NCC(=O)NCC(=O)O\n")
+    assert task.aleph_examples_text(False) == (
+        "amide(m2).  % CC(=O)O\n")
+
+
+def test_write_aleph_produces_the_bfn_triple_with_lf_endings(tmp_path):
+    task = a_task()
+    paths = task.write_aleph(str(tmp_path / "amide"))
+
+    assert sorted(os.path.basename(p) for p in paths.values()) == [
+        "task.b", "task.f", "task.n"]
+    with open(paths["b"], "r", encoding="utf-8") as handle:
+        b_text = handle.read()
+    assert b_text == task.background_text() + "\n" + task.aleph_bias_text()
+    with open(paths["f"], "r", encoding="utf-8") as handle:
+        assert handle.read() == task.aleph_examples_text(True)
+    with open(paths["n"], "r", encoding="utf-8") as handle:
+        assert handle.read() == task.aleph_examples_text(False)
+    for path in paths.values():
+        with open(path, "rb") as handle:
+            assert b"\r\n" not in handle.read()
+
+
+def test_write_aleph_honours_a_custom_filestem(tmp_path):
+    paths = a_task().write_aleph(str(tmp_path / "amide"), filestem="carbonyl")
+
+    assert sorted(os.path.basename(p) for p in paths.values()) == [
+        "carbonyl.b", "carbonyl.f", "carbonyl.n"]
+
+
+def test_write_aleph_refuses_a_path_whose_parent_does_not_exist(tmp_path):
+    with pytest.raises(IlpEncodingError) as info:
+        a_task().write_aleph(str(tmp_path / "nope" / "amide"))
+    assert "parent directory" in str(info.value)
+    assert not (tmp_path / "nope").exists()
+
+
 def test_rendering_is_byte_identical_across_calls_and_across_tasks():
     """A task directory that differs run to run cannot be diffed or committed,
     and a spurious diff hides a real one."""

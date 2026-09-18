@@ -21,6 +21,17 @@ term type is whatever the source logic's AST is (``Node`` for the formula
 families, ``Concept`` for ALC). Fragment restrictions of the underlying
 functions (e.g. ``concept_to_modal`` accepts only single-role concepts)
 surface as their own exceptions, unchanged.
+
+STABILITY POLICY (:data:`DEFAULT_REGISTRY`): within a minor release line
+(0.N.x) no edge — identified by its ``name`` — is removed, renamed, or has
+its ``source``/``target``/``lossy`` changed; only new edges are added.
+This mirrors :mod:`unicode_fol_kit.api`'s own STABILITY POLICY (see that
+module's docstring) applied to the registry surface rather than the
+result dataclasses, and it is what lets a caller compose
+``translate(term, a, b)`` across a minor line without re-checking that the
+path it found last time still exists. ``tests/test_mcp_stability.py``
+pins ``(name, source, target, lossy)`` for the current edges as a
+baseline-subset check.
 """
 
 from collections import deque

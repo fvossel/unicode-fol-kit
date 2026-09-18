@@ -7,7 +7,7 @@ from .nodes import (
     node_at, replace_at,
     SortedQuantifier, SortedConstant,
     SortedCount, SortedCardinality,
-    Nominal, At,
+    Nominal, At, Down,
     Dependence, SlashedExists,
     Tensor, With, OPlus, LinearImplies, OfCourse, One, Top, Zero,
     Product, Under, Over,
@@ -16,6 +16,7 @@ from .nodes import (
     LukNegation, LukImplication, LukEquivalence,
     LambdaVar, Lambda, Application,
     Box, Diamond, Knows, Believes, Says, Wants,
+    EverybodyKnows, DistributedKnowledge, CommonKnowledge,
     Always, Eventually, Next, Until,
     Historically, Once, Previous, Since,
     Obligatory, Permitted,
@@ -28,22 +29,32 @@ from .nodes import (
     eta_reduce, beta_eta_normalize,
     resolve_lambda_scope,
     to_fol,
+    nonempty_sort_axioms,
+    subsort_axioms,
 )
 from .normalforms import to_nnf, to_pnf, to_cnf, to_dnf, to_tseitin_cnf, skolemize, is_horn
 from .lambda_tools import has_lambdas, eliminate_lambdas, beta_reduce_step, reduce_trace
 from .unification import unify, apply_subst
-from .modal_translation import standard_translation, hybrid_is_valid
+from .modal_translation import standard_translation, hybrid_is_valid, down_is_valid
 from .pal import reduce_announcements
 from .latex_input import latex_to_unicode, parse_latex
 from .tptp_input import (
     parse_tptp, parse_tptp_formula, load_tptp, TptpFormula,
     parse_tptp_problem, load_tptp_problem, TptpProblem, TptpHeader,
+    parse_tff_problem, load_tff_problem,
+)
+from .qmltp_input import (
+    parse_qmltp_formula, parse_qmltp, load_qmltp,
+    QmltpFormula, QmltpHeader, QmltpStatus, QmltpProblem,
 )
 from .prover9_input import (
     parse_prover9, parse_prover9_problem, load_prover9, Prover9Formula,
 )
 from .prolog_input import (
     parse_prolog_clause, parse_prolog_program, load_prolog, PrologParsingError,
+)
+from .prolog_export import (
+    formula_to_prolog_clause, formula_to_prolog_program, PrologExportError,
 )
 from .sanitize import sanitize_names, sanitize_all, NameMapping
 from .verbalize import to_english
@@ -54,7 +65,7 @@ from .frames import (
     holds_on_finite_frame, modal_axiom, unguarded_frame_axiom,
 )
 from .qml import (
-    qml_translate, qml_axioms, qml_is_valid, qml_equivalent,
+    qml_translate, qml_axioms, qml_is_valid, qml_equivalent, qml_validity_formula,
     to_thf_modal, to_isabelle_modal, BARCAN, CONVERSE_BARCAN, QML_BRIDGES,
 )
 from .naming import NamingError, ParsingError
@@ -76,7 +87,7 @@ from .simplify_check import (
 )
 from .dialect_detect import detect_dialects
 from .signature import (
-    Signature, PredicateDecl, FunctionDecl, ConstantDecl,
+    Signature, PredicateDecl, FunctionDecl, ConstantDecl, inventory_of,
 )
 
 __all__ = [
@@ -102,13 +113,16 @@ __all__ = [
     "repair_formula", "DialectRepairResult",
     "parse_prolog_clause", "parse_prolog_program", "load_prolog",
     "PrologParsingError",
+    "formula_to_prolog_clause", "formula_to_prolog_program",
+    "PrologExportError",
     "simplify_for_checking", "SimplifyResult",
     "count_from_existential_chain", "expand_count",
     "detect_dialects",
     "Signature", "PredicateDecl", "FunctionDecl", "ConstantDecl",
+    "inventory_of",
     "SortedQuantifier", "SortedConstant",
     "SortedCount", "SortedCardinality",
-    "Nominal", "At",
+    "Nominal", "At", "Down",
     "Dependence", "SlashedExists",
     "Tensor", "With", "OPlus", "LinearImplies", "OfCourse", "One", "Top", "Zero",
     "Product", "Under", "Over",
@@ -117,6 +131,7 @@ __all__ = [
     "LukNegation", "LukImplication", "LukEquivalence",
     "LambdaVar", "Lambda", "Application",
     "Box", "Diamond", "Knows", "Believes", "Says", "Wants",
+    "EverybodyKnows", "DistributedKnowledge", "CommonKnowledge",
     "Always", "Eventually", "Next", "Until",
     "Historically", "Once", "Previous", "Since",
     "Obligatory", "Permitted",
@@ -129,19 +144,25 @@ __all__ = [
     "eta_reduce", "beta_eta_normalize",
     "resolve_lambda_scope",
     "to_fol",
+    "nonempty_sort_axioms",
+    "subsort_axioms",
     "to_nnf", "to_pnf", "to_cnf", "to_dnf", "to_tseitin_cnf", "skolemize", "is_horn",
     "has_lambdas", "eliminate_lambdas", "beta_reduce_step", "reduce_trace",
     "unify", "apply_subst",
-    "standard_translation", "hybrid_is_valid",
+    "standard_translation", "hybrid_is_valid", "down_is_valid",
     "reduce_announcements",
     "latex_to_unicode", "parse_latex",
     "parse_tptp", "parse_tptp_formula", "load_tptp", "TptpFormula",
     "parse_tptp_problem", "load_tptp_problem", "TptpProblem", "TptpHeader",
+    "parse_tff_problem", "load_tff_problem",
     "parse_prover9", "parse_prover9_problem", "load_prover9", "Prover9Formula",
     "sanitize_names", "sanitize_all", "NameMapping",
     "to_english",
     "CCGDerivation", "reduction_derivation",
     "qml_translate", "qml_axioms", "qml_is_valid", "qml_equivalent",
+    "qml_validity_formula",
     "to_thf_modal", "to_isabelle_modal", "BARCAN", "CONVERSE_BARCAN",
     "QML_BRIDGES",
+    "parse_qmltp_formula", "parse_qmltp", "load_qmltp",
+    "QmltpFormula", "QmltpHeader", "QmltpStatus", "QmltpProblem",
 ]

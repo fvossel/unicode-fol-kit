@@ -46,7 +46,8 @@ Public API: :class:`Justification`, :class:`Line`, :class:`Subproof`,
 :class:`Proof`, :class:`ProofResult`, the authoring helpers :func:`premise`,
 :func:`assume`, :func:`line`, :func:`flag` (the ∀I eigenvariable-box head), the
 constant :data:`FALSUM`, the checkers :func:`check_proof` / :func:`verify_proof`,
-and the renderers :func:`render_fitch` / :func:`render_latex_fitch`.
+and the renderers :func:`render_fitch` / :func:`render_latex_fitch` /
+:meth:`Proof.to_html`.
 """
 
 from dataclasses import dataclass, replace
@@ -59,6 +60,7 @@ from ..fol.nodes import (
     SortedQuantifier, SortedConstant, LambdaVar,
     Count, Cardinality, SortedCount, SortedCardinality, SlashedExists,
     Box, Diamond, Knows, Believes,
+    EverybodyKnows, DistributedKnowledge, CommonKnowledge,
     Always, Eventually, Next, Until,
     Historically, Once, Previous, Since,
     Obligatory, Permitted,
@@ -69,6 +71,7 @@ from ..fol.frames import (
     resolve_frame, unguarded_frame_axiom,
 )
 from ..fol._msfl_nodes import _rename, _fresh_name, subst_slash_set
+from ._html import esc_html, html_page
 
 
 # ---------------------------------------------------------------------------
@@ -284,6 +287,16 @@ class Proof:
     def to_latex_fitch(self) -> str:
         """Render the proof as a LaTeX Fitch derivation (array form, no extra package)."""
         return render_latex_fitch(self)
+
+    def to_html(self, title: str = "Fitch proof") -> str:
+        """Render as a self-contained, theme-aware HTML page.
+
+        Same idiom as :meth:`unicode_fol_kit.fol.derivation.CCGDerivation.to_html`:
+        a numbered line gutter, one nested bar per open subproof (the Fitch
+        scope bars), and a horizontal rule under the premises and under each
+        assumption, mirroring :func:`render_fitch`'s layout in markup.
+        """
+        return html_page(title, _html_fitch(self), _FITCH_CSS)
 
 
 @dataclass(frozen=True)
@@ -1216,6 +1229,10 @@ def _collect_modal_frames(nodes, alethic_system):
                 frames["R"] = alethic_system
             elif isinstance(n, Knows):
                 frames["Rk_" + (getattr(n.agent, "name", None) or n.agent.to_unicode_str())] = "S5"
+            elif isinstance(n, (EverybodyKnows, DistributedKnowledge, CommonKnowledge)):
+                # The group operators quantify over the members' own Rk_ relations.
+                for member in n.group:
+                    frames["Rk_" + (getattr(member, "name", None) or member.to_unicode_str())] = "S5"
             elif isinstance(n, Believes):
                 frames["Rb_" + (getattr(n.agent, "name", None) or n.agent.to_unicode_str())] = "KD45"
             elif isinstance(n, (Obligatory, Permitted)):
@@ -1434,3 +1451,51 @@ def render_latex_fitch(proof: "Proof") -> str:
     out.append(r"\end{array}")
     out.append(r"\]")
     return "\n".join(out)
+
+
+# ---------------------------------------------------------------------------
+# Rendering: self-contained HTML page (mirrors CCGDerivation.to_html's idiom)
+# ---------------------------------------------------------------------------
+
+_FITCH_CSS = """
+.scroll{overflow-x:auto;padding:22px 8px}
+.fitch{width:max-content;min-width:100%;padding:0 22px;
+  font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+  font-size:14px;line-height:1.75}
+.ln{display:flex;align-items:stretch}
+.no{flex:none;width:2.6em;text-align:right;padding-right:.6em;color:var(--muted)}
+.bars{flex:none;display:flex}
+.bx{flex:none;width:14px;border-left:1.3px solid var(--bar)}
+.f{flex:none;padding:0 1em 0 .5em;white-space:pre;color:var(--ink)}
+.j{flex:none;color:var(--muted);white-space:pre;padding-left:1.4em}
+.bar .rule{flex:1 1 auto;align-self:center;border-top:1.3px solid var(--bar);margin-right:1.6em}
+"""
+
+
+def _html_fitch(proof: "Proof") -> str:
+    """Render ``proof``'s body markup: one flex row per :func:`_visual_rows` row.
+
+    A ``line`` row is a number gutter, ``depth + 1`` nested ``.bx`` cells (each a
+    ``border-left`` — the vertical Fitch scope bars, exactly as many as
+    :func:`render_fitch` prints ``│`` characters for that line), the formula, and
+    the right-hand justification. A ``bar`` row draws ``depth`` plain ``.bx``
+    cells followed by a horizontal ``.rule`` filling the rest of the row — the
+    markup equivalent of ``render_fitch``'s ``├──────``.
+    """
+    parts: List[str] = []
+    for r in _visual_rows(proof):
+        if r["kind"] == "line":
+            bars = "".join('<div class="bx"></div>' for _ in range(r["depth"] + 1))
+            just = ('<div class="j">%s</div>' % esc_html(r["just"])) if r["just"] else ""
+            parts.append(
+                '<div class="ln"><div class="no">%s</div><div class="bars">%s</div>'
+                '<div class="f">%s</div>%s</div>'
+                % (r["number"], bars, esc_html(r["formula"].to_unicode_str()), just)
+            )
+        else:
+            bars = "".join('<div class="bx"></div>' for _ in range(r["depth"]))
+            parts.append(
+                '<div class="ln bar"><div class="no"></div><div class="bars">%s</div>'
+                '<div class="rule"></div></div>' % bars
+            )
+    return '<div class="scroll"><div class="fitch">%s</div></div>' % "".join(parts)

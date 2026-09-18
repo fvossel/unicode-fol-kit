@@ -96,7 +96,7 @@ __all__ = [
     "ModalVerdict", "FolVerdict",
     "find_isabelle", "isabelle_available",
     "check_theory", "isabelle_decide_modal", "isabelle_decide_fol",
-    "isabelle_decide_relevant",
+    "isabelle_decide_relevant", "isabelle_decide_free",
     "DEFAULT_METHODS",
 ]
 
@@ -701,9 +701,10 @@ class FolVerdict:
 
     Same VALID / INVALID / UNKNOWN scheme as :class:`ModalVerdict` (no frame/mode).
     Note that FOL is only *semi-decidable*, so UNKNOWN is common and expected; and
-    equality ``=`` / ``≠`` is the **uninterpreted** predicate ``feq`` / ``fneq`` of
-    :func:`~unicode_fol_kit.hol.classical.to_isabelle_fol` (no equality axioms are
-    assumed), so e.g. ``∀x. x = x`` is *not* VALID here.
+    equality ``=`` / ``≠`` is by default the **uninterpreted** predicate ``feq`` /
+    ``fneq`` of :func:`~unicode_fol_kit.hol.classical.to_isabelle_fol` (no equality
+    axioms are assumed), so e.g. ``∀x. x = x`` is *not* VALID here unless
+    :func:`isabelle_decide_fol` was called with ``native_equality=True``.
     """
 
     status: str
@@ -738,6 +739,7 @@ class FolVerdict:
 def isabelle_decide_fol(
     formula: Node, *,
     msfol: bool = False,
+    native_equality: bool = False,
     methods: Sequence[str] = DEFAULT_METHODS,
     refute: bool = True,
     card: str = "1-4",
@@ -757,13 +759,18 @@ def isabelle_decide_fol(
     3. otherwise :data:`UNKNOWN` (common — FOL is only semi-decidable).
 
     Sound (Isabelle's kernel certifies the proof; nitpick reports only genuine finite
-    counter-models) and necessarily incomplete. Equality is uninterpreted (see
-    :class:`FolVerdict`).
+    counter-models) and necessarily incomplete. By default equality is uninterpreted
+    (see :class:`FolVerdict`), so an INVALID verdict is about FOL *without* identity;
+    pass ``native_equality=True`` for classical FOL with identity, the reading of
+    the kit's own semantics and of :class:`~unicode_fol_kit.atp.protocol.IsabelleBackend`.
 
     Args:
         formula: the FOL AST node.
         msfol: emit the many-sorted embedding (sorts relativised to guard predicates)
             instead of plain FOL.
+        native_equality: render ``=`` / ``≠`` as HOL identity instead of the
+            uninterpreted ``feq`` / ``fneq`` (see
+            :func:`~unicode_fol_kit.hol.classical.to_isabelle_fol`).
         methods / refute / card / prove_timeout / refute_timeout / install: as for
             :func:`isabelle_decide_modal` (``card`` bounds the individual type ``i``).
 
@@ -781,7 +788,8 @@ def isabelle_decide_fol(
     # --- step 1: prove ---------------------------------------------------- #
     tok = "G" + uuid.uuid4().hex[:8]
     prove_proof = _battery_proof([], methods).lstrip()   # no axioms in the FOL embedding
-    prove_thy = emit(formula, theory_name=tok, proof=prove_proof)
+    prove_thy = emit(formula, theory_name=tok, proof=prove_proof,
+                     native_equality=native_equality)
     r1 = check_theory(prove_thy, tok, install=install, session_timeout=prove_timeout)
     if r1.ok:
         return FolVerdict(status=VALID, method="prove-battery",
@@ -794,7 +802,8 @@ def isabelle_decide_fol(
         tok2 = "G" + uuid.uuid4().hex[:8]
         nit_proof = (f"nitpick[card i = {card}, timeout = {int(refute_timeout)}, "
                      f"expect = genuine]\n  oops")
-        nit_thy = emit(formula, theory_name=tok2, proof=nit_proof)
+        nit_thy = emit(formula, theory_name=tok2, proof=nit_proof,
+                       native_equality=native_equality)
         r2 = check_theory(nit_thy, tok2, install=install,
                           session_timeout=refute_timeout + 30,
                           wall_timeout=float(refute_timeout) + 240.0)
@@ -1008,6 +1017,101 @@ def isabelle_decide_relevant(
         nit_thy = to_isabelle_relevant(
             formula, theory_name=tok2,
             proof=nitpick_proof(card=card, timeout=refute_timeout))
+        r2 = check_theory(nit_thy, tok2, install=install,
+                          session_timeout=refute_timeout + 30,
+                          wall_timeout=float(refute_timeout) + 240.0)
+        refute_output = r2.output
+        refute_elapsed = r2.elapsed
+        if r2.ok:
+            m = _NITPICK_CTEX_RE.search(r2.output)
+            return FolVerdict(status=INVALID,
+                              countermodel=(m.group(0).strip() if m else None),
+                              prove_output=r1.output, refute_output=refute_output,
+                              prove_elapsed=r1.elapsed, refute_elapsed=refute_elapsed)
+
+    return FolVerdict(status=UNKNOWN, prove_output=r1.output,
+                      refute_output=refute_output, prove_elapsed=r1.elapsed,
+                      refute_elapsed=refute_elapsed,
+                      infra_error=_infra_error(r1.output, refute_output))
+
+
+# --------------------------------------------------------------------------- #
+# Deciding free logic (D/E! guard embedding) validity through Isabelle.
+# --------------------------------------------------------------------------- #
+
+def isabelle_decide_free(
+    formula: Node, *,
+    policy: str = "negative",
+    methods: Sequence[str] = DEFAULT_METHODS,
+    refute: bool = True,
+    card: str = "1-4",
+    prove_timeout: int = 60,
+    refute_timeout: int = 60,
+    install: Optional[IsabelleInstall] = None,
+) -> FolVerdict:
+    """Decide a free-logic formula's validity by running a local Isabelle.
+
+    Emits the ``D``/``E!`` guard embedding
+    (:func:`~unicode_fol_kit.hol.free.free_theory`, the same truth condition
+    :func:`~unicode_fol_kit.semantics.free_logic.free_holds` computes for
+    ``policy`` — see that module's docstring) and, exactly like
+    :func:`isabelle_decide_fol`:
+
+    1. tries a proof battery -- exit 0 => :data:`VALID`;
+    2. otherwise (``refute``) runs ``nitpick[expect = genuine]`` over the
+       individual type ``e`` -- exit 0 => :data:`INVALID`. The ``E! -> D`` tie
+       is a PREMISE of the goal, not ``axiomatization`` (see ``hol.free``'s
+       module docstring), so nitpick constructs ``D``/``E!`` itself and can
+       certify a genuine countermodel. ``=`` is HOL identity under the
+       denotation guard and the inner domain may be empty, so both verdicts
+       are verdicts about :func:`~unicode_fol_kit.semantics.free_logic.free_is_valid`'s
+       own semantics (``domain_split="any"``);
+    3. otherwise :data:`UNKNOWN` (expected — first-order free logic is only
+       semi-decidable, same as classical FOL).
+
+    Args:
+        formula: the free-logic AST node.
+        policy: ``"negative"`` (default) or ``"positive"``. ``card`` bounds the
+            individual type ``e``, exactly like ``card i`` for
+            :func:`isabelle_decide_fol`.
+        methods / refute / card / prove_timeout / refute_timeout / install: as
+            for :func:`isabelle_decide_fol`.
+
+    Raises:
+        IsabelleNotAvailable: if no Isabelle installation can be located.
+        NotImplementedError: propagated from the emitter for
+            ``policy="supervaluation"`` (see ``hol.free``'s module docstring —
+            checked BEFORE the install lookup, so this is reported even on a
+            machine with no Isabelle).
+        ValueError: propagated from the emitter for any other unknown
+            ``policy``.
+    """
+    from unicode_fol_kit.hol.free import _check_policy, free_theory
+    _check_policy(policy, "isabelle_decide_free")
+
+    install = install or find_isabelle()
+    if install is None:
+        raise IsabelleNotAvailable(
+            "No Isabelle installation found. Set UFK_ISABELLE_HOME (or ISABELLE_HOME) "
+            "to the install directory, or put `isabelle` on PATH.")
+
+    # --- step 1: prove ---------------------------------------------------- #
+    tok = "G" + uuid.uuid4().hex[:8]
+    prove_proof = _battery_proof([], methods).lstrip()   # no `using` facts needed
+    prove_thy = free_theory(formula, policy=policy, theory_name=tok, proof=prove_proof)
+    r1 = check_theory(prove_thy, tok, install=install, session_timeout=prove_timeout)
+    if r1.ok:
+        return FolVerdict(status=VALID, method="prove-battery",
+                          prove_output=r1.output, prove_elapsed=r1.elapsed)
+
+    # --- step 2: refute (nitpick) ----------------------------------------- #
+    refute_output = ""
+    refute_elapsed = 0.0
+    if refute:
+        tok2 = "G" + uuid.uuid4().hex[:8]
+        nit_proof = (f"nitpick[card e = {card}, timeout = {int(refute_timeout)}, "
+                     f"expect = genuine]\n  oops")
+        nit_thy = free_theory(formula, policy=policy, theory_name=tok2, proof=nit_proof)
         r2 = check_theory(nit_thy, tok2, install=install,
                           session_timeout=refute_timeout + 30,
                           wall_timeout=float(refute_timeout) + 240.0)

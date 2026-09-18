@@ -30,7 +30,7 @@ That overlap is pinned by a three-way differential in the tests: on every
 corpus sentence the DRS route covers, this route's formula, the DRS route's
 formula and Attempto's own TPTP are pairwise Z3-equivalent.
 
-Questions come out as :class:`AceFormula` with a ``kind``:
+Questions come out as :class:`unicode_fol_kit.ace.AceFormula` with a ``kind``:
 
 - a wh-question ("Who waits?") yields an OPEN formula — the queried referent
   stays free, named in ``query_variables`` with its question word — so
@@ -402,8 +402,8 @@ def _kit_pred(noun: str) -> str:
 
 
 def ace_drs_to_formula(ace_drs: AceDrs) -> AceFormula:
-    """APE's DRS → :class:`AceFormula` — the pure function behind
-    :func:`ace_to_formula`, offline-testable on recorded DRS terms."""
+    """APE's DRS → :class:`unicode_fol_kit.ace.AceFormula` — the pure function
+    behind :func:`ace_to_formula`, offline-testable on recorded DRS terms."""
     translator = _Translator(ace_drs)
     questions = [c for c in ace_drs.conditions if isinstance(c, AceQuestion)]
     try:

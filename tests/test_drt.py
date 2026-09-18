@@ -344,9 +344,196 @@ def test_parse_sbn_refuses_lowercase_role():
         drt.parse_sbn("own.v.01 agent -1")
 
 
+def test_parse_sbn_hyphenated_role_in_indentation_dialect():
+    # VerbNet's "Co-" role compounding (Co-Theme, Co-Agent, Co-Patient) is part of the
+    # BASE ``ROLE`` grammar (see the module docstring's section 2), not a connector-
+    # dialect-only addition -- this input has no NEGATION/connector anywhere, so it goes
+    # through _parse_sbn_classic, exactly like the real corpus document
+    # data/en/gold/p17/d2285/en.drs.sbn (pmb-5.1.0), which uses a hyphenated "Co-Theme"
+    # role in an otherwise flat, connector-free document. The hyphen is dropped when the
+    # role becomes a predicate name: Co-Theme(e1, fido) becomes CoTheme(e1, fido).
+    got, mapping = drt.parse_sbn('like.v.01 Co-Theme "fido"')
+    expected = DRS(("e1",), (Pred("LikeV01", ("e1",)), Pred("CoTheme", ("e1", "fido"))))
+    assert got == expected
+    assert mapping.constants == {"fido": "fido"}
+
+
+def test_parse_sbn_bare_deictic_constant_in_indentation_dialect():
+    # Bos (2023) §2.1: "now" is one of the four deictic references (speaker/hearer/
+    # now/here), written bare (unquoted) -- "EQU" is a comparison OPERATOR, lexically
+    # a role in this subset (see the module docstring), applied like any other. This
+    # widening is part of the BASE grammar (section 2's "Bare (unquoted) constants"
+    # bullet), not connector-dialect-only -- this input has no NEGATION/connector
+    # anywhere, so it goes through _parse_sbn_classic (renamed/relocated from the
+    # CONNECTOR-dialect test section, which it never actually exercised).
+    got, _ = drt.parse_sbn("time.n.08 EQU now")
+    assert got == DRS(("e1",), (Pred("TimeN08", ("e1",)), Pred("EQU", ("e1", "now"))))
+
+
+def test_parse_sbn_bare_integer_constant_in_indentation_dialect():
+    # A bare (unquoted) numeral is also a legal SBN constant (Bos 2023 §2.1,
+    # "numerical values"); it is not itself a legal kit CONSTANT name (nodes.py's
+    # NAME class needs an initial letter), so it is sanitized to the explicit 'c_...'
+    # form via the same NameMapping quoted constants use. Same base-grammar widening
+    # as above, exercised via _parse_sbn_classic (no NEGATION/connector in this input;
+    # renamed/relocated from the CONNECTOR-dialect test section for the same reason).
+    got, mapping = drt.parse_sbn("quantity.n.01 Quantity 3")
+    assert got == DRS(("e1",), (Pred("QuantityN01", ("e1",)), Pred("Quantity", ("e1", "c_3"))))
+    assert mapping.constants == {"3": "c_3"}
+
+
 def test_parse_sbn_refuses_empty_input():
     with pytest.raises(drt.SBNSyntaxError, match="empty input"):
         drt.parse_sbn("   \n  \n")
+
+
+# =============================================================================
+# 4b. parser.py — the CONNECTOR dialect (PMB's own released SBN format, added for
+# real-corpus coverage; see the module docstring's "Dialect selection"). The two
+# negation examples are HAND-DERIVED from Bos (2023) "The Sequence Notation:
+# Catching Complex Meanings in Simple Graphs" (IWCS 2023) Figures 3/4 -- an
+# independent, external, authoritative source for the expected DRS/FOL shape, not
+# just a self-consistency check against this module's own code.
+# =============================================================================
+
+def test_parse_sbn_connector_negation():
+    # "She is not tired.": concept-only numbering (box-operator lines don't count,
+    # unlike the indentation dialect) gives female.n.02 concept 1 (e1), tired.a.01
+    # concept 2 (e2); NEGATION <1 attaches its Neg to context (1 - 1) = 0, the root.
+    # tired's Experiencer -1 counts back one CONCEPT from itself (concept 2) to
+    # concept 1 = e1 -- Bos (2023) Figure 3's exact mechanism.
+    text = "female.n.02\nNEGATION <1\ntired.a.01 Experiencer -1"
+    got, mapping = drt.parse_sbn(text)
+    inner = DRS(("e2",), (Pred("TiredA01", ("e2",)), Pred("Experiencer", ("e2", "e1"))))
+    expected = DRS(("e1",), (Pred("FemaleN02", ("e1",)), Neg(inner)))
+    assert got == expected
+    assert got.validate() is True
+    assert mapping.predicates == {"female.n.02": "FemaleN02", "tired.a.01": "TiredA01"}
+
+
+def test_parse_sbn_connector_two_negations_attach_to_same_context():
+    # Bos (2023) Figure 4, "She is neither rich nor famous.", verbatim (its own
+    # worked example -- an external cross-check, not a fact only this module
+    # asserts): female.n.02(e1); NEGATION <1 introduces context 1 (rich), attached
+    # to context (1-1)=0; NEGATION <2 introduces context 2 (famous), attached to
+    # context (2-2)=0 -- THE SAME context 0, not nested inside the first negation,
+    # so the reading is ¬Rich(e1) ∧ ¬Famous(e1), never ¬(¬Rich(e1)). Leading spaces
+    # before each NEGATION are the real release's own cosmetic column-alignment
+    # padding (verified against pmb-5.1.0) and carry no meaning in this dialect.
+    text = ("female.n.02\n"
+            "  NEGATION <1\n"
+            "rich.a.01 AttributeOf -1\n"
+            "  NEGATION <2\n"
+            "famous.a.01 AttributeOf -2")
+    got, mapping = drt.parse_sbn(text)
+    rich = DRS(("e2",), (Pred("RichA01", ("e2",)), Pred("AttributeOf", ("e2", "e1"))))
+    famous = DRS(("e3",), (Pred("FamousA01", ("e3",)), Pred("AttributeOf", ("e3", "e1"))))
+    expected = DRS(("e1",), (Pred("FemaleN02", ("e1",)), Neg(rich), Neg(famous)))
+    assert got == expected
+    assert got.validate() is True
+    # Second, independent check: drs_to_fol's translation is a flat conjunction of
+    # two negations, matching "neither ... nor ..." -- never a nested double
+    # negation, which would (wrongly) assert she IS rich-or-famous.
+    fol = drt.drs_to_fol(got).to_unicode_str()
+    assert fol == "∃e1 (FemaleN02(e1) ∧ ¬∃e2 (RichA01(e2) ∧ AttributeOf(e2, e1)) ∧ " \
+                  "¬∃e3 (FamousA01(e3) ∧ AttributeOf(e3, e1)))"
+
+
+def test_parse_sbn_connector_hyphenated_role():
+    # The same "Co-" role compounding exercised by
+    # test_parse_sbn_hyphenated_role_in_indentation_dialect above, but through the
+    # CONNECTOR dialect's own code path this time (_parse_sbn_connector): the document
+    # carries a real connector (NEGATION <1), so dialect selection picks dialect 2, and
+    # role-hook offsets use its CONCEPT-only numbering. "she likes fido, and is not
+    # tired": like.v.01 is concept 1 (e1); NEGATION <1 attaches to context 0;
+    # tired.a.01 is concept 2 (e2), Experiencer -1 counts back one concept to e1.
+    text = 'like.v.01 Co-Theme "fido"\nNEGATION <1\ntired.a.01 Experiencer -1'
+    got, mapping = drt.parse_sbn(text)
+    inner = DRS(("e2",), (Pred("TiredA01", ("e2",)), Pred("Experiencer", ("e2", "e1"))))
+    expected = DRS(("e1",), (
+        Pred("LikeV01", ("e1",)), Pred("CoTheme", ("e1", "fido")), Neg(inner)))
+    assert got == expected
+    assert got.validate() is True
+    assert mapping.constants == {"fido": "fido"}
+
+
+def test_parse_sbn_connector_bare_deictic_constant():
+    # Same bare-deictic-constant widening as
+    # test_parse_sbn_bare_deictic_constant_in_indentation_dialect above, but through
+    # the CONNECTOR dialect's own code path this time (_parse_sbn_connector): the
+    # document carries a real connector (NEGATION <1), so dialect selection picks
+    # dialect 2. "she is not now tired" (contrived, but a legal instance of the
+    # grammar): time.n.08 is concept 1 (e1); NEGATION <1 attaches to context 0;
+    # tired.a.01 is concept 2 (e2), Experiencer -1 counts back one concept to e1. This
+    # is also the DOMINANT real-world use of the feature: of the 1025 pmb-5.1.0
+    # documents that parse via the connector dialect, 1009 (98%) have a bare
+    # deictic/integer constant in the resulting SBNMapping.constants.
+    text = "time.n.08 EQU now\nNEGATION <1\ntired.a.01 Experiencer -1"
+    got, mapping = drt.parse_sbn(text)
+    inner = DRS(("e2",), (Pred("TiredA01", ("e2",)), Pred("Experiencer", ("e2", "e1"))))
+    expected = DRS(("e1",), (Pred("TimeN08", ("e1",)), Pred("EQU", ("e1", "now")), Neg(inner)))
+    assert got == expected
+    assert got.validate() is True
+    assert mapping.constants == {"now": "now"}
+
+
+def test_parse_sbn_connector_bare_integer_constant():
+    # Same bare-integer-constant widening as
+    # test_parse_sbn_bare_integer_constant_in_indentation_dialect above, but through
+    # the CONNECTOR dialect's own code path (_parse_sbn_connector): a real connector
+    # (NEGATION <1) is present, so dialect selection picks dialect 2. "not three tired
+    # things" (contrived, but legal): quantity.n.01 is concept 1 (e1); NEGATION <1
+    # attaches to context 0; tired.a.01 is concept 2 (e2), Experiencer -1 counts back
+    # one concept to e1.
+    text = "quantity.n.01 Quantity 3\nNEGATION <1\ntired.a.01 Experiencer -1"
+    got, mapping = drt.parse_sbn(text)
+    inner = DRS(("e2",), (Pred("TiredA01", ("e2",)), Pred("Experiencer", ("e2", "e1"))))
+    expected = DRS(("e1",), (
+        Pred("QuantityN01", ("e1",)), Pred("Quantity", ("e1", "c_3")), Neg(inner)))
+    assert got == expected
+    assert got.validate() is True
+    assert mapping.constants == {"3": "c_3"}
+
+
+def test_parse_sbn_connector_refuses_unsupported_separator():
+    with pytest.raises(drt.SBNSyntaxError, match="'POSSIBILITY' is not supported"):
+        drt.parse_sbn("thing.n.01\nPOSSIBILITY <1\nfarmer.n.01")
+
+
+def test_parse_sbn_connector_refuses_forward_connector():
+    with pytest.raises(drt.SBNSyntaxError, match="forward connector"):
+        drt.parse_sbn("thing.n.01\nNEGATION >1\nfarmer.n.01")
+
+
+def test_parse_sbn_connector_refuses_out_of_range_connector():
+    with pytest.raises(drt.SBNSyntaxError, match="outside the document"):
+        drt.parse_sbn("thing.n.01\nNEGATION <2\nfarmer.n.01")
+
+
+def test_parse_sbn_connector_refuses_box_valued_role_target():
+    # "hope.v.01 Proposition >1": Proposition's argument is an embedded CLAUSE
+    # (a context), not an entity -- this subset only resolves entity-valued role
+    # targets, so it is refused by name rather than silently mis-read as an offset.
+    text = "hope.v.01 Proposition >1\nNEGATION <1\nsleep.v.01 Agent -1"
+    with pytest.raises(drt.SBNSyntaxError, match="context/box reference"):
+        drt.parse_sbn(text)
+
+
+def test_parse_sbn_connector_refuses_empty_negation_scope():
+    with pytest.raises(drt.SBNSyntaxError, match="empty context"):
+        drt.parse_sbn("thing.n.01\nNEGATION <1\nNEGATION <2\nfarmer.n.01")
+
+
+def test_parse_sbn_dialect_selection_ignores_leading_spaces_in_connector_mode():
+    # The same leading-space shape that test_parse_sbn_refuses_space_indentation
+    # (dialect 1) refuses outright is legal -- and semantically inert -- the moment
+    # a connector is present anywhere in the document, confirming dialect selection
+    # is document-wide, not per-line.
+    got, _ = drt.parse_sbn("farmer.n.01\n NEGATION <1\n donkey.n.01")
+    assert got == DRS(("e1",), (
+        Pred("FarmerN01", ("e1",)),
+        Neg(DRS(("e2",), (Pred("DonkeyN01", ("e2",)),))),
+    ))
 
 
 # =============================================================================

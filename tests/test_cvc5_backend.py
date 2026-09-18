@@ -129,6 +129,159 @@ def test_decide_never_raises_on_a_crash_inducing_bad_option():
 
 
 # ---------------------------------------------------------------------------
+# C12: an Alethe proof term + unsat core on every PROVED verdict
+# ---------------------------------------------------------------------------
+
+def test_proved_verdict_carries_an_alethe_proof():
+    v = _backend.decide(_VALID)
+    assert v.status == PROVED
+    assert v.proof["kind"] == "cvc5_alethe"
+    # A real Alethe proof step line, not an empty/placeholder string --
+    # every Alethe proof is a sequence of "(step ... :rule ...)" forms.
+    assert v.proof["text"] and ":rule" in v.proof["text"]
+    assert v.proof["unsat_core"]        # non-empty: at least the negated goal
+
+
+def test_refuted_and_unknown_verdicts_carry_no_proof():
+    assert _backend.decide(_INVALID).proof is None                       # REFUTED
+    v = _backend.decide(_VALID, logic="NOT_A_REAL_SMTLIB_LOGIC")
+    assert v.status == ERROR and v.proof is None
+
+
+def test_unsat_core_minimality_sanity_excludes_the_irrelevant_premise():
+    """A hand-built entailment with one deliberately irrelevant extra
+    premise: the returned core must name the forall/Human(socrates)
+    premises actually used and must NOT mention the unrelated Bird(tweety)
+    premise anywhere -- catching a core that is technically sound but
+    trivially 'the whole premise set' (a useless certificate), which is
+    exactly what asserting each premise as a SEPARATE SMT-LIB2 command
+    (rather than one folded implication) fixes -- see
+    Cvc5Backend._run's docstring.
+    """
+    premises = [_P.parse("∀x (Human(x) → Mortal(x))"),
+               _P.parse("Human(socrates)"),
+               _P.parse("Bird(tweety)")]
+    goal = _P.parse("Mortal(socrates)")
+    v = _backend.decide(goal, premises)
+    assert v.status == PROVED
+    core_text = " ".join(v.proof["unsat_core"])
+    assert "Bird" not in core_text and "tweety" not in core_text
+    assert "Human" in core_text and "Mortal" in core_text
+
+
+def test_unsat_core_never_requires_both_of_a_redundant_pair():
+    premises = [_P.parse("Mortal(socrates)"),
+               _P.parse("Mortal(socrates) ∧ Human(socrates)")]
+    goal = _P.parse("Mortal(socrates)")
+    v = _backend.decide(goal, premises)
+    assert v.status == PROVED
+    # Exactly two entries: the negated goal, plus (at most) ONE of the two
+    # independently-sufficient premises -- never a term mentioning BOTH
+    # Mortal(socrates) alone AND the stronger conjunctive restatement.
+    assert len(v.proof["unsat_core"]) == 2
+
+
+def test_unsat_core_soundness_self_check_reproving_just_the_reported_subset():
+    """The independent second route the spec's test_oracle names: since the
+    core is TEXT (SMT-LIB2 term strings, not indices — see
+    Cvc5Backend._run's docstring), re-parsing it back into terms is its own
+    can of worms, so this drives the same property through the kit's own
+    premise list instead: for THIS fixture each premise's own vocabulary is
+    disjoint from the others' (Human/Mortal vs. Bird), so "does the core
+    text mention this premise's own symbol" is a sound per-premise
+    membership test. The reduced subset must still reprove the goal on a
+    second, independent decide() call — an unsound over-pruning bug in the
+    core would make that second call fail.
+    """
+    premises = [_P.parse("∀x (Human(x) → Mortal(x))"),
+               _P.parse("Human(socrates)"),
+               _P.parse("Bird(tweety)")]
+    goal = _P.parse("Mortal(socrates)")
+    v = _backend.decide(goal, premises)
+    core_text = " ".join(v.proof["unsat_core"])
+    own_symbol = {0: "Human", 1: "Human", 2: "Bird"}    # each premise's distinguishing symbol
+    subset = [p for i, p in enumerate(premises) if own_symbol[i] in core_text]
+    assert subset == premises[:2]        # sanity: Bird(tweety) alone got dropped
+    assert _backend.decide(goal, subset).status == PROVED
+
+
+def test_unsat_core_excludes_the_synthetic_non_emptiness_axiom():
+    """Many-sorted PROVED verdicts add ``nonempty_sort_axioms(...)`` (see the
+    class docstring's "Many-sorted (MSFOL) soundness" paragraph) as an
+    extra, unconditional assertion alongside the caller's own premises --
+    but that synthetic axiom is background MSFOL convention, never one of
+    the caller's own premises, so it must never show up in the REPORTED
+    unsat core, mirroring ``atp.protocol.Z3Backend``'s ``z3_unsat_core``
+    (whose ``_z3_track_and_check`` keeps the identical axiom untracked for
+    exactly this reason -- see ``Cvc5Backend._run``'s docstring for how this
+    backend does the analogous exclusion without an ``assert_and_track``-
+    style tag to lean on). Hand-checked: ``(∀x:Ghost P(x)) ⊨ (∃x:Ghost
+    P(x))`` is a textbook tautology once ``Ghost`` is known non-empty
+    (universal instantiation at the witness, then existential
+    generalisation), so this comes back PROVED with exactly two core
+    entries -- the premise and the negated goal -- never a third one for
+    the synthetic ``∃x (Ghost(x))`` axiom nonempty_sort_axioms adds.
+    """
+    MSFOL = MSFLParser(many_sorted=True)
+    premise = MSFOL.parse("∀x:Ghost P(x)")
+    goal = MSFOL.parse("∃x:Ghost P(x)")
+    v = _backend.decide(goal, [premise])
+    assert v.status == PROVED
+    core = v.proof["unsat_core"]
+    assert len(core) == 2          # exactly the caller's premise and negated goal
+    core_text = " ".join(core)
+    # nonempty_sort_axioms names its bound variable "_msfol_<Sort>_witness"
+    # (fol/_msfl_nodes.py) -- that token appearing here would mean the
+    # synthetic axiom leaked into the reported core.
+    assert "_msfol_Ghost_witness" not in core_text
+    assert "Ghost" in core_text and "P" in core_text
+
+
+def test_reported_sorted_premise_was_really_needed_not_just_padding():
+    """The independent second-route sanity check for the sorted case,
+    mirroring
+    ``test_unsat_core_soundness_self_check_reproving_just_the_reported_subset``:
+    the fix only removes the SYNTHETIC non-emptiness axiom from the report,
+    never the caller's own premise, so the ``∀x:Ghost P(x)`` premise the
+    core names as used must genuinely be load-bearing -- dropping it must
+    turn the same goal from PROVED to NOT-PROVED, since "some Ghost exists"
+    (``nonempty_sort_axioms``'s own witness, still asserted unconditionally)
+    does not by itself entail "some Ghost is a P".
+    """
+    MSFOL = MSFLParser(many_sorted=True)
+    goal = MSFOL.parse("∃x:Ghost P(x)")
+    assert _backend.decide(goal, []).status != PROVED
+
+
+def test_alethe_proof_checks_with_carcara_when_installed():
+    """Optional, fully independent verification pass — gated on the external
+    Carcara checker being on PATH, the same discipline test_hol_isabelle.py
+    etc. already use for Isabelle/Vampire/Prover9 (skip, never fake a pass,
+    when the tool is absent)."""
+    import shutil
+    import subprocess
+    import tempfile
+
+    carcara = shutil.which("carcara")
+    if carcara is None:
+        pytest.skip("no carcara binary found — this check is opt-in only")
+
+    v = _backend.decide(_VALID)
+    assert v.status == PROVED
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".alethe", delete=False,
+                                     encoding="utf-8") as tmp:
+        tmp.write(v.proof["text"])
+        path = tmp.name
+    try:
+        result = subprocess.run([carcara, "check", path],
+                                capture_output=True, text=True, timeout=30)
+        assert result.returncode == 0, result.stdout + result.stderr
+    finally:
+        import os
+        os.unlink(path)
+
+
+# ---------------------------------------------------------------------------
 # ASCII/legality sanitisation — digit-leading names, which used to SEGFAULT
 # the whole process (Z3's own to_smt2() does not quote a pure-ASCII
 # digit-leading name, so the replayed SMT-LIB2 text was malformed, and cvc5's
@@ -207,6 +360,98 @@ class TestSmtlib2TextIsValidPerZ3sOwnParser:
         text = solver.to_smt2()
         with pytest.raises(z3.Z3Exception):
             z3.parse_smt2_string(text)
+
+
+class TestReservedWordNamesAreAlsoSanitised:
+    """Extends R5's coverage: an SMT-LIB2 <reserved> word (``let``, ...) used
+    as a predicate/function/constant name is a SECOND legality gap Z3's own
+    ``to_smt2()`` does not close on its own (found live while building the
+    public ``to_smtlib`` writer that reuses this module's sanitiser — see
+    the module docstring's sanitisation section, updated to cover it)."""
+
+    def test_reserved_word_predicate_name_smt2_text_parses(self):
+        import z3
+        from unicode_fol_kit.fol.nodes import Atom, Constant
+
+        # "let" is a legal lower-case-initial NAME in the kit's own grammar
+        # (predicate-hood needs an UPPER-case initial) but an SMT-LIB2
+        # <reserved> word, so it is reachable as a predicate only via a
+        # programmatically built node — same reachability shape as
+        # TestDigitLeadingNamesNoLongerCrash's "2008Wins" predicate case.
+        f = Atom("let", [Constant("x")])
+        goal = _implication(f, [])
+        sanitised, mapping = _sanitize_for_smtlib(goal)
+        assert mapping.mapping["let"] != "let"
+        z3_goal = sanitised.to_z3()
+        solver = z3.Solver()
+        solver.add(z3.Not(z3_goal))
+        text = solver.to_smt2()
+        z3.parse_smt2_string(text)  # must not raise
+
+    def test_unsanitised_reserved_word_name_smt2_text_does_NOT_parse(self):
+        # Negative control, same shape as R5's: Z3's own to_smt2() does not
+        # quote "let" either, so an uninterpreted predicate named "let"
+        # prints as the undecorated head of "(let x)", which Z3's OWN
+        # parser then reads as the let-BINDING form and rejects.
+        import z3
+        from unicode_fol_kit.fol.nodes import Atom, Constant
+
+        f = Atom("let", [Constant("x")])
+        goal = _implication(f, [])          # UNSANITISED goal
+        z3_goal = goal.to_z3()
+        solver = z3.Solver()
+        solver.add(z3.Not(z3_goal))
+        text = solver.to_smt2()
+        with pytest.raises(z3.Z3Exception):
+            z3.parse_smt2_string(text)
+
+    def test_reserved_word_predicate_name_decides_through_cvc5_too(self):
+        from unicode_fol_kit.fol.nodes import Atom, Constant
+
+        f = Atom("let", [Constant("x")])
+        v = _backend.decide(f)
+        assert v.status in ("proved", "refuted", "unknown", "error")
+
+
+class TestSixReservedGrammarWordsZ3DoesNotSpecialCase:
+    """R1 negative control for the review finding on ``_SMTLIB_RESERVED_WORDS``:
+    the SMT-LIB2 v2.6 grammar (Sec. 3.1) lists 13 ``<reserved>`` words, but
+    Z3's own parser only actually treats 7 of them specially as syntax. The
+    other 6 (``BINARY``, ``DECIMAL``, ``HEXADECIMAL``, ``NUMERAL``, ``par``,
+    ``STRING``) already round-trip correctly through Z3's own SMT-LIB2
+    serialisation with no help from this module, in EVERY role a kit name
+    can be emitted in (bare declaration, applied predicate/function head,
+    argument) — so ``_sanitize_for_smtlib`` must leave them identity-mapped,
+    exactly like R1's non-ASCII case below, not rename something that
+    already worked."""
+
+    _WORDS = ["BINARY", "DECIMAL", "HEXADECIMAL", "NUMERAL", "par", "STRING"]
+
+    @pytest.mark.parametrize("word", _WORDS)
+    def test_identity_mapped_by_the_sanitiser(self, word):
+        from unicode_fol_kit.fol.nodes import Atom, Constant
+
+        f = Atom("P", [Constant(word)])
+        goal = _implication(f, [])
+        _, mapping = _sanitize_for_smtlib(goal)
+        assert mapping.mapping[word] == word
+
+    @pytest.mark.parametrize("word", _WORDS)
+    def test_applied_as_a_predicate_head_parses_via_z3_unsanitised(self, word):
+        # Positive control proving these six are safe even in the ONE role
+        # ("applied as a function/predicate head") where digit-leading names
+        # and the true 7 reserved words actually break Z3's own parser —
+        # confirms sanitising them would be pure unforced renaming, not a
+        # fix for anything.
+        import z3
+        from unicode_fol_kit.fol.nodes import Atom, Constant
+
+        f = Atom(word, [Constant("x")])
+        z3_goal = f.to_z3()
+        solver = z3.Solver()
+        solver.add(z3_goal)
+        text = solver.to_smt2()
+        z3.parse_smt2_string(text)  # must not raise
 
 
 class TestNonAsciiNamesAlreadyWorkedAndStayUntouched:

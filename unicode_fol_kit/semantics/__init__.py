@@ -17,6 +17,10 @@ Two complementary evaluators:
   a predicate is.
 - The **Łukasiewicz fuzzy** evaluator :func:`evaluate`, which computes the truth
   degree in [0, 1] of an FL/MSFL formula under a valuation.
+- The **graded (fuzzy) Kripke** evaluator :func:`satisfies_fuzzy_modal`, which
+  computes the truth degree in [0, 1] of a propositional modal formula at a
+  world of a :class:`FuzzyKripkeModel` (weighted accessibility relations,
+  graded valuations) under a chosen t-norm.
 """
 
 from .tarski import Structure, term_value, satisfies, models
@@ -31,7 +35,9 @@ from .fuzzy import evaluate, ground_quantifiers
 from .tnorm import TNorm, get_tnorm, TNORMS, LUKASIEWICZ, GODEL, PRODUCT
 from .kripke import (
     KripkeModel, satisfies_modal, models_at, reflexive_transitive_closure,
+    ctl_ex, ctl_af, ctl_eg, ctl_au,
 )
+from .fuzzy_kripke import FuzzyKripkeModel, satisfies_fuzzy_modal
 from .manyvalued import (
     kleene_value, is_valid, is_satisfiable, entails, DESIGNATED,
 )
@@ -40,6 +46,7 @@ from .truthtable import (
 )
 from .modelfinder import (
     find_model, find_countermodel, is_satisfiable_finite, is_valid_finite,
+    is_size_exhaustive,
 )
 from .intuitionistic import IntKripkeModel, int_valid, int_countermodel
 from .matrix import (
@@ -53,7 +60,7 @@ from .free_logic import (
 from .dynamic_epistemic import announce, box_announce, diamond_announce
 from .action_models import (
     ActionModel, product_update, public_announcement_action,
-    common_knowledge_holds, everybody_knows,
+    common_knowledge_holds, everybody_knows, distributed_knowledge_holds,
 )
 from .conditional import (
     CounterfactualModel, cf_satisfies, cf_countermodel, cf_valid, would, might,
@@ -65,7 +72,7 @@ from .nonmonotonic import (
 )
 from .relevant import RelevantModel, rel_satisfies, rel_countermodel, rel_valid
 from .team import team_satisfies, team_models, MAX_TEAM_SEARCH
-from .team_translation import dependence_to_eso
+from .team_translation import dependence_to_eso, dependence_holds_eso
 from .structures import FiniteStructure, structure_from_dict, graph_to_structure
 # The structure evaluator's own `evaluate` is re-exported under the explicit
 # name `evaluate_in_structure`: this package's bare `evaluate` has meant the
@@ -94,6 +101,8 @@ __all__ = [
     "evaluate", "ground_quantifiers",
     "TNorm", "get_tnorm", "TNORMS", "LUKASIEWICZ", "GODEL", "PRODUCT",
     "KripkeModel", "satisfies_modal", "models_at", "reflexive_transitive_closure",
+    "ctl_ex", "ctl_af", "ctl_eg", "ctl_au",
+    "FuzzyKripkeModel", "satisfies_fuzzy_modal",
     # Many-valued (Kleene K3 / Priest LP). Note: is_valid/is_satisfiable/entails here are
     # the three-valued versions — distinct from the Z3-based ones at the package top level.
     "kleene_value", "is_valid", "is_satisfiable", "entails", "DESIGNATED",
@@ -101,6 +110,7 @@ __all__ = [
     "truth_table", "TruthTable", "is_tautology", "is_contradiction", "is_satisfiable_tt",
     # Finite model finder + countermodels.
     "find_model", "find_countermodel", "is_satisfiable_finite", "is_valid_finite",
+    "is_size_exhaustive",
     # Intuitionistic propositional logic (Kripke semantics).
     "IntKripkeModel", "int_valid", "int_countermodel",
     # Finite-valued logical matrices (K3 / LP re-expressed; Belnap–Dunn FDE).
@@ -111,12 +121,12 @@ __all__ = [
     "free_find_model", "free_countermodel", "free_is_valid", "free_entails",
     "announce", "box_announce", "diamond_announce",
     "ActionModel", "product_update", "public_announcement_action",
-    "common_knowledge_holds", "everybody_knows",
+    "common_knowledge_holds", "everybody_knows", "distributed_knowledge_holds",
     "CounterfactualModel", "cf_satisfies", "cf_countermodel", "cf_valid",
     "would", "might", "CENTERING_LEVELS", "DEFAULT_MAX_WORLDS",
     "minimal_models", "minimal_entails",
     "circumscription_formula", "circumscription_entails_so",
     "RelevantModel", "rel_satisfies", "rel_countermodel", "rel_valid",
     "team_satisfies", "team_models", "MAX_TEAM_SEARCH",
-    "dependence_to_eso",
+    "dependence_to_eso", "dependence_holds_eso",
 ]

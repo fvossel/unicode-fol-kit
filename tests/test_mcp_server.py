@@ -21,6 +21,14 @@ from unicode_fol_kit.mcp.server import (   # noqa: E402
     create_server,
     detect_dialect,
     diagnose,
+    dl_abox_consistent,
+    dl_classify,
+    dl_concept_satisfiable,
+    dl_equivalent,
+    dl_instance_check,
+    dl_instance_retrieval,
+    dl_parse_manchester,
+    dl_subsumes,
     drs_to_fol,
     find_countermodel,
     get_signature,
@@ -241,9 +249,39 @@ def test_render_casl_and_json_and_english():
         "for every x, if x is p, then x is q"
 
 
+def test_render_smtlib_hand_pinned():
+    """P(a) is one declare-sort/declare-fun preamble (Z3's own
+    Solver.to_smt2(), deterministic for this single-symbol input) plus one
+    (assert (P a)) and a trailing (set-logic ALL)/(check-sat) — hand-run and
+    pinned; the round-trip/adversarial-name/refusal contract itself is
+    covered by tests/test_smtlib_export.py, not re-tested here."""
+    assert render("P(a)", to="smtlib")["rendered"] == (
+        "(set-logic ALL)\n"
+        "; benchmark generated from python API\n"
+        "(set-info :status unknown)\n"
+        "(declare-sort S 0)\n"
+        "(declare-fun P (S) Bool)\n"
+        "(declare-fun a () S)\n"
+        "(assert\n"
+        " (P a))\n"
+        "(check-sat)\n"
+    )
+
+
+def test_render_smtlib_refuses_second_order_naming_the_construct():
+    """A family without the requested rendering surfaces its OWN refusal —
+    here to_z3's second-order rejection, reused (not reimplemented) by
+    to_smtlib, plus the one sentence to_smtlib appends."""
+    result = render("∃P P(a)", to="smtlib", dialect="second_order")
+    assert result["error"]["type"] == "NotImplementedError"
+    assert "econd-order" in result["error"]["message"]
+    assert "SMT-LIB2 export is first-order only" in result["error"]["message"]
+
+
 def test_render_unknown_target_is_structured_error():
     result = render("P", to="klingon")
     assert result["error"]["type"] == "ValueError"
+    assert "smtlib" in result["error"]["message"]
 
 
 def test_detect_dialect_tptp_and_unicode():
@@ -308,6 +346,124 @@ def test_score_batch_half_right_corpus():
 def test_score_batch_length_mismatch_is_structured_error():
     result = score_batch(["P"], [])
     assert result["error"]["type"] == "ValueError"
+
+
+# ---------------------------------------------------------------------------
+# converses: declared converse/argument-permutation bridging axioms.
+# ---------------------------------------------------------------------------
+
+_LOVED_BY_JSON = [{"a": ["LovedBy", 2], "b": ["Loves", 2], "permutation": [1, 0]}]
+_LOVED_BY_TUPLE = (("LovedBy", 2), ("Loves", 2), (1, 0))
+
+
+def test_compare_formulas_converses_json_form_matches_python_tuple_form():
+    """The JSON-dict declaration round-trips to the SAME verdict the
+    Python-tuple form gives directly through eval.equivalent — the wire
+    shape is just a re-spelling, not a different code path."""
+    from unicode_fol_kit import equivalent as _equivalent
+    from unicode_fol_kit.mcp.server import _parse
+
+    result = compare_formulas("Loves(a, b)", "LovedBy(b, a)",
+                              converses=_LOVED_BY_JSON)
+    assert result["equivalence"]["equivalent"] is True
+    assert result["equivalence"]["method_used"] == "solver_modulo_converses"
+    assert result["converse_axioms_applied"] == [
+        "∀v0 ∀v1 (LovedBy(v0, v1) ↔ Loves(v1, v0))"]
+
+    pred, _ = _parse("Loves(a, b)", None)
+    gold, _ = _parse("LovedBy(b, a)", None)
+    direct = _equivalent(pred, gold, converses=[_LOVED_BY_TUPLE])
+    assert direct.equivalent == result["equivalence"]["equivalent"]
+    assert direct.method_used == result["equivalence"]["method_used"]
+
+
+def test_compare_formulas_converses_none_leaves_field_none():
+    result = compare_formulas("P(a)", "P(a)")
+    assert result["converse_axioms_applied"] is None
+
+
+def test_compare_formulas_malformed_converses_json_is_top_level_error():
+    """A malformed WIRE shape (missing "permutation") is caught before
+    api.equivalent is even called -- the top-level {"error": {...}} shape,
+    per the JSON-normalisation/field-scoped error split documented on
+    compare_formulas."""
+    result = compare_formulas("Loves(a, b)", "LovedBy(b, a)",
+                              converses=[{"a": ["LovedBy", 2], "b": ["Loves", 2]}])
+    assert "ok" not in result                       # top-level {"error": {...}} shape
+    assert result["error"]["type"] == "ValueError"
+    assert "converses[0]" in result["error"]["message"]
+
+
+def test_compare_formulas_invalid_converse_declaration_is_field_scoped_error():
+    """A well-shaped but semantically invalid declaration (self-pair) is a
+    ValueError raised INSIDE the equivalence computation, so it lands in
+    equivalence.error, not the top-level error -- the correction the
+    roadmap review made versus the original spec."""
+    result = compare_formulas(
+        "Loves(a, b)", "Loves(b, a)",
+        converses=[{"a": ["Loves", 2], "b": ["Loves", 2], "permutation": [1, 0]}])
+    assert "error" not in result
+    assert "own converse" in result["equivalence"]["error"]
+
+
+def test_score_batch_converses_adds_converse_matched_rate():
+    result = score_batch(["Loves(a, b)"], ["LovedBy(b, a)"], method="solver",
+                         converses=_LOVED_BY_JSON)
+    assert result["ok"] is True
+    assert result["converse_matched_rate"] == 1.0
+    assert result["equivalence_accuracy"] == 1.0
+
+
+def test_score_batch_converses_none_keeps_six_key_dict():
+    result = score_batch(["P(a)"], ["P(a)"])
+    assert "converse_matched_rate" not in result
+
+
+_MODAL_CONVERSE = [{"a": ["P", 0], "b": ["Q", 0], "permutation": []}]
+
+
+def test_compare_formulas_modal_pair_with_converses_is_field_scoped_error():
+    """eval.equivalent() deliberately raises NotImplementedError for a modal
+    pair with non-empty converses (no modal bridging route exists -- see
+    tests/test_converses.py's test_modal_pair_with_converses_raises_not_implemented
+    for the direct-call proof). Through this tool that must land in
+    equivalence.error, the SAME structured shape a ValueError gets here (see
+    test_compare_formulas_invalid_converse_declaration_is_field_scoped_error
+    above) -- never escape as a raw, uncaught exception."""
+    result = compare_formulas("□P", "□Q", converses=_MODAL_CONVERSE)
+    assert "error" not in result                    # not the top-level shape
+    assert result["ok"] is True
+    assert "modal" in result["equivalence"]["error"]
+
+
+def test_score_batch_modal_pair_with_converses_is_structured_error():
+    """Same NotImplementedError case as compare_formulas above, through
+    score_batch: must come back as the tool's {"error": {...}} shape, not a
+    raw exception."""
+    result = score_batch(["□P"], ["□Q"], method="solver",
+                         converses=_MODAL_CONVERSE)
+    assert "ok" not in result
+    assert result["error"]["type"] == "NotImplementedError"
+    assert "modal" in result["error"]["message"]
+
+
+def test_call_tool_compare_formulas_modal_converses_over_the_wire_path():
+    """The in-process function calls above prove the exception is caught;
+    this proves it survives the REAL MCP call_tool dispatch too -- the
+    reviewer's concern was specifically that an uncaught NotImplementedError
+    would surface as a protocol-level crash rather than a normal tool
+    response over the wire, which the in-process calls alone cannot show."""
+    import json
+
+    server = create_server()
+    result = asyncio.run(server.call_tool(
+        "compare_formulas",
+        {"predicted": "□P", "gold": "□Q", "converses": _MODAL_CONVERSE}))
+    payload = getattr(result, "structured_content", None)
+    if payload is None:
+        payload = json.loads(result.content[0].text)
+    assert payload["ok"] is True
+    assert "modal" in payload["equivalence"]["error"]
 
 
 def test_check_consistency_satisfiable_set_carries_model():
@@ -454,6 +610,65 @@ def test_probability_bounds_conditional_and_inconsistency():
     assert "inconsistent" in bad["error"]["message"]
 
 
+def test_probability_bounds_strategy_passthrough_matches_direct():
+    """strategy/max_columns travel through to
+    prob.nilsson.entailment_bounds unchanged: column_generation must land
+    on the SAME hand-derived bounds as the direct strategy on the classic
+    P(A)=0.7, P(A→B)=0.8 ⊢ P(B) ∈ [1/2, 4/5] example (see
+    test_probability_bounds_nilsson_classic above) -- exactly the
+    differential the two algorithms are held to agree on exactly, never a
+    tolerance (tests/test_nilsson_colgen.py)."""
+    constraints = [{"formula": "A", "probability": "7/10"},
+                  {"formula": "A → B", "probability": "4/5"}]
+    direct = probability_bounds("B", constraints)
+    colgen = probability_bounds("B", constraints, strategy="column_generation")
+    assert direct["ok"] is True and colgen["ok"] is True
+    assert colgen["lower"] == direct["lower"] == "1/2"
+    assert colgen["upper"] == direct["upper"] == "4/5"
+
+
+def test_probability_bounds_strategy_bypasses_max_atoms():
+    """13 distinct atoms exceed the direct strategy's max_atoms=12 default
+    (refused loudly, the O(2^n) brake); column_generation is exactly the
+    escape hatch. Hand-derived like tests/test_nilsson_colgen.py's own
+    thirteen-atom case: P(S0)=1/2 forces the OR-of-13 conclusion's
+    probability into [1/2, 1] regardless of which strategy answers it
+    (atom0=True forces the OR true; atom0=False mass can be routed onto an
+    all-remaining-false world for the min, or an OR-true world for the
+    max)."""
+    conclusion = " ∨ ".join(f"S{i}" for i in range(13))
+    constraints = [{"formula": "S0", "probability": "1/2"}]
+    refused = probability_bounds(conclusion, constraints)
+    assert refused["error"]["type"] == "ValueError"
+    assert "max_atoms" in refused["error"]["message"]
+    colgen = probability_bounds(conclusion, constraints,
+                                strategy="column_generation")
+    assert colgen["ok"] is True
+    assert colgen["lower"] == "1/2"
+    assert colgen["upper"] == "1"
+    assert colgen["n_worlds"] == 2 ** 13
+
+
+def test_probability_bounds_max_columns_brake():
+    """max_columns travels through too: capped at 1 on a problem that
+    needs more, column_generation refuses rather than ever returning an
+    unproven bound (mirrors tests/test_nilsson_colgen.py's own brake
+    test)."""
+    result = probability_bounds(
+        "B", [{"formula": "A", "probability": "7/10"},
+              {"formula": "A → B", "probability": "4/5"}],
+        strategy="column_generation", max_columns=1)
+    assert result["error"]["type"] == "ValueError"
+    assert "max_columns" in result["error"]["message"]
+
+
+def test_probability_bounds_refuses_unknown_strategy():
+    result = probability_bounds(
+        "A", [{"formula": "A", "probability": "1"}], strategy="bogus")
+    assert result["error"]["type"] == "ValueError"
+    assert "bogus" in result["error"]["message"]
+
+
 def test_probability_query_alarm_classic():
     """burglary 1/10, earthquake 1/5, alarm from either: P(alarm) =
     1 − (9/10)(4/5) = 7/25 — the distribution-semantics classic."""
@@ -486,16 +701,373 @@ def test_list_translations_names_the_default_edges():
 
 
 # ---------------------------------------------------------------------------
+# Description logic (dl_*): ALCHQ tableau reasoning + OWL Manchester Syntax.
+#
+# The family ontology below is docs/guide/description-logic.md's own
+# "End-to-end: a small family ontology" (Parent ≡ Person ⊓ ∃hasChild.Person,
+# Mother ≡ Parent ⊓ Female, Father ≡ Parent ⊓ Male, Male ⊑ ¬Female) —
+# hand-checked there (and independently re-derived below) precisely so
+# these tests are the second, TEXT-in/JSON-out route to already-known
+# answers, not a tautological check of the wrapper against itself.
+# ---------------------------------------------------------------------------
+
+_FAMILY_TBOX = [
+    {"equiv": ["Parent", "Person ⊓ ∃hasChild.Person"]},
+    {"equiv": ["Mother", "Parent ⊓ Female"]},
+    {"equiv": ["Father", "Parent ⊓ Male"]},
+    {"sub": "Male", "sup": "¬Female"},
+]
+
+
+def test_dl_concept_satisfiable_hand_checked_contradiction():
+    """'A ⊓ ¬A' is the textbook unsatisfiable concept; a bare atomic concept
+    is trivially satisfiable. Differential-checked against calling
+    dl.concept_satisfiable directly on the identically-parsed Concept, per
+    this item's own test_oracle."""
+    import unicode_fol_kit.dl as dl
+
+    contradiction = dl_concept_satisfiable("A ⊓ ¬A")
+    assert contradiction == {"ok": True, "satisfiable": False,
+                             "concept_unicode": "A ⊓ ¬A"}
+    assert contradiction["satisfiable"] == dl.concept_satisfiable(
+        dl.parse_concept("A ⊓ ¬A"))
+
+    trivial = dl_concept_satisfiable("Person")
+    assert trivial["satisfiable"] is True
+
+
+def test_dl_concept_satisfiable_manchester_syntax():
+    """The same contradiction, spelled in OWL Manchester Syntax
+    (syntax='manchester') rather than the ALC glyph default."""
+    result = dl_concept_satisfiable("Person and not Person", syntax="manchester")
+    assert result == {"ok": True, "satisfiable": False,
+                      "concept_unicode": "Person ⊓ ¬Person"}
+
+
+def test_dl_subsumes_family_ontology_hand_checked():
+    """Mother ⊑ Parent ⊑ Person (both True — Mother ≡ Parent ⊓ Female, so
+    every Mother is a Parent, hence a Person); the converse Parent ⊑ Mother
+    is False (not every parent is a mother). Same three cases as the docs
+    guide's worked example."""
+    mother_parent = dl_subsumes("Mother", "Parent", tbox=_FAMILY_TBOX)
+    assert mother_parent == {"ok": True, "subsumes": True,
+                             "sub_unicode": "Mother", "sup_unicode": "Parent"}
+    assert dl_subsumes("Mother", "Person", tbox=_FAMILY_TBOX)["subsumes"] is True
+    assert dl_subsumes("Parent", "Mother", tbox=_FAMILY_TBOX)["subsumes"] is False
+
+
+def test_dl_subsumes_differential_against_the_dl_module_directly():
+    """The MCP wrapper's verdict must agree with calling dl.subsumes on the
+    identically-built TBox/Concepts (the differential half of this item's
+    test_oracle)."""
+    import unicode_fol_kit.dl as dl
+
+    Person, Female, Male = dl.Atomic("Person"), dl.Atomic("Female"), dl.Atomic("Male")
+    Parent, Mother, Father = dl.Atomic("Parent"), dl.Atomic("Mother"), dl.Atomic("Father")
+    t = (dl.TBox()
+         .add_equivalence(Parent, dl.And(Person, dl.Exists("hasChild", Person)))
+         .add_equivalence(Mother, dl.And(Parent, Female))
+         .add_equivalence(Father, dl.And(Parent, Male))
+         .add(Male, dl.Not(Female)))
+    for sub, sup in (("Mother", "Parent"), ("Mother", "Person"), ("Parent", "Mother")):
+        via_tool = dl_subsumes(sub, sup, tbox=_FAMILY_TBOX)["subsumes"]
+        via_dl = dl.subsumes(dl.Atomic(sub), dl.Atomic(sup), t)
+        assert via_tool == via_dl
+
+
+def test_dl_concept_satisfiable_mother_and_father_are_disjoint():
+    """Mother ⊓ Father is unsatisfiable: a Mother is Female, a Father is
+    Male, and Male ⊑ ¬Female rules out both at once — the docs guide's own
+    disjointness check."""
+    result = dl_concept_satisfiable("Mother ⊓ Father", tbox=_FAMILY_TBOX)
+    assert result["satisfiable"] is False
+
+
+def test_dl_equivalent_de_morgan():
+    """¬(A ⊓ B) ≡ ¬A ⊔ ¬B — De Morgan, decided by mutual subsumption over
+    the empty TBox."""
+    result = dl_equivalent("¬(A ⊓ B)", "¬A ⊔ ¬B")
+    assert result == {"ok": True, "equivalent": True,
+                      "c_unicode": "¬(A ⊓ B)", "d_unicode": "¬A ⊔ ¬B"}
+    # A non-equivalence: ⊓ is not ⊔.
+    assert dl_equivalent("A ⊓ B", "A ⊔ B")["equivalent"] is False
+
+
+def test_dl_abox_consistent_family_ontology_hand_checked():
+    """Alice a Mother with child Bob a Person is consistent; asserting Alice
+    is ALSO Male is inconsistent (Male ⊑ ¬Female, but Mother ⊑ Female) —
+    the docs guide's own two ABox cases."""
+    ok_kb = dl_abox_consistent(
+        [["alice", "Mother"], ["bob", "Person"]],
+        roles=[["alice", "bob", "hasChild"]], tbox=_FAMILY_TBOX)
+    assert ok_kb == {"ok": True, "consistent": True}
+
+    bad_kb = dl_abox_consistent(
+        [["alice", "Mother"], ["alice", "Male"]], tbox=_FAMILY_TBOX)
+    assert bad_kb == {"ok": True, "consistent": False}
+
+
+def test_dl_abox_consistent_no_unique_name_assumption():
+    """Without an explicit distinctness assertion, two hasChild-successors of
+    alice are free to denote the SAME individual, so a ≤1 hasChild.⊤ bound is
+    satisfied by merging them (consistent); asserting bob ≠ carol blocks that
+    merge and the same KB becomes inconsistent — dl.tableau's own 'no unique
+    name assumption' contract (see its module docstring), reached here purely
+    through the ABox JSON shape's 'distinct' rows."""
+    roles = [["alice", "bob", "hasChild"], ["alice", "carol", "hasChild"]]
+    tbox = [{"sub": "⊤", "sup": "≤1 hasChild.⊤"}]
+    mergeable = dl_abox_consistent([], roles=roles, tbox=tbox)
+    assert mergeable["consistent"] is True
+    blocked = dl_abox_consistent([], roles=roles, tbox=tbox,
+                                 distinct=[["bob", "carol"]])
+    assert blocked["consistent"] is False
+
+
+def test_dl_instance_check_and_retrieval_family_ontology():
+    """Alice (a Mother, hence Parent, hence Person) and Bob (asserted Person
+    directly) are both entailed Person; instance_retrieval finds exactly
+    both, in sorted order."""
+    concepts = [["alice", "Mother"], ["bob", "Person"]]
+    roles = [["alice", "bob", "hasChild"]]
+    check = dl_instance_check("alice", "Person", concepts, roles=roles,
+                              tbox=_FAMILY_TBOX)
+    assert check == {"ok": True, "entailed": True, "individual": "alice",
+                     "concept_unicode": "Person"}
+    retrieval = dl_instance_retrieval("Person", concepts, roles=roles,
+                                      tbox=_FAMILY_TBOX)
+    assert retrieval == {"ok": True, "individuals": ["alice", "bob"],
+                         "concept_unicode": "Person"}
+    # Open-world: nothing entails alice is a Father.
+    assert dl_instance_check("alice", "Father", concepts, roles=roles,
+                             tbox=_FAMILY_TBOX)["entailed"] is False
+
+
+def test_dl_classify_family_ontology_hierarchy():
+    """Reproduces docs/guide/description-logic.md's own classify() values
+    exactly: Person's only direct child is Parent; Parent's direct children
+    are Father/Mother; Mother's direct parents are Female and Parent (Person
+    is only an ancestor, reached via Parent); Mother's full ancestor set adds
+    Person on top."""
+    result = dl_classify(_FAMILY_TBOX)
+    assert result["ok"] is True
+    assert result["children"]["Person"] == ["Parent"]
+    assert result["children"]["Parent"] == ["Father", "Mother"]
+    assert result["parents"]["Mother"] == ["Female", "Parent"]
+    assert result["ancestors"]["Mother"] == ["Female", "Parent", "Person"]
+    assert result["equivalents"]["Mother"] == ["Mother"]     # no synonyms
+
+
+def test_dl_classify_differential_against_the_dl_module_directly():
+    """classify()'s tool payload must agree with calling dl.classify on the
+    identically-built TBox (this item's differential test_oracle, applied to
+    classify as well as the four core reasoning tools)."""
+    import unicode_fol_kit.dl as dl
+
+    Person, Female, Male = dl.Atomic("Person"), dl.Atomic("Female"), dl.Atomic("Male")
+    Parent, Mother, Father = dl.Atomic("Parent"), dl.Atomic("Mother"), dl.Atomic("Father")
+    t = (dl.TBox()
+         .add_equivalence(Parent, dl.And(Person, dl.Exists("hasChild", Person)))
+         .add_equivalence(Mother, dl.And(Parent, Female))
+         .add_equivalence(Father, dl.And(Parent, Male))
+         .add(Male, dl.Not(Female)))
+    via_dl = dl.classify(t)
+    via_tool = dl_classify(_FAMILY_TBOX)
+    assert via_tool["children"]["Parent"] == sorted(via_dl.children["Parent"])
+    assert via_tool["ancestors"]["Mother"] == sorted(via_dl.ancestors["Mother"])
+
+
+def test_dl_parse_manchester_concept_and_roundtrip():
+    """'hasChild some (Doctor and not Rich)' — the W3C-style example from
+    dl.owl_manchester's own docstring. Round-tripping the reported
+    'manchester' text back through the same tool reproduces the identical
+    concept_unicode (parse_manchester(to_manchester(c)) == c, checked
+    structurally at the dl level too)."""
+    import unicode_fol_kit.dl as dl
+
+    first = dl_parse_manchester("hasChild some (Doctor and not Rich)")
+    assert first == {"ok": True,
+                     "concept_unicode": "∃hasChild.(Doctor ⊓ ¬Rich)",
+                     "manchester": "hasChild some (Doctor and not Rich)"}
+    second = dl_parse_manchester(first["manchester"])
+    assert second["concept_unicode"] == first["concept_unicode"]
+    assert dl.parse_manchester(first["manchester"]) == dl.parse_manchester(
+        "hasChild some (Doctor and not Rich)")
+
+
+def test_dl_parse_manchester_axiom_and_role_axiom():
+    """kind='axiom' reaches parse_manchester_axiom; kind='role_axiom' reaches
+    parse_manchester_role_axiom — both of dl.owl_manchester's own hand-
+    checked docstring examples."""
+    axiom = dl_parse_manchester(
+        "Doctor SubClassOf hasChild some owl:Thing", kind="axiom")
+    assert axiom == {"ok": True, "kind": "subclass",
+                     "sub_unicode": "Doctor", "sup_unicode": "∃hasChild.⊤"}
+
+    subprop = dl_parse_manchester(
+        "hasChild SubPropertyOf hasDescendant", kind="role_axiom")
+    assert subprop == {"ok": True, "kind": "subproperty",
+                       "sub_role": "hasChild", "super_role": "hasDescendant"}
+
+    trans = dl_parse_manchester(
+        "hasDescendant Characteristics: Transitive", kind="role_axiom")
+    assert trans == {"ok": True, "kind": "transitive", "role": "hasDescendant"}
+
+
+def test_dl_parse_manchester_unknown_kind_is_structured_error():
+    result = dl_parse_manchester("Person", kind="nope")
+    assert result["error"]["type"] == "ValueError"
+
+
+def test_dl_tools_report_bad_concept_text_in_the_uniform_shape():
+    """A syntax error in ANY concept-text argument comes back ok=False, with
+    'argument' naming which one and spec_topic pointing at the dedicated
+    description-logic topic — the same uniform shape every other tool's
+    text arguments use (see the module docstring)."""
+    for result, argument in (
+        (dl_concept_satisfiable("Person ⊓"), "concept"),
+        (dl_subsumes("Person ⊓", "Person"), "sub"),
+        (dl_subsumes("Person", "Person ⊓"), "sup"),
+        (dl_equivalent("Person ⊓", "Person"), "c"),
+        (dl_equivalent("Person", "Person ⊓"), "d"),
+    ):
+        assert result["ok"] is False
+        assert result["argument"] == argument
+        assert result["errors"][0]["dialect"] == "alc"
+        assert result["spec_topic"] == "description-logic"
+
+
+def test_dl_parse_manchester_rejects_constructs_outside_alc():
+    """'value' restrictions are real Manchester syntax but outside ALCHQ —
+    dl.owl_manchester rejects them by NAME (see its own module docstring's
+    'Rejected constructs'); the tool surfaces that as the uniform ok=False
+    shape, naming the construct in the message."""
+    result = dl_parse_manchester("hasChild value Doctor")
+    assert result["ok"] is False
+    assert result["argument"] == "text"
+    assert "value restrictions" in result["errors"][0]["message"]
+    assert result["spec_topic"] == "description-logic"
+
+
+def test_dl_non_simple_role_error_is_a_structured_error():
+    """A qualified number restriction on a transitive role is refused by
+    dl.tableau's own NonSimpleRoleError (undecidable otherwise — see its
+    module docstring) — reported as {"error": {...}}, not the text-parse
+    ok=False shape, since the CONCEPT parsed fine and it is the REASONING
+    step that refuses the combination."""
+    result = dl_concept_satisfiable(
+        "≥2 hasChild.Person", tbox=[{"transitive": "hasChild"}])
+    assert result["error"]["type"] == "NonSimpleRoleError"
+    assert "hasChild" in result["error"]["message"]
+
+
+def test_dl_unknown_syntax_is_a_structured_error():
+    result = dl_concept_satisfiable("Person", syntax="bogus")
+    assert result["error"]["type"] == "ValueError"
+    assert "bogus" in result["error"]["message"]
+
+
+def test_dl_unknown_syntax_is_refused_even_when_no_row_ever_parses():
+    """dl_classify() and dl_abox_consistent(concepts=[]) can both run their
+    entire row-building loop zero times (no tbox rows, no concepts/roles/
+    distinct rows), so an invalid ``syntax`` is never seen by _parse_dl.
+    Both tools must still refuse it unconditionally, not silently succeed."""
+    classify_result = dl_classify(syntax="bogus")
+    assert classify_result["error"]["type"] == "ValueError"
+    assert "bogus" in classify_result["error"]["message"]
+
+    abox_result = dl_abox_consistent(concepts=[], syntax="bogus")
+    assert abox_result["error"]["type"] == "ValueError"
+    assert "bogus" in abox_result["error"]["message"]
+
+    # Same for the "everything omitted" call shapes, which hit the identical
+    # empty-loop path via the parameters' own defaults.
+    assert dl_classify(syntax="bogus")["error"]["type"] == "ValueError"
+    assert dl_abox_consistent([], syntax="bogus")["error"]["type"] == "ValueError"
+
+
+def test_dl_tbox_row_shapes_and_a_malformed_row_is_structured_error():
+    """All four TBox row shapes (sub/sup, equiv, subrole/suprole,
+    transitive) build a working TBox; a row matching none of them is a
+    caller/config mistake, {"error": {"type": "ValueError", ...}}."""
+    tbox = [
+        {"sub": "A", "sup": "B"},
+        {"equiv": ["C", "D"]},
+        {"subrole": "r", "suprole": "s"},
+        {"transitive": "s"},
+    ]
+    # r ⊑ s, Trans(s): an r-successor chain counts as an s-successor chain.
+    result = dl_subsumes("∃r.∃r.A", "∃s.A", tbox=tbox)
+    assert result["subsumes"] is True
+
+    malformed = dl_concept_satisfiable("A", tbox=[{"nonsense": "row"}])
+    assert malformed["error"]["type"] == "ValueError"
+    assert "nonsense" in malformed["error"]["message"]      # names the KEYS
+    assert "'sub'+'sup'" in malformed["error"]["message"]   # and the valid ones
+
+
+def test_dl_abox_row_shapes_and_a_malformed_row_is_structured_error():
+    good = dl_abox_consistent(
+        concepts=[["a", "P"]], roles=[["a", "b", "r"]], distinct=[["a", "b"]])
+    assert good["ok"] is True
+
+    bad_concepts = dl_abox_consistent(concepts=[["a", "P", "extra"]])
+    assert bad_concepts["error"]["type"] == "ValueError"
+    bad_roles = dl_abox_consistent(concepts=[], roles=[["a", "b"]])
+    assert bad_roles["error"]["type"] == "ValueError"
+    bad_distinct = dl_abox_consistent(concepts=[], distinct=[["a"]])
+    assert bad_distinct["error"]["type"] == "ValueError"
+
+
+def test_get_syntax_spec_description_logic_topic():
+    """The dedicated DL topic: hand-checked constructor table, TBox/ABox row
+    shapes matching what the dl_* tools above actually parse, and examples
+    parsed via dl.parse_concept/dl.parse_manchester (NOT api.parse_any,
+    which cannot read either grammar — see DL_EXAMPLES's own docstring in
+    syntax_spec.py) so the spec cannot silently drift from the real parser."""
+    import unicode_fol_kit.dl as dl
+
+    spec = get_syntax_spec("description-logic")
+    assert spec["ok"] is True
+    assert spec["topic"] == "description-logic"
+    tbox_shapes = " ".join(row["shape"] for row in spec["tool_json_shapes"]["tbox_rows"])
+    assert "sub" in tbox_shapes and "sup" in tbox_shapes  # sanity: field present
+    assert spec["examples"], "must ship at least one worked example"
+    for example in spec["examples"]:
+        parser = dl.parse_concept if example["syntax"] == "alc" else dl.parse_manchester
+        concept = parser(example["input"])
+        assert concept.to_unicode() == example["renders_as"], example["label"]
+
+
+def test_get_syntax_spec_description_logic_dialect_filter():
+    """dialect='manchester' narrows description-logic's own examples using
+    their 'syntax' key (not 'dialect', which those examples do not carry —
+    see syntax_spec.syntax_spec's own filtering fallback)."""
+    spec = get_syntax_spec("description-logic", dialect="manchester")
+    assert spec["filtered_to_dialect"] == "manchester"
+    assert spec["examples"]
+    assert all(e["syntax"] == "manchester" for e in spec["examples"])
+
+
+def test_dl_topic_is_a_valid_spec_topic_target():
+    from unicode_fol_kit.mcp.syntax_spec import SPEC_TOPICS
+
+    assert "description-logic" in SPEC_TOPICS
+
+
+# ---------------------------------------------------------------------------
 # Through the MCP layer proper
 # ---------------------------------------------------------------------------
 
-def test_server_registers_all_twentynine_tools():
+def test_server_registers_all_thirtyseven_tools():
     server = create_server()
     tools = asyncio.run(server.list_tools())
     assert sorted(t.name for t in tools) == [
         "check_consistency", "check_equivalence", "check_formula",
         "check_molecule", "check_molecules", "chemical_signature",
-        "compare_formulas", "detect_dialect", "diagnose", "drs_to_fol",
+        "compare_formulas", "detect_dialect", "diagnose",
+        "dl_abox_consistent", "dl_classify", "dl_concept_satisfiable",
+        "dl_equivalent", "dl_instance_check", "dl_instance_retrieval",
+        "dl_parse_manchester", "dl_subsumes", "drs_to_fol",
         "explain_molecule_failure", "find_countermodel", "get_signature",
         "get_syntax_spec", "list_backends", "list_translations",
         "molecule_to_structure", "normalize", "parse_formula",
@@ -672,3 +1244,20 @@ def test_call_tool_prove_over_the_wire_path():
         payload = json.loads(result.content[0].text)
     assert payload["status"] == "proved"
     assert payload["backend"] == "z3"
+
+
+def test_call_tool_dl_subsumes_over_the_wire_path():
+    """Same wire-path check as above, for a description-logic tool: schema
+    validation must accept a 'tbox' argument that is a list of JSON row
+    dicts (not a Python TBox object), and the result must still be Mother ⊑
+    Parent = True."""
+    import json
+
+    server = create_server()
+    result = asyncio.run(server.call_tool(
+        "dl_subsumes", {"sub": "Mother", "sup": "Parent", "tbox": _FAMILY_TBOX}))
+    payload = getattr(result, "structured_content", None)
+    if payload is None:
+        payload = json.loads(result.content[0].text)
+    assert payload["ok"] is True
+    assert payload["subsumes"] is True

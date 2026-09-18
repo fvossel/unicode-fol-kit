@@ -59,6 +59,23 @@ corpus closes the loop). :func:`~unicode_fol_kit.ace.chem_lexicon.chem_ulex`
 renders the ChemLog signature as such a lexicon, so ACE sentences can talk
 about molecules in plain words ("a carbon", "bonds", "aromatic") while the
 DRS underneath carries the declared chemistry vocabulary.
+
+Since ACE-7 the backward direction also covers the modal/deontic fragment
+(question/command generation stays deferred):
+:func:`~unicode_fol_kit.ace.reverse_modal.fol_to_modal_drs` recognizes the
+two shapes ACE's modal surface can carry — a modality wrapping a whole
+formula ("John must wait.") and one nested in a duplex's consequent ("Every
+man must wait.", verbalized as "If there is a man X1 then X1 must wait.") —
+as :class:`~unicode_fol_kit.ace.reverse_modal.ModalBox` /
+:class:`~unicode_fol_kit.ace.reverse_modal.ModalImpl`, reusing
+:func:`~unicode_fol_kit.drt.reverse.fol_to_drs` for every classical piece
+and refusing every other placement by the same message that route already
+gives a bare modal node. :func:`~unicode_fol_kit.ace.verbalize.modal_formula_to_ace`
+is the ACE-6 entry point's modal counterpart, and
+:func:`~unicode_fol_kit.ace.verbalize.modal_ace_round_trip` closes the loop
+through APE, judged by :func:`~unicode_fol_kit.eval.equivalence.equivalent`
+(not raw Z3 — a modal ``Node`` has no direct Z3 export; ``equivalent``
+already routes a modal pair through the modal tableau / QML embedding).
 """
 
 from .drs_reader import (
@@ -76,9 +93,11 @@ from .runner import (
     ace_to_fol, ape_available, run_ape,
 )
 from .translate import AceFormula, ace_drs_to_formula, ace_to_formula
+from .reverse_modal import ModalBox, ModalImpl, fol_to_modal_drs
 from .verbalize import (
-    AceRoundTrip, AceText, AceVerbalizationError, ace_round_trip, drs_to_ace,
-    formula_to_ace,
+    AceRoundTrip, AceText, AceVerbalizationError, ModalAceRoundTrip,
+    ace_round_trip, drs_to_ace, formula_to_ace, modal_ace_round_trip,
+    modal_drs_to_ace, modal_formula_to_ace,
 )
 from .chem_lexicon import ace_kit_name, chem_ulex
 
@@ -90,6 +109,9 @@ __all__ = [
     # the reverse direction (ACE-6)
     "drs_to_ace", "formula_to_ace", "ace_round_trip", "chem_ulex",
     "ace_kit_name",
+    # the reverse direction, modal/deontic fragment (ACE-7)
+    "fol_to_modal_drs", "ModalBox", "ModalImpl", "modal_drs_to_ace",
+    "modal_formula_to_ace", "modal_ace_round_trip", "ModalAceRoundTrip",
     # results and reports
     "ApeResult", "ApeMessage", "CoverageRow", "DrsMapping",
     "ConditionReport", "AceFormula", "AceText", "AceRoundTrip",

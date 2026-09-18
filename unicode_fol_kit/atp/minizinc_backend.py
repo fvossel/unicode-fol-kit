@@ -12,27 +12,45 @@ PROVED**. Every reconstructed countermodel is re-checked by
 :func:`~unicode_fol_kit.atp.finite_domain.verify_model` before it is allowed
 to leave :meth:`MinizincBackend.decide` as REFUTED — and what
 :mod:`atp.finite_domain`'s module docstring used to call a "Known
-verification gap" for ``Cardinality``/``Function`` is now two different
-outcomes, not one lingering caveat. ``verify_model``'s own evaluator counts
-``Cardinality`` comparisons arithmetically now, so the counting fragment is
+verification gap" for ``Cardinality``/``Function`` is CLOSED for both now,
+the same way, in two steps. ``verify_model``'s own evaluator counts
+``Cardinality`` comparisons arithmetically, so the counting fragment is
 CLOSED end to end: a REFUTED verdict on e.g. ``|{x : P(x)}| > |{y : Q(y)}|``
 carries a countermodel this backend has genuinely re-verified, not one that
-downgrades to ERROR/``"infra"`` for want of a checker. ``Function`` never
-gets that far to need re-checking:
+downgrades to ERROR/``"infra"`` for want of a checker. ``Function`` is
+CLOSED too, by the identical mechanism rather than by staying refused:
 :func:`~unicode_fol_kit.atp.finite_domain.fragment_check` — consulted by
-:func:`to_minizinc` before it emits a single declaration — now refuses any
-sentence containing a ``Function`` node outright, BY NODE TYPE, so a
-function-bearing goal is UNKNOWN/``"unsupported"`` at the gate and never
-reaches :func:`verify_model` (or a solver at all) through
-:meth:`MinizincBackend.decide`. This module's OWN function-encoding
-machinery — the array declarations in :func:`to_minizinc`, :func:`_term`'s
-``Function`` branch, :func:`_atoms_from_solution`'s function-decoding loop —
-is consequently unreachable from :meth:`MinizincBackend.decide` today; it is
-left in place, not deleted, as a second line of defence for a hand-built
-:class:`~unicode_fol_kit.atp.finite_domain.FiniteDomainProblem` passed
-straight to :func:`to_minizinc` with a function :func:`fragment_check` never
-sees (that check walks ``sentences``, not ``signature`` — see "Arithmetic
-function symbols" below for where the same distinction bites a second time).
+:func:`to_minizinc` before it emits a single declaration — now ADMITS a
+``Function`` node generally (a *sorted* ``FunctionDecl`` stays refused, but
+separately — see
+:mod:`~unicode_fol_kit.atp.finite_domain`'s "Sorted function symbols"
+section, not this gate), and ``verify_model``'s evaluator now reads
+``f(t1,...,tk)`` off the SAME ``(name, arity+1)`` total-relation extension
+:func:`~unicode_fol_kit.atp.finite_domain.structure_from_solution` already
+reconstructs, so a function-bearing REFUTED verdict is genuinely
+re-verified too. This module's OWN function-encoding machinery — the array
+declarations in :func:`to_minizinc`, :func:`_term`'s ``Function`` branch,
+:func:`_atoms_from_solution`'s function-decoding loop — is consequently
+REACHABLE from :meth:`MinizincBackend.decide` now, not merely kept in place
+as a second line of defence — see "Encoding — arrays and generators" below,
+which used to document this as dormant and now documents it as live.
+
+Many-sorted input
+-------------------
+:meth:`MinizincBackend.decide` builds ``sentences = tuple(premises) +
+(Not(formula),)`` and then, before ``Signature.from_formulas`` or
+:func:`to_minizinc`'s own :func:`~unicode_fol_kit.atp.finite_domain.fragment_check`
+call ever see it, runs the whole batch through
+:func:`~unicode_fol_kit.atp.finite_domain.lower_msfol` — a no-op for every
+plain-FOL caller, and for a many-sorted one a relativisation to classical
+FOL (plus one non-emptiness sentence per distinct sort name) that needs no
+support from this module's own renderer or output parser at all: a sort
+name is, after lowering, an ordinary unary predicate like any other. See
+:mod:`~unicode_fol_kit.atp.finite_domain`'s own "Many-sorted input" section
+for the full design, including why the non-emptiness sentence is required
+for soundness against :mod:`~unicode_fol_kit.semantics.modelfinder`, the
+oracle this is differentially tested against (offline here, since MiniZinc
+itself is not installed in this environment — see below).
 
 External binary, not a Python package
 --------------------------------------
@@ -57,11 +75,13 @@ environment cannot run either.
 
 Encoding — arrays and generators, not the ASP boolean-relation reading
 --------------------------------------------------------------------------
-This section documents the renderer's OWN convention for a function symbol,
-kept for the record and for the second-line-of-defence case the module
-docstring's opening names — per that section, :func:`fragment_check` now
-refuses every ``Function`` node before :meth:`MinizincBackend.decide` ever
-reaches this code, so nothing below executes on a live search today.
+This section documents the renderer's OWN convention for a function symbol —
+LIVE now, on every ordinary search that mentions one, per the module
+docstring's opening: :func:`fragment_check` admits ``Function`` generally,
+so :meth:`MinizincBackend.decide` reaches this code on a genuine
+function-bearing sentence today, not merely on the hand-built-problem
+second-line-of-defence case the sorted/arithmetic refusals below still
+describe.
 :mod:`atp.finite_domain`'s module docstring describes the shared "function =
 total relation + functionality constraint" reconstruction that
 :func:`~unicode_fol_kit.atp.finite_domain.structure_from_solution` expects
@@ -93,30 +113,20 @@ inside the ``.mzn`` text itself.
 Arithmetic function symbols (``+``, ``-``, ``*``, ``/``) are refused
 ------------------------------------------------------------------------
 ``+``/``-``/``*``/``/`` count as ``Function`` nodes, and
-:func:`~unicode_fol_kit.atp.finite_domain.fragment_check` now refuses every
-``Function`` node BY NODE TYPE (see the module docstring's opening and
-:func:`fragment_check`'s own docstring) — so today an arithmetic-operator
-sentence is stopped there, UNKNOWN/``"unsupported"``, before
-:func:`to_minizinc` declares a single array: the identical fate an ordinary
-``f(x)`` gets, for the identical reason (no
-:class:`~unicode_fol_kit.semantics.structures.FiniteStructure` can hold
-either interpretation). The refusal this section goes on to describe —
-:func:`_term` raising for these four names specifically — therefore never
-fires through :meth:`MinizincBackend.decide`, or even through
-:func:`to_minizinc` on a normally-built problem, any more: ``sentences`` is
-exactly what :func:`fragment_check` walks, so anything reaching
-:func:`_term` from :func:`to_minizinc`'s own rendering loop already passed
-that check first. It survives only as a second line of defence for a caller
-that invokes :func:`_term` directly on a hand-built ``Function("+", …)``
-node, bypassing :func:`to_minizinc` (and its :func:`fragment_check` call)
-altogether — a narrower case than the array-declaration machinery the
-module docstring's opening describes, which stays reachable through
-:func:`to_minizinc` itself via a signature/sentences mismatch. It is kept,
-not deleted, because it answers a question the blanket node-type refusal
-does not: WHICH reading of ``+`` this module would give it if ``Function``
-support were ever reinstated for this backend — a real design choice,
-argued below — not merely THAT every function symbol is refused without
-exception today.
+:func:`~unicode_fol_kit.atp.finite_domain.fragment_check` now ADMITS
+``Function`` generally (see the module docstring's opening) — but these four
+NAMES stay refused regardless, LIVE, on the exact path the rest of this
+module's ``Function`` support now takes: :func:`_term`'s ``Function`` branch
+checks ``node.name in _BUILTIN_ARITH_FUNCS`` before it ever consults
+``ctx.functions``, so an arithmetic-operator sentence is stopped inside
+:func:`to_minizinc`'s own rendering loop, ``NotImplementedError``, before a
+single array is declared — no longer merely a second line of defence for a
+hand-built problem :func:`fragment_check` never saw, now the FIRST and only
+line of defence for these four names specifically (an ordinary declared
+function ``f(x)`` no longer shares this fate — see "Encoding — arrays and
+generators" above). This section states, and argues below, WHICH reading of
+``+`` this module gives it now that ``Function`` support is no longer merely
+hypothetical.
 :meth:`~unicode_fol_kit.fol.nodes.Function.to_z3` treats ``+`` as an
 UNINTERPRETED function symbol named ``"+"`` (``env.get_func(self.name,
 len(self.args))`` — the same call for every function name; genuine
@@ -136,13 +146,14 @@ kit gives it, decided unilaterally inside one backend. Per the kit's own
 discipline against exactly this kind of silent semantic substitution (see
 e.g. :mod:`atp.finite_domain`'s ``all_different`` footnote), this module
 instead REFUSES: :func:`_term` raises ``NotImplementedError`` for these four
-names — today only reachable by a direct call past
-:func:`fragment_check` (see above), where it would still be a caller's job
-to catch it, the way :meth:`MinizincBackend.decide` no longer needs to for
-this particular case: the same ``Function`` node is UNKNOWN/``"unsupported"``
-at the gate before :func:`_term` is ever invoked on it — an honest gap
-either way, not a guess. (A plain :class:`~unicode_fol_kit.fol.nodes.Number`
-literal is unaffected by this — see the next section.)
+names — reached LIVE now through :meth:`MinizincBackend.decide` whenever a
+searched sentence names one of them, since :func:`fragment_check` no longer
+stops a ``Function`` node on the way in; the caller sees the identical
+``UNKNOWN``/``"unsupported"`` outcome either way, just raised one call
+frame deeper than before, from inside :func:`to_minizinc`'s rendering loop
+rather than at the gate — an honest gap either way, not a guess. (A plain
+:class:`~unicode_fol_kit.fol.nodes.Number` literal is unaffected by this —
+see the next section.)
 
 ``Number`` is always the literal integer it names
 -------------------------------------------------------
@@ -239,7 +250,7 @@ from ..fol.nodes import (
 )
 from ..fol.signature import Signature
 from .finite_domain import (
-    FiniteDomainProblem, fragment_check, structure_from_solution, verify_model,
+    FiniteDomainProblem, fragment_check, lower_msfol, structure_from_solution, verify_model,
 )
 from .protocol import (
     BackendUnavailable, ERROR, ProverBackend, REFUTED, UNKNOWN, Verdict,
@@ -335,15 +346,14 @@ def _mzn_var_name(name: str) -> str:
     return f"v_{constant_name_to_ascii(name)}"
 
 
-# The four arithmetic operators are legal Function names, but fragment_check
-# now refuses every Function node by NODE TYPE regardless of which name it
-# carries (see the module docstring's opening), so this set is reachable
-# only when _term is called directly, past that gate — a second line of
-# defence, not a path decide() can take (see the module docstring's
-# "Arithmetic function symbols" section). Signature.from_formulas separately
-# excludes these four names from `functions` (the `_BUILTIN_FUNCS` split),
-# and this module still refuses to guess a reading for them on its own even
-# in that direct-call case.
+# The four arithmetic operators are legal Function names, and fragment_check
+# now admits Function generally (see the module docstring's opening) — but
+# these four names are excluded from Signature.from_formulas's `functions`
+# section (the `_BUILTIN_FUNCS` split) regardless, so _term checks this set
+# BEFORE consulting ctx.functions and refuses them LIVE, reachable through
+# decide() on an ordinary search now (see the module docstring's "Arithmetic
+# function symbols" section) — this module still refuses to guess a reading
+# for them on its own rather than pick one silently.
 _BUILTIN_ARITH_FUNCS = frozenset({"+", "-", "*", "/"})
 
 # The six built-in comparison predicates: never declared in a Signature
@@ -1047,6 +1057,13 @@ class MinizincBackend(ProverBackend):
 
         premises = list(premises)
         sentences: Tuple[Node, ...] = tuple(premises) + (Not(formula),)
+        # Many-sorted input is relativised to plain classical FOL HERE, once,
+        # before Signature.from_formulas / to_minizinc's own fragment_check
+        # call ever see it -- see finite_domain.lower_msfol's own docstring
+        # and this module's "Many-sorted input" section. A no-op for every
+        # unsorted-only caller (the pre-existing test suite): returns
+        # `sentences` untouched when nothing sorted is present.
+        sentences = lower_msfol(sentences)
 
         try:
             signature = Signature.from_formulas(sentences)

@@ -96,42 +96,60 @@ individual-denoting term on the other side of the same comparison has no
 coherent reading and is refused loudly (``_EncodingError``) rather than
 guessed at.
 
-Counting comparisons now verify: the closed gap, and the one that remains
----------------------------------------------------------------------------
+Counting AND function comparisons now verify: the closed gaps, and the one that remains
+-------------------------------------------------------------------------------------------
 This section used to list four node types this backend could ground and
-solve but never verify. That list is down to one.
+solve but never verify. That list is down to one, closed in two steps.
 
 ``Cardinality`` — and a ``Number`` compared as a counting term — used to be
 on it: :func:`~unicode_fol_kit.atp.finite_domain.verify_model`'s underlying
 evaluator raised ``UnsupportedNode`` for them, so a genuinely correct
 countermodel was reported ``ERROR``/``"infra"`` instead of ``REFUTED``.
-:func:`~unicode_fol_kit.semantics.model_eval.evaluate` now reads a
-comparison with a counting-term operand arithmetically (counting ``|{v :
+:func:`~unicode_fol_kit.semantics.model_eval.evaluate` reads a comparison
+with a counting-term operand arithmetically (counting ``|{v :
 φ}|`` over the domain — see that module's ``_numeric_value``/``_atom_value``
 split), so :func:`~unicode_fol_kit.atp.finite_domain.verify_model` can check
 these sentences and :meth:`ClingoBackend.decide` reports a verified
 ``REFUTED`` for them like any other. Example: ``|{x : P(x)}| >
-|{y : Q(y)}|`` at ``max_size=4`` now comes back ``REFUTED`` with
+|{y : Q(y)}|`` at ``max_size=4`` comes back ``REFUTED`` with
 ``countermodel={"kind": "finite_structure", ...}`` and ``detail=None`` (a
 non-``None`` detail would mean verification failed or was skipped) — run
 against this module directly on 2026-08-14, clingo 5.8.1.
 
-``Function`` used to be on this list too, but for a different reason than
-the one now closed: :func:`~unicode_fol_kit.semantics.model_eval.evaluate`
-still refuses it (a :class:`~unicode_fol_kit.semantics.structures.FiniteStructure`
-interprets predicates and constants, not functions — that has not changed).
-What changed is upstream: :func:`~unicode_fol_kit.atp.finite_domain.fragment_check`
-now rejects ``Function`` BY NAME, so a function-bearing sentence never
-reaches this encoder at all — :meth:`ClingoBackend.decide` reports
-``UNKNOWN``/``"unsupported"`` straight from the fragment gate, before
-grounding, solving, or reconstruction is attempted. That is a difference in
-KIND, not just outcome: this is no longer "we found a correct countermodel
-we cannot vouch for," it is "we correctly declined to look." Extending
-:class:`~unicode_fol_kit.semantics.structures.FiniteStructure` with a
-function-interpretation slot (so a countermodel COULD be reconstructed and
-verified) remains a separate, larger piece of work — it touches
-serialisation, the evaluator, and every consumer of a structure — and is
-not attempted here.
+``Function`` was on this list too, for a DIFFERENT reason: the gate itself
+used to refuse every ``Function`` node BY NAME before this encoder ever ran
+(``fragment_check`` reported ``UNKNOWN``/``"unsupported"`` straight from the
+gate — "we correctly declined to look", not merely "we found a countermodel
+we cannot vouch for"), because :func:`~unicode_fol_kit.semantics.model_eval.evaluate`
+had no case for a ``Function`` TERM. That upstream refusal is gone:
+:func:`~unicode_fol_kit.atp.finite_domain.fragment_check` now ADMITS
+``Function`` generally (a *sorted* ``FunctionDecl`` stays refused — a
+separate, narrower decision, see that module's "Sorted function symbols"
+section), and ``evaluate_in_structure``'s new ``Function`` case reads
+``f(t1,...,tk)`` off the SAME ``(name, arity+1)`` total-relation extension
+:func:`~unicode_fol_kit.atp.finite_domain.structure_from_solution` already
+built (:mod:`~unicode_fol_kit.semantics.model_eval`'s own docstring has the
+full account), so this encoder's dormant ``Function`` branch in
+:meth:`_AspEncoder._term` (already documented above — the choice-rule
+total-relation encoding) is REACHABLE and its output is genuinely VERIFIED,
+not merely produced. A function-bearing countermodel now goes through the
+identical closure the counting fragment already got: solved by clingo,
+reconstructed by :func:`~unicode_fol_kit.atp.finite_domain.structure_from_solution`,
+confirmed by :func:`~unicode_fol_kit.atp.finite_domain.verify_model`, and
+reported ``REFUTED`` with ``detail=None``. Example: ``∀x (f(f(x)) = x)``
+("f is an involution") at ``max_size=4`` comes back ``REFUTED`` at the
+hand-derivable minimal size 2 (the only total function on a 1-element domain
+is forced to be the identity, so no countermodel exists there) with
+``detail=None`` — run against this module directly on 2026-09-17, clingo
+5.8.1 (see ``tests/test_clingo_backend.py``'s
+``test_involution_claim_refuted_with_verified_countermodel``). The four
+arithmetic operator names (``+``/``-``/``*``/``/``) stay refused regardless
+— they are
+``Function`` nodes like any other and pass ``fragment_check``, but
+``Signature.from_formulas`` never declares them in ``functions`` (the
+``_BUILTIN_FUNCS`` carve-out), so :meth:`_AspEncoder._term`'s existing
+"function not declared in signature" ``_EncodingError`` catches them, with
+no new special-casing needed in this module.
 
 ``Contrast`` is the one node type left on the list, genuinely unchanged:
 :func:`~unicode_fol_kit.atp.finite_domain.fragment_check` still admits it
@@ -194,6 +212,21 @@ the identical, already-closed sentences — the two consumers cannot
 disagree about what a free variable in a premise means, because neither of
 them ever sees one.
 
+Many-sorted input
+-------------------
+:meth:`ClingoBackend.decide` builds ``sentences`` (premises closed, goal
+closed-then-negated, per the section above) and then, before anything else,
+calls :func:`~unicode_fol_kit.atp.finite_domain.lower_msfol` on the whole
+batch — a no-op for every plain-FOL caller, and for a many-sorted one a
+relativisation to classical FOL (plus one non-emptiness sentence per
+distinct sort name) that lets :func:`~unicode_fol_kit.atp.finite_domain.fragment_check`,
+:func:`to_asp`, and :func:`~unicode_fol_kit.atp.finite_domain.verify_model`
+all stay entirely sort-blind. See
+:mod:`~unicode_fol_kit.atp.finite_domain`'s own "Many-sorted input" section
+for the full design, including why the non-emptiness sentence is required
+for soundness against :mod:`~unicode_fol_kit.semantics.modelfinder`, the
+oracle this is differentially tested against.
+
 Availability and timeout
 -------------------------------
 ``clingo`` (MIT, wheels bundle the solver) is a hard, non-external Python
@@ -232,7 +265,7 @@ from ..fol.nodes import (
 )
 from ..fol.signature import Signature, PredicateDecl
 from .finite_domain import (
-    FiniteDomainProblem, fragment_check, structure_from_solution, verify_model,
+    FiniteDomainProblem, fragment_check, lower_msfol, structure_from_solution, verify_model,
 )
 from .protocol import ProverBackend, Verdict, REFUTED, UNKNOWN, ERROR
 
@@ -888,8 +921,12 @@ def _solve(program_text: str, remaining_seconds: Optional[float]):
 # =============================================================================
 
 class ClingoBackend(ProverBackend):
-    """Bounded finite-model search over unsorted classical FOL plus counting,
-    via clingo — refutation-only (see the module docstring's ONE-rule note).
+    """Bounded finite-model search over classical FOL plus counting, via
+    clingo — refutation-only (see the module docstring's ONE-rule note).
+    Many-sorted input is accepted too: :func:`~unicode_fol_kit.atp.finite_domain.lower_msfol`
+    relativises it to plain classical FOL before anything else in
+    :meth:`decide` runs (see the module docstring's "Many-sorted input"
+    section).
 
     Registered automatically by ``atp/protocol.py`` (this module does not
     touch the registry itself — see that module's bottom-of-registration
@@ -963,6 +1000,14 @@ class ClingoBackend(ProverBackend):
         # sentences; this is where that is guaranteed.
         goal = Not(_universal_closure(formula))
         sentences = tuple(_universal_closure(p) for p in premises) + (goal,)
+        # Many-sorted input (SortedQuantifier/SortedConstant/SortedCount/
+        # SortedCardinality) is relativised to plain classical FOL HERE, once,
+        # before fragment_check ever sees it -- see
+        # finite_domain.lower_msfol's own docstring and finite_domain's module
+        # docstring "Many-sorted input" section. A no-op for every
+        # unsorted-only caller (the pre-existing test suite): returns
+        # `sentences` untouched when nothing sorted is present.
+        sentences = lower_msfol(sentences)
 
         problem_msg = fragment_check(sentences)
         if problem_msg is not None:

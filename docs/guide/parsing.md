@@ -4,7 +4,7 @@
 
 ## Parser modes
 
-The four core modes form the `many_sorted` × `fuzzy` matrix; five further modes — modal, second-order, dependence, linear and Lambek — are each enabled by their own flag and are mutually exclusive with the others.
+The four core modes form the `many_sorted` × `fuzzy` matrix; five further modes — modal, second-order, dependence, linear and Lambek — are each enabled by their own flag. `modal` and `second_order` each additionally combine with `many_sorted` (sorted quantifiers/constants under modal operators, or under second-order predicate quantification); `dependence`, `linear` and `lambek` are standalone and combine with nothing.
 
 ```python
 from unicode_fol_kit import MSFLParser
@@ -27,29 +27,33 @@ MSFLParser(lambek=True)                      # Lambek calculus (• \ /)
 | `True` | `True` | **MSFL** | sorted `∀x:Sort` | sorted `alice:Sort` | weak ∧ ∨, strong ⊗ ⊕, Łuk ¬ → ↔ |
 | `False` | `True` | **FL** | unsorted `∀x` | unsorted | weak ∧ ∨, strong ⊗ ⊕, Łuk ¬ → ↔ |
 
-The modal and second-order extension modes are classical unsorted FOL plus their own operators; the remaining three are standalone fragments with their own connective sets:
+The modal and second-order extension modes are FOL plus their own operators, over unsorted quantifiers/constants by default or SORTED ones with `many_sorted=True`; the remaining three are standalone fragments with their own connective sets:
 
-- **modal** (`modal=True`) — adds `□ ◇` (alethic), `K_a B_a Say_a Want_a` (epistemic/doxastic/assertive/bouletic), `Ⓖ Ⓕ Ⓝ Ⓤ ⒣ ⒫ ⒴ ⒮` (temporal, future and past), `Ⓞ Ⓟ` (deontic), nominals and `@i` (hybrid), the counterfactuals `□→ ◇→`, and the public announcements `[φ!]ψ / ⟨φ!⟩ψ`. The agent of `K_a`/`B_a` is a first-class term, so a bound `K_x` quantifies over agents.
-- **second-order** (`second_order=True`) — adds `∀P / ∃P` over predicate variables (arity inferred from use).
+- **modal** (`modal=True`, optionally `many_sorted=True`) — adds `□ ◇` (alethic), `K_a B_a Say_a Want_a` (epistemic/doxastic/assertive/bouletic), `Ⓖ Ⓕ Ⓝ Ⓤ ⒣ ⒫ ⒴ ⒮` (temporal, future and past), `Ⓞ Ⓟ` (deontic), nominals and `@i` (hybrid), the counterfactuals `□→ ◇→`, and the public announcements `[φ!]ψ / ⟨φ!⟩ψ`. The agent of `K_a`/`B_a` is a first-class term, so a bound `K_x` quantifies over agents (sorted or not). With `many_sorted=True`, every `∀x`/`∃x` — including one nested under a modal operator, e.g. `□∀x:Human (Mortal(x))` — needs a `:Sort` annotation, exactly as in plain MSFOL; see {doc}`modal`'s "Many-sorted modal logic" section for the semantics (sorts are world-relative, not rigid, and non-emptiness is a per-route choice — assumed by `qml_is_valid`/the HOL exporters, not by the bare Kripke evaluator).
+- **second-order** (`second_order=True`, optionally `many_sorted=True`) — adds `∀P / ∃P` over predicate variables (arity inferred from use). The predicate quantifier itself stays unsorted; `many_sorted=True` sorts only the individual `∀x`/`∃x` binders and bare constants.
 - **dependence** (`dependence=True`) — the team-semantic fragment `¬ ∧ ∨ ∀ ∃` with dependence atoms `=(x, y)` and slashed existentials `∃x/{y}`.
 - **linear** (`linear=True`) — intuitionistic linear logic `⊗ ⊸ & ⊕ !` with the units `𝟙 ⊤ 𝟘`.
 - **lambek** (`lambek=True`) — the Lambek calculus `• \ /` over atomic categories.
 
-The constructor rejects an unsupported combination with a clear `ValueError`. The extension modes cannot be combined with each other or with the sorted/fuzzy flags:
+The constructor rejects an unsupported combination with a clear `ValueError`. `fuzzy` never combines with `modal`/`second_order`; `modal` and `second_order` never combine with EACH OTHER (use `third_order=True` for that — it already contains second-order syntax and adds `modal=True` on top); and `many_sorted` still refuses `third_order=True` (how a sort interacts with third-order's individual-vs-property "slot" inference is a separate, open question):
 
 ```python
 from unicode_fol_kit import MSFLParser
 
-for kwargs in [dict(modal=True, many_sorted=True),
+for kwargs in [dict(modal=True, fuzzy=True),
                dict(second_order=True, fuzzy=True),
-               dict(modal=True, fuzzy=True)]:
+               dict(third_order=True, many_sorted=True)]:
     try:
         MSFLParser(**kwargs)            # raises
     except ValueError as e:
         print(str(e)[:46])
-# → modal=True cannot be combined with many_sort
-# → second_order=True cannot be combined with man
-# → modal=True cannot be combined with many_sort
+# → modal=True cannot be combined with fuzzy in v1
+# → second_order=True cannot be combined with fuzz
+# → third_order=True cannot be combined with many_
+
+# many_sorted DOES now combine with modal / second_order:
+MSFLParser(modal=True, many_sorted=True).parse("□∀x:Human (Mortal(x))")
+MSFLParser(second_order=True, many_sorted=True).parse("∀P (∀x:Human P(x) → ∃x:Human P(x))")
 ```
 
 ## Unicode surface syntax

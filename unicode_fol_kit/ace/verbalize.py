@@ -63,15 +63,21 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple
 
 from ..drt.export import drs_to_fol
 from ..drt.nodes import DRS, Card, Condition, Eq, Impl, Neg, Or, Part, Pred
 from .mapping import _kit_predicate, _named_constant, ace_to_drs
+from .reverse_modal import ModalBox, ModalImpl
 from .runner import AceError
 
+if TYPE_CHECKING:                                  # pragma: no cover - typing only
+    from .translate import AceFormula
+
 __all__ = ["drs_to_ace", "formula_to_ace", "ace_round_trip", "AceText",
-           "AceRoundTrip", "AceVerbalizationError"]
+           "AceRoundTrip", "AceVerbalizationError",
+           "modal_drs_to_ace", "modal_formula_to_ace", "modal_ace_round_trip",
+           "ModalAceRoundTrip"]
 
 
 class AceVerbalizationError(AceError):
@@ -385,11 +391,21 @@ class _Verbalizer:
 
 
 def _box_clauses(box: DRS, v: _Verbalizer, env: Dict[str, _Np],
-                 depth: int) -> List[str]:
+                 depth: int, modality: Optional[str] = None) -> List[str]:
     """One box → its clause list. ``env`` is MUTATED (introductions land in
     it); callers that need scope isolation pass a copy — see
     :func:`_complex_clause`, where an if-then shares one env between
     antecedent and consequent while or-branches and negations get copies.
+
+    ``modality`` (one of "must"/"can"/"should"/"may", ACE-7) is threaded
+    through to :func:`verb_clause` only — a modal auxiliary sits INSIDE the
+    verb phrase (probed: "John must wait.", not a sentence paraphrase), so
+    it never touches NP realization, groups, equalities or nested complexes.
+    ``None`` (every EXISTING call site) reproduces the pre-ACE-7 behavior
+    exactly. Callers that pass a modality (:mod:`unicode_fol_kit.ace.reverse_modal`'s
+    two wrappers only) must hand this function a box that renders to EXACTLY
+    ONE clause — the only shape measured under a modal auxiliary; see
+    :func:`modal_drs_to_ace`, which enforces that after calling this.
     """
     preds = [c for c in box.conditions if isinstance(c, Pred)]
     eqs = [c for c in box.conditions if isinstance(c, Eq)]
@@ -600,9 +616,15 @@ def _box_clauses(box: DRS, v: _Verbalizer, env: Dict[str, _Np],
             raise AceVerbalizationError(
                 f"drs_to_ace: verb {verb.name!r} with {len(participants)} "
                 "participants — ACE verbs take one to three")
-        plural = is_plural_subject(participants[0])
-        words = [np_use(participants[0]),
-                 v.lexicon.verb(verb.name, len(participants), plural)]
+        # Under a modal auxiliary the verb always takes the bare/infinitive
+        # lexicon form — probed live: "must florb"/"must chase" parse only
+        # against iv_infpl/tv_infpl, "must florbs" is refused even though
+        # plain "florbs" alone is fine (test_ace_modal_verbalize.py).
+        plural = True if modality is not None else is_plural_subject(participants[0])
+        words = [np_use(participants[0])]
+        if modality is not None:
+            words.append(modality)
+        words.append(v.lexicon.verb(verb.name, len(participants), plural))
         if len(participants) >= 2:
             words.append(np_use(participants[1]))
         if len(participants) == 3:
@@ -872,3 +894,148 @@ def ace_round_trip(drs: DRS, *, timeout: float = 30.0) -> AceRoundTrip:
         f"forward: {ours.to_unicode_str()}  back: {theirs.to_unicode_str()}")
     return AceRoundTrip(verbalization=verbal, back=back,
                         equivalent=bool(result.equivalent), detail=detail)
+
+
+# ---------------------------------------------------------------------------
+# ACE-7: modal/deontic formulas → ACE text
+# ---------------------------------------------------------------------------
+
+def _modal_referents_shell(modal) -> DRS:
+    """A referents-only synthetic DRS, purely to seed :class:`_Verbalizer`'s
+    declared-referent set the same way :func:`drs_to_ace` does — the modal
+    wrapper itself is not a DRS (see :mod:`unicode_fol_kit.ace.reverse_modal`),
+    but every referent it carries was already checked for global uniqueness
+    by the ``fol_to_drs`` call(s) that built it, so combining them here is
+    safe."""
+    if isinstance(modal, ModalBox):
+        refs = _all_referents(modal.drs)
+    else:
+        assert isinstance(modal, ModalImpl)
+        refs = _all_referents(modal.antecedent) | _all_referents(modal.consequent)
+    return DRS(tuple(sorted(refs)), ())
+
+
+def _one_clause(box: DRS, clauses: List[str], where: str) -> str:
+    """The only shape measured live under a modal auxiliary: the box's sole
+    clause must be the EVENT-ANCHORED verb clause the modality actually
+    attaches to. ``modality`` only ever reaches the text through
+    :func:`verb_clause`'s own words list (see ``_box_clauses``'s docstring)
+    — a box whose single clause instead comes from the "there is a NOUN"
+    introduction, the predicative-constant path ("X is a NOUN"), a bare
+    equality or a comparative would pass a naive ``len(clauses) == 1`` count
+    while silently DROPPING the modal auxiliary from the text (found live:
+    ``□Man(john)`` -> "John is a man.", no "must"). Since ``verb_clause`` is
+    reached only through a box's OWN event referent (assembly step 3 in
+    ``_box_clauses``), requiring that referent set to be exactly one event
+    is equivalent to requiring the single clause be that verb clause."""
+    single_verb_clause = (len(clauses) == 1 and len(box.referents) == 1
+                          and _is_event(box.referents[0]))
+    if not single_verb_clause:
+        raise AceVerbalizationError(
+            f"drs_to_ace: a modal box with {len(clauses)} clause(s) {where} "
+            "is outside the probed ACE fragment — only a single verb clause "
+            "has been measured under a modal auxiliary "
+            "('must'/'can'/'should'/'may')")
+    return clauses[0]
+
+
+def modal_drs_to_ace(modal) -> AceText:
+    """Verbalize a modal/deontic DRS shell as ACE text (ACE-7).
+
+    ``modal`` is whatever :func:`~unicode_fol_kit.ace.reverse_modal.fol_to_modal_drs`
+    returns: a plain classical :class:`~unicode_fol_kit.drt.nodes.DRS`
+    (delegated to :func:`drs_to_ace` unchanged), a
+    :class:`~unicode_fol_kit.ace.reverse_modal.ModalBox` ("John must
+    wait."), or a :class:`~unicode_fol_kit.ace.reverse_modal.ModalImpl`
+    ("If there is a man X1 then X1 must wait."). Both modal shapes are
+    restricted to a box that renders to EXACTLY ONE clause — the only shape
+    measured live under a modal auxiliary; anything else raises
+    :class:`AceVerbalizationError` naming the construct, same discipline as
+    :func:`drs_to_ace`.
+    """
+    if isinstance(modal, DRS):
+        return drs_to_ace(modal)
+    if isinstance(modal, ModalBox):
+        v = _Verbalizer(_modal_referents_shell(modal))
+        clause = _one_clause(
+            modal.drs,
+            _box_clauses(modal.drs, v, {}, depth=0, modality=modal.modality),
+            "under its modality")
+        sentence = clause[0].upper() + clause[1:] + "."
+        return AceText(text=sentence, ulex=v.lexicon.text())
+    if isinstance(modal, ModalImpl):
+        v = _Verbalizer(_modal_referents_shell(modal))
+        shared: Dict[str, _Np] = {}
+        ante = _box_clauses(modal.antecedent, v, shared, depth=1)
+        cons = _one_clause(
+            modal.consequent,
+            _box_clauses(modal.consequent, v, shared, depth=1,
+                        modality=modal.modality),
+            "in a duplex consequent")
+        sentence = ("if " + " and ".join(ante) + " then " + cons)
+        sentence = sentence[0].upper() + sentence[1:] + "."
+        return AceText(text=sentence, ulex=v.lexicon.text())
+    raise TypeError(
+        f"modal_drs_to_ace: expected a DRS/ModalBox/ModalImpl, got "
+        f"{type(modal).__name__}")
+
+
+def modal_formula_to_ace(formula) -> AceText:
+    """Is this modal/deontic FORMULA expressible as ACE? Convert it — or
+    refuse by name (ACE-7's :func:`formula_to_ace` counterpart).
+
+    Two refusal-checked steps, mirroring :func:`formula_to_ace` exactly:
+    :func:`~unicode_fol_kit.ace.reverse_modal.fol_to_modal_drs` rebuilds the
+    DRS (or modal DRS shell) the formula is the standard translation of
+    (raising :class:`~unicode_fol_kit.drt.reverse.FolToDrsError` for
+    anything outside that image — including a modal placement neither of
+    the two probed shapes covers), then :func:`modal_drs_to_ace` verbalizes
+    it (raising :class:`AceVerbalizationError` for a modal box outside the
+    single-clause fragment). The live self-check is
+    :func:`modal_ace_round_trip`.
+    """
+    from .reverse_modal import fol_to_modal_drs
+
+    return modal_drs_to_ace(fol_to_modal_drs(formula))
+
+
+@dataclass(frozen=True)
+class ModalAceRoundTrip:
+    """One closed (or failed) loop for the modal route: formula → ACE →
+    APE → formula, judged by :func:`~unicode_fol_kit.eval.equivalence.equivalent`
+    (NOT raw Z3 directly — a modal ``Node``'s own ``to_z3`` refuses by
+    design; ``equivalent`` already routes a modal pair through
+    ``modal_decide``/``qml_equivalent``, see that module)."""
+
+    verbalization: AceText
+    back: "unicode_fol_kit.ace.AceFormula"
+    equivalent: bool
+    detail: str = ""
+
+
+def modal_ace_round_trip(formula, *, timeout: float = 30.0) -> ModalAceRoundTrip:
+    """Formula → ACE → APE → formula, judged by
+    :func:`~unicode_fol_kit.eval.equivalence.equivalent` — the modal
+    counterpart of :func:`ace_round_trip`.
+
+    Needs a live APE (:func:`~unicode_fol_kit.ace.runner.ape_available`).
+    Raises :class:`~unicode_fol_kit.drt.reverse.FolToDrsError` or
+    :class:`AceVerbalizationError` when ``formula`` is outside the
+    verbalizable fragment (see :func:`modal_formula_to_ace`), and
+    propagates :func:`~unicode_fol_kit.ace.translate.ace_to_formula`'s own
+    errors if the produced text comes back unmappable on the backward leg
+    (a generator bug — the tests keep that set empty over the probed
+    corpus).
+    """
+    from ..eval.equivalence import equivalent
+    from .translate import ace_to_formula
+
+    verbal = modal_formula_to_ace(formula)
+    back = ace_to_formula(verbal.text, ulex=verbal.ulex or None,
+                          timeout=timeout)
+    result = equivalent(formula, back.formula)
+    detail = "" if result.equivalent else (
+        f"forward: {formula.to_unicode_str()}  "
+        f"back: {back.formula.to_unicode_str()}")
+    return ModalAceRoundTrip(verbalization=verbal, back=back,
+                             equivalent=bool(result.equivalent), detail=detail)

@@ -4,7 +4,7 @@
 
 ## Parsing modal mode
 
-`modal=True` is classical unsorted FOL plus the modal operators. It does not combine with `many_sorted`, `fuzzy`, or `second_order`.
+`modal=True` is FOL plus the modal operators, over unsorted quantifiers/constants — or, combined with `many_sorted=True`, over SORTED ones (every binder then needs a sort annotation, exactly like plain MSFOL). It does not combine with `fuzzy`, or (except via `third_order=True`) `second_order`. See [Many-sorted modal logic](#many-sorted-modal-logic) below for the sorted combination.
 
 ```python
 from unicode_fol_kit import MSFLParser
@@ -161,6 +161,30 @@ satisfies_modal(Knows("alice", p), multi_em, 0)  # → True
 satisfies_modal(Knows("bob", p), multi_em, 0)    # → False
 ```
 
+### Visualizing a frame: `to_dot()` and `to_svg()`
+
+`KripkeModel.to_dot()` renders any model — worlds, relations, valuation, nominals, domains — as a [Graphviz](https://graphviz.org/) DOT digraph string; it is pure Python (no external dependency) and, like `Node.to_dot()`, just returns the source text. Worlds are declared in sorted `repr()` order; every relation contributes its own `(w, w')` edges labelled with the relation's **name**, so two relations over the same worlds — `alice`'s and `bob`'s indistinguishability relations both include `(0, 0)` above — stay two separate, distinguishable arrows instead of collapsing into one:
+
+```python
+print(multi_em.to_dot())
+# → digraph Kripke {
+#     node [shape=box];
+#     "0" [label="0\nP"];
+#     "1" [label="1\nP"];
+#     "2" [label="2\nQ"];
+#     "0" -> "0" [label="K:alice"];
+#     "0" -> "1" [label="K:alice"];
+#     "1" -> "0" [label="K:alice"];
+#     "1" -> "1" [label="K:alice"];
+#     "0" -> "0" [label="K:bob"];
+#     "0" -> "2" [label="K:bob"];
+#     "2" -> "0" [label="K:bob"];
+#     "2" -> "2" [label="K:bob"];
+#   }
+```
+
+Each node's label carries the world plus (with the default `show_valuation=True`) a second line of the atoms `atoms_true_at(world)` returns there and any nominal name(s) pointing at it (`@i`); pass `show_valuation=False` to drop that line and keep only the bare world. `to_svg(dot_binary=None)` pipes `to_dot()` through the Graphviz `dot` binary (`dot_binary` or `shutil.which("dot")`) and returns the rendered SVG text; with no `dot` on `PATH` it raises `RuntimeError` naming the missing tool rather than falling back to a partial rendering — the same fail-loud convention as the kit's optional external provers (eprover, minizinc, Vampire, Isabelle). A `_repr_svg_()` hook lets Jupyter/IPython display a model inline when Graphviz is installed, and returns `None` (falling back to the plain `__repr__` text) rather than raising when it is not. Both are read-only inspection methods, so `modal_countermodel`'s and `isabelle_decide_modal`'s returned `KripkeModel` instances get them for free — see the worked example after `modal_countermodel` below.
+
 ### Epistemic, doxastic, assertive, bouletic, deontic models
 
 The same evaluator handles every modality by reading the relation under its own key — `"K:"+agent` for `Knows`, `"B:"+agent` for `Believes`, `"Say:"+agent` for `Says`, `"Want:"+agent` for `Wants`, `"deontic"` for `Obligatory`/`Permitted`. **Knowledge** is the universal modality over an agent's indistinguishability relation: agent `alice` *knows* `P` at a world iff `P` holds in every world she cannot tell apart from it.
@@ -221,6 +245,87 @@ dead_deontic = KripkeModel(worlds={0})
 satisfies_modal(Obligatory(p), dead_deontic, 0)  # → True
 satisfies_modal(Permitted(p), dead_deontic, 0)   # → False
 ```
+
+### Group-epistemic operators: everybody knows, distributed and common knowledge
+
+Three more epistemic operators are indexed by a whole **group** of agents rather than one: `EverybodyKnows` (E_G, surface syntax `E_{a,b,…}`), `DistributedKnowledge` (D_G, `D_{a,b,…}`), and `CommonKnowledge` (C_G, `C_{a,b,…}`). All three still read the model's ordinary per-agent `"K:"+agent` relations — there is no separate relation family for the group — they just combine them differently:
+
+- **E_G φ** ("everyone in G knows φ") is the finite conjunction ⋀_{a∈G} K_a φ: φ holds at every world reachable by a single edge of the **union** of the group's relations.
+- **D_G φ** ("φ is distributed knowledge in G") holds at every world reachable by a single edge of the **intersection** of the group's relations — pooling every agent's information together.
+- **C_G φ** ("φ is common knowledge in G") holds at every world reachable by the **reflexive-transitive closure** of the union relation — the standard "everyone knows, everyone knows everyone knows, …" fixpoint.
+
+```python
+from unicode_fol_kit import KripkeModel, satisfies_modal
+from unicode_fol_kit.fol import EverybodyKnows, DistributedKnowledge, CommonKnowledge
+
+# a and b disagree from world 0: a cannot rule out world 1 (P true), b cannot
+# rule out world 2 (P false, since it has no valuation entry).
+gm = KripkeModel(
+    worlds={0, 1, 2},
+    relations={"K:a": {(0, 0), (0, 1)}, "K:b": {(0, 0), (0, 2)}},
+    valuation={0: {"P"}, 1: {"P"}},
+)
+satisfies_modal(EverybodyKnows(("a", "b"), p), gm, 0)     # → False  (b's successor 2 has ¬P)
+satisfies_modal(DistributedKnowledge(("a", "b"), p), gm, 0)  # → True   (the ONLY shared successor is 0 itself, where P holds)
+satisfies_modal(CommonKnowledge(("a", "b"), p), gm, 0)    # → False  (the union reaches 2 too)
+```
+
+Distributed knowledge is the *logically weakest* of the four epistemic readings — `K_a φ → D_G φ` for every `a ∈ G`, and transitively `C_G φ → E_G φ → K_a φ → D_G φ` — even though it can capture facts no single agent's own relation determines (pooling narrows the reachable set, which only makes a universal claim over it easier to satisfy, not harder).
+
+Parse the group syntax with the ordinary modal parser — each glyph is followed by a brace-delimited, comma-separated agent list (`a`/`b`-style single-letter agents or `alice`/`bob`-style names, exactly like `K_alice`'s own agent):
+
+```python
+from unicode_fol_kit import MSFLParser
+
+parser = MSFLParser(modal=True)
+node = parser.parse("D_{a,b} P")
+node.to_unicode_str()  # → 'D_{a,b} P'  (parses back to an equal AST)
+```
+
+`EverybodyKnows`/`DistributedKnowledge` are first-order definable (`standard_translation` translates them, see below); `CommonKnowledge` is **not** — like `Until`, it needs a transitive closure no pure FOL formula expresses, so `standard_translation(CommonKnowledge(...))` raises `NotImplementedError` naming the construct. `DistributedKnowledge` also refuses an **empty** group at construction (`D_∅ φ` would mean "φ holds at literally every world" under the usual empty-intersection convention, unlike `E_∅`/`C_∅`'s harmless vacuous-true reading) — name at least one agent.
+
+## Many-sorted modal logic
+
+`MSFLParser(modal=True, many_sorted=True)` combines the modal operator family with MSFOL's sorted quantifiers/constants: every `∀`/`∃` needs a `:Sort` annotation, exactly as in plain `many_sorted=True` mode, and typed agents work the same way — a typed event under a temporal operator, or a typed agent under `K_a`:
+
+```python
+from unicode_fol_kit import MSFLParser, KripkeModel, satisfies_modal
+
+mp = MSFLParser(modal=True, many_sorted=True)
+f = mp.parse("K_alice ∀x:Human (Mortal(x))")
+f.to_unicode_str()   # → 'K_alice ∀x:Human Mortal(x)'
+```
+
+This is implemented by **delegating** to `SortedQuantifier`'s own `_relativize` reduction (the same one `to_fol` uses): `∀x:S φ` becomes `∀x (S(x) → φ)`, `∃x:S φ` becomes `∃x (S(x) ∧ φ)`. Two consequences worth knowing before building a many-sorted modal model:
+
+- **A sort is world-relative, not rigid.** The sort guard `S(x)` becomes an ordinary atom, looked up in the model's `valuation` exactly like any other atom — an individual can be `Human` at one world and not at another, the same "actualist" reading this kit already gives the bare per-world domain (`domains=`).
+- **Non-emptiness of a sort is NOT assumed** by `satisfies_modal` — unlike the classical many-sorted routes (`api.prove`), which always add `nonempty_sort_axioms` as extra premises, so `∀x:S P(x) → ∃x:S P(x)` comes out classically valid. `satisfies_modal` evaluates the model you hand it, so it is the one route where assuming this would mean silently overriding your model; every route that answers a *validity* question does assume it (see below). Build the `KripkeModel` so a sort's guard is true of at least one individual, wherever that matters:
+
+```python
+m = KripkeModel(
+    worlds={0, 1},
+    relations={"K:alice": {(0, 1)}},
+    domain=["socrates"],
+    valuation={1: {"Human(socrates)", "Mortal(socrates)"}},
+)
+satisfies_modal(f, m, 0)   # → True
+
+# An empty sort is NOT vacuously assumed non-empty:
+empty = KripkeModel(worlds={0, 1}, relations={"K:alice": {(0, 1)}}, domain=[], valuation={1: set()})
+satisfies_modal(f, empty, 0)   # → True  (vacuously — the guard S(x) has no witness to falsify)
+```
+
+`fol.qml.qml_is_valid` and the HOL exporters (`hol.isabelle_modal.to_isabelle_modal`, `hol.thf_modal.to_thf_modal_full`) all support the combination too, via the same relativisation. Unlike the bare Kripke evaluator, all three DO thread the classical non-emptiness convention in automatically — one axiom per sort per world, mirroring the `nonempty_dom` axiom each already carries for the object domain (`nonempty_sort0`, `nonempty_sort1`, … in the emitted theory / problem, and in `modal_axiom_names` so a generated `using … by …` proof brings them into scope). The reason is the same for all three: they answer a **validity** question, where a route that let a sort be empty would call `∀x:S P(x) → ∃x:S P(x)` invalid while `api.prove` calls it valid. Under an actualist `mode` the witness is `existsAt`-guarded as well, since only the local domain can instantiate the existential.
+
+```python
+from unicode_fol_kit import qml_is_valid, api
+
+schema = mp.parse("∀x:Human P(x) → ∃x:Human P(x)")
+qml_is_valid(schema)        # → True
+api.prove(schema).status    # → 'proved'
+```
+
+`MSFLParser(second_order=True, many_sorted=True)` combines the same sorted binders with second-order predicate quantification (`∀P`/`∃P`, which stays unsorted itself — only the individual binders take a sort): `mp2 = MSFLParser(second_order=True, many_sorted=True); mp2.parse("∀P (∀x:Human P(x) → ∃x:Human P(x))")`. Neither combination extends to `third_order=True` — how a sort interacts with third-order's individual-vs-property "slot" inference is a separate, open design question — so `MSFLParser(third_order=True, many_sorted=True)` stays refused, with the same message as before.
 
 ## Standard translation to FOL
 
@@ -375,7 +480,15 @@ satisfies_modal(T, cm, 0)                     # → False   (independently re-ch
 modal_countermodel(T, frame="T")             # → None     (valid over T)
 ```
 
-The counter-model for `□P → P` over **K** is the single dead-end world `0` with no accessibility edges and no atoms true: `□P` holds vacuously there while `P` is false, so the conditional is falsified.
+The counter-model for `□P → P` over **K** is the single dead-end world `0` with no accessibility edges and no atoms true: `□P` holds vacuously there while `P` is false, so the conditional is falsified. `cm` is a plain `KripkeModel`, so its own `to_dot()` renders exactly that (see "Visualizing a frame" above):
+
+```python
+print(cm.to_dot())
+# → digraph Kripke {
+#     node [shape=box];
+#     "0" [label="0\n"];
+#   }
+```
 
 `modal_prove(premises, conclusion, frame=…)` decides local consequence (does `premises ∪ {¬conclusion}` close at one world):
 
@@ -393,6 +506,15 @@ from unicode_fol_kit import Knows
 
 modal_prove([Knows("a", p)], p, frame="K", systems={"epistemic": "S5"})  # → True
 modal_prove([Knows("a", p)], p, frame="K", systems={"epistemic": "K"})   # → False
+```
+
+The same factivity lifts to `DistributedKnowledge` (D_G) even for a whole group, because intersecting reflexive relations stays reflexive — the tableau frame-closes each of the group's OWN `"K:"+agent` relations before recomputing D_G's intersection, so this works whether or not any agent is also mentioned elsewhere in the formula:
+
+```python
+from unicode_fol_kit.fol import DistributedKnowledge
+
+modal_prove([DistributedKnowledge(("a", "b"), p)], p, frame="K", systems={"epistemic": "S5"})  # → True
+modal_prove([DistributedKnowledge(("a", "b"), p)], p, frame="K", systems={"epistemic": "K"})   # → False
 ```
 
 `modal_tableau_closed(formulas, frame=…)` is the lowest-level entry point: it returns `True` iff the listed formulas are **jointly unsatisfiable** at one world (the tableau closes). It is what `is_modal_valid(φ)` runs on `[¬φ]` and what `modal_prove` runs on the premises plus the negated conclusion:
@@ -682,7 +804,7 @@ qml_equivalent(Box(p), Not(Diamond(Not(p))), frame="K")  # → True   (duality)
 qml_equivalent(Box(p), Diamond(p), frame="K")            # → False
 ```
 
-`GL` (Gödel–Löb provability) is transitive + converse-well-founded, which is **not** first-order definable, so `qml_is_valid(…, frame="GL")` raises `NotImplementedError`. GL is reached only through the higher-order exporters `to_thf_modal` / `to_isabelle_modal`, which assert the Löb schema in HOL. These emit a sound problem file but do not themselves run a prover:
+`GL` (Gödel–Löb provability) is transitive + converse-well-founded, which is **not** first-order definable, so `qml_is_valid(…, frame="GL")` raises `NotImplementedError`. GL is reached only through the higher-order exporters `to_thf_modal` / `to_isabelle_modal`, which assert the Löb schema in HOL — the unbounded *proof* direction. For a bounded, in-process *refutation* instead (no external prover), `atp.kripke_enum.modal_enum_search(…, frame="GL")` decides GL directly, via its finite characterisation "transitive + irreflexive" (see the frame registry section below). The exporters emit a sound problem file but do not themselves run a prover:
 
 ```python
 from unicode_fol_kit import to_thf_modal, to_isabelle_modal, modal_axiom_names, Atom, Box, Implies
@@ -771,8 +893,31 @@ agree (`tests/test_modal_frame_registry.py`).
 
 Three axioms have no first-order frame condition at all — Löb (`GL`),
 McKinsey (`S4.1`) and Grzegorczyk (`Grz`) — so only the higher-order routes
-carry them, by asserting the schema itself over propositions. And the
-labelled tableau implements rules for five conditions (reflexive,
+carry them for a *proof*, by asserting the schema itself over propositions.
+Each still has a finite structural characterisation, though (irreflexive,
+"every world reaches a terminal point", and antisymmetric, respectively), so
+`atp.kripke_enum.modal_enum_search` decides all three for a bounded
+*refutation* — the same way it already does for every first-order
+condition, just via `fol.frames.holds_on_finite_frame` instead of an emitted
+axiom:
+
+```python
+from unicode_fol_kit.atp.kripke_enum import modal_enum_search
+from unicode_fol_kit.fol.frames import modal_axiom
+
+# T need not hold on a GL frame — irreflexivity forbids the self-loop a
+# reflexive world would need, so a single world with no relation at all is
+# already a countermodel.
+modal_enum_search(modal_axiom("T"), frame="GL", max_worlds=1).model is not None
+# → True
+
+# Löb's own axiom, by contrast, has none up to the bound — a genuine
+# "no countermodel this small" statement, never a validity proof.
+modal_enum_search(modal_axiom("Loeb"), frame="GL", max_worlds=3).exhausted
+# → True
+```
+
+And the labelled tableau implements rules for five conditions (reflexive,
 transitive, symmetric, serial, euclidean); anything else it **refuses by
 name** rather than ignoring, because dropping `directed` from `S4.2` would
 answer about a larger frame class than you asked for:

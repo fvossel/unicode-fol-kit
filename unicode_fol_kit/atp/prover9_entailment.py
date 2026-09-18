@@ -39,6 +39,25 @@ today. :class:`Prover9NameMap` still exists and is still returned by
 :mod:`atp._tptp_problem`'s ``..._with_mapping``/plain-wrapper split) so a
 future detailed route has the same reversible mapping available without
 redesigning this module.
+
+**Many-sorted (MSFOL) soundness.** A sorted quantifier/constant lowers (via
+``Node.to_prover9()``'s auto-reduction, ``fol.nodes.to_fol``) to a plain
+unary predicate guard, which by itself carries no guarantee the guarded sort
+is non-empty — and MSFOL, by convention, never gives a sort an empty
+universe (see the classical-reasoning guide's many-sorted section).
+:func:`generate_prover9_input_with_mapping` closes that gap by adding
+``unicode_fol_kit.fol._msfl_nodes.nonempty_sort_axioms(premises +
+[conclusion])`` as their own extra lines in ``formulas(assumptions)`` —
+alongside the premises, i.e. Prover9 may assume them freely, exactly what an
+entailment's premise side means; never inside ``formulas(goals)``, and never
+folded into ``Node.to_prover9()`` itself, which stays polarity-blind. Each
+axiom is rendered from the RAW kit-level sort name (bypassing
+:func:`_sanitize_for_prover9`'s renaming map — the same, currently
+un-sanitised — see this module's own ASCII-legality section, a narrower,
+pre-existing gap this fix does not touch — name a sorted node's own lazy
+``to_fol`` reduction already uses elsewhere in the same problem), so the two
+can never talk about different predicates. Empty for an unsorted problem, so
+the generated text is byte-identical to before this soundness fix.
 """
 
 import os
@@ -48,6 +67,7 @@ import tempfile
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
 
+from ..fol._msfl_nodes import nonempty_sort_axioms
 from ..fol.nodes import Atom, Constant, Function, Node
 from ._ascii_names import ascii_safe_base, reserve_rendered
 
@@ -228,6 +248,12 @@ def generate_prover9_input_with_mapping(premises: List[Node], conclusion: Node
     lines.append("formulas(assumptions).")
     for premise in sanitised_premises:
         lines.append(f"  {premise.to_prover9()}.")
+    # Many-sorted non-emptiness axioms — see the module docstring. Built
+    # from the ORIGINAL (pre-sanitisation) premises/conclusion so each one
+    # uses the exact raw sort-predicate name a sorted node's own lazy
+    # to_prover9()/to_fol reduction emits elsewhere in this same problem.
+    for axiom in nonempty_sort_axioms(*premises, conclusion):
+        lines.append(f"  {axiom.to_prover9()}.")
     lines.append("end_of_list.")
     lines.append("")
 

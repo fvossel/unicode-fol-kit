@@ -78,6 +78,34 @@ never through the first-letter fold, so they cannot participate in a folding
 collision. The same two symbols are excluded from :func:`_sanitize_for_tptp`
 for the same reason: ``=`` is not an identifier to begin with, so it is
 never a candidate for the "is this already legal?" test in the first place.
+
+**Many-sorted (MSFOL) soundness.** A sorted quantifier/constant/count lowers
+(via ``Node.to_tptp()``'s auto-reduction, ``fol.nodes.to_fol``) to a plain
+unary predicate guard, which by itself carries no guarantee the guarded sort
+is non-empty — and MSFOL, by convention, never gives a sort an empty universe
+(see the classical-reasoning guide's many-sorted section). In practice a
+caller with genuinely many-sorted ``premises``/``conclusion`` should reach
+the native typed route instead (:func:`~unicode_fol_kit.atp.tptp_tff
+.generate_tff_problem`, whose TPTP TF0 semantics already guarantees
+non-empty sort domains — every ``vampire_entailment``/``eprover_backend``
+call site auto-selects it via ``problem_needs_tff``), but this ``fof``
+builder is reachable directly too (a caller forcing ``tff=False`` on sorted
+input, or :mod:`atp.twee_entailment`, which has no typed route at all), so
+:func:`generate_tptp_problem_with_mapping` closes the same gap here:
+one extra ``fof(nonempty_sort_<i>, axiom, ...).`` line per distinct sort name
+in ``premises``/``conclusion``
+(``unicode_fol_kit.fol._msfl_nodes.nonempty_sort_axioms``), with the
+``axiom`` role — an assumption the conjecture's refutation search may use
+freely, exactly what an entailment's premise side means — never the
+``conjecture`` role, and never folded into ``Node.to_tptp()`` itself, which
+stays polarity-blind. Each axiom is rendered straight from ``Node.to_tptp()``
+on the RAW kit-level sort name, bypassing :func:`_sanitize_for_tptp`'s
+renaming map entirely: a sorted node's own lazy ``to_fol`` reduction
+elsewhere in the SAME problem is equally unsanitised (see this module's own
+ASCII-legality section — sort names are a narrower, pre-existing gap this
+fix does not touch), so keeping the axiom unsanitised too is what keeps both
+talking about the identical predicate. Empty for an unsorted problem, so the
+generated text is byte-identical to before this soundness fix.
 """
 
 import re
@@ -85,11 +113,19 @@ from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Tuple
 
 from ..fol._fol_nodes import constant_name_to_ascii, tptp_fold_first_letter
+from ..fol._msfl_nodes import nonempty_sort_axioms
 from ..fol.nodes import Atom, Constant, Function, Node
 from ._ascii_names import ascii_safe_base, reserve_rendered
+# generate_tff_problem lives in tptp_tff.py (the native TF0/typed-TPTP
+# writer, a sibling module rather than an addition to this fof-only one —
+# see that module's docstring); re-exported here purely so a caller already
+# depending on "the shared TPTP problem generator module" for the fof route
+# finds the typed sibling at the same place, per the natural pairing with
+# generate_tptp_problem above.
+from .tptp_tff import generate_tff_problem
 
 __all__ = ["generate_tptp_problem", "generate_tptp_problem_with_mapping",
-           "TptpNameMap", "apply_reverse_tptp"]
+           "TptpNameMap", "apply_reverse_tptp", "generate_tff_problem"]
 
 
 # ---------------------------------------------------------------------------
@@ -442,6 +478,12 @@ def generate_tptp_problem_with_mapping(premises: List[Node], conclusion: Node
     lines: List[str] = []
     for i, premise in enumerate(sanitised_premises, start=1):
         lines.append(f"fof(premise_{i}, axiom, {premise.to_tptp()}).")
+    # Many-sorted non-emptiness axioms — see the module docstring. Built
+    # from the ORIGINAL (pre-sanitisation) premises/conclusion so each one
+    # renders the exact raw sort-predicate name a sorted node's own lazy
+    # to_tptp()/to_fol reduction emits elsewhere in this same problem.
+    for i, axiom in enumerate(nonempty_sort_axioms(*premises, conclusion), start=1):
+        lines.append(f"fof(nonempty_sort_{i}, axiom, {axiom.to_tptp()}).")
     lines.append(f"fof(goal, conjecture, {sanitised_conclusion.to_tptp()}).")
     return "\n".join(lines) + "\n", mapping
 

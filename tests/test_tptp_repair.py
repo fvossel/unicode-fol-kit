@@ -544,6 +544,46 @@ def test_repair_tptp_problem_raises_on_malformed_statement_structure():
         repair_tptp_problem("fof(ax1, axiom, p(x))")  # no trailing "."
 
 
+def test_repair_tptp_problem_leaves_annotations_outside_the_formula():
+    """TPTP statements may carry a source and a useful-info field after the
+    formula. The formula ends at the first depth-0 comma — the comma inside
+    ``![X,Y]`` is at bracket depth 1 — and the annotations come back verbatim.
+    Before, they were taken as part of the formula, which then failed to parse.
+    """
+    text = (
+        "fof(a1, axiom, ![X,Y]: (p(X) => p(Y)), file('x.p', a1), [note]).\n"
+        "cnf(c1, axiom, (p(a) | ~q(a)), inference(res, [status(thm)], [a1])).\n"
+    )
+    r = repair_tptp_problem(text)
+
+    assert r.ok is True
+    assert [e.name for e in r.entries] == ["a1", "c1"]
+    assert "file('x.p', a1), [note])." in r.repaired_text
+    assert "inference(res, [status(thm)], [a1]))." in r.repaired_text
+    assert [f.name for f in parse_tptp(r.repaired_text)] == ["a1", "c1"]
+
+
+def test_repair_tptp_problem_passes_include_directives_through():
+    """An include holds no formula to repair; it survives verbatim, with or
+    without a selection list, and does not count as an entry."""
+    text = (
+        "include('Axioms/SET001-0.ax').\n"
+        "include('Axioms/SET001-1.ax', [ax1, 'ax 2']).\n"
+        "fof(goal, conjecture, p(x) <=> a & b).\n"
+    )
+    r = repair_tptp_problem(text)
+
+    assert [e.name for e in r.entries] == ["goal"]
+    assert r.repaired_text.startswith(
+        "include('Axioms/SET001-0.ax').\ninclude('Axioms/SET001-1.ax', [ax1, 'ax 2']).\n")
+    assert "fof(goal, conjecture, (p(x) <=> (a & b)))." in r.repaired_text
+
+
+def test_repair_tptp_problem_raises_on_an_unterminated_include():
+    with pytest.raises(TptpRepairError):
+        repair_tptp_problem("include('a.ax'\nfof(g, conjecture, p).")
+
+
 # ---------------------------------------------------------------------------
 # Small dict-serialisation sanity (JSON-compatibility contract shared with
 # the rest of the kit's *Result dataclasses, e.g. CheckResult/EquivalenceResult)

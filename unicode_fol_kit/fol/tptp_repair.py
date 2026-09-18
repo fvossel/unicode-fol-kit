@@ -746,6 +746,40 @@ def _expect(text: str, i: int, ch: str, what: str) -> int:
     return i + 1
 
 
+def _depth_zero_stop(text: str, i: int, n: int, stop_at_comma: bool = False) -> int:
+    """Index of the first ``)`` (or, with ``stop_at_comma``, ``,``) at bracket
+    depth 0 from ``i``, skipping ``'...'`` atoms, ``"..."`` strings and
+    comments; ``n`` if there is none. ``(`` and ``[`` both open a level."""
+    depth = 0
+    m = i
+    while m < n:
+        c = text[m]
+        if c in ("'", '"'):
+            m += 1
+            while m < n and text[m] != c:
+                m += 2 if text[m] == "\\" else 1
+            m += 1
+            continue
+        if c == "%":
+            while m < n and text[m] != "\n":
+                m += 1
+            continue
+        if text[m:m + 2] == "/*":
+            end = text.find("*/", m + 2)
+            m = (end + 2) if end != -1 else n
+            continue
+        if c in "([":
+            depth += 1
+        elif c in ")]":
+            if depth == 0:
+                return m if c == ")" else n
+            depth -= 1
+        elif c == "," and depth == 0 and stop_at_comma:
+            return m
+        m += 1
+    return n
+
+
 def _split_tptp_statements(text: str) -> Tuple[_Statement, ...]:
     """Locate every ``fof(name, role, FORMULA).`` / ``cnf(...)`` statement's
     exact ``FORMULA`` text span, without requiring the formula itself to be
@@ -759,8 +793,12 @@ def _split_tptp_statements(text: str) -> Tuple[_Statement, ...]:
     repair needs to route around. Tracks ``'...'`` quoted atoms (backslash
     escapes) and ``%``/``/* */`` comments so parens/quotes inside them never
     perturb paren-depth tracking; a statement's formula ends at the first
-    ``)`` seen at depth 0, which must be followed (after whitespace/comments)
-    by ``.``.
+    ``,`` or ``)`` seen at depth 0 (both ``()`` and ``[]`` count, so the comma
+    in ``![X,Y]`` stays inside), and the statement at the ``)`` closing it,
+    which must be followed (after whitespace/comments) by ``.``. Whatever sits
+    between a formula's ``,`` and that ``)`` — the optional source and
+    useful-info annotations — is left untouched. An ``include(...)``
+    directive holds no formula and is skipped the same way.
     """
     n = len(text)
     i = 0
@@ -769,11 +807,21 @@ def _split_tptp_statements(text: str) -> Tuple[_Statement, ...]:
         i = _skip_ws_and_comments(text, i)
         if i >= n:
             break
-        keyword, i = _read_ident(text, i, "'fof' or 'cnf'")
+        keyword, i = _read_ident(text, i, "'fof', 'cnf' or 'include'")
+        if keyword == "include":
+            i = _skip_ws_and_comments(text, i)
+            i = _expect(text, i, "(", "include opening paren")
+            end = _depth_zero_stop(text, i, n)
+            if end >= n or text[end] != ")":
+                raise TptpRepairError(
+                    "tptp_repair: an include directive has unbalanced parentheses")
+            after = _skip_ws_and_comments(text, end + 1)
+            i = _expect(text, after, ".", "include terminator")
+            continue
         if keyword not in ("fof", "cnf"):
             raise TptpRepairError(
                 f"tptp_repair: unsupported TPTP statement keyword {keyword!r} "
-                "(only fof and cnf are supported)")
+                "(only fof, cnf and include are supported)")
         i = _skip_ws_and_comments(text, i)
         i = _expect(text, i, "(", "statement opening paren")
         i = _skip_ws_and_comments(text, i)
@@ -787,47 +835,18 @@ def _split_tptp_statements(text: str) -> Tuple[_Statement, ...]:
         i = _skip_ws_and_comments(text, i)
         formula_start = i
 
-        depth = 0
-        in_quote = False
-        m = i
-        while m < n:
-            c = text[m]
-            if in_quote:
-                if c == "\\":
-                    m += 2
-                    continue
-                if c == "'":
-                    in_quote = False
-                m += 1
-                continue
-            if c == "'":
-                in_quote = True
-                m += 1
-                continue
-            if c == "%":
-                while m < n and text[m] != "\n":
-                    m += 1
-                continue
-            if text[m:m + 2] == "/*":
-                end = text.find("*/", m + 2)
-                m = (end + 2) if end != -1 else n
-                continue
-            if c == "(":
-                depth += 1
-                m += 1
-                continue
-            if c == ")":
-                if depth == 0:
-                    break
-                depth -= 1
-                m += 1
-                continue
-            m += 1
+        m = _depth_zero_stop(text, i, n, stop_at_comma=True)
         if m >= n:
             raise TptpRepairError(
                 f"tptp_repair: statement {name!r} has unbalanced parentheses "
                 "(no closing ')' found for its formula)")
         formula_end = m
+        if text[m] == ",":
+            m = _depth_zero_stop(text, m + 1, n)
+            if m >= n or text[m] != ")":
+                raise TptpRepairError(
+                    f"tptp_repair: statement {name!r} has unbalanced parentheses "
+                    "(no closing ')' found after its annotations)")
         after = _skip_ws_and_comments(text, m + 1)
         after = _expect(text, after, ".", "statement terminator")
 

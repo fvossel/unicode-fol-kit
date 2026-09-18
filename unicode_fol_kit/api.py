@@ -65,8 +65,8 @@ _UNICODE_MODES: Tuple[Tuple[str, dict], ...] = (
     # only inputs it newly accepts are the ones with a predicate really standing
     # in an argument slot -- which no mode above can express.
     #
-    # Its MODAL sibling is deliberately NOT on the ladder. That one is served by
-    # Earley (inherited from `modal`, which needs it), and Earley reaches
+    # Its MODAL sibling is deliberately NOT on the ladder. That one falls back
+    # to Earley (inherited from `modal`, which needs it), and Earley reaches
     # readings LALR does not: with a second-order binder available, "∀ P(x)" parses
     # as a quantifier over the propositional atom `x` instead of failing. Every
     # other dialect reports that string as the malformed quantifier it is, and
@@ -407,16 +407,82 @@ def check(formula: Union[Node, str], *, signature: Optional[dict] = None,
 # prove / countermodel — the backend chain
 # ---------------------------------------------------------------------------
 
+#: Node types that are the SOLE occupant of their own parser mode — a formula
+#: containing one of these can only have come from that mode's grammar, so
+#: routing on it is sound (see logic_backends' module docstring). Order
+#: matters: hybrid is checked before the general modal test because
+#: `atp.modal_tableau.has_modal` itself also counts Nominal/At as "modal"
+#: (so the classical tableau gets a clean hybrid-specific rejection) — here
+#: we want the MORE SPECIFIC "hybrid" logic label, not "modal", for exactly
+#: those formulas. Intuitionistic and relevant logic reuse the plain
+#: classical AST with no marker of their own, so they are deliberately
+#: ABSENT from this table — `logic=` must be given explicitly for those two.
 def _detect_logic(formula: Node, premises: Sequence[Node]) -> str:
     from .atp.modal_tableau import has_modal
-    if has_modal(formula) or any(has_modal(p) for p in premises):
+    from .fol.nodes import Nominal, At, Product, Under, Over
+    from .fol._linear_nodes import (
+        Tensor, With, OPlus, LinearImplies, OfCourse, One, Top, Zero,
+    )
+
+    formulas = (formula, *premises)
+
+    def _contains(*node_types) -> bool:
+        return any(isinstance(node, node_types)
+                  for f in formulas for node in f.walk())
+
+    if _contains(Nominal, At):
+        return "hybrid"
+    if _contains(Product, Under, Over):
+        return "lambek"
+    if _contains(Tensor, With, OPlus, LinearImplies, OfCourse, One, Top, Zero):
+        return "ill"
+    if any(has_modal(f) for f in formulas):
         return "modal"
     return "fol"
+
+
+#: Which backend names this facade knows how to ask for premise relevance,
+#: and the free function that answers it — see :func:`_attach_relevant_premises`.
+#: Deliberately NOT every backend :func:`prove` can route to: a route with no
+#: entry here leaves ``Verdict.relevant_premises`` at its default ``None``
+#: rather than guessing. Vampire in particular renames every TPTP statement,
+#: axiom leaves included, to its own ``f1``/``f2``/… scheme, so its derivation
+#: cannot be mapped back to the caller's premise indices.
+def _relevant_premises_for(backend_name: str, formula: Node, premises: Sequence[Node],
+                           timeout: int) -> Optional[Tuple[int, ...]]:
+    if backend_name == "z3":
+        from .atp.protocol import z3_relevant_premises
+        return z3_relevant_premises(formula, premises, timeout=timeout)
+    if backend_name == "eprover":
+        from .atp.eprover_backend import eprover_relevant_premises
+        return eprover_relevant_premises(premises, formula, timeout=max(1, timeout // 1000))
+    return None
+
+
+def _attach_relevant_premises(verdict: Verdict, formula: Node, premises: Sequence[Node],
+                              timeout: int) -> Verdict:
+    """Best-effort: fill ``relevant_premises`` on a PROVED verdict, using
+    whichever route :func:`_relevant_premises_for` supports for the backend
+    that actually produced ``verdict`` — re-running that SAME query, not a
+    different one, so the reported premises are relevant to the ANSWER the
+    caller got, not to some other backend's independent proof of the same
+    entailment. Leaves ``verdict`` untouched (``relevant_premises`` stays its
+    default ``None``) when the winning backend has no route, or that route
+    itself could not produce a trustworthy answer.
+    """
+    if verdict.status != PROVED:
+        return verdict
+    indices = _relevant_premises_for(verdict.backend, formula, premises, timeout)
+    if indices is None:
+        return verdict
+    from dataclasses import replace as _replace
+    return _replace(verdict, relevant_premises=indices)
 
 
 def prove(formula: Node, premises: Sequence[Node] = (), *,
           logic: str = "auto", backends: Optional[Sequence[str]] = None,
           timeout: int = 10000, require_agreement: int = 1,
+          relevant_premises: bool = False,
           **options) -> Verdict:
     """Decide ``premises ⊨ formula`` over a chain of backends.
 
@@ -434,6 +500,18 @@ def prove(formula: Node, premises: Sequence[Node] = (), *,
     ``agreement`` then lists them all. If nothing definitive emerges, the
     result is an UNKNOWN verdict from the pseudo-backend ``"chain"`` whose
     ``detail`` summarises every member's answer.
+
+    ``relevant_premises=True`` additionally fills the returned verdict's
+    ``relevant_premises`` field on a PROVED result, by re-asking the SAME
+    winning backend which premises it actually needed (see
+    :mod:`unicode_fol_kit.atp.protocol`'s ``z3_relevant_premises`` and
+    :mod:`unicode_fol_kit.atp.eprover_backend`'s
+    ``eprover_relevant_premises``) — currently supported only when that
+    backend is ``"z3"`` or ``"eprover"``; any other winning backend (or a
+    query that route itself could not answer) leaves the field at its
+    default ``None`` rather than guessing. Off by default: it re-runs the
+    winning backend's decision procedure a second time, so only pay for it
+    when the caller actually wants the breakdown.
 
     Extra keyword ``options`` are forwarded to EVERY backend in the chain, so
     only use them with an explicit single-backend list (e.g.
@@ -465,10 +543,13 @@ def prove(formula: Node, premises: Sequence[Node] = (), *,
             if len(group) >= require_agreement:
                 first = group[0]
                 if len(group) == 1:
-                    return first
-                from dataclasses import replace as _replace
-                return _replace(first,
-                                agreement=tuple(v.backend for v in group))
+                    result = first
+                else:
+                    from dataclasses import replace as _replace
+                    result = _replace(first, agreement=tuple(v.backend for v in group))
+                if relevant_premises:
+                    result = _attach_relevant_premises(result, formula, premises, timeout)
+                return result
 
     summary = "; ".join(
         f"{v.backend}:{v.status}" + (f"/{v.reason}" if v.reason else "")

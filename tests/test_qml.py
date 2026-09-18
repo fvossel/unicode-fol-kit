@@ -385,3 +385,52 @@ def test_isabelle_non_ascii_predicate_and_constants_are_ascii_legal():
     assert any("c_2008SummerOlympics" in ln for ln in consts_lines)  # digit-leading -> 'c_'-prefixed
     assert not any("Świątek" in ln or "świątek" in ln
                   for ln in consts_lines + lemma_lines)
+
+
+# ---------------------------------------------------------------------------
+# A user predicate named like the translation's own predicates. Before the
+# fix, ST appended the world argument to a unary user R, giving R(x, w) — the
+# alethic accessibility relation itself — so R(alice) → ◇R(alice) came out
+# VALID in K; a binary R crashed Z3 on the arity clash. Each expected value
+# below is worked out by hand from the Kripke semantics.
+# ---------------------------------------------------------------------------
+
+_RESERVED_NAME_CASES = [
+    # a dead end refutes it: ◇ fails, R(alice) is just a user fact
+    ("R(alice) → ◇R(alice)", "K", False),
+    # a successor where R(alice) fails refutes it
+    ("R(alice) → □R(alice)", "K", False),
+    # reflexivity makes the current world its own witness
+    ("R(alice) → ◇R(alice)", "T", True),
+    ("∀x □¬R(x, x)", "K", False),
+    # Barcan over constant domains, with a binary user R
+    ("(∀x □R(x, x)) → □∀x R(x, x)", "K", True),
+    ("World → □World", "K", False),
+    ("E(alice) → □E(alice)", "K", False),
+    ("□(Object(alice) → Object(alice))", "K", True),
+    ("Rk(alice) ∨ ¬Rk(alice)", "K", True),
+]
+
+
+@pytest.mark.parametrize("text,frame,expected", _RESERVED_NAME_CASES)
+def test_user_predicate_named_like_an_internal_predicate(text, frame, expected):
+    formula = MSFLParser(modal=True).parse(text)
+    assert qml_is_valid(formula, mode="constant", frame=frame) is expected
+
+
+def test_reserved_user_predicate_is_renamed_only_when_it_collides():
+    from unicode_fol_kit.fol.qml import qml_translate
+    parse = MSFLParser(modal=True).parse
+    assert (qml_translate(parse("R(alice) → ◇R(alice)")).to_unicode_str()
+            == "R·(alice, w) → ∃_w0 (World(_w0) ∧ R(w, _w0) ∧ R·(alice, _w0))")
+    # a formula that avoids the reserved names translates exactly as before
+    assert (qml_translate(parse("P(alice) → ◇P(alice)")).to_unicode_str()
+            == "P(alice, w) → ∃_w0 (World(_w0) ∧ R(w, _w0) ∧ P(alice, _w0))")
+
+
+def test_sort_named_like_an_internal_predicate_keeps_its_non_emptiness_axiom():
+    """∀x:R P(x) → ∃x:R P(x) is valid under the kit's non-empty-sort
+    convention; the sort's guard and its per-world axiom must both use the
+    renamed guard, or the axiom would constrain the accessibility relation."""
+    formula = MSFLParser(many_sorted=True).parse("(∀x:R P(x)) → ∃x:R P(x)")
+    assert qml_is_valid(formula, mode="constant", frame="K") is True

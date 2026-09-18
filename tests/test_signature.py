@@ -167,6 +167,43 @@ def test_from_formulas_constant_vs_function_clash():
         Signature.from_formulas([k1, k2])
 
 
+def test_from_formulas_three_way_arity_conflict_names_every_arity():
+    """A predicate used at THREE distinct arities across a batch (1, 2, 3):
+    the message names every arity seen, not just the first pairwise clash.
+
+    This is the behaviour that pins ``from_formulas``'s own accumulation
+    policy (collect the full set across the whole batch, then report it)
+    as distinct from ``casl_export._analyze``'s incremental, raise-on-
+    first-conflict policy (see ``test_casl_export.py``'s equivalent
+    three-way case, which reports only the first two arities) — the two
+    call sites share the underlying "more than one distinct value is a
+    conflict" check (``signature._check_single_valued``), not the
+    accumulation strategy around it; see ``signature.py``'s module
+    docstring DESIGN NOTE.
+    """
+    w1 = Atom("W", [Variable("x")])
+    w2 = Atom("W", [Variable("x"), Variable("y")])
+    w3 = Atom("W", [Variable("x"), Variable("y"), Variable("x")])
+    with pytest.raises(
+        ValueError, match=r"predicate 'W' used with conflicting arities \(1, 2, 3\)"
+    ):
+        Signature.from_formulas([w1, w2, w3])
+
+
+def test_from_formulas_predicate_and_function_may_share_a_name():
+    """'Foo' as a predicate (Foo(x)) AND as a function (Q(Foo(x))) in the
+    same batch is NOT a conflict: predicates and functions are separate
+    namespaces in this module's model (only constant-vs-function is a
+    clash — see the module docstring). Both declarations coexist."""
+    p1 = Atom("Foo", [Variable("x")])
+    p2 = Atom("Q", [Function("Foo", [Variable("x")])])
+    sig = Signature.from_formulas([p1, p2])
+    assert dict(sig.predicates) == {
+        "Foo": PredicateDecl("Foo", 1), "Q": PredicateDecl("Q", 1),
+    }
+    assert dict(sig.functions) == {"Foo": FunctionDecl("Foo", 1)}
+
+
 def test_from_formulas_constant_sort_conflict():
     """'bob' annotated :Human in one formula and :Animal in another is a
     genuine sort conflict -> ValueError naming 'bob' and both sorts, sorted
@@ -176,6 +213,42 @@ def test_from_formulas_constant_sort_conflict():
     with pytest.raises(ValueError,
                        match=r"constant 'bob' used with conflicting sorts \('Animal', 'Human'\)"):
         Signature.from_formulas([m1, m2])
+
+
+# =============================================================================
+# Shared refusal bookkeeping: _check_single_valued / _check_not_dual_use
+# =============================================================================
+#
+# The two module-private helpers factored out for both this module's own
+# from_formulas AND unicode_fol_kit.fol.casl_export's independently-written
+# _analyze pass (see the module docstring's DESIGN NOTE). Tested directly
+# here, independent of either call site, per roadmap item C5's test_oracle
+# ("a new shared-helper unit test asserting the extracted conflict-detection
+# function alone").
+
+from unicode_fol_kit.fol.signature import _check_single_valued, _check_not_dual_use
+
+
+def test_check_single_valued_returns_the_sole_value():
+    assert _check_single_valued({1}, "unused message") == 1
+    assert _check_single_valued({7, 7}, "unused message") == 7  # a set dedupes
+
+
+def test_check_single_valued_raises_verbatim_message_on_conflict():
+    with pytest.raises(ValueError, match=r"^exactly this text$"):
+        _check_single_valued({1, 2}, "exactly this text")
+    # Three distinct values also conflict -- the predicate is "more than
+    # one distinct value", not "exactly two".
+    with pytest.raises(ValueError, match=r"^exactly this text$"):
+        _check_single_valued({1, 2, 3}, "exactly this text")
+
+
+def test_check_not_dual_use_raises_iff_name_is_in_other_namespace():
+    # 'alice' is NOT in {'bob'}: no raise.
+    _check_not_dual_use("alice", {"bob"}, "unused message")
+    # 'alice' IS in {'alice', 'bob'}: raises the exact message given.
+    with pytest.raises(ValueError, match=r"^exactly this text$"):
+        _check_not_dual_use("alice", {"alice", "bob"}, "exactly this text")
 
 
 # =============================================================================
@@ -353,6 +426,35 @@ def test_validate_sort_mismatch_predicate_argument():
     ]
 
 
+def test_validate_accepts_a_subsort_substitution():
+    """(test_oracle b, roadmap C4) P declared to expect 'Animal'; x is bound
+    :Human by an outer SortedQuantifier -- with 'Human < Animal' declared,
+    passing a Human-sorted term where Animal is expected is no longer a
+    violation (ext(Human) subset ext(Animal), so any Human individual IS an
+    Animal individual in every conforming structure)."""
+    sig = Signature(predicates={"P": PredicateDecl("P", 1, ("Animal",))},
+                    sorts=frozenset({"Human", "Animal"}),
+                    subsorts={"Human": frozenset({"Animal"})})
+    x = Variable("x")
+    f = SortedQuantifier("∀", x, "Human", Atom("P", [x]))
+    assert sig.validate(f) == []
+
+
+def test_validate_subsort_substitution_is_one_directional():
+    """(test_oracle b, roadmap C4) companion to the test above, same
+    signature: Q declared to expect 'Human'; y is bound :Animal -- the
+    REVERSE substitution is still reported, proving the fix is not
+    accidentally bidirectional (an Animal is not necessarily a Human)."""
+    sig = Signature(predicates={"Q": PredicateDecl("Q", 1, ("Human",))},
+                    sorts=frozenset({"Human", "Animal"}),
+                    subsorts={"Human": frozenset({"Animal"})})
+    y = Variable("y")
+    f = SortedQuantifier("∀", y, "Animal", Atom("Q", [y]))
+    assert sig.validate(f) == [
+        "predicate 'Q' argument 1 expects sort 'Human', got sort 'Animal'"
+    ]
+
+
 def test_validate_sort_mismatch_sorted_constant_vs_declared():
     """'alice' is declared sort 'Human' in the signature but annotated
     :Robot at its use site -- both sides concrete, both different."""
@@ -362,6 +464,23 @@ def test_validate_sort_mismatch_sorted_constant_vs_declared():
     assert sig.validate(f) == [
         "constant 'alice' is annotated sort 'Robot' here but declared sort "
         "'Human' in the signature"
+    ]
+
+
+def test_validate_sorted_constant_annotation_check_stays_exact_match_not_subsort_aware():
+    """The SortedConstant-inline-vs-declared-sort check (a DIFFERENT check
+    from the two argument-position ones above) is deliberately left
+    EXACT-match by the build spec -- it compares one name's own two
+    annotations for internal self-consistency, not a substitutability
+    question, so a subsort edge must NOT make it any more permissive."""
+    sig = Signature(predicates={"P": PredicateDecl("P", 1)},
+                    constants={"alice": ConstantDecl("alice", "Animal")},
+                    sorts=frozenset({"Human", "Animal"}),
+                    subsorts={"Human": frozenset({"Animal"})})
+    f = Atom("P", [SortedConstant("alice", "Human")])
+    assert sig.validate(f) == [
+        "constant 'alice' is annotated sort 'Human' here but declared sort "
+        "'Animal' in the signature"
     ]
 
 
@@ -445,6 +564,118 @@ def test_merge_conflicting_declaration_refused():
     sig_b = Signature(predicates={"P": PredicateDecl("P", 2)})
     with pytest.raises(ValueError, match="conflicting predicate declaration for 'P'"):
         sig_a.merge(sig_b)
+
+
+# =============================================================================
+# Subsorting: is_subsort, cycle detection, merge extension (roadmap C4)
+# =============================================================================
+
+def test_is_subsort_reflexive_transitive_never_symmetric():
+    """(test_oracle a) A two-level chain, direct edges only: Human < Mammal
+    < Animal. is_subsort is TRUE reflexively (every sort is its own
+    subsort), TRUE transitively (Human < Animal, though never declared
+    directly -- only via chaining Human<Mammal and Mammal<Animal), and
+    NEVER symmetric."""
+    sig = Signature(
+        sorts=frozenset({"Human", "Mammal", "Animal"}),
+        subsorts={"Human": frozenset({"Mammal"}), "Mammal": frozenset({"Animal"})},
+    )
+    assert sig.is_subsort("Human", "Human") is True          # reflexive
+    assert sig.is_subsort("Human", "Mammal") is True          # direct
+    assert sig.is_subsort("Mammal", "Animal") is True         # direct
+    assert sig.is_subsort("Human", "Animal") is True          # transitive
+    assert sig.is_subsort("Mammal", "Human") is False         # never symmetric
+    assert sig.is_subsort("Animal", "Human") is False
+    # subsorts itself stores only the DIRECT edges, never the closure --
+    # 'Human' -> 'Animal' is nowhere in this mapping.
+    assert sig.subsorts == {
+        "Human": frozenset({"Mammal"}), "Mammal": frozenset({"Animal"})}
+
+
+def test_is_subsort_diamond_hierarchy():
+    """(test_oracle a) A < B, A < C, B < D, C < D -- A reaches D by BOTH
+    paths; is_subsort must be True regardless of which path is walked
+    first, and unrelated siblings (B, C) must not be conflated."""
+    sig = Signature(subsorts={
+        "A": frozenset({"B", "C"}), "B": frozenset({"D"}), "C": frozenset({"D"}),
+    })
+    assert sig.is_subsort("A", "D") is True
+    assert sig.is_subsort("B", "D") is True
+    assert sig.is_subsort("C", "D") is True
+    assert sig.is_subsort("B", "C") is False
+    assert sig.is_subsort("C", "B") is False
+
+
+def test_subsorts_cycle_raises_naming_the_cycle():
+    """(test_oracle a) A two-sort mutual cycle (A < B, B < A) is refused
+    loudly at construction time, naming the cycle."""
+    with pytest.raises(ValueError, match=r"cycle: A -> B -> A"):
+        Signature(subsorts={"A": frozenset({"B"}), "B": frozenset({"A"})})
+
+
+def test_subsorts_self_cycle_raises():
+    """A sort declared as its own direct parent is likewise a cycle."""
+    with pytest.raises(ValueError, match=r"cycle: A -> A"):
+        Signature(subsorts={"A": frozenset({"A"})})
+
+
+def test_subsorts_three_sort_cycle_raises():
+    """A < B < C < A -- a longer cycle, still caught and named in full."""
+    with pytest.raises(ValueError, match=r"cycle: A -> B -> C -> A"):
+        Signature(subsorts={
+            "A": frozenset({"B"}), "B": frozenset({"C"}), "C": frozenset({"A"}),
+        })
+
+
+def test_subsorts_rejects_non_string_entries():
+    with pytest.raises(TypeError, match="subsorts key must be a sort name"):
+        Signature(subsorts={1: frozenset({"B"})})
+    with pytest.raises(TypeError, match=r"subsorts\['A'\] entries must be sort names"):
+        Signature(subsorts={"A": frozenset({1})})
+
+
+def test_merge_unions_subsorts_per_child_without_conflict():
+    """Two signatures each declaring a DIFFERENT direct parent for the SAME
+    child are not a conflict -- both constraints hold simultaneously, so
+    the merge unions them (see the module docstring's Signature.merge
+    section: two DIFFERENT declared parent sets are both true facts, not
+    competing claims the way two different arities would be)."""
+    sig_a = Signature(subsorts={"Bat": frozenset({"Mammal"})})
+    sig_b = Signature(subsorts={"Bat": frozenset({"Flyer"})})
+    merged = sig_a.merge(sig_b)
+    assert merged.subsorts == {"Bat": frozenset({"Mammal", "Flyer"})}
+    assert merged.is_subsort("Bat", "Mammal") is True
+    assert merged.is_subsort("Bat", "Flyer") is True
+
+
+def test_merge_raises_when_the_union_creates_a_cycle_neither_side_had_alone():
+    """A < B alone (acyclic) and B < A alone (acyclic) merge into a genuine
+    two-sort cycle -- caught by the same cycle check Signature's own
+    __post_init__ runs on the merged result."""
+    sig_a = Signature(subsorts={"A": frozenset({"B"})})
+    sig_b = Signature(subsorts={"B": frozenset({"A"})})
+    with pytest.raises(ValueError, match="cycle"):
+        sig_a.merge(sig_b)
+
+
+def test_to_dict_from_dict_round_trip_preserves_subsorts():
+    sig = Signature(
+        sorts=frozenset({"Human", "Mammal", "Animal"}),
+        subsorts={"Human": frozenset({"Mammal"}), "Mammal": frozenset({"Animal"})},
+    )
+    d = sig.to_dict()
+    assert d["subsorts"] == {"Human": ["Mammal"], "Mammal": ["Animal"]}
+    assert Signature.from_dict(d) == sig
+    assert Signature.from_dict(d).is_subsort("Human", "Animal") is True
+
+
+def test_from_dict_unions_subsort_sort_names_into_sorts():
+    """A sort mentioned ONLY inside 'subsorts' (never in arg_sorts/
+    result_sort/constant sort/the explicit 'sorts' list) is still unioned
+    into Signature.sorts, mirroring the treatment of every other implied
+    sort mention."""
+    sig = Signature.from_dict({"subsorts": {"Human": ["Animal"]}})
+    assert sig.sorts == frozenset({"Human", "Animal"})
 
 
 # =============================================================================

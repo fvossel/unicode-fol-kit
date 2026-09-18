@@ -415,6 +415,31 @@ class TestOrderComparisonReadings:
                           predicates={("P", 1): {(0,), (1,)}, (">", 2): set()})
         assert models(FOL.parse("|{x : P(x)}| > |{x : ¬P(x)}|"), world) is True
 
+    # P holds of 0 and 1, so |{x : P(x)}| = 2; the constant table maps the NAME
+    # "1" to the individual 2. Reading the numeral through that table would turn
+    # "> 1" into "> 2" (False) and "= 1" into "= 2" (True).
+    RENAMED_ONE = dict(domain=[0, 1, 2], constants={"1": 2},
+                       predicates={("P", 1): {(0,), (1,)}})
+
+    @pytest.mark.parametrize("src, expected", [
+        ("|{x : P(x)}| > 1", True),     # 2 > 1
+        ("1 < |{x : P(x)}|", True),     # numeral on the left
+        ("|{x : P(x)}| ≥ 2", True),
+        ("|{x : P(x)}| = 1", False),    # 2 = 1
+        ("|{x : P(x)}| ≠ 1", True),
+        ("|{x : P(x)}| = 2", True),
+    ])
+    def test_a_numeral_next_to_a_cardinality_is_the_number_itself(self, src, expected):
+        assert models(FOL.parse(src), Structure(**self.RENAMED_ONE)) is expected
+
+    def test_a_numeral_elsewhere_still_goes_through_the_constant_table(self):
+        # Only the comparison with a count is numeric. As a predicate argument the
+        # numeral still names whatever the structure says: here the individual 2,
+        # which is not in P.
+        world = Structure(**self.RENAMED_ONE)
+        assert models(FOL.parse("P(1)"), world) is False
+        assert models(FOL.parse("1 = 2"), Structure(domain=[0, 1, 2], constants={"1": 2})) is True
+
     def test_the_suitability_rule_runs_without_a_hand_built_order(self):
         # End-to-end payoff: a threshold rule comparing what a breed brings against
         # what a service demands on the same dimension. Collie clears both services,

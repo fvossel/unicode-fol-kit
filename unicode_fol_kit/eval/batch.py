@@ -16,9 +16,11 @@ once, adding three things a single ``prove()`` call does not need but a
 * **Content-addressed caching.** With ``cache_dir`` set, every task's decision
   is looked up under a key derived from everything that could change the
   answer: the formula, the premises, the backend selection, the logic, the
-  timeout, and the extra options — all of it, not just the formula, because
-  the same formula decided with a different backend chain or a tighter
-  timeout is not the same cache entry. A hit returns the stored
+  timeout, the extra options, and each effective backend's own reported
+  ``solver_version()`` (K1 — see :func:`_cache_key`'s docstring) — all of
+  it, not just the formula, because the same formula decided with a
+  different backend chain, a tighter timeout, or a different external tool
+  version is not the same cache entry. A hit returns the stored
   :class:`~unicode_fol_kit.atp.protocol.Verdict` dict WITHOUT calling any
   backend. Only definitive/UNKNOWN verdicts are cached — an ``"error"``
   verdict (infra failure, e.g. a subprocess crash) is never cached, so a
@@ -48,7 +50,7 @@ import os
 import tempfile
 from typing import Dict, Iterable, List, Optional, Sequence
 
-from ..atp.protocol import ERROR, Verdict, default_chain
+from ..atp.protocol import ERROR, Verdict, default_chain, get_backend
 from ..fol.nodes import Node
 from ..fol.serialize import deserialize as _fol_deserialize
 from ..fol.serialize import serialize as _fol_serialize
@@ -117,7 +119,7 @@ def _cache_key(formula: Node, premises: Sequence[Node],
               options: dict) -> str:
     """sha256 of the canonical JSON of everything that can change the answer.
 
-    Two properties matter for correctness (both pinned by tests):
+    Three properties matter for correctness (all pinned by tests):
 
     - The backend list enters the key IN THE CALLER'S ORDER — ``prove``'s
       chain is order-sensitive (the first definitive backend wins), so
@@ -128,12 +130,35 @@ def _cache_key(formula: Node, premises: Sequence[Node],
       detected logic — because the default chain is install-dependent (the
       optional cvc5 extra joins it when importable): a cache populated
       before an install change must not keep answering for the old chain.
+    - Each concrete backend NAME in the effective chain (the caller's own
+      list, or the resolved default chain above) also contributes its
+      OWN ``solver_version()`` (K1: an upgraded/downgraded external tool —
+      a new Vampire build, a different HETS image, a bumped ``cvc5`` pip
+      package — must invalidate a cache entry the old tool's answer is
+      stored under, exactly like the install-dependent default-chain
+      resolution above). This is queried HERE, in the parent process,
+      once per (cache-missing) task in Pass 1 — BEFORE any
+      ``ProcessPoolExecutor`` dispatch — so it is each backend's own
+      PROCESS-LOCAL memoization (``atp.protocol._binary_version`` for the
+      subprocess-spawning backends, the analogous one-shot caches in
+      ``hets_backend``/``cvc5_backend``) that keeps this cheap across a
+      10k-task batch: the FIRST task naming a given backend pays one
+      subprocess/HTTP/importlib round trip, every later task naming that
+      same backend in the same process is free. Do not "simplify" this
+      away by hoisting the lookup out of the per-task call — the
+      per-backend memoization already IS the hoisting, at finer grain
+      (per binary/server/package, not per whole cache-key computation),
+      and doing it per task here is what lets a mid-batch install change
+      (rare, but the whole point of the 0.108.0-vs-upgraded-HETS-image
+      scenario this item exists for) still show up correctly for every
+      task decided after it.
 
     ``json.dumps(..., sort_keys=True)`` canonicalises dict-key order
-    recursively, so ``options`` needs no manual sorting.
+    recursively, so ``options``/``solver_versions`` need no manual sorting.
     """
     if backends is not None:
-        backend_material = list(backends)
+        effective_backends = list(backends)
+        backend_material = effective_backends
     else:
         effective_logic = logic
         if logic == "auto":
@@ -143,12 +168,17 @@ def _cache_key(formula: Node, premises: Sequence[Node],
             effective_logic = ("modal" if has_modal(formula)
                                or any(has_modal(p) for p in premises)
                                else "fol")
-        backend_material = ["default", effective_logic,
-                           *default_chain(effective_logic)]
+        effective_backends = list(default_chain(effective_logic))
+        backend_material = ["default", effective_logic, *effective_backends]
+
+    solver_versions = {name: get_backend(name).solver_version()
+                       for name in effective_backends}
+
     material = {
         "formula": _fol_serialize(formula),
         "premises": [_fol_serialize(p) for p in premises],
         "backends": backend_material,
+        "solver_versions": solver_versions,
         "logic": logic,
         "timeout": timeout,
         "options": options,

@@ -185,40 +185,77 @@ _REGISTRY_MODE = {
     "fol": "fol", "msfol": "msfol", "msfl": "msfl", "fl": "fl",
     "modal": "modal", "so": "second_order",
     "to": "third_order", "tomodal": "third_order_modal",
+    "modal_sorted": "modal_sorted", "so_sorted": "so_sorted",
     "dependence": "dependence", "linear": "linear", "lambek": "lambek",
 }
 
 
-# Compiled Lark parsers are cached per (registry_mode, registry size): building
-# the Earley grammar is the expensive step, and it depends only on the registered
-# ParserOps. Keying on len(PARSER_OPS) rebuilds automatically if an operator is
-# registered at runtime (the registry is otherwise frozen after import).
+# Compiled Lark parsers are cached per (registry_mode, registry size, algorithm):
+# building either grammar is the expensive step, and it depends only on the
+# registered ParserOps. Keying on len(PARSER_OPS) rebuilds automatically if an
+# operator is registered at runtime (the registry is otherwise frozen after
+# import). The algorithm is part of the key because a hybrid mode (below)
+# caches BOTH an LALR and an Earley build of the SAME grammar side by side.
 _PARSER_CACHE: dict = {}
 
 
-# Modes whose grammar still needs Earley. Everything else is parsed with LALR,
-# which on the kit's own corpus is 30-50x faster for identical trees, identical
-# accept/reject sets and identical source spans (4815 formula-level span
-# comparisons, zero differences) -- measured mode by mode, not assumed.
+# Modes that get an LALR-first, Earley-fallback WRAPPER instead of a single
+# parser. Every other mode is parsed with plain LALR, which on the kit's own
+# corpus is 30-50x faster for identical trees, identical accept/reject sets
+# and identical source spans (4815 formula-level span comparisons, zero
+# differences) -- measured mode by mode, not assumed.
 #
-# `modal` is the one holdout, and for a specific reason rather than caution.
-# After the operator-glyph carve-out in fol/_identifiers.py the two agree on
-# every tree, but eight inputs in the kit's own corpus are still accepted by
-# Earley and refused by LALR, all of one shape: a bare lowercase propositional
-# atom or nominal standing as a whole formula -- `p→(q→p)`, `¬(p∧q)→(¬p∨¬q)`,
-# `@i (P → ◇j)`. Those are legal modal syntax that the modal grammar reaches
-# only through Earley's willingness to explore, so moving that mode would be a
-# silent narrowing of the language, not a speedup. It stays until the grammar
-# says what it means there.
+# `modal` is the one that cannot just move to LALR outright, and for a
+# specific reason rather than caution: `atom_term`'s `"(" term ")"`
+# alternative and `?prefix`'s `"(" formula ")"` alternative (feeding the
+# hybrid-logic bare-nominal rule in _hybrid_nodes.py,
+# `?nominal.-1: (NAME | VARIABLE)`) share an LALR state after `"("` plus a
+# bare lowercase NAME/VARIABLE token. The nominal rule's `-1` priority --
+# added for an unrelated lambda-application disambiguation, see
+# _hybrid_nodes.py -- makes LALR resolve that shared state's reduce/reduce
+# conflict toward the TERM reading even where only the formula/nominal
+# reading can lead to a complete parse, so the parser commits to the wrong
+# branch several tokens early and then fails outright a few tokens later:
+# `(q→p)`, `(p∧q)`, `(p→p)` all raise UnexpectedToken under plain LALR, while
+# the same shapes with an uppercase PREDICATE head, e.g. `(P→P)`, succeed
+# (verified empirically, not just asserted -- see
+# tests/test_parser_backend.py's test_modal_still_accepts_what_only_earley_reaches
+# and the soundness differential in tests/test_modal_lalr_fallback.py). Lark
+# offers only Earley and LALR(1), and this is a genuine LALR(1) conflict the
+# tables resolve by priority, not 8 special-cased strings, so eliminating it
+# cleanly would need nontrivial grammar state-splitting with no guaranteed
+# clean answer -- exactly the kind of grammar surgery that risks the
+# silent-narrowing this project refuses to ship.
+#
+# So `modal` keeps Earley as a FALLBACK rather than as the mode's parser:
+# MSFLParser builds both an LALR parser (the fast path, taken -- and the only
+# one taken -- for every input this conflict doesn't touch) and the Earley
+# parser (the previous, exact parser for this language), tries LALR first,
+# and falls back to Earley transparently on ANY of Lark's three failure
+# exceptions (UnexpectedCharacters/UnexpectedToken/UnexpectedEOF -- the
+# LALR/Earley disagreement is not confined to one exception class, so
+# narrowing the retry to just UnexpectedToken would silently keep exactly the
+# narrowing this wrapper exists to remove). Earley remains the ground truth of
+# what the mode accepts, and what tree it builds, on every input; LALR only
+# ever makes an accepted formula faster to parse, never changes what parses.
+# See MSFLParser._parse_tree.
 # ``tomodal`` inherits the modal mode's operators wholesale, so it inherits
-# the reason too. ``to`` (classical third order) does not, and parses with
-# LALR like the second-order mode it extends.
-_EARLEY_MODES = frozenset({"modal", "tomodal"})
+# the reason too. ``modal_sorted`` (modal=True, many_sorted=True) ALSO
+# inherits the modal mode's operators wholesale -- including the hybrid
+# nominal rule -- via _clone_parser_ops_sorted (fol/nodes.py), so it inherits
+# the same LALR/Earley conflict and needs the same fallback. ``to`` (classical
+# third order) and ``so_sorted`` (second_order=True, many_sorted=True) do not
+# inherit any hybrid/modal operator, and parse with plain LALR like the modes
+# they extend.
+_HYBRID_MODES = frozenset({"modal", "tomodal", "modal_sorted"})
 
 
 # Modes carrying the agent-indexed epistemic/doxastic operators, whose free
 # agent variables are resolved to named agents after the parse.
-_AGENT_MODES = frozenset({"modal", "tomodal"})
+# ``resolve_agent_variables`` (fol/_modal_nodes.py) already tracks a bound
+# object variable through SortedQuantifier as well as plain Quantifier, so
+# ``modal_sorted`` needs no separate handling beyond being listed here.
+_AGENT_MODES = frozenset({"modal", "tomodal", "modal_sorted"})
 
 # The third-order modes, whose formulas are TYPE-CHECKED after the parse:
 # an argument slot holds an individual or a property, never both, and only
@@ -226,8 +263,30 @@ _AGENT_MODES = frozenset({"modal", "tomodal"})
 _THIRD_ORDER_MODES = frozenset({"to", "tomodal"})
 
 
-def _parser_kind(mode: str) -> str:
-    return "earley" if mode in _EARLEY_MODES else "lalr"
+def _cached_parser(registry_mode: str, kind: str) -> Lark:
+    """Return the compiled Lark parser for ``(registry_mode, kind)``, building
+    and caching it on first request. ``kind`` is ``"lalr"`` or ``"earley"``
+    (Lark's own ``parser=`` values) -- see ``_PARSER_CACHE`` and
+    ``_HYBRID_MODES``. A hybrid mode calls this twice, once per kind, and gets
+    two independent cached parsers for the SAME grammar text.
+    """
+    cache_key = (registry_mode, len(PARSER_OPS), kind)
+    parser = _PARSER_CACHE.get(cache_key)
+    if parser is None:
+        grammar_text = _allow_single_letter_function_calls(build_grammar(registry_mode))
+        # propagate_positions=True costs nothing parse()-observable — it only
+        # adds a `.meta` (start_pos/end_pos/line/column/end_line/end_column)
+        # to every Tree Lark builds, which plain parse() never looks at. It is
+        # what parse_with_spans (below) reads to build its SpanMap; verified
+        # empirically (see spans.py's module docstring / the "prove it on a
+        # real example" section of this change's report) that both Lark
+        # backends populate it accurately, including for Tokens, without
+        # needing anything beyond this flag.
+        parser = Lark(grammar_text, parser=kind,
+                      import_paths=[str(_GRAMMARS_DIR)],
+                      propagate_positions=True)
+        _PARSER_CACHE[cache_key] = parser
+    return parser
 
 
 
@@ -623,15 +682,22 @@ class MSFLParser:
             annotations (e.g. ``∀x:Human P(x)``, ``alice:Human``).
         fuzzy: if True, use Łukasiewicz operators (⊗ ⊕ for strong
             conjunction/disjunction; ¬ → ↔ map to Łukasiewicz nodes).
-        modal: if True, parse classical unsorted FOL extended with modal,
-            epistemic, doxastic, temporal, and deontic operators
-            (□ ◇ K_a B_a Ⓖ Ⓕ Ⓝ Ⓤ Ⓞ Ⓟ). Cannot be combined with many_sorted or
-            fuzzy in v1.
-        second_order: if True, parse classical unsorted FOL extended with
+        modal: if True, parse FOL extended with modal, epistemic, doxastic,
+            temporal, and deontic operators (□ ◇ K_a B_a Ⓖ Ⓕ Ⓝ Ⓤ Ⓞ Ⓟ) over
+            classical unsorted quantifiers/constants, or — combined with
+            many_sorted=True — over SORTED quantifiers/constants (every
+            binder then requires a sort annotation, exactly like plain
+            MSFOL: ``□∀x:Human (Mortal(x))``). Cannot be combined with fuzzy
+            in v1.
+        second_order: if True, parse classical FOL extended with
             second-order quantifiers over predicate variables (∀P / ∃P, where P
             is an uppercase PREDICATE; the bound predicate's arity is inferred
-            from its applications in the body). Cannot be combined with
-            many_sorted, fuzzy, or modal in v1.
+            from its applications in the body) over classical unsorted
+            individual quantifiers/constants, or — combined with
+            many_sorted=True — over SORTED ones (the predicate quantifier
+            itself stays unsorted; only the ∀x/∃x individual binders and bare
+            constants need a sort). Cannot be combined with fuzzy or modal
+            in v1.
         third_order: if True, parse second-order syntax extended with predicates
             in ARGUMENT position — ``Positive(G)``, ``Essence(G, x)``,
             ``Positive(λx. ¬G(x))``, which parse to an Atom over a
@@ -654,13 +720,22 @@ class MSFLParser:
         (True,  False) → MSFOL: classical ∧∨¬→↔⊕, sorted quantifiers/constants
         (True,  True)  → MSFL:  Łukasiewicz operators, sorted quantifiers/constants
         (False, True)  → FL:    Łukasiewicz operators, unsorted quantifiers/constants
-        modal=True        → MODAL: classical unsorted FOL + modal/temporal/hybrid operators
-        second_order=True → SO:    classical unsorted FOL + second-order quantifiers (∀P / ∃P)
-        third_order=True  → TO:    SO + predicates in argument position (Positive(G))
-        third_order+modal → TOM:   TO + the modal operator family
-        dependence=True   → DEP:   team-semantic dependence/IF fragment
-        linear=True       → ILL:   propositional intuitionistic linear logic
-        lambek=True       → L:     Lambek-calculus category types
+        modal=True                    → MODAL:  classical unsorted FOL + modal/temporal/hybrid operators
+        modal+many_sorted             → MSMODAL: MODAL over SORTED quantifiers/constants
+        second_order=True             → SO:     classical unsorted FOL + second-order quantifiers (∀P / ∃P)
+        second_order+many_sorted      → MSSO:   SO over SORTED individual quantifiers/constants
+        third_order=True              → TO:     SO + predicates in argument position (Positive(G))
+        third_order+modal             → TOM:    TO + the modal operator family
+        dependence=True                → DEP:   team-semantic dependence/IF fragment
+        linear=True                    → ILL:   propositional intuitionistic linear logic
+        lambek=True                    → L:     Lambek-calculus category types
+
+    ``modal+many_sorted`` and ``second_order+many_sorted`` are NOT third-order:
+    combining many_sorted with third_order stays refused (how a sort interacts
+    with third-order's individual-vs-property "slot" inference is a separate,
+    open design question) — use third_order (optionally with modal=True) for
+    the third-order legs, and many_sorted with at most one of modal /
+    second_order for the sorted legs.
     """
 
     def __init__(self, many_sorted: bool = False, fuzzy: bool = False,
@@ -695,22 +770,24 @@ class MSFLParser:
                 )
             self._mode = "tomodal" if modal else "to"
         elif second_order:
-            if many_sorted or fuzzy or modal:
+            if fuzzy or modal:
                 raise ValueError(
-                    "second_order=True cannot be combined with many_sorted, fuzzy, "
-                    "or modal in v1; second-order mode is classical unsorted FOL "
-                    "plus second-order quantifiers over predicate variables. Use "
+                    "second_order=True cannot be combined with fuzzy or modal in "
+                    "v1; second-order mode is FOL plus second-order quantifiers "
+                    "over predicate variables (optionally sorted, via "
+                    "many_sorted=True, on the individual side). Use "
                     "third_order=True (optionally with modal=True) for the mode "
-                    "that does combine them."
+                    "that combines second-order syntax with modal operators."
                 )
-            self._mode = "so"
+            self._mode = "so_sorted" if many_sorted else "so"
         elif modal:
-            if many_sorted or fuzzy:
+            if fuzzy:
                 raise ValueError(
-                    "modal=True cannot be combined with many_sorted or fuzzy in v1; "
-                    "modal mode is classical unsorted FOL plus modal operators."
+                    "modal=True cannot be combined with fuzzy in v1; modal mode "
+                    "is FOL plus modal operators (optionally many-sorted, via "
+                    "many_sorted=True)."
                 )
-            self._mode = "modal"
+            self._mode = "modal_sorted" if many_sorted else "modal"
         elif not many_sorted and not fuzzy:
             self._mode = "fol"
         elif many_sorted and not fuzzy:
@@ -728,35 +805,56 @@ class MSFLParser:
         # (VARIABLE-headed) function calls — see
         # _allow_single_letter_function_calls above.
         registry_mode = _REGISTRY_MODE[self._mode]
-        kind = _parser_kind(self._mode)
-        # The kind belongs in the key: two modes could share a registry mode
-        # while disagreeing about which parser serves them, and a cache that
-        # ignored that would hand one of them the other's parser.
-        cache_key = (registry_mode, len(PARSER_OPS), kind)
-        parser = _PARSER_CACHE.get(cache_key)
-        if parser is None:
-            grammar_text = _allow_single_letter_function_calls(build_grammar(registry_mode))
-            # propagate_positions=True costs nothing parse()-observable — it only
-            # adds a `.meta` (start_pos/end_pos/line/column/end_line/end_column)
-            # to every Tree Lark builds, which plain parse() never looks at. It is
-            # what parse_with_spans (below) reads to build its SpanMap; verified
-            # empirically (see spans.py's module docstring / the "prove it on a
-            # real example" section of this change's report) that Lark's Earley
-            # parser populates it accurately, including for Tokens, without
-            # needing anything beyond this flag.
-            parser = Lark(grammar_text, parser=kind,
-                          import_paths=[str(_GRAMMARS_DIR)],
-                          propagate_positions=True)
-            _PARSER_CACHE[cache_key] = parser
-        # self.parser is public: NamingError/ParsingError use parser.terminals and parser.lex()
-        self.parser = parser
-        # LALR reports a token it cannot shift; Earley's dynamic lexer reported
-        # the same failure one level down, as a character it could not scan.
-        # _translate_token_failure below turns the former back into the latter
-        # so the error model does not depend on which parser serves the mode.
-        self._lalr = kind == "lalr"
+        self._hybrid = self._mode in _HYBRID_MODES
+        # self.parser is public: NamingError/ParsingError use parser.terminals
+        # and parser.lex(). It is always the LALR parser now -- the fast path
+        # for every mode, hybrid or not (see _cached_parser / _HYBRID_MODES).
+        self.parser = _cached_parser(registry_mode, "lalr")
+        # The Earley fallback, built only for a hybrid mode; None otherwise.
+        # See _parse_tree for how the two are combined.
+        self._earley_parser = _cached_parser(registry_mode, "earley") if self._hybrid else None
         self._transformer = _assemble_transformer(registry_mode)
         self._registry_mode = registry_mode  # parse_with_spans re-derives its own transformer from this
+
+    def _parse_tree(self, text: str):
+        """Parse ``text`` into a raw Lark ``Tree`` with this mode's LALR
+        parser, falling back to the Earley parser for a hybrid mode
+        (``_HYBRID_MODES``) when LALR refuses.
+
+        For a hybrid mode, ALL THREE of Lark's failure exceptions
+        (``UnexpectedCharacters``/``UnexpectedToken``/``UnexpectedEOF``)
+        trigger the retry -- the LALR/Earley disagreement documented at
+        ``_HYBRID_MODES`` is not confined to one exception class, so
+        narrowing the retry to just ``UnexpectedToken`` would silently keep
+        exactly the narrowing this wrapper exists to remove.
+
+        If Earley ALSO fails, its exception is tagged
+        (``_from_earley_fallback = True``) before it propagates, so
+        ``parse``/``parse_with_spans`` (via ``_error_parser``/
+        ``_token_failure``) know to report it untranslated -- through the
+        Earley parser and without the LALR-shape reinterpretation below --
+        exactly as this mode's error model behaved before this wrapper
+        existed, since that mapping was calibrated for LALR failures only.
+        """
+        if not self._hybrid:
+            return self.parser.parse(text)
+        try:
+            return self.parser.parse(text)
+        except (UnexpectedCharacters, UnexpectedToken, UnexpectedEOF):
+            try:
+                return self._earley_parser.parse(text)
+            except (UnexpectedCharacters, UnexpectedToken, UnexpectedEOF) as exc:
+                exc._from_earley_fallback = True
+                raise
+
+    def _error_parser(self, exc) -> Lark:
+        """Which parser instance produced ``exc``: the Earley fallback if
+        ``_parse_tree`` tagged it, else this mode's own (LALR) parser. Used to
+        build NamingError/ParsingError against the terminal patterns of the
+        parser that actually raised, not always the primary one."""
+        if getattr(exc, "_from_earley_fallback", False):
+            return self._earley_parser
+        return self.parser
 
     def _token_failure(self, exc: UnexpectedToken, text: str):
         """Turn lark's "cannot shift this token" into the kit's error model.
@@ -770,7 +868,13 @@ class MSFLParser:
         lexer has no such scruples: it tokenises first and the parser refuses
         afterwards, so the SAME input arrives here as UnexpectedToken.
 
-        The translation is not a guess. Measured over the 1310-line FOLIO
+        For a hybrid mode whose Earley FALLBACK is the one that raised this
+        (``_from_earley_fallback``), no translation applies at all: that
+        exception already carries Earley's own semantics (see
+        ``_parse_tree``), so it is reported exactly as the old, pre-wrapper,
+        pure-Earley modal parser would have.
+
+        The translation below is not a guess. Measured over the 1310-line FOLIO
         fixture plus hand-written malformed shapes, the two parsers' failures
         line up exactly, with no overlap in either direction:
 
@@ -791,8 +895,8 @@ class MSFLParser:
         Earley parsers keep the old routing: their UnexpectedToken means
         something else, and this mapping is calibrated for LALR only.
         """
-        if not self._lalr:
-            return ParsingError(self.parser, exc, text, mode=self._mode)
+        if getattr(exc, "_from_earley_fallback", False):
+            return ParsingError(self._earley_parser, exc, text, mode=self._mode)
         if exc.token.type == "$END":
             # Re-shaped as an end-of-input failure so ParsingError takes its
             # "Incomplete formula" branch rather than reporting an unexpected
@@ -832,7 +936,7 @@ class MSFLParser:
                 variable applied at conflicting arities (ConflictingArityError).
         """
         try:
-            tree = self.parser.parse(text)
+            tree = self._parse_tree(text)
             ast = self._transformer.transform(tree)
             ast = resolve_lambda_scope(ast)
             if self._mode in _AGENT_MODES:
@@ -847,11 +951,11 @@ class MSFLParser:
                 analyse_signatures([ast])
             return ast
         except UnexpectedCharacters as e:
-            raise NamingError(self.parser, e, text, mode=self._mode)
+            raise NamingError(self._error_parser(e), e, text, mode=self._mode)
         except UnexpectedToken as e:
             raise self._token_failure(e, text)
         except UnexpectedEOF as e:
-            raise ParsingError(self.parser, e, text, mode=self._mode)
+            raise ParsingError(self._error_parser(e), e, text, mode=self._mode)
         except VisitError as e:
             # A transformer handler raised. Surface a ParsingError it produced
             # (e.g. ConflictingArityError from second-order arity inference)
@@ -865,7 +969,8 @@ class MSFLParser:
 
         Returns a :class:`~unicode_fol_kit.fol.spans.SpannedFormula` — ``.formula``
         is exactly what ``parse(text)`` would return (same AST, unchanged; this
-        method runs the SAME cached ``self.parser`` and the same
+        method runs the SAME ``self._parse_tree`` LALR-first/Earley-fallback
+        lookup (see ``_HYBRID_MODES``) and the same
         ``resolve_lambda_scope``/``resolve_agent_variables`` rewrites — the span
         bookkeeping is additive, nothing about how the AST itself is built
         changes), and ``.spans`` is a :class:`~unicode_fol_kit.fol.spans.SpanMap`
@@ -889,7 +994,7 @@ class MSFLParser:
         recovered exactly for every node.
         """
         try:
-            tree = self.parser.parse(text)
+            tree = self._parse_tree(text)
             span_transformer = _assemble_span_transformer(self._registry_mode, text)
             pre_ast = span_transformer.transform(tree)
             id_extent = span_transformer.id_extent
@@ -906,11 +1011,11 @@ class MSFLParser:
                 analyse_signatures([ast])
             return SpannedFormula(ast, spans)
         except UnexpectedCharacters as e:
-            raise NamingError(self.parser, e, text, mode=self._mode)
+            raise NamingError(self._error_parser(e), e, text, mode=self._mode)
         except UnexpectedToken as e:
             raise self._token_failure(e, text)
         except UnexpectedEOF as e:
-            raise ParsingError(self.parser, e, text, mode=self._mode)
+            raise ParsingError(self._error_parser(e), e, text, mode=self._mode)
         except VisitError as e:
             if isinstance(e.orig_exc, ParsingError):
                 raise e.orig_exc

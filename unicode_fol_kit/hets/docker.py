@@ -56,6 +56,45 @@ module is built to prevent (see its module docstring) — callers of
 this module and the client only ever pass the reasoner's own ``result``
 string through unmodified.
 
+OWL 2 / description-logic support (C43 Phase-0 spike, verified live
+2026-09-18) — a genuine, working DL reasoner IS present, but only one
+--------------------------------------------------------------------------
+This image DOES parse OWL 2 (Manchester ``.omn`` and Functional-Style
+``.ofn`` alike — an uploaded file's ``GET /dg/<iri>?format=json`` reports
+``"logic": "OWL"`` for the resulting node, same as any CASL node). Its
+``GET /provers/<iri>?format=json`` for an OWL-typed file lists ``Fact,
+eprover, darwin, darwin-non-fd, Vampire, MathServeBroker, SPASS, EProver,
+Darwin`` — of these, only ``Fact`` is a genuine DL reasoner: it is
+`FaCT++ <http://owl.cs.manchester.ac.uk/tools/fact/>`_ 1.6.3
+(live-confirmed inside the image: ``/usr/lib/hets/hets-owl-tools/lib/
+uk.ac.manchester.cs.owl.factplusplus-P5.0-v1.6.3.1.jar`` plus its native
+``libFaCTPlusPlusJNI.so``), **LGPL-2.1-licensed** (confirmed from FaCT++'s
+own project page and the FSF Free Software Directory) — no AGPL callout
+needed here, unlike the hypothetical Pellet-backed route the roadmap item
+that added this section anticipated: neither ``Pellet`` nor ``HermiT`` is
+offered by this image or its REST API at all (``POST /consistency-check``
+with ``reasoner: "Pellet"`` answers ``"*** Error:\nuser error (no cons
+checker found)"``).
+
+Two more OWL-specific quirks, both load-bearing for
+:mod:`unicode_fol_kit.hets.owl_backend` (the module that actually calls
+``Fact``, and the fuller write-up of all of this — see its own module
+docstring's "Phase 0 spike findings" for the exact REST calls/responses):
+
+* **Leaving ``reasoner`` unset is broken for OWL input.** Unlike the CASL/FOL
+  route above (where an unset reasoner is fine and lets Hets choose),
+  omitting ``reasoner`` for an OWL file makes Hets pick an
+  ``OWL22CASL:CASL2SoftFOL``-family translation that can crash outright —
+  live-observed on an ontology as simple as one class asserted a subclass of
+  ``owl:Nothing``: ``*** Error: SuleCFOL2SoftFOL.transPREDSYMB: unknown
+  pred: Qual_pred_name owl_uNothing ...``. Always pass ``reasoner="Fact"``
+  explicitly for OWL input.
+* **``"Timeout\n"`` is a third, genuine result value** (alongside
+  ``"Consistent\n"``/``"Inconsistent\n"``) for ``POST /consistency-check``
+  on an OWL node — live-confirmed by forcing ``timeLimit: 0``. It must be
+  treated the same way ``"Open\n"`` is treated above: UNKNOWN, never
+  silently folded into either verdict.
+
 Lifecycle
 ---------
 :class:`HetsContainer` runs, health-polls, and stops one
@@ -88,7 +127,43 @@ __all__ = [
     "HETS_IMAGE", "HetsContainer", "discover_hets_url", "hets_available",
 ]
 
-HETS_IMAGE = "spechub2/hets:latest"
+# Digest-pinned to the exact build this module's docstring already claims to
+# have verified (HETS 0.108.0, 2026-08-12) — a bare ``:latest`` tag can move
+# out from under this kit without warning, silently swapping in an image
+# whose reasoner-availability quirks (see the module docstring's "Container
+# image quirks" section) were never re-checked.
+#
+# How this digest was verified to BE that build (re-run this whenever the
+# image is deliberately upgraded — see the "re-pinning" note below):
+#
+# 1. Two INDEPENDENT digest sources agreed on the manifest-list digest below
+#    for the ``spechub2/hets:latest`` tag, live on 2026-09-17:
+#       - Docker Hub's public tag API:
+#         ``GET https://hub.docker.com/v2/repositories/spechub2/hets/tags/latest``
+#         -> top-level ``"digest"``.
+#       - The Docker Registry v2 HTTP API itself (bypassing Docker Hub's own
+#         web API entirely): an anonymous pull token from
+#         ``https://auth.docker.io/token?service=registry.docker.io&scope=repository:spechub2/hets:pull``,
+#         then ``GET https://registry-1.docker.io/v2/spechub2/hets/manifests/latest``
+#         with an ``Accept: application/vnd.oci.image.index.v1+json`` header
+#         -> the ``Docker-Content-Digest`` response header. This is the same
+#        digest ``docker pull``/``docker manifest inspect`` would resolve
+#         ``:latest`` to.
+# 2. `docker pull spechub2/hets@<this digest>` (Docker Desktop, live) then
+#    `docker run -d --rm -p 18000:8000 spechub2/hets@<this digest>` and
+#    `curl http://localhost:18000/version` answered
+#    ``"The Heterogeneous Tool Set, version 0.108.0"`` verbatim — the exact
+#    version this module's docstring names, confirmed by the ``/version``
+#    banner itself, not just by tag metadata.
+#
+# Re-pinning for a deliberate upgrade: `docker pull spechub2/hets:latest`,
+# then `docker inspect --format='{{index .RepoDigests 0}}' spechub2/hets:latest`
+# (or repeat step 1 above against the registry API without a local pull),
+# THEN repeat step 2 to confirm the new digest's own ``/version`` banner and
+# re-verify the "Container image quirks" section below still holds before
+# updating this constant — a digest bump with no re-verification would
+# reintroduce exactly the silent-drift risk this pin exists to close.
+HETS_IMAGE = "spechub2/hets@sha256:406dcf34fb2486a99829a57583a2b247163ed99d1f9ace2d66ebedab9d47528a"
 
 _DEFAULT_PORT = 8000
 _VERSION_PATH = "/version"

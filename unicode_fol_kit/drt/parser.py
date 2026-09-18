@@ -95,7 +95,7 @@ silently mis-parsed::
         LEMMA     : /[a-z][a-z_]*/                  # underscore-joined lowercase words
         POS       : one of n, v, a, r, s
         SENSE_NUM : exactly two digits
-    ROLE     := /[A-Z][a-zA-Z0-9]*/                 # e.g. Agent, Patient, Theme
+    ROLE     := /[A-Z][a-zA-Z0-9]*(-[A-Z][a-zA-Z0-9]*)?/  # e.g. Agent, Patient, Co-Theme
     target   := OFFSET | STRING
         OFFSET  : /[+-][0-9]+/                      # relative CONTENT-line index (see below)
         STRING  : a double-quoted literal
@@ -121,6 +121,15 @@ silently mis-parsed::
   (:class:`SBNMapping.predicates`) since it is lossy (case and the dots are gone).
 * **Role -> binary predicate**, exactly as written (``Agent``) applied to
   ``(this_line's_referent, target)`` — i.e. ``Agent(e3, e1)`` style, per the roadmap.
+  **A role name may carry one hyphenated segment** (``Co-Theme``, ``Co-Agent``,
+  ``Co-Patient``, ...) — VerbNet's own "Co-" compounding, common throughout real PMB
+  releases; the hyphen is dropped when the role becomes a predicate name (``Co-Theme``
+  -> ``CoTheme``, since the kit PREDICATE convention has no hyphen). This is part of the
+  BASE grammar above, in force in both SBN dialects this function reads (see 2b below) —
+  real PMB documents use ``Co-``-compounded roles whether or not they also happen to use
+  the connector dialect's own box-operator mechanism (e.g. a flat document with no
+  ``NEGATION`` line at all can still carry a ``Co-Theme`` role), so this widening cannot
+  be gated to one dialect without silently refusing real, in-scope input.
 * **The only supported box-changing operator is ``NEGATION``.** Any other ALL-CAPS token
   in sense-token position (``POSSIBLE``, ``NECESSARY``, ``DISCOURSE_REFERENCE``, PMB's
   other real operators, ...) is REFUSED BY NAME: this subset is negation-only. A
@@ -131,6 +140,15 @@ silently mis-parsed::
   returned (:class:`SBNMapping.constants`) — unlike the box notation's escape-hatch
   quoting, a quoted literal is SBN's ONLY way to write a constant, so recovering the
   original matters.
+* **Bare (unquoted) constants**: the four deictic references Bos (2023) §2.1 documents
+  (``now``/``speaker``/``hearer``/``here`` — utterance time/speaker/addressee/location) and
+  a bare UNSIGNED integer (``Quantity 3``) are also accepted as constant targets, routed
+  through the same :class:`NameMapping` as quoted constants. Unambiguous with an OFFSET
+  target, which always carries a sign.
+* **A comment may itself contain a ``%``, ANSI colour escapes, or start with the PMB release
+  format's own ``%%%``-prefixed generation-command header** — all of that is already inside
+  the comment by the ``COMMENT`` rule above (everything from the first ``%`` on the line),
+  so none of it needs special handling.
 
 **What is explicitly out of scope** (refused by name, never silently dropped): event
 quantification / plural referents, presupposition triggers, any operator besides NEGATION,
@@ -138,8 +156,69 @@ multi-word discourse (this parses ONE sbn "document" — i.e. one sentence's wor
 per call, matching this kit subpackage's single-sentence-plus-anaphora scope; see the
 ``unicode_fol_kit.drt`` package docstring).
 
-The 2-3 SBN examples exercised in ``tests/test_drt.py`` are CONSTRUCTED BY HAND for this
-subset's test coverage — they are illustrative, not verbatim PMB corpus data.
+=================================================================================
+2b. A second SBN dialect: PMB's own released format (the "connector" dialect)
+=================================================================================
+
+The dialect above was hand-written before any real PMB release was measured against it.
+PMB's actual gold releases (verified against pmb-5.1.0's
+``data/<lang>/gold/p<NN>/d<NNNN>/<lang>.drs.sbn`` files) use a DIFFERENT, but fully
+documented, mechanism instead of textual indentation — Bos (2023), "The Sequence Notation:
+Catching Complex Meanings in Simple Graphs" (IWCS 2023), §§2.1/3.4/4.1.
+:func:`parse_sbn` recognizes it automatically (see "Dialect selection" below) and reads it
+as follows — everything not listed here (LEMMA/POS/SENSE_NUM, roles, quoted constants,
+comments, ...) is exactly as in the dialect above:
+
+* **Leading whitespace is PURE COSMETIC COLUMN ALIGNMENT**, never nesting depth (verified:
+  no CONCEPT line in pmb-5.1.0 ever carries leading whitespace; only box-operator lines do,
+  padding them to the sense-token column for human readability) — this dialect ignores it
+  entirely, on every line, and never refuses a space the indentation dialect above would.
+* **A box-operator line carries a trailing CONNECTOR token** (``<N``, a positive integer)
+  instead of relying on indentation. Contexts (boxes) are numbered by INTRODUCTION ORDER:
+  context 0 is the outermost, implicit context holding everything before the first
+  separator; the K-th separator encountered (1-based, document order) introduces context K.
+  Its connector ``<N`` (``1 <= N <= K``) says the separator's OWN reading (``Neg`` for
+  ``NEGATION``) is a CONDITION of context ``K - N`` — e.g. ``<1`` attaches to the immediately
+  preceding context, ``<2`` skips one further back, and so on; several separators may attach
+  to the SAME earlier context (e.g. "she is neither rich nor famous": ``NEGATION <1`` then
+  ``NEGATION <2``, both landing on context 0, giving ``¬Rich(x) ∧ ¬Famous(x)`` rather than a
+  nested double negation — Bos 2023 Figure 4). As above, only ``NEGATION`` is a supported
+  separator; every other name PMB emits (``POSSIBILITY``, ``NECESSITY``, and the SDRT
+  discourse relations ``CONTINUATION``, ``CONTRAST``, ``CONJUNCTION``, ...) is refused by
+  name — this subset's DRS conditions have no modal-box or discourse-relation reading for
+  them. A FORWARD connector (``>N``) is refused too (it needs two-pass resolution this
+  subset does not implement).
+* **Role-hook indices (``+N``/``-N``) count CONCEPT (sense) lines ONLY**, skipping every
+  box-operator line entirely — DELIBERATELY DIFFERENT from the dialect above's own
+  numbering (which counts box-operator lines too, so that offsets stay stable across them):
+  this is what Bos (2023) §3.3 and pmb-5.1.0 itself actually implement. Changing the other
+  dialect's existing (self-consistent, if non-standard) numbering would break its own
+  already-accepted inputs, so both numbering conventions coexist, one per dialect.
+* A role target that is itself a connector (``Proposition >1`` — an embedded-clause /
+  propositional-attitude argument pointing AT A CONTEXT rather than a concept) is refused by
+  name: this subset only resolves entity-valued role targets.
+* Role names may carry one hyphenated segment (``Co-Theme``, ``Co-Agent``, ...) — this is
+  the BASE grammar's own rule (see the ``ROLE`` widening in section 2 above), not a
+  connector-dialect addition; it is repeated here only because ``Co-`` compounding is
+  especially common throughout pmb-5.1.0's connector-dialect documents. Comparison/
+  temporal/spatial OPERATOR tokens (``EQU``, ``TPR``, ...) are lexically indistinguishable
+  from roles in this subset and get the SAME uninterpreted binary-predicate treatment —
+  none of their axiomatic content (e.g. ``EQU``'s reflexivity) is asserted, only the atom
+  itself.
+
+**Dialect selection.** :func:`parse_sbn` looks at every box-operator line up front: if ANY
+of them carries a trailing connector token, the WHOLE document is read in the connector
+dialect (every box-operator line must then carry one, or the specific line is named and
+refused); otherwise it is read in the indentation dialect above (a bare ``NEGATION``, TAB
+depth). The two dialects' numbering/indentation conventions are per-document, never mixed
+within one call — this is exactly why every existing ``parse_sbn`` input (none of which
+contains a connector token) keeps parsing to the identical DRS it always has.
+
+The 2-3 SBN examples exercised in ``tests/test_drt.py`` for the indentation dialect are
+CONSTRUCTED BY HAND — they are illustrative, not verbatim PMB corpus data. The connector
+dialect is exercised against both hand-written fixtures and, when a caller points
+``UFK_PMB_SBN_DIR`` at one, a real PMB gold release — see
+:mod:`unicode_fol_kit.eval.datasets.pmb` and ``tests/test_datasets_pmb.py``.
 """
 
 import re
@@ -424,11 +503,16 @@ def parse_drs(text: str) -> DRS:
 # =============================================================================
 
 _SENSE_RE = re.compile(r"^([a-z][a-z_]*)\.([nvars])\.([0-9]{2})$")
-_ROLE_RE = re.compile(r"^[A-Z][a-zA-Z0-9]*$")
+_ROLE_RE = re.compile(r"^[A-Z][a-zA-Z0-9]*(?:-[A-Z][a-zA-Z0-9]*)?$")
 _OFFSET_RE = re.compile(r"^([+-])([0-9]+)$")
 _ALLCAPS_RE = re.compile(r"^[A-Z_]+$")
+_CONNECTOR_RE = re.compile(r"^([<>])([0-9]+)$")
+_BARE_INTEGER_RE = re.compile(r"^[0-9]+$")
 
 _NEGATION = "NEGATION"
+#: The deictic-reference constants Bos (2023) §2.1 documents as bare (unquoted)
+#: literals: the utterance time, its speaker, its addressee, and its location.
+_DEICTIC_CONSTANTS = frozenset({"now", "speaker", "hearer", "here"})
 
 
 @dataclass(frozen=True)
@@ -436,8 +520,11 @@ class SBNMapping:
     """The mappings :func:`parse_sbn` used, so a lossy sanitization can be undone.
 
     ``predicates`` maps each original sense token (``"person.n.01"``) to the predicate
-    name it became (``"PersonN01"``); ``constants`` maps each original (lower-cased)
-    quoted string to its sanitized constant name.
+    name it became (``"PersonN01"``); ``constants`` maps each original literal constant
+    token — a (lower-cased) quoted string, or one of this subset's bare literals (a
+    deictic reference or a bare integer, accepted in either dialect — see the module
+    docstring's "Bare (unquoted) constants" bullet, part of the shared base grammar) —
+    to its sanitized constant name.
     """
 
     predicates: Dict[str, str]
@@ -460,6 +547,16 @@ def _sbn_predicate_name(token: str) -> str:
     lemma, pos, sense = m.groups()
     pascal = "".join(part[:1].upper() + part[1:] for part in lemma.split("_") if part)
     return f"{pascal}{pos.upper()}{sense}"
+
+
+def _sbn_role_predicate_name(role: str) -> str:
+    """A ROLE (or comparison/temporal/spatial OPERATOR token, e.g. ``EQU`` — lexically
+    indistinguishable from a role in this subset, see the module docstring) as a legal
+    kit predicate name. Each hyphen-segment of a VerbNet 'Co-' compound (``Co-Theme``,
+    :data:`_ROLE_RE`) is already uppercase-initial, so dropping the hyphen keeps it
+    PascalCase (``CoTheme``) — the kit PREDICATE convention has no hyphen. A no-op for
+    every role that has none, so this changes nothing for an already-accepted input."""
+    return role.replace("-", "")
 
 
 def _split_respecting_quotes(s: str, lineno: int) -> List[str]:
@@ -489,24 +586,50 @@ def _split_respecting_quotes(s: str, lineno: int) -> List[str]:
     return tokens
 
 
-def _split_sbn_lines(text: str) -> List[Tuple[str, int, int]]:
-    """Pass 1: strip comments/blanks, measure TAB-only indentation depth. Returns
-    ``(content, lineno, depth)`` triples for every content line."""
-    out: List[Tuple[str, int, int]] = []
+def _split_sbn_lines(text: str) -> List[Tuple[str, int, str]]:
+    """Pass 1: strip comments (a PMB ``%%%``-prefixed generation-command header is just
+    another ``%...`` comment under this rule) and blank lines. Returns ``(content,
+    lineno, leading)`` triples, ``leading`` the RAW leading-whitespace substring —
+    whether it means TAB-only nesting depth or is pure cosmetic column alignment
+    depends on which of :func:`parse_sbn`'s two dialects the document uses (decided by
+    :func:`_uses_connector_dialect` once the whole document has been split), so it is
+    NOT validated here."""
+    out: List[Tuple[str, int, str]] = []
     for lineno, raw in enumerate(text.split("\n"), start=1):
         line = raw.split("%", 1)[0]
         if not line.strip():
             continue
         no_lead = line.lstrip(" \t")
         leading = line[:len(line) - len(no_lead)]
+        out.append((no_lead.strip(), lineno, leading))
+    if not out:
+        raise SBNSyntaxError("parse_sbn: empty input (no content lines)")
+    return out
+
+
+def _require_tab_indentation(lines: List[Tuple[str, int, str]]) -> None:
+    """The indentation dialect's own rule (see the module docstring): leading
+    whitespace is nesting depth and must be TAB-only. Raises on the first line that
+    isn't — unchanged from before the connector dialect existed."""
+    for _, lineno, leading in lines:
         if " " in leading:
             raise SBNSyntaxError(
                 f"parse_sbn: line {lineno} is indented with a space character; this "
                 f"SBN subset requires TAB-only indentation")
-        out.append((no_lead.strip(), lineno, len(leading)))
-    if not out:
-        raise SBNSyntaxError("parse_sbn: empty input (no content lines)")
-    return out
+
+
+def _uses_connector_dialect(lines: List[Tuple[str, int, str]]) -> bool:
+    """True iff any box-operator line carries a trailing CONNECTOR token (``<N`` /
+    ``>N``) — decides which of :func:`parse_sbn`'s two dialects (see the module
+    docstring's "Dialect selection") to read the WHOLE document in. None of the
+    dialect-1 fixtures in ``tests/test_drt.py`` contain one, so they always resolve
+    False here, keeping their parse behaviour exactly as before."""
+    for content, _, _ in lines:
+        parts = content.split()
+        if (parts and _ALLCAPS_RE.fullmatch(parts[0])
+                and len(parts) == 2 and _CONNECTOR_RE.fullmatch(parts[1])):
+            return True
+    return False
 
 
 @dataclass
@@ -520,16 +643,30 @@ class _SBNLine:
 
 
 def parse_sbn(text: str) -> Tuple[DRS, SBNMapping]:
-    """Parse ``text`` (the documented SBN SUBSET — see the module docstring) into a
-    ``(DRS, SBNMapping)`` pair. Raises :class:`SBNSyntaxError` on malformed input or on
-    any construct outside the documented subset (naming it explicitly)."""
+    """Parse ``text`` into a ``(DRS, SBNMapping)`` pair, in whichever of the module
+    docstring's two documented SBN dialects ``text`` turns out to use (decided by
+    :func:`_uses_connector_dialect`). Raises :class:`SBNSyntaxError` on malformed
+    input or on any construct outside the chosen dialect's documented subset (naming
+    it explicitly)."""
     raw_lines = _split_sbn_lines(text)
+    if _uses_connector_dialect(raw_lines):
+        return _parse_sbn_connector(raw_lines)
+    _require_tab_indentation(raw_lines)
+    return _parse_sbn_classic(raw_lines)
 
+
+def _parse_sbn_classic(raw_lines: List[Tuple[str, int, str]]) -> Tuple[DRS, SBNMapping]:
+    """Dialect 1, the indentation dialect (see the module docstring): a bare
+    ``NEGATION`` line opens a sub-box via TAB depth. This is ``parse_sbn``'s ORIGINAL
+    subset — every input it already accepted parses to the identical DRS it always
+    did; the only additions since (widened ``_ROLE_RE``, the bare deictic/integer
+    constants below) are no-ops on any input that does not use them."""
     # Pass 2: tokenize each line's own payload (sense/NEGATION keyword + role/target
     # pairs), without resolving offset targets yet — that needs the full index->kind map.
     pred_mapping: Dict[str, str] = {}
     parsed_lines: List[_SBNLine] = []
-    for index, (content, lineno, depth) in enumerate(raw_lines, start=1):
+    for index, (content, lineno, leading) in enumerate(raw_lines, start=1):
+        depth = len(leading)
         parts = _split_respecting_quotes(content, lineno)
         head, rest = parts[0], parts[1:]
         if head == _NEGATION:
@@ -553,7 +690,8 @@ def parse_sbn(text: str) -> Tuple[DRS, SBNMapping]:
             if not _ROLE_RE.fullmatch(role):
                 raise SBNSyntaxError(
                     f"parse_sbn: line {lineno}: role {role!r} must be uppercase-initial "
-                    f"alphanumeric (e.g. 'Agent', 'Theme')")
+                    f"alphanumeric, optionally with one hyphenated segment (e.g. "
+                    f"'Agent', 'Theme', 'Co-Theme')")
             role_targets.append((role, target))
         predicate = pred_mapping.get(head)
         if predicate is None:
@@ -592,10 +730,14 @@ def parse_sbn(text: str) -> Tuple[DRS, SBNMapping]:
             elif target.startswith('"') and target.endswith('"') and len(target) >= 2:
                 raw_const = target[1:-1].lower()
                 terms.append((role, const_mapping.for_constant(raw_const)))
+            elif target in _DEICTIC_CONSTANTS or _BARE_INTEGER_RE.fullmatch(target):
+                terms.append((role, const_mapping.for_constant(target)))
             else:
                 raise SBNSyntaxError(
                     f"parse_sbn: line {pl.lineno}: target {target!r} on role {role!r} "
-                    f'is neither a signed line offset (+N / -N) nor a quoted constant ("...")')
+                    f"is neither a signed line offset (+N / -N), a quoted constant "
+                    f'("..."), nor one of this subset\'s bare constant literals '
+                    f"(now/speaker/hearer/here, or a bare integer).")
         resolved.append((pl, tuple(terms)))
 
     # Pass 4: build the nested DRS via an indentation-driven stack of open boxes.
@@ -635,7 +777,7 @@ def parse_sbn(text: str) -> Tuple[DRS, SBNMapping]:
             current.referents.append(ref)
             current.conditions.append(Pred(pl.predicate, (ref,)))
             for role, term in terms:
-                current.conditions.append(Pred(role, (ref, term)))
+                current.conditions.append(Pred(_sbn_role_predicate_name(role), (ref, term)))
 
     while len(stack) > 1:
         _pop_negation(stack)
@@ -646,7 +788,173 @@ def parse_sbn(text: str) -> Tuple[DRS, SBNMapping]:
     # ACCESSIBILITY-violating DRS (review-flagged: a referent used outside
     # the box that declares it). Validate before handing it out so a caller
     # never receives a silently invalid tree — the violation surfaces here,
-    # named, instead of downstream in drs_to_fol.
-    root.validate()
+    # named, instead of downstream in drs_to_fol. nodes.DRS.validate raises a
+    # plain ValueError (it has no SBN-specific vocabulary of its own); re-raise
+    # as SBNSyntaxError so every parse_sbn refusal is uniformly that one type.
+    try:
+        root.validate()
+    except ValueError as e:
+        raise SBNSyntaxError(str(e)) from e
+    mapping = SBNMapping(predicates=dict(pred_mapping), constants=dict(const_mapping.constant))
+    return root, mapping
+
+
+def _parse_sbn_connector(raw_lines: List[Tuple[str, int, str]]) -> Tuple[DRS, SBNMapping]:
+    """Dialect 2, the connector dialect (see the module docstring): PMB's own
+    released SBN format. Leading whitespace is ignored throughout; box nesting comes
+    from each box-operator line's trailing connector (``<N``) rather than
+    indentation, and role-hook indices count CONCEPT lines only."""
+
+    class _Context:
+        __slots__ = ("referents", "slots")
+
+        def __init__(self) -> None:
+            self.referents: List[str] = []
+            # Each slot is either a ("concept", i) placeholder (i indexes `concepts`
+            # below) or a ("neg", child_context_index) placeholder — both resolved
+            # into actual Conditions only once every concept's offsets and every
+            # child context are known (see the two passes below).
+            self.slots: List[Tuple[str, int]] = []
+
+    contexts: List[_Context] = [_Context()]     # context 0 = the outermost, implicit context
+    neg_lineno: Dict[int, int] = {}              # child context index -> its NEGATION's line
+    current = 0
+    pred_mapping: Dict[str, str] = {}
+    const_mapping = NameMapping()
+    concepts: List[dict] = []                    # concept-only registry, in document order
+
+    # Pass 1: one linear scan building the context graph and every concept's raw
+    # (unresolved) role targets — an offset may point FORWARD to a concept not yet
+    # seen, so resolution is deferred to pass 2 below.
+    for content, lineno, _leading in raw_lines:
+        head = content.split(None, 1)[0]
+        if _ALLCAPS_RE.fullmatch(head):
+            rest = content.split()[1:]
+            if len(rest) != 1 or not _CONNECTOR_RE.fullmatch(rest[0]):
+                raise SBNSyntaxError(
+                    f"parse_sbn: line {lineno}: a box-operator line in the connector "
+                    f"dialect (see the module docstring) must be followed by exactly "
+                    f"one connector (e.g. 'NEGATION <1'), found {rest!r}")
+            sign, digits = rest[0][0], rest[0][1:]
+            if sign == ">":
+                raise SBNSyntaxError(
+                    f"parse_sbn: line {lineno}: a forward connector ({rest[0]!r}) is "
+                    f"not supported by this SBN subset — only backward ('<N') "
+                    f"connectors are.")
+            if head != _NEGATION:
+                raise SBNSyntaxError(
+                    f"parse_sbn: line {lineno}: box-operator {head!r} is not "
+                    f"supported by this SBN subset (only NEGATION is) — refusing "
+                    f"rather than silently misreading it.")
+            n = int(digits)
+            new_index = len(contexts)
+            target_index = new_index - n
+            if n < 1 or target_index < 0:
+                raise SBNSyntaxError(
+                    f"parse_sbn: line {lineno}: connector '<{n}' refers to context "
+                    f"{target_index}, outside the document (contexts "
+                    f"0..{new_index - 1} exist at this point)")
+            contexts.append(_Context())
+            contexts[target_index].slots.append(("neg", new_index))
+            neg_lineno[new_index] = lineno
+            current = new_index
+            continue
+
+        # A concept (sense) line — tokenized quote-aware (unlike the box-operator
+        # check above, a concept's role targets may be quoted strings).
+        toks = _split_respecting_quotes(content, lineno)
+        head, rest = toks[0], toks[1:]
+        if len(rest) % 2 != 0:
+            raise SBNSyntaxError(
+                f"parse_sbn: line {lineno}: role {rest[-1]!r} has no target")
+        role_targets = []
+        for k in range(0, len(rest), 2):
+            role, target = rest[k], rest[k + 1]
+            if not _ROLE_RE.fullmatch(role):
+                raise SBNSyntaxError(
+                    f"parse_sbn: line {lineno}: role {role!r} must be uppercase-initial "
+                    f"alphanumeric, optionally with one hyphenated segment (e.g. "
+                    f"'Agent', 'Theme', 'Co-Theme')")
+            role_targets.append((role, target))
+        predicate = pred_mapping.get(head)
+        if predicate is None:
+            predicate = _sbn_predicate_name(head)
+            pred_mapping[head] = predicate
+        concept_index = len(concepts)                       # 0-based position
+        ref = f"e{concept_index + 1}"
+        contexts[current].referents.append(ref)
+        contexts[current].slots.append(("concept", concept_index))
+        concepts.append({"lineno": lineno, "ref": ref, "predicate": predicate,
+                         "role_targets": role_targets, "resolved": None})
+
+    n_concepts = len(concepts)
+
+    # Pass 2: resolve every role-hook target now that each concept's CONCEPT-ONLY
+    # position (1-based, box-operator lines excluded — see the module docstring) is
+    # known.
+    for i, c in enumerate(concepts, start=1):
+        resolved_terms = []
+        for role, target in c["role_targets"]:
+            m = _OFFSET_RE.fullmatch(target)
+            if m:
+                sign, digits = m.groups()
+                delta = int(digits) if sign == "+" else -int(digits)
+                target_index = i + delta
+                if target_index < 1 or target_index > n_concepts:
+                    raise SBNSyntaxError(
+                        f"parse_sbn: line {c['lineno']}: offset {target!r} on role "
+                        f"{role!r} points to concept index {target_index}, outside "
+                        f"the document ({n_concepts} concept(s))")
+                resolved_terms.append((role, concepts[target_index - 1]["ref"]))
+            elif target.startswith('"') and target.endswith('"') and len(target) >= 2:
+                raw_const = target[1:-1].lower()
+                resolved_terms.append((role, const_mapping.for_constant(raw_const)))
+            elif target in _DEICTIC_CONSTANTS or _BARE_INTEGER_RE.fullmatch(target):
+                resolved_terms.append((role, const_mapping.for_constant(target)))
+            elif _CONNECTOR_RE.fullmatch(target):
+                raise SBNSyntaxError(
+                    f"parse_sbn: line {c['lineno']}: role {role!r}'s target "
+                    f"{target!r} is a context/box reference (an embedded-clause or "
+                    f"propositional-attitude argument) — this SBN subset does not "
+                    f"support box-valued role targets.")
+            else:
+                raise SBNSyntaxError(
+                    f"parse_sbn: line {c['lineno']}: target {target!r} on role "
+                    f"{role!r} is neither a signed concept offset (+N / -N), a "
+                    f'quoted constant ("..."), nor one of this subset\'s bare '
+                    f"constant literals (now/speaker/hearer/here, or a bare integer).")
+        c["resolved"] = resolved_terms
+
+    # Pass 3: close every context bottom-up. A "neg" slot always names a context
+    # with a STRICTLY GREATER index than its own (target_index < new_index above),
+    # so resolving from the highest index down guarantees a child is already closed
+    # by the time its parent needs it.
+    closed: Dict[int, DRS] = {}
+    for k in range(len(contexts) - 1, -1, -1):
+        conditions: List[Condition] = []
+        for kind, idx in contexts[k].slots:
+            if kind == "concept":
+                c = concepts[idx]
+                conditions.append(Pred(c["predicate"], (c["ref"],)))
+                for role, term in c["resolved"]:
+                    conditions.append(Pred(_sbn_role_predicate_name(role), (c["ref"], term)))
+            else:                                            # "neg"
+                conditions.append(Neg(closed[idx]))
+        if k != 0 and not contexts[k].referents and not conditions:
+            raise SBNSyntaxError(
+                f"parse_sbn: line {neg_lineno[k]}: NEGATION introduces an empty "
+                f"context — every NEGATION in this subset must be followed by at "
+                f"least one concept before the next box-operator or the end of the "
+                f"document")
+        closed[k] = DRS(tuple(contexts[k].referents), tuple(conditions))
+
+    root = closed[0]
+    # See the identical comment in _parse_sbn_classic above: validated here rather
+    # than left for drs_to_fol to discover downstream, and re-raised as
+    # SBNSyntaxError so every parse_sbn refusal is uniformly that one type.
+    try:
+        root.validate()
+    except ValueError as e:
+        raise SBNSyntaxError(str(e)) from e
     mapping = SBNMapping(predicates=dict(pred_mapping), constants=dict(const_mapping.constant))
     return root, mapping

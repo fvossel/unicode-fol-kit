@@ -121,10 +121,17 @@ subsumption check, which reports only proved/not proved with no witness.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, FrozenSet, Mapping, Optional, Sequence, Tuple
+from typing import Dict, FrozenSet, List, Mapping, Optional, Sequence, Tuple
 
 from ..fol.nodes import Node, Atom, Not, Implies
 from ..atp.protocol import PROVED, REFUTED, UNKNOWN
+# eval -> atp is already the established direction in this module (see the
+# PROVED/REFUTED/UNKNOWN import above), so to_html() reuses the small,
+# private HTML-page helper the atp Fitch/sequent renderers share rather than
+# reimplementing page-wrapping/escaping a third time — see atp/_html's own
+# module docstring for why it is safe to import across the package boundary
+# this way (it imports nothing back).
+from ..atp._html import esc_html, html_page
 
 __all__ = [
     "Definitions",
@@ -762,6 +769,46 @@ class TheoryReport:
             "undecided": list(self.undecided),
         }
 
+    def to_markdown(self) -> str:
+        """Render this report as a plain-formatted Markdown document.
+
+        One top summary line (:attr:`proved_problems` vs :attr:`undecided`
+        counts), then a section each for ``cycles`` (the name chains
+        :func:`find_cycles` found), ``satisfiability`` (grouped by status; a
+        ``"satisfiable"`` witness is glossed by :func:`_witness_gloss` when
+        one was recovered — honestly, as an existential witness rather than
+        an implication countermodel; see that function's own docstring and
+        :class:`SatisfiabilityResult`), and ``subsumptions`` (grouped by
+        status; each row's own ``.explanation`` is rendered verbatim,
+        falling back to
+        :func:`~unicode_fol_kit.eval.explain.explain_countermodel` on
+        ``.countermodel`` only in the defensive case where ``.explanation``
+        is itself ``None``).
+
+        Every rendered name/detail/explanation is put through
+        :func:`_md_cell`, so a hostile string (one containing ``|`` or a
+        newline — a molecule name or an error message is never under this
+        module's control) cannot corrupt a table's row/column structure.
+        Calling this twice on the same report always returns the identical
+        string (nothing here depends on dict/set iteration order — every
+        grouping is walked in the fixed, sorted order already used by
+        :meth:`to_dict`/:attr:`proved_problems`).
+        """
+        return "\n".join(_theory_markdown_lines(self))
+
+    def to_html(self, title: str = "Theory report") -> str:
+        """Render as a self-contained, theme-aware HTML page.
+
+        Same idiom as :meth:`unicode_fol_kit.fol.derivation.CCGDerivation.to_html`
+        and the ``atp`` Fitch/sequent renderers built on
+        :mod:`unicode_fol_kit.atp._html`: one ``<!doctype html>`` page with
+        the shared colour tokens, headings/tables for the same three sections
+        :meth:`to_markdown` renders, and every user-supplied string
+        (definition name, detail, explanation) HTML-escaped via
+        :func:`~unicode_fol_kit.atp._html.esc_html`.
+        """
+        return html_page(title, _theory_html_body(self), _THEORY_HTML_CSS)
+
 
 def check_theory(definitions: Definitions, *,
                  subsumptions: Sequence[Tuple[str, str]] = (),
@@ -800,3 +847,324 @@ def check_theory(definitions: Definitions, *,
     )
     return TheoryReport(cycles=cycles, satisfiability=satisfiability,
                         subsumptions=sub_results)
+
+
+# ---------------------------------------------------------------------------
+# TheoryReport.to_markdown() / to_html() — display only, no new proof/model-
+# finding logic (see the roadmap item this implements: a pure formatting
+# layer over already-verified TheoryReport/SatisfiabilityResult/
+# SubsumptionResult data, so it introduces no soundness risk).
+# ---------------------------------------------------------------------------
+
+def _md_cell(value) -> str:
+    """Escape a value for safe embedding in one Markdown table cell.
+
+    A bare ``|`` would be read as a new column and an embedded newline would
+    split the row across lines, silently corrupting every column after it —
+    so both are neutralised. This only ever touches the RENDERED copy: the
+    original string on the result object is never modified.
+    """
+    text = "" if value is None else str(value)
+    text = text.replace("|", "\\|")
+    return text.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+
+
+def _witness_gloss(witness: Optional[dict]) -> Optional[str]:
+    """A short, honest gloss of a :class:`SatisfiabilityResult` witness, or
+    ``None`` if there is none.
+
+    ``witness`` here is documented (see :class:`SatisfiabilityResult`) to be
+    in the exact same JSON-able shape as
+    :class:`~unicode_fol_kit.atp.protocol.Verdict.countermodel` — but it is
+    NOT itself an implication countermodel: :func:`check_satisfiable` proves
+    ``Not(unfolded)`` REFUTED with EMPTY premises, so the model this witness
+    describes is a single-formula existential witness of ``unfolded``, not a
+    model where "premises hold and the goal fails" (the shape an actual
+    countermodel, e.g. :class:`SubsumptionResult`'s, has).
+    :func:`~unicode_fol_kit.eval.explain.explain_countermodel`'s Z3-assignment
+    branch is hardcoded to that implication wording ("... the two sides
+    differ"), which would misstate what was computed here — so any witness
+    carrying an ``"assignment"`` dict (a bare ``{name: value}`` witness, or a
+    ``{"kind": ..., "assignment": {...}}`` one — ``"z3_model"`` is the common
+    case since Z3 leads the default backend chain, but
+    :mod:`unicode_fol_kit.atp.cvc5_backend` emits the identical
+    ``{"kind": "cvc5_model", "assignment": {...}}`` shape and would otherwise
+    have no branch of its own here) is glossed locally instead, via
+    :func:`_z3_satisfiability_gloss`. This mirrors
+    :func:`unicode_fol_kit.eval.chem_batch._gloss_chem_witness`'s reasoning
+    for the exact same class of problem on that module's own (differently
+    shaped) row witnesses.
+
+    Every other witness kind that carries a ``"repr"`` fallback (a Kripke
+    model, the modelfinder's own ``{"kind": "finite_structure", "repr": ...}``,
+    a Nitpick counterexample, ...) has no implication-specific sentence in
+    :func:`explain_countermodel`'s output, so those are still glossed through
+    it as-is — reusing its richer world/domain/relation rendering rather than
+    duplicating it. A witness with neither an ``"assignment"`` dict nor a
+    ``"repr"`` key — e.g. the clingo/minizinc backends' own
+    ``{"kind": "finite_structure", "data": {...}}`` (a different key from the
+    modelfinder's ``"repr"`` shape above) — would make
+    :func:`explain_countermodel` raise ``ValueError`` (it has nothing to
+    explain), which must never propagate out of a report-rendering method, so
+    that case falls back to :func:`_generic_satisfiability_gloss` instead.
+    """
+    if witness is None:
+        return None
+    kind = witness.get("kind") if isinstance(witness, dict) else None
+    assignment: Optional[dict] = None
+    if isinstance(witness, dict):
+        if kind is None:
+            assignment = witness  # bare {name: value}, no "kind" key
+        elif isinstance(witness.get("assignment"), dict):
+            assignment = witness["assignment"]  # any *_model kind: z3_model, cvc5_model, ...
+    if assignment is not None:
+        return _z3_satisfiability_gloss(assignment)
+    if isinstance(witness, dict) and "repr" in witness:
+        from .explain import explain_countermodel  # lazy, mirrors check_subsumption's own import
+        return explain_countermodel(witness)
+    return _generic_satisfiability_gloss(witness)
+
+
+def _z3_satisfiability_gloss(assignment: dict) -> str:
+    """Render a Z3/cvc5-style ``{name: value}`` SATISFIABILITY witness
+    honestly.
+
+    Despite the name (kept for the common Z3 case, and for the existing test
+    surface), this is used for any backend's ``"assignment"``-shaped witness
+    — see :func:`_witness_gloss`'s docstring. Deliberately NOT
+    :func:`~unicode_fol_kit.eval.explain.explain_countermodel`: this
+    assignment satisfies the definition directly — there is no second side
+    to compare it against, and that function does not accept a non-Z3 kind
+    with an assignment at all (it would raise).
+    """
+    if not assignment:
+        return "a model was found, but it recorded no variable assignments."
+    items = sorted(assignment.items(), key=lambda kv: str(kv[0]))
+    assigned_str = ", ".join(f"{k} := {v}" for k, v in items)
+    return f"Under the assignment {assigned_str}, the definition is satisfied."
+
+
+def _generic_satisfiability_gloss(witness: object) -> str:
+    """A minimal, honest, NEVER-raising gloss for a satisfiability witness
+    that :func:`_witness_gloss` could not route anywhere more specific: no
+    ``"assignment"`` dict (so :func:`_z3_satisfiability_gloss` does not
+    apply) and no ``"repr"`` fallback (so
+    :func:`~unicode_fol_kit.eval.explain.explain_countermodel` would raise
+    ``ValueError`` rather than render anything).
+
+    The real shape hitting this today is the clingo/minizinc backends'
+    ``{"kind": "finite_structure", "data": {...}}`` (see
+    ``unicode_fol_kit.atp.clingo_backend``/``minizinc_backend``) — a
+    ``"data"`` key, not the modelfinder's own ``"repr"``-carrying shape of
+    the same ``"kind"``. Deliberately does not attempt to parse or
+    pretty-print ``"data"``: that would risk a shape-specific, silently
+    incomplete duplication of what the backend already encodes, for a
+    one-line table cell that only needs to say a model exists.
+    """
+    kind = witness.get("kind") if isinstance(witness, dict) else None
+    label = kind if kind else "unlabelled"
+    return f'A "{label}" model was found; the definition is satisfied.'
+
+
+def _subsumption_explanation(result: "SubsumptionResult") -> Optional[str]:
+    """``result.explanation`` if set, else a best-effort fallback computed
+    from ``result.countermodel`` — never raising, and never glossing a
+    countermodel as a refutation outside ``status="refuted"``.
+
+    Unlike a :class:`SatisfiabilityResult` witness (see :func:`_witness_gloss`),
+    a :class:`SubsumptionResult` countermodel genuinely IS an implication
+    countermodel when ``status == "refuted"`` (``check_subsumption`` proves
+    ``Def(sub) -> Def(sup)`` REFUTED, i.e. finds a model where ``sub`` holds
+    and ``sup`` does not), so :func:`~unicode_fol_kit.eval.explain.explain_countermodel`'s
+    wording is the right one there — this is not the satisfiability-witness
+    deviation. But ``SubsumptionResult.__post_init__`` only requires
+    ``countermodel is not None`` when ``status == "refuted"``; it never
+    forbids a countermodel from also being present alongside
+    ``status in ("unknown", "entailed", "cyclic")`` on a hand-built instance
+    (as this file's own tests build throughout), and this module's own
+    docstring promises ``"unknown"`` is NEVER reported as ``"refuted"`` — so
+    the countermodel-based fallback below is only ever computed for
+    ``status == "refuted"``, matching what ``check_subsumption`` itself ever
+    produces.
+
+    ``check_subsumption`` itself always sets ``explanation`` to a non-``None``
+    string (it wraps its own ``explain_countermodel`` call in
+    ``try/except Exception`` and falls back to a generic sentence — see that
+    function's body), so this fallback path is never hit by the module's own
+    top-level API. But ``SubsumptionResult`` is a public dataclass whose
+    ``__post_init__`` never requires ``explanation`` to be set. A caller
+    building one by hand can therefore reach a ``status="refuted"``,
+    ``explanation=None`` object carrying a countermodel shape
+    ``explain_countermodel`` cannot handle — a bare
+    ``cvc5_model``/``finite_structure``-without-``repr`` witness, for
+    instance — and a report renderer must never crash on that, so the same
+    guard ``check_subsumption`` uses internally is mirrored here.
+    """
+    if result.explanation is not None:
+        return result.explanation
+    if result.status != "refuted" or result.countermodel is None:
+        return None
+    try:
+        from .explain import explain_countermodel
+        return explain_countermodel(result.countermodel)
+    except Exception:
+        backend = None
+        if isinstance(result.verdict, dict):
+            backend = result.verdict.get("backend")
+        who = backend or "a backend"
+        return (f"{who} found a countermodel: {result.sub} holds "
+                f"but {result.sup} does not.")
+
+
+def _theory_markdown_lines(report: TheoryReport) -> List[str]:
+    lines: List[str] = ["# Theory report", ""]
+    lines.append(f"**{len(report.proved_problems)}** proved problem(s), "
+                 f"**{len(report.undecided)}** undecided.")
+    lines.append("")
+
+    lines.append("## Cycles")
+    lines.append("")
+    if report.cycles:
+        for cycle in report.cycles:
+            lines.append("- " + " -> ".join(_md_cell(name) for name in cycle))
+    else:
+        lines.append("No cycles.")
+    lines.append("")
+
+    lines.append("## Satisfiability")
+    lines.append("")
+    by_status: Dict[str, List[SatisfiabilityResult]] = {}
+    for _, result in sorted(report.satisfiability.items()):
+        by_status.setdefault(result.status, []).append(result)
+    if not by_status:
+        lines.append("No definitions.")
+    for status in _SATISFIABILITY_STATUSES:
+        results = by_status.get(status)
+        if not results:
+            continue
+        lines.append(f"### {status}")
+        lines.append("")
+        lines.append("| name | detail |")
+        lines.append("|---|---|")
+        for result in results:
+            detail = result.detail or ""
+            # Only "satisfiable" is documented to carry a witness (see
+            # SatisfiabilityResult's docstring); __post_init__ does not
+            # forbid a witness on another status on a hand-built instance,
+            # so gate on status here rather than on witness truthiness alone
+            # to avoid glossing e.g. an "unsatisfiable" result as if a model
+            # were found.
+            gloss = _witness_gloss(result.witness) if result.status == "satisfiable" else None
+            if gloss:
+                detail = f"{detail} {gloss}".strip()
+            lines.append(f"| {_md_cell(result.name)} | {_md_cell(detail)} |")
+        lines.append("")
+
+    lines.append("## Subsumptions")
+    lines.append("")
+    sub_by_status: Dict[str, List[SubsumptionResult]] = {}
+    for result in report.subsumptions:
+        sub_by_status.setdefault(result.status, []).append(result)
+    if not sub_by_status:
+        lines.append("No subsumption checks.")
+    for status in _SUBSUMPTION_STATUSES:
+        results = sub_by_status.get(status)
+        if not results:
+            continue
+        lines.append(f"### {status}")
+        lines.append("")
+        lines.append("| sub | sup | explanation |")
+        lines.append("|---|---|---|")
+        for result in results:
+            explanation = _subsumption_explanation(result)
+            lines.append(f"| {_md_cell(result.sub)} | {_md_cell(result.sup)} | "
+                         f"{_md_cell(explanation)} |")
+        lines.append("")
+
+    while lines and lines[-1] == "":
+        lines.pop()
+    lines.append("")
+    return lines
+
+
+_THEORY_HTML_CSS = """
+.rpt{max-width:900px;margin:0 auto;padding:26px 16px;
+  font-family:ui-sans-serif,system-ui,"Segoe UI",Arial,sans-serif;
+  font-size:14px;line-height:1.5}
+.rpt h1{font-size:20px;margin:0 0 8px}
+.rpt h2{font-size:16px;margin:22px 0 6px;border-bottom:1.3px solid var(--bar);padding-bottom:3px}
+.rpt h3{font-size:12.5px;margin:14px 0 4px;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.03em}
+.rpt table{border-collapse:collapse;width:100%;margin:4px 0 14px}
+.rpt th,.rpt td{border:1px solid var(--bar);padding:4px 8px;text-align:left;
+  vertical-align:top}
+.rpt th{color:var(--muted);font-weight:600}
+.rpt ul{margin:6px 0 14px;padding-left:22px}
+.rpt .muted{color:var(--muted)}
+"""
+
+
+def _status_table(rows: List[Tuple[str, ...]], headers: Tuple[str, ...]) -> str:
+    head = "".join("<th>%s</th>" % esc_html(h) for h in headers)
+    body = "".join(
+        "<tr>%s</tr>" % "".join("<td>%s</td>" % esc_html(cell) for cell in row)
+        for row in rows
+    )
+    return "<table><tr>%s</tr>%s</table>" % (head, body)
+
+
+def _theory_html_body(report: TheoryReport) -> str:
+    parts: List[str] = ['<div class="rpt">', "<h1>Theory report</h1>",
+                        "<p>%d proved problem(s), %d undecided.</p>"
+                        % (len(report.proved_problems), len(report.undecided))]
+
+    parts.append("<h2>Cycles</h2>")
+    if report.cycles:
+        items = "".join("<li>%s</li>" % esc_html(" -> ".join(cycle))
+                        for cycle in report.cycles)
+        parts.append("<ul>%s</ul>" % items)
+    else:
+        parts.append('<p class="muted">No cycles.</p>')
+
+    parts.append("<h2>Satisfiability</h2>")
+    by_status: Dict[str, List[SatisfiabilityResult]] = {}
+    for _, result in sorted(report.satisfiability.items()):
+        by_status.setdefault(result.status, []).append(result)
+    if not by_status:
+        parts.append('<p class="muted">No definitions.</p>')
+    for status in _SATISFIABILITY_STATUSES:
+        results = by_status.get(status)
+        if not results:
+            continue
+        rows = []
+        for result in results:
+            detail = result.detail or ""
+            # See the matching comment in _theory_markdown_lines: gate on
+            # status, not witness truthiness, so only "satisfiable" ever
+            # gets model-found prose.
+            gloss = _witness_gloss(result.witness) if result.status == "satisfiable" else None
+            if gloss:
+                detail = f"{detail} {gloss}".strip()
+            rows.append((result.name, detail))
+        parts.append("<h3>%s</h3>" % esc_html(status))
+        parts.append(_status_table(rows, ("name", "detail")))
+
+    parts.append("<h2>Subsumptions</h2>")
+    sub_by_status: Dict[str, List[SubsumptionResult]] = {}
+    for result in report.subsumptions:
+        sub_by_status.setdefault(result.status, []).append(result)
+    if not sub_by_status:
+        parts.append('<p class="muted">No subsumption checks.</p>')
+    for status in _SUBSUMPTION_STATUSES:
+        results = sub_by_status.get(status)
+        if not results:
+            continue
+        rows = []
+        for result in results:
+            explanation = _subsumption_explanation(result)
+            rows.append((result.sub, result.sup, explanation or ""))
+        parts.append("<h3>%s</h3>" % esc_html(status))
+        parts.append(_status_table(rows, ("sub", "sup", "explanation")))
+
+    parts.append("</div>")
+    return "".join(parts)

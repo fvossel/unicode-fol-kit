@@ -25,11 +25,11 @@ every one of thousands of classes.
 
 from typing import Dict, List, Optional
 
-__all__ = ["syntax_spec", "SPEC_TOPICS", "EXAMPLES"]
+__all__ = ["syntax_spec", "SPEC_TOPICS", "EXAMPLES", "DL_EXAMPLES"]
 
 SPEC_TOPICS = (
     "overview", "naming", "dialects", "operators", "quantifiers",
-    "counting", "chemistry", "errors",
+    "counting", "chemistry", "description-logic", "errors",
 )
 
 #: (label, dialect, source text, expected unicode rendering). The single
@@ -72,6 +72,43 @@ def _examples(*labels: str) -> List[dict]:
     for label in labels:
         dialect, text, rendering = by_label[label]
         out.append({"label": label, "dialect": dialect, "input": text,
+                    "renders_as": rendering})
+    return out
+
+
+#: (label, syntax, source text, expected unicode rendering) for the
+#: description-logic topic's own examples — kept SEPARATE from
+#: :data:`EXAMPLES` above because those are all self-checked (by whichever
+#: test module owns that job) via ``api.parse_any``, which has no dialect for
+#: ALC concept text or OWL Manchester Syntax (see
+#: :mod:`unicode_fol_kit.dl.parser` / :mod:`unicode_fol_kit.dl.owl_manchester`
+#: — two wholly separate, non-FOL grammars). Verifying these instead needs
+#: ``dl.parse_concept``/``dl.parse_manchester`` directly (``syntax`` here
+#: selects which one), the same "spec cannot drift from the parser"
+#: guarantee via the CORRECT grammar rather than silently reusing the wrong
+#: one — see ``tests/test_mcp_server.py``'s own description-logic-topic test
+#: for that check.
+DL_EXAMPLES = (
+    ("alc-and-exists", "alc", "Person ⊓ ∃hasChild.Doctor",
+     "Person ⊓ ∃hasChild.Doctor"),
+    ("alc-negated-conjunction", "alc", "¬(A ⊓ B)", "¬(A ⊓ B)"),
+    ("manchester-and-some", "manchester", "Person and hasChild some Doctor",
+     "Person ⊓ ∃hasChild.Doctor"),
+    ("manchester-only", "manchester", "hasChild only Doctor", "∀hasChild.Doctor"),
+    ("manchester-number-restriction", "manchester", "hasChild min 2 Person",
+     "≥2 hasChild.Person"),
+    ("manchester-thing-nothing", "manchester", "owl:Thing and not owl:Nothing",
+     "⊤ ⊓ ¬⊥"),
+)
+
+
+def _dl_examples(*labels: str) -> List[dict]:
+    by_label = {label: (syntax, text, rendering)
+                for label, syntax, text, rendering in DL_EXAMPLES}
+    out = []
+    for label in labels:
+        syntax, text, rendering = by_label[label]
+        out.append({"label": label, "syntax": syntax, "input": text,
                     "renders_as": rendering})
     return out
 
@@ -375,6 +412,116 @@ def _chemistry() -> dict:
     }
 
 
+def _description_logic() -> dict:
+    return {
+        "summary": (
+            "unicode_fol_kit.dl reasons over the description logic ALCHQ "
+            "(ALC plus role hierarchies/transitive roles 'H'/'S' and "
+            "qualified number restrictions 'Q'). Its MCP tools (dl_* in "
+            "unicode_fol_kit.mcp.server) take CONCEPT text, never a full FOL "
+            "formula — parsed by one of two wholly separate grammars, chosen "
+            "by each tool's own `syntax` argument. This is a DIFFERENT input "
+            "language from every other topic in this spec: api.parse_any "
+            "cannot read either of them, and neither of them can read a FOL "
+            "formula."),
+        "syntaxes": [
+            {"syntax": "alc", "default": True,
+             "note": "The glyph syntax Concept.to_unicode() itself emits "
+                     "(dl.parse_concept) — ⊤ ⊥ ¬ ⊓ ⊔ ∃ ∀ ≥ ≤, no ASCII "
+                     "fallback for the operators (an ASCII 'A'/'E' keyword "
+                     "would swallow real concept/role names, which commonly "
+                     "look exactly like that)."},
+            {"syntax": "manchester", "default": False,
+             "note": "The W3C OWL 2 Manchester Syntax (dl.parse_manchester), "
+                     "restricted to what ALCHQ can express — keyword-based "
+                     "('and'/'or'/'not'/'some'/'only'/'min'/'max'/'exactly'), "
+                     "the notation Protege and most OWL tooling show by "
+                     "default."},
+        ],
+        "concept_constructors": [
+            {"meaning": "top (everything)", "alc": "⊤", "manchester": "owl:Thing"},
+            {"meaning": "bottom (nothing)", "alc": "⊥", "manchester": "owl:Nothing"},
+            {"meaning": "concept name", "alc": "Person", "manchester": "Person"},
+            {"meaning": "negation", "alc": "¬C", "manchester": "not C"},
+            {"meaning": "intersection", "alc": "C ⊓ D", "manchester": "C and D"},
+            {"meaning": "union", "alc": "C ⊔ D", "manchester": "C or D"},
+            {"meaning": "existential restriction", "alc": "∃r.C",
+             "manchester": "r some C"},
+            {"meaning": "value restriction", "alc": "∀r.C", "manchester": "r only C"},
+            {"meaning": "at-least number restriction", "alc": "≥n r.C",
+             "manchester": "r min n C  (C optional, defaults to owl:Thing)"},
+            {"meaning": "at-most number restriction", "alc": "≤n r.C",
+             "manchester": "r max n C  (C optional, defaults to owl:Thing)"},
+            {"meaning": "exact number restriction (desugars to ≥n ⊓ ≤n)",
+             "alc": None, "manchester": "r exactly n C  (C optional)"},
+        ],
+        "precedence": (
+            "⊔ loosest, then ⊓, then ¬/∃/∀/≥/≤ (all equal), then atoms/⊤/⊥ "
+            "tightest — identical in both syntaxes (dl.parser and "
+            "dl.owl_manchester share the same lattice, just spelling the "
+            "operators as glyphs vs. keywords), so '∃r.C ⊓ D' and "
+            "'r some C and D' both mean '(∃r.C) ⊓ D', and a filler beyond a "
+            "bare name needs parentheses either way: '∃r.(C ⊓ D)' / "
+            "'r some (C and D)'."),
+        "rbox_axioms": [
+            {"meaning": "role inclusion r ⊑ s", "alc": None,
+             "manchester": "r SubPropertyOf s"},
+            {"meaning": "transitivity declaration Trans(r)", "alc": None,
+             "manchester": "r Characteristics: Transitive"},
+        ],
+        "tbox_gci_axioms": [
+            {"meaning": "concept inclusion C ⊑ D", "alc": None,
+             "manchester": "C SubClassOf D"},
+            {"meaning": "concept equivalence C ≡ D", "alc": None,
+             "manchester": "C EquivalentTo D"},
+        ],
+        "tool_json_shapes": {
+            "summary": (
+                "Every dl_* MCP tool takes concept/axiom TEXT under `syntax` "
+                "(as above) plus, where a TBox/ABox is needed, plain JSON "
+                "rows — never Python TBox/ABox objects directly."),
+            "tbox_rows": [
+                {"shape": "{\"sub\": <text>, \"sup\": <text>}",
+                 "meaning": "general concept inclusion sub ⊑ sup"},
+                {"shape": "{\"equiv\": [<text>, <text>]}",
+                 "meaning": "equivalence (added as the two inclusions)"},
+                {"shape": "{\"subrole\": <role>, \"suprole\": <role>}",
+                 "meaning": "role inclusion subrole ⊑ suprole (RBox 'H')"},
+                {"shape": "{\"transitive\": <role>}",
+                 "meaning": "Trans(role) declaration (RBox 'S')"},
+            ],
+            "abox_shape": {
+                "concepts": "[[individual, concept_text], ...] "
+                            "(individual : concept)",
+                "roles": "[[a, b, role], ...] ((a, b) : role)",
+                "distinct": "[[a, b], ...] (a ≠ b — the ONLY thing that "
+                            "forces two individuals apart; without a unique "
+                            "name assumption, two names may otherwise denote "
+                            "the same individual)",
+            },
+        },
+        "number_restrictions_need_simple_roles": (
+            "A qualified number restriction (≥n r.C / ≤n r.C, or Manchester "
+            "'min'/'max'/'exactly') may not target a role that is itself "
+            "transitive, or has a transitive sub-role via the RBox — "
+            "combining unrestricted transitivity with counting makes "
+            "satisfiability undecidable. Naming such a role raises "
+            "NonSimpleRoleError, a structured {\"error\": {...}} (not the "
+            "ok=False text-parse shape — the CONCEPT text parsed fine; it is "
+            "the REASONING step that refuses the combination)."),
+        "class_definition_note": (
+            "Unlike the 'chemistry' topic's FOL formulas, a DL concept has "
+            "no free variable to accidentally leave open — 'Person and "
+            "hasChild some Doctor' is already a closed description of a "
+            "SET of individuals, so there is no 0-ary-predicate convention "
+            "to remember here."),
+        "examples": _dl_examples(
+            "alc-and-exists", "alc-negated-conjunction",
+            "manchester-and-some", "manchester-only",
+            "manchester-number-restriction", "manchester-thing-nothing"),
+    }
+
+
 def _errors() -> dict:
     return {
         "summary": (
@@ -445,7 +592,8 @@ def _errors() -> dict:
 _TOPIC_BUILDERS = {
     "overview": _overview, "naming": _naming, "dialects": _dialects,
     "operators": _operators, "quantifiers": _quantifiers,
-    "counting": _counting, "chemistry": _chemistry, "errors": _errors,
+    "counting": _counting, "chemistry": _chemistry,
+    "description-logic": _description_logic, "errors": _errors,
 }
 
 
@@ -458,9 +606,12 @@ def syntax_spec(topic: str = "overview",
     function — and how TPTP inverts it), ``dialects``, ``operators``
     (precedence table), ``quantifiers`` (scope rules), ``counting`` (the
     cardinality quantifier and why it replaces existential chains),
-    ``chemistry`` (molecule-as-structure signature), ``errors`` (measured
-    LLM failure modes with fixes). ``dialect`` narrows the examples to one
-    dialect where that makes sense.
+    ``chemistry`` (molecule-as-structure signature), ``description-logic``
+    (ALCHQ concept syntax — glyph or OWL Manchester — plus the TBox/ABox JSON
+    row shapes the ``dl_*`` MCP tools expect), ``errors`` (measured LLM
+    failure modes with fixes). ``dialect`` narrows the examples to one
+    FOL-family dialect, or (``description-logic`` only) one DL ``syntax``
+    (``"alc"``/``"manchester"``), where that makes sense.
 
     Raises:
         ValueError: unknown ``topic`` — the message lists the valid ones.
@@ -472,7 +623,13 @@ def syntax_spec(topic: str = "overview",
     spec = dict(_TOPIC_BUILDERS[topic]())
     spec["topic"] = topic
     if dialect is not None and "examples" in spec:
-        spec["examples"] = [e for e in spec["examples"]
-                            if e["dialect"] == dialect]
+        # description-logic's own EXAMPLES-alike (DL_EXAMPLES) keys its
+        # per-example dialect as "syntax" (alc/manchester), never "dialect"
+        # (see DL_EXAMPLES's own docstring for why it is a separate list) —
+        # every other topic's examples use "dialect", so this falls back to
+        # "syntax" only for that one topic rather than requiring every
+        # example dict in the module to carry both keys.
+        key = "dialect" if topic != "description-logic" else "syntax"
+        spec["examples"] = [e for e in spec["examples"] if e[key] == dialect]
         spec["filtered_to_dialect"] = dialect
     return spec

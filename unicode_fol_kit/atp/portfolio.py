@@ -171,12 +171,22 @@ def _run_sequential(formula: Node, premises: Sequence[Node], backends: Sequence[
 # ---------------------------------------------------------------------------
 
 def _verdict_from_dict(d: dict) -> Verdict:
-    """Reconstruct a ``Verdict`` from ``Verdict.to_dict()`` (round-trips all fields)."""
+    """Reconstruct a ``Verdict`` from ``Verdict.to_dict()`` — round-trips
+    EVERY field, including ``relevant_premises`` and ``solver_version``
+    (both were silently dropped here before K1: a real bug, since this is
+    the process-pool path's only way back from a worker's JSON-safe dict to
+    a live ``Verdict``, so both fields vanished on every ``jobs>1``
+    portfolio race — see ``tests/test_portfolio.py``'s full-fields round
+    trip, which pins ``Verdict.to_dict()`` unchanged by this reconstruction).
+    """
     return Verdict(
         status=d["status"], backend=d["backend"], logic=d["logic"],
         reason=d["reason"], szs_status=d["szs_status"], wall_time=d["wall_time"],
+        solver_version=d["solver_version"],
         countermodel=d["countermodel"], proof=d["proof"], detail=d["detail"],
         agreement=tuple(d["agreement"]),
+        relevant_premises=(tuple(d["relevant_premises"])
+                           if d["relevant_premises"] is not None else None),
     )
 
 

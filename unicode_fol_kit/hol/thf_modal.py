@@ -111,6 +111,12 @@ from ..fol.nodes import (
     Historically, Once, Previous, Nominal, At,
     SortedQuantifier,
 )
+# Down (the ↓ binder, N1) is not yet re-exported through fol.nodes / fol's
+# public __init__ / the top-level unicode_fol_kit package (that three-file
+# edit is outside this change's file ownership — see the change's own
+# report); imported directly from its defining module in the meantime, the
+# same class object either import path would give.
+from ..fol._hybrid_nodes import Down
 
 # Re-use qml.py's THF helpers verbatim so the two exports stay byte-compatible on the
 # overlapping (alethic + object-quantifier + equality) fragment.
@@ -121,6 +127,7 @@ from ..fol.qml import (
     _FORALL,
 )
 from ..fol._symbol_names import dedupe
+from ..fol._msfl_nodes import nonempty_sort_axioms
 
 # The cross-family bridge REGISTRY is single-sourced from the Isabelle route: the
 # names, the families each bridge needs, and the fact names are shared, so the two
@@ -431,6 +438,15 @@ def _lift(node: Node, names: "_ThfNames") -> str:
     if isinstance(node, At):
         return (f"( ^ [W: mu] : ( {_lift(node.formula, names)} "
                 f"@ {names.nominal[node.nominal.name]} ) )")
+    if isinstance(node, Down):
+        raise NotImplementedError(
+            "to_thf_modal_full: the ↓ binder is not supported by this HOL "
+            "shallow embedding — H(@,↓) validity is undecidable, and this "
+            "emitter's job (a TPTP THF conjecture for an ATP) assumes a goal "
+            "shape a prover can be expected to close, not an open research "
+            "question. Use unicode_fol_kit.fol.modal_translation.down_is_valid "
+            "(Z3, PROVED-only) or unicode_fol_kit.atp.kripke_enum.KripkeEnumBackend "
+            "/ modal_enum_search (bounded search, REFUTED-only) instead.")
 
     if isinstance(node, SortedQuantifier):
         raise NotImplementedError(
@@ -447,6 +463,27 @@ def _lift(node: Node, names: "_ThfNames") -> str:
 def _nominal_names(formula: Node):
     """All nominal names occurring in ``formula`` (Nominal and At sites), sorted."""
     return sorted({n.name for n in formula.walk() if isinstance(n, Nominal)})
+
+
+def _sort_functors(original: Node, names: "_ThfNames") -> List[str]:
+    """THF functors of the sorts ``original`` quantifies over, in first-occurrence order.
+
+    Takes the UNrelativized formula: afterwards a sort guard is indistinguishable
+    from any other unary predicate. Reuses
+    :func:`~unicode_fol_kit.fol._msfl_nodes.nonempty_sort_axioms`'s own scan — as
+    :func:`~unicode_fol_kit.fol.qml._sort_names_used` and
+    :func:`~unicode_fol_kit.hol.isabelle_modal._sort_consts` do — so the three
+    routes can never disagree about which sorts a formula uses, then maps each
+    through the de-colliding resolver so the axiom names the same functor the
+    conjecture does. A sort with no unary atom in the relativized formula has no
+    type declaration, so it is skipped rather than referenced undeclared.
+    """
+    out: List[str] = []
+    for axiom in nonempty_sort_axioms(original):
+        functor = names.pred.get((axiom.formula.predicate, 1))
+        if functor is not None and functor not in out:
+            out.append(functor)
+    return out
 
 
 def _resolve_names(formula: Node) -> "_ThfNames":
@@ -626,6 +663,16 @@ def to_thf_modal_full(formula: Node, mode: str = "constant", frame: str = "K",
     # Reject a bare string / an unknown bridge name before any emission work.
     _validate_bridges(bridges, "to_thf_modal_full")
 
+    # A many-sorted formula (SortedQuantifier / SortedConstant) is relativized
+    # ONCE, here, before anything scans or lifts it — same choice, and same
+    # reason, as hol.isabelle_modal.isabelle_modal_theory and fol.qml's
+    # qml_translate: the resulting sort-guard atom is an ordinary predicate
+    # the existing signature scan / lift already handle, and doing it once,
+    # up front, also catches a SortedConstant anywhere in the formula, not
+    # only directly under a SortedQuantifier.
+    original = formula
+    formula = formula._relativize([])
+
     used = _families_used(formula)
     systems = systems or {}
 
@@ -677,6 +724,21 @@ def to_thf_modal_full(formula: Node, mode: str = "constant", frame: str = "K",
     # --- standing axiom: every world has an existing individual ---
     lines.append(
         "thf(nonempty_dom, axiom, ( ! [W: mu] : ? [X: $i] : ( existsAt @ X @ W ) )).")
+
+    # --- standing axiom per SORT: every sort is non-empty at every world ---
+    # _relativize left each sort guard an ordinary WORLD-RELATIVE predicate, so
+    # without this nothing forces S to hold of anything and ∀x:S P(x) → ∃x:S P(x)
+    # would be unprovable here while the classical many-sorted routes call it
+    # valid (fol._msfl_nodes.nonempty_sort_axioms states the same convention
+    # there, fol.qml.qml_axioms the same per-world version, and
+    # hol.isabelle_modal._nonempty_sort_axioms the same lines for the sibling
+    # route). Under an actualist mode the witness must also EXIST at the world,
+    # or it could not instantiate the existsAt-guarded mexists.
+    for i, sort in enumerate(_sort_functors(original, names)):
+        body = (f"( ( existsAt @ X @ W ) & ( {sort} @ X @ W ) )"
+                if mode in _ACTUALIST_MODES else f"( {sort} @ X @ W )")
+        lines.append(
+            f"thf(nonempty_sort{i}, axiom, ( ! [W: mu] : ? [X: $i] : {body} )).")
 
     # --- alethic frame axioms (frame) ---
     for cond in _FRAMES[frame]:

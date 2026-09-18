@@ -24,7 +24,7 @@ from .sequent import (
     sequent, derive, axiom,
     check_sequent_proof, verify_sequent_proof, render_sequent_proof,
 )
-from .z3_input import from_z3, parse_smtlib, load_smtlib
+from .z3_input import from_z3, parse_smtlib, load_smtlib, to_smtlib
 from .fitch_search import find_fitch_proof, fitch_prove, is_valid_fitch
 from .tableau import (
     tableau_closed, is_valid_tableau, prove_tableau, tableau_model,
@@ -49,18 +49,28 @@ from .protocol import (
     Verdict, BackendUnavailable, ProverBackend,
     register_backend, get_backend, available_backends, default_chain,
     run_backend,
+    z3_relevant_premises,
 )
 from .vampire_entailment import check_entailment_vampire_detailed
 from .tstp import (
     extract_szs_status, szs_to_verdict_fields,
     TstpStep, TstpDerivation, parse_tstp_derivation,
+    relevant_premises_from_tstp,
+    to_tstp,
+)
+from .tstp_check import (
+    TstpStepResult, TstpCheckResult, check_tstp_derivation,
+    VAMPIRE_CLAUSIFICATION_RULES, VAMPIRE_CHECKED_RULES,
+    EPROVER_CLAUSIFICATION_RULES, EPROVER_CHECKED_RULES,
 )
 from .portfolio import portfolio_prove
 from .cvc5_backend import Cvc5Backend
+from .incremental import IncrementalSession
 from .eprover_backend import (
     EProverBackend, ZipperpositionBackend,
     check_entailment_eprover_detailed,
     eprover_available, zipperposition_available,
+    eprover_relevant_premises,
 )
 from .hets_backend import HetsBackend
 from .nanocop_backend import NanocopBackend, to_nanocop, nanocop_available
@@ -71,13 +81,23 @@ from .kripke_enum import (
     EnumSearchResult, modal_enum_search, modal_enum_countermodel,
     kripke_model_to_dict, kripke_model_from_dict, KripkeEnumBackend,
 )
+from .hybrid_down import down_decide
 from .tptp_ncl import to_tptp_ncl
 from .leo3_backend import Leo3Backend
 from .finite_domain import (
-    FiniteDomainProblem, fragment_check, structure_from_solution, verify_model,
+    lower_msfol, FiniteDomainProblem, fragment_check, structure_from_solution, verify_model,
 )
 from .clingo_backend import ClingoBackend, clingo_available, to_asp
 from .minizinc_backend import MinizincBackend, minizinc_available, to_minizinc
+from .tptp_tff import generate_tff_problem
+from ._tff_problem import generate_tff_arith_problem
+from .ltl_tableau import (
+    LTLTrace, ltl_tableau_closed, ltl_valid, ltl_decide, ltl_countermodel,
+    ltl_trace_satisfies, LtlTableauBackend,
+)
+from .logic_backends import (
+    IntBackend, LambekBackend, IllBackend, RelevantBackend, HybridBackend,
+)
 
 __all__ = [
     "formulas_are_equivalent",
@@ -96,7 +116,7 @@ __all__ = [
     "Sequent", "Derivation", "Comprehension", "SequentResult",
     "sequent", "derive", "axiom",
     "check_sequent_proof", "verify_sequent_proof", "render_sequent_proof",
-    "from_z3", "parse_smtlib", "load_smtlib",
+    "from_z3", "parse_smtlib", "load_smtlib", "to_smtlib",
     "find_fitch_proof", "fitch_prove", "is_valid_fitch",
     "tableau_closed", "is_valid_tableau", "prove_tableau", "tableau_model",
     "prove_tableau_detailed", "TableauProof", "TableauStep", "TableauClosure",
@@ -113,23 +133,39 @@ __all__ = [
     "Verdict", "BackendUnavailable", "ProverBackend",
     "register_backend", "get_backend", "available_backends", "default_chain",
     "run_backend",
+    "z3_relevant_premises",
     "check_entailment_vampire_detailed",
     "extract_szs_status", "szs_to_verdict_fields",
     "TstpStep", "TstpDerivation", "parse_tstp_derivation",
+    "relevant_premises_from_tstp",
+    "to_tstp",
+    "TstpStepResult", "TstpCheckResult", "check_tstp_derivation",
+    "VAMPIRE_CLAUSIFICATION_RULES", "VAMPIRE_CHECKED_RULES",
+    "EPROVER_CLAUSIFICATION_RULES", "EPROVER_CHECKED_RULES",
     "portfolio_prove",
     "Cvc5Backend",
+    "IncrementalSession",
     "EProverBackend", "ZipperpositionBackend",
     "check_entailment_eprover_detailed",
     "eprover_available", "zipperposition_available",
+    "eprover_relevant_premises",
     "HetsBackend",
     "NanocopBackend", "to_nanocop", "nanocop_available",
     "TweeBackend", "twee_available", "check_entailment_twee_detailed",
     "check_twee_proof", "TweeCheckResult",
     "EnumSearchResult", "modal_enum_search", "modal_enum_countermodel",
     "kripke_model_to_dict", "kripke_model_from_dict", "KripkeEnumBackend",
+    "down_decide",
     "to_tptp_ncl",
     "Leo3Backend",
+    "lower_msfol",
     "FiniteDomainProblem", "fragment_check", "structure_from_solution", "verify_model",
     "ClingoBackend", "clingo_available", "to_asp",
     "MinizincBackend", "minizinc_available", "to_minizinc",
+    "generate_tff_problem",
+    "generate_tff_arith_problem",
+    "LTLTrace", "ltl_tableau_closed", "ltl_valid", "ltl_decide",
+    "ltl_countermodel", "ltl_trace_satisfies", "LtlTableauBackend",
+    "IntBackend", "LambekBackend", "IllBackend", "RelevantBackend",
+    "HybridBackend",
 ]

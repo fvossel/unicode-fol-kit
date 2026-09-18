@@ -1,0 +1,58 @@
+story_id,Truth Value,Premises used,Derivation,Derivation - Corrected,Derivation index,Inference rule
+0,"T
+",,,,,
+,,"1, 2",Rook is a raven that is black.,,D1,universal instantiation
+,,D1,Rook is black.,Rook the raven is black.,D2,conjunction elimination
+,,,,,,
+,,,,,,
+Need to fix labels,,,,,,
+,,,,,,
+,,,,,,
+0,F,,,,,
+,,2,Rook is a raven.,,D1,conjunction elimination
+(,,"D1, 1","If Rook were white, a raven would be non-black, contradicting premise 1.",,D2,reductio ad absurdum
+,,,,,,
+,,,,,,
+,,,,,,
+1,"T
+",,,,,
+,,"1, 2",Milo sleeps often.,,D1,universal instantiation
+,,,,,,
+,,,,,,
+1,U,,,,,
+,,,,,,
+,,,,,,
+2,T,,,,,
+,,"1, 2",Rex barks.,,D1,universal instantiation
+,,,,,,
+,,,,,,
+2,F,,,,,
+,^shouldn't this be U?,2,Rex does not bark.,,D1,conjunction elimination
+,,,,,,
+,,,,,,
+3,T,,,,,
+,,1,Tweety flies.,,D1,existential instantiation
+,,,,,,
+,,,,,,
+4,T,,,,,
+,,1,Nemo swims.,,D1,universal instantiation
+,,,,,,
+,,,,,,
+4,T,,,,,
+,,,,,,
+,,,,,,
+6,"T -> should be U?
+rui_comment: T is correct",,,,,
+,,1,Ann studies.,,D1,universal instantiation
+,,,,,,
+,,,,,,
+7,T,,,,,
+,,1,This statement is a lie.,,D1,universal instantiation
+,,,,,,
+,,,,,,
+8,T,"1, 2",Milo naps in the afternoon.,,D1,universal instantiation
+,,D1,Milo is asleep.,,D2,conjunction elimination
+,,,,,,
+,,,,,,
+99,T,,,,,
+,,1,Some fact about story 99.,,D1,universal instantiation

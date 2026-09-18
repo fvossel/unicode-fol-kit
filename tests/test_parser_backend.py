@@ -6,11 +6,25 @@ a grammar that needs it; this one does not. Asked for every derivation
 1260 parsable lines of the 1310-line FOLIO fixture, so Earley was paying for a capability the grammar
 never used -- measured at 30x to 50x, mode by mode, on the kit's own corpus.
 
-Since 0.23.2 the eight non-modal modes are parsed with LALR and `modal` keeps
-Earley. This module is the evidence that the switch changes nothing a caller
-can observe, and it checks that against a live Earley parser built from the
-same grammar rather than against recorded strings, so it keeps testing the real
-question if the grammar changes.
+Since 0.23.2 every mode is parsed with LALR as its FAST path. Two modes,
+``modal`` and ``tomodal`` (``_HYBRID_MODES``), cannot move to LALR outright --
+a genuine LALR(1) reduce/reduce conflict (documented at ``_HYBRID_MODES`` in
+msflparser.py) makes plain LALR silently commit to the wrong reading for one
+narrow shape (a bracket-grouped formula headed by a bare lowercase
+NAME/VARIABLE) and then fail a few tokens later. Since 0.28.0 those two modes
+get an LALR-first, EARLEY-FALLBACK wrapper instead of plain Earley:
+``MSFLParser`` tries its LALR parser first and retries with Earley,
+transparently, only on the rare input that shape describes -- see
+``MSFLParser._parse_tree``. This module is the evidence that none of this
+changes anything a caller can observe: every test below now runs against
+every mode, hybrid ones included, checked against a live Earley parser built
+from the same grammar rather than against recorded strings, so it keeps
+testing the real question if the grammar changes. The soundness half of the
+hybrid wrapper -- that wherever its LALR fast path itself accepts, it builds
+the SAME tree Earley would -- gets its own dedicated (much larger, randomly
+generated) corpus in tests/test_modal_lalr_fallback.py; this file's job is
+the accept/reject/span/error-message differential, run the same way for
+every mode.
 
 The one thing the swap DOES change is where a failure surfaces. Earley's
 dynamic lexer only offers tokens the parser can currently use, so a well-formed
@@ -21,7 +35,10 @@ afterwards, so the same input arrives as UnexpectedToken. The mapping back
 corpus, and the split turned out to be exact rather than approximate: every
 input Earley failed with UnexpectedEOF becomes UnexpectedToken on `$END`, and
 every input it failed with UnexpectedCharacters becomes UnexpectedToken on
-something else. Both directions are pinned below.
+something else. Both directions are pinned below. A hybrid mode's fallback
+-exhausted failure (both LALR and Earley refuse) is reported through Earley's
+OWN untranslated exception instead -- see MSFLParser._token_failure's
+``_from_earley_fallback`` branch -- so it needs no separate mapping here.
 """
 
 from pathlib import Path
@@ -33,8 +50,8 @@ from lark import Lark
 from unicode_fol_kit import MSFLParser
 from unicode_fol_kit.fol._fol_nodes import build_grammar
 from unicode_fol_kit.fol.msflparser import (
-    _allow_single_letter_function_calls, _EARLEY_MODES, _GRAMMARS_DIR,
-    _parser_kind, _REGISTRY_MODE)
+    _allow_single_letter_function_calls, _GRAMMARS_DIR,
+    _HYBRID_MODES, _REGISTRY_MODE)
 from unicode_fol_kit.fol.naming import NamingError, ParsingError
 
 MODES = {
@@ -43,6 +60,8 @@ MODES = {
     "so": {"second_order": True}, "dependence": {"dependence": True},
     "linear": {"linear": True}, "lambek": {"lambek": True},
     "modal": {"modal": True},
+    "modal_sorted": {"modal": True, "many_sorted": True},
+    "so_sorted": {"second_order": True, "many_sorted": True},
     "to": {"third_order": True},
     "tomodal": {"third_order": True, "modal": True},
 }
@@ -75,30 +94,58 @@ def _earley_reference(mode):
 # --- which parser serves which mode -----------------------------------------
 
 @pytest.mark.parametrize("mode, kwargs", sorted(MODES.items()))
-def test_each_mode_uses_the_intended_parser(mode, kwargs):
-    expected = "earley" if mode in _EARLEY_MODES else "lalr"
-    assert _parser_kind(mode) == expected
-    assert MSFLParser(**kwargs).parser.options.parser == expected
+def test_each_mode_uses_lalr_as_its_fast_path(mode, kwargs):
+    """Every mode's PRIMARY (``.parser``) build is LALR now -- see
+    _HYBRID_MODES for the two that ALSO carry an Earley fallback, checked
+    separately below."""
+    assert MSFLParser(**kwargs).parser.options.parser == "lalr"
+
+
+@pytest.mark.parametrize("mode, kwargs",
+                         sorted((m, k) for m, k in MODES.items() if m in _HYBRID_MODES))
+def test_hybrid_modes_also_build_an_earley_fallback(mode, kwargs):
+    kit = MSFLParser(**kwargs)
+    assert kit._earley_parser is not None
+    assert kit._earley_parser.options.parser == "earley"
+
+
+@pytest.mark.parametrize("mode, kwargs",
+                         sorted((m, k) for m, k in MODES.items() if m not in _HYBRID_MODES))
+def test_non_hybrid_modes_build_no_earley_fallback(mode, kwargs):
+    assert MSFLParser(**kwargs)._earley_parser is None
 
 
 def test_modal_is_the_only_holdout_and_it_is_deliberate():
-    """Earley is kept for the modal LANGUAGE, not for two unrelated modes.
+    """Earley is kept as a FALLBACK for the modal LANGUAGE, not for two
+    unrelated modes.
 
     ``tomodal`` is on the list only because it is the modal operator set
     over a widened argument layer -- it inherits the language, so it
-    inherits the reason. If this ever shrinks to nothing, the mode moved
-    and the comment in msflparser.py explaining why it could not needs
-    deleting with it; if it ever GROWS to a mode that does not carry the
-    modal operators, that is a new claim and needs its own evidence."""
-    assert _EARLEY_MODES == frozenset({"modal", "tomodal"})
-    assert all(MODES[m].get("modal") for m in _EARLEY_MODES)
+    inherits the reason. ``modal_sorted`` joined it for the same reason:
+    it is the modal operator set over sorted quantifiers, i.e. the same
+    LANGUAGE again, so the bare lowercase atoms and nominals below are
+    exactly as unreachable for its LALR table. If this ever shrinks to
+    nothing, the mode moved and the comment in msflparser.py explaining why
+    it could not needs deleting with it; if it ever GROWS to a mode that
+    does not carry the modal operators, that is a new claim and needs its
+    own evidence -- which is what the second assertion below is for.
+
+    ``so_sorted`` is deliberately NOT here: sorted quantification over the
+    second-order language stays pure LALR, so adding sorts to a mode is not
+    by itself a reason to keep a fallback."""
+    assert _HYBRID_MODES == frozenset({"modal", "modal_sorted", "tomodal"})
+    assert all(MODES[m].get("modal") for m in _HYBRID_MODES)
+    assert MSFLParser(**MODES["so_sorted"])._earley_parser is None
 
 
 def test_modal_still_accepts_what_only_earley_reaches():
-    """The reason modal keeps Earley: these are legal modal formulas that the
-    LALR table refuses. Bare lowercase propositional atoms and nominals
-    standing as whole formulas -- moving the mode would silently narrow the
-    language, which is not a speedup."""
+    """The reason modal keeps an Earley FALLBACK: these are legal modal
+    formulas that the LALR table alone refuses. Bare lowercase propositional
+    atoms and nominals standing as whole formulas -- moving the mode to plain
+    LALR would silently narrow the language, which is not a speedup. This now
+    exercises the real LALR-first/Earley-fallback wrapper end to end (see
+    tests/test_modal_lalr_fallback.py for the much larger corpus proving the
+    fallback path is sound, not just that it fires)."""
     parser = MSFLParser(modal=True)
     for text in ["p→(q→p)", "¬(p∧q)→(¬p∨¬q)", "@i (P ∧ ◇j)", "¬¬(p∨¬p)"]:
         assert parser.parse(text) is not None, text
@@ -106,9 +153,15 @@ def test_modal_still_accepts_what_only_earley_reaches():
 
 # --- the swap must be invisible: trees, spans, accept/reject ----------------
 
-@pytest.mark.parametrize("mode", [m for m in MODES if m not in _EARLEY_MODES])
+@pytest.mark.parametrize("mode", sorted(MODES))
 def test_trees_and_acceptance_match_earley(mode):
-    kit = MSFLParser(**MODES[mode]).parser
+    """Compares against ``MSFLParser._parse_tree`` rather than the raw
+    ``.parser`` Lark object: for the 9 plain-LALR modes that is exactly
+    ``.parser.parse`` (no behaviour change from before), and for the 2 hybrid
+    modes it is the ACTUAL LALR-first/Earley-fallback lookup ``parse()``
+    itself uses -- so this differential now also covers the hybrid wrapper's
+    accept/reject set and tree shape, not just the plain-LALR modes'."""
+    kit = MSFLParser(**MODES[mode])
     earley = _earley_reference(mode)
     checked = 0
     mismatches = []
@@ -118,7 +171,7 @@ def test_trees_and_acceptance_match_earley(mode):
         except Exception as exc:                  # noqa: BLE001 - compared
             expected = ("err", type(exc).__name__)
         try:
-            actual = ("ok", kit.parse(text))
+            actual = ("ok", kit._parse_tree(text))
         except Exception as exc:                  # noqa: BLE001 - compared
             actual = ("err", type(exc).__name__)
         checked += 1
@@ -144,18 +197,19 @@ def _spans(tree):
     return out
 
 
-@pytest.mark.parametrize("mode", [m for m in MODES if m not in _EARLEY_MODES])
+@pytest.mark.parametrize("mode", sorted(MODES))
 def test_source_spans_match_earley(mode):
     """lark's ``Tree.__eq__`` compares data and children and IGNORES ``meta``,
     so tree equality above says nothing about spans -- and ``parse_with_spans``
-    reads exactly that meta. Checked separately for that reason."""
-    kit = MSFLParser(**MODES[mode]).parser
+    reads exactly that meta. Checked separately for that reason. As above,
+    ``_parse_tree`` makes this cover the hybrid modes' Earley fallback too."""
+    kit = MSFLParser(**MODES[mode])
     earley = _earley_reference(mode)
     checked = differing = 0
     for text in FOLIO + MALFORMED:
         try:
             a = earley.parse(text)
-            b = kit.parse(text)
+            b = kit._parse_tree(text)
         except Exception:                          # noqa: BLE001
             continue
         checked += 1

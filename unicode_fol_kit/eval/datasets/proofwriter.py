@@ -199,6 +199,7 @@ or via the HF ``rows``/``first-rows`` API) and pass its local path to
 :func:`load_proofwriter`.
 """
 
+import itertools
 import json
 import re
 from pathlib import Path
@@ -209,12 +210,14 @@ from ...fol.nodes import (
     Variable, Constant, substitute,
 )
 from ._base import DatasetExample, _register_dataset_info
+from . import _proofwriter_proof as _proof
 
 __all__ = [
     "load_proofwriter",
     "load_proofwriter_structured",
     "parse_proofwriter_representation",
     "solve_structured_example",
+    "check_gold_proof",
 ]
 
 _register_dataset_info(
@@ -573,7 +576,17 @@ def load_proofwriter_structured(
         One :class:`DatasetExample` per non-null question, in file order and
         numeric question order; ``nl_premises`` are the fact/rule sentence
         texts, ``label`` is the OWA answer verbatim
-        (``"True"``/``"False"``/``"Unknown"``).
+        (``"True"``/``"False"``/``"Unknown"``). ``meta["proofs"]`` (the
+        record's own, unparsed ``question["proofs"]`` string) and
+        ``meta["strategy"]`` were already carried verbatim before this
+        docstring was written; ``meta["premise_keys"]`` — the source
+        record's ``"tripleN"``/``"ruleN"`` keys, parallel to
+        ``meta["premise_representations"]`` — is additive, resolving those
+        proof references back to a premise index for
+        :func:`check_gold_proof`. Parse ``meta["proofs"]`` with
+        :func:`~._proofwriter_proof.parse_question_proof` and verify it
+        against this module's own forward-chaining fixpoint with
+        :func:`check_gold_proof`.
 
     Raises:
         FileNotFoundError / json.JSONDecodeError: as in the other loaders —
@@ -596,6 +609,7 @@ def load_proofwriter_structured(
                                 for _, entry in premise_entries)
             premise_reps = tuple(entry.get("representation", "")
                                  for _, entry in premise_entries)
+            premise_keys = tuple(key for key, _ in premise_entries)
 
             fol_premises: "Tuple[str, ...]" = ()
             conversion_error: Optional[str] = None
@@ -624,6 +638,15 @@ def load_proofwriter_structured(
                     "question_key": q_key,
                     "theory": record.get("theory"),
                     "premise_representations": list(premise_reps),
+                    # Parallel to premise_representations/fol_premises: the
+                    # source record's own "tripleN"/"ruleN" keys, in the SAME
+                    # order -- added purely so a caller can resolve a
+                    # question["proofs"] annotation's "tripleN"/"ruleN"
+                    # references back to a premise index (see
+                    # check_gold_proof). Every OTHER field here was already
+                    # present before that addition; this key is new and
+                    # purely additive, nothing existing was removed/renamed.
+                    "premise_keys": list(premise_keys),
                     "question_representation": q_rep,
                     "QDep": question.get("QDep"),
                     "strategy": question.get("strategy"),
@@ -704,14 +727,42 @@ def _as_rule(premise: Node):
     return [], [], _as_literal(node)
 
 
-def _closed_model(premises: "List[Node]", constants: "List[Constant]"):
+def _ground_rule(rule, constants: "List[Constant]"):
+    """One ``(variables, body, head)`` (see :func:`_as_rule`) → its list of
+    GROUND ``(body, head)`` instances over ``constants`` (``[]`` if the rule
+    is variable-free — a plain ground fact/implication grounds to itself)."""
+    variables, body, head = rule
+    if not variables:
+        return [(body, head)]
+    if not constants:
+        return []
+    groundings = []
+    for values in itertools.product(constants, repeat=len(variables)):
+        g_body = []
+        for atom, positive in body:
+            g_atom = atom
+            for var, value in zip(variables, values):
+                g_atom = substitute(g_atom, var, value)
+            g_body.append((g_atom, positive))
+        h_atom, h_positive = head
+        for var, value in zip(variables, values):
+            h_atom = substitute(h_atom, var, value)
+        groundings.append((g_body, (h_atom, h_positive)))
+    return groundings
+
+
+def _closed_model(premises: "List[Node]", constants: "List[Constant]", *,
+                  record_provenance: bool = False):
     """The theory's closed model, by STRATIFIED forward chaining.
 
     Returns ``(true_atoms, has_naf)`` — the set of ground-atom keys
     (``to_unicode_str``) true in the perfect model, and whether any rule
     body used negation (i.e. the theory is beyond the definite fragment, so
     membership is NOT classical entailment and must not be cross-checked
-    against a classical prover).
+    against a classical prover). With ``record_provenance=True`` a THIRD
+    element is returned, ``provenance`` (see below); with the default
+    ``False`` the return shape is EXACTLY the 2-tuple above, unchanged —
+    every existing caller (:func:`solve_structured_example`) is untouched.
 
     Semantics: negation in a rule body is NEGATION AS FAILURE, evaluated
     stratum by stratum over the GROUND dependency graph — LOCAL
@@ -730,34 +781,50 @@ def _closed_model(premises: "List[Node]", constants: "List[Constant]"):
     tracked only for the final consistency check — a theory that derives
     some atom both positively and negatively is inconsistent under CWA and
     raises rather than answering arbitrarily.
+
+    ``provenance`` (only computed when ``record_provenance=True``, for
+    :func:`check_gold_proof`): ``{signed_key: [(premise_index,
+    antecedent_keys), …]}`` — ``signed_key`` is the SIGNED rendering of a
+    derived atom (``"Foo(a)"`` for a positive derivation, ``"¬Foo(a)"`` for
+    a negative one, via a negative-headed rule or fact — real ProofWriter
+    theories have both, see the module's ``check_gold_proof`` docstring);
+    each ``premise_index`` is the position, in the ORIGINAL ``premises``
+    list, of the fact/rule whose grounding fired; ``antecedent_keys`` is the
+    ordered tuple of each required body literal's OWN SIGNED key (bare for a
+    positive requirement, ``"¬"``-prefixed for a negation-as-failure one) —
+    ``()`` for a fact. Real ProofWriter theories DO use negation-as-failure
+    conditions (209 of 2401 real rules fetched from ``hitachi-nlp/
+    proofwriter_processed_OWA`` — depths 0/1/2/3/3ext/3ext-NatLang/5/
+    NatLang/birds-electricity — have one; ProofWriter's OWN grammar spells
+    this ``"~"``, distinct from the ``"-"`` a FACT or rule HEAD uses for a
+    flat negative assertion — see :func:`parse_proofwriter_representation`'s
+    ``_triple_to_node``), and its own gold ``proofs`` annotation cites an
+    EXPLICIT derivation of ``¬X`` for such a condition whenever the theory
+    has one (rather than leaving it uncited as bare absence) — signing
+    ``antecedent_keys`` is what lets :func:`check_gold_proof` look each one
+    up as a recursive ``signed_key`` regardless of polarity. A
+    ``signed_key`` can have SEVERAL entries (several grounded rules/facts
+    derived it — the "OR-forest" a gold proof may cite any one branch of).
+    Signing ``antecedent_keys`` does NOT change ``true_atoms``/``stratum``
+    below: NAF satisfaction there is still checked by plain ABSENCE from
+    ``true_atoms`` (``(atom.to_unicode_str() in true_atoms) == positive``),
+    exactly ProofWriter's own stratified-fixpoint semantics; ``provenance``
+    is a side record of what ALSO fired explicitly, not a different
+    satisfaction rule.
     """
     parsed = [_as_rule(p) for p in premises]
     has_naf = any(not positive for _, body, _ in parsed
                   for _, positive in body)
 
-    # Ground every rule over the finite constant set.
-    def _ground(rule):
-        variables, body, head = rule
-        if not variables:
-            return [(body, head)]
-        if not constants:
-            return []
-        groundings = []
-        import itertools as _it
-        for values in _it.product(constants, repeat=len(variables)):
-            g_body = []
-            for atom, positive in body:
-                g_atom = atom
-                for var, value in zip(variables, values):
-                    g_atom = substitute(g_atom, var, value)
-                g_body.append((g_atom, positive))
-            h_atom, h_positive = head
-            for var, value in zip(variables, values):
-                h_atom = substitute(h_atom, var, value)
-            groundings.append((g_body, (h_atom, h_positive)))
-        return groundings
-
-    ground_rules = [g for rule in parsed for g in _ground(rule)]
+    # Ground every rule over the finite constant set, remembering which
+    # ORIGINAL premise (index into `premises`) each grounding came from --
+    # needed only for `provenance`, but cheap enough to always compute.
+    ground_rules: "List[Tuple[list, tuple]]" = []
+    origin: "List[int]" = []
+    for premise_index, rule in enumerate(parsed):
+        for grounding in _ground_rule(rule, constants):
+            ground_rules.append(grounding)
+            origin.append(premise_index)
 
     # LOCAL stratification: strata live on GROUND ATOMS. A positive body
     # atom forces its head onto the same-or-higher stratum, a negated one
@@ -794,21 +861,40 @@ def _closed_model(premises: "List[Node]", constants: "List[Constant]"):
             "refusing rather than guessing (well-founded semantics is out of "
             "scope).")
 
+    provenance: "Optional[Dict[str, set]]" = {} if record_provenance else None
+
+    def _record(signed_key: str, gi: int, body) -> None:
+        if provenance is None:
+            return
+        # SIGNED per literal (bare for a positive requirement, "¬"-prefixed
+        # for a negation-as-failure one) -- a NAF antecedent's signed key is
+        # what a gold proof cites when it names an EXPLICIT negative
+        # derivation for it (see check_gold_proof's docstring on why real
+        # ProofWriter proofs prefer a constructive ¬X derivation over silent
+        # absence whenever one exists).
+        ante_keys = tuple(
+            atom.to_unicode_str() if positive else Not(atom).to_unicode_str()
+            for atom, positive in body)
+        provenance.setdefault(signed_key, set()).add((origin[gi], ante_keys))
+
     true_atoms: set = set()
     negative_atoms: set = set()
-    positive_rules = [(body, head) for body, head in ground_rules if head[1]]
+    positive_rules = [
+        (gi, body, head) for gi, (body, head) in enumerate(ground_rules)
+        if head[1]
+    ]
     max_stratum = max(
-        (stratum[head[0].to_unicode_str()] for _, head in positive_rules),
+        (stratum[head[0].to_unicode_str()] for _, _, head in positive_rules),
         default=0)
     for level in range(max_stratum + 1):
         level_rules = [
-            (body, head) for body, head in positive_rules
+            (gi, body, head) for gi, body, head in positive_rules
             if stratum[head[0].to_unicode_str()] == level
         ]
         changed = True
         while changed:
             changed = False
-            for body, (head_atom, _) in level_rules:
+            for gi, body, (head_atom, _) in level_rules:
                 fires = all(
                     (atom.to_unicode_str() in true_atoms) == positive
                     for atom, positive in body
@@ -816,18 +902,20 @@ def _closed_model(premises: "List[Node]", constants: "List[Constant]"):
                 if not fires:
                     continue
                 key = head_atom.to_unicode_str()
+                _record(key, gi, body)
                 if key not in true_atoms:
                     true_atoms.add(key)
                     changed = True
 
     # Negative heads read the COMPLETED model (previously they fired at
     # their head's level, silently missing body atoms derived later).
-    for body, (head_atom, head_positive) in ground_rules:
+    for gi, (body, (head_atom, head_positive)) in enumerate(ground_rules):
         if head_positive:
             continue
         if all((atom.to_unicode_str() in true_atoms) == positive
                for atom, positive in body):
             negative_atoms.add(head_atom.to_unicode_str())
+            _record(Not(head_atom).to_unicode_str(), gi, body)
 
     contradictions = sorted(true_atoms & negative_atoms)
     if contradictions:
@@ -835,6 +923,11 @@ def _closed_model(premises: "List[Node]", constants: "List[Constant]"):
             f"proofwriter: the CWA theory derives {contradictions[0]!r} both "
             "positively and negatively — inconsistent under the closed-world "
             "reading; refusing rather than answering arbitrarily.")
+    if record_provenance:
+        ordered_provenance = {
+            key: sorted(entries) for key, entries in provenance.items()
+        }
+        return frozenset(true_atoms), has_naf, ordered_provenance
     return frozenset(true_atoms), has_naf
 
 
@@ -1042,3 +1135,292 @@ def solve_structured_example(example: DatasetExample, *,
     return {"predicted": "True" if holds else "False",
             "verdict": None, "verdict_negated": None,
             "atom_calls": atom_calls}
+
+
+# --------------------------------------------------------------------------- #
+# check_gold_proof: verify a structured-route example's OWN question["proofs"]
+# annotation against the kit's own forward-chaining fixpoint — see
+# _proofwriter_proof.py for the annotation grammar this parses.
+# --------------------------------------------------------------------------- #
+
+def _negate(node: Node) -> Node:
+    """Logical negation WITHOUT double-negating: ``¬X`` → ``X``, else ``¬``."""
+    return node.formula if isinstance(node, Not) else Not(node)
+
+
+#: Every strategy tag observed across 390 real rows / 5452 questions fetched
+#: from ``hitachi-nlp/proofwriter_processed_OWA`` (every published config)
+#: plus the real AllenAI CWA fixture — see :func:`_target_for_strategy`.
+_KNOWN_STRATEGIES = frozenset({
+    "proof", "inv-proof", "rconc", "inv-rconc", "random", "inv-random",
+})
+
+
+def _target_for_strategy(conclusion: Node, strategy: "Optional[str]",
+                         example_id: str) -> Node:
+    """The literal a gold ``proofs`` annotation is ABOUT, given the
+    question's own strategy tag.
+
+    ProofWriter's ``"proof"``/``"rconc"``/``"random"`` strategies derive (or
+    fail to derive) the question's conclusion EXACTLY as generated —
+    whatever polarity the question itself has (a question can be phrased
+    negatively, e.g. ``"The rabbit is not round."``, and be settled by
+    directly citing a NEGATIVE fact — confirmed in real data: 96 of 1329
+    real ``"proof"``-strategy questions fetched here are phrased negatively
+    and their proof directly cites a negative-headed fact/rule). The
+    ``"inv-*"`` strategies derive the OPPOSITE of the question instead
+    (that is what makes the label ``"False"``/the "inv-" failure a
+    not-entailed positive/negative pair) — never a double negation, since
+    the question's own polarity is stripped, not added to.
+    """
+    if strategy not in _KNOWN_STRATEGIES:
+        raise ValueError(
+            f"proofwriter: example {example_id} has meta['strategy'] "
+            f"{strategy!r}, not one of {sorted(_KNOWN_STRATEGIES)} — cannot "
+            "tell which literal the gold proof is about")
+    if strategy.startswith("inv-"):
+        return _negate(conclusion)
+    return conclusion
+
+
+def _rule_body_holds(rule_node: Node, target_key: str,
+                     true_atoms: "FrozenSet[str]",
+                     constants: "List[Constant]") -> "Optional[bool]":
+    """Is there SOME grounding of ``rule_node`` whose HEAD is ``target_key``
+    (a SIGNED atom key — see :func:`_closed_model`'s ``provenance``) with a
+    satisfied body?
+
+    This is an EXISTENTIAL question over every grounding whose head matches
+    (a rule with a variable that occurs in the body but not the head, or
+    otherwise sharing its head atom across more than one grounding, can have
+    several) — all matching groundings are checked, not just the first one
+    ``itertools.product`` happens to visit, so a non-firing grounding never
+    masks a later firing one.
+
+    Returns ``None`` when no grounding of ``rule_node`` concludes
+    ``target_key`` at all (the rule cannot structurally produce this atom,
+    e.g. under any constant substitution its head is a different
+    predicate/arguments) — a gold "deepest failure" witness naming such a
+    rule cannot be confirmed or refuted this way, which
+    :func:`check_gold_proof` surfaces rather than silently treating as
+    either outcome.
+    """
+    rule = _as_rule(rule_node)
+    matches = []
+    for g_body, (g_head_atom, g_head_positive) in _ground_rule(rule, constants):
+        signed = (g_head_atom.to_unicode_str() if g_head_positive
+                  else Not(g_head_atom).to_unicode_str())
+        if signed != target_key:
+            continue
+        matches.append(g_body)
+    if not matches:
+        return None
+    return any(all((atom.to_unicode_str() in true_atoms) == positive
+                    for atom, positive in g_body)
+               for g_body in matches)
+
+
+def _match_gold_derivation(node: "_proof.ProofNode", target_key: str,
+                           key_to_index: "Dict[str, int]",
+                           provenance: "Dict[str, list]") -> bool:
+    """Does ``node`` (a :class:`~._proofwriter_proof.Leaf` /
+    :class:`~._proofwriter_proof.Naf` / :class:`~._proofwriter_proof.Apply` /
+    :class:`~._proofwriter_proof.Or`) explain how the fixpoint's OWN
+    ``provenance`` derived ``target_key``?
+
+    A :class:`~._proofwriter_proof.Leaf` matches iff the fact it cites fired
+    with no antecedents for exactly ``target_key``; a
+    :class:`~._proofwriter_proof.Naf` matches iff ``target_key`` is a
+    NEGATIVE requirement (starts with ``"¬"``) whose bare positive form has
+    NO provenance entry at all — genuine absence, matching negation-as-
+    failure with no explicit ``¬X`` derivation to cite (see
+    :class:`~._proofwriter_proof.Naf`); an :class:`~._proofwriter_proof.Apply`
+    matches iff SOME provenance entry for ``target_key`` used the SAME rule
+    with the SAME antecedent count, each antecedent recursively matching the
+    corresponding gold sub-term (in order — see :func:`_closed_model`'s
+    ``provenance`` docstring on why body order is preserved and safe to rely
+    on positionally); an :class:`~._proofwriter_proof.Or` matches iff ANY
+    alternative does (the OR-forest offers several valid supports —
+    matching any one is enough).
+    """
+    if isinstance(node, _proof.Leaf):
+        index = key_to_index.get(node.ref)
+        if index is None:
+            raise ValueError(
+                f"proofwriter: gold proof cites unknown fact reference "
+                f"{node.ref!r} — not among this example's premise_keys")
+        return (index, ()) in provenance.get(target_key, ())
+    if isinstance(node, _proof.Naf):
+        if not target_key.startswith("¬"):
+            raise ValueError(
+                f"proofwriter: gold proof cites NAF (negation-as-failure) "
+                f"for {target_key!r}, which is not itself a negative "
+                "requirement — outside the documented grammar (NAF only "
+                "ever justifies a '~'-polarity body condition)")
+        return target_key[1:] not in provenance
+    if isinstance(node, _proof.Or):
+        return any(_match_gold_derivation(alt, target_key, key_to_index,
+                                          provenance)
+                   for alt in node.alts)
+    if isinstance(node, _proof.Apply):
+        index = key_to_index.get(node.rule)
+        if index is None:
+            raise ValueError(
+                f"proofwriter: gold proof cites unknown rule reference "
+                f"{node.rule!r} — not among this example's premise_keys")
+        parts = node.args.parts
+        for origin_index, ante_keys in provenance.get(target_key, ()):
+            if origin_index != index or len(ante_keys) != len(parts):
+                continue
+            if all(_match_gold_derivation(sub, ante_keys[i], key_to_index,
+                                          provenance)
+                   for i, sub in enumerate(parts)):
+                return True
+        return False
+    raise ValueError(
+        f"proofwriter: gold proof node {type(node).__name__} is not a "
+        "derivation node (Leaf/Naf/Apply/Or) — a FailWitness at this "
+        "position is handled separately by check_gold_proof, never "
+        "recursed into")
+
+
+def check_gold_proof(example: DatasetExample) -> dict:
+    """Verify a structured-route example's gold ``question["proofs"]``
+    against the kit's OWN forward-chaining fixpoint (:func:`_closed_model`
+    with ``record_provenance=True``) — a genuine "same derivation" check,
+    because ProofWriter's own generator and this fixpoint are both doing
+    forward chaining over the SAME ground theory (see the module docstring's
+    CWA section). Unlike :func:`solve_structured_example`, no ATP is
+    invoked — the whole point is a SECOND, independent route to the same
+    ground theory's derivable atoms, so this takes no ``prove_kwargs``.
+    Requires an ``example`` produced by :func:`load_proofwriter_structured`
+    with ``convert_fol=True`` (so ``meta["premise_keys"]``/
+    ``meta["proofs"]``/``meta["strategy"]`` and the generated FOL are all
+    present) and without a recorded conversion error.
+
+    Known, narrow disagreement (report, do not repair — see this module's
+    "Independent verification" contract): a real rule body's ``"~"``
+    (negation-as-failure) condition and a fact/rule head's ``"-"`` (strong
+    negation) both lower to the SAME kit ``Not()`` in the generated FOL (see
+    :func:`parse_proofwriter_representation`'s ``_triple_to_node`` —
+    pre-existing, unrelated to this function), so when a ``"~"`` condition
+    is genuinely UNDETERMINED under ProofWriter's own open-world reading
+    (never asserted true OR false) rather than absent-under-closed-world,
+    :func:`_closed_model`'s NAF-as-absence semantics (pre-existing,
+    unrelated to this function, verified 1078/1078 against genuinely
+    CWA-labelled data) can let a rule fire that ProofWriter's own OWA-
+    consistent annotation says should not. Confirmed on 7 of 4550
+    checkable real questions fetched here (0.15%) — every one traced to a
+    rule using ``"~"``; :func:`check_gold_proof` correctly reports these as
+    ``ok=False`` rather than silently agreeing, which is the intended
+    behaviour, not a bug in the parser or this checker.
+
+    Two shapes, per :mod:`._proofwriter_proof`'s grammar:
+
+    * A DERIVATION (``strategy`` ``"proof"``/``"inv-proof"``/``"rconc"``/
+      ``"random"``/``"inv-rconc"``/``"inv-random"`` whose ``proofs`` parses
+      to a :class:`~._proofwriter_proof.Leaf`/:class:`~._proofwriter_proof.Apply`/
+      :class:`~._proofwriter_proof.Or`): the target literal (see
+      :func:`_target_for_strategy`) must be among the atoms the fixpoint's
+      own provenance says were derived by exactly that named chain of
+      facts/rules (:func:`_match_gold_derivation`).
+    * A :class:`~._proofwriter_proof.FailWitness` (``"Unknown"`` answers):
+      confirms the target literal is genuinely NOT derivable (absent from
+      ``provenance``), and — when the witness names a first candidate rule
+      (``rule_chain[0]``) — that THAT rule's own grounding for this target
+      has an unsatisfied body in the fixpoint's COMPLETED perfect model
+      (:func:`_rule_body_holds`). ``true_atoms`` IS the theory's perfect
+      model already (:func:`_closed_model` fully stratifies before
+      returning), so this is the exact ground truth regardless of whether
+      the rule's own body has a negation-as-failure condition — there is no
+      "which round" ambiguity to approximate. **Explicitly NOT verified**:
+      deeper links of a multi-rule failure chain (``rule_chain[1:]`` — real
+      witnesses go up to 5 links deep, see
+      :class:`~._proofwriter_proof.FailWitness`); only the first, named
+      "could this have produced the target" candidate is checked.
+
+    Returns a dict with ``"kind"`` (``"derivation"`` or ``"fail_witness"``),
+    ``"ok"`` (bool), ``"atom"`` (the target's signed key) and ``"gold"``
+    (the parsed :data:`~._proofwriter_proof.ProofNode`); a
+    ``"fail_witness"`` result additionally carries ``"derivable"`` and
+    ``"rule_body_holds"`` (``None`` when ``rule_chain`` is empty or its
+    first rule cannot structurally conclude the target atom).
+
+    Raises:
+        ValueError: the example is missing generated FOL, its
+            ``meta["proofs"]``/``meta["premise_keys"]``/``meta["strategy"]``
+            (i.e. it was not produced by :func:`load_proofwriter_structured`
+            with ``convert_fol=True``), the generated conclusion is not a
+            (possibly negated) atom, or the gold annotation cites a
+            ``tripleN``/``ruleN`` reference outside this example's own
+            premises — never silently ignored or guessed at.
+    """
+    from ... import api
+
+    if example.meta.get("fol_conversion_error"):
+        raise ValueError(
+            f"proofwriter: example {example.id} carries a conversion error "
+            f"({example.meta['fol_conversion_error']}) — cannot check its "
+            "proof.")
+    if example.fol_conclusion is None:
+        raise ValueError(
+            f"proofwriter: example {example.id} has no generated conclusion "
+            "— was it loaded with convert_fol=False?")
+    proofs_text = example.meta.get("proofs")
+    if not proofs_text:
+        raise ValueError(
+            f"proofwriter: example {example.id} has no recorded "
+            "meta['proofs'] annotation to check.")
+    premise_keys = example.meta.get("premise_keys")
+    if not premise_keys:
+        raise ValueError(
+            f"proofwriter: example {example.id} has no meta['premise_keys'] "
+            "— only load_proofwriter_structured's output names its "
+            "triples/rules.")
+
+    def _parse(text: str) -> Node:
+        parsed = api.parse_any(text)
+        if not parsed.ok:
+            raise ValueError(
+                f"proofwriter: example {example.id}: generated formula "
+                f"{text!r} does not parse under the kit grammar")
+        return parsed.formula
+
+    premises = [_parse(p) for p in example.fol_premises]
+    conclusion = _parse(example.fol_conclusion)
+    target = _target_for_strategy(conclusion, example.meta.get("strategy"),
+                                  example.id)
+    target_atom = target.formula if isinstance(target, Not) else target
+    if not isinstance(target_atom, Atom):
+        raise ValueError(
+            f"proofwriter: example {example.id}: target "
+            f"{target.to_unicode_str()!r} is not a (possibly negated) atom "
+            "— cannot check its proof against a ground fixpoint")
+    target_key = target.to_unicode_str()
+
+    constants = _collect_constants(premises + [conclusion])
+    true_atoms, _has_naf, provenance = _closed_model(
+        premises, constants, record_provenance=True)
+    key_to_index = {key: i for i, key in enumerate(premise_keys)}
+    gold = _proof.parse_question_proof(proofs_text)
+
+    if isinstance(gold, _proof.FailWitness):
+        derivable = target_key in provenance
+        rule_body_holds: "Optional[bool]" = None
+        if gold.rule_chain:
+            rule_ref = gold.rule_chain[0]
+            rule_index = key_to_index.get(rule_ref)
+            if rule_index is None:
+                raise ValueError(
+                    f"proofwriter: gold failure witness cites unknown rule "
+                    f"reference {rule_ref!r} — not among this example's "
+                    "premise_keys")
+            rule_body_holds = _rule_body_holds(
+                premises[rule_index], target_key, true_atoms, constants)
+        ok = (not derivable) and (rule_body_holds is not True)
+        return {"kind": "fail_witness", "ok": ok, "atom": target_key,
+                "gold": gold, "derivable": derivable,
+                "rule_body_holds": rule_body_holds}
+
+    ok = _match_gold_derivation(gold, target_key, key_to_index, provenance)
+    return {"kind": "derivation", "ok": ok, "atom": target_key, "gold": gold}

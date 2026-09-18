@@ -22,10 +22,21 @@ predicate and relativizes the quantifiers (``∀x:S φ ↦ ∀x. S(x) → φ``, 
 emit the resulting plain-FOL formula. Pass ``include_sort_facts=True`` to also conjoin
 the sort-membership facts of any sorted constants.
 
-**Equality.** To stay consistent with the rest of the toolkit's HOL layer
+**Equality.** By default, to stay consistent with the rest of the toolkit's HOL layer
 (``qml.to_thf_modal``), ``=`` / ``≠`` are emitted as *uninterpreted* binary predicates
-(``feq`` / ``fneq``), **not** primitive HOL identity. If you want genuine HOL identity,
-post-process the output or add the congruence/identity axioms yourself.
+(``feq`` / ``fneq``), **not** primitive HOL identity. Pass ``native_equality=True`` to
+:func:`to_thf_fol` / :func:`to_isabelle_fol` (and the MSFOL wrappers) to emit ``=`` /
+``≠`` as the target logic's own built-in identity instead — TPTP THF's native infix
+``=`` / ``!=`` and Isabelle/HOL's polymorphic ``=`` / ``\<noteq>`` are both genuine,
+axiom-free HOL identity at every type (including the uninterpreted individual type
+``$i`` / ``i``), so this is a *rendering* choice, not new machinery: no congruence or
+reflexivity axiom is generated or needed, because the target format's own ``=``
+already validates them. The comparison predicates ``<`` ``>`` ``≤`` ``≥`` are
+unaffected by this flag and always stay uninterpreted (``flt``/``fgt``/``fle``/``fge``)
+— they have no built-in counterpart in either target. The default remains ``False``
+(uninterpreted ``feq``/``fneq``) so existing output is unchanged; if you want genuine
+HOL identity without the flag, post-process the output or add the congruence/identity
+axioms yourself.
 
 **Honesty / scope.** This module only *emits* problems and theories; it does **not**
 run Leo-III, Satallax, Vampire, Isabelle, or Sledgehammer. Classical first-order
@@ -55,8 +66,23 @@ from ..fol.nodes import (
 # them valid, distinct functor / constant names in THF and Isabelle.
 _PRED_ALIAS = {"=": "feq", "≠": "fneq", "<": "flt", ">": "fgt", "≤": "fle", "≥": "fge"}
 
+# The two symbols native_equality=True renders as the target logic's own built-in
+# identity (binary use only — a same-named symbol at any OTHER arity is left as an
+# ordinary uninterpreted predicate via _PRED_ALIAS, same as when the flag is off).
+_NATIVE_EQ_NAMES = {"=", "≠"}
+
 _FORALL = "∀"
 _EXISTS = "∃"
+
+
+def _is_native_eq(name: str, arity: int, native_equality: bool) -> bool:
+    """True if ``(name, arity)`` is rendered as the target's built-in identity.
+
+    Only ``=``/``≠`` at their natural binary arity qualify — this bypasses the
+    ``feq``/``fneq`` alias (no declaration, no functor application) in favour of
+    THF's native infix ``=``/``!=`` or Isabelle's polymorphic ``=``/``\\<noteq>``.
+    """
+    return native_equality and name in _NATIVE_EQ_NAMES and arity == 2
 
 
 # ===========================================================================
@@ -158,9 +184,14 @@ class _SymbolResolver:
 
     Both *declarations* and *usages* must go through :meth:`name`, so a symbol is
     declared and referenced under exactly the same (de-collided) identifier.
+
+    ``native_equality=True`` makes this resolver skip reserving ``feq``/``fneq``
+    for the binary ``=``/``≠`` entries (they render as native identity and need no
+    identifier at all), which also frees those stems for a user symbol literally
+    named ``feq``/``fneq`` — there is no longer an alias target to collide with.
     """
 
-    def __init__(self, formula: Node):
+    def __init__(self, formula: Node, native_equality: bool = False):
         self._used = set()
         self._map: Dict[Tuple[str, str, int], str] = {}
         preds, funcs, consts = _signature(formula)
@@ -168,9 +199,10 @@ class _SymbolResolver:
         # claim their natural alias names (feq, fneq, …); any user symbol that
         # would sanitise to the same stem is then de-collided away from them. This
         # makes the alias targets collision-proof while keeping = -> feq when there
-        # is no competing user 'feq'.
+        # is no competing user 'feq'. Skip this for a (name, arity) that
+        # native_equality renders natively — it needs no alias/identifier.
         for name, arity in sorted(preds):
-            if name in _PRED_ALIAS:
+            if name in _PRED_ALIAS and not _is_native_eq(name, arity, native_equality):
                 self._assign(_CAT_PRED, name, arity)
         # Deterministic assignment order so emitted problems are stable.
         for name, arity in sorted(preds):
@@ -270,7 +302,8 @@ def _thf_term(node: Node, syms: "_SymbolResolver", vars_: "_VarResolver") -> str
     )
 
 
-def _thf_formula(node: Node, syms: "_SymbolResolver", vars_: "_VarResolver") -> str:
+def _thf_formula(node: Node, syms: "_SymbolResolver", vars_: "_VarResolver",
+                  native_equality: bool = False) -> str:
     """Render a classical FOL formula as a THF ``$o`` term.
 
     Connectives use the THF/FOF operators (``~ & | => <=> <~>``); quantifiers bind
@@ -279,10 +312,19 @@ def _thf_formula(node: Node, syms: "_SymbolResolver", vars_: "_VarResolver") -> 
     name is routed through the resolvers so distinct source symbols stay distinct.
     Anything outside the classical fragment (modal, second-order, Łukasiewicz,
     lambda) raises ``NotImplementedError``.
+
+    With ``native_equality=True``, a binary ``=``/``≠`` atom renders as THF's own
+    infix ``( a = b )`` / ``( a != b )`` instead of applying the ``feq``/``fneq``
+    functor — genuine HOL identity, built in at every type, no declaration needed.
     """
     def f(n):
-        return _thf_formula(n, syms, vars_)
+        return _thf_formula(n, syms, vars_, native_equality)
     if isinstance(node, Atom):
+        if _is_native_eq(node.predicate, len(node.args), native_equality):
+            op = "=" if node.predicate == "=" else "!="
+            left = _thf_term(node.args[0], syms, vars_)
+            right = _thf_term(node.args[1], syms, vars_)
+            return f"( {left} {op} {right} )"
         head = syms.name(_CAT_PRED, node.predicate, len(node.args))
         if not node.args:
             return head
@@ -312,16 +354,21 @@ def _thf_formula(node: Node, syms: "_SymbolResolver", vars_: "_VarResolver") -> 
     )
 
 
-def _thf_signature_decls(formula: Node, syms: "_SymbolResolver") -> List[str]:
+def _thf_signature_decls(formula: Node, syms: "_SymbolResolver",
+                         native_equality: bool = False) -> List[str]:
     """Type declarations for every predicate / function / constant in ``formula``.
 
     Each declaration uses the resolver-assigned identifier, so a symbol is
     declared under exactly the name its usages reference, and distinct symbols
     (including a predicate at two arities) get distinct, single-typed decls.
+    A binary ``=``/``≠`` skips its declaration when ``native_equality=True`` —
+    THF's built-in identity is polymorphic and needs no type declaration.
     """
     preds, funcs, consts = _signature(formula)
     decls: List[str] = []
     for name, arity in sorted(preds):
+        if _is_native_eq(name, arity, native_equality):
+            continue
         ident = syms.name(_CAT_PRED, name, arity)
         typ = " > ".join(["$i"] * arity + ["$o"]) if arity else "$o"
         decls.append(f"thf({ident}_decl, type, ( {ident} : ( {typ} ) )).")
@@ -335,7 +382,7 @@ def _thf_signature_decls(formula: Node, syms: "_SymbolResolver") -> List[str]:
     return decls
 
 
-def to_thf_fol(formula: Node, conjecture: bool = True) -> str:
+def to_thf_fol(formula: Node, conjecture: bool = True, native_equality: bool = False) -> str:
     """Emit a complete TPTP **THF** problem for a classical FOL ``formula``.
 
     The problem declares the individual type ``$i`` implicitly (TPTP's built-in),
@@ -346,9 +393,12 @@ def to_thf_fol(formula: Node, conjecture: bool = True) -> str:
     (e.g. to assert it as a hypothesis in a larger problem).
 
     Free variables in ``formula`` are universally closed before emission (TPTP
-    formula roles do not admit free variables). Equality ``=`` / ``≠`` becomes the
-    uninterpreted predicate ``feq`` / ``fneq`` (see module docstring); for genuine
-    HOL identity add your own axioms.
+    formula roles do not admit free variables). By default, equality ``=`` / ``≠``
+    becomes the uninterpreted predicate ``feq`` / ``fneq`` (see module docstring);
+    pass ``native_equality=True`` to instead emit THF's own built-in infix
+    ``=`` / ``!=`` — genuine HOL identity, so congruence/substitutivity for every
+    declared function and predicate is free (no axioms to add). The comparison
+    predicates ``<`` ``>`` ``≤`` ``≥`` are unaffected either way.
 
     Classical FOL is *semi-decidable only*: a prover may confirm a valid conjecture
     but is not guaranteed to terminate otherwise. This function only emits the
@@ -359,20 +409,28 @@ def to_thf_fol(formula: Node, conjecture: bool = True) -> str:
     for name in reversed(_free_variables(formula)):
         closed = Quantifier(_FORALL, Variable(name), closed)
     role = "conjecture" if conjecture else "axiom"
-    syms = _SymbolResolver(closed)
+    syms = _SymbolResolver(closed, native_equality=native_equality)
     vars_ = _VarResolver(lambda raw: _sanitize(raw).upper())
     lines = [
         "% Classical FOL embedded into THF (first-order fragment of HOL).",
         f"% The formula is emitted as the {role}; '$i' is the individual type.",
-        "% '=' / '≠' are uninterpreted predicates (feq / fneq), not HOL identity.",
     ]
-    lines += _thf_signature_decls(closed, syms)
-    lines.append(f"thf(goal, {role}, {_thf_formula(closed, syms, vars_)}).")
+    # Only the comment differs, and only when '=' / '≠' actually occur at their
+    # native binary arity — a formula without them emits byte-identical output
+    # whether native_equality is True or False (nothing about it would differ).
+    preds, _, _ = _signature(closed)
+    if any(_is_native_eq(n, a, native_equality) for n, a in preds):
+        lines.append("% '=' / '≠' are THF's native, built-in HOL identity (no axioms needed).")
+    else:
+        lines.append("% '=' / '≠' are uninterpreted predicates (feq / fneq), not HOL identity.")
+    lines += _thf_signature_decls(closed, syms, native_equality=native_equality)
+    lines.append(f"thf(goal, {role}, "
+                 f"{_thf_formula(closed, syms, vars_, native_equality=native_equality)}).")
     return "\n".join(lines) + "\n"
 
 
 def to_thf_msfol(formula: Node, conjecture: bool = True,
-                 include_sort_facts: bool = True) -> str:
+                 include_sort_facts: bool = True, native_equality: bool = False) -> str:
     """Emit a TPTP **THF** problem for a *many-sorted* FOL ``formula`` via guard relativization.
 
     Each sort becomes a unary guard predicate and each sorted quantifier is
@@ -382,10 +440,11 @@ def to_thf_msfol(formula: Node, conjecture: bool = True,
     ``include_sort_facts=True`` (default) the sort-membership facts of any sorted
     constants are conjoined first, so e.g. ``Mortal(socrates:Human)`` carries
     ``Human(socrates)``. All sorts share the single THF individual type ``$i`` —
-    the relativization, not the type system, keeps the sorts apart.
+    the relativization, not the type system, keeps the sorts apart. See
+    :func:`to_thf_fol` for ``native_equality``.
     """
     return to_thf_fol(to_fol(formula, include_sort_facts=include_sort_facts),
-                      conjecture=conjecture)
+                      conjecture=conjecture, native_equality=native_equality)
 
 
 # ===========================================================================
@@ -416,7 +475,8 @@ def _isa_term(node: Node, syms: "_SymbolResolver", vars_: "_VarResolver") -> str
     )
 
 
-def _isa_formula(node: Node, syms: "_SymbolResolver", vars_: "_VarResolver") -> str:
+def _isa_formula(node: Node, syms: "_SymbolResolver", vars_: "_VarResolver",
+                  native_equality: bool = False) -> str:
     """Render a classical FOL formula in Isabelle/HOL syntax (fully parenthesised).
 
     Uses Isabelle's logical-symbol control sequences (``\\<not>``, ``\\<and>`` …)
@@ -424,10 +484,19 @@ def _isa_formula(node: Node, syms: "_SymbolResolver", vars_: "_VarResolver") -> 
     apply their predicate by curried juxtaposition. Xor is rendered as the negated
     biconditional ``\\<not>(l \\<longleftrightarrow> r)``. Every functor / variable
     name is routed through the resolvers so distinct source symbols stay distinct.
+
+    With ``native_equality=True``, a binary ``=``/``≠`` atom renders as Isabelle's
+    own infix ``(a = b)`` / ``(a \\<noteq> b)`` instead of the ``feq``/``fneq``
+    consts — genuine, polymorphic HOL identity, no declaration needed.
     """
     def g(n):
-        return _isa_formula(n, syms, vars_)
+        return _isa_formula(n, syms, vars_, native_equality)
     if isinstance(node, Atom):
+        if _is_native_eq(node.predicate, len(node.args), native_equality):
+            left = _isa_term(node.args[0], syms, vars_)
+            right = _isa_term(node.args[1], syms, vars_)
+            op = "=" if node.predicate == "=" else "\\<noteq>"
+            return f"({left} {op} {right})"
         head = syms.name(_CAT_PRED, node.predicate, len(node.args))
         if not node.args:
             return head
@@ -452,18 +521,23 @@ def _isa_formula(node: Node, syms: "_SymbolResolver", vars_: "_VarResolver") -> 
     )
 
 
-def _isa_consts_block(formula: Node, syms: "_SymbolResolver") -> List[str]:
+def _isa_consts_block(formula: Node, syms: "_SymbolResolver",
+                      native_equality: bool = False) -> List[str]:
     """``consts`` declarations for every predicate / function / constant.
 
     Individuals live in a single uninterpreted HOL type ``i``; a k-ary predicate
     has type ``i ⇒ … ⇒ bool`` and a k-ary function ``i ⇒ … ⇒ i``. Each ``consts``
     entry uses the resolver-assigned identifier, so no two declarations share a
     name (no duplicate-``consts`` load error) and every name matches its usages.
+    A binary ``=``/``≠`` skips its declaration when ``native_equality=True`` —
+    Isabelle's polymorphic ``=`` is built in and needs no ``consts`` entry.
     """
     preds, funcs, consts = _signature(formula)
     lines: List[str] = []
     arrow = " \\<Rightarrow> "
     for name, arity in sorted(preds):
+        if _is_native_eq(name, arity, native_equality):
+            continue
         ident = syms.name(_CAT_PRED, name, arity)
         typ = arrow.join(["i"] * arity + ["bool"]) if arity else "bool"
         lines.append(f"consts {ident} :: \"{typ}\"")
@@ -478,7 +552,8 @@ def _isa_consts_block(formula: Node, syms: "_SymbolResolver") -> List[str]:
 
 
 def to_isabelle_fol(formula: Node, theory_name: str = "FOL_Export",
-                    lemma_name: str = "goal", proof: str = "oops") -> str:
+                    lemma_name: str = "goal", proof: str = "oops",
+                    native_equality: bool = False) -> str:
     """Emit a loadable **Isabelle/HOL** theory with ``formula`` as a real ``lemma``.
 
     The theory declares a single uninterpreted individual type ``i`` and a
@@ -492,9 +567,22 @@ def to_isabelle_fol(formula: Node, theory_name: str = "FOL_Export",
     ``proof="by auto"``, ``"sledgehammer"``, ``"by blast"``, … to attempt a
     discharge — but note that classical FOL is semi-decidable only, so no tactic
     is guaranteed to close every valid lemma, and this function does not run
-    Isabelle. Equality ``=`` / ``≠`` is the uninterpreted predicate ``feq`` /
-    ``fneq`` (see module docstring), not HOL ``=``.
+    Isabelle. By default, equality ``=`` / ``≠`` is the uninterpreted predicate
+    ``feq`` / ``fneq`` (see module docstring), not HOL ``=``; pass
+    ``native_equality=True`` to emit Isabelle's own polymorphic ``=`` / ``\\<noteq>``
+    instead — genuine HOL identity, so congruence closes by ``simp``/``auto`` with
+    no axioms added. The comparison predicates ``<`` ``>`` ``≤`` ``≥`` are
+    unaffected either way.
     """
+    formula = _reduce_nl_nodes(formula)   # Contrast → ∧, Count → witnesses
+    # Only the comment differs, and only when '=' / '≠' actually occur at their
+    # native binary arity — a formula without them emits byte-identical output
+    # whether native_equality is True or False (nothing about it would differ).
+    preds, _, _ = _signature(formula)
+    if any(_is_native_eq(n, a, native_equality) for n, a in preds):
+        eq_comment = "   '=' / '≠' are Isabelle's own built-in HOL identity (no axioms needed)."
+    else:
+        eq_comment = "   '=' / '≠' are the uninterpreted predicates feq / fneq, NOT HOL identity."
     lines = [
         f"theory {theory_name}",
         "  imports Main",
@@ -502,17 +590,17 @@ def to_isabelle_fol(formula: Node, theory_name: str = "FOL_Export",
         "",
         "(* Classical FOL embedded into Isabelle/HOL over an uninterpreted",
         "   individual type and uninterpreted predicates/functions/constants.",
-        "   '=' / '≠' are the uninterpreted predicates feq / fneq, NOT HOL identity.",
+        eq_comment,
         "   FOL is semi-decidable only: no tactic closes every valid lemma. *)",
         "",
         "typedecl i  \\<comment> \\<open>uninterpreted individuals\\<close>",
     ]
-    formula = _reduce_nl_nodes(formula)   # Contrast → ∧, Count → witnesses
-    syms = _SymbolResolver(formula)
+    syms = _SymbolResolver(formula, native_equality=native_equality)
     vars_ = _VarResolver(_sanitize)
-    lines += _isa_consts_block(formula, syms)
+    lines += _isa_consts_block(formula, syms, native_equality=native_equality)
     lines.append("")
-    lines.append(f"lemma {lemma_name}: \"{_isa_formula(formula, syms, vars_)}\"")
+    lines.append(f"lemma {lemma_name}: "
+                 f"\"{_isa_formula(formula, syms, vars_, native_equality=native_equality)}\"")
     lines.append(f"  {proof}")
     lines.append("")
     lines.append("end")
@@ -521,14 +609,16 @@ def to_isabelle_fol(formula: Node, theory_name: str = "FOL_Export",
 
 def to_isabelle_msfol(formula: Node, theory_name: str = "MSFOL_Export",
                       lemma_name: str = "goal", proof: str = "oops",
-                      include_sort_facts: bool = True) -> str:
+                      include_sort_facts: bool = True, native_equality: bool = False) -> str:
     """Emit an **Isabelle/HOL** theory for a many-sorted formula via guard relativization.
 
     Reduces ``formula`` with :func:`~unicode_fol_kit.fol.nodes.to_fol` (each sort
     becomes a unary guard predicate over the single individual type ``i``, each
     sorted quantifier is relativized) and emits the result with
     :func:`to_isabelle_fol`. With ``include_sort_facts=True`` (default) the
-    sort-membership facts of sorted constants are conjoined first.
+    sort-membership facts of sorted constants are conjoined first. See
+    :func:`to_isabelle_fol` for ``native_equality``.
     """
     return to_isabelle_fol(to_fol(formula, include_sort_facts=include_sort_facts),
-                           theory_name=theory_name, lemma_name=lemma_name, proof=proof)
+                           theory_name=theory_name, lemma_name=lemma_name, proof=proof,
+                           native_equality=native_equality)

@@ -22,11 +22,12 @@ sections:
 """
 
 import itertools
+import random
 
 import pytest
 
 from unicode_fol_kit.semantics.action_models import (
-    everybody_knows, common_knowledge_holds,
+    everybody_knows, common_knowledge_holds, distributed_knowledge_holds,
     ActionModel, product_update, public_announcement_action,
 )
 from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
@@ -208,6 +209,162 @@ def test_e_ladder_stays_true_on_the_connected_component():
     for n in range(5):
         assert _e_ladder_holds(model, 0, ["a", "b"], P, n) is True
     assert common_knowledge_holds(model, 0, ["a", "b"], P) is True
+
+
+# ---------------------------------------------------------------------------
+# Distributed knowledge (distributed_knowledge_holds): small hand-built frames
+# ---------------------------------------------------------------------------
+
+def test_distributed_knowledge_singleton_group_equals_knows():
+    """D_{a} φ collapses to plain K_a φ (test_oracle (a)): the intersection of
+    ONE relation with itself is just that relation, so a singleton group's
+    'pooled' relation is identical to the lone agent's own."""
+    model = _chain_model(p_at_2=False)
+    for w in model.worlds:
+        assert distributed_knowledge_holds(model, w, ["a"], P) == satisfies_modal(Knows("a", P), model, w)
+        assert distributed_knowledge_holds(model, w, ["b"], P) == satisfies_modal(Knows("b", P), model, w)
+
+
+def test_distributed_knowledge_is_intersection_not_union():
+    """Two agents whose relations from 0 disagree entirely: K:a sees {0,1} (P
+    true at both), K:b sees {0,2} (P false at 2). The INTERSECTION of the two
+    edge sets restricted to source 0 is {(0,0)} only (the one edge both
+    relations share), so D_{a,b} P at 0 only has to check P at world 0 itself
+    -- true -- unlike E_{a,b} P, which inherits b's counterexample at 2 and is
+    False (see test_everybody_knows_union_not_intersection_of_successors,
+    the SAME frame, contrasting union vs. intersection directly)."""
+    model = KripkeModel(
+        worlds={0, 1, 2},
+        relations={
+            "K:a": {(0, 0), (0, 1), (1, 0), (1, 1)},
+            "K:b": {(0, 0), (0, 2), (2, 0), (2, 2)},
+        },
+        valuation={0: {"P"}, 1: {"P"}, 2: set()},
+    )
+    assert distributed_knowledge_holds(model, 0, ["a", "b"], P) is True
+    assert everybody_knows(model, 0, ["a", "b"], P) is False  # the contrasting union reading
+
+
+def test_distributed_knowledge_can_be_false_where_singleton_knowledge_is_false():
+    """A hand-built witness that D_{a,b} genuinely differs from either K_a or
+    K_b alone in BOTH directions on the same frame: at world 0, neither a nor
+    b alone knows P (each has a P-false successor), but POOLING their
+    relations narrows the reachable set down to just the P-true world 1, so
+    D_{a,b} P holds even though neither individual K_a P nor K_b P does."""
+    model = KripkeModel(
+        worlds={0, 1, 2, 3},
+        relations={
+            # a cannot tell 0 from 2 (where P is false); b cannot tell 0 from 3
+            # (also P-false) -- but their INTERSECTION from 0 is just {1}.
+            "K:a": {(0, 0), (0, 1), (0, 2)},
+            "K:b": {(0, 0), (0, 1), (0, 3)},
+        },
+        valuation={0: {"P"}, 1: {"P"}, 2: set(), 3: set()},
+    )
+    assert satisfies_modal(Knows("a", P), model, 0) is False
+    assert satisfies_modal(Knows("b", P), model, 0) is False
+    assert distributed_knowledge_holds(model, 0, ["a", "b"], P) is True
+
+
+def test_distributed_knowledge_empty_group_raises():
+    """The deliberately-different empty-group convention (see the function's
+    docstring): an empty intersection would be the universal relation, so this
+    raises instead of silently returning a near-universal verdict."""
+    model = _chain_model(p_at_2=False)
+    with pytest.raises(ValueError, match="empty"):
+        distributed_knowledge_holds(model, 0, [], P)
+
+
+def _random_multi_agent_model(rng, agents, n_worlds=4):
+    """A random Kripke model with one relation per name in ``agents``, atom P."""
+    worlds = list(range(n_worlds))
+    relations = {
+        f"K:{a}": {(x, y) for x in worlds for y in worlds if rng.random() < 0.5}
+        for a in agents
+    }
+    valuation = {w: ({"P"} if rng.random() < 0.5 else set()) for w in worlds}
+    return KripkeModel(worlds=worlds, relations=relations, valuation=valuation)
+
+
+def test_distributed_knowledge_monotone_in_group_size():
+    """test_oracle (b): D_G φ true implies D_{G∪{b}} φ true for any added agent
+    -- distributed knowledge only GROWS (never shrinks) as more agents' relations
+    are pooled in, since adding a relation to an intersection can only shrink
+    (never grow) the reachable successor set, which only makes the universal
+    claim over it easier to satisfy. Brute-forced on many small (<=4-world,
+    <=3-agent) random frames, checked at every world and for every group
+    the implication could apply to."""
+    rng = random.Random(20260917)
+    agents = ["a", "b", "c"]
+    checked = 0
+    for _ in range(80):
+        model = _random_multi_agent_model(rng, agents, n_worlds=rng.randint(1, 4))
+        for size in (1, 2):
+            for group in itertools.combinations(agents, size):
+                extra_candidates = [a for a in agents if a not in group]
+                if not extra_candidates:
+                    continue
+                extra = rng.choice(extra_candidates)
+                bigger = tuple(sorted(group + (extra,)))
+                for w in model.worlds:
+                    smaller_holds = distributed_knowledge_holds(model, w, group, P)
+                    if smaller_holds:
+                        assert distributed_knowledge_holds(model, w, bigger, P) is True, (
+                            f"D_{group} P held at {w} but D_{bigger} P did not"
+                        )
+                        checked += 1
+    assert checked > 20, checked  # guard: the corpus must actually exercise the True case sometimes
+
+
+# ---------------------------------------------------------------------------
+# FHMV strength ordering: C_G φ -> E_G φ -> K_a φ -> D_G φ, as theorems
+# (test_oracle (c)), checked the same way test_common_knowledge_gives_
+# factivity_on_a_reflexive_frame checks factivity: for every world where the
+# stronger notion holds, the weaker one must too.
+# ---------------------------------------------------------------------------
+
+def test_fhmv_strength_chain_on_random_reflexive_frames():
+    """C_G φ -> E_G φ -> K_a φ (any a in G) -> D_G φ, brute-forced at every
+    world of many random REFLEXIVE frames (reflexivity is what makes C_G -> φ
+    -- and so the whole chain -- meaningful; an irreflexive frame can make
+    C_G φ vacuously true in ways unrelated to this ordering)."""
+    rng = random.Random(20260918)
+    agents = ["a", "b"]
+    group = tuple(agents)
+    checked = {"c_to_e": 0, "e_to_k": 0, "k_to_d": 0}
+    for _ in range(60):
+        n_worlds = rng.randint(1, 4)
+        worlds = list(range(n_worlds))
+        relations = {}
+        for ag in agents:
+            edges = {(x, y) for x in worlds for y in worlds if rng.random() < 0.4}
+            edges |= {(w, w) for w in worlds}  # reflexive
+            relations[f"K:{ag}"] = edges
+        valuation = {w: ({"P"} if rng.random() < 0.5 else set()) for w in worlds}
+        model = KripkeModel(worlds=worlds, relations=relations, valuation=valuation)
+        for w in worlds:
+            c = common_knowledge_holds(model, w, group, P)
+            e = everybody_knows(model, w, group, P)
+            d = distributed_knowledge_holds(model, w, group, P)
+            if c:
+                assert e is True, f"C_G held but E_G did not at {w}"
+                checked["c_to_e"] += 1
+            if e:
+                for ag in agents:
+                    assert satisfies_modal(Knows(ag, P), model, w) is True, (
+                        f"E_G held but K_{ag} did not at {w}"
+                    )
+                    checked["e_to_k"] += 1
+            # K_a -> D_G, independently of whether E_G also holds.
+            for ag in agents:
+                if satisfies_modal(Knows(ag, P), model, w):
+                    assert d is True, f"K_{ag} held but D_G did not at {w}"
+                    checked["k_to_d"] += 1
+    # Guards: the random corpus must actually exercise every link at least once,
+    # or this test would pass vacuously without checking anything.
+    assert checked["c_to_e"] > 0, checked
+    assert checked["e_to_k"] > 0, checked
+    assert checked["k_to_d"] > 0, checked
 
 
 # ---------------------------------------------------------------------------

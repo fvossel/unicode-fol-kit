@@ -85,11 +85,11 @@ from ..fol.nodes import (
     Node, Atom,
     Box, Diamond, Knows, Believes, Says, Wants, Obligatory, Permitted,
     Next, Always, Eventually, Until, Historically, Once, Previous, Since,
+    EverybodyKnows, DistributedKnowledge, CommonKnowledge,
 )
 from ..semantics.kripke import KripkeModel, satisfies_modal
 from ..fol.frames import (
-    FRAME_CONDITIONS, FRAMES as _FRAMES, UnsupportedFrameCondition,
-    resolve_frame, holds_on_finite_frame,
+    FRAMES as _FRAMES, resolve_frame, holds_on_finite_frame,
 )
 from .protocol import ProverBackend, Verdict, REFUTED, UNKNOWN
 
@@ -145,6 +145,12 @@ def _collect(formula: Node) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
             families.add(_ALETHIC)
         elif isinstance(node, Knows):
             families.add(_KNOWS_PREFIX + _agent_key(node.agent))
+        elif isinstance(node, (EverybodyKnows, DistributedKnowledge, CommonKnowledge)):
+            # Every group member's "K:"+agent relation is searched and frame-
+            # checked. Dropping it would fix the relation empty on every
+            # candidate, which under e.g. S5 is not even a legal frame and
+            # "refutes" the valid E_{a} P → P.
+            families.update(_KNOWS_PREFIX + _agent_key(member) for member in node.group)
         elif isinstance(node, Believes):
             families.add(_BELIEVES_PREFIX + _agent_key(node.agent))
         elif isinstance(node, Says):
@@ -159,16 +165,17 @@ def _collect(formula: Node) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
 
 
 def _check_frame(frame: str, systems: Optional[Dict[str, str]]) -> None:
-    """Resolve every frame this search will use, refusing what a FINITE frame
-    check cannot decide.
+    """Resolve every frame name this search will use, raising if any is unknown.
 
-    The enumerator carries every FIRST-ORDER condition in the shared registry
-    (a condition on a finite relation is directly checkable), which is more
-    than the labelled tableau's rule set — so it validates frames itself
-    rather than borrowing the tableau's stricter check. The three
-    non-first-order conditions (Löb, McKinsey, Grz) are refused by name: they
-    are not properties of a frame's relation at all, and enumerating frames
-    "satisfying" them would be enumerating nothing meaningful.
+    The enumerator carries every condition in the shared registry that a
+    FINITE frame check can decide — every first-order condition (a condition
+    on a finite relation is directly checkable), and, via each one's finite
+    structural characterisation (:func:`~unicode_fol_kit.fol.frames.holds_on_finite_frame`),
+    Löb, McKinsey and Grz too — which is more than the labelled tableau's
+    rule set, so it validates frames itself rather than borrowing the
+    tableau's stricter check. There is nothing left for this function to
+    refuse by condition: it only resolves each name, which still raises
+    ``ValueError`` for one that names no known system or Geach spec.
     """
     names = [frame]
     for fam, sys in (systems or {}).items():
@@ -179,18 +186,9 @@ def _check_frame(frame: str, systems: Optional[Dict[str, str]]) -> None:
         names.append(sys)
     for name in names:
         try:
-            conds = resolve_frame(name)
+            resolve_frame(name)
         except ValueError as exc:
             raise ValueError(f"kripke_enum: {exc}") from None
-        for cond in conds:
-            entry = FRAME_CONDITIONS.get(cond)
-            if entry is not None and not entry.first_order:
-                raise UnsupportedFrameCondition(
-                    f"kripke_enum: the frame {name!r} needs the condition "
-                    f"{cond!r} ({entry.description}), which no finite frame "
-                    "check decides. Use the higher-order embeddings "
-                    "hol.isabelle_modal / hol.thf_modal, which assert the "
-                    "schema itself.")
 
 
 def _conditions_for(relname: str, frame: str, systems: Optional[Dict[str, str]]) -> Tuple[str, ...]:
@@ -227,8 +225,9 @@ def _holds_conditions(edges: FrozenSet[Tuple[int, int]], n: int, conditions: Tup
     SOUNDNESS, not tidiness: this function used to test the five conditions it
     knew and IGNORE any other, so a frame class it did not recognise silently
     widened to the ones it did — and a countermodel the named system excludes
-    would have been reported as if it refuted the formula. An unknown or
-    non-first-order condition now raises instead.
+    would have been reported as if it refuted the formula. An unknown
+    condition now raises instead — Löb/Grz/McKinsey are no exception: each
+    is decided by its own finite structural characterisation, not raised.
     """
     return all(holds_on_finite_frame(cond, edges, n) for cond in conditions)
 
@@ -396,8 +395,10 @@ def modal_enum_search(formula: Node, *, frame: str = "K",
         formula: the (already premise-folded, if applicable — see
             :class:`KripkeEnumBackend`) formula to search for a countermodel of.
         frame: the alethic frame name for ``"alethic"`` relations (Box/Diamond)
-            — one of K/T/D/KD/B/KB/K4/K45/S4/S5/KD45, the same vocabulary as
-            :func:`unicode_fol_kit.atp.modal_tableau.is_modal_valid`.
+            — any name in :data:`unicode_fol_kit.fol.frames.FRAMES`, including
+            ``"GL"``/``"S4.1"``/``"Grz"`` (decided via their finite structural
+            characterisation — see the module docstring) and a Scott–Lemmon
+            spec like ``"G(1,1,1,1)"``.
         systems: per-family frame overrides for deontic/temporal/epistemic/
             doxastic relations (``{"epistemic": "S5", ...}``), same convention
             and same defaults (KD for deontic, K for the rest) as
@@ -418,10 +419,14 @@ def modal_enum_search(formula: Node, *, frame: str = "K",
         ``model``/``exhausted``/``unsupported`` together.
 
     Raises:
-        NotImplementedError: if ``frame`` is ``"GL"`` (not finitely
-            expressible — see ``modal_tableau._check_frame``).
         ValueError: if ``frame`` or a ``systems`` entry names an unknown frame
-            or system family.
+            or system family. ``"GL"``/``"S4.1"``/``"Grz"`` are NOT refused —
+            each has a finite structural characterisation
+            (:func:`unicode_fol_kit.fol.frames.holds_on_finite_frame`) that
+            this bounded enumerator decides directly, unlike the routes that
+            emit a single first-order sentence over frames of every
+            cardinality (``fol.qml``, ``fol.modal_translation``, ``atp.fitch``,
+            the labelled tableau), which still refuse them.
     """
     _check_frame(frame, systems)
     atoms, families = _collect(formula)

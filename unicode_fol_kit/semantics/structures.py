@@ -47,6 +47,7 @@ missing rather than silently receiving a weaker structure, and
 the callables again.
 """
 
+import html
 from dataclasses import dataclass, field
 from typing import (
     Callable, Dict, FrozenSet, Iterable, Mapping, Optional, Sequence, Tuple,
@@ -231,6 +232,58 @@ class FiniteStructure:
         return (f"FiniteStructure(|D|={len(self.domain)}, "
                 f"symbols={len(self.signature())}, "
                 f"computed={len(self.computed)})")
+
+    def _repr_html_(self) -> str:
+        """Jupyter/IPython rich-display hook: an HTML summary built from :meth:`to_dict`.
+
+        Reuses :meth:`to_dict`'s already-safe choice not to evaluate computed
+        predicates — they are listed by NAME only, never called — so this
+        method just formats that same dict as HTML instead of JSON: the
+        domain, one small ``<table>`` per stored ``name/arity`` extension, the
+        list of computed-predicate names, and a constants table. Every value
+        is HTML-escaped, since a domain individual, predicate name, or
+        constant name is a user-chosen string that may contain ``<``/``>``/``&``.
+        """
+        data = self.to_dict()
+        parts = [
+            f"<p><b>domain</b> ({len(data['domain'])}): "
+            + ", ".join(html.escape(d) for d in data["domain"]) + "</p>"
+        ]
+
+        if data["constants"]:
+            rows = "".join(
+                f"<tr><th>{html.escape(name)}</th><td>{html.escape(value)}</td></tr>"
+                for name, value in data["constants"].items()
+            )
+            parts.append(f"<table><caption>constants</caption><tbody>{rows}</tbody></table>")
+
+        for key, tuples in data["extensions"].items():
+            _, _, arity = key.rpartition("/")
+            if arity == "0":
+                # A 0-ary predicate's extension is either {()} (true) or {}
+                # (false) — see the module docstring. Falling through to the
+                # generic per-tuple row loop below would render both as an
+                # empty-looking table under the same caption (one row with
+                # no cells versus no rows at all), which a notebook reader
+                # cannot tell apart. State the boolean explicitly instead.
+                truth = "True" if tuples else "False"
+                parts.append(
+                    f"<table><caption>{html.escape(key)}</caption>"
+                    f"<tbody><tr><td>{truth}</td></tr></tbody></table>")
+                continue
+            rows = "".join(
+                "<tr>" + "".join(f"<td>{html.escape(v)}</td>" for v in row) + "</tr>"
+                for row in tuples
+            )
+            parts.append(
+                f"<table><caption>{html.escape(key)}</caption><tbody>{rows}</tbody></table>")
+
+        if data["computed"]:
+            parts.append(
+                "<p><b>computed</b> (extension not materialised): "
+                + ", ".join(html.escape(c) for c in data["computed"]) + "</p>")
+
+        return "".join(parts)
 
 
 def structure_from_dict(

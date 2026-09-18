@@ -18,6 +18,7 @@ tree labels, and export-rejection live here.
 """
 
 from dataclasses import dataclass
+from typing import Tuple
 
 from ._fol_nodes import (
     Node, Variable, Constant, Z3Env, NODE_CLASSES,
@@ -33,6 +34,16 @@ def _coerce_agent(agent):
 def _agent_label(agent: Node) -> str:
     """Render an agent term as the short name used in K_<agent> / relation keys."""
     return getattr(agent, "name", None) or agent.to_unicode_str()
+
+
+def _coerce_agent_group(group) -> Tuple[Node, ...]:
+    """Coerce an iterable of agents to a tuple of term Nodes (see :func:`_coerce_agent`)."""
+    return tuple(_coerce_agent(a) for a in group)
+
+
+def _group_label(group: Tuple[Node, ...]) -> str:
+    """Render a group of agent terms as the comma-joined list used inside ``{…}``."""
+    return ",".join(_agent_label(a) for a in group)
 
 
 def parse_agent_token(token_text: str, prefix_len: int = 2) -> Node:
@@ -67,6 +78,13 @@ def resolve_agent_variables(node: Node, bound: frozenset = frozenset()) -> Node:
         if isinstance(agent, Variable) and agent.name not in bound:
             agent = Constant(agent.name)
         return replace(node, agent=agent,
+                       formula=resolve_agent_variables(node.formula, bound))
+    if isinstance(node, (EverybodyKnows, DistributedKnowledge, CommonKnowledge)):
+        group = tuple(
+            Constant(a.name) if isinstance(a, Variable) and a.name not in bound else a
+            for a in node.group
+        )
+        return replace(node, group=group,
                        formula=resolve_agent_variables(node.formula, bound))
     return node.map_children(lambda c: resolve_agent_variables(c, bound))
 
@@ -235,6 +253,251 @@ class Believes(Node):
     def to_tptp(self) -> str:
         """Reject TPTP export: modal operators have no direct first-order encoding."""
         raise NotImplementedError(_NO_EXPORT)
+
+
+#: Why the group-epistemic operators (E_G / D_G / C_G) have no direct
+#: first-order export via to_z3/to_prover9/to_tptp, even though E_G and D_G
+#: individually ARE first-order definable (see fol.modal_translation): every
+#: modal node in this module rejects the classical back-ends directly and
+#: requires going through modal_to_fol (standard_translation) first — the
+#: SAME rule Knows/Believes themselves follow despite being FO-definable too.
+_NO_GROUP_EXPORT = _NO_EXPORT
+
+
+@dataclass(frozen=True)
+class EverybodyKnows(Node):
+    """Group-epistemic E_G φ: every agent in ``group`` knows φ (one-step).
+
+    By definition E_G φ ≡ ⋀_{a∈G} K_a φ — equivalently, φ holds at every world
+    reachable from the current one by a SINGLE edge of the UNION of the
+    group's per-agent ``"K:"+agent`` relations (see
+    :func:`unicode_fol_kit.semantics.action_models.everybody_knows`, which
+    this node's :func:`~unicode_fol_kit.semantics.kripke.satisfies_modal`
+    dispatch calls directly — the same "thin AST wrapper over an existing
+    function" pattern :class:`Announce` uses for
+    :func:`~unicode_fol_kit.semantics.dynamic_epistemic.announce`).
+
+    ``group`` is a tuple of agent **terms** (Variable or Constant, exactly
+    like :class:`Knows`'s ``agent`` field — each reachable by
+    free_variables/substitution/β-reduction and resolved by the same
+    :func:`resolve_agent_variables` scope pass, so a group member bound by an
+    enclosing quantifier stays a Variable, e.g.
+    ``∀x (Student(x) → E_{x,b} φ)``). An iterable of bare strings/Nodes is
+    accepted and coerced. An EMPTY group is allowed and, matching
+    :func:`everybody_knows`'s own convention, makes ``E_∅ φ`` vacuously true
+    at every world (the union over zero relations is the empty relation).
+    """
+
+    group: Tuple[Node, ...]
+    formula: Node
+
+    def __post_init__(self):
+        """Coerce every group member to a term Node (see :func:`_coerce_agent_group`)."""
+        object.__setattr__(self, "group", _coerce_agent_group(self.group))
+
+    def _tree_parts(self):
+        """Return the E_{group} label and the single subformula child."""
+        return f"E_{{{_group_label(self.group)}}}", [self.formula]
+
+    def to_dict(self):
+        """Serialise to dict with type tag, group terms, and serialised subformula."""
+        return {"_type": "EverybodyKnows",
+                "group": [a.to_dict() for a in self.group],
+                "formula": self.formula.to_dict()}
+
+    @staticmethod
+    def from_dict(d):
+        """Deserialise an EverybodyKnows from a dict produced by to_dict."""
+        return EverybodyKnows(tuple(Node.from_dict(a) for a in d["group"]),
+                              Node.from_dict(d["formula"]))
+
+    def to_unicode_str(self) -> str:
+        """Render as ``E_{a,b,c} φ`` (see the class docstring; overridden like
+        :class:`Announce` — no registry fixity expresses a variable-length
+        agent LIST, only :class:`Knows`'s single agent)."""
+        post = _pal_wrap(self.formula, 4, lambda n: n.to_unicode_str())
+        return f"E_{{{_group_label(self.group)}}} {post}"
+
+    def to_latex(self) -> str:
+        """Render as LaTeX ``\\mathsf{E}_{\\{a,b,c\\}} φ``."""
+        from ._msfl_nodes import _latex_escape  # lazy: avoid a module-load-order cycle
+        agents = ", ".join(_latex_escape(_agent_label(a)) for a in self.group)
+        post = _pal_wrap(self.formula, 4, lambda n: n.to_latex())
+        return f"\\mathsf{{E}}_{{\\{{{agents}\\}}}} {post}"
+
+    def to_z3(self, env: Z3Env = None):
+        """Reject Z3 export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_GROUP_EXPORT)
+
+    def to_prover9(self) -> str:
+        """Reject Prover9 export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_GROUP_EXPORT)
+
+    def to_tptp(self) -> str:
+        """Reject TPTP export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_GROUP_EXPORT)
+
+
+@dataclass(frozen=True)
+class DistributedKnowledge(Node):
+    """Group-epistemic D_G φ: φ is DISTRIBUTED knowledge in ``group`` (one-step).
+
+    D_G φ holds at ``world`` iff φ holds at every world reachable by a SINGLE
+    edge of the INTERSECTION ``⋂_{a∈G} R_a`` of the group's per-agent
+    ``"K:"+agent`` relations — pooling every agent's information together.
+    D_G is the LOGICALLY WEAKEST of the group notions (``K_a φ → D_G φ`` for
+    every ``a ∈ G``, and transitively ``E_G φ → D_G φ`` / ``C_G φ → D_G φ``,
+    never the converse — see
+    :func:`~unicode_fol_kit.semantics.action_models.distributed_knowledge_holds`'s
+    docstring for why "logically weakest formal constraint" is not in tension
+    with "pools richer information": FHMV, *Reasoning About Knowledge*, MIT
+    Press 1995, ch. 2). Dispatch goes to
+    :func:`unicode_fol_kit.semantics.action_models.distributed_knowledge_holds`
+    (same pattern as :class:`EverybodyKnows` / :func:`everybody_knows`).
+
+    ``group`` is a tuple of agent terms exactly like :class:`EverybodyKnows`'s
+    ``group`` (coerced, resolved by :func:`resolve_agent_variables`) — but,
+    UNLIKE :class:`EverybodyKnows`/:class:`CommonKnowledge`, an EMPTY group is
+    refused at construction: an intersection over an empty family is
+    conventionally the UNIVERSAL relation, so ``D_∅ φ`` would demand φ true at
+    literally every world of the model — a degenerate reading nobody
+    constructing this node means, so this class raises loudly here (matching
+    the same refusal
+    :func:`~unicode_fol_kit.semantics.action_models.distributed_knowledge_holds`
+    raises at evaluation time) rather than let it reach ``modal_to_fol``/the
+    Kripke evaluator as a silent vacuous-universal.
+    """
+
+    group: Tuple[Node, ...]
+    formula: Node
+
+    def __post_init__(self):
+        """Coerce every group member to a term Node; refuse an empty group."""
+        object.__setattr__(self, "group", _coerce_agent_group(self.group))
+        if not self.group:
+            raise ValueError(
+                "DistributedKnowledge: D_∅ φ (an empty group) is refused — an "
+                "intersection over zero relations is conventionally the "
+                "UNIVERSAL relation, which would make D_∅ φ demand φ at every "
+                "world of the model, not a sensible reading of 'distributed "
+                "knowledge of an empty group'. Name at least one agent."
+            )
+
+    def _tree_parts(self):
+        """Return the D_{group} label and the single subformula child."""
+        return f"D_{{{_group_label(self.group)}}}", [self.formula]
+
+    def to_dict(self):
+        """Serialise to dict with type tag, group terms, and serialised subformula."""
+        return {"_type": "DistributedKnowledge",
+                "group": [a.to_dict() for a in self.group],
+                "formula": self.formula.to_dict()}
+
+    @staticmethod
+    def from_dict(d):
+        """Deserialise a DistributedKnowledge from a dict produced by to_dict."""
+        return DistributedKnowledge(tuple(Node.from_dict(a) for a in d["group"]),
+                                    Node.from_dict(d["formula"]))
+
+    def to_unicode_str(self) -> str:
+        """Render as ``D_{a,b,c} φ`` (see :class:`EverybodyKnows`)."""
+        post = _pal_wrap(self.formula, 4, lambda n: n.to_unicode_str())
+        return f"D_{{{_group_label(self.group)}}} {post}"
+
+    def to_latex(self) -> str:
+        """Render as LaTeX ``\\mathsf{D}_{\\{a,b,c\\}} φ``."""
+        from ._msfl_nodes import _latex_escape  # lazy: avoid a module-load-order cycle
+        agents = ", ".join(_latex_escape(_agent_label(a)) for a in self.group)
+        post = _pal_wrap(self.formula, 4, lambda n: n.to_latex())
+        return f"\\mathsf{{D}}_{{\\{{{agents}\\}}}} {post}"
+
+    def to_z3(self, env: Z3Env = None):
+        """Reject Z3 export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_GROUP_EXPORT)
+
+    def to_prover9(self) -> str:
+        """Reject Prover9 export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_GROUP_EXPORT)
+
+    def to_tptp(self) -> str:
+        """Reject TPTP export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_GROUP_EXPORT)
+
+
+@dataclass(frozen=True)
+class CommonKnowledge(Node):
+    """Group-epistemic C_G φ: φ is COMMON knowledge in ``group``.
+
+    C_G φ is the infinite conjunction ``E_G φ ∧ E_G E_G φ ∧ …`` — equivalently
+    (FHMV, *Reasoning About Knowledge*, MIT Press 1995, §2.4), φ holds at
+    every world reachable from the current one by the REFLEXIVE-TRANSITIVE
+    closure of the group's union relation ``⋃_{a∈G} R_a``. Dispatch goes to
+    :func:`unicode_fol_kit.semantics.action_models.common_knowledge_holds`
+    (same pattern as :class:`EverybodyKnows`). UNLIKE E_G/D_G, C_G is NOT
+    first-order definable (transitive closure): :func:`modal_to_fol`
+    (:mod:`unicode_fol_kit.fol.modal_translation`) refuses it by name, exactly
+    as it already refuses :class:`Until`/:class:`Since`.
+
+    ``group`` is a tuple of agent terms exactly like :class:`EverybodyKnows`'s
+    ``group`` (coerced, resolved by :func:`resolve_agent_variables`). An EMPTY
+    group is allowed, matching :func:`common_knowledge_holds`'s own
+    convention (``C_∅ φ`` reduces to plain ``φ`` — the reflexive closure of
+    the empty relation is just the current world).
+    """
+
+    group: Tuple[Node, ...]
+    formula: Node
+
+    def __post_init__(self):
+        """Coerce every group member to a term Node (see :func:`_coerce_agent_group`)."""
+        object.__setattr__(self, "group", _coerce_agent_group(self.group))
+
+    def _tree_parts(self):
+        """Return the C_{group} label and the single subformula child."""
+        return f"C_{{{_group_label(self.group)}}}", [self.formula]
+
+    def to_dict(self):
+        """Serialise to dict with type tag, group terms, and serialised subformula."""
+        return {"_type": "CommonKnowledge",
+                "group": [a.to_dict() for a in self.group],
+                "formula": self.formula.to_dict()}
+
+    @staticmethod
+    def from_dict(d):
+        """Deserialise a CommonKnowledge from a dict produced by to_dict."""
+        return CommonKnowledge(tuple(Node.from_dict(a) for a in d["group"]),
+                               Node.from_dict(d["formula"]))
+
+    def to_unicode_str(self) -> str:
+        """Render as ``C_{a,b,c} φ`` (see :class:`EverybodyKnows`)."""
+        post = _pal_wrap(self.formula, 4, lambda n: n.to_unicode_str())
+        return f"C_{{{_group_label(self.group)}}} {post}"
+
+    def to_latex(self) -> str:
+        """Render as LaTeX ``\\mathsf{C}_{\\{a,b,c\\}} φ``."""
+        from ._msfl_nodes import _latex_escape  # lazy: avoid a module-load-order cycle
+        agents = ", ".join(_latex_escape(_agent_label(a)) for a in self.group)
+        post = _pal_wrap(self.formula, 4, lambda n: n.to_latex())
+        return f"\\mathsf{{C}}_{{\\{{{agents}\\}}}} {post}"
+
+    def to_z3(self, env: Z3Env = None):
+        """Reject Z3 export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_GROUP_EXPORT)
+
+    def to_prover9(self) -> str:
+        """Reject Prover9 export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_GROUP_EXPORT)
+
+    def to_tptp(self) -> str:
+        """Reject TPTP export: modal operators have no direct first-order encoding."""
+        raise NotImplementedError(_NO_GROUP_EXPORT)
+
+
+NODE_CLASSES.update({
+    "EverybodyKnows": EverybodyKnows,
+    "DistributedKnowledge": DistributedKnowledge,
+    "CommonKnowledge": CommonKnowledge,
+})
 
 
 @dataclass(frozen=True)
@@ -1128,3 +1391,77 @@ register_parser_op(Announce, "modal", "prefix", "announce_",
 register_parser_op(AnnounceDiamond, "modal", "prefix", "announce_diamond_",
                    '"⟨" formula "!" "⟩" prefix',
                    lambda items: AnnounceDiamond(items[0], items[1]))
+
+
+# --- group-epistemic operators: E_{a,b,…} / D_{a,b,…} / C_{a,b,…} ----------
+#
+# Knows/Believes/Says/Wants each carry exactly ONE agent, folded into the
+# matched token itself ("K_alice" as a single KNOWS terminal) — the
+# `agent_prefix` machinery `register_operator` drives is built around that
+# single-token shape and has no way to express a variable-length LIST of
+# agents, so (like Announce/AnnounceDiamond just above) these three are
+# parser-only registrations with their own to_unicode_str/to_latex overrides
+# rather than register_operator calls; NODE_CLASSES already carries them (see
+# the NODE_CLASSES.update() next to the three class definitions above).
+#
+# Surface syntax: GLYPH_{agent,agent,…} formula — e.g. "C_{a,b,c} φ",
+# "D_{a,b} φ", "E_{a,b,c} φ". Each opening glyph is its OWN named terminal
+# fusing the letter, the underscore AND the opening brace into one token
+# ("C_{" / "D_{" / "E_{"), exactly so the lexer never has to choose between
+# it and a same-length PREDICATE match: a bare predicate named "C_" can only
+# ever lex as PREDICATE up to the "_" (no valid PREDICATE character follows
+# a "{"), so GROUP_C's 3-character match is strictly LONGER at every
+# position it can start, and standard longest-match lexing picks it with no
+# ambiguity to resolve by priority — the ".5" priority below is added anyway,
+# purely for consistency with KNOWS/BELIEVES/SAYS/WANTS/COUNTOP/CFWOULD/
+# CFMIGHT's own explicit-priority convention, not because it changes the
+# outcome here. "C_"/"D_"/"E_" are not used as a prefix ANYWHERE else in the
+# grammar (Historically/Once/Previous use the parenthesised glyphs ⒣⒫⒴, not
+# ASCII letters), so this introduces no collision with any existing operator.
+#
+# After the opening terminal, each agent is an ordinary VARIABLE (a, b, x1 —
+# single term-valued letter + digits) or NAME (alice, carol_smith — ≥2
+# letters, matching what Knows'/Believes' own agent regex already accepts)
+# token, comma-separated, closed by a bare "}" — the SAME anonymous "}"
+# terminal Cardinality's "|{v : φ}|" and (in the dependence mode) the slashed
+# existential's "∃x/{y, z}" already use, so no new terminal is introduced for
+# it either. Lark's inline `(A|B) ("," (A|B))*` repetition is already proven
+# for exactly this "name, name, …" shape by SlashedExists's slash set in
+# _team_nodes.py — mirrored here. Both VARIABLE and NAME tokens are
+# auto-transformed to Variable/Constant Nodes by FOLTransformer.VARIABLE/.NAME
+# (bottom-up, before this rule's own transform runs — see
+# _team_nodes.py's ``_slashed_transform`` for the identical items-slicing
+# pattern), so ``items[1:-1]`` below is already a tuple of agent term Nodes
+# and needs no further parsing — exactly the Variable/Constant shape
+# resolve_agent_variables (this module) expects for EverybodyKnows/
+# DistributedKnowledge/CommonKnowledge's ``group`` field. The trailing
+# ``prefix`` operand (the payload φ) binds at the SAME precedence every other
+# operator in this module uses for its post-modality operand.
+#
+# The grammar REQUIRES at least one agent (VARIABLE|NAME, not optional), so
+# the parser can never produce an empty group; DistributedKnowledge's own
+# __post_init__ additionally refuses one built directly through the Python
+# API (see that class's docstring) — modal_to_fol therefore never has to
+# render a D_∅.
+def _group_transform(node_cls):
+    """Build ``node_cls(group, formula)`` from [GLYPH token, agent…, formula]."""
+    def transform(items):
+        return node_cls(tuple(items[1:-1]), items[-1])
+    return transform
+
+
+register_parser_op(
+    CommonKnowledge, "modal", "prefix", "common_knowledge_",
+    'GROUP_C (VARIABLE|NAME) ("," (VARIABLE|NAME))* "}" prefix',
+    _group_transform(CommonKnowledge),
+    terminal_name="GROUP_C", terminal_def='GROUP_C.5: "C_{"')
+register_parser_op(
+    DistributedKnowledge, "modal", "prefix", "distributed_knowledge_",
+    'GROUP_D (VARIABLE|NAME) ("," (VARIABLE|NAME))* "}" prefix',
+    _group_transform(DistributedKnowledge),
+    terminal_name="GROUP_D", terminal_def='GROUP_D.5: "D_{"')
+register_parser_op(
+    EverybodyKnows, "modal", "prefix", "everybody_knows_",
+    'GROUP_E (VARIABLE|NAME) ("," (VARIABLE|NAME))* "}" prefix',
+    _group_transform(EverybodyKnows),
+    terminal_name="GROUP_E", terminal_def='GROUP_E.5: "E_{"')

@@ -334,9 +334,33 @@ def test_refuses_partial_function_arrow_as_result_position_too():
         parse_casl_spec(text)
 
 
-def test_refuses_subsorting():
-    text = "spec X = sorts S < T . P(a) end"
-    with pytest.raises(CaslImportError, match="subsorting"):
+def test_refuses_subsorting_combined_with_partial_function():
+    """Bare subsorting is now accepted (see the SUBSORTING section below),
+    but it still does not license a partial function — the two constructs
+    are independent, and this combination must still name the '->?' refusal,
+    not silently accept the whole spec because subsorting alone is fine now."""
+    text = "spec X = sort S < T ops f : S ->? S . P(a) end"
+    with pytest.raises(CaslImportError, match=r"->\?"):
+        parse_casl_spec(text)
+
+
+def test_refuses_subsorting_combined_with_free_type():
+    text = "spec X = sort S < T free type Nat ::= zero | succ(Nat) end"
+    with pytest.raises(CaslImportError, match="free/generated type"):
+        parse_casl_spec(text)
+
+
+def test_refuses_operation_overloading_across_a_subsort_edge():
+    """The pre-existing 'redeclared with a conflicting type' refusal (not a
+    subsort-specific check — see the module docstring's REFUSED bullet)
+    still fires when the two conflicting declarations happen to name sorts
+    related by subsorting: this scoped feature declares no overload
+    resolution, so 'f' at Human and 'f' at Animal (even with Human < Animal)
+    is exactly as refused as any other conflicting redeclaration."""
+    text = ("spec X = sort Human < Animal "
+           "ops f : Human -> Human; f : Animal -> Animal "
+           "preds P : Human . forall x : Human . P(x) end")
+    with pytest.raises(CaslImportError, match="conflicting type"):
         parse_casl_spec(text)
 
 
@@ -389,10 +413,9 @@ def test_refuses_predicate_attributes():
 
 
 def test_refusal_message_carries_line_number():
-    """Every CaslImportError message starts with 'line N: ' — the subsort
-    refusal here is on line 3 (1-indexed, counting the leading blank line
-    from the triple-quoted string as line 1)."""
-    text = "spec X =\n  sorts S\n  sorts T < S\nend"
+    """Every CaslImportError message starts with 'line N: ' — the partial
+    function arrow refusal here is on line 3."""
+    text = "spec X =\n  sorts S\n  ops f : S ->? S\nend"
     with pytest.raises(CaslImportError, match=r"^line 3:"):
         parse_casl_spec(text)
 
@@ -514,6 +537,101 @@ def test_to_dict_is_json_compatible_and_carries_all_four_fields():
     assert set(d) == {"name", "signature", "axioms", "conjectures"}
     assert d["name"] == "X"
     json.dumps(d)  # must not raise
+
+
+# =============================================================================
+# Subsorting (S < T) — narrowed from a blanket refusal (roadmap C4)
+# =============================================================================
+
+def test_accepts_bare_subsorting():
+    """'sort S < T' now parses (the blanket refusal test above was narrowed
+    to combined-with-unsupported-construct cases only); the edge lands in
+    Signature.subsorts as {child: frozenset({parent})}, and is_subsort
+    reflects it in ONE direction only (never symmetric)."""
+    text = "spec X = sort Human < Animal preds P : Human . forall x : Human . P(x) end"
+    spec = parse_casl_spec(text)
+    sig = spec.signature
+    assert sig.subsorts == {"Human": frozenset({"Animal"})}
+    assert sig.sorts == frozenset({"Human", "Animal"})
+    assert sig.is_subsort("Human", "Animal") is True
+    assert sig.is_subsort("Animal", "Human") is False
+
+
+def test_accepts_multi_child_subsort_list():
+    """CASL's 'sort-id-list < sort-id' form: 'sort S1, S2 < T' declares BOTH
+    S1 and S2 as direct subsorts of T from one decl item."""
+    text = "spec X = sort Cat, Dog < Animal preds P : Animal . forall x : Animal . P(x) end"
+    sig = parse_casl_spec(text).signature
+    assert sig.subsorts == {"Cat": frozenset({"Animal"}), "Dog": frozenset({"Animal"})}
+
+
+def test_subsort_edges_accumulate_across_separate_decl_items():
+    """Two 'sort ... < ...' items for the SAME child (e.g. multiple
+    inheritance spread across two lines) accumulate into one parent set,
+    rather than the second overwriting the first."""
+    text = "spec X = sort Bat < Mammal sort Bat < Flyer preds P : Bat . forall x : Bat . P(x) end"
+    sig = parse_casl_spec(text).signature
+    assert sig.subsorts == {"Bat": frozenset({"Mammal", "Flyer"})}
+
+
+def test_transitive_chain_across_separate_decl_items():
+    """A < B < C written as two separate direct edges: is_subsort resolves
+    the TRANSITIVE closure (A is a subsort of C), even though no single
+    decl item ever wrote 'A < C' directly."""
+    text = ("spec X = sort Human < Mammal sort Mammal < Animal "
+           "preds P : Human . forall x : Human . P(x) end")
+    sig = parse_casl_spec(text).signature
+    assert sig.subsorts == {
+        "Human": frozenset({"Mammal"}), "Mammal": frozenset({"Animal"})}
+    assert sig.is_subsort("Human", "Mammal") is True
+    assert sig.is_subsort("Mammal", "Animal") is True
+    assert sig.is_subsort("Human", "Animal") is True   # transitive, not a direct edge
+    assert sig.is_subsort("Animal", "Human") is False
+
+
+def test_refuses_subsort_cycle_across_two_decl_items():
+    """A < B and (separately) B < A together form a cycle only once BOTH
+    decl items are assembled into one Signature — Signature.__post_init__'s
+    own cycle check, re-raised here as CaslImportError (never a bare
+    ValueError leaking a different module's exception type)."""
+    text = "spec X = sort A < B sort B < A pred P : () . P end"
+    with pytest.raises(CaslImportError, match="cycle"):
+        parse_casl_spec(text)
+
+
+def test_round_trip_subsort_edge_through_to_casl_spec():
+    """to_casl_spec(subsorts=...) emits 'sort Human < Animal', and
+    parse_casl_spec reads it back into the identical mapping — completing
+    round-trip losslessness for this subset of CASL (the subsorts argument
+    is genuinely NEW information to_casl_spec cannot infer from formulas
+    alone, unlike every other declaration it emits)."""
+    ax = MSFOL.parse("∀x:Human Mortal(x)")
+    text = to_casl_spec([ax], subsorts={"Human": frozenset({"Animal"})})
+    assert "sort Human < Animal" in text
+    spec = parse_casl_spec(text)
+    assert spec.axioms == (ax,)
+    assert spec.signature.subsorts == {"Human": frozenset({"Animal"})}
+
+
+def test_round_trip_diamond_subsort_hierarchy_through_to_casl_spec():
+    """A < B, A < C, B < D, C < D (a diamond: A has two parents, D has two
+    children) — every edge must survive the round trip independently."""
+    ax = Atom("P", (Constant("a"),))
+    subsorts = {
+        "A": frozenset({"B", "C"}),
+        "B": frozenset({"D"}),
+        "C": frozenset({"D"}),
+    }
+    text = to_casl_spec([ax], subsorts=subsorts)
+    spec = parse_casl_spec(text)
+    assert spec.signature.subsorts == subsorts
+    assert spec.signature.is_subsort("A", "D") is True   # transitive, both routes
+
+
+def test_to_casl_spec_refuses_reserved_word_as_subsort_sort_name():
+    ax = Atom("P", (Constant("a"),))
+    with pytest.raises(ValueError, match="reserved CASL keyword 'sort'"):
+        to_casl_spec([ax], subsorts={"sort": frozenset({"Animal"})})
 
 
 # =============================================================================

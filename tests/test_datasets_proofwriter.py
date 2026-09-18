@@ -26,8 +26,25 @@ The two real theories' sentence counts were hand-checked against
 ``NFact + NRule`` (see ``test_split_theory_sentences_matches_nfact_plus_nrule``
 below) rather than just re-asserting whatever ``_split_theory_sentences``
 happens to compute.
+
+``tests/fixtures/proofwriter/proofwriter_owa_chain_row.jsonl`` is ONE MORE
+real row, ``AttNoneg-OWA-D2-1930``, fetched verbatim from
+``hitachi-nlp/proofwriter_processed_OWA`` (depth-2 train, 2026-09-17) via the
+Hugging Face ``datasets-server`` rows API, with its ``questions`` dict
+trimmed to Q1/Q7/Q8/Q9/Q10 (the other questions' OR-forests are enormous —
+Q2's alone is 29 alternatives — and add nothing this file's tests need); all
+``triples``/``rules`` are kept intact since the kept questions' proofs
+reference across them. It exists specifically because
+``proofwriter_owa_mini.jsonl`` never happens to contain a MULTI-LINK
+"deepest failure" chain (``"(ruleK <- ruleJ <- … <- FAIL)"`` — see
+``_proofwriter_proof.py``'s ``FailWitness``), which a 390-row/5452-question
+real-data sweep (across every ``hitachi-nlp/proofwriter_processed_OWA``
+config: depth-0/1/2/3/3ext/3ext-NatLang/5, NatLang, birds-electricity) run
+while building ``check_gold_proof`` found IS a real, non-rare shape (up to 5
+links deep); this row's Q7/Q9 are 3- and 4-link real examples of it.
 """
 
+import dataclasses
 import json
 from pathlib import Path
 
@@ -318,7 +335,7 @@ def test_proofwriter_dataset_example_to_dict_is_json_compatible():
 
 from unicode_fol_kit.eval.datasets.proofwriter import (   # noqa: E402
     load_proofwriter_structured, parse_proofwriter_representation,
-    solve_structured_example,
+    solve_structured_example, check_gold_proof,
 )
 
 _OWA_FIXTURE = _FIXTURES / "proofwriter_owa_mini.jsonl"
@@ -710,3 +727,476 @@ def test_on_indefinite_rejects_unknown_value():
     q8 = _q8_anne_is_big()
     with pytest.raises(ValueError, match="on_indefinite"):
         solve_structured_example(q8, on_indefinite="ignore")
+
+
+# ---------------------------------------------------------------------------
+# Proof-annotation grammar: _proofwriter_proof.py (Leaf/Naf/And/Apply/Or/
+# FailWitness, parse_question_proof, parse_all_proofs) -- hand-derived ASTs
+# for literal strings copied verbatim from the real fixtures, same style as
+# test_representation_*_hand_converted above.
+# ---------------------------------------------------------------------------
+
+from unicode_fol_kit.eval.datasets._proofwriter_proof import (   # noqa: E402
+    Leaf, Naf, And, Apply, Or, FailWitness,
+    parse_question_proof, parse_all_proofs,
+)
+
+_CHAIN_FIXTURE = _FIXTURES / "proofwriter" / "proofwriter_owa_chain_row.jsonl"
+
+
+def test_parse_question_proof_bare_leaf():
+    """Q1 of the AttNoneg fixture row: the theory's own literal string."""
+    assert parse_question_proof("[(triple6)]") == Leaf("triple6")
+
+
+def test_parse_question_proof_single_rule_application():
+    """Q3: '(triple6) -> rule1' -- one antecedent, one rule."""
+    assert parse_question_proof("[(((triple6) -> rule1))]") == \
+        Apply("rule1", And((Leaf("triple6"),)))
+
+
+def test_parse_question_proof_two_step_chain():
+    """Q5: rule3 applied to [a rule1-derivation of triple6, triple5
+    directly] -- hand-verified against the real theory: rule1 derives 'Erin
+    is white' from triple6 ('Erin is young'), rule3 needs White and Round
+    and triple5 IS 'Erin is round', so this is exactly the two-step chain
+    young->white->big with round cited directly."""
+    assert parse_question_proof(
+        "[(((((triple6) -> rule1) triple5) -> rule3))]"
+    ) == Apply("rule3", And((
+        Apply("rule1", And((Leaf("triple6"),))),
+        Leaf("triple5"),
+    )))
+
+
+def test_parse_question_proof_or_forest_two_alternatives():
+    """The exact allProofs entry for 'Anne is white.' in the fixture:
+    either triple1 directly, OR derive it via rule1 from triple2 ('Anne is
+    young')."""
+    assert parse_question_proof("[(triple1 OR ((triple2) -> rule1))]") == \
+        Or((Leaf("triple1"), Apply("rule1", And((Leaf("triple2"),)))))
+
+
+def test_parse_question_proof_or_forest_two_multi_step_alternatives():
+    """RelNoneg Q5: two DIFFERENT two-step chains both conclude 'the dog
+    chases the bear' (rule8 via rule5, or rule8 via rule6) -- hand-checked
+    against the real theory's rule5/rule6/rule8 text."""
+    node = parse_question_proof(
+        "[(((((triple5) -> rule2) ((triple6) -> rule5)) -> rule8) OR "
+        "((((triple5) -> rule2) ((triple4 triple2) -> rule6)) -> rule8))]"
+    )
+    assert node == Or((
+        Apply("rule8", And((
+            Apply("rule2", And((Leaf("triple5"),))),
+            Apply("rule5", And((Leaf("triple6"),))),
+        ))),
+        Apply("rule8", And((
+            Apply("rule2", And((Leaf("triple5"),))),
+            Apply("rule6", And((Leaf("triple4"), Leaf("triple2")))),
+        ))),
+    ))
+
+
+def test_parse_question_proof_fail_witness_single_rule():
+    """Q7: 'Fiona is not big' -- deepest failure is rule3's own body."""
+    assert parse_question_proof(
+        "[@1: Fiona is big.[CWA. Example of deepest failure = "
+        "(rule3 <- FAIL)]]"
+    ) == FailWitness(atom="Fiona is big", rule_chain=("rule3",), depth=1)
+
+
+def test_parse_question_proof_fail_witness_bare_fail():
+    """Q10: no candidate fact or rule head exists for 'Charlie is round' at
+    all -- the base case, an empty rule chain."""
+    assert parse_question_proof(
+        "[@0: Charlie is round.[CWA. Example of deepest failure = (FAIL)]]"
+    ) == FailWitness(atom="Charlie is round", rule_chain=(), depth=0)
+
+
+def test_parse_question_proof_fail_witness_multi_link_chain():
+    """Real shape confirmed on the committed chain-row fixture (Q7): a
+    3-rule walk-back, not just the single-rule shape the mini fixture alone
+    shows (a 390-row/5452-question real-data sweep found chains up to 5
+    links deep -- see the module docstring above)."""
+    assert parse_question_proof(
+        "[@3: Charlie is green.[CWA. Example of deepest failure = "
+        "(rule3 <- rule2 <- rule7 <- FAIL)]]"
+    ) == FailWitness(atom="Charlie is green",
+                     rule_chain=("rule3", "rule2", "rule7"), depth=3)
+
+
+def test_parse_question_proof_naf_antecedent():
+    """Real CWA fixture shape (RelNeg-CWA-D2-1420 Q4): 'NAF' stands in for
+    a fact/rule reference when a '~' body condition has no explicit
+    negative derivation to cite, only its absence."""
+    assert parse_question_proof("[(((NAF) -> rule6))]") == \
+        Apply("rule6", And((Naf(),)))
+
+
+def test_parse_question_proof_requires_bracket_wrapping():
+    with pytest.raises(ValueError, match=r"\[\.\.\.\]"):
+        parse_question_proof("(triple1)")
+
+
+def test_parse_question_proof_refuses_the_birds_electricity_empty_shape():
+    """Confirmed on 822 real 'birds-electricity'/NatLang questions (all
+    answer='Unknown', none with a recorded witness at all) fetched from
+    hitachi-nlp/proofwriter_processed_OWA -- a real annotation shape this
+    grammar does not cover, refused loudly by name rather than silently
+    parsed as an empty derivation."""
+    with pytest.raises(ValueError, match="birds-electricity"):
+        parse_question_proof("[]")
+
+
+def test_parse_question_proof_rejects_unbalanced_parens():
+    with pytest.raises(ValueError, match="close"):
+        parse_question_proof("[(triple1]")
+
+
+def test_parse_question_proof_rejects_unknown_material():
+    with pytest.raises(ValueError, match="triple1"):
+        parse_question_proof("[(triple1 AND triple2)]")
+
+
+def test_parse_question_proof_rejects_a_rule_ref_where_a_leaf_is_expected():
+    with pytest.raises(ValueError, match="rule1"):
+        parse_question_proof("[(rule1)]")
+
+
+def test_parse_question_proof_rejects_malformed_fail_witness():
+    with pytest.raises(ValueError, match="deepest failure"):
+        parse_question_proof("[@1: Foo is bar.[not the documented shape]]")
+
+
+def test_parse_all_proofs_matches_the_fixture_theory_exactly():
+    """allProofs for the AttNoneg fixture row: three depth strata, the
+    exact facts/derivations hand-verified above as its Q1/Q3/Q5
+    counterparts."""
+    with open(_OWA_FIXTURE, encoding="utf-8") as f:
+        record = json.loads(f.readline())
+    parsed = parse_all_proofs(record["allProofs"])
+    assert set(parsed.keys()) == {0, 1, 2}
+    assert parsed[0]["Anne is white."] == \
+        Or((Leaf("triple1"), Apply("rule1", And((Leaf("triple2"),)))))
+    assert parsed[0]["Erin is young."] == Leaf("triple6")
+    assert parsed[1]["Erin is white."] == \
+        Apply("rule1", And((Leaf("triple6"),)))
+    assert parsed[2]["Erin is big."] == Apply("rule3", And((
+        Apply("rule1", And((Leaf("triple6"),))),
+        Leaf("triple5"),
+    )))
+
+
+def test_parse_all_proofs_requires_at_least_one_section():
+    with pytest.raises(ValueError, match="@N"):
+        parse_all_proofs("no sections here at all")
+
+
+# ---------------------------------------------------------------------------
+# check_gold_proof: independently verify question["proofs"] against the
+# kit's own forward-chaining fixpoint (_closed_model with
+# record_provenance=True) -- differential cross-check layered on the same
+# CWA fixpoint the module docstring reports as verified 1078/1078.
+# ---------------------------------------------------------------------------
+
+def test_check_gold_proof_verifies_every_derivation_in_the_owa_fixture():
+    """proof/inv-proof strategies (True/False labels): the gold support set
+    is found among the fixpoint's own provenance for every one, in both
+    real fixture theories."""
+    examples = list(load_proofwriter_structured(_OWA_FIXTURE))
+    derivations = [e for e in examples
+                  if e.meta["strategy"] in ("proof", "inv-proof")]
+    assert len(derivations) == 12          # 6 per theory x 2 theories
+    for example in derivations:
+        result = check_gold_proof(example)
+        assert result["kind"] == "derivation"
+        assert result["ok"] is True, (example.id, result)
+
+
+def test_check_gold_proof_confirms_every_fail_witness_in_the_owa_fixture():
+    """rconc/random/inv-rconc/inv-random strategies (Unknown labels): the
+    target is genuinely underivable, and the named failing rule's body is
+    confirmed unsatisfied at the fixpoint's own completed state, for every
+    one, in both real fixture theories."""
+    examples = list(load_proofwriter_structured(_OWA_FIXTURE))
+    witnesses = [e for e in examples if e.label == "Unknown"]
+    assert len(witnesses) == 12
+    for example in witnesses:
+        result = check_gold_proof(example)
+        assert result["kind"] == "fail_witness"
+        assert result["ok"] is True, (example.id, result)
+        assert result["derivable"] is False
+
+
+def test_check_gold_proof_verifies_every_real_cwa_question():
+    """Real AllenAI CWA fixture (both rows, 24 questions): every derivation
+    and every fail witness verifies against the kit's own fixpoint."""
+    examples = list(load_proofwriter_structured(_CWA_FIXTURE))
+    assert len(examples) == 24
+    for example in examples:
+        result = check_gold_proof(example)
+        assert result["ok"] is True, (example.id, result)
+
+
+def test_check_gold_proof_verifies_the_real_naf_antecedent():
+    """RelNeg-CWA-D2-1420 Q4: rule6's '~Sees(mouse,tiger)' condition has no
+    rule concluding its negation anywhere in the theory, so the gold proof
+    cites 'NAF' rather than a fact/rule -- exercised end to end here, not
+    just parsed standalone."""
+    examples = {e.meta["question_key"]: e
+                for e in load_proofwriter_structured(_CWA_FIXTURE)
+                if e.meta["row_id"] == "RelNeg-CWA-D2-1420"}
+    q4 = examples["Q4"]
+    assert q4.meta["proofs"] == "[(((NAF) -> rule6))]"
+    result = check_gold_proof(q4)
+    assert result["kind"] == "derivation"
+    assert result["ok"] is True
+    assert result["gold"] == Apply("rule6", And((Naf(),)))
+
+
+def test_check_gold_proof_verifies_a_three_and_four_link_failure_chain():
+    """Real chain-row fixture (AttNoneg-OWA-D2-1930): Q7's rule_chain is 3
+    rules deep, Q9's is 4 -- both confirmed against the fixpoint's own
+    completed state, the exact real shape a 5452-question sweep found
+    (see the module docstring)."""
+    examples = {e.meta["question_key"]: e
+                for e in load_proofwriter_structured(_CHAIN_FIXTURE)}
+    assert set(examples) == {"Q1", "Q7", "Q8", "Q9", "Q10"}
+
+    q7 = examples["Q7"]
+    assert q7.label == "Unknown"
+    result7 = check_gold_proof(q7)
+    assert result7["kind"] == "fail_witness"
+    assert result7["ok"] is True
+    assert result7["gold"].rule_chain == ("rule3", "rule2", "rule7")
+
+    q9 = examples["Q9"]
+    result9 = check_gold_proof(q9)
+    assert result9["ok"] is True
+    assert result9["gold"].rule_chain == ("rule8", "rule3", "rule2", "rule7")
+
+    # And the two simple shapes alongside them in the same real row.
+    assert check_gold_proof(examples["Q1"])["ok"] is True    # Leaf(triple6)
+    assert check_gold_proof(examples["Q10"])["ok"] is True   # bare (FAIL)
+
+
+def test_check_gold_proof_detects_a_genuinely_wrong_leaf_citation():
+    """Negative control: the checker must be able to FAIL, not just always
+    agree. Mutate Q5's real gold proof to cite triple1 ('Anne is white')
+    instead of the real triple5 ('Erin is round') as rule3's second
+    antecedent -- a citation the fixpoint's own provenance for 'Erin is
+    big' never used."""
+    examples = {e.meta["question_key"]: e
+                for e in load_proofwriter_structured(_OWA_FIXTURE)
+                if e.meta["row_id"] == "AttNoneg-OWA-D2-1960"}
+    q5 = examples["Q5"]
+    assert q5.meta["proofs"] == \
+        "[(((((triple6) -> rule1) triple5) -> rule3))]"
+    bad_meta = dict(q5.meta)
+    bad_meta["proofs"] = "[(((((triple6) -> rule1) triple1) -> rule3))]"
+    bad_q5 = dataclasses.replace(q5, meta=bad_meta)
+
+    result = check_gold_proof(bad_q5)
+    assert result["kind"] == "derivation"
+    assert result["ok"] is False
+
+
+def test_check_gold_proof_detects_a_falsely_claimed_fail_witness():
+    """Negative control for the FailWitness branch: falsely claim 'Erin is
+    big' (the SAME theory's Q5 target, which IS derivable) is an unproven
+    dead end -- the checker must catch the contradiction, not agree."""
+    examples = {e.meta["question_key"]: e
+                for e in load_proofwriter_structured(_OWA_FIXTURE)
+                if e.meta["row_id"] == "AttNoneg-OWA-D2-1960"}
+    q5 = examples["Q5"]
+    bad_meta = dict(q5.meta)
+    bad_meta["proofs"] = ("[@1: Erin is big.[CWA. Example of deepest "
+                          "failure = (rule3 <- FAIL)]]")
+    bad_meta["strategy"] = "random"
+    bad_q5 = dataclasses.replace(q5, meta=bad_meta)
+
+    result = check_gold_proof(bad_q5)
+    assert result["kind"] == "fail_witness"
+    assert result["ok"] is False
+    assert result["derivable"] is True
+
+
+def test_check_gold_proof_requires_convert_fol_output():
+    examples = list(load_proofwriter_structured(_OWA_FIXTURE,
+                                                convert_fol=False))
+    with pytest.raises(ValueError, match="generated conclusion"):
+        check_gold_proof(examples[0])
+
+
+def test_check_gold_proof_requires_a_proofs_annotation():
+    example = next(iter(load_proofwriter_structured(_OWA_FIXTURE)))
+    bad_meta = dict(example.meta)
+    bad_meta["proofs"] = None
+    bad = dataclasses.replace(example, meta=bad_meta)
+    with pytest.raises(ValueError, match="proofs"):
+        check_gold_proof(bad)
+
+
+def test_check_gold_proof_requires_premise_keys():
+    example = next(iter(load_proofwriter_structured(_OWA_FIXTURE)))
+    bad_meta = dict(example.meta)
+    del bad_meta["premise_keys"]
+    bad = dataclasses.replace(example, meta=bad_meta)
+    with pytest.raises(ValueError, match="premise_keys"):
+        check_gold_proof(bad)
+
+
+def test_check_gold_proof_rejects_unknown_fact_reference():
+    example = next(iter(load_proofwriter_structured(_OWA_FIXTURE)))
+    bad_meta = dict(example.meta)
+    bad_meta["proofs"] = "[(triple999)]"
+    bad = dataclasses.replace(example, meta=bad_meta)
+    with pytest.raises(ValueError, match="triple999"):
+        check_gold_proof(bad)
+
+
+def test_check_gold_proof_refuses_examples_with_a_conversion_error():
+    example = next(iter(load_proofwriter_structured(_OWA_FIXTURE)))
+    bad_meta = dict(example.meta)
+    bad_meta["fol_conversion_error"] = "ValueError: synthetic"
+    bad = dataclasses.replace(example, meta=bad_meta)
+    with pytest.raises(ValueError, match="conversion error"):
+        check_gold_proof(bad)
+
+
+def test_check_gold_proof_requires_a_recognised_strategy():
+    example = next(iter(load_proofwriter_structured(_OWA_FIXTURE)))
+    bad_meta = dict(example.meta)
+    bad_meta["strategy"] = "sideways"
+    bad = dataclasses.replace(example, meta=bad_meta)
+    with pytest.raises(ValueError, match="strategy"):
+        check_gold_proof(bad)
+
+
+# ---------------------------------------------------------------------------
+# _closed_model(record_provenance=True): the provenance-recording fixpoint
+# itself, white-box, hand-checked on a tiny synthetic theory -- independent
+# of check_gold_proof's own fixture-level tests above.
+# ---------------------------------------------------------------------------
+
+from unicode_fol_kit.eval.datasets.proofwriter import (   # noqa: E402
+    _closed_model, _collect_constants,
+)
+from unicode_fol_kit import api   # noqa: E402
+
+
+def test_closed_model_record_provenance_default_shape_unchanged():
+    """record_provenance=False (the default) MUST return exactly the
+    pre-existing 2-tuple -- every existing caller (solve_structured_example)
+    depends on this being unchanged."""
+    premises = [api.parse_any("Young(bob)").formula]
+    constants = _collect_constants(premises)
+    result = _closed_model(premises, constants)
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+
+
+def test_closed_model_provenance_hand_checked_naf_and_negative_head():
+    """A tiny hand-built theory exercising BOTH a negative-headed rule and
+    a NAF antecedent that reads it, hand-derived:
+
+    Young(bob) [fact, premise 0]; forall x(Young(x) -> not Kind(x)) [rule A,
+    premise 1]; forall x(not Kind(x) -> Old(x)) [rule B, premise 2]. Since
+    Young(bob) is true, rule A concludes not Kind(bob) (a NEGATIVE
+    derivation, tracked under the SIGNED key 'not Kind(bob)'); rule B's
+    antecedent IS that same negative literal, so its own provenance entry's
+    antecedent key must be the SIGNED negative key, not the bare positive
+    one -- exactly what a real '~'-sourced ProofWriter condition needs
+    check_gold_proof to be able to look up recursively (see
+    _closed_model's own docstring)."""
+    premises = [api.parse_any(text).formula for text in (
+        "Young(bob)",
+        "∀x (Young(x) → ¬Kind(x))",
+        "∀x (¬Kind(x) → Old(x))",
+    )]
+    constants = _collect_constants(premises)
+    true_atoms, has_naf, provenance = _closed_model(
+        premises, constants, record_provenance=True)
+
+    assert has_naf is True
+    assert true_atoms == frozenset({"Young(bob)", "Old(bob)"})
+    assert provenance["Young(bob)"] == [(0, ())]
+    assert provenance["¬Kind(bob)"] == [(1, ("Young(bob)",))]
+    assert provenance["Old(bob)"] == [(2, ("¬Kind(bob)",))]
+
+
+# ---------------------------------------------------------------------------
+# _rule_body_holds: an EXISTENTIAL check over every grounding sharing a head
+# atom, not just the first one itertools.product happens to visit.
+# ---------------------------------------------------------------------------
+
+from unicode_fol_kit.eval.datasets.proofwriter import _rule_body_holds  # noqa: E402
+
+
+def test_rule_body_holds_checks_every_grounding_not_just_the_first():
+    """Hand-derived regression for a rule whose body variable (y) does not
+    occur in its head: forall x forall y (P(x,y) -> Q(x)), with facts
+    P(alice,carol) and R(bella,bella). Q(alice) is genuinely derivable, via
+    the grounding x=alice,y=carol -- but _collect_constants sorts constants
+    alphabetically (alice, bella, carol), so itertools.product visits the
+    NON-firing grounding x=alice,y=alice (P(alice,alice) is false) before
+    the firing one x=alice,y=carol. A body-holds check that returns on the
+    first head-matching grounding would wrongly answer False for a target
+    that _closed_model's own fixpoint (an independent, non-existential,
+    all-groundings-at-once route) already proves True; the correct answer,
+    checked over ALL matching groundings, is True."""
+    premises = [api.parse_any(text).formula for text in (
+        "P(alice,carol)",
+        "R(bella,bella)",
+        "∀x∀y (P(x,y) → Q(x))",
+    )]
+    constants = _collect_constants(premises)
+    assert [c.name for c in constants] == ["alice", "bella", "carol"]
+
+    true_atoms, _has_naf, provenance = _closed_model(
+        premises, constants, record_provenance=True)
+    assert "Q(alice)" in true_atoms
+    assert provenance["Q(alice)"] == [(2, ("P(alice, carol)",))]
+
+    assert _rule_body_holds(
+        premises[2], "Q(alice)", true_atoms, constants) is True
+
+
+def test_rule_body_holds_false_when_no_matching_grounding_fires():
+    """Same rule shape, plus a fact naming `dave` in an unrelated predicate
+    (so `dave` is a known constant): the target head atom (Q(dave)) is not
+    the head of any FIRING grounding, since no premise ever puts `dave` in
+    P's first argument together with anything -- every grounding with head
+    Q(dave) has an unsatisfied body. The honest answer is False, not None
+    (the rule DOES structurally conclude Q(dave) for some grounding, its
+    body is just never true)."""
+    premises = [api.parse_any(text).formula for text in (
+        "P(alice,carol)",
+        "Dummy(dave)",
+        "∀x∀y (P(x,y) → Q(x))",
+    )]
+    constants = _collect_constants(premises)
+    assert "dave" in [c.name for c in constants]
+    true_atoms, _has_naf, _provenance = _closed_model(
+        premises, constants, record_provenance=True)
+    assert "Q(dave)" not in true_atoms
+
+    assert _rule_body_holds(
+        premises[2], "Q(dave)", true_atoms, constants) is False
+
+
+def test_rule_body_holds_none_when_rule_cannot_structurally_conclude_target():
+    """The rule's head predicate is Q/1; a target atom over a different
+    predicate (R(alice)) can never be its head under any grounding, so the
+    honest answer is None (structurally inapplicable), distinct from False
+    (structurally applicable but never satisfied)."""
+    premises = [api.parse_any(text).formula for text in (
+        "P(alice,carol)",
+        "∀x∀y (P(x,y) → Q(x))",
+    )]
+    constants = _collect_constants(premises)
+    true_atoms, _has_naf, _provenance = _closed_model(
+        premises, constants, record_provenance=True)
+
+    assert _rule_body_holds(
+        premises[1], "R(alice)", true_atoms, constants) is None

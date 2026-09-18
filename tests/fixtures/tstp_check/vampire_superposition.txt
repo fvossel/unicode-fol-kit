@@ -1,0 +1,57 @@
+% Captured verbatim from `vampire --proof tptp --avatar off` (Vampire 5.0.1,
+% local WSL install) proving
+%   {! [X,Y] : (r(X,Y) => f(X) = f(Y)), r(a,b), p(f(a))} |- p(f(b))
+% the file(...) path was shortened to 'sp.p' for readability; everything else
+% is exactly as Vampire printed it. Exercises a genuine 'resolution' step
+% (f12) and a genuine 'superposition' step (f13): f13 rewrites f(b) -> f(a)
+% inside ~p(f(b)) using the equation f(a)=f(b), i.e. direction 'rl' with the
+% TARGET clause cited first and the EQUATION clause cited second.
+% SZS status Theorem for sp
+% SZS output start Proof for sp
+fof(f1,axiom,(
+  ! [X0,X1] : (r(X0,X1) => f(X0) = f(X1))),
+  file('sp.p',unknown)).
+fof(f2,axiom,(
+  r(a,b)),
+  file('sp.p',unknown)).
+fof(f3,axiom,(
+  p(f(a))),
+  file('sp.p',unknown)).
+fof(f4,conjecture,(
+  p(f(b))),
+  file('sp.p',unknown)).
+fof(f5,negated_conjecture,(
+  ~p(f(b))),
+  inference(negated_conjecture,[status(cth)],[f4])).
+fof(f6,plain,(
+  ~p(f(b))),
+  inference(flattening,[],[f5])).
+fof(f7,plain,(
+  ! [X0,X1] : (f(X0) = f(X1) | ~r(X0,X1))),
+  inference(ennf_transformation,[],[f1])).
+fof(f8,plain,(
+  ( ! [X0,X1] : (~r(X0,X1) | f(X0) = f(X1)) )),
+  inference(cnf_transformation,[],[f7])).
+fof(f9,plain,(
+  r(a,b)),
+  inference(cnf_transformation,[],[f2])).
+fof(f10,plain,(
+  p(f(a))),
+  inference(cnf_transformation,[],[f3])).
+fof(f11,plain,(
+  ~p(f(b))),
+  inference(cnf_transformation,[],[f6])).
+fof(f12,plain,(
+  f(a) = f(b)),
+  inference(resolution,[],[f8,f9])).
+fof(f13,plain,(
+  ~p(f(a))),
+  inference(superposition,[],[f11,f12])).
+fof(f14,plain,(
+  $false),
+  inference(forward_subsumption_resolution,[],[f13,f10])).
+% SZS output end Proof for sp
+% ------------------------------
+% Termination reason: Refutation
+% Time elapsed: 0.008 s
+% ------------------------------

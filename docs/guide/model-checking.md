@@ -318,6 +318,81 @@ What the two are worth, evaluated against hexane (`CCCCCC`), counting the steps
 All four answer `True`. The counting quantifier does not need the convention at
 all, because distinctness is part of what `∃≥6` *means*.
 
+## Branching-time model checking: CTL over a `KripkeModel`
+
+Everything above checks a formula against one *fixed* structure. A
+`KripkeModel` (see {doc}`modal`) adds a *set of worlds* and a `"temporal"`
+accessibility relation between them, so a formula can instead ask about the
+system's possible **futures** — every run, or some run. `satisfies_modal`
+already reads `Always`/`Eventually`/`Next`/`Until` off that relation, but each
+of those has exactly one path reading baked into its own AST node (`Always`
+universal-reachability, `Eventually` existential-reachability, and so on —
+there is no A/E path-quantifier prefix anywhere in the grammar). CTL's other
+four modalities — `ctl_ex`, `ctl_af`, `ctl_eg`, `ctl_au` — fill that in as
+plain functions over `KripkeModel`, `Node` and `satisfies_modal`, not new
+syntax:
+
+```python
+from unicode_fol_kit import KripkeModel, satisfies_modal, Atom, Not, And, Always
+from unicode_fol_kit.semantics import ctl_ex, ctl_af, ctl_eg, ctl_au
+
+crit1 = Atom("crit1", [])
+crit2 = Atom("crit2", [])
+
+# Worlds: 0 = idle, 1 = process 1's critical section, 2 = process 2's.
+# Temporal edges: 0->1 (P1 may enter), 0->0 (idle may also stay idle forever),
+# 1->2, 2->0 (round-robin back to idle). Every world has a successor.
+mutex = KripkeModel(
+    worlds={0, 1, 2},
+    relations={"temporal": {(0, 1), (0, 0), (1, 2), (2, 0)}},
+    valuation={1: {"crit1"}, 2: {"crit2"}},
+)
+
+print(satisfies_modal(Always(Not(And(crit1, crit2))), mutex, 0))  # → True
+print(ctl_af(mutex, 0, crit1), ctl_af(mutex, 1, crit1), ctl_af(mutex, 2, crit1))
+# → False True False
+print(ctl_eg(mutex, 0, Not(crit1)), ctl_eg(mutex, 1, Not(crit1)))
+# → True False
+print(ctl_ex(mutex, 0, crit1), ctl_ex(mutex, 2, crit1))
+# → True False
+```
+
+Mutual exclusion (`AG ¬(crit1 ∧ crit2)`, "never both critical at once") is
+already expressible with the existing `Always` node, because AG *is* exactly
+"true at every world reachable via the reflexive-transitive closure of
+`\"temporal\"`" — no path enumeration needed, which is exactly what `Always`
+already computes. `AF crit1` ("process 1 eventually enters, no matter what")
+is different: it needs to hold on **every** infinite run, and the `0 → 0`
+self-loop is an infinite run that never leaves `0` at all, so `AF crit1` is
+false at world `0` and `2` (both can reach that stalling loop) and true only
+at `1` (where `crit1` already holds). `EG ¬crit1` is the mirror question —
+**some** run that never enters — and holds at `0` and `2` (the stall witnesses
+it) but not at `1`, where `crit1` is already true right now. `EX crit1` only
+looks one step ahead: `0`'s immediate successors are `{0, 1}` and `crit1`
+holds at `1`, so it is true there and false at `1` and `2`, whose immediate
+successors never have `crit1`.
+
+`ctl_af`, `ctl_eg` and `ctl_au` quantify over *infinite* paths through
+`"temporal"`, so they require the relation to be **total** on `model.worlds`
+— every world needs at least one successor inside the world set, or there is
+no infinite path through it to quantify over. A dead end raises `ValueError`
+naming the offending world rather than silently making it vacuously true (the
+same "refuse loudly instead of approximating" rule the kit applies
+everywhere else):
+
+```python
+deadlock = KripkeModel(worlds={0, 1}, relations={"temporal": {(0, 1)}},
+                       valuation={0: {"crit1"}})
+ctl_af(deadlock, 0, crit1)
+# → ValueError: ctl_af/ctl_eg/ctl_au: the "temporal" relation is not total on
+#   model.worlds — world 1 has no temporal successor inside model.worlds, ...
+```
+
+`ctl_ex` is the one exception: it is a plain one-step modality (the
+existential dual of the kit's built-in, universally-read `Next`), so a
+dead end simply makes it `False` there, exactly as a dead end already makes
+`Next` vacuously `True` — no totality requirement, no error.
+
 ## Where to go next
 
 - {doc}`batch-checking` — the same check over thousands of molecules, with a

@@ -39,9 +39,11 @@ from typing import Dict, FrozenSet, Tuple
 from unicode_fol_kit.fol.nodes import (
     Node, Atom, Function, Constant, SortedConstant,
 )
-# Single source of truth for which symbols are built-in operators rather than
-# user vocabulary (=, ≠, <, … and +, -, *, /) — shared with validate's walk.
-from .validate import _BUILTIN_PREDS, _BUILTIN_FUNCS
+# The lenient (non-raising) symbol classification walk itself — including
+# which symbols are built-in operators rather than user vocabulary (=, ≠, <,
+# … and +, -, *, /) — is shared with unicode_fol_kit.fol.signature; see
+# _symbol_inventory's docstring below.
+from unicode_fol_kit.fol.signature import inventory_of
 
 __all__ = [
     "formulas_are_identical",
@@ -206,30 +208,26 @@ def formulas_are_matched_identical(
 _SymKey = Tuple[str, int]
 
 
-def _symbol_inventory(node: Node):
-    """Collect the user vocabulary of ``node`` per namespace.
-
-    Returns ``(preds, funcs, consts)`` where ``preds`` / ``funcs`` are sets of
-    ``(name, arity)`` keys (built-in operators excluded, mirroring
-    ``validate``'s classification) and ``consts`` is a set of constant names
-    (``Constant`` and ``SortedConstant`` — a sorted constant is renamed in
-    place, its sort annotation is untouched). Variables are deliberately NOT
-    collected: bound-variable naming is ``canonicalize``'s job (α-renaming),
-    not a vocabulary difference.
-    """
-    preds: set = set()
-    funcs: set = set()
-    consts: set = set()
-    for n in node.walk():
-        if isinstance(n, Atom):
-            if n.predicate not in _BUILTIN_PREDS:
-                preds.add((n.predicate, len(n.args)))
-        elif isinstance(n, Function):
-            if n.name not in _BUILTIN_FUNCS:
-                funcs.add((n.name, len(n.args)))
-        elif isinstance(n, (Constant, SortedConstant)):
-            consts.add(n.name)
-    return preds, funcs, consts
+# _symbol_inventory: collects the user vocabulary of a Node per namespace —
+# (preds, funcs, consts), where preds/funcs are sets of (name, arity) keys
+# (built-in operators excluded, mirroring validate's classification) and
+# consts is a set of constant names (Constant and SortedConstant — a sorted
+# constant is renamed in place, its sort annotation untouched). Variables are
+# deliberately NOT collected: bound-variable naming is canonicalize's job
+# (α-renaming), not a vocabulary difference.
+#
+# This is a genuine alias — not a wrapper that happens to agree — for
+# :func:`unicode_fol_kit.fol.signature.inventory_of`: the walk itself
+# (including which symbols are built-in operators rather than user
+# vocabulary) is tested and maintained in that one place rather than
+# duplicated here (see that module's DESIGN NOTE). The name stays
+# ``_symbol_inventory`` so existing importers (e.g. ``eval.equivalence``)
+# keep working unchanged. Deliberately NEVER raises, unlike
+# :meth:`~unicode_fol_kit.fol.signature.Signature.from_formulas` — see
+# :func:`inventory_of`'s own docstring for exactly what it tolerates that
+# ``from_formulas`` would refuse (conflicting arities, a name used both as a
+# constant and as a function).
+_symbol_inventory = inventory_of
 
 
 def _greedy_injective(pred_keys, ref_keys, taken_names: FrozenSet[str],

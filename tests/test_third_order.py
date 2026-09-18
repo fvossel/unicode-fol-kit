@@ -242,9 +242,9 @@ def test_parse_any_reaches_third_order_only_when_nothing_narrower_does(text, dia
 
 
 def test_the_modal_third_order_mode_is_deliberately_off_the_ladder():
-    """Its Earley table reaches readings that would swallow malformed input.
+    """Its Earley fallback reaches readings that would swallow malformed input.
 
-    ``modal`` needs Earley, and ``third_order_modal`` inherits it; with a
+    ``modal`` needs an Earley fallback, and ``third_order_modal`` inherits it; with a
     second-order binder also available, ``∀ P(x)`` parses there as a quantifier
     over the propositional atom ``x`` rather than failing as the malformed
     quantifier every other dialect reports. The repair and error-routing

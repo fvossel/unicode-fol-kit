@@ -187,6 +187,42 @@ never silent. Pass `resume=False` to redo everything.
 A truncated final line — the normal shape of an interrupted run — is ignored
 rather than raising: the pair it described simply gets redone.
 
+## A summary, not a row dump
+
+A real campaign is hundreds of thousands of rows — printing every one would be
+useless and, over a run that size, multi-hundred-megabyte output.
+{meth}`~unicode_fol_kit.eval.ChemBatchResult.to_markdown` /
+{meth}`~unicode_fol_kit.eval.ChemBatchResult.to_html` render a *summary*
+instead: `counts` and the cache statistics as tables, then an explicit,
+capped sample of at most `max_rows` non-`ok` rows (their `error_msg` /
+`unknown_predicates` / `witness`, whichever apply) — and the sample section
+always closes with an honest count of what it left out, never a silent
+truncation:
+
+```python
+from unicode_fol_kit.eval import check_definitions
+
+AMIDE = "?[C,O,N]: (c(C) & o(O) & n(N) & bDOUBLE(C,O) & bSINGLE(C,N))"
+result = check_definitions(
+    [{"id": "amide", "formula": AMIDE}],
+    ["NCC(=O)NCC(=O)O", "CCO", "not-a-molecule((("],
+)
+print(result.to_markdown(max_rows=5).splitlines()[-1])
+# → showing 1 of 1 non-ok row(s); full data in `rows`/the JSONL results file.
+```
+
+One structure-building failure among the three molecules, so the sample is
+`1` of `1` — with a real campaign's thousands of failures, the same closing
+line would honestly read `showing 25 of 4213`, say, rather than pretending the
+sample is the whole story. `to_html()` renders the identical content as a
+self-contained, theme-aware page; every SMILES/error message/witness value is
+escaped so a hostile string cannot corrupt the Markdown table or the HTML
+markup.
+
+{class}`~unicode_fol_kit.eval.TheoryReport` (see {doc}`verification`) has the
+same two methods for the other report this package produces, over cycles /
+satisfiability / subsumption findings rather than campaign rows.
+
 ## Where to go next
 
 - {doc}`model-checking` — what a single check does, and what a witness looks like.

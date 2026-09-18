@@ -9,14 +9,57 @@ Only the **propositional / ground** modal fragment is interpreted here (this is
 v1): the modal operators wrap classical connectives and ground atoms. A ground
 atom is identified by its rendered Unicode key (``atom.to_unicode_str()``, e.g.
 ``"P"`` or ``"Likes(a, b)"``); a world's valuation is the set of atom keys true
-there, so a missing key is false. First-order quantifiers, sorted quantifiers,
-Łukasiewicz operators, and lambda nodes are rejected with NotImplementedError —
-quantified / fuzzy modal logic is future work.
+there, so a missing key is false. Object quantifiers (plain ``Quantifier`` and
+sorted ``SortedQuantifier``, see "Many-sorted formulas" below) ARE interpreted,
+over per-world domains; Łukasiewicz operators and lambda nodes are rejected
+with NotImplementedError — fuzzy modal logic is future work.
+
+Many-sorted formulas: ``satisfies_modal`` relativizes the WHOLE input formula
+ONCE, up front, before any dispatch — the same "relativize once, up front"
+choice ``fol.qml.qml_translate`` / ``semantics.intuitionistic._prepare_many_sorted``
+make and for the identical reason: a ``SortedConstant`` (``alice:Human``) can
+occur anywhere in the formula, not only directly under a ``SortedQuantifier``,
+so relativizing lazily (only when the recursive descent happens to walk into a
+``SortedQuantifier`` node) would leave a bare sorted constant's ``:Sort``
+suffix in place, and the valuation lookup for it would then silently miss.
+Relativizing uses ``Node._relativize`` (the same reduction ``fol.to_fol``
+uses): a ``SortedQuantifier`` (``∀x:S φ`` / ``∃x:S φ``) becomes a guarded plain
+``Quantifier`` — ``∀x (S(x) → φ)`` / ``∃x (S(x) ∧ φ)`` — over the current
+world's domain ``D_w``; a bare ``SortedConstant`` becomes a plain ``Constant``.
+Two consequences of this reduction, both deliberate design choices, not gaps:
+
+- **Sorts are world-relative, not rigid.** The sort guard ``S(x)`` is an
+  ordinary atom, looked up in ``valuation`` exactly like any other atom, so an
+  individual can be ``S`` at one world and not at another — the same
+  "actualist" reading this module already gives the bare per-world domain
+  ``D_w`` (see ``domains``/``domain_at`` above). A caller that wants a sort
+  RIGID (the same extension at every world) states that itself, as an extra
+  frame condition on the relation being evaluated over (e.g. asserting
+  ``S(d) ↔ S'(d)`` between every pair of accessible worlds in the model it
+  builds) — this evaluator does not assume or enforce it.
+- **Non-emptiness is the caller's responsibility, exactly as it already is for
+  the unsorted domain.** This evaluator never assumes a sort — or a bare
+  per-world domain — is non-empty; ``∀x:S φ → ∃x:S φ`` can come out FALSE
+  here if the model happens to make ``S`` empty at ``world``. The classical
+  many-sorted routes (``api.prove`` et al.) instead ALWAYS assume every sort
+  is non-empty, by adding ``fol.nonempty_sort_axioms`` as extra premises (see
+  that function's docstring) — so a caller who wants THIS evaluator to agree
+  with a classical MSFOL verdict on a modal-free sorted formula must build the
+  ``KripkeModel`` so each mentioned sort's guard atom holds of at least one
+  individual in ``D_w`` at every world that matters, the same way domains and
+  valuations are already the caller's construction to get right. See
+  ``tests/test_sorted_modal.py`` for a worked differential against
+  ``api.prove`` built this way.
 
 Relation-name convention (keys of :attr:`KripkeModel.relations`):
 
 - ``"alethic"``        — the accessibility relation for Box □ / Diamond ◇.
-- ``"K:" + agent``     — the epistemic relation for ``Knows(agent, …)``.
+- ``"K:" + agent``     — the epistemic relation for ``Knows(agent, …)``, and
+                         also what ``EverybodyKnows``/``DistributedKnowledge``/
+                         ``CommonKnowledge`` (group operators E_G/D_G/C_G, see
+                         below) combine by union/intersection/reflexive-
+                         transitive-closure — there is no separate relation
+                         family for the group operators.
 - ``"B:" + agent``     — the doxastic relation for ``Believes(agent, …)``.
 - ``"Say:" + agent``   — the assertive relation for ``Says(agent, …)`` (non-factive).
 - ``"Want:" + agent``  — the bouletic relation for ``Wants(agent, …)`` (non-veridical).
@@ -35,6 +78,54 @@ names, and ``At(i, φ)`` evaluates φ *at* that world, wherever the evaluation
 currently stands. A nominal without an assignment raises a ValueError naming
 it (rather than silently defaulting), since a nominal must name exactly one
 world for the hybrid semantics to make sense.
+
+The ↓ binder (N1, full H(@,↓)) — ``Down(x, φ)`` (``↓x.φ``) — is interpreted
+the same way, with no extra machinery: evaluating ``Down(x, φ)`` at world
+``w`` locally REBINDS the nominal named ``x`` to ``w`` for the evaluation of
+``φ`` (still at ``w``), by recursing with a model whose ``nominals`` mapping
+is ``model.nominals`` overridden at key ``x``. Because that override is a
+plain dict-key overwrite — not a textual rewrite of ``φ`` — the usual
+name-scoping rules of a binder fall out automatically, with no separate
+alpha-renaming/fresh-name step: a nested ``Down(x, …)`` inside ``φ`` overrides
+the SAME key again for its own (deeper) scope, so it shadows the outer
+binding exactly the way a nested ``∀x`` would (``↓x.↓x.φ`` behaves as bare
+``φ``, the outer binding entirely inert); a DIFFERENTLY-named nested binder
+``Down(y, …)`` with ``y ≠ x`` extends the dict at a different key and leaves
+``x`` untouched, so it cannot capture an outer ``@x``/bare-``x`` occurrence
+(``↓x.(P ∧ ↓y.@x Q)`` — the inner ``↓y`` cannot affect the outer ``@x``); and
+because the rebound world ``w`` is fixed in the dict rather than tracked
+positionally, an occurrence of ``x`` reached through a LATER modality (a
+``Box``/``Diamond`` inside ``φ`` moving evaluation to some other world
+``w2``) still resolves to the ORIGINAL ``w`` — the state variable, once
+bound, is rigid for the rest of its scope, exactly like a nominal already is
+(this is what makes ``↓x.□¬x`` the FO irreflexivity condition: for every
+successor ``w2`` of ``w``, ``¬x`` means "``w2`` is not the world ``x``
+names", i.e. not ``w`` itself).
+
+H(@,↓) validity is UNDECIDABLE, but evaluation at a GIVEN finite model is not
+touched by that — ``satisfies_modal`` decides ``Down`` exactly as it decides
+every other construct here, so it remains the terminating, always-available
+"route A" oracle for ↓ (hand-built models, and the brute-force battery in
+``tests/test_hybrid_down.py``), and the oracle
+:func:`~unicode_fol_kit.atp.kripke_enum.modal_enum_search`'s bounded search
+re-verifies every countermodel it reports against. See
+:mod:`unicode_fol_kit.fol._hybrid_nodes` (the ``Down`` node) and
+:mod:`unicode_fol_kit.fol.modal_translation` (``down_is_valid``, the
+Z3/PROVED-only "route B" half) for the rest of the architecture.
+
+Group epistemic operators — ``EverybodyKnows`` (E_G φ), ``DistributedKnowledge``
+(D_G φ), and ``CommonKnowledge`` (C_G φ), each carrying a ``group`` tuple of
+agent terms (:mod:`unicode_fol_kit.fol._modal_nodes`, parsed from
+``E_{a,b,…}``/``D_{a,b,…}``/``C_{a,b,…}`` surface syntax) — are THIN dispatches
+into :mod:`unicode_fol_kit.semantics.action_models`'s
+:func:`~unicode_fol_kit.semantics.action_models.everybody_knows` /
+:func:`~unicode_fol_kit.semantics.action_models.distributed_knowledge_holds` /
+:func:`~unicode_fol_kit.semantics.action_models.common_knowledge_holds`, which
+implement the actual union/intersection/closure semantics over the group's
+``"K:"+agent`` relations — this module owns none of that logic, only the
+node-to-function wiring (see those functions' docstrings for the semantics,
+including ``distributed_knowledge_holds``'s deliberately-different empty-group
+convention: it RAISES rather than defaulting).
 
 Public announcement logic (PAL) is interpreted directly — ``Announce`` (``[φ!]ψ``)
 and ``AnnounceDiamond`` (``⟨φ!⟩ψ``) are the only two constructs here that do NOT
@@ -61,22 +152,41 @@ Documented temporal semantics:
   ``wn`` and φ true at every earlier world ``w0 … w(n-1)``. This is the
   finite-reachability reading of strong Until; the search is depth-first with a
   visited guard so cycles in the frame terminate.
+
+Next / Always / Eventually / Until above are all LINEAR-time: each has exactly
+one path reading baked into its single AST node (no A/E path-quantifier prefix
+exists anywhere in the AST). Branching-time CTL model checking —
+:func:`ctl_ex`, :func:`ctl_af`, :func:`ctl_eg`, :func:`ctl_au` — adds the four
+readings that baked-in choice leaves out (EX, the existential dual of Next's
+universal reading; AF/EG, the forward/backward fixpoint pair that reachability
+alone cannot compute; AU, the universal-path generalisation of Until) as plain
+functions taking arbitrary :class:`~unicode_fol_kit.fol.nodes.Node`
+subformulas, evaluated via :func:`satisfies_modal` — exactly the pattern
+:func:`~unicode_fol_kit.semantics.action_models.common_knowledge_holds` and
+:func:`~unicode_fol_kit.semantics.action_models.everybody_knows` already use,
+not new dispatch branches on ``formula``'s type. See the CTL section near the
+end of this module for the fixpoint algorithms and the deadlock convention.
 """
 
-from typing import Any, Dict, FrozenSet, Iterable, Mapping, Optional, Set, Tuple
+import shutil
+import subprocess
+from typing import Any, Dict, FrozenSet, Iterable, List, Mapping, Optional, Set, Tuple
 
 from ..fol.nodes import (
     Node,
     Atom, Not, And, Or, Xor, Implies, Iff,
-    Quantifier, SortedQuantifier,
+    Quantifier,
     Box, Diamond, Knows, Believes, Says, Wants,
     Always, Eventually, Next, Until,
     Historically, Once, Previous, Since,
     Obligatory, Permitted,
-    Nominal, At,
+    Nominal, At, Down,
     Constant, substitute,
 )
-from ..fol._modal_nodes import Announce, AnnounceDiamond
+from ..fol._modal_nodes import (
+    Announce, AnnounceDiamond,
+    EverybodyKnows, DistributedKnowledge, CommonKnowledge,
+)
 from ._modal_reject import (
     FUZZY_TYPES, LAMBDA_TYPES,
     reject_fuzzy, reject_lambda,
@@ -218,6 +328,140 @@ class KripkeModel:
             )
         return self.domains.get(world, frozenset())
 
+    def to_dot(self, *, show_valuation: bool = True) -> str:
+        """Render the model as a Graphviz DOT digraph string.
+
+        Pure Python, no external dependency — mirrors the convention of
+        :meth:`~unicode_fol_kit.fol._fol_nodes.Node.to_dot` (escape labels the
+        same way; return the source text, never shell out). One node per world
+        in :attr:`worlds`, declared in ``repr()`` order for determinism (worlds
+        are "any hashable value", so a world is stringified defensively via
+        ``repr()`` for the DOT node id and via ``str()`` for the visible
+        label). When ``show_valuation`` is true (the default) each node's label
+        gets a second line with the atoms :meth:`atoms_true_at` returns for
+        that world plus any nominal name(s) (from :attr:`nominals`) pointing at
+        it, prefixed ``@``; if the model carries object domains (see
+        :meth:`domain_at`), a third line shows that world's domain.
+
+        Every relation in :attr:`relations` contributes one edge per ``(w, w')``
+        pair, labelled with the relation's own name — this is the one place a
+        naive per-pair rendering would lose information, since a model can
+        carry several named relations over the same world set at once (several
+        agents' ``K:``/``B:`` relations, ``alethic``, ``temporal``, ``deontic``
+        all coexisting); the relation-name label is what keeps them visually
+        distinguishable instead of collapsing into indistinguishable arrows.
+        Relations and, within each, their edges are emitted in sorted order too,
+        so the whole output is deterministic and directly string-comparable.
+
+        This is a read-only inspection method: it never touches model
+        construction or :func:`satisfies_modal`.
+        """
+        def esc(text: str) -> str:
+            """Escape backslash/quote/newline/CR for safe placement inside a
+            double-quoted DOT string, on a single physical source line."""
+            return (
+                text.replace("\\", "\\\\")
+                    .replace('"', '\\"')
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r")
+            )
+
+        def node_id(world: World) -> str:
+            """The DOT node id for a world: its escaped ``repr()``."""
+            return esc(repr(world))
+
+        nominals_at: Dict[World, List[str]] = {}
+        for name, named in self.nominals.items():
+            nominals_at.setdefault(named, []).append(name)
+
+        lines = ["digraph Kripke {", "  node [shape=box];"]
+        for world in sorted(self.worlds, key=repr):
+            label_lines = [esc(str(world))]
+            if show_valuation:
+                bits = sorted(self.atoms_true_at(world))
+                bits += [f"@{n}" for n in sorted(nominals_at.get(world, []))]
+                label_lines.append(esc(", ".join(bits)))
+                if self.domains is not None:
+                    dom = ", ".join(sorted(str(d) for d in self.domain_at(world)))
+                    label_lines.append(esc(f"D = {{{dom}}}"))
+            label = "\\n".join(label_lines)
+            lines.append(f'  "{node_id(world)}" [label="{label}"];')
+
+        for rel_name in sorted(self.relations):
+            edges = sorted(
+                self.relations[rel_name],
+                key=lambda edge: (repr(edge[0]), repr(edge[1])),
+            )
+            rel_label = esc(rel_name)
+            for source, target in edges:
+                lines.append(
+                    f'  "{node_id(source)}" -> "{node_id(target)}" '
+                    f'[label="{rel_label}"];'
+                )
+
+        lines.append("}")
+        return "\n".join(lines)
+
+    def to_svg(self, *, dot_binary: Optional[str] = None) -> str:
+        """Render the model to SVG by piping :meth:`to_dot` through Graphviz ``dot``.
+
+        Resolves the binary via ``dot_binary`` or ``shutil.which("dot")`` and,
+        if neither finds one, raises ``RuntimeError`` naming the missing tool
+        and how to install it — the same shutil.which-gate-and-fail-loudly
+        pattern already used for the optional external provers (eprover,
+        minizinc, vampire, prover9, Isabelle) elsewhere in this kit: this never
+        falls back to an approximate or partial rendering.
+
+        Args:
+            dot_binary: an explicit path to the ``dot`` executable, overriding
+                ``PATH`` discovery.
+
+        Raises:
+            RuntimeError: no ``dot`` binary found, the given/discovered binary
+                could not be executed, or the ``dot`` subprocess itself failed
+                (its stderr is included in the message).
+        """
+        binary = dot_binary or shutil.which("dot")
+        if binary is None:
+            raise RuntimeError(
+                "KripkeModel.to_svg: no Graphviz 'dot' binary found on PATH — "
+                "install Graphviz (e.g. 'apt install graphviz', 'brew install "
+                "graphviz', or see https://graphviz.org/download/) or pass "
+                "to_svg(dot_binary=...) explicitly."
+            )
+        try:
+            result = subprocess.run(
+                [binary, "-Tsvg"],
+                input=self.to_dot(),
+                capture_output=True,
+                text=True,
+            )
+        except OSError as exc:
+            raise RuntimeError(
+                f"KripkeModel.to_svg: could not run {binary!r} ({exc}) — is "
+                "this a valid Graphviz 'dot' binary?"
+            ) from exc
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"KripkeModel.to_svg: 'dot -Tsvg' failed (exit "
+                f"{result.returncode}): {result.stderr.strip()}"
+            )
+        return result.stdout
+
+    def _repr_svg_(self) -> Optional[str]:
+        """IPython/Jupyter rich-display hook: render to SVG, or opt out quietly.
+
+        Returns ``None`` (so the notebook falls back to the plain ``__repr__``
+        text) instead of raising when Graphviz's ``dot`` binary — or the
+        subprocess call to it — is not available, so merely inspecting a
+        KripkeModel in a notebook without Graphviz installed never crashes the
+        display machinery.
+        """
+        try:
+            return self.to_svg()
+        except RuntimeError:
+            return None
+
 
 def reflexive_transitive_closure(
     edges: Iterable[Edge],
@@ -343,6 +587,12 @@ def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
       some ``"alethic"``-successor.
     - ``Knows(a, φ)`` — φ holds at every ``"K:"+a``-successor (universal).
     - ``Believes(a, φ)`` — φ holds at every ``"B:"+a``-successor (universal).
+    - ``EverybodyKnows(G, φ)`` (E_G φ) / ``DistributedKnowledge(G, φ)``
+      (D_G φ) / ``CommonKnowledge(G, φ)`` (C_G φ) — dispatched to
+      :func:`~unicode_fol_kit.semantics.action_models.everybody_knows` /
+      :func:`~unicode_fol_kit.semantics.action_models.distributed_knowledge_holds`
+      / :func:`~unicode_fol_kit.semantics.action_models.common_knowledge_holds`
+      (see the module docstring).
     - ``Obligatory φ`` — φ holds at every ``"deontic"``-successor (universal);
       ``Permitted φ`` — at some ``"deontic"``-successor.
     - ``Next φ`` — φ holds at every immediate ``"temporal"``-successor.
@@ -355,11 +605,35 @@ def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
     - ``AnnounceDiamond(φ, ψ)`` (``⟨φ!⟩ψ``) — the dual: ``φ`` true at ``world``
       AND ``ψ`` holds at ``world`` in the ``φ``-restricted model.
 
+    A many-sorted ``formula`` (``SortedQuantifier`` / ``SortedConstant``, ``∀x:S φ``
+    / ``∃x:S φ`` / a bare ``alice:Human``) is relativized ONCE, here, before
+    anything else runs — see the module docstring's "Many-sorted formulas"
+    section for what that does and does not assume (world-relative, not rigid;
+    non-empty only if the model says so).
+
     Raises:
-        NotImplementedError: on a Quantifier / SortedQuantifier (first-order
-            modal logic is out of scope for v1), a Łukasiewicz node, or a lambda
-            node.
+        NotImplementedError: on a Łukasiewicz node or a lambda node (checked
+            BEFORE relativizing, since relativizing runs a whole-tree
+            structural recursion that would otherwise reach one of these
+            first and raise a less specific error).
     """
+    # --- many-sorted formulas: relativize the WHOLE formula once, here, before
+    # any dispatch below — see the docstring above and the module docstring's
+    # "Many-sorted formulas" section. Reject any Łukasiewicz / lambda node
+    # FIRST, by walking the whole (pre-relativize) tree: Node._relativize is
+    # an unconditional structural descent into every child (Node.map_children),
+    # so if a fuzzy/lambda node sat anywhere in the formula -- not only at the
+    # very top -- relativizing before this check would reach it first and
+    # raise a generic RuntimeError ("call to_msfol() before _relativize")
+    # instead of this function's own documented NotImplementedError contract
+    # (see test_fuzzy_node_rejected / test_lambda_node_rejected). ---
+    for node in formula.walk():
+        if isinstance(node, FUZZY_TYPES):
+            reject_fuzzy(node, "satisfies_modal")
+        if isinstance(node, LAMBDA_TYPES):
+            reject_lambda(node, "satisfies_modal")
+    formula = formula._relativize([])
+
     # --- atomic ---
     if isinstance(formula, Atom):
         return formula.to_unicode_str() in model.atoms_true_at(world)
@@ -370,6 +644,20 @@ def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
     if isinstance(formula, At):
         return satisfies_modal(formula.formula, model,
                                _nominal_world(model, formula.nominal.name))
+    if isinstance(formula, Down):
+        # ↓x.φ at world: locally rebind the nominal x to THIS world for φ's
+        # evaluation (still at the same world) — see the module docstring's
+        # "The ↓ binder" section for why this plain dict-override, with no
+        # separate alpha-renaming step, already gets shadowing / no-capture /
+        # rigidity right. KripkeModel's own constructor re-validates the
+        # (harmless, since world ∈ model.worlds whenever a caller reached
+        # here in the first place) new nominal assignment.
+        rebound = KripkeModel(
+            model.worlds, model.relations, model.valuation,
+            domains=model.domains,
+            nominals={**model.nominals, formula.variable.name: world},
+        )
+        return satisfies_modal(formula.formula, rebound, world)
 
     # --- classical connectives (recurse at the same world) ---
     if isinstance(formula, Not):
@@ -413,6 +701,24 @@ def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
             satisfies_modal(formula.formula, model, w2)
             for w2 in model.successors(_BELIEVES_PREFIX + _agent_key(formula.agent), world)
         )
+
+    # --- group epistemic (everyone/distributed/common knowledge): thin
+    # dispatch into semantics.action_models, exactly like Announce dispatches
+    # into semantics.dynamic_epistemic.announce below. Lazy import: action_models
+    # imports THIS module at load time (KripkeModel/satisfies_modal/
+    # reflexive_transitive_closure), so a module-level import here would cycle. ---
+    if isinstance(formula, EverybodyKnows):
+        from .action_models import everybody_knows
+        agents = [_agent_key(a) for a in formula.group]
+        return everybody_knows(model, world, agents, formula.formula)
+    if isinstance(formula, DistributedKnowledge):
+        from .action_models import distributed_knowledge_holds
+        agents = [_agent_key(a) for a in formula.group]
+        return distributed_knowledge_holds(model, world, agents, formula.formula)
+    if isinstance(formula, CommonKnowledge):
+        from .action_models import common_knowledge_holds
+        agents = [_agent_key(a) for a in formula.group]
+        return common_knowledge_holds(model, world, agents, formula.formula)
 
     # --- assertive / bouletic (both universal K-modalities, no frame conditions:
     # Says is non-factive / non-doxastic, Wants is non-veridical) ---
@@ -508,17 +814,16 @@ def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
             return any(instances)
         raise ValueError(f"satisfies_modal: unknown quantifier type {formula.type!r}")
 
-    # --- rejected: out-of-scope node kinds ---
-    if isinstance(formula, SortedQuantifier):
-        raise NotImplementedError(
-            "satisfies_modal: SortedQuantifier is not supported in the modal "
-            "evaluator; use a plain Quantifier with per-world domains."
-        )
-    if isinstance(formula, FUZZY_TYPES):
-        reject_fuzzy(formula, "satisfies_modal")
-    if isinstance(formula, LAMBDA_TYPES):
-        reject_lambda(formula, "satisfies_modal")
+    # NOTE: SortedQuantifier / SortedConstant never reach this dispatch chain --
+    # the preamble above relativizes the whole formula before any isinstance
+    # check runs, so by this point the tree contains only plain Quantifier /
+    # Constant nodes (see the module docstring's "Many-sorted formulas"
+    # section for what the guarded-Quantifier reduction does and does not
+    # assume: world-relative sort guards, non-emptiness left to the caller).
 
+    # Łukasiewicz / lambda nodes were already rejected in the preamble above
+    # (deep scan, before relativizing); anything reaching here is a genuinely
+    # unhandled node type.
     raise NotImplementedError(
         f"satisfies_modal: unsupported node type {type(formula).__name__}."
     )
@@ -527,3 +832,201 @@ def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
 def models_at(formula: Node, model: KripkeModel, world: World) -> bool:
     """Convenience alias for :func:`satisfies_modal` reading "model, world ⊨ φ"."""
     return satisfies_modal(formula, model, world)
+
+
+# ---------------------------------------------------------------------------
+# CTL (branching-time) model checking: EX / AF / EG / AU
+# ---------------------------------------------------------------------------
+#
+# Next / Always / Eventually / Until (documented above) are LINEAR-time
+# operators, each with exactly one path reading baked into its own AST node
+# (fol/_modal_nodes.py): Next and Always read universally (every successor /
+# every reachable world), Eventually and Until existentially (some reachable
+# world / some finite witnessing path). There is no A/E path-quantifier
+# prefix anywhere in the AST, so the four functions below are plain
+# functions — not new isinstance branches in satisfies_modal's dispatch —
+# exactly like common_knowledge_holds / everybody_knows in
+# semantics/action_models.py: arbitrary Node subformulas evaluated via
+# satisfies_modal, no new AST node type and no grammar/parser change.
+#
+# - ctl_ex is the existential dual of the built-in (universal) Next: a plain
+#   one-step modality, no fixpoint needed.
+# - ctl_af/ctl_eg are the missing AF/EG dual pair. Note AF is NOT the same
+#   computation as reflexive_transitive_closure: a world can satisfy "phi
+#   holds on every path" without phi holding at every REACHABLE world (some
+#   paths from it may loop back through phi-free territory before others
+#   reach a phi-world), so a genuine forward least-fixpoint is needed, not a
+#   closure/reachability walk.
+# - ctl_au is the universal-path generalisation of the built-in (existential)
+#   Until above.
+#
+# All three fixpoint functions (AF/EG/AU) quantify over the "temporal"
+# relation RESTRICTED to model.worlds: their state space IS model.worlds, so
+# an edge into a world outside it cannot be a step of the fixpoint — unlike
+# Next/Always/Eventually/Until above, which follow model.successors() /
+# model.relation() exactly as given, with no membership filter.
+#
+# Algorithm (standard CTL labelling via fixpoint iteration on the finite
+# temporal relation restricted to model.worlds — Baier & Katoen, Principles of
+# Model Checking, MIT Press 2008, §6.4; Clarke, Grumberg & Peled, Model
+# Checking, MIT Press 1999, ch. 6): each iteration is monotone on the finite
+# set model.worlds, so it reaches a fixpoint in at most |model.worlds| rounds.
+# No external library and no Tarjan/SCC machinery is required for correctness
+# (SCC detection would only be an internal optimisation, and none is used
+# here).
+
+def _ctl_temporal_successors(model: "KripkeModel", world: World) -> Set[World]:
+    """Temporal successors of ``world`` that are themselves in ``model.worlds``.
+
+    The CTL fixpoints below (:func:`ctl_af`, :func:`ctl_eg`, :func:`ctl_au`)
+    iterate over ``model.worlds`` as their state space, so a temporal edge
+    into a world outside it is not a step of any of those fixpoints — unlike
+    ``Next``/``Always``/``Eventually``/``Until`` above, which follow
+    ``model.successors``/``model.relation`` exactly as given, with no
+    membership filter. :func:`ctl_ex` (the one CTL function below that is a
+    plain one-step modality, not a path fixpoint) intentionally does NOT use
+    this helper — see its own docstring.
+    """
+    return {w2 for w2 in model.successors(_TEMPORAL, world) if w2 in model.worlds}
+
+
+def _require_total_temporal(model: "KripkeModel") -> None:
+    """Raise ValueError unless every world of ``model.worlds`` has a temporal
+    successor inside ``model.worlds``.
+
+    ``ctl_af``/``ctl_eg``/``ctl_au`` quantify over INFINITE ``"temporal"``
+    paths. A world with no successor inside ``model.worlds`` is a dead end no
+    infinite path can pass through — treating it the way ``Next`` treats a
+    dead end (AX-anything vacuously true) would silently make AF/EG/AU wrong
+    there, exactly the kind of silent wrongness the kit's "refuse loudly,
+    never approximate" rule exists to prevent (the same discipline
+    ``product_update`` follows for a missing agent relation in
+    ``action_models.py``). So instead of picking a convention, this requires
+    the frame to be total on ``model.worlds`` and names the (deterministically
+    first, by ``repr()``, so the message is reproducible) offending world.
+
+    ``ctl_ex`` needs no such check — it is a genuine one-step modality, as
+    vacuously-decided at a dead end as the existing universal ``Next``, see
+    its own docstring.
+    """
+    dead_ends = sorted(
+        (w for w in model.worlds if not _ctl_temporal_successors(model, w)),
+        key=repr,
+    )
+    if dead_ends:
+        raise ValueError(
+            "ctl_af/ctl_eg/ctl_au: the \"temporal\" relation is not total on "
+            f"model.worlds — world {dead_ends[0]!r} has no temporal successor "
+            "inside model.worlds, so no infinite path passes through it. Add "
+            "a temporal successor within model.worlds (a self-loop is the "
+            "usual fix for a terminal/sink state) to make the frame total, "
+            "or use ctl_ex there instead, which needs no totality."
+        )
+
+
+def ctl_ex(model: KripkeModel, world: World, formula: Node) -> bool:
+    """Return whether EX φ ("some immediate successor satisfies φ") holds at ``world``.
+
+    The existential dual of the kit's built-in ``Next`` (which reads its one
+    AST node universally, i.e. AX — see the module docstring). A plain
+    one-step modality: no fixpoint, and no totality requirement. Exactly like
+    ``Next``, a world with no ``"temporal"``-successor is simply decided by
+    the empty case — ``Next``'s empty ``all(...)`` is vacuously TRUE there,
+    this function's empty ``any(...)`` is FALSE there — not an error.
+
+    Also follows ``Next``'s convention of reading ``model.successors``
+    UNFILTERED: a successor outside ``model.worlds`` is still a witness here
+    (exactly as it is for ``Next``), unlike :func:`ctl_af`/:func:`ctl_eg`/
+    :func:`ctl_au` below, which restrict to ``model.worlds`` because they run
+    a fixpoint over it.
+    """
+    return any(
+        satisfies_modal(formula, model, w2)
+        for w2 in model.successors(_TEMPORAL, world)
+    )
+
+
+def ctl_af(model: KripkeModel, world: World, formula: Node) -> bool:
+    """Return whether AF φ ("φ eventually holds, on every path") holds at ``world``.
+
+    The least fixpoint μZ. φ ∨ AX Z (Baier & Katoen §6.4), computed by
+    forward iteration from Z = ∅: a world enters Z as soon as φ holds there,
+    or every one of its ``model.worlds``-internal temporal successors is
+    already in Z. Z grows monotonically on the finite set ``model.worlds``,
+    so the loop reaches a fixpoint in at most ``|model.worlds|`` rounds.
+
+    Raises:
+        ValueError: the ``"temporal"`` relation is not total on
+            ``model.worlds`` — see :func:`_require_total_temporal`. Without
+            totality, "every successor of w is in Z" would hold vacuously at
+            a dead end and silently pull dead ends into AF's least fixpoint
+            for the wrong reason.
+    """
+    _require_total_temporal(model)
+    phi_worlds = {w for w in model.worlds if satisfies_modal(formula, model, w)}
+    z: Set[World] = set()
+    while True:
+        new_z = set(phi_worlds)
+        for w in model.worlds:
+            if w not in new_z and _ctl_temporal_successors(model, w) <= z:
+                new_z.add(w)
+        if new_z == z:
+            return world in z
+        z = new_z
+
+
+def ctl_eg(model: KripkeModel, world: World, formula: Node) -> bool:
+    """Return whether EG φ ("φ holds forever, on some path") holds at ``world``.
+
+    The greatest fixpoint νZ. φ ∧ EX Z (Baier & Katoen §6.4), computed by
+    shrinking from Z = {w : φ holds at w}: a world leaves Z as soon as NONE
+    of its ``model.worlds``-internal temporal successors is still in Z. Z
+    shrinks monotonically on the finite set ``model.worlds``, so the loop
+    reaches a fixpoint in at most ``|model.worlds|`` rounds.
+
+    Raises:
+        ValueError: the ``"temporal"`` relation is not total on
+            ``model.worlds`` — see :func:`_require_total_temporal`. This
+            batch's deadlock convention requires totality uniformly across
+            ``ctl_af``/``ctl_eg``/``ctl_au`` (even though EG's own greatest
+            fixpoint would, left alone, correctly drop a dead end out of Z on
+            its own on the first iteration): a dead end is a modelling error
+            to be reported the same way by all three, not something EG alone
+            quietly special-cases while its siblings refuse it.
+    """
+    _require_total_temporal(model)
+    z = {w for w in model.worlds if satisfies_modal(formula, model, w)}
+    while True:
+        new_z = {w for w in z if _ctl_temporal_successors(model, w) & z}
+        if new_z == z:
+            return world in z
+        z = new_z
+
+
+def ctl_au(model: KripkeModel, world: World, phi: Node, psi: Node) -> bool:
+    """Return whether A[φ U ψ] ("φ holds until ψ, on every path") holds at ``world``.
+
+    The universal-path generalisation of the kit's built-in (existential)
+    ``Until`` above. The least fixpoint μZ. ψ ∨ (φ ∧ AX Z) (Baier & Katoen
+    §6.4), computed by forward iteration from Z = ∅ exactly like
+    :func:`ctl_af`: a world enters Z as soon as ψ holds there, or φ holds
+    there AND every one of its ``model.worlds``-internal temporal successors
+    is already in Z.
+
+    Raises:
+        ValueError: the ``"temporal"`` relation is not total on
+            ``model.worlds`` — see :func:`_require_total_temporal`.
+    """
+    _require_total_temporal(model)
+    phi_worlds = {w for w in model.worlds if satisfies_modal(phi, model, w)}
+    psi_worlds = {w for w in model.worlds if satisfies_modal(psi, model, w)}
+    z: Set[World] = set()
+    while True:
+        new_z = set(psi_worlds)
+        for w in model.worlds:
+            if (w not in new_z and w in phi_worlds
+                    and _ctl_temporal_successors(model, w) <= z):
+                new_z.add(w)
+        if new_z == z:
+            return world in z
+        z = new_z

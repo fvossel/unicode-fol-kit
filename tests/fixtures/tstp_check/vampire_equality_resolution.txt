@@ -1,0 +1,40 @@
+% Captured verbatim from `vampire --proof tptp --avatar off` (Vampire 5.0.1,
+% local WSL install) proving {! [X] : (X = a => q(X))} |- q(a); the file(...)
+% path was shortened to 'er.p' for readability. Exercises a genuine
+% 'equality_resolution' step (f8, 1 parent): f6's clause is
+% {q(X0), a != X0}; unifying the negative equation's two sides (a, X0) binds
+% X0 |-> a and drops the literal, leaving {q(a)}.
+% SZS status Theorem for er
+% SZS output start Proof for er
+fof(f1,axiom,(
+  ! [X0] : (X0 = a => q(X0))),
+  file('er.p',unknown)).
+fof(f2,conjecture,(
+  q(a)),
+  file('er.p',unknown)).
+fof(f3,negated_conjecture,(
+  ~q(a)),
+  inference(negated_conjecture,[status(cth)],[f2])).
+fof(f4,plain,(
+  ~q(a)),
+  inference(flattening,[],[f3])).
+fof(f5,plain,(
+  ! [X0] : (q(X0) | a != X0)),
+  inference(ennf_transformation,[],[f1])).
+fof(f6,plain,(
+  ( ! [X0] : (q(X0) | a != X0) )),
+  inference(cnf_transformation,[],[f5])).
+fof(f7,plain,(
+  ~q(a)),
+  inference(cnf_transformation,[],[f4])).
+fof(f8,plain,(
+  q(a)),
+  inference(equality_resolution,[],[f6])).
+fof(f9,plain,(
+  $false),
+  inference(forward_subsumption_resolution,[],[f8,f7])).
+% SZS output end Proof for er
+% ------------------------------
+% Termination reason: Refutation
+% Time elapsed: 0.004 s
+% ------------------------------

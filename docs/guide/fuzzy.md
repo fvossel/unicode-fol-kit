@@ -393,6 +393,99 @@ impl = LukImplication(Atom("P", []), Atom("Q", []))
 fuzzy_evaluate(impl, {"P": 0.9, "Q": 0.4})  # → 0.5
 ```
 
+## Graded (fuzzy) Kripke semantics
+
+`semantics.fuzzy_kripke` generalises `semantics.kripke`'s two-valued
+possible-worlds evaluator the way this page's `fuzzy_evaluate` generalises
+classical FOL: `FuzzyKripkeModel` is a Kripke frame whose accessibility
+relations carry an edge **weight** in `[0, 1]` (instead of a crisp edge set)
+and whose valuation carries an atom **degree** in `[0, 1]` (instead of a
+crisp atom set), and `satisfies_fuzzy_modal` returns the truth **degree** of
+a modal formula at a world, not a bool. This is the direct propositional
+generalisation Fitting gave many-valued modal logic (M. Fitting, "Many-valued
+modal logics", *Fundamenta Informaticae* 15(3-4), 1991, 235-254) using the
+residuated □ / t-norm ◇ pair studied by Hájek (*Metamathematics of Fuzzy
+Logic*, Kluwer, 1998, ch. 8) and by Bou, Esteva, Godo & Rodríguez ("On the
+minimum many-valued modal logic over a finite residuated lattice", *Journal
+of Logic and Computation* 21(5), 2011, 739-790):
+
+- `Box φ` (□) is `inf` over accessible worlds of `tnorm.impl(R(w, w'), deg(φ, w'))`
+  — a RESIDUATED universal reading, "every accessible world forces φ at
+  least as much as it is accessible";
+- `Diamond φ` (◇) is `sup` over accessible worlds of `tnorm.conj(R(w, w'), deg(φ, w'))`
+  — a t-norm existential reading;
+- `Knows`/`Believes`/`Says`/`Wants` get the same residuated-universal reading
+  as `Box`, over their own agent-keyed relation, exactly like the crisp
+  evaluator (`semantics.kripke`'s module docstring documents the relation-name
+  convention both evaluators share: `"alethic"`, `"K:"+agent`, `"B:"+agent`,
+  `"Say:"+agent`, `"Want:"+agent`).
+
+A formula for the graded evaluator is built with **Łukasiewicz** connective
+nodes under the modal operators (never classical `And`/`Or`/`Not`/…, exactly
+this page's own discipline above) — there is no parser mode combining
+`modal=True` with `fuzzy=True`, so the AST is always built directly:
+
+```python
+from unicode_fol_kit.semantics import FuzzyKripkeModel, satisfies_fuzzy_modal
+from unicode_fol_kit.semantics import LUKASIEWICZ, GODEL
+from unicode_fol_kit import Atom, Box, Diamond
+
+P = Atom("P", [])
+
+# Two worlds; the only edge is R(w0, w1) = 0.6 (w0 has no self-loop, so
+# R(w0, w0) = 0.0 by the missing-edge convention); val_w1(P) = 0.5.
+m = FuzzyKripkeModel(
+    worlds={"w0", "w1"},
+    relations={"alethic": {("w0", "w1"): 0.6}},
+    valuation={"w1": {"P": 0.5}},
+    tnorm=LUKASIEWICZ,
+)
+
+round(satisfies_fuzzy_modal(Diamond(P), m, "w0"), 10)  # → 0.1  max(0, 0.6+0.5−1)
+satisfies_fuzzy_modal(Box(P), m, "w0")                 # → 0.9  min(1, 1−0.6+0.5)
+```
+
+A missing edge or atom reads as weight/degree `0.0`, and an edge of weight
+`0.0` contributes the NEUTRAL element to both aggregates (`tnorm.impl(0, y)
+= 1`, `tnorm.conj(0, y) = 0`, for all three t-norms), so "no accessible
+worlds" gives `Box = 1.0` / `Diamond = 0.0` exactly, matching
+`semantics.kripke`'s crisp vacuous-truth convention. On edge weights and atom
+degrees restricted to `{0.0, 1.0}`, `satisfies_fuzzy_modal` agrees exactly
+with `semantics.kripke.satisfies_modal` on the structurally matching crisp
+formula, for every t-norm — the collapse `tests/test_fuzzy_kripke.py`
+checks over hundreds of random frames.
+
+The Gödel t-norm's negation is not involutive, so the residuated duality
+`◇φ = ¬□¬φ` — which DOES hold exactly under Łukasiewicz — can fail under
+Gödel:
+
+```python
+mg = FuzzyKripkeModel(
+    worlds={"w0", "w1"},
+    relations={"alethic": {("w0", "w1"): 0.5}},
+    valuation={"w1": {"P": 0.5}},
+    tnorm=GODEL,
+)
+satisfies_fuzzy_modal(Diamond(P), mg, "w0")  # → 0.5   min(0.5, 0.5)
+```
+
+**v1 scope.** Exactly graded `Box`/`Diamond`/`Knows`/`Believes`/`Says`/
+`Wants`, single-step aggregation, no fixpoints — the same "propositional /
+ground, v1" discipline `semantics.kripke` documents for the crisp evaluator.
+Temporal closure, hybrid logic, public announcement logic, group-epistemic
+operators (`EverybodyKnows`/`DistributedKnowledge`/`CommonKnowledge`), and
+Standard-Deontic-style serial-frame reasoning are refused BY NAME rather
+than silently approximated — a graded fixpoint or model update over a
+continuous t-norm is an open research question in its own right:
+
+```python
+from unicode_fol_kit import Next
+
+satisfies_fuzzy_modal(Next(P), m, "w0")
+# raises NotImplementedError: satisfies_fuzzy_modal: Next (temporal) is not
+# supported by the graded (fuzzy) Kripke evaluator — …
+```
+
 ## End-to-end: a small fuzzy rule base
 
 Parse → evaluate → solve, in one scenario. A diagnostic rule says that strong *fever* together with a *cough* implies elevated *risk*; we both score it under a fixed reading and ask whether the antecedent can reach a target degree.

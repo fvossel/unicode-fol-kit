@@ -245,11 +245,12 @@ NODE_CLASSES.update({
 # "nullary" fixity — see _fol_nodes._VALID_FIXITIES — because every fixity it
 # supports arranges at least one operand). PARSING ⊤/𝟘 needs no such branch
 # (register_parser_op below is self-contained), so 'MSFLParser(linear=True)'
-# already round-trips them; only Node.to_unicode_str()/to_latex() on a formula
-# that CONTAINS ⊤ or 𝟘 need the central _msfl_nodes branch, which is wired in
-# centrally alongside every other in-flight change to that shared module (see
-# render_ill_formula below for the self-contained substitute this module's own
-# callers — atp.linear, hol.isabelle_substructural — use in the meantime).
+# already round-trips them; Node.to_unicode_str()/to_latex() on a formula
+# that CONTAINS ⊤ or 𝟘 also renders correctly, via the central _msfl_nodes
+# branch (see the comment above render_ill_formula below for why that
+# function exists alongside to_unicode_str() anyway — a stricter
+# round-trip guarantee, not a Top/Zero workaround; its only caller in this
+# kit is atp.linear.ILLSequent).
 
 register_operator(Tensor, "level2", "⊗", "\\otimes", 3)
 register_operator(With, "level2", "&", "\\mathbin{\\&}", 3)
@@ -279,33 +280,37 @@ register_parser_op(Zero, "linear", "prefix", "zero_", '"𝟘"',
 
 
 # ---------------------------------------------------------------------------
-# A self-contained Unicode renderer for ILL formulas (workaround).
+# A self-contained, fully-parenthesised Unicode renderer for ILL formulas.
 # ---------------------------------------------------------------------------
 #
 # Node.to_unicode_str() dispatches through unicode_fol_kit.fol._msfl_nodes,
-# whose explicit branch table currently only special-cases One ("𝟙") among the
-# nullary linear-mode constants (see the comment above register_operator's
-# calls). Until Top/Zero get their own branch there, to_unicode_str() (and
-# to_latex()) raise TypeError on any formula containing a Top/Zero node
-# ANYWHERE in its tree — including nested, e.g. inside a Tensor — because the
-# renderer recurses via its own free functions, not via polymorphic dispatch,
-# so overriding to_unicode_str on Top/Zero alone would not be seen by a
-# containing Tensor's rendering. render_ill_formula is the drop-in substitute
-# every ILL-aware caller in this kit (atp.linear, hol.isabelle_substructural)
-# uses instead: it renders exactly like to_unicode_str for every existing
-# linear-mode node (Atom included, via to_unicode_str — atoms can never
-# contain Top/Zero, only term arguments), and adds the ⊤/𝟘 cases. Every
-# subformula is fully parenthesised (always safe: MSFLParser accepts redundant
-# parens anywhere), so round-tripping through MSFLParser(linear=True).parse
-# reproduces a structurally equal AST even though the text differs from what
-# the (eventual) central renderer would print.
+# whose explicit branch table special-cases all three nullary linear-mode
+# constants — One ("𝟙"), Top ("⊤"), Zero ("𝟘") — wherever they occur in a
+# formula's tree, including nested, e.g. inside a Tensor; none of them raises.
+# Verified live: Top().to_unicode_str() == "⊤", Zero().to_latex() ==
+# "\\mathbf{0}", and Tensor(Atom("P", []), Zero()).to_unicode_str() ==
+# "P ⊗ 𝟘". So render_ill_formula below is NOT a Top/Zero workaround. The
+# reason its caller in this kit, atp.linear.ILLSequent, uses it instead of
+# to_unicode_str() is that to_unicode_str() does precedence-based MINIMAL
+# parenthesisation — e.g. Tensor(Atom("P", []), Atom("Q", [])).to_unicode_str()
+# == "P ⊗ Q" — whereas render_ill_formula fully parenthesises every compound
+# subformula (the same Tensor renders as "(P ⊗ Q)"; always safe, since
+# MSFLParser accepts redundant parens anywhere), which guarantees that
+# round-tripping through MSFLParser(linear=True).parse reproduces a
+# structurally equal AST — a guarantee minimal parenthesisation does not make
+# in general. It is a deliberately-conservative renderer for its
+# round-trip-sensitive caller, not a substitute for a rendering gap.
 def render_ill_formula(f: Node) -> str:
-    """Render an ILL (``linear`` mode) formula to Unicode text.
+    """Render an ILL (``linear`` mode) formula to Unicode text, fully
+    parenthesised.
 
-    A safe substitute for ``f.to_unicode_str()`` that also handles ``Top``/
-    ``Zero`` (see the module comment above). Always produces text that
-    re-parses (via ``MSFLParser(linear=True).parse``) to a structurally equal
-    formula; every compound subformula is fully parenthesised.
+    Renders the same symbols as ``f.to_unicode_str()`` (Top/Zero included —
+    see the module comment above), but always produces text that re-parses
+    (via ``MSFLParser(linear=True).parse``) to a structurally equal formula,
+    because every compound subformula is fully parenthesised — unlike
+    ``to_unicode_str()``'s precedence-based minimal parenthesisation. Used by
+    its round-trip-sensitive caller, ``atp.linear.ILLSequent``, in place of
+    ``to_unicode_str()``.
     """
     if isinstance(f, Top):
         return "⊤"

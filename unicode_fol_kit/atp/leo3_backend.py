@@ -19,6 +19,38 @@ modal family) is reported as ``UNKNOWN``/``"unsupported"`` rather than a
 malformed or silently wrong NXF file ever reaching the subprocess — see
 :func:`Leo3Backend.decide`.
 
+**The mandatory modal-tableau cross-check**, mirroring
+:class:`atp.nanocop_backend.NanocopBackend`'s soundness-alarm policy (an
+external prover's claim earns trust only when an in-kit route backs it up):
+every PROVED/REFUTED verdict is re-decided by this kit's own
+``modal-tableau`` (:class:`atp.protocol.ModalTableauBackend`) on the SAME
+``formula``/``premises``/``frame`` before it is returned (UNKNOWN/ERROR
+verdicts skip the check — there is nothing definitive to cross-check yet).
+Unlike nanocop's policy this one is **symmetric**: nanocop's first-order
+modal fragment is undecidable, so only its ``Theorem`` direction has a
+complete second opinion available (a tableau REFUTATION alarms; a tableau
+UNKNOWN never can, because completeness does not exist there to demand it
+of). Leo-III's fragment here, in contrast, is the mono-modal alethic
+PROPOSITIONAL fragment over K/T/S4/S5 — and ``modal-tableau`` is a *sound
+and complete* decision procedure for exactly that fragment (labelled
+tableaux with blocking decide propositional K/T/S4/S5; see
+:mod:`atp.modal_tableau`'s own docstring), strictly larger than what
+Leo-III accepts (multi-relation Knows/Believes/PAL, and the frames
+D/B/K4/K45/KD45 besides). So a disagreement in EITHER direction —
+Leo-III PROVED vs. tableau REFUTED, or Leo-III REFUTED vs. tableau PROVED —
+is a genuine soundness alarm (``ERROR``/``"infra"``), not merely one
+engine outrunning the other's power. The only escape hatch is the
+tableau's own resource bound (``UNKNOWN``/``"bound_hit"``): that is a
+budget limit, not an incompleteness of the fragment, so it never alarms —
+Leo-III's own verdict is kept, with the cross-check outcome
+(``"confirmed"``/``"inconclusive"``) appended to ``detail``, and — when
+Leo-III's REFUTED is confirmed — the tableau's verified Kripke witness is
+attached as ``Verdict.countermodel`` (see
+:meth:`atp.protocol.ModalTableauBackend.decide`). The cross-check itself is
+best-effort infrastructure: an exception from it (not a tableau
+disagreement) is swallowed and never masks Leo-III's own answer — see
+:meth:`Leo3Backend._cross_check`.
+
 Discovery is deliberately narrow and explicit, matching
 :class:`atp.protocol.Prover9Backend`/:class:`atp.protocol.VampireBackend`'s
 own env-var-then-PATH convention: ``$UFK_LEO3`` must point to either a
@@ -47,7 +79,9 @@ import time
 from typing import Optional, Sequence
 
 from ..fol.nodes import And, Implies, Node
-from .protocol import ERROR, UNKNOWN, BackendUnavailable, ProverBackend, Verdict
+from .protocol import (
+    ERROR, PROVED, REFUTED, UNKNOWN, BackendUnavailable, ProverBackend, Verdict,
+)
 from .tptp_ncl import to_tptp_ncl
 from .tstp import extract_szs_status, szs_to_verdict_fields
 
@@ -160,7 +194,22 @@ class Leo3Backend(ProverBackend):
               ``query="conjecture"`` (the problem carries exactly one
               ``conjecture``-role formula — see :func:`to_tptp_ncl`'s
               docstring) into ``PROVED``/``REFUTED``/``UNKNOWN``, with the
-              raw SZS token kept verbatim in ``szs_status``.
+              raw SZS token kept verbatim in ``szs_status``; a ``PROVED`` or
+              ``REFUTED`` verdict is then re-decided by ``modal-tableau`` on
+              the same ``formula``/``premises``/``frame`` (see the module
+              docstring's cross-check section and :meth:`_cross_check`):
+
+              - the tableau DISAGREES (a definitive PROVED vs. REFUTED
+                clash, in either direction) → ``ERROR``/``"infra"`` with
+                ``"SOUNDNESS ALARM"`` in ``detail`` — two definitive answers
+                may never disagree silently;
+              - the tableau agrees, or is ``UNKNOWN``/unreachable → Leo-III's
+                own ``PROVED``/``REFUTED`` is kept, with
+                ``"; cross-check modal-tableau: confirmed"`` or
+                ``"; cross-check modal-tableau: inconclusive"`` appended to
+                ``detail``; when Leo-III's ``REFUTED`` is confirmed, the
+                tableau's ``satisfies_modal``-verified Kripke witness is
+                attached as ``countermodel`` (``None`` otherwise).
 
         Raises:
             BackendUnavailable: neither ``$UFK_LEO3`` nor ``java`` (or
@@ -232,6 +281,52 @@ class Leo3Backend(ProverBackend):
                            detail=f"no 'SZS status' line in leo3 output: {excerpt!r}")
 
         status, reason = szs_to_verdict_fields(szs, query="conjecture")
+        base_detail = f"leo3 SZS status {szs} (frame={frame})"
+
+        if status not in (PROVED, REFUTED):
+            # Nothing definitive to cross-check yet — matches nanocop's own
+            # "skip on UNKNOWN/ERROR" pattern (see the module docstring).
+            return Verdict(status, self.name, logic="modal", reason=reason,
+                           wall_time=elapsed, szs_status=szs, detail=base_detail)
+
+        check = self._cross_check(formula, premises, frame, timeout)
+        if status == PROVED and check is not None and check.status == REFUTED:
+            return Verdict(
+                ERROR, self.name, logic="modal", reason="infra", wall_time=elapsed,
+                detail=f"SOUNDNESS ALARM: leo3 says Theorem but modal-tableau "
+                       f"(frame {frame}) refutes it — refusing to answer.")
+        if status == REFUTED and check is not None and check.status == PROVED:
+            # The symmetric alarm nanocop cannot build (its FO fragment has no
+            # complete second engine for a Non-Theorem claim) — see the module
+            # docstring: modal-tableau fully decides Leo-III's own fragment.
+            return Verdict(
+                ERROR, self.name, logic="modal", reason="infra", wall_time=elapsed,
+                detail=f"SOUNDNESS ALARM: leo3 says Non-Theorem but modal-tableau "
+                       f"(frame {frame}) proves it — refusing to answer.")
+
+        agreement = ("confirmed" if check is not None and check.status == status
+                     else "inconclusive")
+        countermodel = (check.countermodel
+                        if status == REFUTED and check is not None
+                        and check.status == REFUTED else None)
         return Verdict(status, self.name, logic="modal", reason=reason,
-                       wall_time=elapsed, szs_status=szs,
-                       detail=f"leo3 SZS status {szs} (frame={frame})")
+                       wall_time=elapsed, szs_status=szs, countermodel=countermodel,
+                       detail=f"{base_detail}; cross-check modal-tableau: {agreement}")
+
+    @staticmethod
+    def _cross_check(formula: Node, premises: Sequence[Node], frame: str,
+                     timeout: int) -> Optional[Verdict]:
+        """Run the REAL ``modal-tableau`` backend on the same problem; ``None`` on any error.
+
+        A local, ``modal-tableau``-only counterpart of
+        :meth:`atp.nanocop_backend.NanocopBackend._cross_check` — best-effort
+        infrastructure: ITS failure must not mask Leo-III's own answer, only
+        its definitive disagreement may (see the module docstring).
+        """
+        from .protocol import get_backend
+
+        try:
+            return get_backend("modal-tableau").decide(
+                formula, list(premises), frame=frame, timeout=timeout)
+        except Exception:                                  # noqa: BLE001
+            return None

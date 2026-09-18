@@ -245,6 +245,34 @@ safe_2 = Structure(domain=set(range(20)))
 holds(p("∀R ∀x ∃y R(x, y)"), safe_2)  # → fine
 ```
 
+### A faster route for one quantifier block: `asp_holds_so` / `fast=True`
+
+`satisfies_so` / `holds` are brute force by construction — every `∀P` / `∃P` materialises the full `2 ** (n ** k)` relation powerset in Python. `semantics.asp_models.asp_holds_so(formula, structure)` (roadmap C24) checks the *same* semantics through clingo instead: an answer-set solver's own choice-and-propagate search replaces the Python enumeration, so it clears the `MAX_RELATIONS` cap entirely. The trade-off is scope: it only accepts a formula whose `SecondOrderQuantifier` occurrences form a **single block of one polarity** (all `∀` or all `∃`, nothing else of that kind anywhere in the formula) — genuine alternation (`∀P∃Q…`) still needs `satisfies_so`. `holds`, and every function built on it (`so_find_model`, `so_find_countermodel`, `so_is_satisfiable_finite`, `so_is_valid_finite`), take an opt-in `fast=True` that switches to `asp_holds_so` for exactly this reason: the default (`fast=False`) is unchanged, and `fast=True` raises `ValueError` — never a silent, possibly wrong, fallback — the moment a formula leaves the single-block fragment.
+
+```python
+from unicode_fol_kit import so_is_valid_finite
+from unicode_fol_kit.semantics.asp_models import asp_holds_so
+
+# The safe_2 example above, pushed past MAX_RELATIONS (domain size 6, arity 2:
+# 2 ** (6 ** 2) relations) -- holds() refuses it outright, asp_holds_so and
+# holds(..., fast=True) do not:
+big = Structure(domain=set(range(6)))
+try:
+    holds(p("∀R ∀x ∃y R(x, y)"), big)
+except ValueError as e:
+    print(str(e)[:46])
+    # → Second-order quantifier ∀R/2 over a 6-element
+
+asp_holds_so(p("∀R ∀x ∃y R(x, y)"), big)       # → False (R = ∅ is a counter-choice)
+holds(p("∀R ∀x ∃y R(x, y)"), big, fast=True)   # → False (same answer, same reason)
+
+# The bounded search functions below (next section) take the same flag:
+so_is_valid_finite(p("∃P ∀x P(x)"), max_size=2)               # → True
+so_is_valid_finite(p("∃P ∀x P(x)"), max_size=2, fast=True)    # → True
+```
+
+`asp_holds_so` needs `pip install unicode-fol-kit[asp]` (`clingo`) — the same optional dependency `asp_find_model` / `asp_minimal_models` already use. It is also what `nonmonotonic.circumscription_entails_so`'s ∀-block ([Further Non-Classical Logics](nonclassical.md)) and `team_translation.dependence_to_eso`'s ∃-block ([Dependence logic](dependence.md), via `dependence_holds_eso(sentence, structure, fast=True)`) opt into: both producers only ever emit a single same-polarity block by construction, so `fast=True` never raises for THEM specifically — only a hand-built formula with genuine alternation does.
+
 ## Bounded second-order search (new in 0.9.0)
 
 Second-order logic has no complete proof system, and SO validity is not even semi-decidable — so there is no decision procedure and no `to_tptp`-style hand-off to a prover. The four search functions are instead a **bounded finite-model search** (the SO analogue of the first-order model finder): they enumerate finite structures interpreting the formula's *free* symbols over domains `1 .. max_size`, while `satisfies_so` ranges the SO-quantified predicates over every relation. A returned model or counter-model is genuine; "none found up to size N" is bounded evidence, not a proof.
@@ -506,6 +534,8 @@ print("feq" in thf)   # → True  (= becomes the uninterpreted feq)
 
 # The exported problem is *not* automatically reflexive
 # You would need to add an axiom: ∀x. feq(x, x)
+# (The first-order exporters to_thf_fol / to_isabelle_fol take
+#  native_equality=True for built-in identity; these two do not.)
 thy_eq = to_isabelle_so(f_eq, name="Reflexivity")
 print("feq" in thy_eq)  # → True
 ```

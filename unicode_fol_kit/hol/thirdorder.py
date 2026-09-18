@@ -50,7 +50,7 @@ from ..fol._ho_nodes import INDIVIDUAL
 from ._ho_common import (
     UnsupportedHigherOrderNode, EQUALITY,
     peel_lambdas, rename_apart, bound_pred_names, atom_predicates,
-    function_symbols, free_individuals,
+    function_symbols, free_individuals, ThfNames, bound_token,
 )
 
 _ALL = r"\<forall>"
@@ -215,52 +215,60 @@ def to_isabelle_to(formula: Node, name: str = "TO_Goal",
 _BINARY_THF = {And: "&", Or: "|", Implies: "=>", Iff: "<=>", Xor: "<~>"}
 
 
-def _thf_arg(node: Node, upper: Dict[str, str], display: Dict[str, str]) -> str:
-    """Render a node in ARGUMENT position in THF."""
+def _thf_arg(node: Node, upper: Dict[str, str], display: Dict[str, str],
+             names: ThfNames) -> str:
+    """Render a node in ARGUMENT position in THF.
+
+    ``upper`` maps each source name bound in scope to its THF variable token;
+    anything not in it is a free symbol, spelled through ``names``.
+    """
     if isinstance(node, (Variable, LambdaVar, Constant)):
-        return upper.get(node.name, node.name)
+        return upper.get(node.name) or names.functor("individual", node.name)
     if isinstance(node, PredicateTerm):
-        base = display.get(node.name, node.name)
-        return upper.get(node.name, base)
+        return upper.get(node.name) or names.functor("predicate", node.name)
     if isinstance(node, Lambda):
-        names, body = peel_lambdas(node)
+        params, body = peel_lambdas(node)
         fresh = dict(upper)
-        for n in names:
-            fresh[n] = n.upper() + "_V"
-        binders = ", ".join(f"{fresh[n]}: $i" for n in names)
-        return f"( ^ [{binders}] : {_thf(body, fresh, display)} )"
+        for n in params:
+            fresh[n] = bound_token(n, "_V", fresh)
+        binders = ", ".join(f"{fresh[n]}: $i" for n in params)
+        return f"( ^ [{binders}] : {_thf(body, fresh, display, names)} )"
     if isinstance(node, Function):
-        args = " @ ".join(_thf_arg(a, upper, display) for a in node.args)
-        return f"( {node.name} @ {args} )" if node.args else node.name
+        functor = names.functor("function", node.name)
+        args = " @ ".join(_thf_arg(a, upper, display, names) for a in node.args)
+        return f"( {functor} @ {args} )" if node.args else functor
     raise UnsupportedHigherOrderNode(
         f"thirdorder: {type(node).__name__} cannot stand in argument position.")
 
 
-def _thf(node: Node, upper: Dict[str, str], display: Dict[str, str]) -> str:
+def _thf(node: Node, upper: Dict[str, str], display: Dict[str, str],
+         names: ThfNames) -> str:
     """Render ``node`` as a THF (TH0) formula."""
     if isinstance(node, Not):
-        return f"( ~ {_thf(node.formula, upper, display)} )"
+        return f"( ~ {_thf(node.formula, upper, display, names)} )"
     glyph = _BINARY_THF.get(type(node))
     if glyph is not None:
-        return (f"( {_thf(node.left, upper, display)} {glyph} "
-                f"{_thf(node.right, upper, display)} )")
+        return (f"( {_thf(node.left, upper, display, names)} {glyph} "
+                f"{_thf(node.right, upper, display, names)} )")
     if isinstance(node, Quantifier):
-        var = node.variable.name.upper() + "_V"
+        var = bound_token(node.variable.name, "_V", upper)
         fresh = dict(upper, **{node.variable.name: var})
         quant = "!" if node.type == "∀" else "?"
-        return f"( {quant} [{var}: $i] : {_thf(node.formula, fresh, display)} )"
+        return f"( {quant} [{var}: $i] : {_thf(node.formula, fresh, display, names)} )"
     if isinstance(node, SecondOrderQuantifier):
-        var = display.get(node.predicate, node.predicate).upper() + "_P"
+        var = bound_token(display.get(node.predicate, node.predicate), "_P", upper)
         fresh = dict(upper, **{node.predicate: var})
         quant = "!" if node.type == "∀" else "?"
         return (f"( {quant} [{var}: {_thf_prop_type(node.arity)}] : "
-                f"{_thf(node.formula, fresh, display)} )")
+                f"{_thf(node.formula, fresh, display, names)} )")
     if isinstance(node, Atom):
-        name = EQUALITY.get(node.predicate, node.predicate)
-        name = upper.get(node.predicate, display.get(name, name))
+        if node.predicate in EQUALITY:
+            name = EQUALITY[node.predicate]
+        else:
+            name = upper.get(node.predicate) or names.functor("predicate", node.predicate)
         if not node.args:
             return name
-        args = " @ ".join(_thf_arg(a, upper, display) for a in node.args)
+        args = " @ ".join(_thf_arg(a, upper, display, names) for a in node.args)
         return f"( {name} @ {args} )"
     raise UnsupportedHigherOrderNode(
         f"thirdorder: no THF reading for {type(node).__name__}; this export "
@@ -288,23 +296,27 @@ def to_thf_to(formula: Node, assumptions: Sequence[Node] = (),
         "% Standard (full) semantics; validity at this order is NOT semi-decidable,",
         "% so a sound prover may fail to close a valid goal.",
     ]
+    names = ThfNames(reserved=EQUALITY.values())
     for pred in sorted(signatures.slots):
         if pred in bound or pred in EQUALITY:
             continue
         parts = [_thf_slot_type(k) for k in signatures.slots[pred]]
         thf_type = " > ".join(parts + ["$o"]) if parts else "$o"
-        lines.append(f"thf({pred}_type, type, ( {pred} : {thf_type} )).")
+        functor = names.functor("predicate", pred)
+        lines.append(f"thf({functor}_type, type, ( {functor} : {thf_type} )).")
     for symbol in sorted(free_individuals(apart)):
-        lines.append(f"thf({symbol}_type, type, ( {symbol} : $i )).")
+        functor = names.functor("individual", symbol)
+        lines.append(f"thf({functor}_type, type, ( {functor} : $i )).")
     for symbol in sorted({EQUALITY[p] for f in apart for p in atom_predicates(f)
                           if p in EQUALITY}):
         lines.append(f"thf({symbol}_type, type, ( {symbol} : $i > $i > $o )).")
     for symbol, k in sorted(function_symbols(apart).items()):
-        lines.append(f"thf({symbol}_type, type, ( {symbol} : "
+        functor = names.functor("function", symbol)
+        lines.append(f"thf({functor}_type, type, ( {functor} : "
                      f"{' > '.join(['$i'] * (k + 1))} )).")
     for index, assumption in enumerate(apart[:-1], start=1):
         lines.append(f"thf(assumption{index}, axiom, "
-                     f"( {_thf(assumption, {}, display)} )).")
+                     f"( {_thf(assumption, {}, display, names)} )).")
     role = "conjecture" if conjecture else "axiom"
-    lines.append(f"thf(goal, {role}, ( {_thf(apart[-1], {}, display)} )).")
+    lines.append(f"thf(goal, {role}, ( {_thf(apart[-1], {}, display, names)} )).")
     return "\n".join(lines) + "\n"

@@ -32,6 +32,13 @@ Coverage map (see the task instructions this file was written under):
   the gap existed), engaged with (not "unsupported") by this backend; one
   full happy-path ``Count`` entailment, REFUTED with a verified countermodel
   end to end.
+* :func:`test_involution_claim_refuted_with_verified_countermodel` and
+  :func:`test_named_constant_fixed_point_refutes_a_universal_no_fixed_point_claim`
+  — the C26 closure: ``Function`` (including a NESTED application, and one
+  combined with a named constant) grounded, solved and independently
+  verified end to end; see ``tests/test_finite_domain_functions.py`` for the
+  differential-against-``modelfinder`` corpus this closure is checked
+  against separately.
 * :func:`test_unsupported_fragment_returns_unknown_not_a_crash` — a modal
   node is refused honestly, not a crash.
 * :func:`test_to_asp_renders_a_solvable_program_with_hand_derived_model_count`
@@ -51,7 +58,7 @@ clingo = pytest.importorskip("clingo")
 
 from unicode_fol_kit import MSFLParser
 from unicode_fol_kit.fol.nodes import (
-    Variable, Constant, Number, Atom, Not, Count, Cardinality, Box,
+    Variable, Constant, Number, Function, Atom, Not, Quantifier, Count, Cardinality, Box,
 )
 from unicode_fol_kit.semantics import structure_from_dict, evaluate_in_structure
 from unicode_fol_kit.semantics.modelfinder import find_countermodel
@@ -311,6 +318,69 @@ def test_count_quantifier_entailment_fully_decided_with_verified_countermodel():
     # Independent re-check, not trusting decide()'s own internal verify step.
     assert evaluate_in_structure(at_least_2, structure) is True
     assert evaluate_in_structure(Not(at_least_3), structure) is True
+
+
+# =============================================================================
+# Function symbols: the C26 closure -- admitted, grounded, solved, AND
+# independently verified end to end (see test_finite_domain_functions.py for
+# the differential-against-modelfinder corpus this closure is checked
+# against separately).
+# =============================================================================
+
+def test_involution_claim_refuted_with_verified_countermodel():
+    """``∀x (f(f(x)) = x)`` — "f is an involution" — is not a tautology.
+
+    Hand-derived minimal countermodel size: a 1-element domain FORCES f to be
+    the identity (the only total function ``D -> D`` when ``|D|=1``), so
+    ``f(f(x))=x`` holds trivially there — no countermodel at size 1. A
+    2-element domain admits a genuinely non-involutive f (e.g. mapping both
+    elements to the same one), so size 2 is minimal. This is also the first
+    live test in this module of a NESTED Function application
+    (``f(f(x))``), exercised through the real clingo solver end to end.
+    """
+    x = Variable("x")
+    involution = Quantifier(
+        "forall", x, Atom("=", [Function("f", [Function("f", [x])]), x]))
+
+    v = _backend.decide(involution, max_size=_MAX_SIZE)
+    assert v.status == REFUTED
+    assert v.reason is None
+    assert v.detail is None            # None => verify_model raised no objection
+
+    structure = structure_from_dict(v.countermodel["data"])
+    assert len(structure.domain) == 2  # the hand-derived minimal size
+    assert ("f", 2) in structure.extensions
+    f_graph = {row[0]: row[1] for row in structure.extensions[("f", 2)]}
+    assert set(f_graph) == set(structure.domain)   # total: every input has a row
+
+    # Independent re-check, not trusting decide()'s own internal verify step.
+    assert evaluate_in_structure(Not(involution), structure) is True
+
+
+def test_named_constant_fixed_point_refutes_a_universal_no_fixed_point_claim():
+    """``f(a) = a`` (a premise pinning ONE named constant as a fixed point)
+    together refutes the universal claim ``∀x (f(x) ≠ x))`` — "f has no
+    fixed point anywhere" cannot be true once ``a`` itself is one.
+
+    Hand-derived: at domain size 1, the sole individual must denote ``a``
+    (the only individual there is), and the ONLY total unary function on a
+    1-element domain is the identity — so ``f(a)=a`` is forced, and IS the
+    countermodel: it satisfies the premise and directly witnesses ``∃x
+    (f(x)=x)`` (the claim's negation), refuting size 1 already.
+    """
+    a = Constant("a")
+    premise = Atom("=", [Function("f", [a]), a])
+    no_fixed_point = Quantifier("forall", Variable("x"), Atom("≠", [Function("f", [Variable("x")]), Variable("x")]))
+
+    v = _backend.decide(no_fixed_point, [premise], max_size=_MAX_SIZE)
+    assert v.status == REFUTED
+    assert v.reason is None
+    assert v.detail is None
+
+    structure = structure_from_dict(v.countermodel["data"])
+    assert structure.domain == ("0",)   # the hand-derived minimal size
+    assert evaluate_in_structure(premise, structure) is True
+    assert evaluate_in_structure(Not(no_fixed_point), structure) is True
 
 
 # =============================================================================

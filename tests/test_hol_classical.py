@@ -73,6 +73,66 @@ def test_thf_equality_is_uninterpreted():
     assert " = " not in out.split("conjecture,")[1]  # no primitive = in the goal body
 
 
+def test_thf_native_equality_is_hol_identity():
+    # native_equality=True: '=' becomes THF's own infix '=', not the feq functor.
+    f = Atom("=", [Constant("a"), Constant("b")])
+    out = to_thf_fol(f, native_equality=True)
+    assert "feq" not in out
+    assert "( a = b )" in out.split("conjecture,")[1]
+
+
+def test_thf_native_inequality_is_negated_identity():
+    f = Atom("≠", [Constant("a"), Constant("b")])
+    out = to_thf_fol(f, native_equality=True)
+    assert "fneq" not in out
+    assert "( a != b )" in out.split("conjecture,")[1]
+
+
+def test_thf_native_equality_comparisons_still_uninterpreted():
+    # '<' '>' '≤' '≥' are unaffected by native_equality — always uninterpreted.
+    f = Atom("<", [Constant("a"), Constant("b")])
+    out = to_thf_fol(f, native_equality=True)
+    assert "( flt : ( $i > $i > $o ) )" in out
+    assert "( flt @ a @ b )" in out.split("conjecture,")[1]
+
+
+def test_thf_native_equality_frees_the_feq_stem_for_a_user_symbol():
+    # With no '=' consuming the 'feq' alias slot, a user predicate literally
+    # named 'feq' gets the plain identifier 'feq' (no forced de-collision).
+    f = And(Atom("feq", [Constant("a")]), Atom("=", [Constant("a"), Constant("b")]))
+    out = to_thf_fol(f, native_equality=True)
+    assert "thf(feq_decl, type, ( feq : ( $i > $o ) ))." in out  # the user's unary feq
+    assert out.count("_decl") == 3  # feq, a, b — no separate decl for '='
+    assert "( a = b )" in out.split("conjecture,")[1]
+
+
+def test_thf_native_equality_only_applies_at_binary_arity():
+    # A same-named '=' used at a non-binary arity (pathological input) is left
+    # as the ordinary uninterpreted feq predicate at ITS arity; only the
+    # genuinely binary use renders as native identity.
+    f = And(Atom("=", [Constant("a"), Constant("b")]),
+           Atom("=", [Constant("a"), Constant("b"), Constant("c")]))
+    out = to_thf_fol(f, native_equality=True)
+    assert "( feq : ( $i > $i > $i > $o ) )" in out       # ternary '=' still declared
+    assert "( $i > $i > $o )" not in out                   # no binary feq decl
+    body = out.split("conjecture,")[1]
+    assert "( a = b )" in body
+    assert "( feq @ a @ b @ c )" in body
+
+
+def test_thf_native_equality_default_is_byte_identical():
+    # native_equality omitted == native_equality=False explicitly (additive default).
+    f = Atom("=", [Constant("a"), Constant("b")])
+    assert to_thf_fol(f) == to_thf_fol(f, native_equality=False)
+
+
+def test_thf_native_equality_no_op_without_equality_atoms():
+    # A formula that never uses '=' / '≠' renders byte-identically regardless
+    # of native_equality (nothing about the emission would differ).
+    f = And(Atom("P", [Constant("a")]), Atom("Q", [Constant("b")]))
+    assert to_thf_fol(f, native_equality=True) == to_thf_fol(f, native_equality=False)
+
+
 def test_thf_connectives_mapping():
     f = Iff(Or(Atom("A", []), Not(Atom("B", []))), Xor(Atom("A", []), Atom("B", [])))
     out = to_thf_fol(f)
@@ -197,6 +257,54 @@ def test_isabelle_equality_uninterpreted():
     out = to_isabelle_fol(f)
     assert "consts feq :: \"i \\<Rightarrow> i \\<Rightarrow> bool\"" in out
     assert "(feq a b)" in out
+
+
+def test_isabelle_native_equality_is_hol_identity():
+    f = Atom("=", [Constant("a"), Constant("b")])
+    out = to_isabelle_fol(f, native_equality=True)
+    assert "feq" not in out          # no functor, no 'consts feq' declaration
+    assert '"(a = b)"' in out
+
+
+def test_isabelle_native_inequality_is_noteq():
+    f = Atom("≠", [Constant("a"), Constant("b")])
+    out = to_isabelle_fol(f, native_equality=True)
+    assert "fneq" not in out
+    assert '"(a \\<noteq> b)"' in out
+
+
+def test_isabelle_native_equality_comparisons_still_uninterpreted():
+    f = Atom("≤", [Constant("a"), Constant("b")])
+    out = to_isabelle_fol(f, native_equality=True)
+    assert "consts fle :: \"i \\<Rightarrow> i \\<Rightarrow> bool\"" in out
+    assert "(fle a b)" in out
+
+
+def test_isabelle_native_equality_default_is_byte_identical():
+    f = Atom("=", [Constant("a"), Constant("b")])
+    assert to_isabelle_fol(f) == to_isabelle_fol(f, native_equality=False)
+
+
+def test_isabelle_native_equality_no_op_without_equality_atoms():
+    f = And(Atom("P", [Constant("a")]), Atom("Q", [Constant("b")]))
+    assert to_isabelle_fol(f, native_equality=True) == to_isabelle_fol(f, native_equality=False)
+
+
+def test_thf_msfol_threads_native_equality():
+    # a '=' atom under a sorted quantifier still renders natively after relativization.
+    f = SortedQuantifier("∀", X, "Human", Atom("=", [X, X]))
+    out = to_thf_msfol(f, native_equality=True)
+    assert "feq" not in out
+    assert "( X = X )" in out.split("conjecture,")[1]
+    assert "( human : ( $i > $o ) )" in out  # the sort guard is unaffected
+
+
+def test_isabelle_msfol_threads_native_equality():
+    f = SortedQuantifier("∀", X, "Human", Atom("=", [X, X]))
+    out = to_isabelle_msfol(f, native_equality=True)
+    assert "feq" not in out
+    assert "(x = x)" in out
+    assert "consts human :: \"i \\<Rightarrow> bool\"" in out
 
 
 def test_isabelle_xor_is_negated_iff():

@@ -246,6 +246,24 @@ p.parse("[P → Q!]R").to_unicode_str()    # → '[P → Q!]R'   (the announceme
 
 See {doc}`nonclassical` for `reduce_announcements` and how the modal tableau decides PAL through it.
 
+### Group-epistemic operators (modal mode)
+
+| Glyph | Operator | Surface syntax | Meaning |
+|---|---|---|---|
+| `E_{…}` | `EverybodyKnows` | `E_{a,b,…}φ` | every agent in the group knows φ (one-step, ⋀K_a φ) |
+| `D_{…}` | `DistributedKnowledge` | `D_{a,b,…}φ` | φ is distributed knowledge in the group (one-step, pooled) |
+| `C_{…}` | `CommonKnowledge` | `C_{a,b,…}φ` | φ is common knowledge in the group (reflexive-transitive closure) |
+
+Each opening glyph is followed by a brace-delimited, comma-separated agent list — `a`/`b` (single-letter, like a quantified variable) or `alice`/`bob` (multi-letter, like `K_alice`'s own agent) — closed by `}`, then the formula at the same tight, prefix-level precedence every other operator in this family uses:
+
+```python
+p.parse("D_{a,b} P").to_unicode_str()          # → 'D_{a,b} P'
+p.parse("E_{alice,bob} P").to_unicode_str()     # → 'E_{alice,bob} P'
+p.parse("C_{a,b,c} (P ∧ Q)").to_unicode_str()   # → 'C_{a,b,c} (P ∧ Q)'
+```
+
+The brace list needs **at least one** agent (`C_{}` is not valid syntax), and it cannot collide with the pre-existing `{…}` uses elsewhere in the grammar — Cardinality's `|{v : φ}|`, or a plain predicate whose name happens to start `C_`/`D_`/`E_` (e.g. `C_alpha(x)`, unaffected, since the group terminals fuse the letter, the underscore AND the opening brace into one token). See {doc}`modal` for the semantics (union / intersection / closure) and the FHMV strength ordering `C_G φ → E_G φ → K_a φ → D_G φ`.
+
 ## Lambda abstraction and application (all modes)
 
 A lambda abstraction is written `λ` followed by a parameter name, a literal `.`, and a body formula. Every parser mode supports identical lambda surface notation.
@@ -405,8 +423,11 @@ The prefix temporal duals are the past-tense mirrors of the forward operators.
 | `Might` | `left`, `right` | `◇→` | dual `¬(A □→ ¬B)`; no first-order export |
 | `Announce` | `announcement`, `formula` | `[…!]` | PAL box: after truthfully announcing `announcement`, `formula` holds |
 | `AnnounceDiamond` | `announcement`, `formula` | `⟨…!⟩` | PAL diamond: `announcement` is truthful and `formula` then holds |
+| `EverybodyKnows` | `group: Tuple[Node, ...]`, `formula` | `E_{…}` | E_G: everyone in `group` knows `formula` (one-step, union) |
+| `DistributedKnowledge` | `group: Tuple[Node, ...]`, `formula` | `D_{…}` | D_G: distributed knowledge in `group` (one-step, intersection; refuses an empty `group`) |
+| `CommonKnowledge` | `group: Tuple[Node, ...]`, `formula` | `C_{…}` | C_G: common knowledge in `group` (reflexive-transitive closure) |
 
-The alethic (`Box`, `Diamond`), epistemic/doxastic (`Knows`, `Believes`), assertive/bouletic (`Says`, `Wants` — agent-prefix attitude operators `Say_a` / `Want_a`; see {doc}`natural-language`), and deontic (`Obligatory`, `Permitted`) nodes round out the modal family; see the modal-logic page. All modal nodes reject `to_z3` / `to_prover9` / `to_tptp` directly — translate first with `standard_translation()` (or, for `Announce`/`AnnounceDiamond`, reduce first with `reduce_announcements` — see {doc}`nonclassical`).
+The alethic (`Box`, `Diamond`), epistemic/doxastic (`Knows`, `Believes`), assertive/bouletic (`Says`, `Wants` — agent-prefix attitude operators `Say_a` / `Want_a`; see {doc}`natural-language`), and deontic (`Obligatory`, `Permitted`) nodes round out the modal family; see the modal-logic page. All modal nodes reject `to_z3` / `to_prover9` / `to_tptp` directly — translate first with `standard_translation()` (or, for `Announce`/`AnnounceDiamond`, reduce first with `reduce_announcements` — see {doc}`nonclassical`). `standard_translation()` itself further refuses `CommonKnowledge` (not first-order definable, like `Until`); `EverybodyKnows`/`DistributedKnowledge`, like `Knows`, translate to ordinary FOL. `EverybodyKnows`'s `group` field is each member's own agent **term** (`Variable`/`Constant`, exactly like `Knows`'s `agent` field), a structural child reached by `free_variables`/substitution/`map_children` like any other — not a special binder.
 
 ### Lambda-calculus nodes (all modes)
 

@@ -1,0 +1,30 @@
+{
+  "type": "propositional_logic",
+  "axiom": "modus_tollens",
+  "samples": [
+    {
+      "id": 1,
+      "context": "Liam had finished his work early for the day, which meant that he would typically have ordered pizza for dinner. however, on this particular day, he decided against ordering pizza and opted for something else instead.",
+      "question": "Based on the context, what conclusion would be deemed most suitable?",
+      "choices": {
+        "choice_1": "Liam didn't finish his work early.",
+        "choice_2": "Sarah had already ordered Chinese takeout.",
+        "choice_3": "Rebecca finished her work early.",
+        "choice_4": "Liam decided to order sushi instead."
+      },
+      "answer": "choice_1"
+    },
+    {
+      "id": 2,
+      "context": "Isabella had been working hard on her project, knowing that if she finished it on time, she would receive a bonus from her company. however, despite her efforts, isabella realized that she wouldn't be receiving a bonus as she had hoped.",
+      "question": "In light of the context provided, what conclusion can be considered the most appropriate?",
+      "choices": {
+        "choice_1": "Isabella didn't finish her project on time.",
+        "choice_2": "Sarah finished her project on time.",
+        "choice_3": "Isabella received a bonus from her company.",
+        "choice_4": "Isabella decided to quit her job."
+      },
+      "answer": "choice_1"
+    }
+  ]
+}

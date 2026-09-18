@@ -31,6 +31,7 @@ carries a `spec_topic` and why the grammar itself is served as a tool.
 | Self-correction | `diagnose`, `repair_formula`, `get_syntax_spec` |
 | Introspection | `list_backends` |
 | Chemistry | `check_molecule`, `check_molecules`, `molecule_to_structure`, `explain_molecule_failure`, `simplify_definition`, `chemical_signature` |
+| Description logic | `dl_concept_satisfiable`, `dl_subsumes`, `dl_equivalent`, `dl_abox_consistent`, `dl_instance_check`, `dl_instance_retrieval`, `dl_classify`, `dl_parse_manchester` |
 
 Every tool takes formulas as plain text with the dialect auto-detected, and
 returns structured JSON.
@@ -46,6 +47,52 @@ print(r["status"], r["backend"], r["szs_status"])
 
 (The tool functions are importable directly, which is what the examples on this
 page do; under MCP the same functions are registered on the server.)
+
+### Stability
+
+Within a minor release line (0.N.x) a registered tool is never renamed or
+removed, and its input schema only ever gains new *optional* parameters — an
+existing parameter's name, type and required/optional flag are stable (see
+`unicode_fol_kit/mcp/server.py`'s module docstring for the exact wording, and
+`tests/test_mcp_stability.py` for the pinned baseline that enforces it). A
+Python caller of {doc}`../api` can pin `unicode-fol-kit>=0.N,<0.N+1` and be
+done; an MCP client talking JSON-RPC over stdio has no equivalent of a `pip`
+pin for the session it opens, so the 0.N line itself — checked once at
+connect time, e.g. against `list_tools()` — *is* its integration contract.
+The comorphism registry behind `translate`/`list_translations` carries the
+same guarantee: within a line, no edge is removed, renamed, or has its
+source/target/lossy changed, only added (`unicode_fol_kit/comorphism.py`'s
+docstring).
+
+## Rendering into another syntax
+
+`render(text, to=..., dialect=None)` reparses `text` and re-emits it in
+another concrete syntax: `unicode` / `tptp` / `prover9` / `latex` / `smtlib`
+(a standalone SMT-LIB2 problem — one `(assert ...)`, no premises through this
+tool; see {doc}`interoperability` for the premises-taking free function) /
+`casl` / `json` (the one target whose `rendered` is a dict, not a string) /
+`english`. A family without the requested rendering surfaces its OWN
+refusal — for `smtlib` this is `to_z3`'s, naming the construct:
+
+```python
+from unicode_fol_kit.mcp.server import render
+
+print(render("P(a)", to="smtlib")["rendered"])
+# → (set-logic ALL)
+# → ; benchmark generated from python API
+# → (set-info :status unknown)
+# → (declare-sort S 0)
+# → (declare-fun P (S) Bool)
+# → (declare-fun a () S)
+# → (assert
+# →  (P a))
+# → (check-sat)
+
+result = render("∃P P(a)", to="smtlib", dialect="second_order")
+print(result["error"]["type"], "SMT-LIB2 export is first-order only" in
+      result["error"]["message"])
+# → NotImplementedError True
+```
 
 ## The self-correction loop
 
@@ -72,12 +119,17 @@ print(spec["rules"][1]["kind"], "—", spec["rules"][1]["shape"])
 # → variable — one term-valued letter (any script, cased or caseless), then optional trailing digits
 ```
 
-The eight topics are `overview`, `naming`, `dialects`, `operators`,
-`quantifiers`, `counting`, `chemistry` and `errors`. Each carries prose rules
-*and* worked examples, and the examples are not decorative: the test suite parses
-every one of them with the dialect the spec claims and compares the rendering to
-what the spec advertises. A rule the parser does not implement is a failing test
-rather than a surprise for whoever trusted the spec at runtime.
+The nine topics are `overview`, `naming`, `dialects`, `operators`,
+`quantifiers`, `counting`, `chemistry`, `description-logic` and `errors`. Each
+carries prose rules *and* worked examples, and the examples are not decorative:
+the test suite parses every one of them with the dialect the spec claims and
+compares the rendering to what the spec advertises. A rule the parser does not
+implement is a failing test rather than a surprise for whoever trusted the spec
+at runtime. `description-logic`'s own examples are parsed with `dl.parse_concept`/
+`dl.parse_manchester` rather than the FOL-family `api.parse_any` every other
+topic's examples go through — a different input language needs the matching
+parser, not the wrong one reused (see the "Description logic tools" section
+below).
 
 The routing is deliberately conservative but not naive. Parse failures produce
 one message per candidate dialect, and the dialects that give up earliest are
@@ -187,6 +239,85 @@ only the first number would understate the system by 100%, and reporting only th
 second would hide the cases where the solver returned unknown rather than
 equal — hence `solver_unknown_rate` alongside it.
 
+## Declared converses (argument-permutation bridges)
+
+`compare_formulas` and `score_batch` both take an OPTIONAL `converses`
+argument that bridges a declared argument-permutation relationship — e.g.
+`LovedBy(x, y) ↔ Loves(y, x)` — that no *automatic* alignment is allowed to
+guess (guessing converses from lexical similarity alone would just as
+happily "forgive" a genuine subject/object-swap translation error; see
+{mod}`unicode_fol_kit.eval.converses`'s module docstring for the full
+reasoning). Only the SOLVER level of `equivalence` ever honours it, and the
+result is tagged with its own `method_used` value,
+`"solver_modulo_converses"`, so it never gets silently merged into a plain
+`"solver"` verdict. Each declaration is
+`{"a": [name, arity], "b": [name, arity], "permutation": [...]}`:
+
+```python
+from unicode_fol_kit.mcp.server import compare_formulas
+
+r = compare_formulas(
+    "Loves(alice, bob)", "LovedBy(bob, alice)",
+    converses=[{"a": ["LovedBy", 2], "b": ["Loves", 2], "permutation": [1, 0]}])
+print(r["equivalence"]["equivalent"], r["equivalence"]["method_used"])
+print(r["converse_axioms_applied"])
+# → True solver_modulo_converses
+# → ['∀v0 ∀v1 (LovedBy(v0, v1) ↔ Loves(v1, v0))']
+```
+
+`converse_axioms_applied` lists the axioms that were actually built
+(unicode-rendered), or is `None` when no `converses` were given.
+`score_batch(..., converses=...)` forwards the same declarations to every
+pair and, when non-empty, adds a seventh metric key,
+`converse_matched_rate` — the fraction of pairs the solver proved
+equivalent USING the declared axioms, kept separately visible from (and
+subtractable out of) `equivalence_accuracy`, matching how
+`solver_unknown_rate` already sits alongside it rather than folding in
+silently.
+
+A malformed declaration (a dict missing `"a"`/`"b"`/`"permutation"`) comes
+back as the tool's top-level `{"error": {...}}` shape; a well-shaped but
+semantically invalid one (mismatched arity, a non-permutation, a predicate
+declared its own converse, …) instead lands inside `equivalence["error"]`,
+since it is only caught once `equivalent()` tries to build the axioms.
+A modal pair with a non-empty `converses` lands in the same
+`equivalence["error"]` place, since no modal bridging route exists:
+
+```python
+r = compare_formulas(
+    "□P", "□Q",
+    converses=[{"a": ["P", 0], "b": ["Q", 0], "permutation": []}])
+print(r["ok"], r["equivalence"])
+# → True {'error': 'equivalent: converses is not supported for modal
+#   formulas -- declared converse bridging axioms are only honoured by the
+#   classical/MSFOL Z3 route'}
+```
+
+`score_batch` reports the same case as its own top-level `{"error": {...}}`
+shape (a batch has no per-pair error slot to isolate it in).
+
+## Probabilistic entailment
+
+`probability_bounds(conclusion, constraints, max_atoms=12, dialect=None,
+strategy="direct", max_columns=500)` returns the tightest `[lower, upper]`
+bounds the `constraints` Nilsson-entail for `conclusion` — see
+{doc}`probabilistic` for the semantics. `strategy` picks the solving
+ALGORITHM only, never the answer: `"direct"` (the default) enumerates every
+world and is capped by `max_atoms`; `"column_generation"` never
+materialises that many worlds, so it can go past `max_atoms` (its own brake
+is `max_columns`). Both land on the identical exact bounds:
+
+```python
+from unicode_fol_kit.mcp.server import probability_bounds
+
+constraints = [{"formula": "A", "probability": "7/10"},
+               {"formula": "A → B", "probability": "4/5"}]
+direct = probability_bounds("B", constraints)
+colgen = probability_bounds("B", constraints, strategy="column_generation")
+print(direct["lower"], direct["upper"], colgen["lower"], colgen["upper"])
+# → 1/2 4/5 1/2 4/5
+```
+
 ## Chemistry tools
 
 The chemistry group evaluates a definition against a real molecule; see
@@ -239,9 +370,75 @@ print(s["after_unicode"])    # → ∃a ∃b (c(a) ∧ c(b))
 print(s["removed_count"])    # → 1
 ```
 
+## Description logic tools
+
+The `dl_*` group wires up `unicode_fol_kit.dl`'s ALCHQ tableau (concept
+satisfiability, subsumption, ABox consistency, instance/realization queries,
+TBox classification) — no new reasoning, purely MCP plumbing over what
+{doc}`description-logic` already implements. Every tool takes concept TEXT,
+not a full FOL formula: the ALC glyph syntax (`syntax="alc"`, the default —
+`⊤ ⊥ ¬ ⊓ ⊔ ∃ ∀ ≥ ≤`) or the W3C OWL 2 Manchester Syntax (`syntax="manchester"`
+— `and`/`or`/`not`/`some`/`only`/`min`/`max`/`exactly`). A TBox is passed as a
+list of JSON rows — `{"sub": ..., "sup": ...}` (a GCI), `{"equiv": [...]}`, or
+the RBox's `{"subrole": ..., "suprole": ...}` / `{"transitive": ...}` — never a
+Python `TBox` object; an ABox is `concepts` (`[individual, concept_text]`
+pairs), `roles` (`[a, b, role]` triples) and `distinct` (`[a, b]` pairs, for
+`ABox.assert_distinct`).
+
+```python
+from unicode_fol_kit.mcp.server import dl_subsumes, dl_classify
+
+tbox = [
+    {"equiv": ["Parent", "Person ⊓ ∃hasChild.Person"]},
+    {"equiv": ["Mother", "Parent ⊓ Female"]},
+    {"equiv": ["Father", "Parent ⊓ Male"]},
+    {"sub": "Male", "sup": "¬Female"},
+]
+print(dl_subsumes("Mother", "Parent", tbox=tbox)["subsumes"])   # → True
+
+cl = dl_classify(tbox)
+print(sorted(cl["children"]["Parent"]))                          # → ['Father', 'Mother']
+```
+
+`dl_parse_manchester(text, kind="concept"|"axiom"|"role_axiom")` reads OWL
+tooling's own notation and reports the kit's unicode rendering alongside a
+`to_manchester` round-trip:
+
+```python
+from unicode_fol_kit.mcp.server import dl_parse_manchester
+
+r = dl_parse_manchester("hasChild some (Doctor and not Rich)")
+print(r["concept_unicode"])
+# → ∃hasChild.(Doctor ⊓ ¬Rich)
+```
+
+Errors follow the same two-shape convention as every other tool: a malformed
+concept/Manchester TEXT (`ConceptSyntaxError`/`ManchesterSyntaxError` —
+including a real Manchester construct outside ALCHQ, like `value`/`Self`/
+`inverse`/a nominal, rejected by name) is the uniform `ok=False`/`argument`/
+`errors`/`spec_topic="description-logic"` shape; a REASONING-level refusal —
+a qualified number restriction on a non-simple (transitive, or
+transitively-subsumed) role — is `NonSimpleRoleError`, a structured
+`{"error": {...}}`, since the concept text itself parsed fine:
+
+```python
+from unicode_fol_kit.mcp.server import dl_concept_satisfiable
+
+r = dl_concept_satisfiable("≥2 hasChild.Person", tbox=[{"transitive": "hasChild"}])
+print(r["error"]["type"])
+# → NonSimpleRoleError
+```
+
+`get_syntax_spec("description-logic")` serves the concept-constructor table
+(glyph and Manchester keyword side by side), the RBox/GCI axiom shapes, and
+the exact TBox/ABox JSON row shapes above.
+
 ## Where to go next
 
 - {doc}`syntax-reference` — the same grammar the spec tool serves, for human
   readers.
 - {doc}`model-checking` — the chemistry tools' underlying layer.
 - {doc}`probabilistic` — what `probability_bounds` and `probability_query` mean.
+- {doc}`description-logic` — the `dl_*` tools' underlying ALCHQ tableau, in
+  full: general TBoxes, role hierarchies and transitive roles, qualified
+  number restrictions, instance/realization queries, and classification.

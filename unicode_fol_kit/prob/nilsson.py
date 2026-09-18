@@ -52,6 +52,19 @@ atoms, so ``max_atoms`` (default 12, i.e. up to 4096 worlds) is a deliberate,
 overridable brake on that exponential — raise it explicitly if a larger
 problem is intended.
 
+**A second, algorithm-only route.** :func:`entailment_bounds` takes a
+``strategy`` keyword: ``"direct"`` (above, the default, unchanged) or
+``"column_generation"`` (:mod:`unicode_fol_kit.prob._column_gen`), which
+never materialises a ``2^n``-sized world array — it grows a small subset of
+worlds on demand, using a Z3 Boolean-SAT search (over the ``n`` atoms
+directly, never ``2^n`` enumerated) as the pricing subproblem that decides
+which world to add next, so it can answer problems with far more than
+``max_atoms`` distinct atoms. Both strategies solve the EXACT SAME linear
+program and are held to agreeing exactly (never a tolerance) wherever both
+can answer — see :func:`entailment_bounds`'s own docstring and
+:mod:`unicode_fol_kit.prob._column_gen`'s module docstring for the algorithm and its
+termination/optimality proof.
+
 Public API: :class:`ProbConstraint`, :class:`ProbBounds`,
 :func:`entailment_bounds`.
 """
@@ -59,7 +72,7 @@ Public API: :class:`ProbConstraint`, :class:`ProbBounds`,
 from dataclasses import dataclass
 from fractions import Fraction
 from itertools import product
-from typing import Optional, Sequence
+from typing import Literal, Optional, Sequence
 
 import z3
 
@@ -213,6 +226,39 @@ def _eval(formula: Node, valuation: dict) -> bool:
     raise ValueError(_UNSUPPORTED.format(cls=type(formula).__name__))
 
 
+def _to_z3_bool(formula: Node, atom_vars: dict):
+    """Translate ``formula`` (¬ ∧ ∨ → ↔ ⊕ over Atom leaves) into a Z3 Bool expression.
+
+    The exact structural mirror of :func:`_eval`, one recursive case for
+    one recursive case, with ``atom_vars`` (mapping each atom's
+    ``to_unicode_str()`` to its own :func:`z3.Bool` variable) standing in
+    for the Python ``valuation`` dict — so a world is no longer a fixed
+    Python bool assignment to evaluate against, but a Z3 model Z3 itself
+    gets to choose, which is exactly what :mod:`unicode_fol_kit.prob._column_gen`'s pricing
+    subproblem needs (searching over all ``2^n`` worlds via SAT rather than
+    enumerating them). Used only by ``strategy="column_generation"``; the
+    default ``strategy="direct"`` path never calls this (it evaluates
+    formulas against concrete Python valuations via :func:`_eval` alone).
+    Raises the same ``ValueError`` as :func:`_eval` on an unsupported node
+    (defensive: :func:`_collect_atoms` already rejects these upstream).
+    """
+    if isinstance(formula, Atom):
+        return atom_vars[formula.to_unicode_str()]
+    if isinstance(formula, Not):
+        return z3.Not(_to_z3_bool(formula.formula, atom_vars))
+    if isinstance(formula, And):
+        return z3.And(_to_z3_bool(formula.left, atom_vars), _to_z3_bool(formula.right, atom_vars))
+    if isinstance(formula, Or):
+        return z3.Or(_to_z3_bool(formula.left, atom_vars), _to_z3_bool(formula.right, atom_vars))
+    if isinstance(formula, Xor):
+        return z3.Xor(_to_z3_bool(formula.left, atom_vars), _to_z3_bool(formula.right, atom_vars))
+    if isinstance(formula, Implies):
+        return z3.Implies(_to_z3_bool(formula.left, atom_vars), _to_z3_bool(formula.right, atom_vars))
+    if isinstance(formula, Iff):
+        return _to_z3_bool(formula.left, atom_vars) == _to_z3_bool(formula.right, atom_vars)
+    raise ValueError(_UNSUPPORTED.format(cls=type(formula).__name__))
+
+
 # ---------------------------------------------------------------------------
 # The linear program
 # ---------------------------------------------------------------------------
@@ -230,6 +276,20 @@ def _z3_to_fraction(value) -> Fraction:
     return Fraction(value.as_long())
 
 
+def _infeasible_error(constraints: Sequence["ProbConstraint"]) -> ValueError:
+    """The ``ValueError`` raised when no distribution satisfies ``constraints`` at once.
+
+    Shared by both strategies (see :mod:`unicode_fol_kit.prob._column_gen`'s phase-1 termination)
+    so an inconsistent constraint set is refused with the identical message
+    regardless of which algorithm found the inconsistency.
+    """
+    detail = "; ".join(c._describe() for c in constraints)
+    return ValueError(
+        "entailment_bounds: probabilistically inconsistent — no probability "
+        f"distribution over the possible worlds satisfies all of: {detail}"
+    )
+
+
 def _solve(base_constraints, objective, minimize: bool, constraints: Sequence[ProbConstraint]) -> Fraction:
     """Minimize or maximize ``objective`` subject to ``base_constraints`` (a fresh Optimize)."""
     opt = z3.Optimize()
@@ -237,34 +297,63 @@ def _solve(base_constraints, objective, minimize: bool, constraints: Sequence[Pr
         opt.add(c)
     handle = opt.minimize(objective) if minimize else opt.maximize(objective)
     if opt.check() != z3.sat:
-        detail = "; ".join(c._describe() for c in constraints)
-        raise ValueError(
-            "entailment_bounds: probabilistically inconsistent — no probability "
-            f"distribution over the possible worlds satisfies all of: {detail}"
-        )
+        raise _infeasible_error(constraints)
     value = opt.lower(handle) if minimize else opt.upper(handle)
     return _z3_to_fraction(value)
 
 
 def entailment_bounds(constraints: Sequence[ProbConstraint], conclusion: Node,
-                      *, max_atoms: int = 12) -> ProbBounds:
+                      *, max_atoms: int = 12,
+                      strategy: Literal["direct", "column_generation"] = "direct",
+                      max_columns: int = 500) -> ProbBounds:
     """Return the tightest ``[lower, upper]`` bounds :func:`ProbConstraint`\\ s entail for ``conclusion``.
 
-    Builds one nonnegative real variable per possible world (``2^n`` for the
-    ``n`` distinct atoms across every constraint and ``conclusion``; see the
-    module docstring for the exact LP encoding), then minimizes and maximizes
-    ``P(conclusion)`` over that polytope with two separate :class:`z3.Optimize`
-    calls. Every probability in the result is an EXACT :class:`~fractions.Fraction`
-    read back from Z3's rational model — never routed through ``float``.
+    ``strategy`` selects the solving ALGORITHM, never the semantics — both
+    solve the exact same LP (one nonnegative real per possible world, summing
+    to 1, subject to the constraints; see the module docstring) and are held
+    to agreeing EXACTLY (``Fraction`` equality, never a tolerance) on every
+    problem either can answer, which is what this module's own differential
+    test suite (``tests/test_nilsson_colgen.py``) checks directly.
+
+    ``"direct"`` (the default, UNCHANGED from before ``strategy`` existed)
+    builds one nonnegative real variable per possible world (``2^n`` for the
+    ``n`` distinct atoms across every constraint and ``conclusion``), then
+    minimizes and maximizes ``P(conclusion)`` over that polytope with two
+    separate :class:`z3.Optimize` calls. Every probability in the result is
+    an EXACT :class:`~fractions.Fraction` read back from Z3's rational model
+    — never routed through ``float``. ``max_atoms`` (12 by default) is an
+    explicit, overridable brake on the ``2^n`` blow-up.
+
+    ``"column_generation"`` (:mod:`unicode_fol_kit.prob._column_gen`) never
+    materialises a world: it grows a small ``columns`` subset of worlds on
+    demand, pricing a candidate world in via one small exact LP plus one Z3
+    Boolean-SAT search over the ``n`` atoms — polynomial per iteration
+    regardless of ``n`` — so it can answer problems with far more than
+    ``max_atoms`` distinct atoms (``max_atoms`` is not enforced under this
+    strategy; the only brake is ``max_columns``, 500 by default, raising
+    ``ValueError`` rather than ever returning an unproven bound). See
+    :func:`unicode_fol_kit.prob._column_gen.solve` for the two-phase
+    primal/dual column-generation algorithm and its termination/optimality
+    proof.
 
     Raises:
         ValueError: if ``conclusion`` or any constraint's ``formula``/``given``
-            is quantified or otherwise outside ¬/∧/∨/→/↔/⊕-over-Atom; if the
-            distinct-atom count exceeds ``max_atoms`` (the world count is
-            ``2^n`` — an explicit, overridable brake on that exponential); or
+            is quantified or otherwise outside ¬/∧/∨/→/↔/⊕-over-Atom; under
+            ``strategy="direct"``, if the distinct-atom count exceeds
+            ``max_atoms`` (the world count is ``2^n`` — an explicit,
+            overridable brake on that exponential); under
+            ``strategy="column_generation"``, if column generation does not
+            certify optimality within ``max_columns`` generated columns; an
+            unrecognised ``strategy``; or (either strategy, identical message)
             if the constraint set is probabilistically inconsistent (no
             distribution satisfies every constraint at once).
     """
+    if strategy not in ("direct", "column_generation"):
+        raise ValueError(
+            f"entailment_bounds: unknown strategy {strategy!r}; expected "
+            "'direct' or 'column_generation'."
+        )
+
     atoms: set = set()
     for c in constraints:
         _collect_atoms(c.formula, atoms)
@@ -274,6 +363,10 @@ def entailment_bounds(constraints: Sequence[ProbConstraint], conclusion: Node,
 
     atom_list = sorted(atoms)
     n = len(atom_list)
+
+    if strategy == "column_generation":
+        return _entailment_bounds_column_generation(constraints, conclusion, atom_list, max_columns)
+
     if n > max_atoms:
         raise ValueError(
             f"entailment_bounds: {n} distinct atoms exceeds max_atoms={max_atoms}. "
@@ -313,3 +406,32 @@ def entailment_bounds(constraints: Sequence[ProbConstraint], conclusion: Node,
     lower = _solve(base, p_concl, True, constraints)
     upper = _solve(base, p_concl, False, constraints)
     return ProbBounds(lower, upper, len(worlds))
+
+
+# ---------------------------------------------------------------------------
+# strategy="column_generation" dispatch
+# ---------------------------------------------------------------------------
+
+def _entailment_bounds_column_generation(constraints: Sequence[ProbConstraint], conclusion: Node,
+                                         atom_list, max_columns: int) -> ProbBounds:
+    """``entailment_bounds(..., strategy="column_generation")``'s dispatch target.
+
+    A lazy, function-local import of :mod:`unicode_fol_kit.prob._column_gen` (not a module-level
+    one): that module imports several names FROM this one (:class:`ProbConstraint`,
+    :func:`_eval`, :func:`_to_z3_bool`, :func:`_z3_to_fraction`,
+    :func:`_infeasible_error`) to build its rows and pricing subproblem, so a
+    module-level import here in the other direction would be circular — the
+    same lazy-import shape :func:`~unicode_fol_kit.atp.z3_input.to_smtlib`
+    already uses for an analogous reason (see its own module docstring).
+
+    ``n_worlds`` on the returned :class:`ProbBounds` is still ``2**n`` — the
+    SAME nominal meaning it has under ``strategy="direct"`` (the polytope's
+    world count), even though column generation never materialises anywhere
+    near that many worlds — so a :class:`ProbBounds` from either strategy
+    means the same thing and the differential tests' ``.lower``/``.upper``
+    equality checks compare like with like.
+    """
+    from . import _column_gen
+
+    result = _column_gen.solve(atom_list, constraints, conclusion, max_columns)
+    return ProbBounds(result.lower, result.upper, 2 ** len(atom_list))

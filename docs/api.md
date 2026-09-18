@@ -39,6 +39,8 @@ there. Two deliberate exceptions:
    substitute
    free_variables
    to_fol
+   nonempty_sort_axioms
+   subsort_axioms
    serialize
    deserialize
    SCHEMA_VERSION
@@ -101,6 +103,7 @@ there. Two deliberate exceptions:
    PredicateDecl
    FunctionDecl
    ConstantDecl
+   inventory_of
    SortedQuantifier
    SortedConstant
    SortedCount
@@ -139,6 +142,9 @@ there. Two deliberate exceptions:
    Believes
    Says
    Wants
+   EverybodyKnows
+   DistributedKnowledge
+   CommonKnowledge
    Always
    Eventually
    Next
@@ -164,6 +170,7 @@ there. Two deliberate exceptions:
    AnnounceDiamond
    Nominal
    At
+   Down
    Dependence
    SlashedExists
    SecondOrderQuantifier
@@ -255,6 +262,35 @@ condition alone with the head's variables free (`mode="body"`). Those are
 different formulas, so it will not choose for you. See
 {doc}`guide/interoperability`.
 
+{func}`~unicode_fol_kit.formula_to_prolog_clause` is the return leg: a
+formula built to look like a fact or a definite/normal clause renders back
+out as Prolog text, `parse_prolog_clause`'s own `mode="clause"` reading run
+in reverse; {func}`~unicode_fol_kit.formula_to_prolog_program` does the same
+for several clauses at once. Both refuse — by name, via
+{class}`~unicode_fol_kit.fol.PrologExportError` — a formula outside the
+narrow accepted fragment rather than approximating it.
+
+Prover9's `op(precedence, type, symbol)` operator declarations are applied to
+formulas parsed after them, not just recognised and skipped — see
+{doc}`guide/interoperability` for exactly which placements splice into the
+grammar, which are refused by name (redeclaring a built-in, or a malformed
+directive), and which are accepted but left harmlessly inert.
+
+TF0 (typed TPTP) is its own guide section — see {doc}`guide/interoperability`
+— because a many-sorted formula there gets a genuine `tff` type per
+sort/symbol instead of the classical route's guard-predicate encoding.
+{func}`~unicode_fol_kit.generate_tff_arith_problem` is `generate_tff_problem`'s
+single-numeric-sort sibling — see {doc}`guide/classical-reasoning`'s "Native
+typed arithmetic for Vampire/E (TFA)" section: every individual lives in ONE
+caller-chosen `$int`/`$real` sort (mirroring `is_valid_arith`'s own design),
+which is what lets Vampire/E activate their native arithmetic reasoning on
+`+ - * /` and `< > ≤ ≥` — the classical `fof` route, and TF0's own many-sorted
+route, cannot.
+
+{func}`~unicode_fol_kit.parse_qmltp` reads the QMLTP library's own `#box`/
+`#dia` extension of `fof` syntax and its per-logic/per-domain status header;
+see {doc}`guide/quantified-modal`.
+
 ```{eval-rst}
 .. autosummary::
    :toctree: _autosummary
@@ -268,6 +304,10 @@ different formulas, so it will not choose for you. See
    load_tptp_problem
    TptpProblem
    TptpHeader
+   parse_tff_problem
+   load_tff_problem
+   generate_tff_problem
+   generate_tff_arith_problem
    parse_prover9
    parse_prover9_problem
    load_prover9
@@ -275,14 +315,24 @@ different formulas, so it will not choose for you. See
    parse_prolog_clause
    parse_prolog_program
    load_prolog
+   formula_to_prolog_clause
+   formula_to_prolog_program
    from_z3
    parse_smtlib
    load_smtlib
+   to_smtlib
    to_casl_spec
    formula_to_casl
    parse_casl_spec
    CaslSpec
    to_tptp_ncl
+   parse_qmltp_formula
+   parse_qmltp
+   load_qmltp
+   QmltpFormula
+   QmltpHeader
+   QmltpStatus
+   QmltpProblem
    parse_latex
    latex_to_unicode
 ```
@@ -325,6 +375,7 @@ different formulas, so it will not choose for you. See
    find_countermodel
    is_satisfiable_finite
    is_valid_finite
+   is_size_exhaustive
    truth_table
    TruthTable
    is_tautology
@@ -423,11 +474,18 @@ wherever a frame name is. What a route cannot express soundly it refuses with
    satisfies_modal
    models_at
    reflexive_transitive_closure
+   ctl_ex
+   ctl_af
+   ctl_eg
+   ctl_au
+   FuzzyKripkeModel
+   satisfies_fuzzy_modal
    standard_translation
    qml_translate
    qml_is_valid
    qml_equivalent
    hybrid_is_valid
+   down_is_valid
    modal_axiom
    UnsupportedFrameCondition
    announce
@@ -439,11 +497,13 @@ wherever a frame name is. What a route cannot express soundly it refuses with
    public_announcement_action
    common_knowledge_holds
    everybody_knows
+   distributed_knowledge_holds
    EnumSearchResult
    modal_enum_search
    modal_enum_countermodel
    kripke_model_to_dict
    kripke_model_from_dict
+   down_decide
    BARCAN
    CONVERSE_BARCAN
 ```
@@ -500,6 +560,7 @@ wherever a frame name is. What a route cannot express soundly it refuses with
    team_models
    MAX_TEAM_SEARCH
    dependence_to_eso
+   dependence_holds_eso
    satisfies_so
    satisfies_to
    holds_to
@@ -545,18 +606,31 @@ entry point can reach it.
    available_backends
    default_chain
    run_backend
+   z3_relevant_premises
+   IncrementalSession
    portfolio_prove
    Cvc5Backend
    Leo3Backend
    KripkeEnumBackend
    ClingoBackend
    MinizincBackend
+   LtlTableauBackend
+   IntBackend
+   LambekBackend
+   IllBackend
+   RelevantBackend
+   HybridBackend
    check_entailment_vampire_detailed
    extract_szs_status
    szs_to_verdict_fields
    TstpStep
    TstpDerivation
    parse_tstp_derivation
+   relevant_premises_from_tstp
+   to_tstp
+   TstpStepResult
+   TstpCheckResult
+   check_tstp_derivation
    batch_decide
 ```
 
@@ -576,6 +650,7 @@ entry point can reach it.
    isabelle_decide_fol
    isabelle_decide_counterfactual
    isabelle_decide_relevant
+   isabelle_decide_free
    check_theory
    ModalVerdict
    FolVerdict
@@ -584,8 +659,13 @@ entry point can reach it.
    intuitionistic_faithfulness_theory
    conditional_faithfulness_theory
    relevant_faithfulness_theory
+   qml_deep_faithfulness_theory
    to_thf_modal
    to_isabelle_modal
+   to_thf_conditional
+   to_isabelle_conditional
+   isabelle_conditional_theory
+   to_thf_relevant
    to_isabelle_relevant
    to_isabelle_ill
    ill_derivation_theory
@@ -618,6 +698,22 @@ entry point can reach it.
    EquivalenceResult
    equivalent
    explain_countermodel
+   explain_proof
+```
+
+## Generating exercises
+
+```{eval-rst}
+.. autosummary::
+   :toctree: _autosummary
+   :nosignatures:
+
+   ValidInvalidPair
+   generate_valid_invalid_pair
+   EntailmentExercise
+   generate_entailment_with_proof
+   ModelSizeExercise
+   generate_theory_with_model_size
 ```
 
 ## Registries, at their definition site
@@ -657,6 +753,18 @@ entry point can reach it.
    :nosignatures:
 
    DEFAULT_MAX_WORLDS
+```
+
+```{eval-rst}
+.. currentmodule:: unicode_fol_kit.atp.tstp_check
+
+.. autosummary::
+   :nosignatures:
+
+   VAMPIRE_CLAUSIFICATION_RULES
+   VAMPIRE_CHECKED_RULES
+   EPROVER_CLAUSIFICATION_RULES
+   EPROVER_CHECKED_RULES
 ```
 
 The third-order evaluator ranges over each bound symbol's argument SIGNATURE
@@ -799,6 +907,9 @@ and `find_model` already return. See {doc}`guide/finite-domain`.
    check_definitions
    ChemBatchResult
    compute_fol_metrics
+   ConverseDeclaration
+   validate_converses
+   converse_axioms
    datasets
 ```
 
@@ -890,7 +1001,13 @@ hypothesis refused rather than documented. See {doc}`guide/interoperability`.
    query
 ```
 
-## Description logic (ALC)
+## Description logic (ALCHQ)
+
+ALCHQ ({mod}`unicode_fol_kit.dl.tableau`) refuses inverse roles and nominals (I, O)
+by name; {mod}`unicode_fol_kit.dl.owl_reasoner` decides the full ALCHQ+I+O
+fragment via an external, HermiT-backed reasoner (owlready2, optional
+`[owl]` extra), mirroring every `dl.tableau` function's own reduction under
+an `external_` prefix.
 
 ```{eval-rst}
 .. currentmodule:: unicode_fol_kit.dl
@@ -907,25 +1024,56 @@ hypothesis refused rather than documented. See {doc}`guide/interoperability`.
    Or
    Exists
    ForAll
+   AtLeast
+   AtMost
+   InverseRole
+   Nominal
    TBox
    ABox
+   Classification
    nnf
    parse_concept
    parse_gci
    parse_manchester
    parse_manchester_axiom
    to_manchester
+   parse_manchester_role_axiom
+   role_axiom_to_manchester
+   parse_owl_functional
+   parse_owl_functional_class_expression
+   to_owl_functional
+   to_owl_functional_class_expression
    concept_satisfiable
    concept_unsatisfiable
    subsumes
    abox_consistent
+   instance_check
+   instance_retrieval
+   realize
+   realize_all
+   classify
    concept_to_fol
    concept_to_modal
    tbox_to_fol
+   rbox_to_fol
    abox_to_fol
    subsumption_to_fol
    ConceptSyntaxError
    ManchesterSyntaxError
+   OwlFunctionalSyntaxError
+   owl_reasoner_available
+   external_concept_satisfiable
+   external_concept_unsatisfiable
+   external_subsumes
+   external_equivalent
+   external_abox_consistent
+   external_instance_check
+   external_instance_retrieval
+   external_realize
+   external_realize_all
+   OwlReasonerError
+   NonSimpleRoleError
+   UnsupportedConceptError
 ```
 
 ## Discourse representation theory
@@ -986,7 +1134,14 @@ through APE with a Z3 verdict, and `chem_ulex` speaks the ChemLog signature
 direction to FORMULAS: `drt.fol_to_drs` rebuilds the box structure of any
 formula in the standard translation's image (refusing the rest by name),
 then the verbalizer takes over — the two exceptions are the "is this
-expressible as ACE?" verdict.
+expressible as ACE?" verdict. Since ACE-7 the backward direction also covers
+the modal/deontic fragment: `fol_to_modal_drs` recognizes a modality
+wrapping a whole formula or nested in a duplex's consequent,
+`modal_formula_to_ace`/`modal_drs_to_ace` verbalize it (refusing a modal box
+whose single clause is not the event-anchored verb clause the modality
+actually attaches to), and `modal_ace_round_trip` closes the loop through
+APE, judged by `eval.equivalence.equivalent` (a modal formula has no direct
+Z3 export).
 
 ```{eval-rst}
 .. currentmodule:: unicode_fol_kit.ace
@@ -1007,6 +1162,10 @@ expressible as ACE?" verdict.
    drs_to_ace
    formula_to_ace
    ace_round_trip
+   fol_to_modal_drs
+   modal_drs_to_ace
+   modal_formula_to_ace
+   modal_ace_round_trip
    chem_ulex
    ace_kit_name
    ApeResult
@@ -1017,6 +1176,9 @@ expressible as ACE?" verdict.
    AceFormula
    AceText
    AceRoundTrip
+   ModalBox
+   ModalImpl
+   ModalAceRoundTrip
    AceDrs
    AceVar
    AceNamed
@@ -1046,6 +1208,11 @@ expressible as ACE?" verdict.
 
 ## HETS, DOL and comorphisms
 
+`unicode_fol_kit.hets.owl_backend` adds a second, independent external OWL 2
+DL reasoner (FaCT++ via the server's `Fact` prover), mirroring
+`dl.owl_reasoner`'s function-per-namesake shape over the same ALCHQ+I+O
+fragment.
+
 ```{eval-rst}
 .. currentmodule:: unicode_fol_kit.hets
 
@@ -1061,6 +1228,19 @@ expressible as ACE?" verdict.
    HETS_EDGE_PREFIX
    to_dol_library
    DolSpec
+   to_dol_library_from_modal
+   sanitize_modal_identifiers
+   hets_owl_available
+   external_concept_satisfiable
+   external_concept_unsatisfiable
+   external_subsumes
+   external_equivalent
+   external_abox_consistent
+   external_instance_check
+   external_instance_retrieval
+   external_realize
+   external_realize_all
+   HetsOwlError
 ```
 
 ```{eval-rst}
@@ -1089,6 +1269,9 @@ expressible as ACE?" verdict.
    to_isabelle_fol
    to_thf_msfol
    to_isabelle_msfol
+   to_thf_free
+   to_isabelle_free
+   free_theory
    to_thf_so
    to_isabelle_so
    to_thf_to
@@ -1114,6 +1297,7 @@ expressible as ACE?" verdict.
    int_to_deep
    counterfactual_to_deep
    rel_to_deep
+   qml_to_deep
    gmt_translate
    gmt_is_s4_valid
    gmt_validity_matches_int_valid
@@ -1136,6 +1320,7 @@ expressible as ACE?" verdict.
    check_entailment_eprover_detailed
    ZipperpositionBackend
    zipperposition_available
+   eprover_relevant_premises
    TweeBackend
    twee_available
    check_entailment_twee_detailed
@@ -1145,6 +1330,7 @@ expressible as ACE?" verdict.
    nanocop_available
    to_nanocop
    HetsBackend
+   lower_msfol
    FiniteDomainProblem
    fragment_check
    structure_from_solution
@@ -1158,6 +1344,12 @@ expressible as ACE?" verdict.
    modal_decide
    modal_prove
    modal_countermodel
+   ltl_tableau_closed
+   ltl_valid
+   ltl_decide
+   ltl_countermodel
+   ltl_trace_satisfies
+   LTLTrace
    TableauStep
    TableauClosure
    ArithEnv
@@ -1179,8 +1371,10 @@ expressible as ACE?" verdict.
    ProblemRepairEntry
    TptpRepairError
    PrologParsingError
+   PrologExportError
    SimplifyResult
    qml_axioms
+   qml_validity_formula
 ```
 
 ## Subpackage modules
@@ -1211,6 +1405,7 @@ its submodules.
    atp.minizinc_backend
    atp.modal_tableau
    hol.isabelle_runner
+   hol.lean
    chem
    fol.prolog_input
    fol.dialect_repair

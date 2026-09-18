@@ -25,6 +25,14 @@ who passes ``world="w0"`` keeps a distinct, uncaptured free variable):
 - ``Diamond φ``  → ``∃w' (R(w, w') ∧ ST(φ, w'))``.
 - ``Knows(a, φ)``    → ``∀w' (Rk_a(w, w') → ST(φ, w'))``.
 - ``Believes(a, φ)`` → ``∀w' (Rb_a(w, w') → ST(φ, w'))``.
+- ``EverybodyKnows(G, φ)`` (E_G, "everyone in G knows φ") →
+  ``⋀_{a∈G} ∀w' (Rk_a(w, w') → ST(φ, w'))`` — a per-agent :class:`Knows`
+  translation for every member of ``G``, ANDed together (one-step; union of
+  relations ≡ conjunction of boxes). Empty ``G`` is rejected (see Scope below).
+- ``DistributedKnowledge(G, φ)`` (D_G, "φ is distributed knowledge in G") →
+  ``∀w' ((⋀_{a∈G} Rk_a(w, w')) → ST(φ, w'))`` — ONE box over the
+  INTERSECTION of the group's relations (every ``Rk_a(w,w')`` conjunct must
+  hold of the SAME ``w'``), not a per-agent conjunction of separate boxes.
 - ``Says(a, φ)``     → ``∀w' (Rs_a(w, w') → ST(φ, w'))`` (assertive: box over
   a per-agent "compatible with what a says" relation).
 - ``Wants(a, φ)``    → ``∀w' (Rw_a(w, w') → ST(φ, w'))`` (bouletic: box over
@@ -40,10 +48,30 @@ who passes ``world="w0"`` keeps a distinct, uncaptured free variable):
 - ``Nominal i``  → ``w = nom_i``: a nominal is a world-equality against a
   dedicated world CONSTANT. The ``"nom_"`` prefix keeps these constants out of
   the user's constant namespace, so an atom mentioning a ground constant ``i``
-  can never collide with the nominal ``i``.
+  can never collide with the nominal ``i``. UNLESS ``i`` is currently BOUND by
+  an enclosing ``↓i`` (see ``Down`` below), in which case the translation uses
+  the bound world TERM instead — the ``bindings`` mechanism, not the ``nom_``
+  constant, decides which.
 - ``At(i, φ)``   → ``ST(φ, nom_i)``: the satisfaction operator ``@i φ``
   re-anchors the translation at the constant world term ``nom_i`` (the current
-  world term is simply replaced — no quantifier is introduced).
+  world term is simply replaced — no quantifier is introduced) — again unless
+  ``i`` is ``↓``-bound, in which case the bound term replaces ``nom_i``.
+- ``Down(x, φ)`` (``↓x.φ``, N1) → ``ST(φ, world)`` with ``x`` now BOUND, for
+  the rest of ``φ``'s translation, to the CURRENT WORLD TERM ``world`` — no
+  fresh quantifier is introduced (this is the bounded-fragment translation:
+  ``↓`` rebinds a name to the current world, it does not existentially
+  quantify over worlds). Concretely: every ``Nominal(x)`` / ``At(x, …)`` in
+  ``φ`` — down to, but not inside, a nested ``Down(x, …)`` that shadows it —
+  translates to ``world`` (or re-anchors at it) instead of to a fresh
+  ``nom_x`` constant. This is threaded through ``_translate`` as one extra
+  parameter, ``bindings: Dict[str, Node]`` (name → the world TERM it is
+  currently bound to), consulted by the ``Nominal``/``At`` cases FIRST,
+  falling back to the ``nom_`` scheme only when the name is unbound — so
+  ``bindings={}`` (every call site outside ``Down``'s own recursion)
+  reproduces the pre-``Down`` translation byte-for-byte. Because ``↓`` makes
+  H(@,↓) UNDECIDABLE (unlike plain H(@)), no bare-bool validity check treats
+  a ``Down``-containing formula: ``hybrid_is_valid`` refuses it by name;
+  :func:`down_is_valid` (below) is the PROVED-only replacement.
 
 Scope / caveats (v1):
 
@@ -57,6 +85,15 @@ Scope / caveats (v1):
   used by the Kripke model, NOT its closure.
 - ``Until`` is rejected: strong Until needs the transitive closure of the
   temporal relation, which is not first-order definable.
+- ``CommonKnowledge`` (C_G) is rejected for the exact same reason: it needs the
+  reflexive-transitive closure of the group's union relation.
+- ``EverybodyKnows`` over an EMPTY group is rejected too: ``E_∅ φ`` is
+  vacuously true by definition (the union over zero relations is empty, so
+  "holds at every successor" holds vacuously), but this grammar has no
+  first-order truth constant to render that without borrowing an unrelated
+  atom from the caller's own vocabulary. ``DistributedKnowledge`` never
+  raises this way — its own constructor already refuses an empty group (see
+  ``fol._modal_nodes.DistributedKnowledge``'s docstring).
 - ``Quantifier`` / ``SortedQuantifier`` are rejected: first-order (quantified)
   modal logic with object domains is out of scope for v1. So are Łukasiewicz and
   lambda nodes.
@@ -67,7 +104,7 @@ be built mechanically: ``"R"`` (alethic), ``"Rk_" + agent`` (epistemic),
 (bouletic), ``"T"`` (temporal), ``"N"`` (next), ``"D"`` (deontic).
 """
 
-from typing import List, NoReturn
+from typing import Dict, List, NoReturn, Optional
 
 from .nodes import (
     Node,
@@ -75,11 +112,18 @@ from .nodes import (
     Atom, Not, And, Or, Xor, Implies, Iff,
     Quantifier, SortedQuantifier,
     Box, Diamond, Knows, Believes, Says, Wants,
+    EverybodyKnows, DistributedKnowledge, CommonKnowledge,
     Always, Eventually, Next, Until,
     Historically, Once, Previous, Since,
     Obligatory, Permitted,
     Nominal, At,
 )
+# Down (the ↓ binder, N1) is not yet re-exported through fol.nodes / fol's
+# public __init__ / the top-level unicode_fol_kit package — that three-file
+# edit is outside this change's file ownership (see the change's own
+# report); imported directly from its defining module instead, the same
+# class object either import path would give.
+from ._hybrid_nodes import Down
 from .frames import (
     FRAMES as _SHARED_FRAMES, UnsupportedFrameCondition,
     resolve_frame, unguarded_frame_axiom,
@@ -116,6 +160,28 @@ _NOM_PREFIX = "nom_"
 _FORALL = "∀"
 _EXISTS = "∃"
 
+# A USER predicate named like one of the accessibility relations above used to
+# BE that relation once the translation appended its world argument (a
+# propositional atom ``R`` became ``R(w)`` next to the binary relation
+# ``R(w, v)`` and crashed Z3 on the arity clash). _user_predicate keeps the
+# two namespaces apart: U+00B7 MIDDLE DOT is punctuation no parser puts into
+# an identifier, so the renamed user name can collide with nothing.
+_RESERVED_RELATIONS = frozenset({_R_ALETHIC, _R_TEMPORAL, _R_NEXT, _R_DEONTIC})
+_RESERVED_RELATION_PREFIXES = (_R_KNOWS_PREFIX, _R_BELIEVES_PREFIX,
+                               _R_SAYS_PREFIX, _R_WANTS_PREFIX)
+_USER_MARK = "·"
+
+
+def _user_predicate(name: str) -> str:
+    """The name a USER atom's predicate gets in the image: unchanged unless it
+    (with any trailing ``·`` stripped) is a relation name above, then with one
+    ``·`` appended — injective, and a formula that avoids those names
+    translates byte-for-byte as before (the same scheme as ``fol.qml``)."""
+    base = name.rstrip(_USER_MARK)
+    if base in _RESERVED_RELATIONS or base.startswith(_RESERVED_RELATION_PREFIXES):
+        return name + _USER_MARK
+    return name
+
 
 class _FreshWorlds:
     """A monotonic generator of fresh world-variable names ``w0, w1, …``.
@@ -142,109 +208,197 @@ class _FreshWorlds:
         return Variable(name)
 
 
-def _box_like(rel_name: str, world: Node, body: Node, fresh: _FreshWorlds) -> Node:
+def _box_like(rel_name: str, world: Node, body: Node, fresh: _FreshWorlds,
+             bindings: Dict[str, Node]) -> Node:
     """Build ``∀w' (rel(world, w') → ST(body, w'))`` with a fresh ``w'``."""
     w2 = fresh.next()
     access = Atom(rel_name, [world, w2])
-    return Quantifier(_FORALL, w2, Implies(access, _translate(body, w2, fresh)))
+    return Quantifier(_FORALL, w2, Implies(access, _translate(body, w2, fresh, bindings)))
 
 
-def _diamond_like(rel_name: str, world: Node, body: Node, fresh: _FreshWorlds) -> Node:
+def _diamond_like(rel_name: str, world: Node, body: Node, fresh: _FreshWorlds,
+                  bindings: Dict[str, Node]) -> Node:
     """Build ``∃w' (rel(world, w') ∧ ST(body, w'))`` with a fresh ``w'``."""
     w2 = fresh.next()
     access = Atom(rel_name, [world, w2])
-    return Quantifier(_EXISTS, w2, And(access, _translate(body, w2, fresh)))
+    return Quantifier(_EXISTS, w2, And(access, _translate(body, w2, fresh, bindings)))
 
 
-def _box_converse(rel_name: str, world: Node, body: Node, fresh: _FreshWorlds) -> Node:
+def _box_intersection(rel_names: List[str], world: Node, body: Node, fresh: _FreshWorlds,
+                      bindings: Dict[str, Node]) -> Node:
+    """Build ``∀w' ((R1(w,w')∧R2(w,w')∧…) → ST(body,w'))`` — a box over the
+    INTERSECTION of several accessibility relations, one atom per relation
+    ANDed together into the antecedent, sharing ONE fresh ``w'`` (a single
+    successor has to satisfy every relation at once — this is exactly what
+    distinguishes :class:`DistributedKnowledge` from
+    :func:`_box_like`-per-agent-then-ANDed, which is what
+    :class:`EverybodyKnows` uses instead, and which shares no such single
+    witness). ``rel_names`` must be non-empty (guaranteed by
+    :class:`DistributedKnowledge`'s own constructor refusing an empty group).
+    """
+    w2 = fresh.next()
+    guard = Atom(rel_names[0], [world, w2])
+    for name in rel_names[1:]:
+        guard = And(guard, Atom(name, [world, w2]))
+    return Quantifier(_FORALL, w2, Implies(guard, _translate(body, w2, fresh, bindings)))
+
+
+def _box_converse(rel_name: str, world: Node, body: Node, fresh: _FreshWorlds,
+                  bindings: Dict[str, Node]) -> Node:
     """Build ``∀w' (rel(w', world) → ST(body, w'))`` — a box over the CONVERSE relation."""
     w2 = fresh.next()
     access = Atom(rel_name, [w2, world])
-    return Quantifier(_FORALL, w2, Implies(access, _translate(body, w2, fresh)))
+    return Quantifier(_FORALL, w2, Implies(access, _translate(body, w2, fresh, bindings)))
 
 
-def _diamond_converse(rel_name: str, world: Node, body: Node, fresh: _FreshWorlds) -> Node:
+def _diamond_converse(rel_name: str, world: Node, body: Node, fresh: _FreshWorlds,
+                      bindings: Dict[str, Node]) -> Node:
     """Build ``∃w' (rel(w', world) ∧ ST(body, w'))`` — a diamond over the CONVERSE relation."""
     w2 = fresh.next()
     access = Atom(rel_name, [w2, world])
-    return Quantifier(_EXISTS, w2, And(access, _translate(body, w2, fresh)))
+    return Quantifier(_EXISTS, w2, And(access, _translate(body, w2, fresh, bindings)))
 
 
-def _translate(formula: Node, world: Node, fresh: _FreshWorlds) -> Node:
+def _translate(formula: Node, world: Node, fresh: _FreshWorlds,
+               bindings: Optional[Dict[str, Node]] = None) -> Node:
     """Recursively translate ``formula`` relative to ``world`` (the worker).
 
     ``world`` is the current-world TERM: the free Variable at the top, a bound
     fresh Variable under a modality, or a ``nom_``-Constant under an ``@``-jump.
+
+    ``bindings`` (name → world TERM) holds the ``↓``-bound nominal names in
+    scope (N1); every call site outside :class:`Down`'s own recursion passes
+    ``{}`` (the default), which is exactly what makes ``bindings={}``
+    reproduce the pre-``Down`` translation byte-for-byte — see the module
+    docstring's ``Down`` bullet.
     """
+    if bindings is None:
+        bindings = {}
+
     # --- atomic: append the world as the last predicate argument ---
     if isinstance(formula, Atom):
-        return Atom(formula.predicate, list(formula.args) + [world])
+        return Atom(_user_predicate(formula.predicate), list(formula.args) + [world])
 
     # --- classical connectives: structural at the same world ---
     if isinstance(formula, Not):
-        return Not(_translate(formula.formula, world, fresh))
+        return Not(_translate(formula.formula, world, fresh, bindings))
     if isinstance(formula, And):
-        return And(_translate(formula.left, world, fresh),
-                   _translate(formula.right, world, fresh))
+        return And(_translate(formula.left, world, fresh, bindings),
+                   _translate(formula.right, world, fresh, bindings))
     if isinstance(formula, Or):
-        return Or(_translate(formula.left, world, fresh),
-                  _translate(formula.right, world, fresh))
+        return Or(_translate(formula.left, world, fresh, bindings),
+                  _translate(formula.right, world, fresh, bindings))
     if isinstance(formula, Xor):
-        return Xor(_translate(formula.left, world, fresh),
-                   _translate(formula.right, world, fresh))
+        return Xor(_translate(formula.left, world, fresh, bindings),
+                   _translate(formula.right, world, fresh, bindings))
     if isinstance(formula, Implies):
-        return Implies(_translate(formula.left, world, fresh),
-                       _translate(formula.right, world, fresh))
+        return Implies(_translate(formula.left, world, fresh, bindings),
+                       _translate(formula.right, world, fresh, bindings))
     if isinstance(formula, Iff):
-        return Iff(_translate(formula.left, world, fresh),
-                   _translate(formula.right, world, fresh))
+        return Iff(_translate(formula.left, world, fresh, bindings),
+                   _translate(formula.right, world, fresh, bindings))
 
     # --- alethic ---
     if isinstance(formula, Box):
-        return _box_like(_R_ALETHIC, world, formula.formula, fresh)
+        return _box_like(_R_ALETHIC, world, formula.formula, fresh, bindings)
     if isinstance(formula, Diamond):
-        return _diamond_like(_R_ALETHIC, world, formula.formula, fresh)
+        return _diamond_like(_R_ALETHIC, world, formula.formula, fresh, bindings)
 
     # --- epistemic / doxastic (both box-like / universal) ---
     if isinstance(formula, Knows):
-        return _box_like(_R_KNOWS_PREFIX + _agent_key(formula.agent), world, formula.formula, fresh)
+        return _box_like(_R_KNOWS_PREFIX + _agent_key(formula.agent), world,
+                         formula.formula, fresh, bindings)
     if isinstance(formula, Believes):
-        return _box_like(_R_BELIEVES_PREFIX + _agent_key(formula.agent), world, formula.formula, fresh)
+        return _box_like(_R_BELIEVES_PREFIX + _agent_key(formula.agent), world,
+                         formula.formula, fresh, bindings)
+
+    # --- group epistemic: E_G and D_G are one-step (union/intersection of
+    # per-agent relations) and ARE first-order definable; C_G needs the
+    # reflexive-transitive CLOSURE of the union relation and is NOT (see the
+    # rejection below, alongside Until/Since). ---
+    if isinstance(formula, EverybodyKnows):
+        if not formula.group:
+            raise NotImplementedError(
+                "standard_translation: E_∅ φ (a group-epistemic operator over "
+                "an empty group) is vacuously TRUE at every world by "
+                "definition (everybody_knows's own empty-group convention), "
+                "but this grammar has no first-order truth constant to render "
+                "that without borrowing an unrelated atom. Evaluate it "
+                "directly with semantics.kripke.satisfies_modal / "
+                "semantics.action_models.everybody_knows instead."
+            )
+        conj = _box_like(_R_KNOWS_PREFIX + _agent_key(formula.group[0]), world,
+                         formula.formula, fresh, bindings)
+        for agent in formula.group[1:]:
+            conj = And(conj, _box_like(_R_KNOWS_PREFIX + _agent_key(agent), world,
+                                       formula.formula, fresh, bindings))
+        return conj
+    if isinstance(formula, DistributedKnowledge):
+        rel_names = [_R_KNOWS_PREFIX + _agent_key(a) for a in formula.group]
+        return _box_intersection(rel_names, world, formula.formula, fresh, bindings)
+    if isinstance(formula, CommonKnowledge):
+        raise NotImplementedError(
+            "standard_translation: CommonKnowledge (C_G) is not first-order "
+            "definable — common knowledge is the REFLEXIVE-TRANSITIVE CLOSURE "
+            "of the group's union relation, and transitive closure has no "
+            "first-order rendering (the same obstacle this module already "
+            "reports for Until/Since — see the module docstring). Evaluate it "
+            "with the Kripke evaluator (semantics.kripke.satisfies_modal) "
+            "instead."
+        )
 
     # --- assertive / bouletic (both box-like, per-agent relations) ---
     if isinstance(formula, Says):
-        return _box_like(_R_SAYS_PREFIX + _agent_key(formula.agent), world, formula.formula, fresh)
+        return _box_like(_R_SAYS_PREFIX + _agent_key(formula.agent), world,
+                         formula.formula, fresh, bindings)
     if isinstance(formula, Wants):
-        return _box_like(_R_WANTS_PREFIX + _agent_key(formula.agent), world, formula.formula, fresh)
+        return _box_like(_R_WANTS_PREFIX + _agent_key(formula.agent), world,
+                         formula.formula, fresh, bindings)
 
     # --- deontic (box/diamond over a deontic accessibility predicate D) ---
     if isinstance(formula, Obligatory):
-        return _box_like(_R_DEONTIC, world, formula.formula, fresh)
+        return _box_like(_R_DEONTIC, world, formula.formula, fresh, bindings)
     if isinstance(formula, Permitted):
-        return _diamond_like(_R_DEONTIC, world, formula.formula, fresh)
+        return _diamond_like(_R_DEONTIC, world, formula.formula, fresh, bindings)
 
     # --- temporal (box/diamond over an assumed accessibility predicate) ---
     if isinstance(formula, Always):
-        return _box_like(_R_TEMPORAL, world, formula.formula, fresh)
+        return _box_like(_R_TEMPORAL, world, formula.formula, fresh, bindings)
     if isinstance(formula, Eventually):
-        return _diamond_like(_R_TEMPORAL, world, formula.formula, fresh)
+        return _diamond_like(_R_TEMPORAL, world, formula.formula, fresh, bindings)
     if isinstance(formula, Next):
-        return _box_like(_R_NEXT, world, formula.formula, fresh)
+        return _box_like(_R_NEXT, world, formula.formula, fresh, bindings)
 
     # --- past tense (box/diamond over the CONVERSE temporal/next predicate) ---
     if isinstance(formula, Historically):
-        return _box_converse(_R_TEMPORAL, world, formula.formula, fresh)
+        return _box_converse(_R_TEMPORAL, world, formula.formula, fresh, bindings)
     if isinstance(formula, Once):
-        return _diamond_converse(_R_TEMPORAL, world, formula.formula, fresh)
+        return _diamond_converse(_R_TEMPORAL, world, formula.formula, fresh, bindings)
     if isinstance(formula, Previous):
-        return _box_converse(_R_NEXT, world, formula.formula, fresh)
+        return _box_converse(_R_NEXT, world, formula.formula, fresh, bindings)
 
-    # --- hybrid: a nominal is a world-equality; @ re-anchors the world term ---
+    # --- hybrid: a nominal is a world-equality; @ re-anchors the world term.
+    # ``bindings`` is consulted FIRST — a ↓-bound name uses its bound TERM
+    # directly (no fresh nom_ constant, no equality atom needed for Nominal:
+    # "x" bound to term t just means "the current world is t", i.e. w = t —
+    # same shape as the nom_ case, just with t instead of a fresh constant). ---
     if isinstance(formula, Nominal):
-        return Atom("=", [world, Constant(_NOM_PREFIX + formula.name)])
+        bound = bindings.get(formula.name)
+        target = bound if bound is not None else Constant(_NOM_PREFIX + formula.name)
+        return Atom("=", [world, target])
     if isinstance(formula, At):
-        return _translate(formula.formula,
-                          Constant(_NOM_PREFIX + formula.nominal.name), fresh)
+        bound = bindings.get(formula.nominal.name)
+        target = bound if bound is not None else Constant(_NOM_PREFIX + formula.nominal.name)
+        return _translate(formula.formula, target, fresh, bindings)
+    if isinstance(formula, Down):
+        # ↓x.φ: bind x to the CURRENT world term for the rest of φ's
+        # translation — NO fresh quantifier (the bounded-fragment
+        # translation; see the module docstring's Down bullet and
+        # fol._hybrid_nodes.Down's own docstring for why this is sound: ST
+        # stays meaning-preserving for full H(@,↓), this is not an
+        # approximation).
+        return _translate(formula.formula, world, fresh,
+                          {**bindings, formula.variable.name: world})
 
     # --- rejected ---
     if isinstance(formula, (Until, Since)):
@@ -392,9 +546,31 @@ def hybrid_is_valid(formula: Node, frame: str = "K", timeout: int = 10000) -> bo
     "not proven valid" (for these small hybrid instances: a genuine
     countermodel).
 
-    The ↓ binder (which makes hybrid validity undecidable) has no node type in
-    this kit — deliberately out of scope.
+    Raises:
+        NotImplementedError: ``formula`` contains a ``Down`` node (the ↓
+            binder, N1). Adding ↓ makes hybrid validity UNDECIDABLE, so this
+            function's bare-``bool`` contract — where ``False`` is safe to
+            read as "a genuine countermodel" precisely BECAUSE H(@) over K is
+            decidable and Z3 reliably closes these small instances — no
+            longer holds: a bare ``False`` on a ↓-formula could equally be a
+            countermodel or an honest Z3 timeout on an undecidable query, and
+            this function has no second field to tell them apart. Use
+            :func:`down_is_valid` instead (a :class:`~unicode_fol_kit.atp.protocol.Verdict`,
+            PROVED-only — never claims REFUTED) or
+            :func:`~unicode_fol_kit.atp.kripke_enum.modal_enum_search` /
+            :class:`~unicode_fol_kit.atp.kripke_enum.KripkeEnumBackend` for a
+            bounded-search REFUTED verdict.
     """
+    for n in formula.walk():
+        if isinstance(n, Down):
+            raise NotImplementedError(
+                "hybrid_is_valid: the ↓ binder (Down) makes hybrid validity "
+                "undecidable, so this bare-bool, PROVED-and-REFUTED-conflating "
+                "check cannot honestly answer for it. Use down_is_valid "
+                "(PROVED-only, never REFUTED) or "
+                "unicode_fol_kit.atp.kripke_enum.KripkeEnumBackend / "
+                "modal_enum_search (bounded search, REFUTED-only) instead."
+            )
     from ..atp.z3_models import is_valid  # local import (as in fol.qml): keeps fol importable without z3
     w = Variable("w")
     closed = Quantifier(_FORALL, w, standard_translation(formula, world="w"))
@@ -403,3 +579,95 @@ def hybrid_is_valid(formula: Node, frame: str = "K", timeout: int = 10000) -> bo
         hyp = axiom if hyp is None else And(hyp, axiom)
     goal = closed if hyp is None else Implies(hyp, closed)
     return is_valid(goal, timeout=timeout)
+
+
+# =========================
+# ↓ validity via the standard translation + a direct Z3 solver call (N1)
+# =========================
+#
+# down_is_valid is hybrid_is_valid's PROVED-only sibling for the FULL hybrid
+# language H(@,↓). It exists as a SEPARATE function, not a keyword flag on
+# hybrid_is_valid, precisely because the two make different promises:
+# hybrid_is_valid's bare bool is safe only because H(@) over K is decidable
+# (so "not proved" IS "refuted" there); down_is_valid must call the Z3
+# Solver() directly — never the bare-bool is_valid() wrapper, which collapses
+# Z3's 'sat' (a genuine countermodel) and 'unknown' (timeout / incompleteness
+# on an undecidable query) into the same False (unicode_fol_kit.atp.z3_models
+# .is_valid, confirmed by direct reading) — so it can tell the two apart and
+# report them honestly as UNKNOWN, never smuggling a REFUTED claim out of a
+# SAT witness this route never verified against a presentable finite
+# KripkeModel (that verification is KripkeEnumBackend's job — see
+# fol._hybrid_nodes' module docstring and atp.hybrid_down.down_decide, which
+# combines the two into one call).
+
+def down_is_valid(formula: Node, frame: str = "K", timeout: int = 10000) -> "Verdict":
+    """Return a :class:`~unicode_fol_kit.atp.protocol.Verdict` for the FULL
+    hybrid-modal ``formula`` (H(@,↓), including ``Down``/↓) over ``frame``.
+
+    Builds the exact same goal ``hybrid_is_valid`` does — the standard
+    translation, closed over the current world, under the frame axioms
+    (``standard_translation`` now threads ``Down``'s local rebinding through,
+    see the module docstring) — but decides it with a Z3 ``Solver()`` called
+    directly, so ``unsat`` (of the negated goal) and ``sat``/``unknown`` are
+    told apart instead of collapsed:
+
+    - Z3 ``unsat`` → ``PROVED`` — sound unconditionally: soundness of a
+      Z3-``unsat`` verdict depends only on Z3's own soundness, never on
+      whether Z3 is a COMPLETE decision procedure for this (undecidable)
+      fragment (see ``fol._hybrid_nodes``' module docstring for the
+      co-r.e. argument this rests on: ST is meaning-preserving for H(@,↓)
+      — Areces/Blackburn/Marx 1999 — so FO-``unsat``-of-the-negation IS
+      H(@,↓)-validity, exactly).
+    - Z3 ``sat`` (of the negated goal) → ``UNKNOWN`` / ``reason="incomplete"``
+      — NEVER ``REFUTED``. A SAT witness here would, ON INSPECTION, also be a
+      sound Kripke countermodel in principle (same correspondence as above,
+      run in the other direction) — this is a deliberate COMPLETENESS
+      sacrifice, not a soundness requirement, made to sidestep turning an
+      arbitrary Z3 model back into a presentable, inspectable finite
+      :class:`~unicode_fol_kit.semantics.kripke.KripkeModel`. Use
+      :func:`~unicode_fol_kit.atp.kripke_enum.modal_enum_search` /
+      :class:`~unicode_fol_kit.atp.kripke_enum.KripkeEnumBackend` for an
+      actual REFUTED verdict, with a countermodel independently
+      re-verified by :func:`~unicode_fol_kit.semantics.kripke.satisfies_modal`
+      — or :func:`~unicode_fol_kit.atp.hybrid_down.down_decide`, which runs
+      both routes and combines them.
+    - Z3 times out → ``UNKNOWN`` / ``reason="timeout"``.
+
+    This function decides ANY formula ``standard_translation`` accepts
+    (``Down`` or not) — it is not restricted to ↓-containing input; a plain
+    H(@) formula is handled identically, just more conservatively than
+    ``hybrid_is_valid`` (which, for THAT decidable fragment, is entitled to —
+    and does — read Z3 ``sat``/``unknown`` as a genuine countermodel).
+    """
+    import time
+    from ..atp.protocol import PROVED, UNKNOWN, Verdict  # local: keeps fol importable without atp
+    from z3 import Not as _ZNot, Solver, sat, unsat
+
+    w = Variable("w")
+    closed = Quantifier(_FORALL, w, standard_translation(formula, world="w"))
+    hyp = None
+    for axiom in _frame_axioms(frame):
+        hyp = axiom if hyp is None else And(hyp, axiom)
+    goal = closed if hyp is None else Implies(hyp, closed)
+
+    solver = Solver()
+    solver.set("timeout", timeout)
+    solver.set("random_seed", 42)
+    solver.add(_ZNot(goal.to_z3()))
+    start = time.perf_counter()
+    result = solver.check()
+    elapsed = time.perf_counter() - start
+
+    if result == unsat:
+        return Verdict(PROVED, "down_is_valid", logic="hybrid", wall_time=elapsed)
+    if result == sat:
+        return Verdict(
+            UNKNOWN, "down_is_valid", logic="hybrid", reason="incomplete", wall_time=elapsed,
+            detail=("Z3 found a model of the negated goal; down_is_valid never "
+                    "reads this as REFUTED (see its own docstring) — use "
+                    "atp.kripke_enum.KripkeEnumBackend / modal_enum_search, or "
+                    "atp.hybrid_down.down_decide, for a genuine countermodel."))
+    why = solver.reason_unknown()
+    reason = "timeout" if ("timeout" in why or "cancel" in why) else "incomplete"
+    return Verdict(UNKNOWN, "down_is_valid", logic="hybrid", reason=reason,
+                   wall_time=elapsed, detail=why)

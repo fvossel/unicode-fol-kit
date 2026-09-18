@@ -63,17 +63,47 @@ forward chaining. ``max_choice_facts`` (default 16, i.e. up to 65536 choices)
 is a deliberate, overridable brake on the ``2^k`` enumeration over the
 (pruned, if ``prune=True``) relevant fact set.
 
+**A second evaluation route (``method="compile"``).** :func:`query` takes a
+``method`` keyword, ``"enumerate"`` (the default; the ``2^k`` total-choice sum
+described above, UNCHANGED) or ``"compile"`` — a second, algorithmically
+DISTINCT but semantically IDENTICAL route that never materialises a total
+choice at all. It reuses the exact same grounding, pruning and least-model
+machinery, but replaces the Boolean least-fixpoint with a BDD-VALUED one over
+:class:`~unicode_fol_kit.prob._bdd.BDDManager`: each derived ground atom gets
+a canonical Boolean FUNCTION of the relevant facts (OR, over every grounded
+rule deriving it, of the AND of that rule's body atoms' current functions),
+iterated to a fixpoint by the same monotone-lattice argument as the
+enumeration route's while-loop — now over canonical BDD node identity rather
+than Python-set membership. The goal is composed over these atom-functions
+with the identical ∧/∨/¬ structure :func:`_eval_goal` uses, and the single
+resulting root is weighted-model-counted bottom-up (each SHARED node priced
+once), which is why a chain/tree/diamond-shaped program collapses to
+``O(#BDD nodes)`` under ``method="compile"`` instead of the ``O(2^k)`` weights
+the enumeration route sums for the same answer. Both routes MUST agree, on
+every input, exactly (never a float, never a tolerance) — that identity is
+the specification this module holds itself to, and the test suite tests it
+directly. ``method="compile"`` is bounded by its own brake, ``max_bdd_nodes``
+(default 100 000, ``max_choice_facts`` does not apply to it): weighted model
+counting is #P-hard, so worst-case Boolean functions still have exponential
+ROBDDs under any fixed variable order — this path still refuses loudly rather
+than silently degrading, preserving the kit-wide rule, and can in fact refuse
+programs the enumeration route would ALSO refuse (just via a different brake,
+since the two routes' costs scale with different things) as well as accept
+programs (many shared sub-derivations) the enumeration route's
+``max_choice_facts`` brake alone would never let through.
+
 Public API: :class:`ProbFact`, :class:`ProbProgram`, :func:`query`.
 """
 
 from dataclasses import dataclass
 from fractions import Fraction
 from itertools import product
-from typing import Dict, List, Sequence, Set, Tuple
+from typing import Dict, List, Literal, Sequence, Set, Tuple
 
 from ..fol.nodes import (
     Node, Atom, Not, And, Or, Implies, Quantifier, Variable, Constant, substitute,
 )
+from ._bdd import BDDManager, weighted_model_count, FALSE as _BDD_FALSE, TRUE as _BDD_TRUE
 
 __all__ = ["ProbFact", "ProbProgram", "query"]
 
@@ -379,6 +409,25 @@ def _eval_goal(node: Node, known_true: Set[str]) -> bool:
     raise ValueError(_GOAL_LANGUAGE.format(cls=type(node).__name__))  # pragma: no cover — defensive
 
 
+def _goal_bdd(node: Node, atom_bdd: Dict[str, int], manager: BDDManager) -> int:
+    """Compose an expanded ground goal over per-atom BDDs — the ``method="compile"`` analog of :func:`_eval_goal`.
+
+    Same ∧/∨/¬ recursive structure, same default-``False`` (here: the BDD
+    ``FALSE`` terminal) treatment of an atom key absent from ``atom_bdd`` —
+    mirroring ``node.to_unicode_str() in known_true`` being ``False`` when the
+    key was never derived.
+    """
+    if isinstance(node, Atom):
+        return atom_bdd.get(node.to_unicode_str(), _BDD_FALSE)
+    if isinstance(node, Not):
+        return manager.NOT(_goal_bdd(node.formula, atom_bdd, manager))
+    if isinstance(node, And):
+        return manager.AND(_goal_bdd(node.left, atom_bdd, manager), _goal_bdd(node.right, atom_bdd, manager))
+    if isinstance(node, Or):
+        return manager.OR(_goal_bdd(node.left, atom_bdd, manager), _goal_bdd(node.right, atom_bdd, manager))
+    raise ValueError(_GOAL_LANGUAGE.format(cls=type(node).__name__))  # pragma: no cover — defensive, unreachable: _expand_goal already validated node's shape
+
+
 # ---------------------------------------------------------------------------
 # Dependency cone (pruning) and least Herbrand model (forward chaining)
 # ---------------------------------------------------------------------------
@@ -425,12 +474,52 @@ def _least_model(seed_keys: Set[str],
     return known
 
 
+def _least_model_bdd(always_true: Set[str], relevant: Sequence["ProbFact"],
+                     grounded_rules: List[Tuple[Tuple[Atom, ...], Atom]],
+                     manager: BDDManager) -> Dict[str, int]:
+    """The ``method="compile"`` analog of :func:`_least_model`: a BDD-valued least fixpoint.
+
+    ``relevant[i]``'s own truth is exactly BDD variable ``i`` (its "chosen"
+    status); every other atom key's function starts at ``FALSE`` and is
+    repeatedly OR'd with (AND over a deriving rule's body atoms' current
+    functions), one grounded rule at a time, until nothing changes — same
+    flat while-loop shape as :func:`_least_model`, same termination argument
+    (a monotone, bounded-above lattice: here "bounded above" by the BDD
+    ``TRUE`` terminal under Boolean implication, each successful update
+    strictly increasing an atom's function in that order), but comparing
+    canonical BDD node ids instead of Python-set membership.
+    """
+    known: Dict[str, int] = {key: _BDD_TRUE for key in always_true}
+    for i, fact in enumerate(relevant):
+        key = fact.atom.to_unicode_str()
+        known[key] = manager.OR(known.get(key, _BDD_FALSE), manager.variable(i))
+
+    changed = True
+    while changed:
+        changed = False
+        for body_atoms, head in grounded_rules:
+            hk = head.to_unicode_str()
+            if known.get(hk) == _BDD_TRUE:
+                continue  # already the constant-true function; cannot improve further
+            body_bdd = _BDD_TRUE
+            for a in body_atoms:
+                body_bdd = manager.AND(body_bdd, known.get(a.to_unicode_str(), _BDD_FALSE))
+                if body_bdd == _BDD_FALSE:
+                    break
+            new_value = manager.OR(known.get(hk, _BDD_FALSE), body_bdd)
+            if new_value != known.get(hk, _BDD_FALSE):
+                known[hk] = new_value
+                changed = True
+    return known
+
+
 # ---------------------------------------------------------------------------
 # Public query
 # ---------------------------------------------------------------------------
 
 def query(program: ProbProgram, goal: Node, *, max_choice_facts: int = 16,
-         prune: bool = True) -> Fraction:
+         prune: bool = True, method: Literal["enumerate", "compile"] = "enumerate",
+         max_bdd_nodes: int = 100_000) -> Fraction:
     """Return the exact distribution-semantics probability of ``goal`` under ``program``.
 
     Sums the weight of every total choice of the (by default, pruned to the
@@ -440,14 +529,28 @@ def query(program: ProbProgram, goal: Node, *, max_choice_facts: int = 16,
     module; the arithmetic is plain Python ``Fraction`` products and sums over
     a finite, explicitly enumerated set of choices.
 
+    ``method`` selects the evaluation ALGORITHM, never the semantics — see the
+    module docstring's "A second evaluation route" section. ``"enumerate"``
+    (the default) is the ``2^k`` total-choice sum just described, unchanged.
+    ``"compile"`` instead builds one shared Boolean-decision-diagram function
+    per derivable atom (:mod:`unicode_fol_kit.prob._bdd`) and weighted-model-
+    counts a single composed root; it is bounded by ``max_bdd_nodes`` rather
+    than ``max_choice_facts`` (the latter is ignored under ``method="compile"``),
+    and can therefore answer some programs ``"enumerate"`` cannot (many shared
+    sub-derivations, few actual BDD nodes) — while, on every program either
+    route CAN answer, returning bit-for-bit the same ``Fraction``.
+
     Raises:
         ValueError: on a malformed ``goal`` (outside ground-literal /
-            ∧/∨/¬ / ∀/∃-over-constants); if the number of relevant
-            probabilistic facts exceeds ``max_choice_facts`` (the choice
-            enumeration is ``2^k`` — an explicit, overridable brake); or if
-            ``program`` itself is malformed (raised eagerly by
-            :class:`ProbProgram` / :class:`ProbFact` at construction time,
-            before ``query`` is ever called).
+            ∧/∨/¬ / ∀/∃-over-constants); under ``method="enumerate"``, if the
+            number of relevant probabilistic facts exceeds ``max_choice_facts``
+            (the choice enumeration is ``2^k`` — an explicit, overridable
+            brake); under ``method="compile"``, if the compiled BDD would grow
+            past ``max_bdd_nodes`` (weighted model counting is #P-hard — an
+            explicit, overridable brake on a different failure mode); an
+            unrecognised ``method``; or if ``program`` itself is malformed
+            (raised eagerly by :class:`ProbProgram` / :class:`ProbFact` at
+            construction time, before ``query`` is ever called).
     """
     constant_names: Set[str] = set()
     for f in program.facts:
@@ -474,27 +577,37 @@ def query(program: ProbProgram, goal: Node, *, max_choice_facts: int = 16,
     else:
         relevant = list(program.facts)
 
-    if len(relevant) > max_choice_facts:
-        raise ValueError(
-            f"query: {len(relevant)} relevant probabilistic facts exceeds "
-            f"max_choice_facts={max_choice_facts}. The total-choice enumeration is "
-            f"O(2^k) — {len(relevant)} facts means 2**{len(relevant)} = "
-            f"{2 ** len(relevant)} choices. Reduce the program (or tighten the goal, "
-            "which tightens the dependency-cone pruning), or pass a larger "
-            "max_choice_facts explicitly if that blow-up is intended."
-        )
+    if method == "enumerate":
+        if len(relevant) > max_choice_facts:
+            raise ValueError(
+                f"query: {len(relevant)} relevant probabilistic facts exceeds "
+                f"max_choice_facts={max_choice_facts}. The total-choice enumeration is "
+                f"O(2^k) — {len(relevant)} facts means 2**{len(relevant)} = "
+                f"{2 ** len(relevant)} choices. Reduce the program (or tighten the goal, "
+                "which tightens the dependency-cone pruning), or pass a larger "
+                "max_choice_facts explicitly if that blow-up is intended."
+            )
 
-    total = Fraction(0)
-    for combo in product((False, True), repeat=len(relevant)):
-        weight = Fraction(1)
-        chosen_keys = set(always_true)
-        for fact, is_chosen in zip(relevant, combo):
-            weight *= fact.prob if is_chosen else (Fraction(1) - fact.prob)
-            if is_chosen:
-                chosen_keys.add(fact.atom.to_unicode_str())
-        if weight == 0:
-            continue
-        known_true = _least_model(chosen_keys, all_grounded_rules)
-        if _eval_goal(ground_goal, known_true):
-            total += weight
-    return total
+        total = Fraction(0)
+        for combo in product((False, True), repeat=len(relevant)):
+            weight = Fraction(1)
+            chosen_keys = set(always_true)
+            for fact, is_chosen in zip(relevant, combo):
+                weight *= fact.prob if is_chosen else (Fraction(1) - fact.prob)
+                if is_chosen:
+                    chosen_keys.add(fact.atom.to_unicode_str())
+            if weight == 0:
+                continue
+            known_true = _least_model(chosen_keys, all_grounded_rules)
+            if _eval_goal(ground_goal, known_true):
+                total += weight
+        return total
+
+    if method == "compile":
+        manager = BDDManager(len(relevant), max_nodes=max_bdd_nodes)
+        atom_bdd = _least_model_bdd(always_true, relevant, all_grounded_rules, manager)
+        root = _goal_bdd(ground_goal, atom_bdd, manager)
+        weights = [fact.prob for fact in relevant]
+        return weighted_model_count(manager, root, weights)
+
+    raise ValueError(f"query: unknown method {method!r}; expected 'enumerate' or 'compile'.")

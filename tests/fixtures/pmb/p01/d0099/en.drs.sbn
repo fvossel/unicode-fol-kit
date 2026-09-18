@@ -1,0 +1,3 @@
+%%% generated
+cat.n.01    % A cat [0-4]
+sleep.v.01 Agent -1 % sleeps. [6-12]

@@ -20,6 +20,7 @@ Public API: :func:`truth_table`, :class:`TruthTable`, and the convenience predic
 :func:`is_tautology`, :func:`is_contradiction`, :func:`is_satisfiable_tt`.
 """
 
+import html
 from dataclasses import dataclass
 from itertools import product
 from typing import Dict, List, Tuple
@@ -103,10 +104,20 @@ class TruthTable:
         """True iff the formula is designated under some assignment."""
         return any(d for _, _, d in self.rows)
 
-    def render(self) -> str:
-        """Render the truth table as a GitHub-flavoured Markdown table."""
+    def _rows_and_glyphs(self) -> Tuple[List[str], Dict[float, str]]:
+        """Column headers (atoms + the formula) and the value-to-glyph map for ``logic``.
+
+        Shared by :meth:`render` (Markdown) and :meth:`_repr_html_` (HTML) so the
+        two renderers walk ``self.rows`` with the same headers and the same glyphs
+        and can never quietly disagree.
+        """
         glyph = _GLYPH_BOOL if self.logic == "classical" else _GLYPH_MANY
         head = list(self.atoms) + [self.formula.to_unicode_str()]
+        return head, glyph
+
+    def render(self) -> str:
+        """Render the truth table as a GitHub-flavoured Markdown table."""
+        head, glyph = self._rows_and_glyphs()
         lines = ["| " + " | ".join(head) + " |",
                  "|" + "|".join(["---"] * len(head)) + "|"]
         for assignment, value, _ in self.rows:
@@ -116,6 +127,26 @@ class TruthTable:
 
     def __str__(self) -> str:
         return self.render()
+
+    def _repr_html_(self) -> str:
+        """Jupyter/IPython rich-display hook: the truth table as an HTML ``<table>``.
+
+        Built directly from ``self.atoms``/``self.rows`` via :meth:`_rows_and_glyphs`
+        — NOT by round-tripping ``render()``'s Markdown through a Markdown-to-HTML
+        parser, since no such parser is a dependency of this kit (and none is added
+        for this). Column/atom labels come from user-chosen predicate and constant
+        names, so they are HTML-escaped; the glyphs themselves are always one of the
+        fixed strings in ``_GLYPH_BOOL``/``_GLYPH_MANY`` and need no escaping.
+        """
+        head, glyph = self._rows_and_glyphs()
+        header_cells = "".join(f"<th>{html.escape(h)}</th>" for h in head)
+        body_rows = []
+        for assignment, value, _ in self.rows:
+            cells = [glyph[v] for v in assignment] + [glyph[value]]
+            row_html = "".join(f"<td>{c}</td>" for c in cells)
+            body_rows.append(f"<tr>{row_html}</tr>")
+        return (f"<table><thead><tr>{header_cells}</tr></thead>"
+                f"<tbody>{''.join(body_rows)}</tbody></table>")
 
 
 def truth_table(formula: Node, logic: str = "classical") -> TruthTable:

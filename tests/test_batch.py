@@ -213,3 +213,56 @@ def test_cache_key_resolves_the_default_chain_concretely():
     key_auto_modal = _cache_key(modal, [], None, "auto", 10000, {})
     key_auto_fol = _cache_key(formula, [], None, "auto", 10000, {})
     assert key_auto_modal != key_auto_fol
+
+
+# ---------------------------------------------------------------------------
+# K1: solver_version() enters the cache key
+# ---------------------------------------------------------------------------
+
+def test_cache_key_changes_with_solver_version(monkeypatch):
+    """A backend's own reported solver_version() enters the cache key (K1):
+    upgrading/downgrading an external tool must invalidate a cache entry
+    stored under the OLD tool's answer rather than silently reusing it.
+    Verified directly against the z3 backend's singleton instance (get_backend
+    always returns the SAME registered object), so patching its bound method
+    is visible to _cache_key's own get_backend(name) call."""
+    from unicode_fol_kit.eval.batch import _cache_key
+    from unicode_fol_kit.atp.protocol import get_backend
+    from unicode_fol_kit import MSFLParser
+
+    formula = MSFLParser().parse("P(alice) → P(alice)")
+    backend = get_backend("z3")
+
+    monkeypatch.setattr(backend, "solver_version", lambda: "1.0.0")
+    key_v1 = _cache_key(formula, [], ["z3"], "fol", 10000, {})
+    key_v1_again = _cache_key(formula, [], ["z3"], "fol", 10000, {})
+    assert key_v1 == key_v1_again              # identical version -> identical key
+
+    monkeypatch.setattr(backend, "solver_version", lambda: "2.0.0")
+    key_v2 = _cache_key(formula, [], ["z3"], "fol", 10000, {})
+    assert key_v1 != key_v2                     # different version -> different key
+
+
+def test_cache_key_solver_version_lookup_is_memoized_per_task(monkeypatch):
+    """_cache_key calls get_backend(name).solver_version() once per (missing-
+    cache) task in Pass 1 (see the docstring); the per-backend memoization
+    that keeps that cheap across a batch lives INSIDE each backend's own
+    solver_version() (atp.protocol._binary_version and friends) — this test
+    pins the CALL COUNT _cache_key itself makes per task, one call per
+    backend NAME per invocation, so a future edit cannot accidentally start
+    calling it twice per task and silently rely on the backend-level cache
+    to hide the waste."""
+    from unicode_fol_kit.eval.batch import _cache_key
+    from unicode_fol_kit.atp.protocol import get_backend
+    from unicode_fol_kit import MSFLParser
+
+    formula = MSFLParser().parse("P(alice) → P(alice)")
+    backend = get_backend("z3")
+    calls = []
+    monkeypatch.setattr(backend, "solver_version",
+                        lambda: calls.append(1) or "1.0.0")
+
+    _cache_key(formula, [], ["z3"], "fol", 10000, {})
+    assert len(calls) == 1
+    _cache_key(formula, [], ["z3"], "fol", 10000, {})
+    assert len(calls) == 2                        # one MORE call for the second task

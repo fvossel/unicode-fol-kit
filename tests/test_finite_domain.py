@@ -21,10 +21,13 @@ Four things this module is responsible for, four test classes below:
 * ``TestVerifyModel`` — the §3 safety net. A structure that genuinely
   satisfies a sentence must verify clean; a structure DELIBERATELY built to
   violate one (not a solver output — hand-built wrong on purpose) must be
-  caught and named; and the module's own documented verification gap
-  (``Cardinality``/``Function``/``Number``-as-comparison-operand/``Contrast``
-  make ``evaluate_in_structure`` itself raise) must degrade to "could not
-  verify", never silently read as "verified false" or "verified true".
+  caught and named; ``Cardinality``/``Number``-as-comparison-operand AND
+  ``Function`` are now genuinely VERIFIED (not merely decided — see
+  ``TestVerifyModelFunctions`` below for the ``Function`` case specifically,
+  including its own failure modes); and the module's one remaining
+  documented verification gap (``Contrast`` makes ``evaluate_in_structure``
+  itself raise) must degrade to "could not verify", never silently read as
+  "verified false" or "verified true".
 
 Every expected value below is worked out from the input by hand in the
 comment next to the assertion (never captured from a run of the module under
@@ -122,6 +125,51 @@ class TestFiniteDomainProblem:
         problem = FiniteDomainProblem((Atom("P", [X]),), 2, all_different=True)
         assert problem.all_different is True
 
+    def test_unsorted_function_declaration_is_accepted(self):
+        # A plain (arg_sorts=None, result_sort=None) FunctionDecl is the
+        # ordinary case -- must not trip the sorted-function refusal below.
+        sig = Signature(functions={"f": FunctionDecl("f", 1)})
+        problem = FiniteDomainProblem((Atom("P", [X]),), 2, signature=sig)
+        assert problem.signature is sig
+
+    def test_sorted_function_declaration_via_arg_sorts_is_rejected(self):
+        # This module's explicit "sorted function symbols" decision (see the
+        # module docstring): a FunctionDecl with a declared arg_sorts is
+        # refused, by name, because neither backend's encoder nor
+        # FiniteStructure/verify_model respects or can check a sort
+        # constraint on a function -- see module docstring for the full
+        # argument.
+        sig = Signature(functions={"f": FunctionDecl("f", 1, arg_sorts=("S",))})
+        with pytest.raises(ValueError, match="sorted function symbol"):
+            FiniteDomainProblem((Atom("P", [X]),), 2, signature=sig)
+
+    def test_sorted_function_declaration_via_result_sort_is_rejected(self):
+        sig = Signature(functions={"f": FunctionDecl("f", 1, result_sort="S")})
+        with pytest.raises(ValueError, match="sorted function symbol"):
+            FiniteDomainProblem((Atom("P", [X]),), 2, signature=sig)
+
+    def test_sorted_function_refusal_names_every_offending_symbol(self):
+        # Two functions declared, only one sorted -- the message must name
+        # exactly the offending one(s), sorted, not every declared function.
+        sig = Signature(functions={
+            "f": FunctionDecl("f", 1),
+            "g": FunctionDecl("g", 1, result_sort="S"),
+        })
+        with pytest.raises(ValueError) as exc_info:
+            FiniteDomainProblem((Atom("P", [X]),), 2, signature=sig)
+        msg = str(exc_info.value)
+        assert "'g'" in msg and "'f'" not in msg
+
+    def test_default_inferred_signature_never_triggers_the_sorted_refusal(self):
+        # Signature.from_formulas (the signature= None default) never sets
+        # arg_sorts/result_sort for a function -- it infers arity only (see
+        # fol/signature.py's own "scope" docstring section) -- so this
+        # refusal is inert on the path every ordinary caller takes.
+        f = Atom("P", [Function("f", [X])])
+        problem = FiniteDomainProblem((f,), 2)      # signature=None
+        assert problem.signature.functions["f"].arg_sorts is None
+        assert problem.signature.functions["f"].result_sort is None
+
 
 # =============================================================================
 # fragment_check — the single allow/refuse gate
@@ -158,20 +206,24 @@ class TestFragmentCheckAccepts:
         card = Cardinality(X, Atom("P", [X]))
         assert fragment_check([Atom(">", [card, Number(1)])]) is None
 
-    def test_function_terms_are_refused_because_no_structure_can_hold_one(self):
-        """A solver can happily find a model containing a function symbol —
-        but ``FiniteStructure`` has fields ``domain``/``extensions``/
-        ``computed``/``constants`` and no slot for a function interpretation,
-        so that model could never be checked back with ``verify_model``. This
-        layer does not hand out countermodels it cannot verify, so the gate
-        refuses the fragment outright and says why, rather than letting the
-        backend engage and fail late with an opaque infra error."""
+    def test_function_terms_are_admitted(self):
+        """``FiniteStructure`` interprets a function symbol as the ``(name,
+        arity+1)`` total-relation extension ``structure_from_solution``
+        already builds, and ``evaluate_in_structure`` (as of this module's
+        own ``Function`` closure) can check one back — so a solver's model
+        containing a function symbol is no longer refused before it is even
+        attempted. See ``TestFragmentCheckRefuses`` for what the gate DOES
+        still refuse by name, and ``TestVerifyModelFunctions`` for the
+        function-bearing verification path this admission now unlocks."""
         f = Atom("P", [Function("f", [Constant("a"), Variable("x")])])
+        assert fragment_check([f]) is None
 
-        message = fragment_check([f])
-        assert message is not None
-        assert "Function" in message
-        assert "FiniteStructure" in message
+    def test_nested_function_composition_is_admitted(self):
+        # f(g(x)) -- nested composition is just an ordinary Function node
+        # whose own argument is another Function node; no special case is
+        # needed at this gate for that.
+        nested = Atom("P", [Function("f", [Function("g", [Variable("x")])])])
+        assert fragment_check([nested]) is None
 
     def test_multiple_sentences_all_in_fragment(self):
         s1 = Atom("P", [Constant("a")])
@@ -500,18 +552,6 @@ class TestVerifyModel:
         assert message is not None
         assert "could not verify" not in message      # refuted, not unevaluable
 
-    def test_function_term_hits_the_documented_gap(self):
-        # A FiniteStructure interprets predicates, not functions (see
-        # semantics/model_eval.py's own docstring) -- P(f(a)) must degrade
-        # to "could not verify", not silently pass or fail.
-        s = FiniteStructure(domain=("0", "1"), extensions={("P", 1): {("0",)}},
-                            constants={"a": "0"})
-        sentence = Atom("P", [Function("f", [Constant("a")])])
-        message = verify_model(s, [sentence])
-        assert message is not None
-        assert "could not verify" in message
-        assert "Function" in message
-
     def test_contrast_is_verified_as_the_conjunction_it_is(self):
         """``Contrast`` was the last node the gate admitted but the checker
         could not evaluate. It is truth-functionally ``And`` — concession is a
@@ -558,3 +598,107 @@ class TestVerifyModel:
         # this pins that it does not error out on an empty iterable.)
         s = FiniteStructure(domain=("0",), extensions={})
         assert verify_model(s, []) is None
+
+
+# =============================================================================
+# verify_model -- Function terms (the C26 closure: genuinely verified now,
+# not merely a documented gap -- see TestVerifyModel's docstring above)
+# =============================================================================
+
+class TestVerifyModelFunctions:
+    # f: "0"->"1", "1"->"0" (a fixed-point-free involution over {0,1}),
+    # hand-picked so P(f(a)) and Not(P(f(b))) are independently checkable.
+    _F = {("f", 2): {("0", "1"), ("1", "0")}}
+
+    def test_true_function_atom_verifies_clean(self):
+        # a="0", f(a)=f("0")="1", P holds of "1" -- P(f(a)) is genuinely TRUE.
+        s = FiniteStructure(domain=("0", "1"),
+                            extensions={("P", 1): {("1",)}, **self._F},
+                            constants={"a": "0"})
+        sentence = Atom("P", [Function("f", [Constant("a")])])
+        assert verify_model(s, [sentence]) is None
+
+    def test_false_function_atom_is_reported_as_refuted_not_unevaluable(self):
+        # b="1", f(b)=f("1")="0", P does NOT hold of "0" -- P(f(b)) is
+        # genuinely FALSE, and must be reported as such (a refutation, not a
+        # "could not verify").
+        s = FiniteStructure(domain=("0", "1"),
+                            extensions={("P", 1): {("1",)}, **self._F},
+                            constants={"b": "1"})
+        sentence = Atom("P", [Function("f", [Constant("b")])])
+        message = verify_model(s, [sentence])
+        assert message is not None
+        assert "does not hold" in message
+        assert "could not verify" not in message
+
+    def test_nested_composition_verifies(self):
+        # f is an involution (f(f(x))=x for every x), so ∀x (f(f(x))=x)
+        # genuinely holds -- nested Function composition needs no special
+        # case, it is ordinary recursion through _term_value.
+        s = FiniteStructure(domain=("0", "1"), extensions=dict(self._F))
+        sentence = Quantifier(
+            "forall", X, Atom("=", [Function("f", [Function("f", [X])]), X]))
+        assert verify_model(s, [sentence]) is None
+
+    def test_uninterpreted_function_degrades_to_could_not_verify(self):
+        # 'f' has no interpretation at all in this structure -- a vocabulary
+        # mismatch, degrading to "could not verify" (never a false verdict),
+        # exactly the reading an uninterpreted PREDICATE already gets.
+        s = FiniteStructure(domain=("0", "1"), extensions={("P", 1): {("0",)}},
+                            constants={"a": "0"})
+        sentence = Atom("P", [Function("f", [Constant("a")])])
+        message = verify_model(s, [sentence])
+        assert message is not None
+        assert "could not verify" in message
+        assert "function 'f'/1" in message
+
+    def test_partial_function_relation_degrades_to_could_not_verify(self):
+        # f has a row for input "0" but none for "1" -- PARTIAL, not TOTAL --
+        # a defect only a HAND-BUILT structure can have (structure_from_solution
+        # itself enforces totality on a solver's own output).
+        s = FiniteStructure(domain=("0", "1"),
+                            extensions={("P", 1): {("0",)}, ("f", 2): {("0", "1")}},
+                            constants={"a": "1"})
+        sentence = Atom("P", [Function("f", [Constant("a")])])
+        message = verify_model(s, [sentence])
+        assert message is not None
+        assert "could not verify" in message
+        assert "TOTAL" in message
+
+    def test_non_functional_relation_degrades_to_could_not_verify(self):
+        # f has TWO different rows for the same input "0" -- not FUNCTIONAL --
+        # another defect only a hand-built structure can have.
+        s = FiniteStructure(domain=("0", "1"),
+                            extensions={("P", 1): {("0",)}, ("f", 2): {("0", "0"), ("0", "1")}},
+                            constants={"a": "0"})
+        sentence = Atom("P", [Function("f", [Constant("a")])])
+        message = verify_model(s, [sentence])
+        assert message is not None
+        assert "could not verify" in message
+        assert "FUNCTIONAL" in message
+
+    def test_arithmetic_name_absent_from_signature_is_naturally_uninterpreted(self):
+        # '+' is excluded from Signature.from_formulas's `functions` section
+        # (the _BUILTIN_FUNCS carve-out -- see fol/signature.py), so a
+        # structure built through structure_from_solution never has an
+        # extension for it either -- this needs no special-case refusal
+        # inside model_eval itself, it is naturally UNINTERPRETED like any
+        # other undeclared symbol (see the module docstring's own account of
+        # why this cannot reopen the tarski.py numeral/cardinality bug).
+        s = FiniteStructure(domain=("0", "1"), extensions={("P", 1): {("0",)}},
+                            constants={"a": "0"})
+        sentence = Atom("P", [Function("+", [Constant("a"), Constant("a")])])
+        message = verify_model(s, [sentence])
+        assert message is not None
+        assert "could not verify" in message
+        assert "function '+'/2" in message
+
+
+def test_signature_with_subsort_edges_is_refused_by_name():
+    """The ASP/CP encoders read only the vocabulary, so a subsort edge would
+    be silently ignored; it is refused, pointing at subsort_axioms."""
+    sig = Signature.from_dict({"predicates": {"P": {"arity": 1}}, "constants": {"a": None},
+                               "sorts": ["Human", "Animal"],
+                               "subsorts": {"Human": ["Animal"]}})
+    with pytest.raises(ValueError, match=r"subsort edges \[\('Human', 'Animal'\)\].*subsort_axioms"):
+        FiniteDomainProblem((Atom("P", [Constant("a")]),), 2, signature=sig)

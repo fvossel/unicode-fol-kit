@@ -48,16 +48,36 @@ emits, plus the listed tolerances):
 * ``%%`` line comments and the ``%implied`` conjecture annotation, both
   anywhere whitespace-flexible; arbitrary whitespace/newlines everywhere.
 
+* Subsorting (``sort S < T``, and the list form ``sort S1, S2 < T``): a
+  DIRECT edge, subset-semantics only (``ext(S) ⊆ ext(T)``) — see
+  :mod:`unicode_fol_kit.fol.signature`'s "Subsorting" docstring section for
+  the exact semantics and why it is deliberately narrower than full CASL
+  order-sorted algebra. Parsed into the returned :class:`CaslSpec`'s
+  :attr:`~unicode_fol_kit.fol.signature.Signature.subsorts`; a cycle across
+  one or more ``sort ... < ...`` declarations is refused with
+  :class:`CaslImportError` naming it (the same check
+  :class:`~unicode_fol_kit.fol.signature.Signature`'s own ``__post_init__``
+  runs, re-wrapped here so every refusal from this module is a
+  ``CaslImportError``).
+
 REFUSED with :class:`CaslImportError` (a specific line number and construct
 name in every message — never silently accepted as if it meant something
-narrower): partial function arrows (``->?``), subsorting (``S < T``), free/
-generated types (``free type``/``generated type``/bare ``type``/``types``
-items), structured-specification constructs inside the one spec body
-(``then``, ``view``, ``given``, ``arch``, ``unit``, …), and operation/
-predicate attributes (``, assoc``, ``, comm``, …). None of these can ever
-appear in ``to_casl_spec`` output, so refusing them costs nothing against the
-round-trip contract below and keeps this parser from silently accepting CASL
-it cannot faithfully turn back into a kit AST.
+narrower): partial function arrows (``->?``), free/generated types (``free
+type``/``generated type``/bare ``type``/``types`` items), structured-
+specification constructs inside the one spec body (``then``, ``view``,
+``given``, ``arch``, ``unit``, …), and operation/predicate attributes
+(``, assoc``, ``, comm``, …) — these still hold with or without a subsort
+declaration in the same spec, since honoring them would need the full
+order-sorted algebra this module deliberately does not attempt (injections,
+casts, overload resolution across a sort hierarchy — see the "Subsorting"
+bullet above). None of these can ever appear in ``to_casl_spec`` output, so
+refusing them costs nothing against the round-trip contract below and keeps
+this parser from silently accepting CASL it cannot faithfully turn back into
+a kit AST. Operation/predicate OVERLOADING (the same name declared twice
+with a different arity/argument-sort profile, subsort-related sorts or not)
+is likewise still refused — not by a subsort-specific check, but because
+:func:`_declare_function`/:func:`_declare_predicate` already refuse ANY
+redeclaration with a conflicting type, subsorting or not.
 
 0-ary operations import as :class:`~unicode_fol_kit.fol.nodes.Constant`, never
 :class:`~unicode_fol_kit.fol.nodes.SortedConstant` — an inherent, documented
@@ -361,6 +381,11 @@ class _Parser:
         self._lexer = lexer
         self.default_sort = default_sort
         self.sorts: set = set()
+        #: child sort name -> the set of DIRECT parent sort names declared
+        #: for it (accumulated across every ``sort ... < ...`` decl item —
+        #: a child can gain further parents from a LATER decl in the same
+        #: spec, e.g. multiple inheritance spread across two lines).
+        self.subsorts: Dict[str, set] = {}
         self.predicates: Dict[str, PredicateDecl] = {}
         self.functions: Dict[str, FunctionDecl] = {}
         self.constants: Dict[str, ConstantDecl] = {}
@@ -479,20 +504,37 @@ class _Parser:
             )
 
     def _parse_sort_decl(self) -> None:
+        """Parse one ``sort``/``sorts`` item: a plain comma-separated name
+        list (``sort S1, S2``), or a subsort declaration (``sort S1, S2 <
+        T``, CASL's ``sort-id-list "<" sort-id`` production — every name in
+        the list becomes a DIRECT subsort of ``T``). The ``<`` can only
+        follow the WHOLE list, matching CASL's own grammar (not after each
+        individual name), so ``sort S < T`` and ``sort S1, S2 < T`` are both
+        supported but ``sort S1 < T1, S2 < T2`` (two subsort decls chained
+        by comma) is not — write those as two separate ``sort ...`` items.
+        """
         self._advance()  # 'sort' | 'sorts'
+        names = []
         while True:
             tok = self._expect("IDENT", "sort name")
             self._check_reserved(tok.value, "sort", tok.line)
-            if self._at("LT"):
-                self._error(
-                    f"subsorting ('{tok.value} < ...') is outside "
-                    "parse_casl_spec's supported grammar"
-                )
-            self.sorts.add(tok.value)
+            names.append(tok.value)
             if self._at("COMMA"):
                 self._advance()
                 continue
             break
+        if self._at("LT"):
+            self._advance()
+            parent_tok = self._expect("IDENT", "supersort name")
+            self._check_reserved(parent_tok.value, "sort", parent_tok.line)
+            parent = parent_tok.value
+            self.sorts.add(parent)
+            for child in names:
+                self.sorts.add(child)
+                self.subsorts.setdefault(child, set()).add(parent)
+            return
+        for name in names:
+            self.sorts.add(name)
 
     def _parse_op_decl(self) -> None:
         self._advance()  # 'op' | 'ops'
@@ -825,27 +867,38 @@ def parse_casl_spec(text: str, *, default_sort: str = "Thing") -> CaslSpec:
     Returns:
         A :class:`CaslSpec` carrying the spec's name, its declared
         :class:`~unicode_fol_kit.fol.signature.Signature` (read directly off
-        the ``sorts``/``ops``/``preds`` declarations, not re-inferred from
-        the formulas), and its axioms/conjectures as kit ASTs.
+        the ``sorts``/``subsorts``/``ops``/``preds`` declarations, not
+        re-inferred from the formulas), and its axioms/conjectures as kit
+        ASTs.
 
     Raises:
         CaslImportError: a construct outside the supported grammar (partial
-            functions, subsorting, free/generated types, structured-spec
+            functions, a subsort cycle, free/generated types, structured-spec
             constructs, operation/predicate attributes, an unrecognized
             token, a malformed op/pred type, a reserved-word identifier, or
-            any other parse failure) — always with a line number and the
-            offending construct named.
+            any other parse failure) — always with a line number (or, for a
+            subsort cycle — detected only once the whole spec is assembled —
+            the cycle itself) named.
     """
     lexer = _Lexer(text)
     parser = _Parser(lexer, default_sort)
     name = parser.parse()
     _validate_usage(parser)
-    signature = Signature(
-        predicates=dict(parser.predicates),
-        functions=dict(parser.functions),
-        constants=dict(parser.constants),
-        sorts=frozenset(parser.sorts),
-    )
+    try:
+        signature = Signature(
+            predicates=dict(parser.predicates),
+            functions=dict(parser.functions),
+            constants=dict(parser.constants),
+            sorts=frozenset(parser.sorts),
+            subsorts={child: frozenset(parents)
+                     for child, parents in parser.subsorts.items()},
+        )
+    except ValueError as e:
+        # Signature.__post_init__'s own subsort-cycle check — re-raised as
+        # this module's own error type so every refusal from parse_casl_spec
+        # is a CaslImportError, never a bare ValueError leaking a different
+        # module's exception type.
+        raise CaslImportError(str(e)) from e
     return CaslSpec(
         name=name,
         signature=signature,

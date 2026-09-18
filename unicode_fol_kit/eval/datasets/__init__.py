@@ -61,6 +61,25 @@ collected machine-readably in :data:`DATASET_INFO`):
   :func:`audit_examples` is vacuous on it;
   :func:`~unicode_fol_kit.eval.datasets.fracas.ace_census` reports, per
   sentence, what APE accepts as controlled English.
+- :mod:`~unicode_fol_kit.eval.datasets.pmb` — PMB (Parallel Meaning Bank): the
+  only adapter with no ready-made NL/FOL pair file — gold FOL is produced by
+  reading each document's own DRS (in SBN notation) through
+  :mod:`unicode_fol_kit.drt`, and a document this subset's grammar cannot
+  parse still yields an example, with the refusal recorded in
+  ``meta["parse_error"]`` rather than dropped.
+- :mod:`~unicode_fol_kit.eval.datasets.pfolio` — P-FOLIO: FOLIO's own
+  entailment labels, joined against a bundled, human-written step-by-step
+  derivation per conclusion (``meta["proof_steps"]``); every join is
+  cross-checked against ``FOLIO.csv``'s own truth value, never merged
+  silently, and a disagreement is refused rather than guessed
+  (:func:`~unicode_fol_kit.eval.datasets.pfolio.pfolio_refusals`).
+- :mod:`~unicode_fol_kit.eval.datasets.logicbench` — LogicBench: 25
+  single-inference-rule reasoning patterns split by logic type
+  (propositional, first-order, non-monotonic), another no-gold-FOL adapter in
+  FraCaS's shape;
+  :func:`~unicode_fol_kit.eval.datasets.logicbench.solve_example` routes a
+  non-monotonic-logic row through :mod:`unicode_fol_kit.semantics.nonmonotonic`
+  instead of a second classical cascade.
 
 Per-dataset helper functions (converters, solvers) deliberately live on
 their OWN modules rather than being re-exported here — two adapters
@@ -102,6 +121,9 @@ from .fracas import load_fracas
 # membership decision: a definition is scored by model-checking it against
 # real molecule structures, so score_definition lives here beside the loader.
 from .c3po import load_c3po, score_definition, DefinitionScore
+from .pmb import load_pmb
+from .pfolio import load_pfolio
+from .logicbench import load_logicbench
 
 __all__ = [
     "DatasetExample", "DATASET_INFO", "audit_examples",
@@ -110,4 +132,5 @@ __all__ = [
     "load_proofwriter", "load_proofwriter_structured",
     "load_logicnli", "load_proverqa", "load_fracas",
     "load_c3po", "score_definition", "DefinitionScore",
+    "load_pmb", "load_pfolio", "load_logicbench",
 ]

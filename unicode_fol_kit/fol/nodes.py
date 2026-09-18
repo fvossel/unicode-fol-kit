@@ -73,9 +73,12 @@ from ._msfl_nodes import (
     eta_reduce, beta_eta_normalize,
     resolve_lambda_scope,
     to_fol,
+    nonempty_sort_axioms,
+    subsort_axioms,
 )
 from ._modal_nodes import (
     Box, Diamond, Knows, Believes, Says, Wants,
+    EverybodyKnows, DistributedKnowledge, CommonKnowledge,
     Always, Eventually, Next, Until,
     Historically, Once, Previous, Since,
     Obligatory, Permitted,
@@ -83,7 +86,7 @@ from ._modal_nodes import (
     Announce, AnnounceDiamond,
 )
 from ._so_nodes import SecondOrderQuantifier
-from ._hybrid_nodes import Nominal, At
+from ._hybrid_nodes import Nominal, At, Down
 from ._team_nodes import Dependence, SlashedExists
 from ._linear_nodes import (
     Tensor, With, OPlus, LinearImplies, OfCourse, One, Top, Zero,
@@ -97,6 +100,12 @@ from ._ho_nodes import (
     PredicateTerm, Signatures, analyse_signatures, MixedSlotError,
     _clone_parser_ops,
 )
+# PARSER_OPS/ParserOp/parser_ops_for_mode: needed below by
+# _clone_parser_ops_sorted, the exclusion-aware sibling of _ho_nodes'
+# _clone_parser_ops that assembles the two new SORTED+modal/second-order
+# grammar modes (see that function's docstring for why plain _clone_parser_ops
+# is not enough here).
+from ._fol_nodes import PARSER_OPS, ParserOp, parser_ops_for_mode
 
 # The two third-order grammar modes are their base modes' operator sets over a
 # widened argument layer, so they are assembled by CLONING rather than by
@@ -106,6 +115,83 @@ from ._ho_nodes import (
 # point in this file, they all have.
 _clone_parser_ops("third_order", ["second_order"])
 _clone_parser_ops("third_order_modal", ["modal", "second_order"])
+
+
+# =========================
+# many_sorted + modal / second_order grammar modes (C3)
+# =========================
+#
+# "modal_sorted" (MSFLParser(modal=True, many_sorted=True)) and "so_sorted"
+# (MSFLParser(second_order=True, many_sorted=True)) are assembled the same
+# CLONING way the third-order modes above are -- but plain _clone_parser_ops
+# is not quite enough here, for a reason the third-order clones never hit:
+# "modal" and "second_order" each register the UNSORTED individual quantifier
+# (Quantifier, rule alias "quantifier_") and the unsorted counting quantifier
+# (Count, "count_"), while "msfol" registers the SORTED equivalents
+# (SortedQuantifier "sorted_quantifier_", SortedCount "sorted_count_") under
+# DIFFERENT rule aliases / grammar fragments. _clone_parser_ops's dedup key is
+# (level, rule_alias, grammar, only_name) -- since the sorted and unsorted
+# forms differ on every one of those, a bare clone of ["modal", "msfol"]
+# would keep BOTH, so ``MSFLParser(modal=True, many_sorted=True)`` would
+# accept an UNSORTED ``∀x P(x)`` right alongside ``∀x:S P(x)`` -- silently
+# reintroducing the unsorted quantifier many_sorted is supposed to forbid
+# (exactly like plain "msfol" forbids it today). _clone_parser_ops_sorted
+# below is _ho_nodes._clone_parser_ops with one addition: ops whose rule_alias
+# names an unsorted binder are skipped, so the sorted mode ends up with
+# EXACTLY "msfol"'s quantifier/count/constant/cardinality forms plus every
+# modal / second-order operator, and nothing double-registered (the classical
+# connectives and Contrast register identically -- same level/rule_alias/
+# grammar/only_name -- for "modal"/"second_order" and "msfol", so the
+# ordinary dedup already collapses those to one copy each).
+_UNSORTED_BINDER_ALIASES = frozenset({"quantifier_", "count_"})
+
+
+def _clone_parser_ops_sorted(target: str, sources) -> None:
+    """Like ``_ho_nodes._clone_parser_ops(target, sources)``, but never clones
+    an unsorted quantifier/counting-quantifier binding (see the module comment
+    above). ``sources`` should list the SORTED source mode ("msfol") before
+    the modal/second-order one, so a genuine grammar conflict — should one
+    ever appear — is reported against the sorted form's own shape first;
+    today no such conflict exists, since every non-binder op the two source
+    modes share registers identically and is deduped as usual.
+    """
+    seen = set()
+    for source in sources:
+        for op in parser_ops_for_mode(source):
+            if op.rule_alias in _UNSORTED_BINDER_ALIASES:
+                continue
+            key = (op.level, op.rule_alias, op.grammar, op.only_name)
+            if key in seen:
+                continue
+            seen.add(key)
+            PARSER_OPS.append(ParserOp(
+                target, op.level, op.terminal_name, op.terminal_def,
+                op.grammar, op.rule_alias, op.transform, op.node_class,
+                op.only_name))
+
+
+_clone_parser_ops_sorted("modal_sorted", ["msfol", "modal"])
+_clone_parser_ops_sorted("so_sorted", ["msfol", "second_order"])
+
+# build_grammar (fol/_fol_nodes.py) also needs two pieces of per-mode
+# configuration that are NOT operator-specific and therefore not covered by
+# PARSER_OPS cloning above: whether SORT is a recognised terminal / bare
+# constants must carry a sort annotation (_SORTED_MODES), and the terminal
+# import list (_MODE_TERMINAL_IMPORTS, indexed with `[mode]` -- a missing key
+# is a hard KeyError). Both live in fol/_fol_nodes.py, which this change does
+# not own/edit; they are extended here, at runtime, the same way
+# _clone_parser_ops_sorted above extends PARSER_OPS (another registry that
+# also lives in _fol_nodes.py) -- module-level registries, not the module's
+# own source, so this is additive rather than a hack around ownership. Every
+# other mode-keyed dict build_grammar reads (_MODE_TERM_EXTRA,
+# _MODE_ATOM_ARGS, _MODE_ATOM_EXTRA) is read with ``.get(mode, default)``, so
+# the two sorted modes correctly fall back to "no extra term form" / "plain
+# termlist" / "no extra atom form" without needing an entry.
+from . import _fol_nodes as _fn  # noqa: E402  (after the registrations above)
+
+_fn._SORTED_MODES = _fn._SORTED_MODES | {"modal_sorted", "so_sorted"}
+_fn._MODE_TERMINAL_IMPORTS.setdefault("modal_sorted", _fn._MODE_TERMINAL_IMPORTS["modal"])
+_fn._MODE_TERMINAL_IMPORTS.setdefault("so_sorted", _fn._MODE_TERMINAL_IMPORTS["second_order"])
 
 __all__ = [
     "Z3Env",
@@ -118,7 +204,7 @@ __all__ = [
     "node_at", "replace_at",
     "SortedQuantifier", "SortedConstant",
     "SortedCount", "SortedCardinality",
-    "Nominal", "At",
+    "Nominal", "At", "Down",
     "Dependence", "SlashedExists",
     "Tensor", "With", "OPlus", "LinearImplies", "OfCourse", "One", "Top", "Zero",
     "Product", "Under", "Over",
@@ -127,6 +213,7 @@ __all__ = [
     "LukNegation", "LukImplication", "LukEquivalence",
     "LambdaVar", "Lambda", "Application",
     "Box", "Diamond", "Knows", "Believes", "Says", "Wants",
+    "EverybodyKnows", "DistributedKnowledge", "CommonKnowledge",
     "Always", "Eventually", "Next", "Until",
     "Historically", "Once", "Previous", "Since",
     "Obligatory", "Permitted",
@@ -138,4 +225,6 @@ __all__ = [
     "eta_reduce", "beta_eta_normalize",
     "resolve_lambda_scope",
     "to_fol",
+    "nonempty_sort_axioms",
+    "subsort_axioms",
 ]

@@ -26,6 +26,7 @@ Three things hold across the whole kit:
 | Truth table (classical / K3 / LP) | `truth_table`, `is_tautology`, `is_contradiction`, `is_satisfiable_tt` | `TruthTable` / bool | decidable; propositional only |
 | Finite-valued matrix / Belnap–Dunn FDE consequence | `TruthMatrix` (`semantics.matrix`); `K3_MATRIX`, `LP_MATRIX`, `FDE_MATRIX` | matrix verdicts | decidable; propositional, any finite matrix |
 | Intuitionistic validity (prop. or first-order) | `int_valid`, `int_countermodel` | bool / `IntKripkeModel` | decidable propositionally; bounded Kripke search for quantifiers |
+| Decide intuitionistic / Lambek / ILL / relevant / hybrid logic through the same uniform `Verdict` every other route uses | `api.prove(f, logic="intuitionistic"\|"lambek"\|"ill"\|"relevant"\|"hybrid")` (lambek/ill/hybrid also auto-detected from syntax) | `Verdict` | per-logic: G4ip decision procedure (intuitionistic) · Lambek's own complete decision procedure (order-sensitive) · ILL's !-free-complete / bounded search · B's bounded countermodel search (never PROVED) · H(@)'s standard-translation-to-Z3 decision |
 | Evaluate truth in a structure | `satisfies` (FOL/MSFOL), `satisfies_so`/`holds` (SO), `satisfies_modal` (modal) | bool | direct Tarskian / Kripke / finite SO semantics |
 | Same, on a LARGE structure from real data | `evaluate_in_structure`, `evaluate_detailed` over `FiniteStructure` ({doc}`model-checking`) | bool / `EvalResult` | index-driven, no normal form; computed predicates; budget exhausts to UNKNOWN, never False |
 | Turn a molecule into a structure | `chem.mol_to_structure`, `chem.parse_chemlog_tptp` | `FiniteStructure` / Node | needs the `[chem]` extra (RDKit); atoms are individuals |
@@ -207,6 +208,26 @@ int_valid(parse("¬¬(P ∨ ¬P)"))      # → True   (its double negation is)
 int_countermodel(parse("¬¬P → P")) is not None   # → True  (DNE fails — countermodel found)
 ```
 
+### I want to … decide a substructural or non-classical logic through the same `Verdict` as everything else
+
+`api.prove(..., logic=...)` routes to one of five per-logic backends (`atp.logic_backends`), each honoring its own logic's soundness/completeness boundary rather than sharing one shape: intuitionistic and relevant reuse the plain classical AST and need `logic=` given explicitly (nothing marks them syntactically); Lambek, ILL, and hybrid have their own unambiguous node types, so `logic="auto"` (the default) finds them on its own.
+
+```python
+from unicode_fol_kit import api, MSFLParser, Under
+
+lam = MSFLParser(lambek=True).parse
+A, B = lam("A"), lam("B")
+v = api.prove(B, premises=[A, Under(A, B)])       # order-sensitive; auto-detected as lambek
+print(v.status, v.backend)                         # proved lambek
+
+hyb = MSFLParser(modal=True).parse
+v2 = api.prove(hyb("@i i"))                        # auto-detected as hybrid, not modal
+print(v2.status, v2.backend)                       # proved hybrid
+
+v3 = api.prove(api.parse_any("P → P").formula, logic="intuitionistic")  # must be explicit
+print(v3.status, v3.backend)                        # proved intuitionistic
+```
+
 ### I want to … evaluate truth in a structure I built
 
 `satisfies` evaluates a closed FOL/MSFOL formula in a hand-built `Structure`; `satisfies_so` / `holds` do the second-order case; `satisfies_modal` evaluates against a `KripkeModel`.
@@ -277,8 +298,10 @@ is_valid_resolution(Implies(psi, parse("P(a) → Q(a)")))   # → True
 | Fuzzy (FL) | `fuzzy=True` | weak ∧ ∨, strong ⊗ ⊕, Łuk ¬ → ↔ | `fuzzy_evaluate()` | `fuzzy_is_valid` / `fuzzy_is_satisfiable` (Z3 reals); Łukasiewicz / Gödel / product t-norms |
 | Many-sorted fuzzy (MSFL) | `many_sorted=True, fuzzy=True` | sorts + Łukasiewicz | `fuzzy_evaluate()` | `fuzzy_*` (Z3 reals); `to_msfol()` lowers to classical |
 | Modal / temporal / epistemic / deontic | `modal=True` | □ ◇, K_a B_a, Ⓖ Ⓕ Ⓝ Ⓤ, Ⓞ Ⓟ (+ past-tense ⒣ ⒫ ⒴ ⒮) | `satisfies_modal()` | native modal tableau (`is_modal_valid` / `modal_decide`); `standard_translation()` → Z3/resolution; `qml_is_valid`; Fitch (K/T/S4/S5, prop.) |
+| Many-sorted modal | `modal=True, many_sorted=True` | the modal family above, over sorted `∀x:S`/`c:S` | `satisfies_modal()` (sorts world-relative, not rigid — see {doc}`modal`) | `qml_is_valid`, `to_isabelle_modal`, `to_thf_modal_full` (all three assume per-world non-emptiness of every sort, so they agree with `api.prove` on a modal-free sorted schema) |
 | Many-valued K3 / LP / FDE | `MSFLParser()` + `logic=` / `semantics.matrix` | classical syntax over {0, ½, 1} / four-valued | `kleene_value()`; `TruthMatrix` | `truth_table`, three-valued `is_valid`; `K3_MATRIX` / `LP_MATRIX` / `FDE_MATRIX`; Fitch under `logic="K3"`/`"LP"` |
 | Second-order | `second_order=True` | ∀P ∃P over predicate vars | `satisfies_so()` / `holds()` | `satisfies_so` on finite models; `so_is_valid_finite` / `so_find_model` (bounded search); LK (`∀²`/`∃²`). Rejects `to_z3`/`to_prover9`/`to_tptp` |
+| Many-sorted second-order | `second_order=True, many_sorted=True` | ∀P ∃P (unsorted) over sorted `∀x:S`/`c:S` individuals | `satisfies_so()` | `satisfies_so` on finite (sorted) models |
 | Intuitionistic | `MSFLParser()` + intuitionistic tools | classical syntax | `IntKripkeModel.forces()` | `int_valid` / `int_countermodel` (decidable prop.; bounded first-order search); LJ (`check_lj_proof`) |
 | Description logic ALC | `unicode_fol_kit.dl` | ⊤ ⊥, ¬ ⊓ ⊔, ∃r.C ∀r.C | concept/ABox interpretations | `concept_satisfiable` / `subsumes` / `equivalent` / `abox_consistent` (tableau) |
 | Free / dynamic-epistemic / counterfactual / circumscriptive | `semantics.free_logic`, `semantics.dynamic_epistemic`, `semantics.conditional`, `semantics.nonmonotonic` | logic-specific | per-module model classes | free-logic evaluation, public-announcement (PAL) updates, Lewis-sphere counterfactuals, circumscriptive non-monotonic entailment |
@@ -376,15 +399,15 @@ isinstance(thf, str) and "thf" in thf   # → True   (a TPTP THF problem ready f
 
 ## Composing parser modes
 
-The four core parser modes form the `many_sorted` × `fuzzy` 2×2; the **modal** and **second-order** modes are each "classical unsorted FOL + one extension" and do not combine with sorts, fuzziness, or each other. The **third-order** mode is the one that does combine: it CONTAINS second-order syntax (and so refuses to be asked for alongside it) and takes `modal=True` on top, which is how third-order modal logic is reached. The **dependence**, **linear**, and **lambek** modes are standalone logics (their connectives and semantics replace the classical ones), so they combine with nothing. The constructor rejects an unsupported combination with a clear `ValueError`. (The matrix, ALC, intuitionistic, relevant, and peripheral logics are separate subsystems, not parser flags.)
+The four core parser modes form the `many_sorted` × `fuzzy` 2×2; the **modal** and **second-order** modes are each "FOL + one extension" and now ALSO combine with sorts (`many_sorted=True`: sorted quantifiers/constants under modal operators, or under second-order predicate quantification — see {doc}`modal`'s "Many-sorted modal logic" section), but not with fuzziness or with each other. The **third-order** mode is the one that combines with modal but not with sorts: it CONTAINS second-order syntax (and so refuses to be asked for alongside it), takes `modal=True` on top (how third-order modal logic is reached), but stays refused with `many_sorted=True` — how a sort interacts with third-order's individual-vs-property "slot" inference is a separate, open design question. The **dependence**, **linear**, and **lambek** modes are standalone logics (their connectives and semantics replace the classical ones), so they combine with nothing. The constructor rejects an unsupported combination with a clear `ValueError`. (The matrix, ALC, intuitionistic, relevant, and peripheral logics are separate subsystems, not parser flags.)
 
 | Combine… | with sorts | with fuzzy | with modal | with second-order | with third-order |
 |---|---|---|---|---|---|
 | **base FOL** | ✅ MSFOL | ✅ FL | ✅ modal | ✅ second-order | ✅ third-order |
-| **sorts** | — | ✅ MSFL | ❌ | ❌ | ❌ |
+| **sorts** | — | ✅ MSFL | ✅ sorted modal | ✅ sorted second-order | ❌ |
 | **fuzzy** | ✅ MSFL | — | ❌ | ❌ | ❌ |
-| **modal** | ❌ | ❌ | — | ❌ | ✅ third-order modal |
-| **second-order** | ❌ | ❌ | ❌ | — | ❌ (contained in it) |
+| **modal** | ✅ sorted modal | ❌ | — | ❌ | ✅ third-order modal |
+| **second-order** | ✅ sorted second-order | ❌ | ❌ | — | ❌ (contained in it) |
 | **third-order** | ❌ | ❌ | ✅ third-order modal | ❌ (contains it) | — |
 
 ## The frontier families

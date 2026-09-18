@@ -1,0 +1,34 @@
+{
+  "type": "non_monotonic_logic",
+  "axiom": "default_reasoning_default",
+  "samples": [
+    {
+      "id": 1,
+      "context": "Jenny and Anna are known for their tall stature, which is often associated with playing basketball. However, Anna might be an exception to this norm.",
+      "qa_pairs": [
+        {
+          "question": "does this entail that jenny plays basketball?",
+          "answer": "yes"
+        },
+        {
+          "question": "does this mean that jenny doesn't play basketball?",
+          "answer": "no"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "context": "Block A and Block B are both heavy objects that are typically found on the table. However, there is a possibility that Block A might not follow this usual convention. It is important to note this exception.",
+      "qa_pairs": [
+        {
+          "question": "Does the context imply that B is on the table?",
+          "answer": "yes"
+        },
+        {
+          "question": "Does the context imply that B is not on the table?",
+          "answer": "no"
+        }
+      ]
+    }
+  ]
+}

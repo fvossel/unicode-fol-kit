@@ -33,9 +33,9 @@ print(is_valid(phi))   # True
   registry). Every result has a JSON-compatible `to_dict()`, and the API carries an
   explicit stability policy.
 - **An MCP server out of the box.** `pip install unicode-fol-kit[mcp]`, then
-  `python -m unicode_fol_kit.mcp` exposes the toolkit as twenty-eight Model
-  Context Protocol tools (22 general-purpose plus 6 for chemistry) — any
-  MCP client (Claude Code/Desktop, agent
+  `python -m unicode_fol_kit.mcp` exposes the toolkit as thirty-seven Model
+  Context Protocol tools (23 general-purpose, 6 for chemistry, 8 for
+  description logic) — any MCP client (Claude Code/Desktop, agent
   frameworks, editors) can parse, prove, diagnose and translate without
   writing Python; the repair loop inverts naturally (the client LLM is the
   fixer). An error-analysis layer comes along: prediction-vs-gold
@@ -70,7 +70,7 @@ print(is_valid(phi))   # True
   independent probabilistic facts under Sato's distribution semantics —
   every result an exact `Fraction`, every unsupported fragment a loud
   refusal.
-- **Seventeen prover backends, one honest `Verdict`.** The kit's own calculi and
+- **Twenty-five prover backends, one honest `Verdict`.** The kit's own calculi and
   semantic searches (resolution — with sound paramodulation/demodulation for
   equality, no hand-supplied congruence axioms needed —, analytic tableaux
   with recorded, independently checkable proof objects, modal tableau, finite
@@ -167,7 +167,10 @@ Requires Python 3.10+. Z3 ships with the package. `pip install
 "unicode-fol-kit[cvc5]"` adds cvc5 as a second in-process SMT backend (it then
 joins the default proving chain right after Z3); `[mcp]` adds the MCP server
 (`python -m unicode_fol_kit.mcp`); `[hf]` adds the HuggingFace-`evaluate`
-metric wrapper. Prover9, Vampire, E, Zipperposition, Twee, nanoCoP-M
+metric wrapper; `[owl]` adds owlready2, so `dl.owl_reasoner` can hand a
+description-logic problem to HermiT (needs a JVM on `PATH`) and decide the
+inverse roles and nominals the in-house tableau refuses by name — note that
+owlready2 is LGPL-3.0-or-later, unlike this MIT-licensed kit. Prover9, Vampire, E, Zipperposition, Twee, nanoCoP-M
 (needs your own ECLiPSe/SWI-Prolog install; `$UFK_NANOCOP_CMD`), and
 Isabelle are optional external tools you install separately to unlock the
 corresponding backends, and the HETS backend wants Docker (`docker pull
@@ -187,7 +190,7 @@ as unavailable rather than silently disappearing.
 | Intuitionistic | `int_valid` / `int_countermodel` | propositional **decision procedure** (`int_prove`/`int_decide`, G4ip) + bounded first-order Kripke search; LJ checker |
 | Second-order | `MSFLParser(second_order=True)` | `satisfies_so`, bounded `so_is_valid_finite` / `so_find_countermodel` |
 | Third-order (incl. modal) | `MSFLParser(third_order=True[, modal=True])` | a predicate whose ARGUMENT is a property (`Pos(G)`, `Pos(λx. ¬G(x))`); slot types inferred across a theory; `to_thf_to` / `to_isabelle_to` and the shallow modal embedding `hol.ho_modal`; `hol.goedel` checks Gödel's ontological argument both ways |
-| Description logic **ALC** | `unicode_fol_kit.dl` | `concept_satisfiable` / `subsumes` / `abox_consistent` (tableau, TBox + ABox); `parse_concept`/`parse_gci` plus `concept_to_fol`/`tbox_to_fol`/`abox_to_fol` reuse the FOL provers and Isabelle/THF exports |
+| Description logic **ALCHQ** | `unicode_fol_kit.dl` | `concept_satisfiable` / `subsumes` / `abox_consistent` (tableau, TBox + ABox, role hierarchies + transitive roles, qualified number restrictions `AtLeast`/`AtMost` on simple roles); `parse_concept`/`parse_gci`/`parse_manchester` plus `concept_to_fol`/`tbox_to_fol`/`rbox_to_fol`/`abox_to_fol` reuse the FOL provers (Z3's `Count` expansion for the number restrictions) and Isabelle/THF exports |
 | Free · public-announcement · counterfactual · circumscription | `semantics.free_logic` / `dynamic_epistemic` / `conditional` / `nonmonotonic` | `free_is_valid`/`free_entails` (bounded search); `[φ!]ψ`/`⟨φ!⟩ψ` parse in modal mode and decide via `reduce_announcements`; `cf_valid` over Lewis V / VW / VC (`centering=`, default weakly centered); `minimal_entails` and the unbounded `circumscription_entails_so` |
 | Hybrid **H(@)** (nominals, `@i φ`) | `MSFLParser(modal=True)` | `KripkeModel(nominals=…)`, `hybrid_is_valid` per frame (standard translation + Z3) |
 | Relevant logic **B** | classical syntax + `semantics.relevant` | `rel_valid` / `rel_countermodel` (Routley–Meyer, bounded exhaustive search); `isabelle_decide_relevant` certifies both directions |
@@ -199,7 +202,8 @@ With a local **Isabelle** installed, the `hol` subpackage's shallow embeddings b
 actually run the prover, and `hol.isabelle_substructural` replays a Python-found
 ILL/Lambek derivation as a machine-checked lemma. The `hol.deepshallow` subpackage goes
 further, emitting — for propositional modal, intuitionistic, Lewis-conditional and
-relevant logic — the **deep, maximal-shallow and minimal-shallow** embeddings side by
+relevant logic, plus a Tier 2 quantified fragment (K frame, constant domain, alethic
+□/◇ only) — the **deep, maximal-shallow and minimal-shallow** embeddings side by
 side with **machine-checked faithfulness proofs** between them (Benzmüller,
 arXiv:2502.19311), verified end to end by Isabelle. See
 the [higher-order guide](https://unicode-fol-kit.readthedocs.io/en/latest/guide/higher-order.html).

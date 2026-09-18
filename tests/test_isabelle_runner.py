@@ -175,3 +175,65 @@ def test_modal_axiom_names_per_frame():
     assert modal_axiom_names(Box(p), frame="T") == ["r_refl"]
     assert modal_axiom_names(Box(p), frame="S4") == ["r_refl", "r_trans"]
     assert set(modal_axiom_names(Box(p), frame="S5")) == {"r_refl", "r_trans", "r_sym"}
+
+
+# --------------------------------------------------------------------------- #
+# Equality reading of the classical FOL route.
+# --------------------------------------------------------------------------- #
+
+def _capture_theories(monkeypatch, prove_ok: bool):
+    """Replace check_theory with a recorder; the prove step succeeds iff ``prove_ok``."""
+    seen = []
+
+    def fake_check_theory(theory_text, theory_name, **kwargs):
+        seen.append(theory_text)
+        ok = prove_ok if len(seen) == 1 else True
+        return R.BuildResult(ok=ok, exit_code=0 if ok else 1, output="",
+                             theory_name=theory_name, session="S", elapsed=0.0)
+
+    monkeypatch.setattr(R, "check_theory", fake_check_theory)
+    return seen
+
+
+_DUMMY_INSTALL = IsabelleInstall(home="X", is_windows=False, isabelle_exe="X/bin/isabelle")
+
+
+def test_decide_fol_native_equality_reaches_both_theories(monkeypatch):
+    from unicode_fol_kit.fol.nodes import Quantifier, Variable
+    x = Variable("x")
+    refl = Quantifier("∀", x, Atom("=", [x, x]))
+    seen = _capture_theories(monkeypatch, prove_ok=False)
+    v = isabelle_decide_fol(refl, native_equality=True, install=_DUMMY_INSTALL)
+    assert v.status == INVALID                     # the fake nitpick build "succeeded"
+    assert len(seen) == 2                          # prove theory, then nitpick theory
+    for thy in seen:
+        assert "feq" not in thy and "(x = x)" in thy
+
+
+def test_decide_fol_default_keeps_uninterpreted_equality(monkeypatch):
+    from unicode_fol_kit.fol.nodes import Quantifier, Variable
+    x = Variable("x")
+    seen = _capture_theories(monkeypatch, prove_ok=True)
+    isabelle_decide_fol(Quantifier("∀", x, Atom("=", [x, x])), install=_DUMMY_INSTALL)
+    assert "feq" in seen[0]
+
+
+def test_isabelle_backend_decides_fol_with_native_equality(monkeypatch):
+    # api.prove(backends=["isabelle"]) promises the kit's semantics, where "=" is
+    # identity; with uninterpreted feq, "∀x (x = x)" came back REFUTED.
+    from unicode_fol_kit.atp.protocol import get_backend, REFUTED
+    from unicode_fol_kit.fol.nodes import Quantifier, Variable
+    calls = []
+
+    def fake_decide_fol(goal, **options):
+        calls.append(options)
+        return FolVerdict(status=INVALID)
+
+    monkeypatch.setattr(R, "isabelle_decide_fol", fake_decide_fol)
+    x = Variable("x")
+    backend = get_backend("isabelle")
+    verdict = backend.decide(Quantifier("∀", x, Atom("=", [x, x])), card="1-2")
+    assert verdict.status == REFUTED               # the fake's verdict, mapped through
+    assert calls == [{"native_equality": True, "card": "1-2"}]
+    with pytest.raises(ValueError, match="native_equality=False"):
+        backend.decide(Quantifier("∀", x, Atom("=", [x, x])), native_equality=False)

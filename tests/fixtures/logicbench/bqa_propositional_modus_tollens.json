@@ -1,0 +1,34 @@
+{
+  "type": "propositional_logic",
+  "axiom": "modus_tollens",
+  "samples": [
+    {
+      "id": 1,
+      "context": "Liam had finished his work early for the day, which meant that he would typically have ordered pizza for dinner. However, on this particular day, he decided against ordering pizza and opted for something else instead.",
+      "qa_pairs": [
+        {
+          "question": "Does this imply that liam didn't finish his work early?",
+          "answer": "yes"
+        },
+        {
+          "question": "Does this entail that liam finished his work early?",
+          "answer": "no"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "context": "Isabella had been working hard on her project, knowing that if she finished it on time, she would receive a bonus from her company. However, despite her efforts, Isabella realized that she wouldn't be receiving a bonus as she had hoped.",
+      "qa_pairs": [
+        {
+          "question": "Does this entail that isabella didn't finish her project on time?",
+          "answer": "yes"
+        },
+        {
+          "question": "Does this infer that isabella finished her project on time?",
+          "answer": "no"
+        }
+      ]
+    }
+  ]
+}

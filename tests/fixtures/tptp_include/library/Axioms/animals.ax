@@ -1,0 +1,6 @@
+% Axioms/animals.ax -- a tiny hand-written "TPTP library" fixture, addressed
+% by root-relative path (include('Axioms/animals.ax')), never by a path
+% relative to whatever problem file refers to it -- see
+% tests/test_tptp_include.py's search_paths-tier test.
+fof(dog_is_animal, axiom, ![X]: (dog(X) => animal(X))).
+fof(rex_is_dog, axiom, dog(rex)).

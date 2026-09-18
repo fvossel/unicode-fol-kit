@@ -1,0 +1,4 @@
+%%% generated
+dog.n.01                % The dog [0-3]
+  NEGATION <1           %
+bark.v.01 Agent -1      % barks   [8-13]

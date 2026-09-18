@@ -22,6 +22,35 @@ undecidable, and some non-theorems such as the double-negation shift have only i
 counter-models, being valid in every finite model). Every intuitionistic validity is
 also classically valid, which the test-suite cross-checks.
 
+**Many-sorted formulas** (``SortedQuantifier``, ``∀x:S φ`` / ``∃x:S φ``) are decided by
+delegating ONCE, at the top of :func:`int_valid` / :func:`int_countermodel`, to the same
+``_relativize`` reduction :mod:`unicode_fol_kit.fol.to_fol` uses (``∀x:S φ`` → ``∀x (S(x)
+→ φ)``, ``∃x:S φ`` → ``∃x (S(x) ∧ φ)``) — done ONCE for the WHOLE formula, rather than
+node-by-node inside the search, so a ``SortedConstant`` anywhere in the formula (not only
+one directly under a ``SortedQuantifier``) is also turned into a plain ``Constant`` before
+:func:`_fo_countermodel` scans for constants/predicates. The sort guard ``S(x)`` becomes an
+ordinary atom, forced exactly like any other predicate — and every atom's valuation in this
+module is already required to be MONOTONE (up-closed along the order, see
+:func:`_upclosed_subsets` / :func:`_monotone_valuations`), so a sort is "stage-stable" (once
+forced, stays forced at every later stage) but not fully rigid (an individual need not
+already be of sort ``S`` at the initial stage) — the natural reading given the module's
+existing atom semantics, and the same "world/stage-relative, not rigid" choice
+:func:`~unicode_fol_kit.semantics.kripke.satisfies_modal` makes for the modal routes.
+
+Non-emptiness: the classical many-sorted routes (``api.prove`` et al.) always assume every
+sort is non-empty, by adding :func:`~unicode_fol_kit.fol._msfl_nodes.nonempty_sort_axioms`
+as extra premises — without the matching assumption here, a schema like ``∀x:S P(x) →
+∃x:S P(x)`` would come out intuitionistically INVALID (a countermodel with ``S`` empty
+everywhere) while being classically valid, which is the "bare relativisation is
+inconsistent with the classical routes" trap the sort-guard-relativisation approach
+warns about. So :func:`int_valid` / :func:`int_countermodel` fold those same non-emptiness
+sentences in as EXTRA PREMISES — checking ``⋀nonempty_axioms → relativised-formula`` — the
+standard "no separate premise list" trick, sound both classically and intuitionistically
+for a FINITE premise set (the deduction theorem holds in both). A many-sorted formula's
+:func:`int_valid` / :func:`int_countermodel` verdict therefore agrees with
+``api.prove``/Z3's on any MODAL-FREE sorted formula the propositional-or-bounded-first-order
+fragments both decide — see ``tests/test_sorted_modal.py``.
+
 Public API: :class:`IntKripkeModel`, :func:`int_valid`, :func:`int_countermodel`.
 """
 
@@ -34,23 +63,77 @@ from ..fol.nodes import (
     Constant, Function, substitute,
 )
 from ..fol._so_nodes import SecondOrderQuantifier
+from ..fol._msfl_nodes import nonempty_sort_axioms
 
 
 def _is_propositional(formula: Node) -> bool:
-    """True iff ``formula`` has no quantifier (the decidable propositional fragment)."""
+    """True iff ``formula`` has no quantifier (the decidable propositional fragment).
+
+    Checks for ``SortedQuantifier`` too, even though ``int_valid``/
+    ``int_countermodel`` always relativize a many-sorted formula away (see
+    :func:`_prepare_many_sorted`) before this is ever called on it from those
+    two entry points -- so in practice this branch never fires there. It is
+    kept anyway: a caller may run this directly on a formula that still has
+    its ``SortedQuantifier`` nodes, and it must answer correctly there too.
+    """
     return not any(
         isinstance(node, (Quantifier, SortedQuantifier, SecondOrderQuantifier))
         for node in formula.walk())
 
 
+def _prepare_many_sorted(formula: Node) -> Node:
+    """Relativize a many-sorted formula ONCE, for the search entry points.
+
+    ``int_valid``/``int_countermodel`` call this before anything else. Two
+    things happen together, both needed for the search to agree with the
+    classical many-sorted routes on a many-sorted formula (see the module
+    docstring's "Many-sorted formulas" section):
+
+    1. The WHOLE formula is relativized in one pass (``formula._relativize([])``
+       — the same reduction :func:`~unicode_fol_kit.fol.to_fol` uses), not
+       node-by-node during the search. Doing it once, up front, also turns a
+       ``SortedConstant`` occurring ANYWHERE in the formula (not only directly
+       under a ``SortedQuantifier``) into a plain ``Constant`` before
+       :func:`_fo_countermodel` scans the formula for its constants — a
+       per-node fix inside the search would miss that case.
+    2. The MSFOL non-emptiness convention every classical route assumes
+       (:func:`~unicode_fol_kit.fol._msfl_nodes.nonempty_sort_axioms`, added
+       there as extra premises) is folded in here as an extra premise too —
+       checking ``⋀nonempty-axioms → relativized-formula`` in place of the
+       bare relativized formula. Sound both classically and intuitionistically
+       for a finite premise set (the deduction theorem holds in both), and it
+       is what makes e.g. ``∀x:S P(x) → ∃x:S P(x)`` agree with the classical
+       Z3 verdict here instead of finding an empty-``S`` countermodel.
+
+    Returns ``formula`` UNCHANGED (same object, not even copied) when it has
+    no many-sorted node at all — ``nonempty_sort_axioms`` returning nothing IS
+    exactly "no ``SortedQuantifier``/``SortedConstant``/``SortedCount``/
+    ``SortedCardinality`` anywhere in it" (the same four types
+    ``_relativize`` would otherwise eliminate), so every call site that never
+    used many_sorted sees byte-identical behaviour to before this existed.
+    """
+    axioms = nonempty_sort_axioms(formula)
+    if not axioms:
+        return formula
+    relativized = formula._relativize([])
+    hyp = axioms[0]
+    for ax in axioms[1:]:
+        hyp = And(hyp, ax)
+    return Implies(hyp, relativized)
+
+
 def _reject_second_order(formula: Node) -> None:
-    """Reject a second-order quantifier / sorted quantifier in the FO search."""
+    """Reject a second-order quantifier or a function term in the FO search.
+
+    A sorted quantifier/constant needs no rejection here any more: by the
+    time :func:`_fo_countermodel` calls this, ``int_valid``/
+    ``int_countermodel`` have already relativized it away (see
+    :func:`_prepare_many_sorted`), so it is an ordinary (unsorted)
+    first-order formula.
+    """
     for node in formula.walk():
         if isinstance(node, SecondOrderQuantifier):
             raise ValueError("intuitionistic: second-order quantifiers are not supported.")
-        if isinstance(node, SortedQuantifier):
-            raise ValueError(
-                "intuitionistic: sorted quantifiers are not supported; use plain ∀x/∃x.")
         if isinstance(node, Function):
             raise ValueError(
                 "intuitionistic: function terms are not supported in the first-order "
@@ -262,7 +345,12 @@ def int_countermodel(formula: Node, max_worlds: int = 3,
     ``max_steps`` valuations): a returned model genuinely refutes validity, but
     ``None`` only means "no counter-model within the bounds" — first-order
     intuitionistic logic is undecidable.
+
+    Many-sorted (``∀x:S`` / ``∃x:S``): relativized and given the classical
+    non-emptiness assumption before the search runs — see
+    :func:`_prepare_many_sorted` and the module docstring.
     """
+    formula = _prepare_many_sorted(formula)
     if _is_propositional(formula):
         keys = _atom_keys(formula)
         for n in range(1, max_worlds + 1):
@@ -301,7 +389,14 @@ def int_valid(formula: Node, max_worlds: int = 3,
       counter-model within the bounds" (not a proof, since first-order intuitionistic
       validity is undecidable), while ``False`` is always backed by a real counter-model
       from :func:`int_countermodel`.
+
+    Many-sorted (``∀x:S`` / ``∃x:S``): relativized and given the classical
+    non-emptiness assumption before either fragment's check runs (so a
+    formula that is many-sorted always takes the first-order branch above,
+    even if it would otherwise look propositional — see
+    :func:`_prepare_many_sorted` and the module docstring).
     """
+    formula = _prepare_many_sorted(formula)
     if not _is_propositional(formula):
         return int_countermodel(formula, max_worlds, domain_elements, max_steps) is None
     if int_countermodel(formula, max_worlds, domain_elements, max_steps) is not None:

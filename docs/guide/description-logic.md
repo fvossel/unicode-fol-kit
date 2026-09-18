@@ -1,6 +1,6 @@
 # Description logic ALC
 
-The `unicode_fol_kit.dl` subpackage (new in 0.9.0) implements **ALC**, the smallest propositionally closed description logic and the notation underlying OWL. It provides concept constructors, negation-normal-form rewriting, and a tableau reasoner that decides satisfiability, subsumption, equivalence, and ABox consistency over **general** TBoxes. Import it as `import unicode_fol_kit.dl as dl`.
+The `unicode_fol_kit.dl` subpackage (new in 0.9.0) implements **ALC**, the smallest propositionally closed description logic and the notation underlying OWL, extended with role hierarchies and transitive roles (**ALCH+S** — see "Role hierarchies and transitive roles (RBox)" below) and qualified number restrictions (**ALCQ**, giving **ALCHQ** combined — see "Qualified number restrictions" below). It provides concept constructors, negation-normal-form rewriting, and a tableau reasoner that decides satisfiability, subsumption, equivalence, and ABox consistency over **general** TBoxes. Import it as `import unicode_fol_kit.dl as dl`.
 
 ## Concept constructors
 
@@ -16,6 +16,8 @@ A *concept* describes a set of individuals; a *role* (a plain string) describes 
 | `dl.Or(C, D)` | C ⊔ D | union |
 | `dl.Exists("r", C)` | ∃r.C | has an `r`-successor in C |
 | `dl.ForAll("r", C)` | ∀r.C | all `r`-successors are in C |
+| `dl.AtLeast(n, "r", C)` | ≥n r.C | at least `n` *pairwise-distinct* `r`-successors are in C |
+| `dl.AtMost(n, "r", C)` | ≤n r.C | at most `n` pairwise-distinct `r`-successors are in C |
 
 ```python
 import unicode_fol_kit.dl as dl
@@ -499,6 +501,45 @@ dl.concept_to_modal(two_roles)
 
 Both translations are differentially validated against the ALC tableau across a battery of concepts, so `concept_to_fol` / `concept_to_modal` and `dl.concept_satisfiable` / `dl.subsumes` agree by construction — pick whichever entry point fits the rest of your pipeline.
 
+## Instance checking, retrieval, and realization
+
+Given an ABox (and optionally a TBox), four functions answer the standard ABox
+reasoning tasks. All four are pure reductions to `dl.abox_consistent` — no new
+tableau logic, so they inherit its soundness/completeness rather than adding to it.
+
+- `dl.instance_check(abox, individual, C, tbox=None)` — does the knowledge base
+  entail `individual : C`? Decided the same way `dl.subsumes` is: assert the
+  complement `individual : ¬C` alongside the ABox and check the result is
+  *inconsistent*. Open-world, like the rest of the reasoner: `False` means "not
+  entailed", not "entailed to be false".
+- `dl.instance_retrieval(abox, C, tbox=None)` — every individual entailed to be a `C`.
+- `dl.realize(abox, individual, vocabulary, tbox=None)` — `individual`'s
+  *most-specific* concepts from a caller-supplied `vocabulary` list (this reasoner
+  keeps no persistent registry of "all named concepts", so realization needs that
+  list up front; see `dl.classify` below for the TBox-wide version of that registry).
+- `dl.realize_all(abox, vocabulary, tbox=None)` — `dl.realize` for every individual
+  named in the ABox, as a `{individual: [concepts]}` dict.
+
+```python
+import unicode_fol_kit.dl as dl
+
+Human, Mortal = dl.Atomic("Human"), dl.Atomic("Mortal")
+t = dl.TBox().add(Human, Mortal)
+abox = dl.ABox().assert_concept("socrates", Human)
+print(dl.instance_check(abox, "socrates", Mortal, t))   # → True
+
+Dog, Mammal, Animal = dl.Atomic("Dog"), dl.Atomic("Mammal"), dl.Atomic("Animal")
+t2 = dl.TBox().add(Dog, Mammal).add(Mammal, Animal)
+kb = dl.ABox().assert_concept("rex", Dog).assert_concept("tweety", dl.Atomic("Bird"))
+
+print(sorted(dl.instance_retrieval(kb, Animal, t2)))    # → ['rex']
+
+# rex is a Dog, hence a Mammal, hence an Animal — realize keeps only the
+# most-specific of those, dropping Mammal/Animal/⊤ as strictly subsumed by Dog.
+vocabulary = [Animal, Mammal, Dog, dl.Top()]
+print([c.to_unicode() for c in dl.realize(kb, "rex", vocabulary, t2)])   # → ['Dog']
+```
+
 ## General TBoxes
 
 `dl.TBox()` holds general concept inclusions (GCIs). `add(sub, sup)` adds `sub ⊑ sup`; `add_equivalence(C, D)` adds `C ≡ D` (the two inclusions `C ⊑ D` and `D ⊑ C`). Both return the TBox, so calls chain. Each GCI is internalised as the concept `nnf(¬sub ⊔ sup)`, forced on every individual.
@@ -670,9 +711,187 @@ bad_concept = dl.And(
 print(dl.concept_satisfiable(bad_concept, t2))  # → False
 ```
 
+### Role hierarchies and transitive roles (RBox)
+
+On top of the concept-level TBox, `dl.TBox()` also carries an **RBox**: role
+inclusions `r ⊑ s` (`add_role_inclusion(sub_role, super_role)`) and transitivity
+declarations `Trans(r)` (`add_transitive_role(role)`). Together with ALC this gives
+**ALCH** (role hierarchies) plus transitive roles — the non-inverse fragment of the
+DL usually written **SH**. Both methods return the TBox, so they chain like `add`/
+`add_equivalence`.
+
+A role hierarchy alone lets an `r`-edge count as an `s`-edge for every declared
+`r ⊑ s`, so an `∃hasSon` witness is also an `∃hasChild` witness — but only once the
+inclusion is declared:
+
+```python
+import unicode_fol_kit.dl as dl
+
+sub, sup = dl.Exists("hasSon", dl.Top()), dl.Exists("hasChild", dl.Top())
+print(dl.subsumes(sub, sup))                                   # → False (unrelated roles)
+
+t = dl.TBox().add_role_inclusion("hasSon", "hasChild")
+print(dl.subsumes(sub, sup, t))                                 # → True
+```
+
+A transitive role makes a 2-hop chain collapse into a 1-hop fact. `Trans("partOf")`
+makes "part of a part of an Engine" entail "part of an Engine":
+
+```python
+import unicode_fol_kit.dl as dl
+
+Engine = dl.Atomic("Engine")
+sub = dl.Exists("partOf", dl.Exists("partOf", Engine))
+sup = dl.Exists("partOf", Engine)
+print(dl.subsumes(sub, sup))                                    # → False
+
+t = dl.TBox().add_transitive_role("partOf")
+print(dl.subsumes(sub, sup, t))                                  # → True
+```
+
+The two combine: a role hierarchy edge that feeds into a transitive super-role
+still composes along the whole chain, not just one hop. With `hasChild ⊑
+hasDescendant` and `Trans(hasDescendant)`, a value restriction on `hasDescendant`
+propagates down an arbitrarily long `hasChild` chain — three hops here, `alice`
+down to `carol`:
+
+```python
+import unicode_fol_kit.dl as dl
+
+Happy = dl.Atomic("Happy")
+t = dl.TBox().add_role_inclusion("hasChild", "hasDescendant").add_transitive_role("hasDescendant")
+kb = (dl.ABox()
+      .assert_concept("alice", dl.ForAll("hasDescendant", Happy))
+      .assert_role("alice", "bob", "hasChild")
+      .assert_role("bob", "carol", "hasChild")
+      .assert_concept("carol", dl.Not(Happy)))
+print(dl.abox_consistent(kb, t))                                  # → False (carol must be Happy)
+```
+
+`dl.instance_check`, `dl.classify`, and the rest of the reasoning API above respect
+a TBox's RBox automatically — they are pure reductions to `concept_satisfiable`/
+`abox_consistent`, which is where the RBox lives, so there is no separate
+RBox-aware entry point to call.
+
+`dl.translate.rbox_to_fol(tbox)` renders the RBox itself as FOL — a role inclusion
+as `∀x,y (r(x,y) → s(x,y))`, a transitivity declaration as `∀x,y,z (r(x,y) ∧
+r(y,z) → r(x,z))` — giving an independent cross-check for the tableau's RBox rules
+via any FOL prover, the same way `tbox_to_fol` cross-checks GCIs:
+
+```python
+from unicode_fol_kit.dl.translate import rbox_to_fol
+
+print(rbox_to_fol(t).to_unicode_str())
+# → '∀x ∀y (hasChild(x, y) → hasDescendant(x, y)) ∧
+#     ∀x ∀y ∀z (hasDescendant(x, y) ∧ hasDescendant(y, z) → hasDescendant(x, z))'
+```
+
+RBox axioms also read from OWL Manchester syntax's two matching one-line shapes,
+`"r SubPropertyOf s"` and `"r Characteristics: Transitive"`, via
+`dl.parse_manchester_role_axiom`:
+
+```python
+import unicode_fol_kit.dl as dl
+
+print(dl.parse_manchester_role_axiom("hasChild SubPropertyOf hasDescendant"))
+# → ('subproperty', 'hasChild', 'hasDescendant')
+print(dl.parse_manchester_role_axiom("hasDescendant Characteristics: Transitive"))
+# → ('transitive', 'hasDescendant')
+```
+
+Every other OWL role characteristic (`Functional`, `InverseFunctional`,
+`Symmetric`, `Asymmetric`, `Reflexive`, `Irreflexive`) sits outside ALCHQ — most
+need inverse roles, which this kit's DL fragment does not have, and `Functional`
+is a role-level notion distinct from this module's concept-level `AtLeast`/
+`AtMost` (see "Qualified number restrictions" below) — and is rejected by name
+rather than silently ignored:
+
+```python
+dl.parse_manchester_role_axiom("hasSpouse Characteristics: Symmetric")
+# raises ManchesterSyntaxError: parse_manchester_role_axiom: role characteristic
+# 'Symmetric' is not supported — ALCHQ (this kit's DL fragment) has no inverse
+# roles, and a role-level characteristic is not the same as this module's
+# concept-level AtLeast/AtMost number restrictions, so only 'Transitive' is
+# expressible in 'hasSpouse Characteristics: Symmetric'
+```
+
+## Qualified number restrictions (ALCQ)
+
+`dl.AtLeast(n, role, C)` (≥n r.C) and `dl.AtMost(n, role, C)` (≤n r.C) count *pairwise-distinct* `role`-successors in `C`. There is **no unique name assumption** anywhere in this reasoner — an individual (named or generated) is distinct from another only when something forces it — so `n` really means "n individuals the reasoner cannot merge together", not "n names":
+
+```python
+import unicode_fol_kit.dl as dl
+
+Person = dl.Atomic("Person")
+c = dl.AtLeast(2, "hasChild", Person)
+print(c.to_unicode())   # → ≥2 hasChild.Person
+```
+
+The classic pigeonhole example — at most one `hasChild`-successor overall, but at least two `Person`-successors and at least two non-`Person`-successors — is unsatisfiable, since satisfying both `≥2` restrictions forces two individuals that are *each* pairwise-distinct from the other members of their own restriction, and nothing can collapse them back under the `≤1` bound:
+
+```python
+pigeonhole = dl.And(
+    dl.And(dl.AtMost(1, "hasChild", dl.Top()), dl.AtLeast(2, "hasChild", Person)),
+    dl.AtLeast(2, "hasChild", dl.Not(Person)))
+print(dl.concept_satisfiable(pigeonhole))   # → False
+```
+
+Named ABox individuals stay mergeable until something forces them apart. Two `hasChild`-successors of `alice`, with `alice` bound (via a global TBox axiom, `⊤ ⊑ ≤1 hasChild.⊤`) to at most one, are satisfiable exactly because `bob` and `carol` are free to denote the same domain element:
+
+```python
+ab = (dl.ABox().assert_role("alice", "bob", "hasChild")
+      .assert_role("alice", "carol", "hasChild"))
+t = dl.TBox().add(dl.Top(), dl.AtMost(1, "hasChild", dl.Top()))
+print(dl.abox_consistent(ab, t))    # → True  (bob and carol may be merged)
+
+ab2 = ab.assert_distinct("bob", "carol")   # ABox.assert_distinct: force them apart
+print(dl.abox_consistent(ab2, t))          # → False (now genuinely 2 successors)
+```
+
+**Simple roles only.** A number restriction may not target a role that is transitive, or that has a transitive sub-role reachable through the RBox — combining unrestricted transitivity with counting is undecidable (Horrocks, Sattler & Tobies 1999/2000; the same "simple roles" restriction SHQ/SHIQ use). The kit refuses the combination by name, before the tableau ever starts:
+
+```python
+t2 = dl.TBox().add_transitive_role("hasChild")
+dl.concept_satisfiable(dl.AtLeast(2, "hasChild", Person), t2)
+# raises NonSimpleRoleError: qualified number restriction on role 'hasChild' is not
+# allowed: 'hasChild' is NON-SIMPLE — it is transitive, or has a transitive sub-role
+# via the RBox (a role inclusion into it from a declared-transitive role). Number
+# restrictions on non-simple roles make the logic undecidable (Horrocks, Sattler &
+# Tobies 1999/2000: SHQ/SHIQ restrict AtLeast/AtMost to SIMPLE roles for exactly
+# this reason), so this kit refuses the combination outright rather than risk an
+# unsound or non-terminating result.
+```
+
+Role hierarchies compose correctly with counting: an `r`-edge counts as an `s`-neighbour for every declared `r ⊑ s`, so `≤n s.C` and `≥n s.C` are decided over every such neighbour, not just literal `s`-edges — see `unicode_fol_kit.dl.tableau`'s "Qualified number restrictions" section for the full tableau algorithm (the ≥-rule, the ≤-rule's merge, and the choose-rule needed for the ≤-rule's completeness) and its termination argument. This counts *neighbours*, not *edges*: if `bob` is reached from `alice` by two DIFFERENT sub-roles of `hasChild` at once, he is still exactly one `hasChild`-neighbour, so a `≤1 hasChild.Person` bound is satisfied (not, say, spuriously violated by counting him twice):
+
+```python
+t3 = dl.TBox().add_role_inclusion("hasSon", "hasChild").add_role_inclusion("hasDaughter", "hasChild")
+ab3 = (dl.ABox().assert_role("alice", "bob", "hasSon").assert_role("alice", "bob", "hasDaughter")
+       .assert_concept("bob", Person).assert_concept("alice", dl.AtMost(1, "hasChild", Person)))
+print(dl.abox_consistent(ab3, t3))   # → True (bob counts once, not twice)
+
+ab3.assert_concept("alice", dl.AtMost(0, "hasChild", Person))   # tighten the bound to 0
+print(dl.abox_consistent(ab3, t3))   # → False (bob is still a genuine hasChild-neighbour)
+```
+
+`dl.concept_to_fol`/`dl.translate.abox_to_fol` route `AtLeast`/`AtMost` through the kit's existing counting-quantifier FOL node, `fol.nodes.Count` (`∃≥n`/`∃≤n`), reusing its already-tested distinct-witnesses expansion rather than a new encoding — this is also the independent Z3-backed oracle `tests/test_dl_alcq.py` cross-checks the tableau against.
+
+OWL Manchester Syntax's `min`/`max`/`exactly` parse into exactly these constructors, with the qualifying class optional (defaulting to `owl:Thing`):
+
+```python
+from unicode_fol_kit.dl.owl_manchester import parse_manchester, to_manchester
+
+parse_manchester("hasChild min 2 Person")     # → AtLeast(n=2, role='hasChild', concept=Atomic(name='Person'))
+parse_manchester("hasChild min 2")            # → AtLeast(n=2, role='hasChild', concept=Top())
+parse_manchester("hasChild exactly 1 Person")
+# → And(left=AtLeast(n=1, role='hasChild', concept=Atomic(name='Person')),
+#       right=AtMost(n=1, role='hasChild', concept=Atomic(name='Person')))
+to_manchester(dl.AtLeast(2, "hasChild", dl.Top()))   # → 'hasChild min 2'
+```
+
 ## ABoxes
 
-`dl.ABox()` collects assertions. `assert_concept(individual, C)` adds `individual : C`; `assert_role(a, b, role)` adds `(a, b) : role`. Both chain. `dl.abox_consistent(abox, tbox)` checks the whole knowledge base.
+`dl.ABox()` collects assertions. `assert_concept(individual, C)` adds `individual : C`; `assert_role(a, b, role)` adds `(a, b) : role`; `assert_distinct(a, b)` adds `a ≠ b` (see "Qualified number restrictions" above — there is no unique name assumption, so this is the only thing that ever forces two individuals apart). All three chain. `dl.abox_consistent(abox, tbox)` checks the whole knowledge base.
 
 ```python
 import unicode_fol_kit.dl as dl
@@ -725,6 +944,70 @@ abox.assert_concept("bob", dl.Not(dl.Atomic("Happy")))
 print(dl.abox_consistent(abox))   # → False
 ```
 
+## OWL 2 Functional-Style Syntax
+
+`unicode_fol_kit.dl.owl_functional` reads and writes a whole ontology *document* — not just a single class expression or axiom, like OWL Manchester Syntax above — in the W3C's [OWL 2 Functional-Style Syntax](https://www.w3.org/TR/owl2-syntax/#Functional-Style_Syntax), restricted to ALCHQ. Unlike Manchester Syntax's keyword-infix notation, Functional Syntax is a flat `Keyword(arg arg ...)` S-expression form, so there is no precedence to resolve when rendering: every compound expression is already fully parenthesised by its own keyword.
+
+`dl.to_owl_functional(tbox, abox, ontology_iri=...)` writes a `Declaration(...)` block for every class/role/individual name referenced, the RBox (`SubObjectPropertyOf`/`TransitiveObjectProperty`), the TBox's inclusions (as `SubClassOf`/`EquivalentClasses`), and the ABox's assertions (`ClassAssertion`/`ObjectPropertyAssertion`/`DifferentIndividuals`); `dl.parse_owl_functional(text)` reads it all back into a `(TBox, ABox)` pair:
+
+```python
+import unicode_fol_kit.dl as dl
+
+Person, Doctor = dl.Atomic("Person"), dl.Atomic("Doctor")
+t = dl.TBox().add(Doctor, dl.And(Person, dl.Exists("hasChild", Doctor)))
+t.add_role_inclusion("hasSon", "hasChild")
+t.add_transitive_role("hasChild")
+
+ab = dl.ABox().assert_concept("alice", Doctor)
+ab.assert_role("alice", "bob", "hasChild")
+
+text = dl.to_owl_functional(t, ab, ontology_iri="http://example.org/family")
+print(text)
+# → Ontology(<http://example.org/family>
+#     Declaration(Class(Doctor))
+#     Declaration(Class(Person))
+#     Declaration(ObjectProperty(hasChild))
+#     Declaration(ObjectProperty(hasSon))
+#     Declaration(NamedIndividual(alice))
+#     Declaration(NamedIndividual(bob))
+#     SubObjectPropertyOf(hasSon hasChild)
+#     TransitiveObjectProperty(hasChild)
+#     SubClassOf(Doctor ObjectIntersectionOf(Person ObjectSomeValuesFrom(hasChild Doctor)))
+#     ClassAssertion(Doctor alice)
+#     ObjectPropertyAssertion(hasChild alice bob)
+#   )
+
+t2, ab2 = dl.parse_owl_functional(text)
+print(t2 == t, ab2 == ab)   # → True True
+```
+
+A single class expression parses/renders independently via `dl.parse_owl_functional_class_expression`/`dl.to_owl_functional_class_expression`, the Functional-Syntax analogue of `parse_manchester`/`to_manchester`:
+
+```python
+c = dl.parse_owl_functional_class_expression(
+    "ObjectIntersectionOf(Person ObjectSomeValuesFrom(hasChild Doctor))")
+print(c)                                      # → Person ⊓ ∃hasChild.Doctor
+print(dl.to_owl_functional_class_expression(c))
+# → 'ObjectIntersectionOf(Person ObjectSomeValuesFrom(hasChild Doctor))'
+```
+
+`ObjectMinCardinality`/`ObjectMaxCardinality`/`ObjectExactCardinality` map onto `AtLeast`/`AtMost` exactly like Manchester's `min`/`max`/`exactly` (`ObjectExactCardinality` desugars to their conjunction at parse time), and `EquivalentClasses`/`DisjointClasses`/`DifferentIndividuals` — each genuinely n-ary in the OWL grammar, with no direct n-ary counterpart in `TBox`/`ABox` — are decomposed at parse time: `EquivalentClasses(A B C)` into the pairwise-consecutive chain `add_equivalence(A, B)`, `add_equivalence(B, C)` (sound, since ⊑ is transitive); `DisjointClasses`/`DifferentIndividuals` into *every* unordered pair (not a chain — disjointness and distinctness have no transitive shortcut the way equivalence does), so `DisjointClasses(A B C)` becomes three GCIs `A ⊓ B ⊑ ⊥`, `A ⊓ C ⊑ ⊥`, `B ⊓ C ⊑ ⊥`, and `DifferentIndividuals(a b c)` becomes three `assert_distinct` calls covering all three pairs — never fewer, since (with no unique name assumption — see "Qualified number restrictions" above) omitting even one pair would silently understate what the axiom actually asserts.
+
+Every construct outside ALCHQ is rejected by its OWL name, the same honesty convention as Manchester Syntax:
+
+```python
+from unicode_fol_kit.dl.owl_functional import OwlFunctionalSyntaxError
+
+try:
+    dl.parse_owl_functional("Ontology(FunctionalObjectProperty(hasChild))")
+except OwlFunctionalSyntaxError as e:
+    print(e)
+# → parse_owl_functional: the Functional object property characteristic
+#   (FunctionalObjectProperty) is not supported — outside ALCHQ (this kit's
+#   DL fragment), found 'FunctionalObjectProperty' at position 9 in
+#   'Ontology(FunctionalObjectProperty(hasChild))'
+```
+
 A `∀r` and an `∃r` on the same individual interact even without an explicit role edge:
 asserting `a : ∀r.A` together with `a : ∃r.¬A` forces the generated witness to be both
 `A` and `¬A`:
@@ -738,6 +1021,106 @@ abox = (dl.ABox()
         .assert_concept("a", dl.Exists("r", dl.Not(A))))
 print(dl.abox_consistent(abox))   # → False
 ```
+
+## Inverse roles and nominals (I, O): the external OWL 2 DL reasoner
+
+Two constructs sit outside ALCHQ, this kit's in-house DL fragment: `InverseRole("r")` (the role expression `r⁻`, used wherever a plain role name is expected) and `Nominal("a")` (the singleton concept `{a}`). `dl.concepts`/`dl.tableau` recognise both — they can be built, printed, and negated — but the in-house tableau refuses to *reason* over them, by name, rather than risk an unsound or silently-incomplete result:
+
+```python
+import unicode_fol_kit.dl as dl
+
+A = dl.Atomic("A")
+r = "r"
+
+try:
+    dl.concept_satisfiable(dl.Exists(dl.InverseRole(r), A))
+except dl.UnsupportedConceptError as e:
+    print(e)
+# → dl.tableau: an InverseRole (r⁻) is outside ALCHQ (this kit's in-house DL
+#   fragment) — no in-house tableau rule decides it (see the module docstring's
+#   'Inverse roles and nominals (I, O)' section for why: it breaks subset
+#   blocking's soundness/completeness argument). Use dl.owl_reasoner's
+#   external, HermiT-backed reasoner instead.
+```
+
+`dl.classify` and every reduction built on `dl.tableau.subsumes`/`abox_consistent` (`subsumes`, `equivalent`, `instance_check`, `instance_retrieval`, `realize`, `realize_all`) inherit this refusal automatically. `dl.translate`, by contrast, translates both faithfully to FOL (`r⁻` swaps the role atom's argument order; `{a}` becomes the equality `x = a`) — see `unicode_fol_kit.dl.translate`'s module docstring. `to_manchester` can still *render* a concept using either (useful for diagnostics), while `parse_manchester` keeps refusing the matching input, unchanged:
+
+```python
+c = dl.Exists(dl.InverseRole("hasChild"), dl.Top())
+print(dl.to_manchester(c))               # → 'inverse hasChild some owl:Thing'
+try:
+    dl.parse_manchester(dl.to_manchester(c))
+except dl.ManchesterSyntaxError as e:
+    print(e)
+# → parse_manchester: inverse roles ('inverse r') — not supported outside ALC
+#   (found 'inverse' at position 0) in 'inverse hasChild some owl:Thing'
+
+print(dl.to_manchester(dl.Nominal("alice")))   # → '{alice}'
+```
+
+`to_owl_functional`/`to_owl_functional_class_expression`, unlike `to_manchester`, do **not** get this export-only exception: they refuse `InverseRole`/`Nominal` in both directions, exactly like every other construct outside ALCHQ — named in the error, not a low-level crash:
+
+```python
+try:
+    dl.to_owl_functional_class_expression(c)   # same c = ∃hasChild⁻.⊤ as above
+except TypeError as e:
+    print(e)
+# → to_owl_functional_class_expression: the inverse role hasChild⁻ (InverseRole)
+#   is outside ALCHQ (this kit's DL fragment) -- OWL 2 Functional-Style Syntax
+#   rendering only covers ALCHQ, the same fragment this module's parser
+#   accepts. Use dl.to_manchester for a diagnostic-only rendering that does
+#   support inverse roles (I) and nominals (O), or dl.owl_reasoner to actually
+#   decide a concept that needs them.
+```
+
+To actually *decide* a concept that needs I/O, use `dl.owl_reasoner`'s external, HermiT-backed reasoner (`pip install unicode-fol-kit[owl]`, an optional dependency — `dl.owl_reasoner_available()` checks whether it is installed). Every `dl.external_*` function mirrors its in-house-tableau namesake's signature and reduction exactly, just decided over the bigger ALCHQ + I + O fragment:
+
+```python
+print(dl.owl_reasoner_available())   # → True (once the 'owl' extra is installed)
+
+# (alice, bob):hasChild entails bob : ∃hasChild⁻.⊤ — bob has an INCOMING
+# hasChild edge, i.e. an hasChild-inverse successor (alice).
+ab = dl.ABox().assert_role("alice", "bob", "hasChild")
+query = dl.Exists(dl.InverseRole("hasChild"), dl.Top())
+print(dl.external_instance_check(ab, "bob", query))   # → True
+
+# {alice} ⊓ {bob}: satisfiable absent an explicit distinctness assertion —
+# OWL 2 has no unique name assumption, exactly like this kit's own ABoxes.
+concept = dl.And(dl.Nominal("alice"), dl.Nominal("bob"))
+print(dl.external_concept_satisfiable(concept))   # → True
+
+ab2 = dl.ABox().assert_distinct("alice", "bob").assert_concept("_probe", concept)
+print(dl.external_abox_consistent(ab2))   # → False: alice and bob can no longer coincide
+```
+
+`dl.owl_reasoner` spawns a fresh `java` subprocess (HermiT, via `owlready2`) per call, so it is orders of magnitude slower than the in-house tableau — expected for an occasional cross-check over the I/O-extended fragment, not a hot-path reasoner. See `unicode_fol_kit.dl.owl_reasoner`'s module docstring for the full translation and licensing (`owlready2` is LGPL-3.0-or-later) notes.
+
+## A second, independent external oracle: Hets/FaCT++
+
+`dl.owl_reasoner` is one external OWL 2 DL route (HermiT, in-process via `owlready2`). `unicode_fol_kit.hets.owl_backend` is a second, INDEPENDENT one: it renders the same `TBox`/`ABox`/`Concept` AST to an OWL 2 Functional-Style Syntax document, uploads it to a running [Hets](https://github.com/spechub/Hets) server (`unicode_fol_kit.hets`, the same Docker-backed REST server the kit's FOL route uses — see the [interoperability guide](interoperability.md)), and asks it to run `Fact` (FaCT++, a *different* reasoner implementation, LGPL-2.1) via `POST /consistency-check`. Agreement between two independently-implemented reasoners, reached two structurally different ways (an in-process JVM binding vs. a Docker container's REST API), is a stronger correctness signal than either alone — this is why it exists, not to replace `dl.owl_reasoner`.
+
+It lives outside the `dl` package on purpose (in `unicode_fol_kit.hets`, alongside the kit's other Hets/Docker integration) and mirrors `dl.owl_reasoner`'s function-per-namesake shape exactly, over the same ALCHQ + I + O fragment:
+
+```python
+from unicode_fol_kit.hets.owl_backend import (
+    hets_owl_available, external_subsumes, external_instance_check,
+)
+
+print(hets_owl_available())   # → True iff a Hets server answers right now (never starts one)
+
+t = dl.TBox().add(dl.Atomic("A"), dl.Atomic("B")).add(dl.Atomic("B"), dl.Atomic("C"))
+print(dl.subsumes(dl.Atomic("A"), dl.Atomic("C"), t))                # → True  (in-house tableau)
+print(external_subsumes(dl.Atomic("A"), dl.Atomic("C"), t))          # → True  (FaCT++ via Hets)
+
+# The I/O fragment: same textbook case as dl.owl_reasoner's example above,
+# decided by a different reasoner over the same REST/Docker boundary the
+# kit's FOL route already uses.
+ab = dl.ABox().assert_role("alice", "bob", "hasChild")
+query = dl.Exists(dl.InverseRole("hasChild"), dl.Top())
+print(external_instance_check(ab, "bob", query))   # → True
+```
+
+Like `dl.owl_reasoner` and `unicode_fol_kit.atp.hets_backend`, this is opt-in and never part of any default chain: no function here starts a container, and `hets_owl_available()` only ever checks whether one is already reachable. It needs Docker running with the `spechub2/hets` image, nothing extra pip-installed (it talks plain HTTP, the same as the rest of `unicode_fol_kit.hets`). See `unicode_fol_kit.hets.owl_backend`'s module docstring for the live capability spike that justified building this at all (which reasoners the image actually offers, and why), and `unicode_fol_kit.hets.docker`'s "OWL 2 / description-logic support" section for the underlying wire-protocol facts.
 
 ## Cyclic TBoxes terminate
 
@@ -856,6 +1239,42 @@ bad = (dl.ABox()
        .assert_concept("alice", Mother)
        .assert_concept("alice", Male))
 print(dl.abox_consistent(bad, t))                 # → False
+```
+
+### TBox classification: the whole hierarchy at once
+
+`dl.classify(tbox, concepts=None)` reproduces, as data, exactly the hierarchy the
+prose above describes by hand: it collects every named concept mentioned in the
+TBox, decides `dl.subsumes` for every pair, and returns a `Classification` —
+`equivalents` (mutual-subsumption synonym classes, keyed by the lexicographically
+smallest name in each), `parents`/`children` (the transitively-reduced Hasse
+diagram — *direct* super-/sub-concepts only), and `ancestors` (the full transitive
+closure, a free byproduct of the pairwise matrix). It is itself a pure reduction to
+`dl.subsumes`, so it adds no reasoning risk beyond what the tableau already carries.
+
+```python
+import unicode_fol_kit.dl as dl
+
+Person, Male, Female = dl.Atomic("Person"), dl.Atomic("Male"), dl.Atomic("Female")
+Parent, Mother, Father = dl.Atomic("Parent"), dl.Atomic("Mother"), dl.Atomic("Father")
+
+t = (dl.TBox()
+     .add_equivalence(Parent, dl.And(Person, dl.Exists("hasChild", Person)))
+     .add_equivalence(Mother, dl.And(Parent, Female))
+     .add_equivalence(Father, dl.And(Parent, Male))
+     .add(Male, dl.Not(Female)))
+
+cl = dl.classify(t)
+# cl.children/.parents/.ancestors are frozensets, so their repr's element
+# order is hash-seed-dependent, not the sorted order shown below — sort
+# before printing (or comparing) whenever the order itself matters.
+print(sorted(cl.children["Person"]))   # → ['Parent']
+print(sorted(cl.children["Parent"]))   # → ['Father', 'Mother']
+
+# Mother ≡ Parent ⊓ Female: both are direct parents, since neither subsumes
+# the other, and Person is only an *ancestor* of Mother, not a direct parent.
+print(sorted(cl.parents["Mother"]))    # → ['Female', 'Parent']
+print(sorted(cl.ancestors["Mother"]))  # → ['Female', 'Parent', 'Person']
 ```
 
 ### End-to-end example: university domain

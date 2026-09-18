@@ -49,8 +49,13 @@ What this module does NOT do
 ----------------------------
 It does not run a learner. Popper needs SWI-Prolog and, from v4, ``janus_swi``
 — a dependency the kit does not take on for a file format. It writes the three
-files Popper reads (``bk.pl``, ``exs.pl``, ``bias.pl``), and reads back the
-text a learner prints. Everything in between is the learner's business.
+files Popper reads (``bk.pl``, ``exs.pl``, ``bias.pl``) via
+:meth:`IlpTask.write`, and Aleph's genuinely different three-file layout
+(``<stem>.b``/``.f``/``.n`` — ``modeh``/``modeb``/``determination`` mode
+declarations rather than ``head_pred``/``body_pred``, bare-atom examples split
+by label rather than one ``pos``/``neg``-wrapped file) via
+:meth:`IlpTask.write_aleph`, and reads back the text either learner prints.
+Everything in between is the learner's business.
 
 It also does not decide whether your task is a *good* one. It does offer the
 one check that has to happen first: :func:`check_separation` asks whether a

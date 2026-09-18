@@ -64,6 +64,7 @@ from typing import Optional, Sequence, Tuple
 
 from ..fol.nodes import Node, Atom, Not, And, Or, Implies, Iff
 from .deepshallow._common import AtomConsts, theory_name_ok
+from ._ho_common import ThfNames
 
 #: The Isabelle type of an embedded formula: a predicate on worlds.
 _TAU = r"w \<Rightarrow> bool"
@@ -217,3 +218,182 @@ def to_isabelle_relevant(formula: Node, *,
     body.append("")
     body.append("end")
     return "\n".join(body) + "\n"
+
+
+# --------------------------------------------------------------------------
+# THF
+# --------------------------------------------------------------------------
+#
+# The THF sibling of the theory above: the same shallow embedding (a formula
+# is true or false AT A WORLD; ``N``/``star``/``R`` uninterpreted; the frame
+# conditions bundled into ``wellformed``), for a higher-order ATP (Leo-III,
+# Vampire-THF, Satallax) instead of Isabelle. The conjecture is
+# ``wellformed => ![X:w] : ((N @ X) => φ_at(X))``, matching the Isabelle goal's
+# "true at every NORMAL world of every interpretation" contract exactly.
+#
+# UNLIKE the Isabelle encoding (and an earlier draft of this function), ``φ``
+# is NOT built from separately-declared ``NegC``/``AndC``/``OrC``/``ImpC``/
+# ``IffC`` *combinators* that :func:`_thf_encode` would apply to already-built
+# ``tau``-typed subterms (``impc @ (andc @ p @ q) @ p``, mirroring the
+# Isabelle term exactly). :func:`_thf_encode` instead THREADS the current
+# world through the recursion and emits ``φ``, at that world, as one native
+# THF formula (``&``/``|``/``~``/``=>``/``!``/``?`` applied to already-a-world
+# atoms) -- the same "world-relativised connective, no free-standing
+# constant" style :mod:`unicode_fol_kit.hol.ho_modal`'s box/diamond nesting
+# uses. This is NOT a change of meaning: a combinator applied to arguments and
+# the fully-inlined, world-threaded reading of the same formula are
+# beta-equivalent term for term (only ``ImpC``'s two case-split branches are
+# genuinely new content per node, and those are exactly the N/R clauses below,
+# transcribed unchanged from ``_PREAMBLE``). It is a change of PROOF-SEARCH
+# DIFFICULTY: measured by hand with a battery of THF micro-examples in the
+# scratchpad, Vampire 5.0.1's default portfolio needs real higher-order
+# UNIFICATION to match a combinator's parameter against another combinator's
+# PARTIAL APPLICATION (``F := (andc @ p @ q)`` to unfold ``impc``'s body) and
+# failed to close even ``(P∧Q)→P`` in 60s / a 150-strategy CASC sweep in 30s;
+# feeding it the same formula already reduced to ordinary quantified
+# first-order-shaped THF over ``w`` (no function-valued arguments passed
+# between macros at all) closes in well under a second. ``wellformed`` stays a
+# single named, ARGUMENT-FREE ``$o`` ``definition`` (unfolding a nullary
+# biconditional needs no higher-order unification either way) and stays a
+# PREMISE of the conjecture rather than an ``axiom``, for the reason given in
+# the module docstring: a model finder run on this problem's negation should
+# still be free to build its own N/star/R rather than trusting an axiomatised
+# triple.
+
+#: The embedding's own functors, pre-claimed so no user atom's THF stem can
+#: collide with them (see hol._ho_common.ThfNames).
+_THF_RESERVED = ("w", "n", "star", "r", "wellformed")
+
+_THF_PRELUDE = [
+    "% Relevant logic B (simplified Routley-Meyer semantics) -> THF.",
+    "% Shallow embedding: a formula is true/false AT A WORLD; N/star/R are",
+    "% uninterpreted and their frame conditions are bundled into `wellformed`,",
+    "% a PREMISE of the conjecture (never an axiom) -- see isabelle_relevant.py's",
+    "% module docstring, _PREAMBLE, and the comment above _THF_PRELUDE for why",
+    "% the connectives below are inlined at each world rather than routed",
+    "% through separately-declared NegC/AndC/OrC/ImpC/IffC combinators.",
+    "thf(w_type, type, ( w : $tType )).",
+    "thf(n_type, type, ( n : w > $o )).",
+    "thf(star_type, type, ( star : w > w )).",
+    "thf(r_type, type, ( r : w > w > w > $o )).",
+    "thf(wellformed_type, type, ( wellformed : $o )).",
+    "thf(wellformed_def, definition, ( wellformed <=> "
+    "( ( ? [X: w] : ( n @ X ) ) "
+    "& ( ! [X: w] : ( ( star @ ( star @ X ) ) = X ) ) "
+    "& ( ! [X: w, Y: w, Z: w] : ( ( r @ X @ Y @ Z ) => ( ~ ( n @ X ) ) ) ) ) )).",
+]
+
+
+def _thf_implies_at(left: Node, right: Node, world: str,
+                    names: ThfNames, depth: int) -> str:
+    """The world-threaded rendering of ``left -> right`` at ``world``.
+
+    ImpC's own case split (:func:`_encode`'s ``ImpC`` clause, unchanged): at a
+    NORMAL world every ``left``-world of the WHOLE model is a ``right``-world;
+    at a non-normal world, every R-triple routes ``left`` to ``right``. ``Y``/
+    ``Z`` are named from ``depth`` (not a running total) so that two SIBLING
+    ``->`` nodes may freely reuse the same token -- each ``!`` binds only its
+    own subformula -- while a NESTED ``->`` (reached through ``left``/
+    ``right``, always recursed at ``depth + 1``) never reuses an ancestor's.
+
+    This deliberately parallels :mod:`unicode_fol_kit.hol.ho_modal`'s OWN
+    Kripke-world binders (``f"W{depth}"`` in its ``_thf``/``_thf_arg``), not
+    :func:`~unicode_fol_kit.hol._ho_common.bound_token`: ``bound_token`` renames
+    a USER-level binder apart from other in-scope user binders of the SAME
+    source name (``thirdorder.py``/``ho_modal.py`` call it for the caller's own
+    ``Quantifier``/``SecondOrderQuantifier``/``Lambda`` nodes), and no such node
+    ever reaches this encoder -- ``_thf_encode`` accepts only nullary atoms and
+    the propositional connectives, so there is no user binder to rename apart
+    from anything. ``Y{depth}``/``Z{depth}`` name this EMBEDDING's own frame
+    quantifiers instead, exactly the role ``ho_modal.py``'s plain ``W{depth}``
+    plays for its own world binders (see the comment above its ``_thf``).
+    """
+    y, z = f"Y{depth}", f"Z{depth}"
+    left_at_y = _thf_encode(left, y, names, depth + 1)
+    right_at_y = _thf_encode(right, y, names, depth + 1)
+    right_at_z = _thf_encode(right, z, names, depth + 1)
+    return (f"( ( ( n @ {world} ) => ( ! [{y}: w] : "
+            f"( {left_at_y} => {right_at_y} ) ) ) "
+            f"& ( ( ~ ( n @ {world} ) ) => ( ! [{y}: w, {z}: w] : "
+            f"( ( r @ {world} @ {y} @ {z} ) => "
+            f"( {left_at_y} => {right_at_z} ) ) ) ) )")
+
+
+def _thf_encode(formula: Node, world: str, names: ThfNames, depth: int = 0) -> str:
+    """Recursive worker for :func:`to_thf_relevant`: ``formula`` rendered TRUE AT ``world``.
+
+    Structurally identical to :func:`_encode`'s own recursion -- only nullary
+    :class:`Atom`\\ s and Not/And/Or/Implies/Iff are accepted, everything else
+    raises :class:`TypeError`, the same refusal :func:`_encode` makes,
+    mirroring :func:`unicode_fol_kit.semantics.relevant._reject_non_propositional`
+    -- but threading ``world`` (a THF term, not a fixed variable: ``¬`` passes
+    down ``( star @ world )``) instead of building a free-standing ``tau``
+    term. See the comment above ``_THF_PRELUDE`` for why.
+    """
+    if isinstance(formula, Atom):
+        if formula.args:
+            raise TypeError(
+                "to_thf_relevant: only nullary propositional atoms are "
+                f"supported; got {formula.to_unicode_str()!r} with arguments -- "
+                "matching semantics.relevant._reject_non_propositional's "
+                "rejection of non-nullary atoms.")
+        functor = names.functor("predicate", formula.to_unicode_str())
+        return f"( {functor} @ {world} )"
+    if isinstance(formula, And):
+        return (f"( {_thf_encode(formula.left, world, names, depth)} & "
+                f"{_thf_encode(formula.right, world, names, depth)} )")
+    if isinstance(formula, Or):
+        return (f"( {_thf_encode(formula.left, world, names, depth)} | "
+                f"{_thf_encode(formula.right, world, names, depth)} )")
+    if isinstance(formula, Not):
+        return f"( ~ {_thf_encode(formula.formula, f'( star @ {world} )', names, depth)} )"
+    if isinstance(formula, Implies):
+        return _thf_implies_at(formula.left, formula.right, world, names, depth)
+    if isinstance(formula, Iff):
+        return (f"( {_thf_implies_at(formula.left, formula.right, world, names, depth)} "
+                f"& {_thf_implies_at(formula.right, formula.left, world, names, depth)} )")
+    raise TypeError(
+        f"to_thf_relevant: unsupported node type {type(formula).__name__} "
+        f"in {formula.to_unicode_str()!r}. The B semantics "
+        "(semantics.relevant) interprets only the propositional connectives "
+        "not/and/or/implies/iff over nullary atoms -- no quantifiers, "
+        "modalities, lambda terms, or Xor; see "
+        "semantics.relevant._reject_non_propositional.")
+
+
+def to_thf_relevant(formula: Node) -> str:
+    r"""Emit a self-contained THF (TH0) problem asserting ``formula``'s validity in B.
+
+    The THF sibling of :func:`to_isabelle_relevant`: the same shallow embedding
+    (a formula is true/false at a world; ``N``/``star``/``R`` uninterpreted;
+    the frame conditions bundled into ``wellformed``), for a higher-order ATP
+    (Leo-III, Vampire-THF, Satallax) instead of Isabelle. The conjecture is
+    ``wellformed => ![X:w] : ((N @ X) => φ_at(X))`` -- truth at every NORMAL
+    world of every interpretation satisfying the frame conditions, matching
+    :func:`unicode_fol_kit.semantics.relevant.rel_valid`'s "true at every
+    normal world of every interpretation" contract, exactly as
+    :func:`to_isabelle_relevant`'s goal does (see the comment above
+    ``_THF_PRELUDE`` for why ``φ_at(X)`` is rendered inline rather than as a
+    combinator applied to ``X``). As elsewhere in the toolkit, this function
+    only emits the problem; it does not run a prover.
+
+    Args:
+        formula: the AST node to encode -- the propositional connectives
+            ``¬ ∧ ∨ → ↔`` over nullary atoms.
+
+    Raises:
+        TypeError: propagated from :func:`_thf_encode` -- a quantifier,
+            modality, lambda term, ``Xor``, or non-nullary atom, mirroring
+            :func:`to_isabelle_relevant`'s own refusal and
+            :func:`unicode_fol_kit.semantics.relevant._reject_non_propositional`.
+    """
+    names = ThfNames(reserved=_THF_RESERVED)
+    body = _thf_encode(formula, "X", names)
+    lines = list(_THF_PRELUDE)
+    for label in sorted({atom.to_unicode_str() for atom in formula.atoms()}):
+        functor = names.functor("predicate", label)
+        lines.append(f"thf({functor}_type, type, ( {functor} : w > $o )).")
+    lines.append(
+        "thf(goal, conjecture, ( wellformed => "
+        f"( ! [X: w] : ( ( n @ X ) => {body} ) ) )).")
+    return "\n".join(lines) + "\n"

@@ -118,3 +118,43 @@ jobs:
 
       - name: Run the fast suite
         run: pytest -n auto -m "not isabelle_live and not hets_live"
+
+  # A separate job from `fast` on purpose: a type-check finding is a
+  # different kind of red than a failing test, and this job's mypy pin can
+  # move on its own schedule without touching the pytest matrix above.
+  #
+  # One Python version only (3.11, the primary dev box's interpreter —
+  # matched by the one Windows leg above): mypy's own findings do not vary
+  # per interpreter the way runtime behaviour can, and python_version in
+  # [tool.mypy] (pyproject.toml) already pins WHICH Python semantics are
+  # checked (3.10, this project's floor) independent of which interpreter
+  # runs mypy itself.
+  #
+  # This is a RATCHET, not a bare `mypy unicode_fol_kit`: the package had no
+  # type-check gate before this job existed, and a first real pass surfaces
+  # several hundred pre-existing errors across most subpackages. Running
+  # mypy directly here would redden every PR regardless of what it touches.
+  # tools/mypy_ratchet.py runs mypy, counts errors per file, and fails only
+  # when a file's count RISES above tools/mypy_baseline.json's committed
+  # ceiling for it — see that script's module docstring for the full
+  # rationale (including why mypy itself needs `no_site_packages`, set in
+  # pyproject.toml, to survive a broken third-party stub package). Run the
+  # identical command locally: `python tools/mypy_ratchet.py`.
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install package + lint extras
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[lint]
+
+      - name: Run the mypy ratchet gate
+        run: python tools/mypy_ratchet.py

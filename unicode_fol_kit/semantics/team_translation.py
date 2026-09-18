@@ -108,7 +108,7 @@ Every rejection raises :class:`NotImplementedError` naming the offending shape
 and pointing back at ``team_satisfies`` / ``team_models`` as the fallback
 (brute-force, but total over the whole team fragment).
 
-Public API: :func:`dependence_to_eso`.
+Public API: :func:`dependence_to_eso`, :func:`dependence_holds_eso`.
 """
 
 from typing import FrozenSet, List, Optional, Tuple
@@ -117,6 +117,7 @@ from ..fol.nodes import (
     Node, Variable, Atom, Not, And, Or, Implies, Quantifier,
     Dependence, SlashedExists, SecondOrderQuantifier,
 )
+from .tarski import Structure
 
 _FORALL = ("∀", "forall")
 _EXISTS = ("∃", "exists")
@@ -365,3 +366,51 @@ def dependence_to_eso(sentence: Node) -> Node:
     for fname, arity in skolems:
         result = SecondOrderQuantifier("∃", fname, arity, result)
     return result
+
+
+def dependence_holds_eso(sentence: Node, structure: Structure, fast: bool = False) -> bool:
+    """Translate ``sentence`` via :func:`dependence_to_eso` and check it in ``structure``.
+
+    The "checking side" this module's own faithfulness argument (and its test
+    suite, ``holds(dependence_to_eso(sentence), structure)``) always pairs the
+    translation with: a convenience for that exact two-step pattern, plus an
+    opt-in fast path (roadmap C24).
+
+    ``dependence_to_eso``'s output is always a SINGLE, leading, all-``∃``
+    block of ``SecondOrderQuantifier`` nodes wrapping a classical core (see
+    the module docstring: one fresh ``∃F_u`` per Skolemised existential,
+    nested front-to-back, never alternating with a ``∀``) — always within
+    :func:`~unicode_fol_kit.semantics.asp_models.asp_holds_so`'s single-block
+    fragment, so ``fast=True`` here never raises for that reason (it can
+    still raise for a symbol :func:`~unicode_fol_kit.semantics.asp_models.asp_holds_so`
+    needs that ``structure`` does not interpret, or a missing ``clingo``).
+
+    Args:
+        sentence: a dependence-logic sentence in :func:`dependence_to_eso`'s
+            supported fragment.
+        structure: the structure to check the translation against.
+        fast: opt-in (default ``False``, matching this module's own tests'
+            existing ``holds(dependence_to_eso(sentence), structure)`` call
+            exactly); ``True`` checks via
+            :func:`~unicode_fol_kit.semantics.asp_models.asp_holds_so`
+            instead of the brute-force
+            :func:`~unicode_fol_kit.semantics.secondorder.holds`.
+
+    Returns:
+        Whether ``structure`` satisfies the ESO translation of ``sentence``
+        (provably equivalent to ``sentence``'s own team-semantic truth, for
+        the fragment :func:`dependence_to_eso` covers — see the module
+        docstring's "FAITHFULNESS" section).
+
+    Raises:
+        NotImplementedError: from :func:`dependence_to_eso`, for ``sentence``
+            outside its fragment.
+        ImportError: ``fast=True`` and ``clingo`` (the optional ``asp``
+            extra) is not installed.
+    """
+    translated = dependence_to_eso(sentence)
+    if fast:
+        from .asp_models import asp_holds_so
+        return asp_holds_so(translated, structure)
+    from .secondorder import holds
+    return holds(translated, structure)

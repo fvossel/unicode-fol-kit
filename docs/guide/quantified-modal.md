@@ -769,3 +769,47 @@ thf_custom = to_thf_modal(custom, mode="constant", frame="S5")
 len(thf_custom.splitlines())  # → (large problem, many axiom lines)
 "mforall" in thf_custom  # → True (existentials become mforall in the embedding)
 ```
+
+## A fifth view: NXF export, and reading QMLTP problems back
+
+Besides the THF/Isabelle shallow embeddings above, `to_tptp_ncl` (in `atp.tptp_ncl`) exports a QUANTIFIED modal formula as **NXF** ("Non-Classical TFF"), the TPTP World's own native syntax for non-classical logics — a `logic` role statement naming the frame (`K`/`T`/`S4`/`S5`/`D`) and domain regime, native `!`/`?` quantifiers, and one `tff(...,type,...)` declaration per sort/constant/predicate the formula actually uses:
+
+```python
+from unicode_fol_kit import BARCAN, to_tptp_ncl
+
+nxf = to_tptp_ncl(BARCAN, frame="S4", conjecture_name="bf")
+print(nxf)
+# → tff(bf_logic,logic,
+#       $modal ==
+#         [ $domains == $constant,
+#           $designation == $rigid,
+#           $terms == $global,
+#           $modalities == $modal_system_S4 ] ).
+#
+#     tff(a_decl,type,
+#         a: $i > $o ).
+#
+#     tff(bf,conjecture,
+#         (<.> ? [X: $i] : (a(X)) => ? [X: $i] : (<.> a(X))) ).
+```
+
+The companion reader, `fol.qmltp_input`, goes the other way for a DIFFERENT (older, QMLTP-native) surface syntax: it reads the 600-problem [QMLTP library](https://www.iltp.de/qmltp/)'s own `qmf(name, role, formula).` statements and `#box`/`#dia` connectives, plus the structured comment header recording that problem's status (`Theorem`/`Non-Theorem`) per logic and per domain regime — exactly the litmus-test table this page has been building by hand all along:
+
+```python
+from unicode_fol_kit.fol.qmltp_input import load_qmltp
+from unicode_fol_kit.fol.qml import qml_is_valid
+
+problem = load_qmltp("tests/fixtures/qmltp/barcan.p")   # the test suite's own stand-in, in QMLTP syntax
+problem.header.problem
+# → 'Barcan scheme instance.'
+problem.header.status_for("S4", "constant")
+# → 'Theorem'
+
+formula = problem.formulas[0].formula
+formula.to_unicode_str()
+# → '∀x □F(x) → □∀x F(x)'   (the box-Barcan scheme, parsed straight into a kit Node)
+
+qml_is_valid(formula, mode="constant", frame="S4")  # → True -- agrees with the file's own status table
+```
+
+That agreement is not incidental: QMLTP's logic names (`K`/`D`/`T`/`S4`/`S5`) and domain-condition names (`varying`/`cumulative`/`constant`) are used verbatim as `qml_is_valid`'s own `frame=`/`mode=` values, and every `(logic, domain)` cell of every bundled fixture is cross-checked against `qml_is_valid` this way in `tests/test_qmltp_input.py`. The kit ships no QMLTP file — no redistribution licence for the library could be found — so those fixtures are small stand-ins written in the same syntax with hand-derived status tables; point `load_qmltp` at your own copy of QMLTP to read the real problems — the reader and this page's own oracle are required to agree on all of them, not just the one shown here. See `atp.tptp_ncl` / `fol.qmltp_input`'s own module docstrings for the exact supported fragment (mono-modal alethic, native quantifiers, non-nullary atoms — compound function terms and indexed multi-modal connectives are refused by name as documented extensions) and the primary sources each syntax choice was checked against.

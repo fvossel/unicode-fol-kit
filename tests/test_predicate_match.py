@@ -1,11 +1,18 @@
 """Tests for unicode_fol_kit.eval.predicate_match — predicate-aligned string match."""
 
+import pytest
+
 from unicode_fol_kit import (
     formulas_are_identical,
     match_predicates,
     formulas_are_matched_identical,
+    align_symbols,
 )
-from unicode_fol_kit.eval.predicate_match import _levenshtein, _normalised_distance
+from unicode_fol_kit.eval.predicate_match import (
+    _levenshtein, _normalised_distance, _symbol_inventory,
+)
+from unicode_fol_kit.fol.signature import inventory_of, Signature
+from unicode_fol_kit.fol.nodes import Atom, Constant, Function, Variable, And
 
 
 # ---------------------------------------------------------------------------
@@ -145,3 +152,84 @@ def test_matched_identical_false_for_structural_difference():
     assert formulas_are_matched_identical(
         "∀x (P(x) ∧ Q(x))", "∀x (P(x) ∨ Q(x))"
     ) is False
+
+
+# ---------------------------------------------------------------------------
+# _symbol_inventory — the LENIENT (never-raising) inventory shared with
+# unicode_fol_kit.fol.signature.inventory_of (roadmap item C5).
+# ---------------------------------------------------------------------------
+#
+# These are adversarial cases Signature.from_formulas REFUSES outright (see
+# tests/test_signature.py's own from_formulas conflict tests): predicate_
+# match's whole purpose is scoring possibly-malformed model output, so its
+# inventory walk must keep tolerating exactly what it tolerated before the
+# swap onto the shared unicode_fol_kit.fol.signature.inventory_of walk.
+
+def test_symbol_inventory_is_exactly_inventory_of():
+    """_symbol_inventory is a pure delegation, not a coincidentally-agreeing
+    second implementation — same object identity as fol.signature's walk."""
+    from unicode_fol_kit.eval import predicate_match
+    assert predicate_match._symbol_inventory is inventory_of
+
+
+def test_symbol_inventory_tolerates_arity_conflict():
+    """P used at arity 1 and arity 2 in ONE tree: Signature.from_formulas
+    refuses this outright; _symbol_inventory keeps BOTH (name, arity)
+    entries and never raises."""
+    n = And(Atom("P", [Constant("a")]),
+            Atom("P", [Constant("a"), Constant("b")]))
+    with pytest.raises(ValueError, match="conflicting arities"):
+        Signature.from_formulas([n])
+    preds, funcs, consts = _symbol_inventory(n)
+    assert preds == {("P", 1), ("P", 2)}
+    assert funcs == set()
+    assert consts == {"a", "b"}
+
+
+def test_symbol_inventory_tolerates_constant_vs_function_clash():
+    """'alice' used as a bare constant AND as an applied function in ONE
+    tree: Signature.from_formulas refuses this; _symbol_inventory records
+    'alice' in BOTH the constants set and the functions set."""
+    x = Variable("x")
+    n = And(Atom("S", [Constant("alice")]),
+            Atom("T", [Function("alice", [x])]))
+    with pytest.raises(ValueError, match="used both as a constant and as a function"):
+        Signature.from_formulas([n])
+    preds, funcs, consts = _symbol_inventory(n)
+    assert funcs == {("alice", 1)}
+    assert consts == {"alice"}
+
+
+def test_symbol_inventory_allows_predicate_and_function_sharing_a_name():
+    """A predicate 'Foo' and a function 'Foo' coexisting is not a clash in
+    either implementation (separate namespaces) — sanity check that the
+    lenient walk does not over-tolerate by conflating namespaces."""
+    x = Variable("x")
+    n = And(Atom("Foo", [x]), Atom("Q", [Function("Foo", [x])]))
+    preds, funcs, consts = _symbol_inventory(n)
+    assert preds == {("Foo", 1), ("Q", 1)}
+    assert funcs == {("Foo", 1)}
+
+
+def test_symbol_inventory_excludes_builtin_operators():
+    """'=' and '+' are the kit's built-in operators, never user vocabulary —
+    matches Signature's identical classification (see signature.py)."""
+    from unicode_fol_kit.fol.nodes import Number
+    n = Atom("=", [Function("+", [Constant("a"), Number(1)]), Constant("b")])
+    preds, funcs, consts = _symbol_inventory(n)
+    assert preds == set()
+    assert funcs == set()
+    assert consts == {"a", "b"}
+
+
+def test_align_symbols_never_raises_on_a_vocabulary_conflict_input():
+    """align_symbols (which calls _symbol_inventory on both sides) must not
+    raise on a prediction with an internal vocabulary conflict — this is
+    the property the whole lenient-inventory swap exists to preserve; the
+    formula is malformed model output, not something align_symbols should
+    refuse, since Signature.from_formulas already refuses it upstream for
+    callers that want that check."""
+    n = And(Atom("P", [Constant("a")]),
+            Atom("P", [Constant("a"), Constant("b")]))
+    aligned = align_symbols(n, n)
+    assert aligned == n

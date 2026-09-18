@@ -124,17 +124,19 @@ the offending node type rather than silently mis-encoding it.
 Public API: :func:`asp_minimal_models`, :func:`asp_find_model`.
 """
 
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+from itertools import product
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from ..fol.nodes import (
     Node, Variable, Constant, Number, Function,
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier, Count,
+    SecondOrderQuantifier,
 )
-from .tarski import Structure, _FORALL, _EXISTS
+from .tarski import Structure, _FORALL, _EXISTS, _ORDER_COMPARISONS, _ORDER_OPS, _is_number
 from .modelfinder import _Signature, _universal_closure
 from .nonmonotonic import _circ_profile, _strictly_below, _fixed_key
 
-__all__ = ["asp_minimal_models", "asp_find_model"]
+__all__ = ["asp_minimal_models", "asp_find_model", "asp_holds_so"]
 
 
 # =============================================================================
@@ -145,6 +147,12 @@ __all__ = ["asp_minimal_models", "asp_find_model"]
 
 _ALLOWED_FORMULA_TYPES = (Atom, Not, And, Or, Xor, Implies, Iff, Quantifier, Count)
 _ALLOWED_TERM_TYPES = (Variable, Constant, Number, Function)
+
+
+def _silent(code, message):
+    """clingo logger that drops its info/warning chatter about the GENERATED program
+    (e.g. "atom does not occur in any rule head" for an empty extension), the same
+    choice atp.clingo_backend makes; real errors still raise from clingo itself."""
 
 
 def _check_fragment(sentences: Iterable[Node]) -> None:
@@ -265,6 +273,179 @@ class _AspEncoder:
                 self.rules.append(f"{choice} :- {body}.")
         for name, asp in self.const_asp.items():
             self.rules.append(f"1 {{ {asp}(V) : dom(V) }} 1.")
+
+    def emit_fixed_facts(self, structure: Structure, index_of: Dict[Any, int],
+                         free_predicates: Set[Tuple[str, int]]) -> None:
+        """Emit ``dom/1``, plus GROUND facts pinning ``structure``'s fixed part.
+
+        Sibling of :meth:`emit_base_facts`, used only by :func:`asp_holds_so`
+        (``emit_base_facts`` itself is untouched, so :func:`asp_find_model` /
+        :func:`asp_minimal_models` are unaffected). Every declared predicate
+        named in ``free_predicates`` — the SO-quantifier-bound ones — gets
+        exactly the same free choice rule ``emit_base_facts`` would give it
+        (the quantifier itself needs no other encoding: see
+        :func:`asp_holds_so`'s docstring). Every OTHER declared symbol
+        (predicate, function, constant) is pinned EXACTLY to its
+        interpretation in ``structure`` — ground facts, never a choice rule —
+        translating ``structure``'s own (arbitrary, hashable) domain
+        individuals to the ``0..size-1`` integers ``declare_signature``'s
+        numbering assumes elsewhere via ``index_of``.
+
+        One case is not "pin to the declared extension, or else empty": an
+        order comparison (``< > ≤ ≥``) that ``structure`` declares NO
+        extension for. :func:`~unicode_fol_kit.semantics.tarski._order_value`
+        does not read that as empty (always false) — its third, lowest-
+        priority reading is that the comparison still holds numerically
+        between two operands that themselves evaluate to numbers (see that
+        function's own docstring). Pinning such a predicate to the empty
+        relation here would silently disagree with the very evaluator
+        :func:`asp_holds_so` claims to match once the block's body compares
+        two numeric domain individuals with no declared ``<``/etc.
+        extension — see :meth:`_order_numeric_extension`, used below exactly
+        where ``emit_base_facts`` has no analogous case (a fully free choice
+        never needs this fallback).
+
+        Args:
+            structure: the structure whose fixed part is pinned.
+            index_of: ``{domain individual: 0-based index}`` for every
+                individual in ``structure.domain`` (``len(structure.domain)``
+                must equal ``self.size``).
+            free_predicates: the ``(name, arity)`` pairs to leave as a free
+                choice instead of pinning (the SO-quantifier-bound ones).
+
+        Raises:
+            ValueError: a constant has no interpretation in ``structure``
+                (and does not itself parse as a numeral, mirroring
+                :func:`~unicode_fol_kit.semantics.tarski.term_value`'s own
+                fallback), a function has no interpretation in ``structure``
+                or is not TOTAL over its domain (an argument tuple with no
+                value — this encoder's function encoding is the same
+                "total relation" reading :func:`emit_base_facts`
+                free-chooses, so a partial interpretation does not fit it),
+                or a pinned value (from a predicate's declared extension, a
+                function's arguments/result, or a constant) is not itself a
+                member of ``structure.domain``. A declared PREDICATE with no
+                interpretation in ``structure`` never raises here — it
+                silently falls through to the empty relation (or, for an
+                order comparison, to :meth:`_order_numeric_extension`'s
+                numeric reading), the same "missing extension is the empty
+                relation, hence false" fallback
+                :func:`~unicode_fol_kit.semantics.tarski._atom_value` /
+                :func:`~unicode_fol_kit.semantics.tarski._order_value`
+                themselves document, not a gap.
+        """
+        self.rules.append(f"dom(0..{self.size - 1}).")
+
+        for (name, arity), asp in self.pred_asp.items():
+            if (name, arity) in free_predicates:
+                if arity == 0:
+                    self.rules.append(f"{{{asp}}}.")
+                else:
+                    xs = [f"X{i}" for i in range(arity)]
+                    conds = ", ".join(f"dom({x})" for x in xs)
+                    self.rules.append(f"{{{asp}({','.join(xs)}) : {conds}}}.")
+                continue
+            if arity == 0:
+                if bool(structure.predicates.get((name, 0), False)):
+                    self.rules.append(f"{asp}.")
+                continue
+            extension = structure.predicates.get((name, arity))
+            if extension is None:
+                extension = (self._order_numeric_extension(name, structure)
+                            if arity == 2 and name in _ORDER_COMPARISONS else ())
+            for tup in extension:
+                idxs = [self._pin_value(v, index_of, "predicate", name) for v in tup]
+                self.rules.append(f"{asp}({','.join(str(i) for i in idxs)}).")
+
+        for (name, arity), asp in self.func_asp.items():
+            # Functions are never second-order-bound (SecondOrderQuantifier
+            # binds a PREDICATE name only — see the module docstring), so
+            # every function declared here is pinned.
+            key = (name, arity)
+            if key not in structure.functions:
+                raise ValueError(
+                    f"asp_holds_so: function {name!r}/{arity} has no "
+                    "interpretation in the given structure."
+                )
+            interp = structure.functions[key]
+            for args in product(structure.domain, repeat=arity):
+                if callable(interp):
+                    value = interp(*args)
+                else:
+                    if args not in interp:
+                        raise ValueError(
+                            f"asp_holds_so: function {name!r}/{arity} is not "
+                            f"total over the given structure's domain — "
+                            f"undefined for arguments {args!r} (this "
+                            "encoder's function encoding requires exactly "
+                            "one result per input tuple, the same 'total "
+                            "relation' reading emit_base_facts free-chooses)."
+                        )
+                    value = interp[args]
+                idxs = [self._pin_value(a, index_of, "function", name) for a in args]
+                idxs.append(self._pin_value(value, index_of, "function", name))
+                self.rules.append(f"{asp}({','.join(str(i) for i in idxs)}).")
+
+        for name, asp in self.const_asp.items():
+            # Constants are never second-order-bound either.
+            if name in structure.constants:
+                value = structure.constants[name]
+            else:
+                # No override -- mirror tarski.term_value's own Number
+                # fallback (a Number is scanned as a constant named
+                # str(value), read as the literal itself unless overridden;
+                # see modelfinder._Signature.scan / this module's own _term).
+                try:
+                    value = int(name)
+                except ValueError:
+                    raise ValueError(
+                        f"asp_holds_so: constant {name!r} has no "
+                        "interpretation in the given structure."
+                    )
+            idx = self._pin_value(value, index_of, "constant", name)
+            self.rules.append(f"{asp}({idx}).")
+
+    def _order_numeric_extension(self, name: str, structure: Structure) -> Set[Tuple[Any, Any]]:
+        """The numeric-fallback extension of an order comparison ``structure``
+        declares no extension for — mirrors
+        :func:`~unicode_fol_kit.semantics.tarski._order_value`'s rule (3).
+
+        Computed directly over ``structure.domain`` rather than over every
+        term this encoder's callers might build: every term
+        :meth:`emit_fixed_facts` ever pins (a constant, a function result, a
+        quantified variable) is already required to be a member of
+        ``structure.domain`` (:meth:`_pin_value` raises otherwise), so the
+        domain's own individuals are exactly the ``(left, right)`` value
+        pairs :func:`~unicode_fol_kit.semantics.tarski._order_value` would
+        ever see for this predicate once no declared extension applies. A
+        pair where either individual is not a number (:func:`~unicode_fol_kit.semantics.tarski._is_number`,
+        which excludes ``bool``) is simply absent from the result — the same
+        "anything else is false" fallback ``_order_value`` itself uses, not
+        an error: a non-numeric domain is a legitimate case, not a gap.
+
+        Returns:
+            The set of ``(x, y)`` pairs of RAW domain individuals (not yet
+            translated to ``dom/1`` indices — the caller does that via
+            :meth:`_pin_value`, same as for a declared extension) for which
+            ``name``'s numeric reading holds.
+        """
+        op = _ORDER_OPS[name]
+        return {
+            (x, y)
+            for x in structure.domain
+            for y in structure.domain
+            if _is_number(x) and _is_number(y) and op(x, y)
+        }
+
+    def _pin_value(self, value: Any, index_of: Dict[Any, int], kind: str, name: str) -> int:
+        """Translate one structure individual to its ``dom/1`` index, or raise."""
+        if value not in index_of:
+            raise ValueError(
+                f"asp_holds_so: the given structure's {kind} {name!r} "
+                f"produces the value {value!r}, which is not itself a member "
+                "of the structure's own domain."
+            )
+        return index_of[value]
 
     # -- term evaluation ------------------------------------------------------
 
@@ -585,7 +766,7 @@ def asp_find_model(premises: Iterable[Node], size: int = 3) -> Optional[Structur
     sentences = [_universal_closure(p) for p in premises]
     program, enc, sig = _build_program(sentences, size)
 
-    ctl = clingo.Control(["1"])
+    ctl = clingo.Control(["1"], logger=_silent)
     ctl.add("base", [], program)
     ctl.ground([("base", [])])
 
@@ -655,7 +836,7 @@ def asp_minimal_models(premises: Iterable[Node], circumscribed: Optional[Set[str
     pred_sig = sorted(sig.predicates)
     circ = set(circumscribed) if circumscribed is not None else {n for n, _ in pred_sig}
 
-    ctl = clingo.Control(["0"])
+    ctl = clingo.Control(["0"], logger=_silent)
     ctl.add("base", [], program)
     ctl.ground([("base", [])])
 
@@ -688,3 +869,291 @@ def asp_minimal_models(premises: Iterable[Node], circumscribed: Optional[Set[str
             if not any(_strictly_below(other, profile) for (e2, other) in grp if e2 is not entry):
                 result.append(entry[3])
     return result
+
+
+# =============================================================================
+# Single-block second-order checking (roadmap C24): asp_holds_so
+# =============================================================================
+#
+# secondorder.satisfies_so evaluates ∀P/∃P by brute-force enumeration of every
+# relation of P's arity — 2 ** (n ** k), doubly exponential (see that module's
+# docstring). The exact mechanism this module already uses for an ORDINARY
+# predicate — "a free ASP choice, propagation-pruned by clingo instead of
+# materialised in Python" (module docstring, "The ASP encoding") — applies
+# just as well to a SECOND-ORDER-BOUND predicate, PROVIDED the quantifier
+# nesting is simple enough that "propagation-pruned choice + one solve" is a
+# SOUND reduction: a single leading block of SAME-polarity SecondOrderQuantifier
+# occurrences (∃P1…∃Pk or ∀P1…∀Pk, nothing else of that kind anywhere in the
+# sentence). One ∃-block is an ordinary satisfiability check (NP-flavoured,
+# exactly what clingo solves). One ∀-block reduces to a single
+# UNSAT-of-the-negation check (co-NP-flavoured — ask whether any answer set
+# witnesses the negation; none existing means the block holds for every
+# choice). Genuine ALTERNATION (∀P∃Q…) is a strictly harder complexity class
+# (Σ2p/Π2p) that plain, non-disjunctive clingo choice rules do not capture
+# soundly — see secondorder.py's own module docstring and roadmap C24's
+# existing_coverage for the argument — so it is refused here, loudly, rather
+# than silently mishandled.
+
+def _so_quantifier_chain(sentence: Node) -> Tuple[Optional[str], List[SecondOrderQuantifier]]:
+    """Validate ``sentence``'s SecondOrderQuantifier occurrences; return its block.
+
+    Returns ``(None, [])`` if ``sentence`` has no SecondOrderQuantifier at all
+    (a purely classical sentence — :func:`asp_holds_so` accepts this as the
+    degenerate zero-quantifier case). Otherwise returns ``("forall" | "exists",
+    chain)``, ``chain`` being the block's nodes in outer-to-inner order.
+
+    "A single block" means every SecondOrderQuantifier occurrence in
+    ``sentence`` — wherever it sits in the tree, including nested inside
+    ordinary classical structure such as
+    :func:`~unicode_fol_kit.semantics.nonmonotonic.circumscription_entails_so`'s
+    ``Implies``/``And`` — is reachable from exactly ONE entry node by
+    following ``.formula`` through SecondOrderQuantifier nodes ONLY, all of
+    the SAME polarity, until reaching a body with no further
+    SecondOrderQuantifier anywhere inside it. A second, unrelated occurrence
+    (a sibling block, or one merely nested a connective away rather than
+    directly wrapping the next) is rejected exactly like true alternation —
+    both are outside the fragment :func:`asp_holds_so` soundly covers.
+
+    Raises:
+        ValueError: mixed ``∀``/``∃`` polarities, an unrecognised quantifier
+            spelling, more than one entry point (disconnected or
+            connective-separated occurrences), or a SecondOrderQuantifier
+            nested inside the block's own innermost body — naming the
+            offending sentence in every case.
+    """
+    all_so = [n for n in sentence.walk() if isinstance(n, SecondOrderQuantifier)]
+    if not all_so:
+        return None, []
+
+    types = {n.type for n in all_so}
+    forall_seen = types & set(_FORALL)
+    exists_seen = types & set(_EXISTS)
+    unknown = types - forall_seen - exists_seen
+    if unknown:
+        raise ValueError(
+            f"asp_holds_so: unknown SecondOrderQuantifier type(s) {sorted(unknown)!r} "
+            f"in {sentence.to_unicode_str()!r} — only unsorted "
+            f"{_FORALL + _EXISTS} are supported here."
+        )
+    if forall_seen and exists_seen:
+        raise ValueError(
+            f"asp_holds_so: {sentence.to_unicode_str()!r} mixes ∀ and ∃ "
+            "second-order quantifiers (alternation) — only a single leading "
+            "block of the SAME polarity is supported here; use "
+            "secondorder.satisfies_so for alternating second-order "
+            "quantification."
+        )
+    block_type = "forall" if forall_seen else "exists"
+
+    bodies_that_are_so = {
+        id(n.formula) for n in all_so if isinstance(n.formula, SecondOrderQuantifier)
+    }
+    entry_points = [n for n in all_so if id(n) not in bodies_that_are_so]
+    if len(entry_points) != 1:
+        raise ValueError(
+            f"asp_holds_so: {sentence.to_unicode_str()!r} has "
+            f"{len(entry_points)} separate second-order-quantifier chains "
+            "(nested through a non-quantifier connective, or genuinely "
+            "scattered) — only a single leading block, with nothing else of "
+            "its kind anywhere in the sentence, is supported here; use "
+            "secondorder.satisfies_so instead."
+        )
+
+    chain: List[SecondOrderQuantifier] = []
+    cur: Node = entry_points[0]
+    while isinstance(cur, SecondOrderQuantifier):
+        chain.append(cur)
+        cur = cur.formula
+
+    if any(isinstance(n, SecondOrderQuantifier) for n in cur.walk()):
+        raise ValueError(
+            f"asp_holds_so: a SecondOrderQuantifier is nested inside the "
+            f"single block's own body in {sentence.to_unicode_str()!r} "
+            "(quantifier alternation) — use secondorder.satisfies_so instead."
+        )
+    if len(chain) != len(all_so):
+        raise ValueError(  # pragma: no cover - defensive; unreachable given the checks above
+            f"asp_holds_so: the second-order quantifiers in "
+            f"{sentence.to_unicode_str()!r} do not form a single connected "
+            "chain — use secondorder.satisfies_so instead."
+        )
+    return block_type, chain
+
+
+def _replace_so_block(node: Node, entry: SecondOrderQuantifier, replacement: Node) -> Node:
+    """Rebuild ``node``, replacing the ONE occurrence ``entry`` (by identity) with ``replacement``.
+
+    ``entry`` is found by object identity (``is``), not structural equality —
+    the single node :func:`_so_quantifier_chain` identified as the block's
+    entry point, wherever it sits in ``node``. Used to splice the block's own
+    (already-computed) truth value back into the surrounding classical
+    sentence — see :func:`asp_holds_so`.
+    """
+    if node is entry:
+        return replacement
+    return node.map_children(lambda c: _replace_so_block(c, entry, replacement))
+
+
+def asp_holds_so(sentence: Node, structure: Structure) -> bool:
+    """Whether ``structure`` satisfies second-order ``sentence`` (ASP-grounded).
+
+    Mirrors :func:`~unicode_fol_kit.semantics.secondorder.holds`'s signature,
+    and — on the fragment described below — its exact answer (verified
+    differentially against ``secondorder.satisfies_so``/``holds`` in this
+    module's test suite; see roadmap C24). Restricted to sentences whose
+    :class:`~unicode_fol_kit.fol.nodes.SecondOrderQuantifier` occurrences form
+    a SINGLE, contiguous, SAME-polarity block — see
+    :func:`_so_quantifier_chain` for exactly what that means (the block need
+    not be at ``sentence``'s outermost node: see
+    :func:`~unicode_fol_kit.semantics.nonmonotonic.circumscription_entails_so`'s
+    output, whose ``∀``-block sits inside an ``Implies``/``And``). A sentence
+    with NO second-order quantifier at all is accepted too, checked as an
+    ordinary closed classical formula against ``structure``.
+
+    THE ENCODING is a TWO-STEP evaluation, not a single whole-sentence ASP
+    solve — a single solve over the WHOLE sentence with the block's wrapper
+    merely stripped is UNSOUND once the block sits in a position where sign
+    matters (e.g. the ANTECEDENT of an ``Implies``, as
+    ``circumscription_entails_so``'s own output does): negating the whole
+    stripped sentence to test the ``∀`` case conflates the block's own
+    polarity with the surrounding connective's, silently turning a nested
+    ``∀`` into something that answers like an ``∃`` (caught by this module's
+    own differential tests against ``satisfies_so`` — a hand-checked
+    ``Implies(∀P(P(a)→Q(a)), Q(a))`` example disagreed before this two-step
+    design). Instead:
+
+    1. The block's OWN truth value is computed in ISOLATION: its innermost
+       body (``chain[-1].formula`` — the part with no further
+       ``SecondOrderQuantifier``) is ASP-encoded on its own — the SO-bound
+       predicate name(s) get the ordinary free ASP choice any OTHER declared
+       predicate gets (no per-node quantifier encoding is needed; see the
+       module docstring's "The ASP encoding"), and every other symbol this
+       body uses is PINNED to ``structure``'s own extension
+       (:meth:`_AspEncoder.emit_fixed_facts`). One clingo solve then asks:
+       for a ``∃``-block, is the body true in SOME answer set (SAT, ``:- not
+       head.``); for a ``∀``-block, is the body's NEGATION true in NO answer
+       set (UNSAT). This is exactly ``asp_find_model``'s own SAT-checking
+       shape, just scoped to the block's body and a partly-pinned rather than
+       fully-free signature.
+    2. That single Boolean is spliced back into ``sentence`` in place of the
+       block (:func:`_replace_so_block`, by object identity) as a fresh
+       nullary atom whose extension in an EXTENDED copy of ``structure`` is
+       exactly that Boolean, and the RESULT — an ordinary classical sentence,
+       since the block is now just a 0-ary atom — is handed to
+       :func:`~unicode_fol_kit.semantics.tarski.satisfies`, the real
+       recursive Tarskian evaluator, which threads the surrounding
+       ``Implies``/``And``/``Not``/… polarity correctly because it is not
+       re-derived here, just reused.
+
+    The block's own body may not have any free object variable — genuinely
+    free in ``sentence`` (which must be closed) or bound by an object-level
+    quantifier OUTSIDE the block — since step 1 evaluates it as a
+    self-contained closed sentence; see the ``Raises`` section.
+
+    Requires ``structure``'s functions the block's body uses to be
+    interpreted TOTALLY over its own domain, matching this module's own
+    "total relation" function encoding; see
+    :meth:`_AspEncoder.emit_fixed_facts`.
+
+    Args:
+        sentence: a closed (no free object variable) second-order sentence,
+            single-block as above; the block's own body must, once isolated,
+            be within :func:`_check_fragment`'s classical fragment
+            (``Atom``/``Not``/``And``/``Or``/``Xor``/``Implies``/``Iff``/
+            ``Quantifier``/``Count`` over
+            ``Variable``/``Constant``/``Number``/``Function`` terms; see the
+            module docstring's "Fragment supported here" section) — the
+            surrounding classical structure the block sits inside, if any,
+            is evaluated by the FULL Tarskian evaluator instead (step 2
+            above), so it is not limited to this narrower fragment.
+        structure: the structure to check ``sentence`` against — an
+            arbitrary :class:`~unicode_fol_kit.semantics.tarski.Structure`
+            (any hashable domain, not necessarily the ``0..n-1`` integers
+            :func:`asp_find_model`/:func:`asp_minimal_models` produce; this
+            function builds its own index for the ASP encoding).
+
+    Returns:
+        Whether ``structure`` satisfies ``sentence``.
+
+    Raises:
+        ValueError: the SecondOrderQuantifier occurrences in ``sentence`` do
+            not form a single same-polarity block (alternation, nesting,
+            mixed polarity, or more than one chain — naming the offending
+            sentence); the block's own body uses a construct outside
+            :func:`_check_fragment`'s fragment, or has a free object variable
+            (genuinely free in ``sentence``, or bound outside the block —
+            either way, out of scope for the isolated per-block solve above);
+            or a constant or function the block's body needs from
+            ``structure`` has no interpretation there, a pinned value is not
+            itself a member of ``structure``'s domain, or a function is not
+            total over it — a declared PREDICATE with no interpretation
+            never raises (see :meth:`_AspEncoder.emit_fixed_facts`'s own
+            ``Raises``).
+        ImportError: ``clingo`` (the optional ``asp`` extra) is not
+            installed — never a silent fallback to the brute-force evaluator.
+    """
+    import clingo
+    from .tarski import satisfies
+    from ..atp.sequent import _all_pred_names, _fresh_pred_name
+
+    block_type, chain = _so_quantifier_chain(sentence)
+
+    if not chain:
+        return satisfies(sentence, structure, {})
+
+    entry = chain[0]
+    body = chain[-1].formula
+    _check_fragment([body])
+
+    free_vars = _free_var_names_local(body)
+    if free_vars:
+        raise ValueError(
+            f"asp_holds_so: the second-order block in {sentence.to_unicode_str()!r} "
+            f"has free object variable(s) {sorted(free_vars)} in its own body "
+            "— either genuinely free in `sentence` (which must be closed) or "
+            "bound by an object-level quantifier OUTSIDE the block, neither "
+            "of which this function's isolated per-block solve supports; use "
+            "secondorder.satisfies_so instead."
+        )
+
+    so_names = {(n.predicate, n.arity) for n in chain}
+
+    sig = _Signature()
+    sig.scan(body)
+    sig.predicates |= so_names  # a vacuously-quantified SO predicate still needs a choice
+
+    index_of: Dict[Any, int] = {d: i for i, d in enumerate(structure.domain)}
+    size = len(structure.domain)
+
+    enc = _AspEncoder(size)
+    enc.declare_signature(sig)
+    enc.emit_fixed_facts(structure, index_of, so_names)
+
+    target: Node = Not(body) if block_type == "forall" else body
+    head_ref, _free = enc.encode(target, {})
+    enc.rules.append(f":- not {head_ref}.")
+    program = "\n".join(enc.rules)
+
+    ctl = clingo.Control(["1"], logger=_silent)
+    ctl.add("base", [], program)
+    ctl.ground([("base", [])])
+
+    found = False
+    with ctl.solve(yield_=True) as handle:
+        for _model in handle:
+            found = True
+            break
+
+    block_value = (not found) if block_type == "forall" else found
+
+    if entry is sentence:
+        return block_value
+
+    fresh_name = _fresh_pred_name("_so_block", _all_pred_names(sentence))
+    substituted = _replace_so_block(sentence, entry, Atom(fresh_name, ()))
+    ext_predicates = dict(structure.predicates)
+    ext_predicates[(fresh_name, 0)] = block_value
+    ext_structure = Structure(structure.domain, constants=structure.constants,
+                              functions=structure.functions, predicates=ext_predicates,
+                              sorts=structure.sorts)
+    return satisfies(substituted, ext_structure, {})

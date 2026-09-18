@@ -13,6 +13,8 @@ the extension of ``C`` iff ``π(C, x)`` holds under ``x ↦ d``. Concretely:
 - ``C ⊔ D``         ↦  ``π(C, x) ∨ π(D, x)``
 - ``∃r.C``          ↦  ``∃y (r(x, y) ∧ π(C, y))``
 - ``∀r.C``          ↦  ``∀y (r(x, y) → π(C, y))``
+- ``≥n r.C``        ↦  ``∃≥n y (r(x, y) ∧ π(C, y))``   (see "Qualified number restrictions")
+- ``≤n r.C``        ↦  ``∃≤n y (r(x, y) ∧ π(C, y))``
 
 with ``y`` a FRESH variable at every restriction, so nested restrictions
 (``∃r.(∀s.C)``) never capture an outer variable (see "Variable freshness").
@@ -74,6 +76,23 @@ independent calls to the internal translator, may both use ``x_1``) — this
 is not a capture risk because the two calls' quantifier scopes are siblings
 under ``→``, not nested inside one another.
 
+Qualified number restrictions
+------------------------------
+``AtLeast``/``AtMost`` (≥n r.C / ≤n r.C — see :mod:`unicode_fol_kit.dl.tableau`'s
+"Qualified number restrictions" section for the tableau side of ALCQ) route through
+the EXISTING :class:`~unicode_fol_kit.fol.nodes.Count` node rather than a new
+counting encoding written here: ``≥n r.C`` becomes ``Count("ge", Number(n), y,
+r(x, y) ∧ π(C, y))`` and ``≤n r.C`` becomes the same with ``"le"``. ``Count`` already
+carries a tested standard "distinct witnesses" first-order expansion
+(:meth:`~unicode_fol_kit.fol.nodes.Count._expand`, bounded at ``n ≤ 500`` — see that
+class's docstring) that :meth:`Count.to_z3` lowers through automatically, so this is
+exactly the independent (Z3-backed) differential oracle
+``tests/test_dl_alcq.py`` cross-checks the tableau against, the same role
+:func:`rbox_to_fol` plays for the RBox extension above. The counting variable ``y``
+is minted by the SAME ``fresh()`` counter as every other restriction (see "Variable
+freshness"), so a number restriction nested inside — or sibling to — an ordinary
+∃/∀ still gets a pairwise-distinct name throughout one top-level call.
+
 Multi-role concepts and modal K
 --------------------------------
 ALC is exactly multi-modal K: an ``∃r.C``/``∀r.C`` pair over a *single* role
@@ -109,21 +128,81 @@ together. An empty TBox/ABox translates to the same equality tautology used
 for ``⊤`` (over a nullary placeholder constant, since there is no ``x`` in
 scope at that point) — vacuously true, matching "no axioms" / "no
 assertions" imposing no constraint.
+
+Inverse roles and nominals (I, O)
+------------------------------------
+Unlike :mod:`unicode_fol_kit.dl.tableau` (which refuses both by name — see
+that module's "Inverse roles and nominals (I, O)" section), the standard
+translation to FOL has no trouble with either, so this module TRANSLATES
+them rather than refusing them:
+
+- :class:`~unicode_fol_kit.dl.concepts.InverseRole` (``r⁻``), used as a
+  restriction's ``role`` field, swaps the translated role atom's argument
+  order: ``∃r⁻.C`` ↦ ``∃y (r(y, x) ∧ π(C, y))`` and ``∀r⁻.C`` ↦
+  ``∀y (r(y, x) → π(C, y))`` (and likewise for ``AtLeast``/``AtMost``'s
+  ``Count`` matrix) — exactly the FOL reading of "an r-predecessor", the
+  standard translation of an inverse role (Baader et al., *DL Handbook*,
+  Ch. 2). This is a one-line change confined to the atom's argument order;
+  everything else about the restriction (the quantifier, the ``Count``
+  encoding for ``AtLeast``/``AtMost``) is untouched.
+- :class:`~unicode_fol_kit.dl.concepts.Nominal` (``{a}``) ↦ ``x = a``, with
+  ``a`` rendered as the same kind of term ``concept_to_fol``'s own ``term``
+  argument already is (a :class:`~unicode_fol_kit.fol.nodes.Variable` when
+  translating a bare concept, a :class:`~unicode_fol_kit.fol.nodes.Constant`
+  when translating an ABox assertion via :func:`abox_to_fol` — see "GCIs,
+  TBoxes, ABoxes" above for why that distinction matters) — the textbook
+  reading of a nominal as "the singleton set named by the individual ``a``"
+  (Baader et al., *DL Handbook*, Ch. 2's "individual-generated" theories).
+  This is genuinely a NEW predicate-free case, not a reuse of an existing
+  branch (unlike ⊤/⊥, which reuse equality — see "Top and Bottom" above —
+  a nominal names a SPECIFIC individual, not a tautology/contradiction).
+
+Both directions of this translation are differentially tested (see
+``tests/test_dl_alc.py``): concept satisfiability/entailment against the
+tableau where a genuinely independent second route exists (none does here —
+these constructs are precisely what the tableau refuses — so the check runs
+the OTHER direction instead, against a bounded FOL model finder/solver on the
+emitted formula itself, per this kit's translation-faithfulness convention).
+
+:func:`concept_to_modal` (single-role propositional K) is a DIFFERENT story:
+propositional K has no converse modality and no nominal/naming construct at
+all (that is HYBRID logic, a strictly different formalism this kit does not
+implement), so it explicitly REFUSES both, by name, rather than attempt an
+unfaithful encoding — see its own docstring.
+
+RBoxes
+------
+:func:`rbox_to_fol` renders a :class:`~unicode_fol_kit.dl.tableau.TBox`'s RBox
+(role inclusions and transitivity declarations — see "Role hierarchies and
+transitive roles (RBox)" in :mod:`unicode_fol_kit.dl.tableau`'s module
+docstring) the same way :func:`tbox_to_fol` renders its concept-level GCIs: a
+role inclusion ``r ⊑ s`` becomes its universal closure ``∀x,y (r(x,y) →
+s(x,y))`` and a transitivity declaration ``Trans(r)`` becomes ``∀x,y,z
+(r(x,y) ∧ r(y,z) → r(x,z))``, all conjoined together. This is the reduction
+the tableau's ∀-rule generalisation (RBox rule H) and ∀+-rule (RBox rule S)
+implement as completion-graph propagation, so
+``Implies(And(tbox_to_fol(tbox), rbox_to_fol(tbox)), subsumption_to_fol(C, D))``
+being FOL-valid is the independent, structurally unrelated cross-check this
+module's differential test battery runs through the kit's Z3 backend against
+``tableau.subsumes(C, D, tbox)``.
 """
 
 from typing import List
 
 from ..fol.nodes import (
-    Node, Variable, Constant, Atom,
+    Node, Variable, Constant, Number, Atom,
     Not as _FNot, And as _FAnd, Or as _FOr, Implies, Quantifier,
-    Box, Diamond,
+    Box, Diamond, Count,
 )
-from .concepts import Concept, Top, Bottom, Atomic, Not, And, Or, Exists, ForAll
+from .concepts import (
+    Concept, Top, Bottom, Atomic, Not, And, Or, Exists, ForAll, AtLeast, AtMost,
+    InverseRole, Nominal,
+)
 from .tableau import TBox, ABox
 
 __all__ = [
     "concept_to_fol", "subsumption_to_fol", "tbox_to_fol", "abox_to_fol",
-    "concept_to_modal",
+    "rbox_to_fol", "concept_to_modal",
 ]
 
 
@@ -144,6 +223,18 @@ def _fresh_var_factory(base: str):
     return fresh
 
 
+def _role_atom(role, x: Node, y: Node) -> Node:
+    """Render the role atom for an ``x —role→ y`` edge: ``role(x, y)``, or — when
+    ``role`` is an :class:`~unicode_fol_kit.dl.concepts.InverseRole` — ``role(y,
+    x)`` (see the module docstring's "Inverse roles and nominals (I, O)"
+    section: the standard translation of ``r⁻`` swaps the atom's argument order,
+    nothing else).
+    """
+    if isinstance(role, InverseRole):
+        return Atom(role.role, (y, x))
+    return Atom(role, (x, y))
+
+
 def _translate(concept: Concept, term: Node, fresh) -> Node:
     """Render ``concept`` as a FOL formula with ``term`` (a Variable or
     Constant) standing for the individual under discussion; ``fresh`` mints
@@ -155,6 +246,8 @@ def _translate(concept: Concept, term: Node, fresh) -> Node:
         return Atom("≠", (term, term))
     if isinstance(concept, Atomic):
         return Atom(concept.name, (term,))
+    if isinstance(concept, Nominal):
+        return Atom("=", (term, Constant(concept.individual)))
     if isinstance(concept, Not):
         return _FNot(_translate(concept.concept, term, fresh))
     if isinstance(concept, And):
@@ -166,11 +259,16 @@ def _translate(concept: Concept, term: Node, fresh) -> Node:
     if isinstance(concept, Exists):
         w = Variable(fresh())
         return Quantifier("∃", w, _FAnd(
-            Atom(concept.role, (term, w)), _translate(concept.concept, w, fresh)))
+            _role_atom(concept.role, term, w), _translate(concept.concept, w, fresh)))
     if isinstance(concept, ForAll):
         w = Variable(fresh())
         return Quantifier("∀", w, Implies(
-            Atom(concept.role, (term, w)), _translate(concept.concept, w, fresh)))
+            _role_atom(concept.role, term, w), _translate(concept.concept, w, fresh)))
+    if isinstance(concept, (AtLeast, AtMost)):
+        w = Variable(fresh())
+        matrix = _FAnd(_role_atom(concept.role, term, w), _translate(concept.concept, w, fresh))
+        op = "ge" if isinstance(concept, AtLeast) else "le"
+        return Count(op, Number(concept.n), w, matrix)
     raise TypeError(f"concept_to_fol: unsupported concept {type(concept).__name__}")
 
 
@@ -230,14 +328,46 @@ def tbox_to_fol(tbox: TBox, var: str = "x") -> Node:
     return _conjoin([subsumption_to_fol(sub, sup, var) for sub, sup in tbox.inclusions])
 
 
+def rbox_to_fol(tbox: TBox, x: str = "x", y: str = "y", z: str = "z") -> Node:
+    """Render every RBox axiom in ``tbox`` — role inclusions and transitivity
+    declarations — as its FOL image (see "RBoxes" in the module docstring) and
+    conjoin them.
+
+    - ``r ⊑ s``    ↦  ``∀x,y (r(x, y) → s(x, y))``
+    - ``Trans(r)`` ↦  ``∀x,y,z (r(x, y) ∧ r(y, z) → r(x, z))``
+
+    Transitive roles are sorted before rendering so the output (and hence any
+    string comparison of it) is deterministic despite ``TBox.transitive_roles``
+    being an unordered ``set``. An RBox with no role axioms at all — including
+    every plain ALC ``TBox`` predating this function — renders as a tautology,
+    matching :func:`tbox_to_fol`'s own empty-TBox convention.
+    """
+    parts: List[Node] = []
+    for sub_role, super_role in tbox.role_inclusions:
+        vx, vy = Variable(x), Variable(y)
+        parts.append(Quantifier("∀", vx, Quantifier("∀", vy,
+            Implies(Atom(sub_role, (vx, vy)), Atom(super_role, (vx, vy))))))
+    for role in sorted(tbox.transitive_roles):
+        vx, vy, vz = Variable(x), Variable(y), Variable(z)
+        parts.append(Quantifier("∀", vx, Quantifier("∀", vy, Quantifier("∀", vz,
+            Implies(_FAnd(Atom(role, (vx, vy)), Atom(role, (vy, vz))),
+                    Atom(role, (vx, vz)))))))
+    return _conjoin(parts)
+
+
 def abox_to_fol(abox: ABox) -> Node:
     """Render every assertion in ``abox`` as a FOL formula and conjoin them.
 
     A concept assertion ``a : C`` becomes ``π(C, a)`` with the individual
     ``a`` translated as a :class:`~unicode_fol_kit.fol.nodes.Constant` (not a
     Variable — see "GCIs, TBoxes, ABoxes" above for why this matters). A role
-    assertion ``(a, b) : r`` becomes ``r(a, b)``. An ABox with no assertions
-    at all renders as a tautology.
+    assertion ``(a, b) : r`` becomes ``r(a, b)``. A distinctness assertion
+    ``a ≠ b`` (see :meth:`~unicode_fol_kit.dl.tableau.ABox.assert_distinct` and
+    "Qualified number restrictions" in :mod:`unicode_fol_kit.dl.tableau`'s module
+    docstring — this reasoner has no unique name assumption, so this is the ONLY
+    thing that ever forces two individuals apart) becomes the FOL atom ``a ≠ b``
+    directly — no translation needed, ``Atom`` already renders it natively for
+    every backend. An ABox with no assertions at all renders as a tautology.
     """
     parts: List[Node] = []
     for individual, concept in abox.concept_assertions:
@@ -245,6 +375,8 @@ def abox_to_fol(abox: ABox) -> Node:
         parts.append(_translate(concept, term, _fresh_var_factory(individual)))
     for a, b, role in abox.role_assertions:
         parts.append(Atom(role, (Constant(a), Constant(b))))
+    for a, b in abox.distinct_assertions:
+        parts.append(Atom("≠", (Constant(a), Constant(b))))
     return _conjoin(parts)
 
 
@@ -252,15 +384,31 @@ def abox_to_fol(abox: ABox) -> Node:
 # Single-role concepts as propositional modal K formulas.
 # --------------------------------------------------------------------------- #
 
+_IO_MODAL_MSG = (
+    "concept_to_modal: {what} has no faithful propositional-K rendering — "
+    "plain modal K has no converse modality (inverse roles need TENSE/hybrid "
+    "logic) and no naming/nominal construct at all (that is HYBRID logic, a "
+    "strictly different formalism this kit does not implement); refusing "
+    "rather than silently dropping or misencoding it. Use concept_to_fol "
+    "instead: the standard translation to FOL handles both faithfully (see "
+    "its module docstring's 'Inverse roles and nominals (I, O)' section)."
+)
+
+
 def _roles_used(concept: Concept) -> set:
     """Return the set of distinct role names occurring anywhere in ``concept``."""
     if isinstance(concept, (Top, Bottom, Atomic)):
         return set()
+    if isinstance(concept, Nominal):
+        raise NotImplementedError(_IO_MODAL_MSG.format(what=f"the nominal {{{concept.individual}}}"))
     if isinstance(concept, Not):
         return _roles_used(concept.concept)
     if isinstance(concept, (And, Or)):
         return _roles_used(concept.left) | _roles_used(concept.right)
     if isinstance(concept, (Exists, ForAll)):
+        if isinstance(concept.role, InverseRole):
+            raise NotImplementedError(
+                _IO_MODAL_MSG.format(what=f"the inverse role {concept.role.role}⁻"))
         return {concept.role} | _roles_used(concept.concept)
     raise TypeError(f"concept_to_modal: unsupported concept {type(concept).__name__}")
 

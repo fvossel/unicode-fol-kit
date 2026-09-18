@@ -58,7 +58,7 @@ every consumer that treats PROVED as "goal follows".
 """
 
 import time
-from typing import Sequence
+from typing import Dict, Optional, Sequence
 
 from ..fol.nodes import Node
 from .protocol import ProverBackend, Verdict, PROVED, REFUTED, UNKNOWN, ERROR
@@ -71,6 +71,42 @@ __all__ = ["HetsBackend"]
 _DEFAULT_REASONER = "SPASS"
 
 _SPEC_NAME = "KitProblem"
+
+# ---------------------------------------------------------------------------
+# Solver-version provenance (K1). HETS is an HTTP server, not a spawned
+# binary, so the analogue of atp.protocol._binary_version's subprocess memo
+# is one GET /version per discovered base_url, memoized process-wide via
+# the already-existing but (until now) unused HetsClient.version().
+# ---------------------------------------------------------------------------
+
+_VERSION_CACHE: Dict[str, Optional[str]] = {}
+
+
+def _hets_version(client, url: str) -> Optional[str]:
+    """``client.version()`` (``GET /version``), memoized per ``url`` for the
+    life of this process — every call after the first for the same
+    ``base_url`` returns the cached string (or cached ``None``) without a
+    second HTTP round trip. A failure degrades to ``None`` rather than
+    raising — this is best-effort provenance, never grounds to turn a sound
+    decide() result into an ERROR verdict, so this catches broadly: a real
+    ``HetsClient.version()`` only ever raises ``RuntimeError`` (server
+    dropped between the availability check and this call, a malformed
+    response — see ``hets.client``'s own contract), but ``client`` here is
+    whatever :meth:`HetsBackend.decide`/:meth:`HetsBackend.solver_version`
+    constructed (or, in a test double that stands in for the whole
+    ``HetsClient`` surface but has not modelled this one extra method,
+    might not even implement ``version()`` at all — an ``AttributeError``
+    must degrade exactly like a ``RuntimeError`` does, not propagate and
+    turn a working ``decide()`` call into a crash over a provenance nicety).
+    """
+    if url in _VERSION_CACHE:
+        return _VERSION_CACHE[url]
+    try:
+        version: Optional[str] = client.version()
+    except Exception:   # noqa: BLE001 - best-effort provenance, must not sink a sound verdict
+        version = None
+    _VERSION_CACHE[url] = version
+    return version
 
 
 def _prover_id(goal: dict):
@@ -98,6 +134,25 @@ class HetsBackend(ProverBackend):
 
         return hets_available()
 
+    def solver_version(self) -> Optional[str]:
+        """The reachable server's ``GET /version`` banner, via
+        :meth:`~unicode_fol_kit.hets.client.HetsClient.version` — memoized
+        per discovered ``base_url`` for the life of the process (see
+        :func:`_hets_version`). ``None`` when no server is currently
+        reachable (the same "never guess" discipline as :meth:`available`),
+        so callers such as
+        :func:`~unicode_fol_kit.eval.batch.batch_decide`'s cache key can
+        call this unconditionally, with no prior availability check.
+        """
+        from ..hets import HetsClient, discover_hets_url
+        from .protocol import BackendUnavailable
+
+        try:
+            url, _container = discover_hets_url()
+        except BackendUnavailable:
+            return None
+        return _hets_version(HetsClient(url), url)
+
     def decide(self, formula: Node, premises: Sequence[Node] = (),
                timeout: int = 10000, **options) -> Verdict:
         from ..fol.casl_export import to_casl_spec
@@ -107,6 +162,23 @@ class HetsBackend(ProverBackend):
         translation = options.pop("translation", None)
         url = options.pop("url", None)
 
+        # Solver-version provenance (K1): resolve it up front ONLY when the
+        # caller passed an explicit `url=` override — they already opted
+        # into contacting THAT specific server (see the module docstring's
+        # `url=` CAVEAT), so looking its version up before the CASL-fragment
+        # check below adds no network touch beyond what was already asked
+        # for, and even an out-of-fragment formula's UNKNOWN/"unsupported"
+        # verdict then carries it. Without an explicit `url=`, this stays
+        # None here: resolving it would mean running discover_hets_url()'s
+        # own network health probe for a formula that will never reach a
+        # prover, which test_out_of_fragment_is_unsupported_before_any_network
+        # (tests/test_hets_backend.py, unowned) deliberately forbids —
+        # discovery must never run before the fragment check for the
+        # default-discovery path (see that test's own docstring). In that
+        # path solver_version is instead resolved below, right after
+        # discover_hets_url() succeeds.
+        solver_version = _hets_version(HetsClient(url), url) if url is not None else None
+
         try:
             spec = to_casl_spec(list(premises), conjectures=[formula],
                                 spec_name=_SPEC_NAME)
@@ -115,15 +187,24 @@ class HetsBackend(ProverBackend):
             # conflict, free variable, …): honestly unsupported, never a
             # silent mistranslation.
             return Verdict(UNKNOWN, self.name, reason="unsupported",
+                           solver_version=solver_version,
                            detail=f"{type(exc).__name__}: {exc}")
 
         if url is None:
             url, _ = discover_hets_url()   # raises BackendUnavailable
+            # Memoized per base_url (see _hets_version) — resolved only now
+            # (not above) because discovery itself must not run before the
+            # fragment check just above.
+            solver_version = _hets_version(HetsClient(url), url)
 
         # Hets takes its budget in whole seconds; the HTTP timeout must
         # outlast it (upload + translation + prover startup).
         time_limit = max(1, timeout // 1000)
         client = HetsClient(url, timeout=float(time_limit + 30))
+        # Memoized per base_url (see _hets_version) — the first decide() (or
+        # solver_version()) call for this server pays one GET /version, every
+        # later one for the same url is free (including the lookup above,
+        # under either path: this is the SAME cache, keyed by url).
 
         try:
             start = time.perf_counter()
@@ -134,12 +215,14 @@ class HetsBackend(ProverBackend):
             elapsed = time.perf_counter() - start
         except RuntimeError as exc:
             return Verdict(ERROR, self.name, reason="infra",
+                           solver_version=solver_version,
                            detail=f"{type(exc).__name__}: {exc}")
 
         if len(goals) != 1:
             # Exactly one %implied conjecture was emitted, so anything else
             # means the server answered a different question than asked.
             return Verdict(ERROR, self.name, reason="infra",
+                           solver_version=solver_version,
                            detail=f"hets returned {len(goals)} goal results "
                                   "for a single-conjecture spec")
 
@@ -150,15 +233,15 @@ class HetsBackend(ProverBackend):
 
         if result == "Proved":
             return Verdict(PROVED, self.name, wall_time=elapsed,
-                           detail=provenance)
+                           solver_version=solver_version, detail=provenance)
         if result == "Disproved":
             return Verdict(REFUTED, self.name, wall_time=elapsed,
-                           detail=provenance)
+                           solver_version=solver_version, detail=provenance)
         # "Open" and anything unrecognised: not settled. Open is NOT a
         # refutation (and in this image often just a broken wrapper).
         tail = (goal.get("prover_output") or "").strip()[-200:]
         return Verdict(UNKNOWN, self.name, reason="incomplete",
-                       wall_time=elapsed,
+                       wall_time=elapsed, solver_version=solver_version,
                        detail=f"{provenance}, result={result or 'absent'}"
                               + (f", output tail: {tail}" if tail else ""))
 

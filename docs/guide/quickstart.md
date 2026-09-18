@@ -458,6 +458,24 @@ ast2.to_unicode_str()   # → 'P(x) ∧ (Q(x) ∨ R(x))'
 ast2.to_latex()         # → 'P(x) \\land (Q(x) \\lor R(x))'
 ```
 
+### Notebook display
+
+A `Node` renders as LaTeX automatically in Jupyter/IPython, via the `_repr_latex_` rich-
+display hook — no explicit `.to_latex()` call needed when a formula is the last expression
+in a cell:
+
+```python
+ast._repr_latex_()
+# → '$$\\forall x\\, (Human(x) \\rightarrow Mortal(x))$$'
+```
+
+The hook never raises: for a node with no LaTeX rendering it returns `None`, and IPython
+falls back to the plain `repr()` instead of showing a traceback in the cell. `TruthTable`,
+`Structure`, and `FiniteStructure` (see [Finding satisfying assignments
+systematically](#finding-satisfying-assignments-systematically) and [Another taster: a
+three-valued truth table](#another-taster-a-three-valued-truth-table)) similarly define
+`_repr_html_` for a formatted table instead of Python's default `repr()`.
+
 Don't have the Unicode symbols handy? Write LaTeX and decode it. `latex_to_unicode`
 converts a LaTeX string to the kit's Unicode syntax, and `parse_latex` parses LaTeX
 directly into an AST:
@@ -719,6 +737,18 @@ print(tt.render())
 
 tt.is_tautology      # → False
 tt.is_satisfiable    # → True
+```
+
+In Jupyter/IPython, a `TruthTable` also has a `_repr_html_` rich-display hook, so it shows
+as a formatted HTML table instead of `.render()`'s Markdown or the default `repr()` — built
+directly from the same `atoms`/`rows` data, not by parsing the Markdown:
+
+```python
+tt._repr_html_()
+# → '<table><thead><tr><th>P</th><th>Q</th><th>(P → Q) ∧ (Q → P)</th></tr></thead><tbody>
+#    <tr><td>T</td><td>T</td><td>T</td></tr><tr><td>T</td><td>F</td><td>F</td></tr><tr>
+#    <td>F</td><td>T</td><td>F</td></tr><tr><td>F</td><td>F</td><td>T</td></tr></tbody></table>'
+#    (one continuous string; wrapped here for width)
 ```
 
 For a single valuation, `kleene_value` evaluates directly over {0, ½, 1}:

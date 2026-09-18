@@ -46,7 +46,9 @@ guide/interoperability
 guide/classical-reasoning
 guide/modal
 guide/quantified-modal
+guide/linear-temporal
 guide/higher-order
+guide/lean
 guide/many-valued
 guide/fuzzy
 guide/intuitionistic
@@ -65,6 +67,7 @@ guide/model-checking
 guide/verification
 guide/batch-checking
 guide/finite-domain
+guide/exercises
 guide/mcp
 guide/syntax-reference
 ```

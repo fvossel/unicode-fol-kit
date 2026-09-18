@@ -1,0 +1,30 @@
+{
+  "type": "non_monotonic_logic",
+  "axiom": "default_reasoning_default",
+  "samples": [
+    {
+      "id": 1,
+      "context": "Jenny and anna are known for their tall stature, which is often associated with playing basketball. however, anna might be an exception to this norm.",
+      "question": "What would be the most appropriate conclusion based on the given context?",
+      "choices": {
+        "choice_1": "Anna plays volleyball",
+        "choice_2": "Jenny is good at skipping",
+        "choice_3": "Jenny plays volleyball",
+        "choice_4": "Jenny plays basketball"
+      },
+      "answer": "choice_4"
+    },
+    {
+      "id": 2,
+      "context": "Block a and block b are both heavy objects that are typically found on the table. however, there is a possibility that block a might not follow this usual convention. it is important to note this exception.",
+      "question": "What would be the most appropriate conclusion based on the given context?",
+      "choices": {
+        "choice_1": "b is on the table",
+        "choice_2": "b is on the tv",
+        "choice_3": "a is on the table",
+        "choice_4": "c is on the table"
+      },
+      "answer": "choice_1"
+    }
+  ]
+}
