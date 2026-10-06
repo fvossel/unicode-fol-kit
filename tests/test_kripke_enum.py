@@ -301,7 +301,9 @@ def test_backend_reports_bound_hit_for_the_k_axiom_not_proved():
     """
     backend = KripkeEnumBackend()
     k_axiom = Implies(Box(Implies(P, Q)), Implies(Box(P), Box(Q)))
-    v = backend.decide(k_axiom, max_worlds=3)
+    # The whole bound is searched (about three seconds on a free machine); under the default
+    # limit of ten seconds a busy runner ended the search first and reported "timeout".
+    v = backend.decide(k_axiom, max_worlds=3, timeout=120_000)
     assert v.status == UNKNOWN
     assert v.reason == "bound_hit"
     assert v.countermodel is None
@@ -323,7 +325,8 @@ def test_backend_folds_premises_as_local_consequence():
     world 0 with an alethic successor where P holds but Q does not.
     """
     backend = KripkeEnumBackend()
-    entailed = backend.decide(Box(Q), premises=[Box(P), Box(Implies(P, Q))], max_worlds=3)
+    entailed = backend.decide(Box(Q), premises=[Box(P), Box(Implies(P, Q))], max_worlds=3,
+                              timeout=120_000)
     assert entailed.status == UNKNOWN and entailed.reason == "bound_hit"
 
     not_entailed = backend.decide(Box(Q), premises=[Box(P)], max_worlds=2)
