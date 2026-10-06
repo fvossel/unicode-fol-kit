@@ -33,6 +33,15 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Type
 
 from unicode_fol_kit.fol.nodes import Node, Atom, Iff, Xor, Variable, Quantifier
+from unicode_fol_kit.fol._truth_constants import refuse_truth_constants
+
+#: Why a deep embedding refuses the TPTP constants ``$true`` / ``$false``: its
+#: formula datatype has a constructor for an atom and one per connective, and none
+#: for a truth constant, so the only reading it could give one is an unrelated letter.
+NO_CONSTANT_WHY = (
+    "the deep embedding's formula datatype has constructors for atoms and "
+    "connectives only, none for a truth constant, and an atom named $true would "
+    "be a letter that is neither true nor false")
 
 
 def sanitize_atom(name: str) -> str:
@@ -109,6 +118,7 @@ def encode_deep(formula: Node, atoms: AtomConsts,
     absent from ``ctors`` — the deep embedding is propositional.
     """
     if isinstance(formula, Atom):
+        refuse_truth_constants([formula], logic, NO_CONSTANT_WHY)
         if not _atom_is_propositional(formula):
             raise NotImplementedError(
                 f"{logic}: atom with a free variable is first-order; the deep "

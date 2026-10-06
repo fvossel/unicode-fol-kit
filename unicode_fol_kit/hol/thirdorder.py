@@ -38,7 +38,7 @@ uninterpreted relations ``feq`` / ``fneq``, not primitive HOL identity.
 Public API: :func:`to_thf_to`, :func:`to_isabelle_to`.
 """
 
-from typing import Dict, Sequence
+from typing import Dict, Optional, Sequence
 
 from ..fol.nodes import (
     Node, Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
@@ -47,10 +47,14 @@ from ..fol.nodes import (
     analyse_signatures,
 )
 from ..fol._ho_nodes import INDIVIDUAL
+from ..fol._truth_constants import truth_value
 from ._ho_common import (
     UnsupportedHigherOrderNode, EQUALITY,
     peel_lambdas, rename_apart, bound_pred_names, atom_predicates,
     function_symbols, free_individuals, ThfNames, bound_token,
+)
+from ._isabelle_binders import (
+    PREDICATE, VARIABLE, BinderScope, binder_tokens, collect_binders, declared_names,
 )
 
 _ALL = r"\<forall>"
@@ -92,53 +96,77 @@ def _thf_slot_type(kind) -> str:
 _BINARY_ISA = {And: _AND, Or: _OR, Implies: _IMP, Iff: _IFF}
 
 
-def _isa_arg(node: Node, arity: Dict[str, int], display: Dict[str, str]) -> str:
-    """Render a node in ARGUMENT position — an individual term or a property."""
-    if isinstance(node, (Variable, LambdaVar, Constant)):
+def _isa_arg(node: Node, arity: Dict[str, int], display: Dict[str, str],
+             scope: Optional[BinderScope] = None) -> str:
+    """Render a node in ARGUMENT position — an individual term or a property.
+
+    ``scope`` holds the binders that enclose the node and the names they are printed under: a
+    variable or a lambda variable is printed under its binder's name, a constant under its own.
+    Without a ``scope`` every binder is printed under its own name.
+    """
+    if scope is None:
+        scope = BinderScope({})
+    if isinstance(node, (Variable, LambdaVar)):
+        return scope.token(VARIABLE, node.name)
+    if isinstance(node, Constant):
         return node.name
     if isinstance(node, PredicateTerm):
         return display.get(node.name, node.name)
     if isinstance(node, Lambda):
         names, body = peel_lambdas(node)
-        binders = " ".join(f"{_LAM}{n}::i." for n in names)
-        return f"({binders} {_isa(body, arity, display)})"
+        binders = []
+        for name in names:
+            token, scope = scope.enter(VARIABLE, name)
+            binders.append(f"{_LAM}{token}::i.")
+        return f"({' '.join(binders)} {_isa(body, arity, display, scope)})"
     if isinstance(node, Function):
-        args = " ".join(_isa_arg(a, arity, display) for a in node.args)
+        args = " ".join(_isa_arg(a, arity, display, scope) for a in node.args)
         return f"({node.name} {args})" if args else node.name
     raise UnsupportedHigherOrderNode(
         f"thirdorder: {type(node).__name__} cannot stand in argument position; an "
         f"argument is an individual term, a predicate name, or a λ-abstraction.")
 
 
-def _isa(node: Node, arity: Dict[str, int], display: Dict[str, str]) -> str:
-    """Render ``node`` as an Isabelle/HOL formula."""
+def _isa(node: Node, arity: Dict[str, int], display: Dict[str, str],
+         scope: Optional[BinderScope] = None) -> str:
+    """Render ``node`` as an Isabelle/HOL formula.
+
+    ``display`` gives each bound predicate variable the name it is printed under, ``scope`` each
+    enclosing object binder (see :mod:`unicode_fol_kit.hol._isabelle_binders`); without a
+    ``scope`` every binder is printed under its own name.
+    """
+    if scope is None:
+        scope = BinderScope({})
     if isinstance(node, Not):
-        return f"({_NOT} {_isa(node.formula, arity, display)})"
+        return f"({_NOT} {_isa(node.formula, arity, display, scope)})"
     glyph = _BINARY_ISA.get(type(node))
     if glyph is not None:
-        left = _isa(node.left, arity, display)
-        right = _isa(node.right, arity, display)
+        left = _isa(node.left, arity, display, scope)
+        right = _isa(node.right, arity, display, scope)
         return f"({left} {glyph} {right})"
     if isinstance(node, Xor):
-        left = _isa(node.left, arity, display)
-        right = _isa(node.right, arity, display)
+        left = _isa(node.left, arity, display, scope)
+        right = _isa(node.right, arity, display, scope)
         return f"({left} {_NEQ} {right})"
     if isinstance(node, Quantifier):
         binder = _ALL if node.type == "∀" else _EX
-        body = _isa(node.formula, arity, display)
-        return f"({binder}{node.variable.name}::i. {body})"
+        token, inner = scope.enter(VARIABLE, node.variable.name)
+        body = _isa(node.formula, arity, display, inner)
+        return f"({binder}{token}::i. {body})"
     if isinstance(node, SecondOrderQuantifier):
         binder = _ALL if node.type == "∀" else _EX
         k = arity.get(node.predicate, node.arity)
         name = display.get(node.predicate, node.predicate)
-        body = _isa(node.formula, arity, display)
+        body = _isa(node.formula, arity, display, scope)
         return f"({binder}{name}::{_isa_prop_type(k)}. {body})"
     if isinstance(node, Atom):
+        if truth_value(node) is not None:
+            return "True" if truth_value(node) else "False"
         name = EQUALITY.get(node.predicate, node.predicate)
         name = display.get(name, name)
         if not node.args:
             return name
-        args = " ".join(_isa_arg(a, arity, display) for a in node.args)
+        args = " ".join(_isa_arg(a, arity, display, scope) for a in node.args)
         return f"({name} {args})"
     raise UnsupportedHigherOrderNode(
         f"thirdorder: no reading for {type(node).__name__}. This export covers "
@@ -190,6 +218,12 @@ def to_isabelle_to(formula: Node, name: str = "TO_Goal",
         arrow = "".join(f"i {_FUN} " for _ in range(k))
         lines.append(f'consts {symbol} :: "{arrow}i"')
     lines.append("")
+    # A binder shadows a constant of its own spelling inside its scope: every binder (object
+    # quantifier, lambda parameter, bound predicate variable) is printed under a name that no
+    # declared symbol has. ``display`` gives each renamed-apart predicate variable that name.
+    tokens = binder_tokens(collect_binders(formulas), declared_names(lines))
+    display = {fresh: tokens[(PREDICATE, original)] for fresh, original in display.items()}
+    scope = BinderScope(tokens)
     if signatures.defaulted:
         pairs = ", ".join(f"{p}[{i}]" for p, i in sorted(signatures.defaulted))
         lines.append(f"\\<comment> \\<open>arity defaulted to 1 (nothing in the "
@@ -197,10 +231,10 @@ def to_isabelle_to(formula: Node, name: str = "TO_Goal",
         lines.append("")
     for index, assumption in enumerate(apart[:-1], start=1):
         lines.append(f'axiomatization where assumption{index}: '
-                     f'"{_isa(assumption, signatures.arity, display)}"')
+                     f'"{_isa(assumption, signatures.arity, display, scope)}"')
     if len(apart) > 1:
         lines.append("")
-    lines.append(f'lemma "{_isa(apart[-1], signatures.arity, display)}"')
+    lines.append(f'lemma "{_isa(apart[-1], signatures.arity, display, scope)}"')
     lines.append(f"  {proof}" if proof else
                  "  oops  \\<comment> \\<open>try: by auto / by blast / sledgehammer\\<close>")
     lines.append("")
@@ -262,6 +296,8 @@ def _thf(node: Node, upper: Dict[str, str], display: Dict[str, str],
         return (f"( {quant} [{var}: {_thf_prop_type(node.arity)}] : "
                 f"{_thf(node.formula, fresh, display, names)} )")
     if isinstance(node, Atom):
+        if truth_value(node) is not None:
+            return "$true" if truth_value(node) else "$false"
         if node.predicate in EQUALITY:
             name = EQUALITY[node.predicate]
         else:

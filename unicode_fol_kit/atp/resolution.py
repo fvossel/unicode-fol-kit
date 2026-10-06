@@ -14,6 +14,10 @@ Pipeline:
    and split into clauses (``_clauses``). Each literal is a positive ``Atom`` or
    a ``Not(Atom)``; each clause is a ``frozenset`` of literals; the clause set is
    a ``set`` of such frozensets. Variables are implicitly universally quantified.
+   The truth constants ``$true`` and ``$false`` are constants, not letters: a
+   clause with ``$true`` (or ``¬$false``) is true and is dropped, and a literal
+   ``$false`` (or ``¬$true``) is removed from its clause, so a clause of nothing
+   else is the empty clause.
 
 2. Standardize apart (:func:`_standardize_apart`). Before two clauses are
    resolved their variables are renamed to fresh disjoint names so the clauses
@@ -108,9 +112,17 @@ Public API: :func:`to_clauses`, :func:`refute`, :func:`prove`,
 :func:`is_valid_resolution`.
 """
 
+import time
+from typing import Optional
+
+from .._deadline import instant as _instant, remaining_ms as _remaining_ms, run_until as _run_until
+from ..fol._free_parameters import parameterize
+from ..fol._identifiers import symbol_names
+from ..fol._msfl_nodes import sort_axioms
+from ..fol._truth_constants import truth_value
 from ..fol.nodes import (
     Node, Atom, Not, Implies, Quantifier, Variable, Constant, Number, Function,
-    Measure,
+    Measure, SortedConstant, Cardinality, SortedCardinality, to_fol,
 )
 from ..fol.normalforms import skolemize, _prenex_split, _cnf, _clauses
 from ..fol.unification import unify, apply_subst
@@ -169,10 +181,13 @@ def _symbol_names(node: Node) -> set:
 
     Variables are excluded (they are renamed separately). Used to detect which
     symbols skolemisation introduced, so they can be made globally unique.
+    A :class:`SortedConstant` is a constant like any other: ``c:S`` is the
+    symbol ``c``, and it must not look "introduced" once the many-sorted
+    reduction turns it into the plain ``c``.
     """
     names = set()
     for n in node.walk():
-        if isinstance(n, Constant):
+        if isinstance(n, (Constant, SortedConstant)):
             names.add(n.name)
         elif isinstance(n, Function):
             names.add(n.name)
@@ -201,42 +216,86 @@ def _rename_symbols(node: Node, mapping: dict) -> Node:
     return node.map_children(lambda c: _rename_symbols(c, mapping))
 
 
-def to_clauses(formula: Node, sk_counter: list = None) -> set:
+def to_clauses(formula: Node, sk_counter: list = None, avoid=()) -> set:
     """Return the clausal form of a single formula as a set of frozensets.
 
-    The formula is first universally closed over its free variables (a soundness
-    requirement before skolemisation — see :func:`_universal_closure`), then
+    The formula is first universally closed over its free variables (the convention
+    of a clausal form, whose variables are all universal; :func:`prove` hands it
+    formulas without a free variable, see there), then
     skolemised (prenex NNF, existentials → Skolem terms, ∀ prefix kept). The
     Skolem symbols that skolemisation introduced are renamed to globally unique
     names — using the shared mutable cursor ``sk_counter`` when one is supplied —
     so that two independently clausified source formulas can never share a Skolem
     symbol (which would be UNSOUND: e.g. ``∃x P(x)`` and the negated conclusion of
     ``∀y P(y)`` both skolemise to ``sk0`` and would spuriously resolve to the
-    empty clause). The universal prefix is then dropped, the matrix is converted
+    empty clause). A Skolem symbol is also fresh against every name of the formula
+    and every name in ``avoid``: a source formula of a problem passes the names of
+    ALL the formulas of the problem, or a Skolem constant could take the spelling
+    of a constant that only another formula has. The universal prefix is then
+    dropped, the matrix is converted
     to CNF and split into clauses. Each literal is a positive :class:`Atom` or a
     :class:`Not` wrapping an Atom; each clause is a ``frozenset`` of literals; the
     result is a ``set`` of those frozensets. The remaining variables are
     implicitly universally quantified. The input node is not mutated.
     """
     closed = _universal_closure(formula)
-    before = _symbol_names(closed)
     sk = skolemize(closed)
+    # The symbols the formula already has. Skolemisation reduces the many-sorted
+    # nodes first (a sorted constant ``c:S`` becomes the plain ``c``, a sort
+    # becomes a guard predicate), so the names are read off the reduced formula
+    # as well as off the source: whatever is in ``sk`` and in neither was
+    # introduced by skolemisation itself. A sorted constant therefore keeps its
+    # name -- it is the same constant in every formula it occurs in.
+    reduced = to_fol(closed)
+    before = _symbol_names(closed) | _symbol_names(reduced)
     if sk_counter is None:
         sk_counter = [0]
     # Symbols present after skolemisation but not before are Skolem symbols.
     introduced = _symbol_names(sk) - before
     mapping = {}
-    for name in sorted(introduced):
-        mapping[name] = f"_sk{sk_counter[0]}"
-        sk_counter[0] += 1
+    if introduced:
+        # A Skolem symbol must not have the spelling of ANY name the problem carries, of
+        # any kind (a constant, a function, a predicate, a sort, a variable).
+        taken = set(symbol_names(closed, reduced)) | set(avoid)
+        for name in sorted(introduced):
+            candidate = f"_sk{sk_counter[0]}"
+            sk_counter[0] += 1
+            while candidate in taken:
+                candidate = f"_sk{sk_counter[0]}"
+                sk_counter[0] += 1
+            mapping[name] = candidate
     if mapping:
         sk = _rename_symbols(sk, mapping)
     _, matrix = _prenex_split(sk)
     cnf = _cnf(matrix)
     result = set()
     for clause in _clauses(cnf):
-        result.add(frozenset(clause))
+        simplified = _drop_truth_constants(clause)
+        if simplified is not None:
+            result.add(frozenset(simplified))
     return result
+
+
+def _drop_truth_constants(literals):
+    """The clause ``literals`` with the truth constants read as constants, or ``None``.
+
+    ``$true`` and ``¬$false`` hold in every interpretation, so a clause that has one
+    is true and ``None`` is returned (the clause is dropped). ``$false`` and ``¬$true``
+    hold in none, so they are removed from the clause; a clause that has nothing else
+    is the EMPTY clause, which refutes the set. Every other literal is kept as it is.
+    """
+    kept = []
+    for literal in literals:
+        if isinstance(literal, Not):
+            constant = truth_value(literal.formula)
+            constant = None if constant is None else not constant
+        else:
+            constant = truth_value(literal)
+        if constant is True:
+            return None
+        if constant is None:
+            kept.append(literal)
+    return kept
 
 
 # ---------------------------------------------------------------------------
@@ -269,7 +328,9 @@ def _rename_term(node: Node, mapping: dict) -> Node:
     looked up exactly once in ``mapping``. That makes it safe for standardizing
     apart, where a fresh name may itself appear as a key (e.g. renaming a clause
     whose variables are already ``_r0`` while ``_r0`` is being mapped to a new
-    fresh variable), which would otherwise loop.
+    fresh variable), which would otherwise loop. It is also how a one-sided
+    matcher is applied (:func:`_demodulate_once`): the images of a matcher are
+    terms of the target and are never looked up again.
     """
     if isinstance(node, Variable):
         return mapping.get(node.name, node)
@@ -810,7 +871,14 @@ def _demodulate_once(clause: frozenset, rules: list):
     paramodulation's full unification) AND the concrete orientation
     ``subterm ≻ rσ`` holds under :func:`_term_gt` for the match's σ — checked
     on the instantiated terms, not merely inherited from the rule's abstract
-    orientation (see :func:`_term_gt`'s soundness note). Literals and
+    orientation (see :func:`_term_gt`'s soundness note). The rule and the clause
+    are not standardized apart, so the rule ``f(x, y) → g(x)`` matched against
+    ``f(y, z)`` gives ``{x: y, y: z}`` (and ``{y: y}`` or ``{x: y, y: x}`` for
+    other clauses): the images are terms of the clause, never looked up again, so
+    the matcher is applied to ``r`` in ONE simultaneous step
+    (:func:`_rename_term`), the instance being ``g(y)``, as the proof checkers
+    (:func:`~unicode_fol_kit.atp.resolution_check._apply_matcher`) compute it.
+    Literals and
     positions are visited in a fixed, content-determined order (mirroring
     every other generator in this module) so which of several possible
     rewrites fires is reproducible run to run.
@@ -823,7 +891,7 @@ def _demodulate_once(clause: frozenset, rules: list):
                 sigma = _match_term(l, subterm, {})
                 if sigma is None:
                     continue
-                r_sigma = apply_subst(r, sigma)
+                r_sigma = _rename_term(r, sigma)
                 if not _term_gt(subterm, r_sigma):
                     continue
                 new_atom = _replace_at(atom, pos, r_sigma)
@@ -872,8 +940,15 @@ def _demodulate_to_fixpoint(clause: frozenset, rules: list,
 _SUBSUMPTION_PATTERN_CAP = 3
 
 
-def refute(clauses, max_steps: int = 10000) -> bool:
+def refute(clauses, max_steps: int = 10000, timeout: Optional[float] = None) -> bool:
     """Return True iff the clause set is unsatisfiable (empty clause derivable).
+
+    ``timeout`` (milliseconds, default none) is a second bound next to ``max_steps``: the
+    clock is read for every candidate clause and for every kept clause the given clause is
+    paired with, and once it has run out the call returns False ("not refuted within the
+    bound") within one such pairing's work. The call as a whole is also cut off at the
+    deadline, so the preparation of a very large clause set (sorting, the subsumption of
+    the seed clauses) cannot outlast it either.
 
     Runs given-clause saturation: resolution between the new clause and every
     previously kept clause, plus factoring of the new clause, PLUS (see the
@@ -939,6 +1014,16 @@ def refute(clauses, max_steps: int = 10000) -> bool:
 
     ``clauses`` is any iterable of frozensets of literals; it is not mutated.
     """
+    deadline = _instant(timeout)
+    finished, refuted = _run_until(deadline, lambda: _saturate(clauses, max_steps, deadline))
+    return bool(finished and refuted)
+
+
+def _saturate(clauses, max_steps: int, deadline: Optional[float]) -> bool:
+    """The saturation of :func:`refute`, which runs it under ``deadline`` (a ``perf_counter``
+    instant, or ``None``): it reads the clock itself for every candidate and every kept
+    clause, and the whole run is cut off at the deadline besides, so the sorting and the
+    subsumption of the seed clauses, which no step accounts for, cannot outlast it."""
     # Insertion-ordered working structures (kept_list mirrors the kept set):
     # processing order must be a function of the INPUT, not of hash seeds, or
     # "proved within max_steps" varies between runs of the same call. Seed
@@ -1017,6 +1102,9 @@ def refute(clauses, max_steps: int = 10000) -> bool:
         """
         nonlocal steps
         steps += 1
+        if deadline is not None and time.perf_counter() > deadline:
+            steps = max_steps               # the callers' step check then ends the search
+            return False
         rules = _unit_rewrite_rules(kept_list)
         simplified, rewrite_count = _demodulate_to_fixpoint(
             candidate, rules, cap=min(_DEMODULATION_ITERATION_CAP, max(0, max_steps - steps)))
@@ -1033,6 +1121,8 @@ def refute(clauses, max_steps: int = 10000) -> bool:
             _keep(clause)
 
     while agenda:
+        if deadline is not None and time.perf_counter() > deadline:
+            return False
         given = agenda.pop(0)
         if given not in kept:
             continue  # removed by backward subsumption after being queued
@@ -1060,6 +1150,8 @@ def refute(clauses, max_steps: int = 10000) -> bool:
         for other in list(kept_list):
             if other not in kept:
                 continue  # backward-subsumed by an earlier resolvent this round
+            if deadline is not None and time.perf_counter() > deadline:
+                return False
             r_given = _rename_clause(given, counter)
             r_other = _rename_clause(other, counter)
             for resolvent in _resolvents(r_given, r_other):
@@ -1110,6 +1202,15 @@ def _translate_modal_inputs(premises, conclusion: Node):
     default of ``qml_is_valid``. For other frames or domain regimes
     (varying/increasing/decreasing) call ``qml_is_valid`` directly.
 
+    A SORTED constant ``c:S`` is an element of ``S`` at every world (a constant is a rigid
+    designator), and the standard translation's guard atom ``S(c, w)`` does not say so. The
+    propositional route therefore lowers the problem to ``membership → image``, with the
+    rigid, unguarded membership ``∀v0 S(c, v0)`` of every sorted constant of the input taken
+    from :func:`~unicode_fol_kit.fol.modal_translation.frame_axioms` — so ``□Human(carl:Human)``
+    is proved, ``◇Human(carl:Human)`` is not (a world without successor) and
+    ``□Mortal(carl:Human)`` is not. The quantified route already carries the same fact among
+    ``qml``'s axioms.
+
     Counterfactuals are guarded first: ``standard_translation`` predates them and
     its generic error would not name the sphere tools.
 
@@ -1140,29 +1241,92 @@ def _translate_modal_inputs(premises, conclusion: Node):
         # reading, constant domains (qml_is_valid's default).
         from ..fol.qml import _validity_formula
         return (_validity_formula(combined, "constant", "K"), True)
-    from ..fol.modal_translation import standard_translation
-    return (standard_translation(combined), False)
+    from ..fol.modal_translation import standard_translation, frame_axioms
+    image = standard_translation(combined)
+    # The membership axioms are what frame_axioms returns for a formula that mentions no
+    # relation and exactly these sorted constants; they join the image as hypotheses (never
+    # conjoined onto it), in the translation's own vocabulary.
+    constants = tuple(n for n in combined.walk() if isinstance(n, SortedConstant))
+    if constants:
+        for axiom in reversed(frame_axioms(Atom("P", constants))):
+            image = Implies(axiom, image)
+    return (image, False)
 
 
-def prove(premises, conclusion: Node, max_steps: int = 10000) -> bool:
+def _refuse_cardinality(formulas) -> None:
+    """Refuse a problem that holds a cardinality term, by name.
+
+    ``|{v : φ}|`` is a natural number that is counted in a structure. It is not a term of
+    first-order logic, so it has no clause form, and reading it as an uninterpreted term would
+    answer another question (``|{x : P(x)}| = |{x : Q(x)}|`` would not follow from
+    ``∀x (P(x) ↔ Q(x))``).
+
+    Raises:
+        NotImplementedError: a cardinality term occurs in one of ``formulas``.
+    """
+    for formula in formulas:
+        for node in formula.walk():
+            if isinstance(node, (Cardinality, SortedCardinality)):
+                raise NotImplementedError(
+                    f"atp.resolution: the cardinality {node.to_unicode_str()} has no clause "
+                    "form. A cardinality |{v : φ}| is a natural number that is counted in a "
+                    "structure, not a term of first-order logic, so resolution does not decide "
+                    "a problem that holds one. A counting quantifier (∃≥n x φ, ∃≤n x φ, "
+                    "∃=n x φ) states a bound that resolution reads.")
+
+
+def prove(premises, conclusion: Node, max_steps: int = 10000,
+          timeout: Optional[float] = None) -> bool:
     """Return True iff ``premises`` entail ``conclusion`` (premises ⊨ conclusion).
 
-    Decided by refutation. Each premise is treated as a sentence: free variables
-    are read as universally quantified (its universal closure). The conclusion is
-    universally closed *and then negated* — crucially in that order, because
-    ``¬∀x φ`` is ``∃x ¬φ``: a free variable of the conclusion must skolemise to a
-    fresh witness constant/function under the negation, NOT to a universally
-    quantified variable. (Closing after negating would misplace the ∀ outside the
-    ¬ and unsoundly turn ``∃x ¬φ`` into ``∀x ¬φ``.) Each source formula is
-    clausified independently and every clause is renamed apart, so the Skolem and
-    variable names from one source cannot collide with another's. The clause sets
+    ``timeout`` (milliseconds, default none) bounds the whole call: the lowering of a
+    modal input, the clausification of every source formula (a normal form can be
+    exponentially larger than its formula, and that work is cut off at the deadline like
+    any other) and then the saturation, which is handed what is left of it (see
+    :func:`refute`). A call that ran out of time returns False, "not proved within the
+    bound".
+
+    Decided by refutation. A variable that is free in a premise or in the
+    conclusion is a PARAMETER of the problem: one unknown element, the same in
+    every premise and in the conclusion (the consequence relation of the textbooks,
+    ``Γ ⊨ φ`` iff every structure AND assignment that satisfies ``Γ`` satisfies
+    ``φ``). It is replaced by a constant that no symbol of the problem has
+    (:func:`~unicode_fol_kit.fol._free_parameters.parameterize`) before anything
+    else is done, so ``P(x) ⊢ P(alpha)`` is not proved (universe ``{0, 1}``,
+    ``x`` ↦ 1, ``alpha`` ↦ 0, ``P`` = ``{1}``), while ``P(x) ⊢ ∃y P(y)`` and
+    ``∀y P(y) ⊢ P(x)`` are. A premise is never closed universally. For a problem
+    without a premise the reading is the universal closure of the conclusion. The
+    negation of the conclusion then has no free variable, so a parameter of the
+    conclusion stays one fixed element under the negation. Each source formula is
+    clausified independently and every clause is renamed apart, so the variable
+    names from one source cannot collide with another's, and a Skolem symbol is
+    fresh against every name of the whole problem. The clause sets
     are unioned and saturation is run. Returns True iff the empty clause is
     derived; False if the union saturates without it; and False (conservatively,
     "not proved within the bound") if ``max_steps`` is reached first — never
     reporting a non-theorem as proved.
+
+    Many-sorted input is read with the guard reading of
+    :func:`~unicode_fol_kit.fol.nodes.to_fol` and gets the background facts that
+    reading needs, as ordinary premises: :func:`~unicode_fol_kit.fol.nodes.sort_axioms`
+    of the premises and the conclusion -- every sort is non-empty, and a sorted
+    constant ``c:S`` lies in ``S``. A sorted constant is the same constant in
+    every formula (``P(carl:S), ∀x (P(x) → Q(x)) ⊢ Q(carl:S)`` is proved). The
+    facts are premises, never part of the negated conclusion. Still incomplete,
+    like everything here: ``False`` means "not proved within the bound".
+
+    Raises:
+        NotImplementedError: a premise or the conclusion holds a cardinality term
+            ``|{v : φ}|``, which has no clause form (the ``resolution`` backend answers
+            ``unknown`` / ``unsupported``).
     """
+    deadline = _instant(timeout)
     premises = list(premises)
-    translated = _translate_modal_inputs(premises, conclusion)
+    _refuse_cardinality(premises + [conclusion])
+    finished, translated = _run_until(
+        deadline, lambda: _translate_modal_inputs(premises, conclusion))
+    if not finished:
+        return False
     if translated is not None:
         lowered, first_order = translated
         # The FO shallow embedding's image (guard predicates + domain/frame
@@ -1171,20 +1335,32 @@ def prove(premises, conclusion: Node, max_steps: int = 10000) -> bool:
         # quantified-modal validities (Barcan / converse Barcan under constant
         # domains, ~200k steps) close under the default budget. False remains
         # "not proved within the bound", as everywhere in this module.
-        return prove([], lowered, max_steps=max_steps * (20 if first_order else 1))
+        return prove([], lowered, max_steps=max_steps * (20 if first_order else 1),
+                     timeout=_remaining_ms(deadline))
 
-    counter = [0]
-    sk_counter = [0]
-    clause_set = set()
-    sources = [_universal_closure(p) for p in premises]
-    sources.append(Not(_universal_closure(conclusion)))
-    for source in sources:
-        for clause in to_clauses(source, sk_counter=sk_counter):
-            clause_set.add(_rename_clause(clause, counter))
-    return refute(clause_set, max_steps=max_steps)
+    def clausify() -> set:
+        counter = [0]
+        sk_counter = [0]
+        clause_set = set()
+        closed, _ = parameterize(premises + [conclusion])
+        given, goal = closed[:-1], closed[-1]
+        sources = list(given)
+        sources.extend(sort_axioms(*given, goal))
+        sources.append(Not(goal))
+        problem_names = symbol_names(*sources)
+        for source in sources:
+            for clause in to_clauses(source, sk_counter=sk_counter, avoid=problem_names):
+                clause_set.add(_rename_clause(clause, counter))
+        return clause_set
+
+    finished, clause_set = _run_until(deadline, clausify)
+    if not finished or clause_set is None:
+        return False
+    return refute(clause_set, max_steps=max_steps, timeout=_remaining_ms(deadline))
 
 
-def is_valid_resolution(formula: Node, max_steps: int = 10000) -> bool:
+def is_valid_resolution(formula: Node, max_steps: int = 10000,
+                        timeout: Optional[int] = None) -> bool:
     """Return True iff ``formula`` is valid (its negation is refutable).
 
     Equivalent to ``prove([], formula)``: a formula is valid exactly when
@@ -1193,4 +1369,4 @@ def is_valid_resolution(formula: Node, max_steps: int = 10000) -> bool:
     False means "not shown valid within ``max_steps``", never a false claim of
     invalidity-as-validity.
     """
-    return prove([], formula, max_steps=max_steps)
+    return prove([], formula, max_steps=max_steps, timeout=timeout)

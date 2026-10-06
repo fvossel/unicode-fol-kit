@@ -458,9 +458,21 @@ _ALETHIC_OK = ("Atom", "Not", "And", "Or", "Xor", "Implies", "Iff", "Box", "Diam
 
 
 def _is_alethic_propositional(formula: Node) -> bool:
-    """True iff ``formula`` is Box/Diamond + connectives over GROUND atoms only."""
+    """True iff ``formula`` is Box/Diamond + connectives over GROUND atoms only.
+
+    An identity atom (``a = b`` / ``a ≠ b``) is NOT propositional: ``satisfies_modal``
+    reads an atom as a letter in a world's valuation, has no term semantics, and so
+    refuses identity by name. Answering ``True`` here would route the formula to that
+    evaluator AFTER Isabelle has already certified the verdict (nitpick said INVALID),
+    and the refusal would raise past a result the runner already holds. Identity is
+    decided by Isabelle alone, where it is rigid HOL ``=``; there is simply no
+    propositional Kripke witness to exhibit for it, so ``countermodel`` stays ``None``.
+    """
     from unicode_fol_kit.fol.nodes import Variable
+    from unicode_fol_kit.semantics._modal_reject import is_equality_atom
     for node in formula.walk():
+        if is_equality_atom(node):
+            return False
         if type(node).__name__ not in _ALETHIC_OK and not isinstance(node, Variable):
             # allow the ground arguments of an atom (Constant/Number/Function), but a
             # free/bound Variable means it is not propositional.
@@ -506,7 +518,9 @@ def _find_alethic_countermodel(formula: Node, frame: str,
     from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
 
     conds = _FRAME_CONDS[frame]
-    keys = sorted({n.to_unicode_str() for n in formula.walk() if isinstance(n, Atom)})
+    from unicode_fol_kit.fol._truth_constants import truth_value
+    keys = sorted({n.to_unicode_str() for n in formula.walk()
+                   if isinstance(n, Atom) and truth_value(n) is None})
     for n in range(1, max_worlds + 1):
         worlds = list(range(n))
         edges = [(i, j) for i in worlds for j in worlds]

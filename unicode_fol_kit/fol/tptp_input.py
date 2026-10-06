@@ -22,7 +22,19 @@ is capitalised to match the toolkit's uppercase-predicate convention, so ``loves
 ``$greater`` / ``$lesseq`` / ``$greatereq`` map to the ``<`` / ``>`` / ``≤`` / ``≥``
 atoms; and the arithmetic dollar-words ``$sum`` / ``$difference`` / ``$product`` /
 ``$quotient`` map to the ``+`` / ``-`` / ``*`` / ``/`` functions. ``$true`` / ``$false``
-are imported as opaque nullary atoms (the toolkit has no boolean-constant node).
+are imported as the nullary atoms ``$true`` / ``$false`` (the toolkit has no
+boolean-constant node), which every route that decides or evaluates a formula reads
+as TPTP's defined propositions — true and false — and the TPTP writers write back
+verbatim.
+
+A TPTP variable is case-sensitive and the kit variable is its lower-cased form, so
+two variables that differ only by letter case (``Xa``, ``XA``) would become one
+kit variable. Where that changes the formula — one is captured by the other's
+quantifier, or both occur free in one formula — the reader REFUSES it by name,
+naming both variables (``![Xa, XA]: p(Xa, XA)`` is not read as ``∀xa ∀xa
+P(xa, xa)``); where each is bound by a quantifier of its own and they never meet
+(``(![Xa]: p(Xa)) & (![XA]: q(XA))``) the reading is the same formula and is
+unchanged. No renaming is invented: rename one of the two.
 
 Single-quoted atoms (``'http___example_org_Thing'``) — the form OWL→FOL translators
 emit for IRIs — are accepted as functor / predicate / constant names: the quotes are
@@ -38,8 +50,18 @@ resolved by every file/load entry point (see "Includes" below); the optional
 and are discarded. THF (higher-order TPTP), TF1 polymorphism (type
 variables, ``!>``), and TPTP's built-in arithmetic sorts (``$int``/``$rat``/
 ``$real``) remain out of scope — each is refused LOUDLY, naming the
-construct, rather than silently narrowed (see :func:`parse_tff_problem`'s
-docstring for exactly which constructs raise where).
+construct, rather than silently narrowed. THF and TF1 are refused BEFORE the
+first-order grammar is tried, by the statement's kind and by the binder, so the
+refusal does not depend on the rest of the text parsing: a problem with a ``thf(...)``
+statement (a type declaration, an application ``p @ A``, whatever its body) is a
+:class:`TptpParsingError` naming THF, and a text with the type binder ``!>`` or a
+quantifier variable of type ``$tType`` (``![A: $tType]``) is an error naming TF1
+polymorphism that is a :class:`TptpParsingError` and also a
+:class:`NotImplementedError`. Comments and single-quoted atoms are taken out first,
+so a ``thf(`` or a ``!>`` inside one is no statement and no binder. The arithmetic sorts
+are refused by :class:`NotImplementedError` where a declaration or a quantifier names
+one (see :func:`parse_tff_problem`'s docstring for exactly which constructs raise
+where).
 
 Includes
 --------
@@ -90,16 +112,49 @@ same AST shape :func:`~unicode_fol_kit.atp.tptp_tff.generate_tff_problem`
 started from, since a TFF formula BODY carries no inline sort annotation for
 a constant occurrence (only a bound variable does; a constant's sort lives
 solely in its separate ``type`` declaration).
+
+Two parsers, LALR first and Earley as a fallback
+------------------------------------------------
+The grammar below is parsed by FOUR lark parsers: an LALR(1) pair (``file``
+and ``formula`` start symbols) that is tried first, and the original Earley
+pair that takes over whenever LALR raises ``UnexpectedInput``. The reason is
+measured, not stylistic: on a real 1,367,212-byte, 4291-formula TPTP
+translation of an ontology, ``load_tptp_problem`` took 68.3 s through Earley
+and 1.7 s through LALR — and the two produce BYTE-IDENTICAL item lists for
+all 4291 records. The cost is per formula (4.15 ms against 0.2 ms), not
+superlinear in file size, and a ``cProfile`` run attributes 98 % of it to
+lark's dynamic-lexer Earley chart, so this is the only lever that matters.
+
+The fallback is what makes it risk-free, and only the PARSE step falls back:
+if LALR refuses a text, Earley re-parses it and Earley raises, so no input
+that parsed before stops parsing and every syntax-error message stays
+byte-identical. The TRANSFORM step is never retried — the TF0-scope refusals
+(``NotImplementedError`` for TF1/``$int``/``$rat``/``$real``, the
+``ConflictingArityError`` path) come out of the shared transformer and are
+identical either way, so a retry would only double the work.
+
+The asymmetry that remains: LALR uses lark's contextual lexer and Earley the
+dynamic one, so in principle LALR could ACCEPT a text Earley rejects, which
+the fallback does not protect against. Every terminal here is disjoint by
+first character (``VAR`` ``[A-Z]``, ``LOWER`` ``[a-z]``, ``SQ`` ``'``,
+``DOLLARWORD`` ``$``, ``NUMBER`` a digit or ``-``) and every operator is a
+literal string resolved by longest match, so a divergence would need a
+GRAMMAR change to introduce. ``tests/test_tptp_input.py`` therefore keeps a
+permanent parametrised agreement battery over both parsers, plus an explicit
+assertion that the grammar still builds as LALR(1) — so a future grammar edit
+that breaks the equivalence goes red instead of silently falling back to
+Earley for every parse.
 """
 
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from lark import Lark, Transformer
-from lark.exceptions import VisitError
+from lark import Lark, Transformer, Tree
+from lark.exceptions import UnexpectedInput, VisitError
 
+from ._fol_nodes import _numeral_from_text
 from .nodes import (
     Node, Variable, Constant, Number, Function,
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
@@ -122,6 +177,27 @@ class TptpParsingError(ParsingError):
 
     def __str__(self):
         return self.args[0]
+
+
+class _Tf1PolymorphismError(TptpParsingError, NotImplementedError):
+    """TF1 polymorphism (a type variable), refused by name.
+
+    A :class:`TptpParsingError`, like every other refusal of a text this reader does not
+    read, and also a :class:`NotImplementedError`, which is what the refusal of a TF1
+    type declaration always was: a caller that catches either keeps catching it.
+    """
+
+
+_THF_REFUSAL = (
+    "SYNTAX_ERROR: THF (higher-order TPTP) is out of scope for "
+    "this reader; only fof, cnf, and tff (TF0, monomorphic) are "
+    "supported."
+)
+
+_TF1_REFUSAL = (
+    "TF0 reader: TF1 polymorphic types and type variables ('!> [...] : ...', "
+    "'![A: $tType] : ...') are out of scope for this monomorphic TF0-only reader."
+)
 
 
 # Dollar-word predicate / function dictionaries — the inverse of the
@@ -383,11 +459,7 @@ class _TptpTransformer(Transformer):
     def stmt(self, items):
         keyword = str(items[0])
         if keyword == "thf":
-            raise TptpParsingError(
-                "SYNTAX_ERROR: THF (higher-order TPTP) is out of scope for "
-                "this reader; only fof, cnf, and tff (TF0, monomorphic) are "
-                "supported."
-            )
+            raise TptpParsingError(_THF_REFUSAL)
         if keyword not in ("fof", "cnf", "tff"):
             raise TptpParsingError(
                 f"SYNTAX_ERROR: unsupported TPTP statement '{keyword}' "
@@ -414,11 +486,7 @@ class _TptpTransformer(Transformer):
         """
         keyword, name, role, decl = str(items[0]), str(items[1]), str(items[2]), items[3]
         if keyword == "thf":
-            raise TptpParsingError(
-                "SYNTAX_ERROR: THF (higher-order TPTP) is out of scope for "
-                "this reader; only fof, cnf, and tff (TF0, monomorphic) are "
-                "supported."
-            )
+            raise TptpParsingError(_THF_REFUSAL)
         if keyword != "tff":
             raise TptpParsingError(
                 f"SYNTAX_ERROR: a type declaration (role 'type') is only "
@@ -549,8 +617,7 @@ class _TptpTransformer(Transformer):
         return Constant(_functor_name(items[0]))
 
     def number(self, items):
-        text = str(items[0])
-        return Number(float(text) if "." in text else int(text))
+        return Number(_numeral_from_text(str(items[0])))
 
     def func_app(self, items):
         return Function(_functor_name(items[0]), items[1])
@@ -591,10 +658,7 @@ class _TptpTransformer(Transformer):
         return ("sort", None)
 
     def tff_poly_decl(self, items):
-        raise NotImplementedError(
-            "TF0 reader: TF1 polymorphic type declarations ('!> [...] : ...') "
-            "are out of scope for this monomorphic TF0-only reader."
-        )
+        raise _Tf1PolymorphismError(_TF1_REFUSAL)
 
     def tff_symbol_decl(self, items):
         return ("mapping", items[0])
@@ -624,17 +688,222 @@ class _TptpTransformer(Transformer):
 
 _FORMULA_PARSER = Lark(_GRAMMAR, start="formula", parser="earley")
 _FILE_PARSER = Lark(_GRAMMAR, start="file", parser="earley")
+# The LALR(1) twins, tried first -- see "Two parsers" in the module
+# docstring. Construction costs +0.06 s at import for the pair (measured),
+# against 45x on every non-trivial parse. lark raises GrammarError on any
+# shift/reduce or reduce/reduce collision, so these two lines are themselves
+# the assertion that the grammar above is LALR(1).
+_FORMULA_PARSER_FAST = Lark(_GRAMMAR, start="formula", parser="lalr")
+_FILE_PARSER_FAST = Lark(_GRAMMAR, start="file", parser="lalr")
 _TRANSFORMER = _TptpTransformer()
 
+#: A DOL ``logic <Name>.<Sublogic>`` line is what HETS puts in front of every
+#: ``GET /theory`` rendering (``logic TPTP.FOF``, ``logic CASL.SulFOL=``,
+#: ``logic OWL.NP-sROIQx-D|Literal|...``). It is not TPTP, and neither is the
+#: CASL ``%{ ... }%`` block that follows it -- TPTP's only comment forms are
+#: ``%`` to end-of-line and ``/* ... */``, both already in the grammar's
+#: %ignore lines above. Detected here only so the refusal can NAME it and
+#: point at the stripper; the grammar is deliberately NOT widened, because a
+#: reader that treated ``%{ ... }%`` as a comment would accept a CASL theory,
+#: ignore its whole body and return an EMPTY formula list -- a silent empty
+#: answer to a wrong-translation request.
+#:
+#: The WHOLE first line must be ``logic`` plus ONE DOL logic reference
+#: (:data:`_HETS_LOGIC_REFERENCE`): a logic NAME, which is an identifier
+#: (``TPTP``, ``CASL``, ``SoftFOL``, ``HasCASL``, ``OWL`` ...), optionally
+#: followed by ``.`` and a free-form sublogic. The first character of the word
+#: after ``logic`` is therefore a LETTER, never an operator, so the guard
+#: cannot fire on a legitimate formula that happens to use ``logic`` as a
+#: predicate or constant name: ``logic & p``, ``logic &p``, ``logic|q``,
+#: ``logic =a``, ``logic != b``, ``logic <=> q``, ``logic(X)`` all keep parsing
+#: exactly as before. (An earlier test, ``logic`` plus any whitespace-free
+#: word, refused ``logic &p`` and ``logic =a`` -- valid formulas that parsed
+#: before the pointer existed.)
+#:
+#: On top of the shape, :func:`_parse` consults it only AFTER both parsers have
+#: failed, so by construction no text that parses is ever refused here; the
+#: shape is what keeps the pointer from naming the wrong cause for a text that
+#: does not.
+_HETS_LOGIC_REFERENCE = r"[A-Za-z][A-Za-z0-9_]*(?:\.\S*)?"
+_HETS_THEORY_HEADER = re.compile(r"logic[ \t]+" + _HETS_LOGIC_REFERENCE + r"\Z")
 
-def _parse(text: str, parser: Lark, what: str):
-    """Parse + transform with unified error handling (unwrapping lark's VisitError)."""
-    try:
-        tree = parser.parse(text)
-    except TptpParsingError:
-        raise
-    except Exception as exc:
-        raise TptpParsingError(f"SYNTAX_ERROR: could not parse TPTP {what}: {exc}")
+
+def _refuse_hets_theory_header(text: str) -> None:
+    """Refuse a HETS ``/theory`` rendering by name. Called by :func:`_parse`
+    once the text has FAILED to parse, never before: a text that parses is not
+    a Hets rendering, whatever its first line looks like."""
+    stripped = text.lstrip()
+    first_line = stripped.split("\n", 1)[0].rstrip()
+    if not _HETS_THEORY_HEADER.fullmatch(first_line):
+        return
+    raise TptpParsingError(
+        "SYNTAX_ERROR: this is not a TPTP problem but a Hets theory "
+        f"rendering (it begins {first_line!r}; a '%{{ ... }}%' block is CASL "
+        "comment syntax, not TPTP). Strip the header first with "
+        "unicode_fol_kit.hets.strip_hets_theory_header(text), or fetch it "
+        "already stripped with HetsClient.theory_tptp().")
+
+
+#: What carries no syntax of its own in TPTP text: a single-quoted atom (its escapes as in the
+#: grammar's ``SQ``), a ``%`` comment to the end of the line, a ``/* ... */`` block comment.
+_QUOTED_OR_COMMENT = re.compile(r"'(?:\\.|[^'\\])*'|%[^\r\n]*|/\*.*?\*/", re.DOTALL)
+
+#: A ``thf`` statement: the keyword opens the text or follows the ``.`` that ends the
+#: statement before it. (A ``.`` elsewhere is the point of a numeral, and a digit follows it.)
+_THF_STATEMENT = re.compile(r"(?:\A|\.)\s*thf\s*\(")
+
+#: TF1 syntax: the type binder ``!>``, and a quantifier variable whose type is ``$tType``
+#: (``![A: $tType]``). TF0 uses ``$tType`` only in ``name: $tType``, a lower-case name.
+_TF1_SYNTAX = re.compile(r"!>|[\[,]\s*[A-Z][A-Za-z0-9_]*\s*:\s*\$tType")
+
+
+def _refuse_out_of_scope_syntax(text: str, *, problem: bool) -> None:
+    """Refuse THF and TF1 by name before the first-order grammar is tried.
+
+    A THF statement has a body the first-order grammar cannot read (``p @ A``, a type
+    declaration ``p : $i > $o``), and TF1 writes a type variable with ``!>`` or with a
+    quantifier over ``$tType``; each ended in a syntax error that does not say what the
+    text is. The statement's KIND and the binder are found in the text with comments and
+    quoted atoms taken out, so neither a comment nor a quoted atom is ever refused, and
+    the check does not depend on the body parsing.
+
+    Args:
+        text: the text about to be parsed.
+        problem: whether ``text`` is a whole problem (statements). A bare formula has no
+            statement keyword: ``thf(a)`` there is the atom ``Thf(a)``.
+
+    Raises:
+        TptpParsingError: ``text`` has a ``thf`` statement.
+        _Tf1PolymorphismError: ``text`` uses ``!>`` or a ``$tType`` quantifier variable
+            (a :class:`TptpParsingError` and a :class:`NotImplementedError`).
+    """
+    if "thf" not in text and "!>" not in text and "$tType" not in text:
+        return
+    code = _QUOTED_OR_COMMENT.sub(" ", text)
+    if problem and _THF_STATEMENT.search(code):
+        raise TptpParsingError(_THF_REFUSAL)
+    if _TF1_SYNTAX.search(code):
+        raise _Tf1PolymorphismError(_TF1_REFUSAL)
+
+
+#: Parse-tree nodes whose ``VAR`` tokens are not variables of a formula: the
+#: discarded 4th/5th annotation fields of a statement (an opaque term may carry
+#: one), the statement's name, and the declarations that are not formulas.
+_NOT_A_FORMULA = frozenset({
+    "annotation_term", "annotation_term_list", "fof_name", "include_stmt",
+    "name_list", "stmt_type",
+})
+
+
+def _refuse_merged_variables(tree) -> None:
+    """Refuse, by name, a formula in which lower-casing turns two TPTP variables
+    into one.
+
+    :class:`_TptpTransformer` reads a TPTP variable as its lower-cased kit
+    :class:`Variable`, and a TPTP variable is case-sensitive: ``Xa`` and ``XA``
+    are two variables that both become ``xa``. Where that merges them the formula
+    is read as a DIFFERENT formula (``![Xa, XA]: p(Xa, XA)`` as ``∀xa ∀xa
+    P(xa, xa)``), and nothing said so. A kit variable here is a NAME, resolved to
+    the nearest enclosing binder of that name; TPTP resolves an occurrence to the
+    nearest enclosing binder of the EXACT spelling, or leaves it free. The two
+    readings of an occurrence therefore differ exactly when
+
+    * the nearest binder of the lower-cased name is not the nearest binder of the
+      exact spelling (one variable is captured by another's quantifier, or a free
+      variable by a binder), or
+    * two spellings of one lower-cased name occur free in the same formula.
+
+    Those are refused, naming both variables. Anything else reads as it always
+    did, byte for byte: ``(![Xa]: p(Xa)) & (![XA]: q(XA))`` has two binders that
+    never meet, so the kit's ``(∀xa P(xa)) ∧ (∀xa Q(xa))`` is the same formula.
+    Each statement of a problem is checked on its own. No renaming is invented
+    here: a formula that needs one is refused and the caller renames.
+    """
+    if tree.data == "file":
+        roots = [child for child in tree.children
+                 if isinstance(child, Tree) and child.data == "stmt"]
+    else:
+        roots = [tree]
+    for root in roots:
+        free: Dict[str, str] = {}          # lower-cased name -> first free spelling
+        # (node, binders); binders is None or (spelling, enclosing binders)
+        stack: List[Tuple[Any, Any]] = [(root, None)]
+        while stack:
+            node, binders = stack.pop()
+            if not isinstance(node, Tree) or node.data in _NOT_A_FORMULA:
+                continue
+            if node.data == "var":
+                _check_variable_occurrence(str(node.children[0]), binders, free)
+            elif node.data in ("forall", "exists"):
+                varlist, body = node.children
+                for typed_var in varlist.children:
+                    binders = (str(typed_var.children[0]), binders)
+                stack.append((body, binders))
+            else:
+                for child in reversed(node.children):
+                    stack.append((child, binders))
+
+
+def _check_variable_occurrence(spelling: str, binders: Any, free: Dict[str, str]) -> None:
+    """One occurrence of the TPTP variable ``spelling`` under ``binders`` — see
+    :func:`_refuse_merged_variables`."""
+    lowered = spelling.lower()
+    exact = by_name = None
+    scope = binders
+    while scope is not None and (exact is None or by_name is None):
+        if exact is None and scope[0] == spelling:
+            exact = scope
+        if by_name is None and scope[0].lower() == lowered:
+            by_name = scope
+        scope = scope[1]
+    if by_name is not None and by_name is not exact:
+        _refuse_variable_pair(by_name[0], spelling, lowered)
+    if by_name is None:
+        first = free.setdefault(lowered, spelling)
+        if first != spelling:
+            _refuse_variable_pair(first, spelling, lowered)
+
+
+def _refuse_variable_pair(one: str, other: str, lowered: str) -> None:
+    raise TptpParsingError(
+        f"SYNTAX_ERROR: the TPTP variables {one!r} and {other!r} are different "
+        f"variables that differ only by letter case, and this reader turns a "
+        f"TPTP variable into a kit variable by lower-casing it: both would "
+        f"become {lowered!r}, and the formula would be read with one variable "
+        f"where TPTP has two. Rename one of them so that they differ by more "
+        f"than letter case.")
+
+
+def _parse(text: str, parser: Lark, what: str, *, fast: Optional[Lark] = None):
+    """Parse + transform with unified error handling (unwrapping lark's VisitError).
+
+    ``fast`` is the LALR(1) twin of ``parser``; it is tried first and Earley
+    takes over on ``UnexpectedInput``, so no text that parsed before stops
+    parsing and every syntax-error message is Earley's, unchanged. Only the
+    PARSE is retried — see "Two parsers" in the module docstring.
+
+    A HETS theory rendering is named only once BOTH parsers have refused the
+    text (see :func:`_refuse_hets_theory_header`): the pointer replaces a syntax
+    error with a better one, and can never turn a text that parses into a
+    refusal.
+    """
+    _refuse_out_of_scope_syntax(text, problem=what == "problem")
+    tree = None
+    if fast is not None:
+        try:
+            tree = fast.parse(text)
+        except UnexpectedInput:
+            tree = None
+    if tree is None:
+        try:
+            tree = parser.parse(text)
+        except TptpParsingError:
+            raise
+        except Exception as exc:
+            _refuse_hets_theory_header(text)
+            raise TptpParsingError(
+                f"SYNTAX_ERROR: could not parse TPTP {what}: {exc}")
+    _refuse_merged_variables(tree)
     try:
         return _TRANSFORMER.transform(tree)
     except VisitError as exc:
@@ -768,7 +1037,8 @@ def _resolve_includes(items: list, base_dir: Optional[str], search_paths,
             )
         with open(path, "r", encoding="utf-8") as handle:
             sub_text = handle.read()
-        sub_items = _parse(sub_text, _FILE_PARSER, "problem")
+        sub_items = _parse(sub_text, _FILE_PARSER, "problem",
+                           fast=_FILE_PARSER_FAST)
         sub_resolved = _resolve_includes(
             sub_items, os.path.dirname(path), search_paths,
             chain + ((item.file_name, real),))
@@ -812,7 +1082,7 @@ def _load_and_resolve(path: str, search_paths) -> Tuple[list, str]:
     real_path = os.path.realpath(path)
     with open(path, "r", encoding="utf-8") as handle:
         text = handle.read()
-    items = _parse(text, _FILE_PARSER, "problem")
+    items = _parse(text, _FILE_PARSER, "problem", fast=_FILE_PARSER_FAST)
     items = _resolve_includes(
         items, os.path.dirname(path), search_paths, ((path, real_path),))
     return items, text
@@ -830,7 +1100,8 @@ def parse_tptp_formula(text: str) -> Node:
     Raises:
         ParsingError: if ``text`` is not a well-formed TPTP formula.
     """
-    return _parse(text, _FORMULA_PARSER, "formula")
+    return _parse(text, _FORMULA_PARSER, "formula",
+                  fast=_FORMULA_PARSER_FAST)
 
 
 def parse_tptp(text: str, *, base_dir: Optional[str] = None, search_paths=()) -> list:
@@ -869,7 +1140,7 @@ def parse_tptp(text: str, *, base_dir: Optional[str] = None, search_paths=()) ->
             cannot be resolved (``base_dir=None``, a missing file, or a
             circular chain; see "Includes").
     """
-    items = _parse(text, _FILE_PARSER, "problem")
+    items = _parse(text, _FILE_PARSER, "problem", fast=_FILE_PARSER_FAST)
     items = _resolve_includes(items, base_dir, search_paths, ())
     return _finalize_formulas(items)
 
@@ -1032,7 +1303,7 @@ def parse_tff_problem(
             (``$int``/``$rat``/``$real``) — see :func:`_resolve_type_str` /
             ``_TptpTransformer.tff_poly_decl``.
     """
-    items = _parse(text, _FILE_PARSER, "problem")
+    items = _parse(text, _FILE_PARSER, "problem", fast=_FILE_PARSER_FAST)
     items = _resolve_includes(items, base_dir, search_paths, ())
     return _build_signature_and_formulas(items)
 

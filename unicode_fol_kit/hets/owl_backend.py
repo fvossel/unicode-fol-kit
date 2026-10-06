@@ -167,6 +167,21 @@ call in this module passes that same constant as ``node``, with no per-call
 its CASL input's node name is caller-chosen, not a constant this module
 controls).
 
+The data layer
+----------------
+FaCT++ is an SROIQ(D) reasoner, so unlike ``dl.owl_reasoner`` (whose HermiT
+bridge refuses the data layer by name) THIS oracle can be asked about it:
+:func:`_render_document` writes the data box and the data assertions, with
+OWL 2's own datatype and facet names verbatim (``xsd:integer`` means the same
+to FaCT++ as to us) and the same fresh synthetic names for data properties
+(``:P<n>``) and user-defined datatypes (``:T<n>``) it gives classes and roles --
+a LITERAL's datatype included: ``"5"^^:T1``, never the kit's own datatype name,
+which the document does not declare.
+The ``xsd``/``rdfs``/``rdf`` prefixes are declared only for a knowledge base
+that mentions a datatype, so every data-free document is unchanged. This is an
+independent check on the kit's own two-sorted FOL image, not a replacement for
+it; no test here starts the container.
+
 The one primitive: :func:`_kb_consistent`
 --------------------------------------------
 Every public ``external_*`` function reduces to it, exactly the way
@@ -197,9 +212,18 @@ from typing import Dict, List, Optional, Set
 
 from ..dl.concepts import (
     Concept, Top, Bottom, Atomic, Not, And, Or, Exists, ForAll, AtLeast, AtMost,
-    InverseRole, Nominal,
+    InverseRole, Nominal, HasValue, DataExists, DataForAll, DataHasValue,
+    DataAtLeast, DataAtMost,
 )
-from ..dl.tableau import TBox, ABox
+from ..dl.datatypes import (
+    DataRange, Literal, is_builtin_datatype, render_datarange_fs, render_literal_fs,
+)
+from ..dl.tableau import (
+    TBox, ABox, _abox_individual_names, _reject_abox_roles,
+    _reject_concept_roles_deep, _tbox_class_expressions, _validate_data_box,
+    _validate_role_box,
+)
+from ..dl.translate import _check_name_punning, _collect_vocabulary
 from .client import HetsClient
 from .docker import discover_hets_url, hets_available
 
@@ -282,6 +306,8 @@ class _NameMap:
         self._classes: Dict[str, str] = {}
         self._roles: Dict[str, str] = {}
         self._individuals: Dict[str, str] = {}
+        self._data_properties: Dict[str, str] = {}
+        self._datatypes: Dict[str, str] = {}
 
     def cls(self, name: str) -> str:
         if name not in self._classes:
@@ -298,6 +324,22 @@ class _NameMap:
             self._individuals[name] = f":I{len(self._individuals) + 1}"
         return self._individuals[name]
 
+    def dprop(self, name: str) -> str:
+        """A fresh ``:P<n>`` token for a DATA property name."""
+        if name not in self._data_properties:
+            self._data_properties[name] = f":P{len(self._data_properties) + 1}"
+        return self._data_properties[name]
+
+    def dtype(self, name: str) -> str:
+        """A datatype name as OWL 2 text: a BUILT-IN datatype keeps its own
+        name (``xsd:integer`` means the same to Hets as to us), a user-defined
+        one gets a fresh ``:T<n>`` token."""
+        if is_builtin_datatype(name):
+            return name
+        if name not in self._datatypes:
+            self._datatypes[name] = f":T{len(self._datatypes) + 1}"
+        return self._datatypes[name]
+
     def class_tokens(self) -> List[str]:
         return list(self._classes.values())
 
@@ -306,6 +348,26 @@ class _NameMap:
 
     def individual_tokens(self) -> List[str]:
         return list(self._individuals.values())
+
+    def data_property_tokens(self) -> List[str]:
+        return list(self._data_properties.values())
+
+    def datatype_tokens(self) -> List[str]:
+        return list(self._datatypes.values())
+
+
+def _render_datarange(datarange: DataRange, names: _NameMap) -> str:
+    """A data range as OWL 2 Functional-Style text, with user-defined datatypes
+    under their synthetic names."""
+    return render_datarange_fs(datarange, names.dtype)
+
+
+def _render_literal(literal: Literal, names: _NameMap) -> str:
+    """A literal as OWL 2 Functional-Style text, its datatype under the SAME
+    name :func:`_render_datarange` gives it: a user-defined datatype is declared
+    as ``:T<n>``, so a literal written with the kit's own name would use a name
+    the document never declared."""
+    return render_literal_fs(literal, names.dtype)
 
 
 def _render_role_expr(role_field, names: _NameMap) -> str:
@@ -334,6 +396,9 @@ def _render_ce(c: Concept, names: _NameMap) -> str:
         return names.cls(c.name)
     if isinstance(c, Nominal):
         return f"ObjectOneOf({names.ind(c.individual)})"
+    if isinstance(c, HasValue):
+        return (f"ObjectHasValue({_render_role_expr(c.role, names)} "
+                f"{names.ind(c.individual)})")
     if isinstance(c, Not):
         return f"ObjectComplementOf({_render_ce(c.concept, names)})"
     if isinstance(c, And):
@@ -348,7 +413,88 @@ def _render_ce(c: Concept, names: _NameMap) -> str:
         return f"ObjectMinCardinality({c.n} {_render_role_expr(c.role, names)} {_render_ce(c.concept, names)})"
     if isinstance(c, AtMost):
         return f"ObjectMaxCardinality({c.n} {_render_role_expr(c.role, names)} {_render_ce(c.concept, names)})"
+    if isinstance(c, DataExists):
+        return f"DataSomeValuesFrom({names.dprop(c.prop)} {_render_datarange(c.datarange, names)})"
+    if isinstance(c, DataForAll):
+        return f"DataAllValuesFrom({names.dprop(c.prop)} {_render_datarange(c.datarange, names)})"
+    if isinstance(c, DataHasValue):
+        return f"DataHasValue({names.dprop(c.prop)} {_render_literal(c.value, names)})"
+    if isinstance(c, DataAtLeast):
+        return (f"DataMinCardinality({c.n} {names.dprop(c.prop)} "
+                f"{_render_datarange(c.datarange, names)})")
+    if isinstance(c, DataAtMost):
+        return (f"DataMaxCardinality({c.n} {names.dprop(c.prop)} "
+                f"{_render_datarange(c.datarange, names)})")
     raise TypeError(f"hets.owl_backend: unsupported concept {type(c).__name__}")
+
+
+#: ``(TBox field, OWL 2 keyword)`` for the seven one-role characteristic
+#: axioms, in the order ``dl.tableau._AXIOM_KINDS`` lists them. A table rather
+#: than seven loops, for the same reason ``dl.owl_functional`` uses one: they
+#: differ only in the keyword, and a FaCT++ oracle that silently dropped one
+#: would agree with the in-house tableau for the wrong reason.
+#: ``transitive_roles`` is NOT here: a transitivity declaration is rendered
+#: with the role inclusions, ahead of everything else, which is the ordering
+#: this module has had since the RBox landed and which several pinned
+#: expected-document strings depend on.
+_CHARACTERISTIC_AXIOMS = (
+    ("asymmetric_roles", "AsymmetricObjectProperty"),
+    ("irreflexive_roles", "IrreflexiveObjectProperty"),
+    ("functional_roles", "FunctionalObjectProperty"),
+    ("symmetric_roles", "SymmetricObjectProperty"),
+    ("reflexive_roles", "ReflexiveObjectProperty"),
+    ("inverse_functional_roles", "InverseFunctionalObjectProperty"),
+)
+
+
+def _guard_document(tbox: TBox, abox: ABox, concepts=()) -> None:
+    """Refuse, by name, what no route may answer, BEFORE a word of the document
+    is written.
+
+    A renderer gives every name it meets a synthetic one of its own (``:R1``), so
+    an OWL 2 built-in property name (``owl:topObjectProperty`` and the other
+    three, and ``=`` / ``≠``) as the role of a class expression came out as an
+    ordinary role, and FaCT++ was asked about a different restriction — while
+    every other route refuses the same concept by name. These are the validations
+    :func:`unicode_fol_kit.dl.owl_reasoner._guard_inputs` runs for the HermiT
+    route, CALLED here and not copied, so one expression is refused with one
+    message wherever it is asked: the stored role box and data box are validated
+    before anything is unpacked (a hand-built wrong-arity pair is a
+    :class:`~unicode_fol_kit.dl.tableau.RoleExpressionError`, not a bare
+    ``ValueError``), no ABox assertion carries a built-in property name, and no
+    class expression — in a TBox inclusion, in a domain or range filler, in a
+    DATA property domain filler (a class expression this route renders; the
+    HermiT route refuses the whole data box instead), in an ABox concept
+    assertion (which is where every QUERY concept ends up) — uses one as a role,
+    at any depth. A NAME used as both an object property and a data property, or
+    as both a class and a datatype, is refused too
+    (:func:`~unicode_fol_kit.dl.translate._check_name_punning`, the one the FOL
+    image runs): this renderer would write the two kinds under separate tokens
+    (``:R1`` / ``:P1``), so the oracle would answer a knowledge base the kit's own
+    route refuses. Not run here: the data-layer refusal (FaCT++ is an SROIQ(D)
+    reasoner and IS asked about the data layer) and the simple-role check.
+
+    ``concepts`` are query concepts that are NOT yet in the ABox: an entry point
+    that may make no Hets call at all (``external_realize`` over an empty
+    vocabulary, ``external_realize_all`` and ``external_instance_retrieval`` over
+    an empty ABox) runs the guard itself, as ``dl.owl_reasoner`` does, so that it
+    does not return a quiet ``[]`` for a knowledge base every other route refuses.
+    """
+    where = "hets.owl_backend"
+    _validate_role_box(tbox, where=where)
+    _validate_data_box(tbox, where=where)
+    _reject_abox_roles(abox, where=where)
+    for concept in _tbox_class_expressions(tbox):
+        _reject_concept_roles_deep(concept, where=where)
+    for _prop, filler in tbox.data_property_domains:
+        _reject_concept_roles_deep(filler, where=where)
+    for _individual, concept in abox.concept_assertions:
+        _reject_concept_roles_deep(concept, where=where)
+    for concept in concepts:
+        _reject_concept_roles_deep(concept, where=where)
+    # Over the whole knowledge base, which includes every query concept (they
+    # reach this renderer as ABox assertions).
+    _check_name_punning(_collect_vocabulary(tbox, abox), where)
 
 
 def _render_document(tbox: TBox, abox: ABox) -> str:
@@ -356,16 +502,70 @@ def _render_document(tbox: TBox, abox: ABox) -> str:
     document under the fixed :data:`_ONTOLOGY_IRI`, with a ``Declaration(...)``
     for every synthetic name used (mirrors ``dl.owl_functional.to_owl_functional``'s
     own declaration-block convention, for the same reason: cheap, harmless,
-    and matches what a hand-written OWL ontology looks like) — RBox axioms
-    first, then the TBox's inclusions, then the ABox's assertions, matching
+    and matches what a hand-written OWL ontology looks like) — the whole role
+    box first, then the TBox's inclusions, then the ABox's assertions, matching
     that sibling module's own axiom ordering.
+
+    EVERY role-box field is rendered, including the ones
+    ``dl.owl_functional`` cannot read back (an ``ObjectInverseOf`` on either
+    side of a sub-property axiom): this module exists to be a SECOND,
+    INDEPENDENT oracle, and an oracle that drops the axiom under test agrees
+    with everything. What no route answers is refused first
+    (:func:`_guard_document`).
     """
+    _guard_document(tbox, abox)
     names = _NameMap()
     axiom_lines: List[str] = []
     for sub_role, super_role in tbox.role_inclusions:
-        axiom_lines.append(f"SubObjectPropertyOf({names.role(sub_role)} {names.role(super_role)})")
+        # _render_role_expr, not names.role: an InverseRole must come out as
+        # ObjectInverseOf(...), and using it as a _NameMap KEY (what this did
+        # until 0.30.0) invents a brand-new atomic property instead -- so an
+        # inverse-role inclusion and a chain rendered CHARACTER-FOR-CHARACTER
+        # identically, and FaCT++ was asked about neither of them.
+        axiom_lines.append(f"SubObjectPropertyOf({_render_role_expr(sub_role, names)} "
+                           f"{_render_role_expr(super_role, names)})")
     for role in sorted(tbox.transitive_roles):
         axiom_lines.append(f"TransitiveObjectProperty({names.role(role)})")
+    # The remaining role-box fields, in the order dl.tableau._AXIOM_KINDS lists
+    # them -- the same order dl.owl_functional._render_role_box uses, so the
+    # two renderers' documents line up axiom for axiom.
+    for left, right in tbox.disjoint_role_pairs:
+        axiom_lines.append(
+            f"DisjointObjectProperties({names.role(left)} {names.role(right)})")
+    for field_name, keyword in _CHARACTERISTIC_AXIOMS:
+        for role in sorted(getattr(tbox, field_name)):
+            axiom_lines.append(f"{keyword}({names.role(role)})")
+    for p, q in tbox.inverse_role_pairs:
+        axiom_lines.append(
+            f"InverseObjectProperties({names.role(p)} {names.role(q)})")
+    for chain, super_role in tbox.role_chains:
+        body = " ".join(_render_role_expr(role, names) for role in chain)
+        axiom_lines.append(f"SubObjectPropertyOf(ObjectPropertyChain({body}) "
+                           f"{names.role(super_role)})")
+    for role, filler in tbox.role_domains:
+        axiom_lines.append(f"ObjectPropertyDomain({names.role(role)} "
+                           f"{_render_ce(filler, names)})")
+    for role, filler in tbox.role_ranges:
+        axiom_lines.append(f"ObjectPropertyRange({names.role(role)} "
+                           f"{_render_ce(filler, names)})")
+    # The DATA box: FaCT++ is an SROIQ(D) reasoner, so unlike the HermiT route
+    # this oracle CAN be asked about the data layer. Datatype and facet names
+    # are OWL 2's own and stay verbatim; a user-defined datatype and every data
+    # property get fresh synthetic names, like classes and roles.
+    for sub_prop, super_prop in tbox.data_property_inclusions:
+        axiom_lines.append(f"SubDataPropertyOf({names.dprop(sub_prop)} {names.dprop(super_prop)})")
+    for left, right in tbox.disjoint_data_property_pairs:
+        axiom_lines.append(f"DisjointDataProperties({names.dprop(left)} {names.dprop(right)})")
+    for prop in sorted(tbox.functional_data_properties):
+        axiom_lines.append(f"FunctionalDataProperty({names.dprop(prop)})")
+    for prop, filler in tbox.data_property_domains:
+        axiom_lines.append(f"DataPropertyDomain({names.dprop(prop)} {_render_ce(filler, names)})")
+    for prop, datarange in tbox.data_property_ranges:
+        axiom_lines.append(f"DataPropertyRange({names.dprop(prop)} "
+                           f"{_render_datarange(datarange, names)})")
+    for name, datarange in tbox.datatype_definitions:
+        axiom_lines.append(f"DatatypeDefinition({names.dtype(name)} "
+                           f"{_render_datarange(datarange, names)})")
     for sub, sup in tbox.inclusions:
         axiom_lines.append(f"SubClassOf({_render_ce(sub, names)} {_render_ce(sup, names)})")
     for individual, concept in abox.concept_assertions:
@@ -375,16 +575,36 @@ def _render_document(tbox: TBox, abox: ABox) -> str:
             f"ObjectPropertyAssertion({names.role(role)} {names.ind(a)} {names.ind(b)})")
     for a, b in abox.distinct_assertions:
         axiom_lines.append(f"DifferentIndividuals({names.ind(a)} {names.ind(b)})")
+    for a, b in abox.same_assertions:
+        axiom_lines.append(f"SameIndividual({names.ind(a)} {names.ind(b)})")
+    for a, b, role in abox.negative_role_assertions:
+        axiom_lines.append(f"NegativeObjectPropertyAssertion({names.role(role)} "
+                           f"{names.ind(a)} {names.ind(b)})")
+    for individual, prop, value in abox.data_assertions:
+        axiom_lines.append(f"DataPropertyAssertion({names.dprop(prop)} "
+                           f"{names.ind(individual)} {_render_literal(value, names)})")
+    for individual, prop, value in abox.negative_data_assertions:
+        axiom_lines.append(f"NegativeDataPropertyAssertion({names.dprop(prop)} "
+                           f"{names.ind(individual)} {_render_literal(value, names)})")
 
     decl_lines = (
         [f"Declaration(Class({t}))" for t in names.class_tokens()]
         + [f"Declaration(ObjectProperty({t}))" for t in names.role_tokens()]
+        + [f"Declaration(DataProperty({t}))" for t in names.data_property_tokens()]
+        + [f"Declaration(Datatype({t}))" for t in names.datatype_tokens()]
         + [f"Declaration(NamedIndividual({t}))" for t in names.individual_tokens()]
     )
     body_lines = decl_lines + axiom_lines
     header = (f"Prefix(:=<{_PREFIX_IRI}>)\n"
-              f"Prefix(owl:=<http://www.w3.org/2002/07/owl#>)\n"
-              f"Ontology(<{_ONTOLOGY_IRI}>")
+              f"Prefix(owl:=<http://www.w3.org/2002/07/owl#>)\n")
+    if _collect_vocabulary(tbox, abox).has_data():
+        # The datatypes' own prefixes, declared so the document does not lean on
+        # the implicit ones -- only for a knowledge base that mentions a
+        # datatype at all, which leaves every data-free document as it was.
+        header += ("Prefix(xsd:=<http://www.w3.org/2001/XMLSchema#>)\n"
+                   "Prefix(rdfs:=<http://www.w3.org/2000/01/rdf-schema#>)\n"
+                   "Prefix(rdf:=<http://www.w3.org/1999/02/22-rdf-syntax-ns#>)\n")
+    header += f"Ontology(<{_ONTOLOGY_IRI}>"
     if not body_lines:
         return header + ")"
     body = "\n".join(f"  {line}" for line in body_lines)
@@ -415,10 +635,12 @@ def _kb_consistent(tbox: Optional[TBox], abox: ABox, *,
             result) — see :class:`HetsOwlError`.
     """
     tbox = tbox if tbox is not None else TBox()
+    # Rendered BEFORE a server is looked for: a question that is refused by name
+    # (see _guard_document) must not need a reachable Hets to be refused.
+    text = _render_document(tbox, abox)
     if url is None:
         url, _container = discover_hets_url(start_container=False)
     client = HetsClient(url, timeout=float(time_limit + 30))
-    text = _render_document(tbox, abox)
     iri = client.upload(text, _FILENAME)
     goals = client.consistency_check(iri, _ONTOLOGY_IRI, reasoner=_REASONER,
                                       time_limit=time_limit)
@@ -487,12 +709,19 @@ def _abox_with(abox: ABox, individual: str, concept: Concept) -> ABox:
     """A copy of ``abox`` with one extra concept assertion ``individual : concept``
     (used by :func:`external_instance_check`'s entailment reduction — mirrors
     :func:`unicode_fol_kit.dl.owl_reasoner._abox_with` exactly).
+
+    :meth:`~unicode_fol_kit.dl.tableau.ABox.copy`, not a field-by-field
+    reconstruction: this module is one of the kit's INDEPENDENT oracles, and a
+    probe that silently drops an assertion kind the caller supplied asks FaCT++
+    about a strictly WEAKER knowledge base than the one the caller has, so the
+    two oracles would agree for the wrong reason. (Field-by-field is what this
+    did until 0.30.0, and it dropped ``same_assertions`` and
+    ``negative_role_assertions`` — and would have dropped the data assertions —
+    the moment they existed.)
     """
-    return ABox(
-        concept_assertions=abox.concept_assertions + [(individual, concept)],
-        role_assertions=list(abox.role_assertions),
-        distinct_assertions=list(abox.distinct_assertions),
-    )
+    probe = abox.copy()
+    probe.assert_concept(individual, concept)
+    return probe
 
 
 def external_instance_check(abox: ABox, individual: str, concept: Concept,
@@ -508,22 +737,25 @@ def external_instance_check(abox: ABox, individual: str, concept: Concept,
 
 
 def _all_individuals(abox: ABox) -> Set[str]:
-    """Every individual name mentioned in ``abox``, falling back to a single
-    anonymous ``"a"`` for a wholly empty ABox — the same convention
-    :func:`unicode_fol_kit.dl.tableau._individuals` /
-    :func:`unicode_fol_kit.dl.owl_reasoner._all_individuals` use, reimplemented
-    locally to keep this module decoupled from either one's private internals.
+    """Every individual name mentioned in ``abox`` (ANY assertion list), and NO
+    anonymous fallback: an ABox that names nobody has nobody to retrieve or
+    realize.
+
+    It IS :func:`unicode_fol_kit.dl.tableau._abox_individual_names`, the scan the
+    tableau's two sweeps (``instance_retrieval``, ``realize_all``), the HermiT
+    route and ``kb_to_fol(...).individuals`` all read, driven by ``dl.tableau.
+    _AXIOM_KINDS``' ``individual_positions``: an assertion kind added to the
+    table is enumerated by every route that sweeps individuals from its row
+    alone. NOT ``dl.tableau._individuals``, which adds the anonymous ``"a"`` for
+    an empty ABox because ``abox_consistent`` needs SOME node for the TBox to
+    run on — that node is not an individual of the knowledge base, and sweeping
+    it asked FaCT++ about a phantom and reported it as a member
+    (``TBox().add(⊤, A)`` over an empty ABox retrieved ``{"a"}`` here and
+    ``set()`` from the tableau and from HermiT). A local re-implementation of
+    the scan is what this was until 0.30.0, and it omitted ``same_assertions``
+    and ``negative_role_assertions``.
     """
-    individuals = {a for a, _ in abox.concept_assertions}
-    for a, b, _ in abox.role_assertions:
-        individuals.add(a)
-        individuals.add(b)
-    for a, b in abox.distinct_assertions:
-        individuals.add(a)
-        individuals.add(b)
-    if not individuals:
-        individuals = {"a"}
-    return individuals
+    return set(_abox_individual_names(abox))
 
 
 def external_instance_retrieval(abox: ABox, concept: Concept, tbox: Optional[TBox] = None, *,
@@ -532,6 +764,7 @@ def external_instance_retrieval(abox: ABox, concept: Concept, tbox: Optional[TBo
     ``concept`` — sweeps :func:`external_instance_check` exactly like
     :func:`unicode_fol_kit.dl.tableau.instance_retrieval` does.
     """
+    _guard_document(tbox if tbox is not None else TBox(), abox, [concept])
     return {ind for ind in _all_individuals(abox)
             if external_instance_check(abox, ind, concept, tbox, time_limit=time_limit, url=url)}
 
@@ -543,6 +776,7 @@ def external_realize(abox: ABox, individual: str, vocabulary: List[Concept],
     same filter-then-drop-non-minimal reduction
     :func:`unicode_fol_kit.dl.tableau.realize` uses.
     """
+    _guard_document(tbox if tbox is not None else TBox(), abox, vocabulary)
     candidates = [c for c in vocabulary
                   if external_instance_check(abox, individual, c, tbox,
                                               time_limit=time_limit, url=url)]
@@ -555,5 +789,6 @@ def external_realize(abox: ABox, individual: str, vocabulary: List[Concept],
 def external_realize_all(abox: ABox, vocabulary: List[Concept], tbox: Optional[TBox] = None, *,
                           time_limit: int = 15, url: Optional[str] = None) -> Dict[str, List[Concept]]:
     """Return :func:`external_realize` for every individual named in ``abox``."""
+    _guard_document(tbox if tbox is not None else TBox(), abox, vocabulary)
     return {ind: external_realize(abox, ind, vocabulary, tbox, time_limit=time_limit, url=url)
             for ind in sorted(_all_individuals(abox))}

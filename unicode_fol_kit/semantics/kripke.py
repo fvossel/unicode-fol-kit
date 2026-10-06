@@ -50,6 +50,38 @@ Two consequences of this reduction, both deliberate design choices, not gaps:
   valuations are already the caller's construction to get right. See
   ``tests/test_sorted_modal.py`` for a worked differential against
   ``api.prove`` built this way.
+- **A sorted constant being in its sort is a property of the MODEL, too.**
+  ``c:S`` denotes an element of ``S``, and a constant is a rigid designator, so
+  in a legal model the guard atom ``S(c)`` is true at EVERY world — whatever the
+  world's domain says about whether ``c`` exists there. The evaluator reads the
+  guard from the valuation like any other atom and does not check it: in a model
+  that leaves ``Human(socrates)`` out of some world's valuation,
+  ``∀x:Human Mortal(x) → Mortal(socrates:Human)`` can be FALSE there, a model
+  the many-sorted routes (``qml_is_valid``, ``api.prove``) never consider. The
+  routes assert the fact as a background axiom (``fol.sort_membership_axioms``,
+  lifted per world by ``fol.qml``) and an evaluator of ONE given model cannot, so
+  a caller who compares this evaluator with them builds the model that way, or
+  asks :func:`sorted_constant_violations` which worlds of a model fall short. A
+  plain constant ``socrates`` has no sort, and nothing is asserted about it.
+
+Equality is NOT interpreted. ``=`` and ``≠`` need a semantics of TERMS — what
+``a`` and ``b`` denote, so that ``a = b`` can be decided as identity of those
+denotations — and this evaluator has none: it never interprets a term, it looks
+an atom up by its rendered key in a world's valuation set. Run on ``a = b`` that
+lookup would silently read the identity as an uninterpreted proposition keyed
+``"a = b"``, so ``a = a`` would come out FALSE unless a caller happened to
+list it, and ``□(a = b) → a = b`` would be decided by the frame alone. The kit's
+rule is that an unsupported fragment is refused loudly, never approximated, so
+:func:`satisfies_modal` (and so :func:`ctl_ex` / :func:`ctl_af` / :func:`ctl_eg`
+/ :func:`ctl_au`, and every evaluator built on it) raises ``NotImplementedError``
+naming the atom as soon as ANY ``=`` / ``≠`` atom occurs ANYWHERE in the formula
+— the check scans the whole tree before evaluating, because evaluating lazily
+would let a short-circuit (``P ∨ a = b`` at a world where ``P`` holds), a
+vacuous ``□`` at a dead end, or an empty domain skip the atom and return a verdict
+that never looked at it. Decide identity with :func:`unicode_fol_kit.fol.qml.qml_is_valid`
+(quantified modal logic, where ``=`` is rigid identity over the object domain) or
+a first-order route; the other arithmetic comparisons (``<``, ``≤`` …) are
+ordinary keyed atoms here, exactly as before.
 
 Relation-name convention (keys of :attr:`KripkeModel.relations`):
 
@@ -181,15 +213,16 @@ from ..fol.nodes import (
     Historically, Once, Previous, Since,
     Obligatory, Permitted,
     Nominal, At, Down,
-    Constant, substitute,
+    Constant, substitute, sort_membership_axioms,
 )
 from ..fol._modal_nodes import (
     Announce, AnnounceDiamond,
     EverybodyKnows, DistributedKnowledge, CommonKnowledge,
 )
+from ..fol._truth_constants import truth_value as _truth_value
 from ._modal_reject import (
-    FUZZY_TYPES, LAMBDA_TYPES,
-    reject_fuzzy, reject_lambda,
+    EQUALITY_PREDICATES, FUZZY_TYPES, LAMBDA_TYPES,
+    reject_equality, reject_equality_in, reject_fuzzy, reject_lambda,
 )
 
 # Quantifier-type spellings used by the AST.
@@ -216,6 +249,7 @@ def _agent_key(agent: Node) -> str:
     relation key matches the model's ``"K:"+name`` / ``"B:"+name`` convention.
     """
     return getattr(agent, "name", None) or agent.to_unicode_str()
+
 
 World = Any
 Edge = Tuple[World, World]
@@ -609,13 +643,17 @@ def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
     / ``∃x:S φ`` / a bare ``alice:Human``) is relativized ONCE, here, before
     anything else runs — see the module docstring's "Many-sorted formulas"
     section for what that does and does not assume (world-relative, not rigid;
-    non-empty only if the model says so).
+    non-empty only if the model says so; a sorted constant is in its sort only
+    if the model puts ``S(c)`` in every world's valuation — see
+    :func:`sorted_constant_violations`).
 
     Raises:
         NotImplementedError: on a Łukasiewicz node or a lambda node (checked
             BEFORE relativizing, since relativizing runs a whole-tree
             structural recursion that would otherwise reach one of these
-            first and raise a less specific error).
+            first and raise a less specific error), and on an equality /
+            disequality atom (``=`` / ``≠``) anywhere in the formula — see the
+            module docstring's "Equality is NOT interpreted" section.
     """
     # --- many-sorted formulas: relativize the WHOLE formula once, here, before
     # any dispatch below — see the docstring above and the module docstring's
@@ -632,10 +670,17 @@ def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
             reject_fuzzy(node, "satisfies_modal")
         if isinstance(node, LAMBDA_TYPES):
             reject_lambda(node, "satisfies_modal")
+        # Equality has no interpretation here (module docstring); refuse it by
+        # name from the WHOLE tree, up front, so no short-circuit or vacuous
+        # branch can let an equality atom through unexamined.
+        reject_equality(node, "satisfies_modal")
     formula = formula._relativize([])
 
     # --- atomic ---
     if isinstance(formula, Atom):
+        constant = _truth_value(formula)
+        if constant is not None:
+            return constant         # `$true` / `$false`: the same at every world
         return formula.to_unicode_str() in model.atoms_true_at(world)
 
     # --- hybrid: a nominal is true exactly at the world it names; @ jumps there ---
@@ -819,7 +864,8 @@ def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
     # check runs, so by this point the tree contains only plain Quantifier /
     # Constant nodes (see the module docstring's "Many-sorted formulas"
     # section for what the guarded-Quantifier reduction does and does not
-    # assume: world-relative sort guards, non-emptiness left to the caller).
+    # assume: world-relative sort guards, non-emptiness and the membership of a
+    # sorted constant left to the caller).
 
     # Łukasiewicz / lambda nodes were already rejected in the preamble above
     # (deep scan, before relativizing); anything reaching here is a genuinely
@@ -832,6 +878,37 @@ def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
 def models_at(formula: Node, model: KripkeModel, world: World) -> bool:
     """Convenience alias for :func:`satisfies_modal` reading "model, world ⊨ φ"."""
     return satisfies_modal(formula, model, world)
+
+
+def sorted_constant_violations(formula: Node,
+                               model: KripkeModel) -> List[Tuple[str, str, World]]:
+    """The worlds of ``model`` at which a sorted constant of ``formula`` is NOT in its sort.
+
+    ``c:S`` denotes an element of ``S`` and a constant is a rigid designator, so a
+    model is LEGAL for ``formula`` only if the guard atom ``S(c)`` is in the
+    valuation of every world, for every distinct ``c:S`` of ``formula`` (see the
+    module docstring: :func:`satisfies_modal` evaluates one given model and does
+    not assert the fact itself). Pass the ORIGINAL formula — ``c:S`` is gone once
+    the formula is relativized.
+
+    Returns ``(constant, sort, world)`` triples, one per sorted constant and per
+    world whose valuation lacks the key ``S(c)``, constants in first-occurrence
+    order and worlds in ``repr`` order; ``[]`` means the model is legal for the
+    formula's sorted constants (and trivially so for a formula without any).
+    Non-emptiness of a sort is a different fact, left to the caller as before.
+    """
+    violations: List[Tuple[str, str, World]] = []
+    worlds = sorted(model.worlds, key=repr)
+    for atom in sort_membership_axioms(formula):
+        # every member is the guard atom ``S(c)`` over the one constant ``c``
+        assert isinstance(atom, Atom)
+        constant = atom.args[0]
+        assert isinstance(constant, Constant)
+        key = atom.to_unicode_str()
+        for world in worlds:
+            if key not in model.atoms_true_at(world):
+                violations.append((constant.name, atom.predicate, world))
+    return violations
 
 
 # ---------------------------------------------------------------------------
@@ -939,7 +1016,14 @@ def ctl_ex(model: KripkeModel, world: World, formula: Node) -> bool:
     (exactly as it is for ``Next``), unlike :func:`ctl_af`/:func:`ctl_eg`/
     :func:`ctl_au` below, which restrict to ``model.worlds`` because they run
     a fixpoint over it.
+
+    Raises:
+        NotImplementedError: an equality / disequality atom (``=`` / ``≠``)
+            anywhere in ``formula`` — refused up front, so a world with no
+            successor (where the ``any(...)`` below would never look at
+            ``formula``) refuses it too; see the module docstring.
     """
+    reject_equality_in(formula, "ctl_ex")
     return any(
         satisfies_modal(formula, model, w2)
         for w2 in model.successors(_TEMPORAL, world)
@@ -956,12 +1040,15 @@ def ctl_af(model: KripkeModel, world: World, formula: Node) -> bool:
     so the loop reaches a fixpoint in at most ``|model.worlds|`` rounds.
 
     Raises:
+        NotImplementedError: an equality / disequality atom (``=`` / ``≠``)
+            anywhere in ``formula`` — see the module docstring.
         ValueError: the ``"temporal"`` relation is not total on
             ``model.worlds`` — see :func:`_require_total_temporal`. Without
             totality, "every successor of w is in Z" would hold vacuously at
             a dead end and silently pull dead ends into AF's least fixpoint
             for the wrong reason.
     """
+    reject_equality_in(formula, "ctl_af")
     _require_total_temporal(model)
     phi_worlds = {w for w in model.worlds if satisfies_modal(formula, model, w)}
     z: Set[World] = set()
@@ -993,7 +1080,10 @@ def ctl_eg(model: KripkeModel, world: World, formula: Node) -> bool:
             its own on the first iteration): a dead end is a modelling error
             to be reported the same way by all three, not something EG alone
             quietly special-cases while its siblings refuse it.
+        NotImplementedError: an equality / disequality atom (``=`` / ``≠``)
+            anywhere in ``formula`` — see the module docstring.
     """
+    reject_equality_in(formula, "ctl_eg")
     _require_total_temporal(model)
     z = {w for w in model.worlds if satisfies_modal(formula, model, w)}
     while True:
@@ -1014,9 +1104,13 @@ def ctl_au(model: KripkeModel, world: World, phi: Node, psi: Node) -> bool:
     is already in Z.
 
     Raises:
+        NotImplementedError: an equality / disequality atom (``=`` / ``≠``)
+            anywhere in ``phi`` or ``psi`` — see the module docstring.
         ValueError: the ``"temporal"`` relation is not total on
             ``model.worlds`` — see :func:`_require_total_temporal`.
     """
+    reject_equality_in(phi, "ctl_au")
+    reject_equality_in(psi, "ctl_au")
     _require_total_temporal(model)
     phi_worlds = {w for w in model.worlds if satisfies_modal(phi, model, w)}
     psi_worlds = {w for w in model.worlds if satisfies_modal(psi, model, w)}

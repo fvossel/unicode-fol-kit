@@ -148,11 +148,11 @@ def test_invalid_formula_refuted_with_verifiable_countermodel():
 
     The countermodel is checked TWICE: once via the backend's own
     ``REFUTED`` verdict, and independently here by reconstructing the
-    refutation goal with the same closure convention
-    (:func:`_universal_closure`, matching :mod:`semantics.modelfinder`'s —
-    see the module's own docstring) and re-evaluating it with
-    ``evaluate_in_structure`` — an oracle this test does not get from the
-    backend under test.
+    refutation goal with the universal closure
+    (:func:`_universal_closure`: with no premise, a free variable read as a
+    parameter and read as universally closed are the same question) and
+    re-evaluating it with ``evaluate_in_structure`` — an oracle this test
+    does not get from the backend under test.
     """
     x = Variable("x")
     formula = Atom("P", [x])
@@ -420,32 +420,34 @@ def test_to_asp_renders_a_solvable_program_with_hand_derived_model_count():
     correct renderer.
     """
     x = Variable("x")
-    problem = FiniteDomainProblem((Atom("P", [x]),), size=2)
-    # The bare atom "P(x)" (x free) is used AS-IS -- FiniteDomainProblem has
-    # no opinion on closure (see its own docstring); this exercises to_asp's
-    # per-sentence ∀-closing constraint directly: ":- dom(X), not sat(X)."
-    # reads as "for every X in the domain, P(X) must hold", i.e. ∀x P(x),
-    # NOT ∃x P(x) -- so the hand-derived count below is for the UNIVERSAL
-    # reading, and is deliberately different from this test's own name-sake
-    # existential intuition; see the assertion below for the corrected,
-    # hand-checked expectation.
-    text = to_asp(problem)
 
-    assert "dom(0..1)." in text
-    assert "#show." in text
+    def models_of(sentence):
+        text = to_asp(FiniteDomainProblem((sentence,), size=2))
+        assert "dom(0..1)." in text
+        assert "#show." in text
+        ctl = clingo.Control(["0"], logger=lambda code, msg: None)
+        ctl.add("base", [], text)
+        ctl.ground([("base", [])])
+        with ctl.solve(yield_=True) as handle:
+            return {frozenset(str(s) for s in m.symbols(shown=True)) for m in handle}
 
-    ctl = clingo.Control(["0"], logger=lambda code, msg: None)
-    ctl.add("base", [], text)
-    ctl.ground([("base", [])])
-    models = []
-    with ctl.solve(yield_=True) as handle:
-        for m in handle:
-            models.append(frozenset(str(s) for s in m.symbols(shown=True)))
+    # ∃x P(x): every extension of P except the empty one.
+    assert models_of(Quantifier("exists", x, Atom("P", [x]))) == {
+        frozenset({"pred0(0)"}), frozenset({"pred0(1)"}), frozenset({"pred0(0)", "pred0(1)"})}
+    # ∀x P(x): both individuals must have P, so the full domain is the one extension.
+    assert models_of(Quantifier("forall", x, Atom("P", [x]))) == {
+        frozenset({"pred0(0)", "pred0(1)"})}
 
-    # ∀x P(x) over a 2-element domain has exactly ONE satisfying extension
-    # of P: the full domain {0,1} -- both individuals must have P, so
-    # nothing may be excluded.
-    assert models == [frozenset({"pred0(0)", "pred0(1)"})]
+
+def test_to_asp_refuses_an_open_sentence_by_name():
+    """A free variable is a parameter of the whole problem: ``P(x)`` together with
+    ``¬P(alpha)`` has a model (``x`` and ``alpha`` denote two elements), and read as
+    ``∀x P(x)`` it has none. A constraint with a free ASP variable is the second reading,
+    so the writer refuses the sentence instead of writing it."""
+    x = Variable("x")
+    problem = FiniteDomainProblem((Atom("P", [x]), Not(Atom("P", [Constant("alpha")]))), size=2)
+    with pytest.raises(ValueError, match=r"to_asp: a sentence has the free variable 'x'"):
+        to_asp(problem)
 
 
 def test_to_asp_rejects_wrong_input_type():

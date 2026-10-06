@@ -168,6 +168,56 @@ def test_check_entailment_eprover_detailed_reverse_maps_predicate_in_raw(fake_ru
     assert "mortal(socrates)" not in result["raw"]
 
 
+# The TF0 route's cross-kind clash (see test_vampire_entailment.py): the TF0
+# writer renames the function ``agent`` to ``agent_term`` because the predicate
+# ``Agent`` renders as ``agent`` too. Hand-derived reading of text echoed from
+# that problem: ``agent(agent_term(X))`` is ``Agent(agent(X))`` in kit names.
+#
+# The goal is ``∃y Agent(y)``, with an UNSORTED ``y``. The goal these tests used to
+# have, ``∃x:Thing Agent(x)``, is not entailed by the premise in the kit's reading
+# of a sort: the premise says that every Thing's agent is an Agent, nothing says
+# that agent(a) is itself a Thing (a function has no declared result sort), and the
+# structure U={0,1}, Thing={0}, agent(0)=1, Agent={1} makes the premise true and the
+# goal false. The typed text proved it only because the TF0 inference typed
+# ``agent`` as ``thing > thing``, which is the stronger reading the writer now
+# refuses (and with ``tff=None`` the problem would be written as fof). The new goal
+# IS entailed: Thing is not empty, so take a Thing a; agent(a) is an Agent, and
+# y = agent(a) witnesses the unsorted existential. The writer accepts it
+# (``agent: thing > $i``), so the tests below still run the TF0 route they are about.
+_MSFOL = MSFLParser(many_sorted=True)
+_CLASH_PREMISES = [_MSFOL.parse("∀x:Thing Agent(agent(x))")]
+_CLASH_GOAL = MSFLParser().parse("∃y Agent(y)")   # the many-sorted parser takes only sorted binders
+_CLASH_ECHO = "tff(premise_1, axiom, (![X: thing]: agent(agent_term(X))) ).\n"
+
+
+def test_tf0_route_raw_is_reverse_mapped_across_a_cross_kind_clash(fake_run):
+    fake_run["response"] = ("# SZS status Theorem\n" + _CLASH_ECHO, False)
+    result = eb.check_entailment_eprover_detailed(_CLASH_PREMISES, _CLASH_GOAL)
+    assert fake_run["problem"].startswith("tff(")       # the TF0 route, not a fof fallback
+    assert "agent_term" in fake_run["problem"]          # the clash is real: the writer renamed
+    assert result["status"] == "proved"
+    assert "Agent(agent(X))" in result["raw"]
+    assert "agent_term" not in result["raw"]
+
+
+def test_tf0_route_refusal_detail_is_reverse_mapped_across_a_cross_kind_clash(fake_run):
+    fake_run["response"] = ("eprover: type error near agent_term(X)\n", False)
+    verdict = get_backend("eprover").decide(_CLASH_GOAL, _CLASH_PREMISES)
+    assert fake_run["problem"].startswith("tff(")       # the TF0 route, not a fof fallback
+    assert (verdict.status, verdict.reason) == ("error", "infra")
+    assert "type error near agent(X)" in verdict.detail
+    assert "agent_term" not in verdict.detail
+
+
+def test_tf0_route_szs_error_detail_is_reverse_mapped_across_a_cross_kind_clash(fake_run):
+    fake_run["response"] = ("# SZS status InputError\n# unknown symbol agent_term\n", False)
+    verdict = get_backend("eprover").decide(_CLASH_GOAL, _CLASH_PREMISES)
+    assert fake_run["problem"].startswith("tff(")       # the TF0 route, not a fof fallback
+    assert verdict.status == "error"
+    assert "unknown symbol agent" in verdict.detail
+    assert "agent_term" not in verdict.detail
+
+
 def test_e_countersatisfiable_maps_to_refuted(fake_run):
     fake_run["response"] = (_E_COUNTERSAT_OUTPUT, False)
     verdict = get_backend("eprover").decide(_GOAL, [])
@@ -175,15 +225,19 @@ def test_e_countersatisfiable_maps_to_refuted(fake_run):
     assert verdict.szs_status == "CounterSatisfiable"
 
 
-def test_e_resourceout_maps_to_unknown_bound_hit(fake_run):
-    """ResourceOut is E's own budget exhaustion: UNKNOWN with the kit's
-    established mapping reason "bound_hit" (SZS ResourceOut covers time AND
-    memory, so the ontology maps it to the generic bound, not "timeout" —
-    see szs_to_verdict_fields), never an error."""
+def test_e_resourceout_at_its_cpu_limit_maps_to_unknown_timeout(fake_run):
+    """E stopping at the ``--cpu-limit`` the kit derived from the call's own budget
+    IS the call running out of time: ``Failure: Resource limit exceeded (time)`` +
+    ``SZS status ResourceOut`` is UNKNOWN / "timeout", the verdict of a run the kit
+    cut off itself, never an error. (SZS ResourceOut alone covers time AND memory;
+    it is E's wording of the failure that says which limit ended the run, and the
+    kit passes no limit but this one. The same status without the time wording, or
+    with another limit's, stays "bound_hit": see tests/test_tptp_defined_words_and_rewrites.py.)"""
     fake_run["response"] = (_E_RESOURCEOUT_OUTPUT, False)
     verdict = get_backend("eprover").decide(_GOAL, _PREMISES)
     assert verdict.status == "unknown"
-    assert verdict.reason == "bound_hit"
+    assert verdict.reason == "timeout"
+    assert verdict.szs_status == "ResourceOut"       # E's own line, verbatim
 
 
 def _recorded(name: str) -> str:
@@ -364,6 +418,24 @@ class TestEProverLive:
                                                 timeout=15000)
         _skip_if_the_binary_crashed(verdict)
         assert verdict.status == "refuted", _why(verdict)
+
+    def test_tf0_cross_kind_clash_is_read_back_in_kit_names_live(self):
+        """A REAL E on the TF0 route of the clash. Hand-derived: ``∀x:Thing
+        Agent(agent(x))`` over a non-empty sort entails ``∃y Agent(y)`` (take any
+        Thing a: agent(a) satisfies Agent, so y = agent(a) witnesses the unsorted
+        existential); it does not entail ``∃x:Thing Agent(x)``, the goal this test
+        used to prove, because nothing says that agent(a) is a Thing. E echoes the
+        declarations of the problem; the writer's ``agent_term`` must not
+        survive in what the caller is shown."""
+        result = eb.check_entailment_eprover_detailed(
+            _CLASH_PREMISES, _CLASH_GOAL, timeout=20)
+        if result["status"] == "error" and any(
+                m in (result.get("raw") or "") for m in _CRASH_MARKERS):
+            pytest.skip("the eprover binary aborted")
+        assert result["dialect"] == "tff", result["raw"][:500]    # TF0, not a fof fallback
+        assert result["status"] == "proved", result["raw"][:500]
+        assert "agent_term" not in result["raw"]
+        assert "Agent" in result["raw"]
 
     def test_ascii_sanitisation_round_trip_live(self):
         """The task's own non-ASCII/digit-leading example, decided by a REAL

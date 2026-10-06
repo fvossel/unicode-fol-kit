@@ -5,11 +5,11 @@
 ASCII, keyword-based specification language; ``libraries`` of CASL ``spec``s
 are what `Hets <https://github.com/spechub/Hets>`_ (the Heterogeneous Tool
 Set) parses, structures, and hands off to first-order/HOL back-ends. This
-module is a one-way EXPORTER only (kit AST -> CASL text): it turns a batch of
+module is the EXPORTER (kit AST -> CASL text): it turns a batch of
 the kit's classical FOL / MSFOL formulas into a complete, Hets-parsable
 ``spec ... end`` block, or a bare formula fragment for embedding in
-hand-written CASL. There is no CASL importer here — going the other way needs
-a real CASL parser, out of scope for this module.
+hand-written CASL. The other direction, for the text this module writes, is
+:func:`unicode_fol_kit.fol.casl_import.parse_casl_spec`.
 
 Scope: classical, two-valued FOL and many-sorted FOL only
 -----------------------------------------------------------
@@ -43,11 +43,15 @@ formula to exactly this module's classical fragment (the shallow, first-order
 "standard translation" — see that module's own docstring), and
 :func:`unicode_fol_kit.hets.dol.to_dol_library_from_modal` composes that
 translation with THIS module's :func:`to_casl_spec` (sanitising ``qml``'s
-auto-generated identifiers first, since those are not always legal CASL, and
-aliasing any world-relativized ``=``/``≠`` atom the translation produces to a
-fresh uninterpreted predicate, since THIS module's own equality atom is
-always rigid and exactly 2-ary — see ``hets.dol``'s own docstring for both
-contracts) to hand the result to Hets as a DOL library. This module's OWN
+auto-generated identifiers first, since those are not always legal CASL) to
+hand the result to Hets as a DOL library. Identity needs no translation on
+that path any more: ``qml`` keeps an ``=`` atom RIGID and exactly 2-ary — no
+world argument — which is precisely CASL's own built-in ``=``, and lowers
+``≠`` to ``¬(=)``. The alias that used to rename a world-relativized,
+ternary ``=``/``≠`` to a fresh uninterpreted predicate is gone with the
+behaviour that produced it; a hand-built non-binary ``=`` is passed through
+and refused by this module's own arity check, and a ``≠`` atom is refused by
+``hets.dol``'s sanitiser. This module's OWN
 fragment gate — and its own exactly-2-ary ``=`` check — is unaffected: it
 still refuses every non-classical node, and every malformed equality atom,
 it always refused (see :func:`_check_fragment` and :func:`_infer_formula`);
@@ -113,6 +117,36 @@ class's root, never reparented under a slot-tuple root), which is what makes
 conflict detection a plain root-equality check rather than a separate
 per-class bookkeeping pass.
 
+This is the TYPED reading, and it is stronger than the kit's own. The kit has ONE
+universe, a sort is a (non-empty) subset of it, a constant written ``c:S`` is in
+``S``, and an unannotated constant, an unsorted variable and the value of a function
+are ANY element of the universe: a function has no declared result sort. The
+inference above declares an unannotated constant or a function value at the sort of
+the position it is used in (``∀x:Human Mortal(x), Mortal(socrates)`` declares
+``socrates : Human``), and CASL's sorts are disjoint, so an unsorted quantifier
+(typed with ``default_sort``) bounds a sort of its own rather than the universe the
+other sorts are subsets of. An export into a typed language keeps writing that
+reading, as a designed feature (the round trip through
+:mod:`~unicode_fol_kit.fol.casl_import` and the typed worked examples rest on it); a
+caller that DECIDES with the text must not take its answer for the kit's. The check that says when the
+two readings differ is :func:`~unicode_fol_kit.atp.tptp_tff.check_typed_reading`
+(shared with the TF0 and NXF writers), and
+:class:`~unicode_fol_kit.atp.hets_backend.HetsBackend` applies it before it asks
+Hets, answering ``unknown`` / ``unsupported`` for such a problem.
+
+**The default sort is a sort of its own.** ``default_sort`` (``Thing``) is the sort of every
+unsorted quantifier and of every position no annotation reaches. A sort of the SAME name
+that the formulas write (``∀x:Thing``, ``c:Thing``) or ``subsorts`` declares would be one
+sort with it, so an unsorted position would silently be a position of the user's sort:
+``∀x:Thing P(x) ⊢ ∀y P(y)`` would be proved, which the kit's reading (a sort is a part of
+the universe) does not say. When the default sort is used at all (an unsorted quantifier,
+or a symbol connected to no annotation) and a sort of that name is also written, the
+export is refused by name, and the refusal names the keyword that picks another default
+sort: ``default_sort=`` of :func:`to_casl_spec` and :func:`formula_to_casl`
+(``DolSpec.default_sort`` in :mod:`~unicode_fol_kit.hets.dol`).
+:class:`~unicode_fol_kit.atp.hets_backend.HetsBackend` picks a default sort that no sort
+of the problem has, so it never meets the refusal.
+
 Two further checks ride along the same walk, both refusals the kit's honesty
 convention requires rather than a mistranslation: a predicate or function
 name used at two DIFFERENT arities across the exported formulas (CASL has no
@@ -125,6 +159,23 @@ application raises :class:`ValueError` (this module declares at most one
 raises :class:`ValueError`: CASL ``. <formula>`` axioms must be closed, so
 there is no implicit universal closure or variable declaration to fall back
 on here.
+
+Bound variables and the symbols of the spec
+----------------------------------------------
+CASL text writes a bound variable, a constant (a 0-ary operation) and a predicate as
+one identifier, compared exactly (``w`` and ``W`` are two names), and inside a
+quantifier the name of its variable is the variable: ``forall w : Thing . (P(w) =>
+Q(w))`` next to ``ops w : Thing`` says nothing about a constant ``w``, whatever the
+formula was. So a bound variable that is spelled like ANY symbol of the whole spec (a
+constant, a function, a predicate, a sort, the default sort) is renamed to a fresh
+variable name, fresh against every name the formulas hold, in its quantifier and in
+every occurrence it binds (``forall w0 : Thing . (P(w0) => Q(w))``). Text without such
+a clash is byte-identical to what it was before. The renaming is an alpha-conversion
+of a closed sentence, so the text means the formula; read back through
+:func:`~unicode_fol_kit.fol.casl_import.parse_casl_spec` it is the same formula up to
+the names of the variables that had to be renamed. :func:`to_casl_spec` and
+:func:`formula_to_casl` take ``visible_symbols`` for the symbols the text meets
+without declaring them.
 
 Reserved words and identifier hygiene
 ----------------------------------------
@@ -182,6 +233,8 @@ Formula emission rules (exact, classical two-valued reading)
   suite is exactly this shape.
 * A 0-ary :class:`Atom` renders as its bare predicate name, both in a formula
   and as a ``preds`` declaration (``Rain : ()``).
+* The truth constants ``$true`` / ``$false`` render as CASL's own formulas
+  ``true`` / ``false`` and declare no predicate.
 
 ``to_casl_spec`` output shape (see the module's tests for the byte-exact
 golden cases): a ``spec <name> =`` header; an optional ``sorts`` line (only
@@ -207,11 +260,13 @@ collection is explicitly sorted before being joined into text), so the same
 input always produces byte-identical output.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Set, Tuple, Union
 import re
 
-from .nodes import Node
+from .nodes import Node, SortedConstant, SortedQuantifier, Variable
+from ._identifiers import fresh_variable_like, symbol_names
+from ._truth_constants import truth_value
 # Shared arity-conflict / constant-vs-function name-clash refusal, factored
 # out into unicode_fol_kit.fol.signature so this module's independently-
 # accumulated bookkeeping (see _Signature's docstring) and Signature.
@@ -434,6 +489,11 @@ class _Signature:
     func_names: Set[str] = field(default_factory=set)
     literal_sorts: Set[str] = field(default_factory=set)
     default_sort: str = "Thing"
+    #: the sorts the caller wrote (a SortedQuantifier's or a SortedConstant's), never the
+    #: default sort that a plain Quantifier implies
+    user_sorts: Set[str] = field(default_factory=set)
+    #: whether a plain Quantifier typed a variable with the default sort
+    default_quantified: bool = False
 
 
 _CONST_VS_FUNCTION = (
@@ -467,7 +527,11 @@ def _infer_term(node: Node, env: Dict[str, str], sig: _Signature) -> _Slot:
         sig.const_names.add(name)
         slot: _Slot = ("const", name)
         if cls == "SortedConstant":
+            # _check_fragment admits a node only by class name, and SortedConstant is the
+            # one class of that name in the node hierarchy.
+            assert isinstance(node, SortedConstant)
             sig.literal_sorts.add(node.sort)
+            sig.user_sorts.add(node.sort)
             sig.uf.union(slot, node.sort, f"constant '{name}' sort annotation")
         return slot
 
@@ -505,6 +569,8 @@ def _infer_formula(node: Node, env: Dict[str, str], sig: _Signature) -> None:
     cls = type(node).__name__
 
     if cls == "Atom":
+        if truth_value(node) is not None:
+            return                       # CASL's own `true` / `false`: no predicate
         if node.predicate == "=":
             if len(node.args) != 2:
                 raise ValueError(
@@ -542,14 +608,18 @@ def _infer_formula(node: Node, env: Dict[str, str], sig: _Signature) -> None:
     if cls == "Quantifier":
         _check_reserved(node.variable.name, "variable")
         sig.literal_sorts.add(sig.default_sort)
+        sig.default_quantified = True
         new_env = dict(env)
         new_env[node.variable.name] = sig.default_sort
         _infer_formula(node.formula, new_env, sig)
         return
 
     if cls == "SortedQuantifier":
+        # Same invariant as for SortedConstant in _infer_term.
+        assert isinstance(node, SortedQuantifier)
         _check_reserved(node.variable.name, "variable")
         sig.literal_sorts.add(node.sort)
+        sig.user_sorts.add(node.sort)
         new_env = dict(env)
         new_env[node.variable.name] = node.sort
         _infer_formula(node.formula, new_env, sig)
@@ -561,7 +631,8 @@ def _infer_formula(node: Node, env: Dict[str, str], sig: _Signature) -> None:
     )
 
 
-def _analyze(formulas: Sequence[Node], default_sort: str) -> _Signature:
+def _analyze(formulas: Sequence[Node], default_sort: str,
+             declared_sorts: Iterable[str] = ()) -> _Signature:
     """Run the full validation + sort-inference pipeline over a batch of
     formulas that will share one CASL signature (all the axioms and
     conjectures of a single :func:`to_casl_spec` call, or the single formula
@@ -575,6 +646,10 @@ def _analyze(formulas: Sequence[Node], default_sort: str) -> _Signature:
     is unrelated to ``x`` in another), but all formulas share one
     :class:`_Signature` (one union-find, one arity/name-clash bookkeeping),
     because they share one CASL ``ops``/``preds`` vocabulary.
+
+    ``declared_sorts`` are sorts the caller declares without a formula (the names of the
+    ``subsorts`` edges); like the sorts the formulas write they must not be the default
+    sort when that is used (:func:`_check_default_sort_is_free`).
     """
     for f in formulas:
         _check_fragment(f)
@@ -604,7 +679,111 @@ def _analyze(formulas: Sequence[Node], default_sort: str) -> _Signature:
             _check_reserved(name, "predicate")
     for name in sig.literal_sorts:
         _check_reserved(name, "sort")
+    _check_default_sort_is_free(sig, declared_sorts)
     return sig
+
+
+#: A sort name no caller can write (it is not an identifier): marks a slot no annotation reaches.
+_NO_SORT = "\0"
+
+
+def _default_sort_is_used(sig: _Signature) -> bool:
+    """Whether the default sort types anything: a variable of a plain quantifier, or a
+    symbol position that no sort annotation reaches (:meth:`_UnionFind.sort_of` falls back
+    to the default sort for it)."""
+    if sig.default_quantified:
+        return True
+    slots: List[_Slot] = [("const", name) for name in sig.const_names]
+    for name, arity in sig.func_arity.items():
+        slots.append(("func_result", name))
+        slots.extend(("func", name, i) for i in range(arity))
+    for name, arity in sig.pred_arity.items():
+        if name != "=":
+            slots.extend(("pred", name, i) for i in range(arity))
+    return any(sig.uf.sort_of(slot, _NO_SORT) == _NO_SORT for slot in slots)
+
+
+def _check_default_sort_is_free(sig: _Signature, declared_sorts: Iterable[str]) -> None:
+    """Refuse a sort the caller wrote that is spelled like the default sort, when the
+    default sort is used (see the module docstring, "The default sort is a sort of its own").
+
+    Raises:
+        ValueError: such a sort exists; the message names it and the keyword that picks
+            another default sort.
+    """
+    written = sig.user_sorts | set(declared_sorts)
+    if sig.default_sort in written and _default_sort_is_used(sig):
+        raise ValueError(
+            f"CASL export: the sort {sig.default_sort!r} is written in the formulas (or "
+            f"declared in subsorts) and is also the default sort, which this exporter gives "
+            "every unsorted quantifier and every position no sort annotation reaches, so the "
+            "two would be ONE sort and an unsorted position would silently become a position "
+            f"of your sort {sig.default_sort!r} (∀x:{sig.default_sort} P(x) ⊢ ∀y P(y) would "
+            "be proved). Pick another default sort with the keyword default_sort= of "
+            "to_casl_spec / formula_to_casl (DolSpec.default_sort in hets.dol), for "
+            f"example default_sort={sig.default_sort + '1'!r}.")
+
+
+# =============================================================================
+# Bound variables against the symbols of the specification
+# =============================================================================
+#
+# In CASL text a bound variable, a constant (a 0-ary operation) and a predicate are
+# all written as one identifier, and identifiers are compared exactly (``w`` and ``W``
+# are two names, as :func:`~unicode_fol_kit.fol.casl_import.parse_casl_spec` reads
+# them). ``forall w : Thing . (P(w) => Q(w))`` therefore cannot say that ``Q`` is
+# applied to a constant ``w``: inside the quantifier the name is the variable. A
+# binder is renamed when its name is the name of any symbol of the specification, and
+# only then, so text without such a clash is unchanged.
+
+def _specification_symbols(sig: _Signature, extra: Iterable[str] = ()) -> FrozenSet[str]:
+    """Every name of the specification that a bound variable must not share: the constants,
+    functions and predicates it declares, every sort it names, the default sort, and the
+    names in ``extra`` (sorts declared by ``subsorts``, symbols visible from outside)."""
+    names: Set[str] = set(sig.const_names) | set(sig.func_names)
+    names.update(name for name in sig.pred_arity if name != "=")
+    names.update(sig.literal_sorts)
+    names.update(sig.user_sorts)
+    names.update(extra)
+    names.add(sig.default_sort)
+    return frozenset(names)
+
+
+def _bind_apart(formulas: Sequence[Node], symbols: FrozenSet[str]) -> List[Node]:
+    """``formulas`` with every bound variable that is spelled like one of ``symbols`` renamed.
+
+    A binder whose name is in ``symbols`` is renamed to a fresh variable name (the same
+    one the occurrences it binds are rewritten to), fresh against every name any of the
+    formulas holds, against ``symbols``, and against every name minted before it. Every
+    other binder and every other node is kept as it is, and when no binder clashes the
+    formulas come back unchanged. A formula is a closed sentence here (a free variable
+    has been refused), so renaming a binder changes nothing the formula says.
+    """
+    clashing = {node.variable.name for f in formulas for node in f.walk()
+                if type(node).__name__ in ("Quantifier", "SortedQuantifier")
+                and node.variable.name in symbols}
+    if not clashing:
+        return list(formulas)
+    names = set(symbol_names(*formulas)) | set(symbols)
+
+    def rename(node: Node, scope: Dict[str, str]) -> Node:
+        kind = type(node).__name__
+        if kind == "Variable":
+            new = scope.get(node.name)
+            return node if new is None else Variable(new)
+        if kind in ("Quantifier", "SortedQuantifier"):
+            old = node.variable.name
+            if old in clashing:
+                new = fresh_variable_like(old, names)
+                names.add(new)
+                inner = {**scope, old: new}
+            else:
+                new = old
+                inner = {name: image for name, image in scope.items() if name != old}
+            return replace(node, variable=Variable(new), formula=rename(node.formula, inner))
+        return node.map_children(lambda child: rename(child, scope))
+
+    return [rename(f, {}) for f in formulas]
 
 
 # =============================================================================
@@ -668,7 +847,9 @@ def _render_term(node: Node) -> str:
 
 def _render_atom(node: Node) -> str:
     """Render an Atom: infix equality, a 0-ary bare predicate name, or an
-    applied predicate."""
+    applied predicate (the truth constants render as ``true`` / ``false``)."""
+    if truth_value(node) is not None:
+        return "true" if truth_value(node) else "false"
     if node.predicate == "=":
         if len(node.args) != 2:
             raise ValueError(
@@ -788,7 +969,8 @@ def _render_block(keyword: str, entries: List[Tuple[str, str]]) -> str:
 # Public API
 # =============================================================================
 
-def formula_to_casl(formula: Node, *, default_sort: str = "Thing") -> str:
+def formula_to_casl(formula: Node, *, default_sort: str = "Thing",
+                    visible_symbols: Iterable[str] = ()) -> str:
     """Render a single closed formula as bare CASL formula text, without a
     ``spec`` wrapper.
 
@@ -804,15 +986,24 @@ def formula_to_casl(formula: Node, *, default_sort: str = "Thing") -> str:
     because CASL text with a free variable, a reserved-word identifier, or
     an unsatisfiable sort constraint is not valid CASL either way.
 
+    A bound variable that is spelled like a symbol of the formula (a constant, a
+    function, a predicate or a sort it names, or ``default_sort``) is renamed, as in
+    :func:`to_casl_spec`. ``visible_symbols`` names the symbols of the hand-written CASL
+    the text is embedded into, which this function cannot see: a bound variable is
+    never given the spelling of one of them either.
+
     Raises:
         NotImplementedError: ``formula`` contains a node outside the
             classical FOL/MSFOL fragment (see the module docstring's
             "Scope" section).
         ValueError: a free variable, a reserved-word identifier, an arity
-            or constant/function-vs-function conflict, or an unsatisfiable
-            sort constraint.
+            or constant/function-vs-function conflict, an unsatisfiable
+            sort constraint, or a sort written in the formula that is spelled like
+            ``default_sort`` while the default sort is used (the message names the
+            keyword that picks another one).
     """
-    _analyze([formula], default_sort)
+    sig = _analyze([formula], default_sort)
+    [formula] = _bind_apart([formula], _specification_symbols(sig, visible_symbols))
     return _render(formula, default_sort)
 
 
@@ -823,6 +1014,7 @@ def to_casl_spec(
     spec_name: str = "KitExport",
     default_sort: str = "Thing",
     subsorts: Optional[Mapping[str, FrozenSet[str]]] = None,
+    visible_symbols: Iterable[str] = (),
 ) -> str:
     """Render ``axioms`` and ``conjectures`` as one complete CASL basic spec:
     ``spec <spec_name> = … end``, Hets-parsable ASCII text.
@@ -850,10 +1042,28 @@ def to_casl_spec(
     checked against the CASL reserved-word list exactly like every other
     emitted sort name (see the module docstring's "Reserved words" section).
 
+    **Bound variables and the symbols of the spec.** CASL writes a bound variable and a
+    constant as the same identifier, and the variable wins inside its quantifier, so a
+    constant ``w`` under a quantifier that binds ``w`` would be read as the variable. A
+    bound variable that is spelled like ANY symbol of the whole spec (a constant, function
+    or predicate of any axiom or conjecture, a sort, ``default_sort``, a name in
+    ``visible_symbols``) is therefore renamed to a fresh variable name (``w0``, ``w1``, …,
+    fresh against every name the formulas hold), in its quantifier and in every
+    occurrence it binds; names are compared exactly, as CASL does (``W`` and ``w`` do not
+    clash). Text without such a clash is unchanged. The result reads back through
+    :func:`~unicode_fol_kit.fol.casl_import.parse_casl_spec` as the same formula up to
+    the names of the bound variables that had to be renamed (and is the same formula
+    where none was). ``visible_symbols`` are the names of symbols the spec sees without
+    declaring them (those of a spec it extends with ``then``); no formula is read for
+    them, they only keep the binders away.
+
     Raises:
         ValueError: neither ``axioms`` nor ``conjectures`` contains any
             formula; ``spec_name`` is not a simple identifier or collides
-            with a CASL keyword; a sort name in ``subsorts`` is reserved; or
+            with a CASL keyword; a sort name in ``subsorts`` is reserved; a sort
+            written in the formulas or named in ``subsorts`` is spelled like
+            ``default_sort`` while the default sort is used (the message names the
+            keyword ``default_sort=`` that picks another one); or
             any of the sort-inference / identifier refusals documented on
             :func:`formula_to_casl` above.
         NotImplementedError: as :func:`formula_to_casl`.
@@ -875,7 +1085,11 @@ def to_casl_spec(
         _check_reserved(child, "sort")
         _check_reserved(parent, "sort")
 
-    sig = _analyze(all_formulas, default_sort)
+    edge_sorts = [s for edge in subsort_edges for s in edge]
+    sig = _analyze(all_formulas, default_sort, declared_sorts=edge_sorts)
+    bound_apart = _bind_apart(all_formulas,
+                              _specification_symbols(sig, [*edge_sorts, *visible_symbols]))
+    axioms, conjectures = bound_apart[:len(axioms)], bound_apart[len(axioms):]
     declared_sorts: Set[str] = set(sig.literal_sorts)
     for child, parent in subsort_edges:
         declared_sorts.add(child)

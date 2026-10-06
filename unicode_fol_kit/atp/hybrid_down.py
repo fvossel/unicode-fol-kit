@@ -81,9 +81,12 @@ def down_decide(formula: Node, frame: str = "K", timeout: int = 10000,
         frame: the alethic frame name, shared by both routes (``down_is_valid``
             for the frame axioms, ``KripkeEnumBackend`` for the relation
             conditions it enumerates over — see :mod:`unicode_fol_kit.fol.frames`).
-        timeout: milliseconds, forwarded to ``down_is_valid``'s Z3 call only
-            (the bounded search has no wall-clock timeout of its own — its
-            budget is ``max_worlds``/``max_atoms``/``max_models``, below).
+        timeout: milliseconds, the limit of the whole call. ``down_is_valid``'s
+            Z3 call runs under it, and the bounded search that follows is
+            given what is left of it (at least one millisecond), ending at a
+            candidate model with ``reason="timeout"`` when that runs out — on
+            top of its own budget, ``max_worlds``/``max_atoms``/``max_models``,
+            below.
         systems, max_worlds, max_atoms, max_models: forwarded verbatim to
             :class:`KripkeEnumBackend`'s ``decide`` (equivalently,
             :func:`~unicode_fol_kit.atp.kripke_enum.modal_enum_search`) — see
@@ -97,7 +100,8 @@ def down_decide(formula: Node, frame: str = "K", timeout: int = 10000,
                     "max_atoms": max_atoms, "max_models": max_models}
     if systems is not None:
         enum_options["systems"] = systems
-    enum_verdict = KripkeEnumBackend().decide(formula, **enum_options)
+    left = max(1, int(timeout - proved.wall_time * 1000))
+    enum_verdict = KripkeEnumBackend().decide(formula, timeout=left, **enum_options)
 
     if enum_verdict.status == REFUTED:
         return Verdict(

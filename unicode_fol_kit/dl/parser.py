@@ -6,7 +6,56 @@ dl.Not(B))``); this module parses the glyph syntax that
 :class:`~unicode_fol_kit.dl.concepts.Concept`, so a rendered concept — or one
 typed by hand in the same notation — round-trips: ``parse_concept(c.to_unicode())
 == c`` for every constructor, including the qualified number restrictions
-``AtLeast``/``AtMost`` (≥n r.C / ≤n r.C).
+``AtLeast``/``AtMost`` (≥n r.C / ≤n r.C), with the documented exceptions below.
+
+The reader folds a flat chain of one connective to the LEFT (``A ⊓ B ⊓ C`` is
+``(A ⊓ B) ⊓ C``), so the printer writes a nested operand of the SAME connective
+without parentheses on the left only: ``And(A, And(B, C))`` is ``A ⊓ (B ⊓ C)``,
+never ``A ⊓ B ⊓ C``, which reads back as the other tree. The round trip is
+therefore exact for every shape, not only for left-nested chains.
+
+The first exceptions are the two constructors that name an INDIVIDUAL:
+:class:`~unicode_fol_kit.dl.concepts.Nominal` renders as ``{a}`` and
+:class:`~unicode_fol_kit.dl.concepts.HasValue` as ``∃r.{a}``, and neither reads
+back — they are refused BY NAME instead (see ``_primary``). The glyph syntax
+has no individual-name layer, so ``{a}`` cannot be told apart from a concept
+NAME, and ``∃r.{a}`` cannot be told apart from ``∃r.`` applied to a nominal:
+``HasValue("r", "a")`` and ``Exists("r", Nominal("a"))`` have the SAME
+rendering, honestly, because they have the same models — but picking one of
+them when reading the text back would be a silent normalisation of the other.
+This is the same render-only asymmetry :func:`~unicode_fol_kit.dl.to_manchester`
+already has for a nominal, and the two syntaxes that DO distinguish the pair,
+Manchester (``r value a`` versus ``r some {a}``) and Functional
+(``ObjectHasValue(r a)`` versus ``ObjectSomeValuesFrom(r ObjectOneOf(a))``),
+round-trip it exactly.
+
+The DATA restrictions (:class:`~unicode_fol_kit.dl.concepts.DataExists` and its
+four siblings) are render-only in the same way, for the same reason: the glyph
+syntax has no data-range layer, and ``∃d.xsd:integer`` is the text of BOTH
+``DataExists("d", Datatype("xsd:integer"))`` and ``Exists("d",
+Atomic("xsd:integer"))`` -- two concepts about different sorts. Reading it as
+the second would be the silent misreading ``dl.parse_manchester`` had for
+``d some xsd:integer`` before the data layer. So a NAME that is a BUILT-IN
+datatype (``xsd:integer``, ``rdfs:Literal``, …) is refused by name below; OWL 2
+forbids a class with a datatype's name anyway. A USER-defined datatype
+(``∃d.Digit``) cannot be told from a class by its spelling and reads as the
+object restriction -- the limit the Manchester reader avoids by being told the
+datatype names (``datatypes=``). Read data restrictions with
+``dl.parse_manchester`` or ``dl.parse_owl_functional_class_expression``.
+
+An :class:`~unicode_fol_kit.dl.concepts.InverseRole` is the last one: it prints
+as ``r⁻`` (``∃r⁻.C``), and the reader refuses a role name that ends in ``⁻`` BY
+NAME (see ``_role_name``) instead of reading a plain role called ``r⁻``, which
+would turn an inverse role into an unrelated one without a word.
+
+Names. The grammar below says which names the reader can read. A name outside
+it (one that holds whitespace, an ``.`` or a parenthesis, one of the reserved
+glyphs, or nothing at all) is printed as it is, for display, and the reader then
+refuses the text: this syntax has no escape (the Manchester and Functional-Style
+writers bracket such a name as a full IRI). The one thing the printer does not do
+is print a name so that the text reads back as ANOTHER concept — ``Atomic("A ⊓ B")``
+would print ``A ⊓ B``, the intersection of two classes — and
+``Concept.to_unicode`` raises :class:`ValueError` for it.
 
 Grammar (loosest-binding first, matching ``concepts.py``'s ``_PREC`` table
 exactly — ⊔ at precedence 1, ⊓ at 2, ¬/∃/∀/≥/≤ at 3, atoms/⊤/⊥ at 4)::
@@ -20,12 +69,19 @@ exactly — ⊔ at precedence 1, ⊓ at 2, ¬/∃/∀/≥/≤ at 3, atoms/⊤/�
               | primary
     primary  := "⊤" | "⊥" | NAME | "(" concept ")"
     NAME     := a maximal run of characters that are none of: whitespace,
-                the glyphs ⊤ ⊥ ¬ ⊓ ⊔ ∃ ∀ ≥ ≤ ( ) . ⊑
+                the glyphs ⊤ ⊥ ¬ ⊓ ⊔ ∃ ∀ ≥ ≤ ( ) . ⊑ { }
     NUMBER   := a NAME token consisting only of ASCII digits
 
 A concept/role NAME may be any length and contain any characters outside
 that reserved set (digits, underscores, non-ASCII letters, …) — e.g.
-``hasChild``, ``Doctor42``, ``θ``. Restricting ``unary``'s operand (rather
+``hasChild``, ``Doctor42``, ``θ``. ``{`` and ``}`` are in that reserved set
+since 0.30.0 and are refused BY NAME (see ``_primary``): a nominal-shaped
+text like ``{a}`` was a legal NAME before, so ``parse_concept("{a}")``
+returned ``Atomic("{a}")`` -- a concept with a bogus class name -- silently,
+for text ``dl.concepts`` itself prints. A concept name containing a literal
+brace therefore stops parsing; there is no such name in the kit, its tests or
+the OEO ontology this was measured against.
+Restricting ``unary``'s operand (rather
 than the full ``concept``) is what makes ``∃r.∀s.C`` and ``¬¬C`` parse
 without parentheses while ``∃r.(C ⊓ D)`` requires them, mirroring
 ``concepts.py``'s ``_paren`` exactly — so the grammar is precedence-faithful
@@ -63,9 +119,11 @@ against hand-picked expected ``(Concept, Concept)`` pairs instead.
 
 from typing import List, Tuple
 
+from .datatypes import is_builtin_datatype
 from .concepts import (
     Concept, Top, Bottom, Atomic, Not, And, Or, Exists, ForAll, AtLeast, AtMost,
 )
+from .tableau import RoleExpressionError, _reject_concept_role
 
 __all__ = ["parse_concept", "parse_gci", "ConceptSyntaxError"]
 
@@ -82,6 +140,9 @@ _GLYPH_TOKENS = {
     "⊤": "TOP", "⊥": "BOT", "¬": "NOT", "⊓": "AND", "⊔": "OR",
     "∃": "EXISTS", "∀": "FORALL", "≥": "ATLEAST", "≤": "ATMOST",
     "(": "LPAREN", ")": "RPAREN", ".": "DOT", "⊑": "SUBSUME",
+    # RESERVED since 0.30.0, so `{a}` is refused BY NAME instead of read as a
+    # concept NAME spelled "{a}" -- see _primary's LBRACE branch.
+    "{": "LBRACE", "}": "RBRACE",
 }
 
 # A Token is (type: str, value: str, pos: int).
@@ -166,25 +227,60 @@ class _Parser:
             left = And(left, self._unary())
         return left
 
+    def _checked(self, concept: Concept, pos: int) -> Concept:
+        """``concept``, unless its role is an OWL 2 built-in property name (or
+        ``=``/``≠``) — refused BY NAME, the way ``dl.parse_owl_functional`` and
+        the Manchester parser refuse it. ``∃owl:topObjectProperty.A`` used to
+        read as an ordinary role of that name, whose verdict (satisfiable) is
+        not the universal property's (every element is related to itself)."""
+        try:
+            _reject_concept_role(concept, where="parse_concept")
+        except RoleExpressionError as exc:
+            raise self._error(f"{exc} (at position {pos})") from exc
+        return concept
+
     def _unary(self) -> Concept:
-        ttype, _, _ = self._peek()
+        ttype, _, pos = self._peek()
         if ttype == "NOT":
             self._advance()
             return Not(self._unary())
         if ttype in ("EXISTS", "FORALL"):
             self._advance()
-            role = self._expect("NAME", "a role name")[1]
+            role = self._role_name()
             self._expect("DOT", "'.' after the role name")
             body = self._unary()
-            return Exists(role, body) if ttype == "EXISTS" else ForAll(role, body)
+            return self._checked(
+                Exists(role, body) if ttype == "EXISTS" else ForAll(role, body), pos)
         if ttype in ("ATLEAST", "ATMOST"):
             self._advance()
             n = self._expect_number()
-            role = self._expect("NAME", "a role name")[1]
+            role = self._role_name()
             self._expect("DOT", "'.' after the role name")
             body = self._unary()
-            return AtLeast(n, role, body) if ttype == "ATLEAST" else AtMost(n, role, body)
+            return self._checked(
+                AtLeast(n, role, body) if ttype == "ATLEAST" else AtMost(n, role, body),
+                pos)
         return self._primary()
+
+    def _role_name(self) -> str:
+        """Consume the NAME token of a restriction's role.
+
+        A name that ends in the inverse glyph ``⁻`` is refused BY NAME: that is
+        how ``Concept.to_unicode`` writes ``Exists(InverseRole("r"), C)``
+        (``∃r⁻.C``), a role EXPRESSION this syntax has no layer for, so reading
+        the text as a role NAMED ``r⁻`` would silently turn an inverse role into
+        an unrelated plain one.
+        """
+        tok = self._expect("NAME", "a role name")
+        if tok[1].endswith("⁻"):
+            raise self._error(
+                f"parse_concept: {tok[1]!r} (position {tok[2]}) is the glyph "
+                f"spelling of an INVERSE role, which the glyph syntax cannot "
+                f"read — reading it as a role named {tok[1]!r} would silently "
+                f"change what it says. Build dl.InverseRole({tok[1][:-1]!r}) "
+                f"directly (the in-house tableau refuses it by name; the "
+                f"external reasoner, dl.owl_reasoner, decides it)")
+        return tok[1]
 
     def _expect_number(self) -> int:
         """Consume a NAME token of only ASCII digits (the ``n`` in ``≥n``/``≤n``)."""
@@ -205,7 +301,39 @@ class _Parser:
         if ttype == "BOT":
             self._advance()
             return Bottom()
+        if ttype in ("LBRACE", "RBRACE"):
+            # A nominal-shaped text. Until 0.30.0 braces were not reserved, so
+            # `{a}` was a legal NAME and parse_concept("{a}") returned
+            # Atomic("{a}") -- a concept with a bogus class name, silently, for
+            # text this module's own siblings print. dl.parse_manchester
+            # already refused the same text by name; now so does this.
+            #
+            # Teaching it to BUILD a nominal was the alternative and is wrong:
+            # `∃r.{a}` is AMBIGUOUS between dl.HasValue(r, "a") and
+            # dl.Exists(r, dl.Nominal("a")) -- the glyph syntax has no
+            # individual-name layer to tell them apart -- and always picking
+            # one would be a silent normalisation of the other.
+            raise self._error(
+                f"parse_concept: nominal and value concepts "
+                f"('{{a}}', '∃r.{{a}}') are not supported — the glyph syntax "
+                f"has no individual-name layer, so '{{a}}' cannot be told "
+                f"apart from a concept NAME, and '∃r.{{a}}' cannot be told "
+                f"apart from a value restriction (found {value!r} at position "
+                f"{pos}). Build dl.Nominal('a') or dl.HasValue(role, 'a') "
+                f"directly, or read 'r value a' with dl.parse_manchester / "
+                f"'ObjectHasValue(r a)' with "
+                f"dl.parse_owl_functional_class_expression")
         if ttype == "NAME":
+            if is_builtin_datatype(value):
+                raise self._error(
+                    f"parse_concept: {value!r} (position {pos}) is a built-in "
+                    f"DATATYPE, not a class, and the glyph syntax has no "
+                    f"data-range layer -- reading '∃d.{value}' as an object "
+                    f"restriction would silently change what it says. Read a "
+                    f"data restriction with dl.parse_manchester "
+                    f"('d some {value}') or "
+                    f"dl.parse_owl_functional_class_expression "
+                    f"('DataSomeValuesFrom(d {value})')")
             self._advance()
             return Atomic(value)
         if ttype == "LPAREN":
@@ -237,7 +365,16 @@ def parse_concept(text: str) -> Concept:
     """Parse ``text`` (the ⊤ ⊥ ¬ ⊓ ⊔ ∃ ∀ ≥ ≤ glyph syntax) into a :class:`Concept`.
 
     Round-trips against :meth:`Concept.to_unicode`: ``parse_concept(c.to_unicode())
-    == c`` for every concept ``c``. Raises :class:`ConceptSyntaxError` on
+    == c`` for every concept ``c`` EXCEPT the ones the glyph syntax cannot read:
+    the two that name an individual
+    (:class:`~unicode_fol_kit.dl.concepts.Nominal` and
+    :class:`~unicode_fol_kit.dl.concepts.HasValue`, which render as ``{a}`` and
+    ``∃r.{a}`` and are refused by name on the way back in — see the module
+    docstring and :class:`~unicode_fol_kit.dl.concepts.HasValue`; the same
+    render-only asymmetry ``dl.to_manchester`` has for a nominal), the data
+    restrictions, and an inverse role (``∃r⁻.C``), all refused by name. The
+    shape of a chain is exact: ``And(A, And(B, C))`` is written ``A ⊓ (B ⊓ C)``.
+    Raises :class:`ConceptSyntaxError` on
     malformed input (unbalanced parentheses, a missing '.' after a role name,
     a stray operator, trailing garbage, …).
     """

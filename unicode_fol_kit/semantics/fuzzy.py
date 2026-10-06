@@ -2,7 +2,11 @@
 
 The evaluator interprets the Łukasiewicz operators over the real interval
 [0, 1] under a *valuation* — a mapping from ground atoms (keyed by their
-canonical ``to_unicode_str()`` rendering, e.g. ``'P(alice)'``) to degrees.
+canonical ``to_unicode_str()`` rendering, e.g. ``'P(alice)'``) to degrees. A sorted constant
+``alice:Person`` is the constant ``alice``, so ``Tall(alice:Person)`` has the key
+``'Tall(alice)'`` -- the key the grounding of ``∀x:Person Tall(x)`` gives its instance at
+``alice`` -- and two different atoms that print alike (the numeral ``1`` and a constant named
+``1``) are refused by name.
 
 Łukasiewicz semantics::
 
@@ -41,6 +45,8 @@ from ..fol.nodes import (
     LukNegation, LukImplication, LukEquivalence,
     LambdaVar, Lambda, Application,
 )
+from ..fol._atom_keys import AtomKeys, atom_key
+from ..fol._truth_constants import truth_value as _truth_value
 from .tnorm import get_tnorm
 
 # Comparison predicates have no Łukasiewicz reading under a propositional
@@ -115,7 +121,8 @@ def _eval_quantifier(qtype: str, var_name: str, body: Node,
                      universe: Set[str], valuation: Dict[str, float],
                      domain: Optional[Set[str]],
                      sort_universes: Optional[Dict[str, Set[str]]],
-                     descriptor: str, tnorm: str) -> float:
+                     descriptor: str, tnorm: str,
+                     keys: Optional[AtomKeys] = None) -> float:
     """Evaluate a quantifier by grounding ``var_name`` over ``universe``.
 
     ``qtype`` is ``'∀'`` (infimum = min) or ``'∃'`` (supremum = max) — the lattice
@@ -128,8 +135,7 @@ def _eval_quantifier(qtype: str, var_name: str, body: Node,
             "provide at least one element."
         )
     degrees = [
-        evaluate(_ground(body, var_name, d), valuation,
-                 domain=domain, sort_universes=sort_universes, tnorm=tnorm)
+        _evaluate(_ground(body, var_name, d), valuation, domain, sort_universes, tnorm, keys)
         for d in universe
     ]
     if qtype in ("∀", "forall"):
@@ -152,7 +158,10 @@ def evaluate(node: Node,
             ``MSFLParser(many_sorted=True, fuzzy=True)`` (sorted MSFL).
         valuation: maps a ground atom's canonical key — its
             ``to_unicode_str()`` rendering, e.g. ``'P(alice)'`` — to a degree in
-            [0, 1]. A missing key raises ``KeyError`` with a helpful message.
+            [0, 1]. A missing key raises ``KeyError`` with a helpful message. A sorted
+            constant ``alice:Person`` is the constant ``alice``: ``Tall(alice:Person)``
+            has the key ``'Tall(alice)'``, the key the grounding of ``∀x:Person Tall(x)``
+            gives its instance at ``alice``.
         domain: a set of constant-name strings over which unsorted quantifiers
             range. Required whenever a ``Quantifier`` is evaluated.
         sort_universes: maps each sort name to its set of constant-name strings;
@@ -170,17 +179,74 @@ def evaluate(node: Node,
             or ``tnorm`` is unknown.
         TypeError: the node carries a classical connective, lambda construct,
             numeric literal, comparison atom, or otherwise unsupported type.
+        NotImplementedError: two different atoms print alike (the numeral ``1`` and a
+            constant named ``1``, a free variable ``x`` and a constant named ``x``), which
+            one key of the valuation could not tell apart.
+        ValueError: also for a sorted constant ``c:S`` whose name ``sort_universes[S]``
+            does not hold (see :func:`check_sorted_constants`).
     """
+    check_sorted_constants(node, sort_universes, "evaluate")
+    return _evaluate(node, valuation, domain, sort_universes, tnorm, AtomKeys("evaluate"))
+
+
+def check_sorted_constants(node: Node, sort_universes: Optional[Dict[str, Set[str]]],
+                           where: str) -> None:
+    """Refuse a sorted constant that the universe given for its sort does not hold.
+
+    ``c:S`` denotes an element of ``S``, and here an element of a universe is named by its
+    constant. A universe for ``S`` without ``c`` therefore contradicts the formula, and
+    deciding it anyway reads ``c`` as something outside ``S``: over ``Person = {carol}``
+    the valid ``(∀x:Person Tall(x)) → Tall(alice:Person)`` would come out not valid
+    (``Tall(carol) = 1``, ``Tall(alice) = 0``). A sort with no universe given puts no
+    condition on its constants.
+
+    Raises:
+        ValueError: ``node`` holds a sorted constant ``c:S``, ``sort_universes`` has an
+            entry for ``S``, and ``c`` is not in it.
+    """
+    if not sort_universes:
+        return
+    for term in node.walk():
+        if (isinstance(term, SortedConstant) and term.sort in sort_universes
+                and term.name not in sort_universes[term.sort]):
+            raise ValueError(
+                f"{where}: the sorted constant {term.name}:{term.sort} names an element that "
+                f"sort_universes[{term.sort!r}] = {sorted(sort_universes[term.sort])} does not "
+                f"hold. A sorted constant is an element of its sort, so the universe and the "
+                f"formula contradict each other: add {term.name!r} to that universe, or write "
+                f"the constant without the sort.")
+
+
+def _reject_comparison_atom(node: Node, route: str = "the fuzzy evaluator") -> None:
+    """Refuse a comparison atom (``=``, ``≠``, ``<``, ``>``, ``≤``, ``≥``) by name.
+
+    A comparison has no Łukasiewicz truth degree under a propositional valuation, and a
+    route that read one as a letter of its own would decide ``a = a`` as it decides ``P``
+    (not valid). The evaluator and the Z3 deciders of the fuzzy route share this refusal.
+
+    Raises:
+        TypeError: ``node`` is an atom whose predicate is a comparison symbol.
+    """
+    if isinstance(node, Atom) and node.predicate in _COMPARISON_PREDS:
+        raise TypeError(
+            f"Comparison atom {node.to_unicode_str()!r} has no Łukasiewicz "
+            f"truth degree; {route} only handles propositional predicate atoms."
+        )
+
+
+def _evaluate(node: Node, valuation: Dict[str, float], domain: Optional[Set[str]],
+              sort_universes: Optional[Dict[str, Set[str]]], tnorm: str,
+              keys: Optional[AtomKeys]) -> float:
+    """The body of :func:`evaluate`; ``keys`` records and checks the key of every atom reached."""
     t = get_tnorm(tnorm)
     # --- Atoms (the base case) --------------------------------------------
     if isinstance(node, Atom):
-        if node.predicate in _COMPARISON_PREDS:
-            raise TypeError(
-                f"Comparison atom {node.to_unicode_str()!r} has no Łukasiewicz "
-                "truth degree; the fuzzy evaluator only handles propositional "
-                "predicate atoms."
-            )
-        key = node.to_unicode_str()
+        constant = _truth_value(node)
+        if constant is not None:
+            # `$true` / `$false` are the top and the bottom degree under every valuation.
+            return 1.0 if constant else 0.0
+        _reject_comparison_atom(node)
+        key = atom_key(node) if keys is None else keys.key(node)
         if key not in valuation:
             raise KeyError(
                 f"No degree for ground atom {key!r} in the valuation. "
@@ -190,15 +256,15 @@ def evaluate(node: Node,
 
     # --- strong negation (t-norm residual negation; involutive for Łukasiewicz) -
     if isinstance(node, LukNegation):
-        x = evaluate(node.formula, valuation, domain, sort_universes, tnorm)
+        x = _evaluate(node.formula, valuation, domain, sort_universes, tnorm, keys)
         return _clamp(t.neg(x))
 
     # --- binary connectives (weak ∧/∨ are min/max; strong ⊗⊕→↔ are the t-norm's) -
     if isinstance(node, (WeakConjunction, WeakDisjunction,
                          StrongConjunction, StrongDisjunction,
                          LukImplication, LukEquivalence)):
-        x = evaluate(node.left, valuation, domain, sort_universes, tnorm)
-        y = evaluate(node.right, valuation, domain, sort_universes, tnorm)
+        x = _evaluate(node.left, valuation, domain, sort_universes, tnorm, keys)
+        y = _evaluate(node.right, valuation, domain, sort_universes, tnorm, keys)
         if isinstance(node, WeakConjunction):
             return _clamp(min(x, y))
         if isinstance(node, WeakDisjunction):
@@ -221,7 +287,7 @@ def evaluate(node: Node,
             )
         return _eval_quantifier(node.type, node.variable.name, node.formula,
                                 set(domain), valuation, domain, sort_universes,
-                                descriptor="domain", tnorm=tnorm)
+                                descriptor="domain", tnorm=tnorm, keys=keys)
 
     if isinstance(node, SortedQuantifier):
         if sort_universes is None or node.sort not in sort_universes:
@@ -232,7 +298,8 @@ def evaluate(node: Node,
         return _eval_quantifier(node.type, node.variable.name, node.formula,
                                 set(sort_universes[node.sort]), valuation,
                                 domain, sort_universes,
-                                descriptor=f"sort universe {node.sort!r}", tnorm=tnorm)
+                                descriptor=f"sort universe {node.sort!r}", tnorm=tnorm,
+                                keys=keys)
 
     # --- Rejected node classes (informative errors) -----------------------
     if isinstance(node, _CLASSICAL_CONNECTIVES):

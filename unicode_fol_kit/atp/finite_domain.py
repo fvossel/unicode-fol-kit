@@ -322,6 +322,7 @@ from ..fol.nodes import (
     LambdaVar, Lambda, Application,
 )
 from ..fol._msfl_nodes import nonempty_sort_axioms
+from ..fol._tptp_symbols import is_tptp_boolean_atom as _is_tptp_boolean_atom
 from ..fol.signature import Signature
 from ..semantics.structures import FiniteStructure
 from ..semantics.model_eval import (
@@ -331,7 +332,8 @@ from ..semantics.model_eval import (
 
 __all__ = [
     "lower_msfol",
-    "FiniteDomainProblem", "fragment_check", "structure_from_solution", "verify_model",
+    "FiniteDomainProblem", "fragment_check", "free_variable_reason", "structure_from_solution",
+    "verify_model",
 ]
 
 
@@ -685,6 +687,35 @@ _REJECTED_NODE_REASONS.update(_family(
 _REJECTED_NODE_REASONS.update(_family(_MEASURE_REASON, Measure))
 
 
+def free_variable_reason(sentences: Iterable[Node]) -> Optional[str]:
+    """Return why ``sentences`` cannot be WRITTEN as a search problem as they stand, or ``None``.
+
+    The reason is a free variable. A solver's program has no place for a variable that
+    nothing binds, and the readings a writer could pick on its own (every element, one
+    sentence at a time; or some element of each sentence) both differ from what a free
+    variable means on the kit's routes: a parameter, ONE unknown element that all sentences
+    of the problem share, so ``P(x)`` together with ``¬P(x)`` has no model while ``P(x)``
+    together with ``¬P(alpha)`` has one. The two backends replace every free variable by
+    such a parameter before they write a problem
+    (:func:`~unicode_fol_kit.fol._free_parameters.parameterize`); the writers
+    (``to_asp``, ``to_minizinc``) are handed sentences and refuse an open one with this
+    reason, so that a program is never written under another reading.
+    """
+    from ..fol._free_parameters import free_parameter_names
+
+    names = free_parameter_names(sentences)
+    if not names:
+        return None
+    return (
+        f"a sentence has the free variable{'s' if len(names) > 1 else ''} "
+        f"{', '.join(repr(name) for name in names)}. A free variable is a parameter of the "
+        "whole problem (one unknown element, the same in every sentence), which a program "
+        "writer cannot state for sentences it is handed one by one: replace it by a constant "
+        "in all sentences together (fol._free_parameters.parameterize) or bind it with a "
+        "quantifier."
+    )
+
+
 def fragment_check(sentences: Iterable[Node]) -> Optional[str]:
     """Return why ``sentences`` cannot be finite-domain-encoded, or ``None``.
 
@@ -724,6 +755,17 @@ def fragment_check(sentences: Iterable[Node]) -> Optional[str]:
             )
         for node in sentence.walk():
             node_type = type(node)
+            if node_type is Atom and _is_tptp_boolean_atom(node):
+                # TPTP's defined propositions are the truth constants on every
+                # route that reads them (to_z3, the model finder, the TPTP
+                # writers). The grounding here would treat them as a relation
+                # the solver may choose, and report a 'countermodel' of `$true`.
+                return (f"Atom is not encodable: {node.predicate} is TPTP's defined "
+                        f"proposition, a truth constant, and this finite-domain "
+                        f"encoding has no constant for it (it would become a "
+                        f"relation the solver may choose). Decide the formula "
+                        f"with a route that reads it: api.prove(..., "
+                        f"backends=['z3']) or the finite model finder.")
             if node_type in _ALLOWED_NODE_TYPES:
                 continue
             reason = _REJECTED_NODE_REASONS.get(node_type, _GENERIC_REASON)

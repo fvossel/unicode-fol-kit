@@ -86,6 +86,39 @@ From inconsistent premises everything follows, so `[0, 1]` — or any other
 interval — would be technically defensible and practically useless. The error is
 the useful answer.
 
+`⊤` and `⊥` are the truth constants, not atoms: `n_worlds` does not count them,
+`P(⊤) = 1` and `P(⊥) = 0` in every distribution, and a constraint such as
+`P(⊥) = 1` is refused as inconsistent, like the one above:
+
+```python
+from fractions import Fraction
+from unicode_fol_kit import MSFLParser
+from unicode_fol_kit.prob import ProbConstraint, entailment_bounds
+
+p = MSFLParser()
+rain = ProbConstraint(p.parse("Rain"), Fraction(1, 2), Fraction(1, 2))
+b = entailment_bounds([rain], p.parse("Rain ∧ ⊤"))
+print(b.lower, b.upper, b.n_worlds)   # → 1/2 1/2 2
+b = entailment_bounds([rain], p.parse("⊥"))
+print(b.lower, b.upper)               # → 0 0
+
+absurd = ProbConstraint(p.parse("⊥"), Fraction(1), Fraction(1))
+entailment_bounds([absurd], p.parse("Rain"))
+# raises ValueError: entailment_bounds: probabilistically inconsistent — ...
+```
+
+An atom is a world bit named by the text it prints as, so two different ground atoms that print alike (the numeral `1` and a constant named `1`, both `P(1)`) would be one bit and the bounds another problem's. `entailment_bounds` refuses them with a `ValueError` that names the pair, and refuses in the same way an atom with a sorted constant (`P(alice:Human)`), since the probabilities have no statement of whether `alice` lies in `Human`:
+
+```python
+from fractions import Fraction
+from unicode_fol_kit.fol.nodes import Atom, Constant, Number
+from unicode_fol_kit.prob import ProbConstraint, entailment_bounds
+
+numeral, constant = Atom("P", [Number(1)]), Atom("P", [Constant("1")])
+entailment_bounds([ProbConstraint(numeral, Fraction(1, 2), Fraction(1, 2))], constant)
+# raises ValueError: entailment_bounds: two different atoms are both written 'P(1)': ...
+```
+
 ### A second, algorithm-only route: `strategy="column_generation"`
 
 `entailment_bounds` takes a `strategy` keyword: `"direct"` (above, the default,
@@ -111,7 +144,7 @@ Same `2/5 1` as `strategy="direct"` above — the two strategies must agree exac
 is what `tests/test_nilsson_colgen.py` checks directly, differentially, on a large
 battery of cases. `"direct"` builds one probability variable per possible world
 (`2^n`, hence `max_atoms`); `"column_generation"` never does — it grows a small
-subset of worlds on demand, deciding which one to add next via an exact Z3
+subset of worlds on demand, deciding which one to add next via a Z3
 Boolean-SAT search over the `n` atoms directly (see
 `unicode_fol_kit.prob._column_gen`'s module docstring for the algorithm and its
 termination/optimality proof), so it can answer problems with far more than
@@ -151,6 +184,14 @@ cover every world at least once — an honest interval, not `0.99**15` (that
 narrower number needs an INDEPENDENCE assumption `entailment_bounds` is
 deliberately not told to make; `prob.distribution.query`, below, is the entry
 point for when the premises really are "these facts are independent").
+
+No answer of `"column_generation"` rests on the optimiser alone. Every world a pricing
+step returns is re-evaluated exactly, in `Fraction` arithmetic. That no world improves is
+settled by exact evaluation of every world (up to 6 atoms) or by an unsatisfiable solver
+query (more atoms). A bound is returned only when the exact value of the primal solution
+equals the exact objective of a dual that no world violates. An answer that cannot be
+certified is a `ValueError` ("column generation could not certify its answer"), never a
+bound.
 
 ## Distribution semantics: what the program says
 
@@ -197,10 +238,36 @@ print(query(program, p.parse("Wet")))         # → 3/10
 `P(Wet)` is exactly `P(Rain)`. Rules are material implications over the sampled
 world, not a licence to invent influence.
 
+`⊤` and `⊥` are constants here too, not atoms that a rule has to derive: in a goal
+they have probability 1 and 0, in a rule body `⊤` is a conjunct that always holds and
+`⊥` makes the clause never fire. A constant as a `ProbFact`, as a hard fact or as the
+head of a clause is refused with a `ValueError`: a constant is true (or false) in every
+world and so has no probability of its own, deriving `⊤` adds nothing, and a clause that
+derives `⊥` would be an integrity constraint, which this module does not have:
+
+```python
+from fractions import Fraction
+from unicode_fol_kit import MSFLParser
+from unicode_fol_kit.prob import ProbFact, ProbProgram, query
+
+p = MSFLParser()
+facts = [ProbFact(p.parse("Rain"), Fraction(3, 10))]
+always = ProbProgram(facts=facts, rules=[p.parse("⊤ → Wet")])
+never = ProbProgram(facts=facts, rules=[p.parse("(Rain ∧ ⊥) → Wet")])
+print(query(always, p.parse("Wet")), query(never, p.parse("Wet")))   # → 1 0
+
+ProbProgram(facts=facts, rules=[p.parse("Rain → ⊥")])
+# raises ValueError: ProbProgram: rule has the truth constant '⊥' as its head ...
+```
+
 `max_choice_facts` (16 by default) bounds the enumeration for the same reason
 `max_atoms` does above: the world set is exponential in the number of independent
 choices, and an exact method has to say where it stops rather than quietly
 switching to sampling.
+
+As in `entailment_bounds`, `query` refuses with a `ValueError` two different ground atoms of the
+program and goal that print alike (the numeral `1` and a constant named `1`), and an atom with a
+sorted constant.
 
 ### A second, compiled route: `method="compile"`
 
@@ -247,7 +314,7 @@ rules = [Implies(facts[0].atom, d[0])]
 rules += [Implies(And(d[i - 1], facts[i].atom), d[i]) for i in range(1, 20)]
 program = ProbProgram(facts=facts, rules=rules)
 
-query(program, d[-1])                    # -> ValueError: 20 > max_choice_facts=16
+query(program, d[-1])                    # raises ValueError: query: 20 relevant probabilistic facts exceeds max_choice_facts=16
 query(program, d[-1], method="compile")  # -> 1/1048576  ( = (1/2)**20 )
 ```
 

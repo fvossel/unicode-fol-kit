@@ -24,9 +24,9 @@ tom("∀P (Pos(P) → □Pos(P))")
 tom("∀P ∀x (Ess(P, x) ↔ P(x) ∧ ∀Q (Q(x) → □∀y (P(y) → Q(y))))")
 ```
 
-The two third-order modes are their base modes over a widened argument layer: `third_order` accepts exactly what `second_order` accepts plus predicate arguments, and `third_order` + `modal` accepts the whole modal family the same way. They do not combine with `second_order` (which they contain), sorts, or fuzziness.
+The two third-order modes are their base modes over a widened argument layer: `third_order` accepts what `second_order` accepts plus predicate arguments, and `third_order` + `modal` accepts the whole modal family the same way; the one difference is the typing below, which reads names globally. They do not combine with `second_order` (which they contain), sorts, or fuzziness.
 
-`api.parse_any` tries the **classical** one last, after `fol`, `modal` and `second_order`: it is served by the same LALR table as `second_order`, so the only inputs it newly accepts are the ones with a predicate really standing in an argument slot, and nothing previously detected as something else moves. The modal one is deliberately off the ladder — it inherits `modal`'s Earley table, and with a second-order binder also available `∀ P(x)` parses there as a quantifier over the propositional atom `x` instead of failing as the malformed quantifier every other dialect reports. Reach it explicitly with `MSFLParser(third_order=True, modal=True)`.
+`api.parse_any` tries the **classical** one after `fol`, `modal` and `second_order` and before `dependence` and the sorted, fuzzy, linear and Lambek modes: it is served by the same LALR table as `second_order`, so the only inputs it newly accepts are the ones with a predicate really standing in an argument slot, and nothing previously detected as something else moves. The modal one is deliberately off the ladder — it inherits `modal`'s Earley table, and with a second-order binder also available `∀ P(x)` parses there as `∀P` over the nominal `x` instead of failing, as it does in every other dialect. Reach it explicitly with `MSFLParser(third_order=True, modal=True)`.
 
 ## Typing: what a slot holds is inferred
 
@@ -42,18 +42,32 @@ analyse_signatures([p("Pos(G)"), p("G(a, b)")]).slots
 # → {'Pos': (('p', 2),), 'G': ('i', 'i')}   ... now it is determined
 ```
 
-`'i'` is an individual slot; `('p', k)` a property of arity `k`. Two things are refused rather than guessed:
+`'i'` is an individual slot; `('p', k)` a property of arity `k`. Three things are refused rather than guessed:
 
 - a predicate applied at two arities → `ConflictingArityError`;
-- one slot used for an individual *and* for a property → `MixedSlotError`, raised at parse time.
+- one slot used for an individual *and* for a property → `MixedSlotError`, raised at parse time;
+- a predicate that takes a property *and* stands in a property slot of another predicate → `NestedPropertySlotError`, raised at parse time and by `holds_to`, `to_isabelle_to`, `to_thf_to`, `isabelle_ho_modal_theory`, `to_isabelle_ho_modal` and `to_thf_ho_modal`.
 
 ```python
 p("Loves(x, y) ∧ Loves(x, G)")
-# MixedSlotError: argument slot 1 of 'Loves' is used both for an individual
+# raises MixedSlotError: TYPE_ERROR: argument slot 1 of 'Loves' is used both for an individual
 # and for a predicate; a slot holds one or the other, not both.
 ```
 
-One thing *is* defaulted, and reported: a property slot no evidence reaches gets arity 1, because argument position is what makes it a property slot at all and arity 0 would silently retype it as a predicate over propositions. Which slots were guessed is in `Signatures.defaulted`, and the HOL exporters print them as a comment in the emitted theory.
+In `Meta(Pos) ∧ Pos(G)`, `Pos` takes a property, so `Meta` would be a predicate of predicates of properties (fourth order). A slot holds an individual or a property of individuals, `('p', k)`, so that typing cannot be stated and is refused instead of being read as if `Pos` were a property of individuals. `NestedPropertySlotError` is importable, like `MixedSlotError`, from `unicode_fol_kit` and `unicode_fol_kit.fol`; all three errors are `ParsingError`s.
+
+```python
+from unicode_fol_kit import NestedPropertySlotError
+
+p("Meta(Pos) ∧ Pos(G)")
+# raises NestedPropertySlotError: TYPE_ERROR: 'Meta' takes the predicate 'Pos' as a property in argument
+# slot 0, but 'Pos' itself takes a property in its argument slot 0: 'Meta' would be a predicate of
+# predicates of properties (fourth order or higher). …
+```
+
+The analysis reads names globally, so a name bound by two quantifiers has to be typed alike in both: `(∀Z Z(G)) ∧ (∃Z Z(a))` is refused like the mixed slot above, and `(∀P P(a)) ∧ (∃P P(a, b))` like two arities, which `second_order=True` accepts.
+
+One thing *is* defaulted, and reported: a property slot no evidence reaches gets arity 1, because argument position is what makes it a property slot at all and arity 0 would silently retype it as a predicate over propositions. Which slots were guessed is in `Signatures.defaulted`, and the Isabelle exporters print them as a comment in the emitted theory.
 
 ## Export: HOL takes it directly
 
@@ -71,6 +85,13 @@ from unicode_fol_kit import to_isabelle_to, to_thf_to
 
 print(to_isabelle_to(p("∀P (Pos(P) → P(a))"), assumptions=[p("Pos(G)"), p("G(a)")]))
 print(to_thf_to(p("∀P (Pos(P) → P(a))")))
+```
+
+`to_isabelle_to` renames binders as the [second-order](second-order.md) writer does: a binder keeps its own name unless a symbol of the theory is spelled like it, and is then written `x_2`, `x_3`, …, so a quantifier never captures a constant of the same spelling. `isabelle_ho_modal_theory` does the same.
+
+```python
+clash = to_isabelle_to(p("Pos(G) ∧ G(x) ∧ ∀x Q(x)"))   # the free x is declared as a constant
+"\\<forall>x_2::i." in clash   # → True   (the bound x is written x_2)
 ```
 
 As in the second-order module these are **standard (full)** semantics: validity at this order is not semi-decidable, so a sound prover may fail on a valid conjecture. The kit emits the problem; it does not run one.
@@ -151,7 +172,11 @@ from unicode_fol_kit.hol.goedel import axiom_texts, goedel_theory, check_variant
 
 axiom_texts("scott")["A1"]   # → '∀P (Pos(λx. ¬P(x)) ↔ ¬Pos(P))'
 print(goedel_theory("scott"))
-check_variant("scott").ok    # needs a local Isabelle
+```
+
+```python
+# doctest: +SKIP  — needs a local Isabelle; raises IsabelleNotAvailable without one
+check_variant("scott").ok
 ```
 
 The two variants differ in **one conjunct** and nowhere else:
@@ -187,6 +212,15 @@ holds_to(p("∃Z (Z(G) ∧ ¬Z(λx. x = 1))"), S)    # a quantifier over predica
 ```
 
 A λ in argument position is evaluated to its **extension** — which is why `λx. x = 0` and `G` are interchangeable above. That is the one place a λ has a reading here; anywhere else it is refused, as are modal and Łukasiewicz nodes.
+
+`x = 0` inside that λ is read by the evaluator as identity of domain elements, which is what makes the two interchangeable. The **exporters** are a separate question, and they do not all answer it the same way: `hol.ho_modal` (the third-order MODAL route) reads `=` between individuals as rigid identity — HOL's own `=`, no world argument, matching `fol.qml` — and refuses identity at a *property* type by name, because HOL's `=` there would silently pick necessary coextension as what "the same property" means. `hol.thirdorder` (the classical route) still renders `=` / `≠` as the uninterpreted `feq` / `fneq`, its documented convention. So a formula whose identity is meant to be identity belongs on the modal route or in `holds_to`, not in a classical third-order export.
+
+A property named like a sort is read as that sort when the structure has a sort of the name and no table for the unary predicate, as `Human(t)` is read at first order: the property is the set of 1-tuples, one per member of the sort. A name that is no sort and has no table is the empty relation, and an empty sort, or a table that disagrees with the sort, raises `IllegalStructureError`:
+
+```python
+H = Structure((0, 1), sorts={"Human": {0}}, predicates={("Pos", 1): {(G,)}})
+holds_to(p("Pos(Human)"), H)   # → True   (Human = {0}, the same relation as G)
+```
 
 Where the cost sits is worth knowing, because it is not where the syntax suggests. An individual slot ranges over the `n` domain elements and a property slot of arity `j` over the `2 ** (n ** j)` relations, so a *property* variable is cheap (`2 ** n` — 32 on a five-element domain) while a *predicate of properties* is not:
 

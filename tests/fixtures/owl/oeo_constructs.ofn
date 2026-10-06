@@ -1,0 +1,73 @@
+# tests/fixtures/owl/oeo_constructs.ofn
+#
+# One axiom per OWL 2 construct named in the CCG2MSFL extension request
+# (A1-A10), as the COMMITTED stand-in for the Open Energy Ontology itself:
+# the kit holds tools, not corpora, so the 4041-axiom corpus stays out of the
+# repository and is reached only through $UFK_OEO_AXIOMS_JSONL (see
+# tests/test_owl_corpus.py). This file is what the default suite can measure.
+#
+# Every axiom that exists in OEO 2.13.0 (CC0) is quoted VERBATIM from it, with
+# the requesting project's per-axiom record id in the comment; an axiom OEO
+# happens not to contain is hand-written in OEO's own vocabulary and says so.
+#
+# Each line carries a trailing '  # <id> - <request item>' comment. OWL 2
+# Functional-Style Syntax has no comment syntax and this kit's tokenizer has
+# none either, so tests/test_owl_constructs_fixture.py strips everything from
+# the first '  # ' on each line before parsing it. One axiom per line.
+#
+# A1's Manchester spelling ('HasNormalStateOfMatter value Gaseous') is not an
+# OWL functional document and lives in tests/test_owl_manchester.py instead.
+Ontology(
+  # --- the fragment this kit already accepts: ALCHQ plus the RBox ----------
+  SubClassOf(InformationContentEntity GenericallyDependentContinuant)  # ax00001 - accepted today
+  EquivalentClasses(ChemicalEnergy ObjectIntersectionOf(Energy ObjectSomeValuesFrom(HasCharacteristic ChemicalPotential)))  # accepted today
+  DisjointClasses(IndependentContinuant SpecificallyDependentContinuant)  # ax(disjointWith) - accepted today
+  SubObjectPropertyOf(PartOf OverlapsWith)  # accepted today
+  TransitiveObjectProperty(PartOf)  # ax(characteristic:Transitive) - accepted today
+  ClassAssertion(Modus Active)  # ax(classAssertion) - accepted today
+  ObjectPropertyAssertion(Uses GeneralAlgebraicModelingSystem GAMSProgrammingLanguage)  # ax(objectPropertyAssertion) - accepted today
+  DifferentIndividuals(EUEmissionSectorETS EUEmissionSectorEffortSharing)  # ax(differentIndividuals) - accepted today
+  # --- A1: value restrictions, 95 OEO axioms on 90 classes ----------------
+  SubClassOf(CarbonDioxide ObjectHasValue(HasNormalStateOfMatter Gaseous))  # ax00299 - A1 ObjectHasValue
+  # --- A2: property domains and ranges, 110 + 108 OEO axioms --------------
+  ObjectPropertyDomain(IsAbout InformationContentEntity)  # ax02986 - A2 ObjectPropertyDomain
+  ObjectPropertyRange(HasCharacteristic SpecificallyDependentContinuant)  # ax02991 - A2 ObjectPropertyRange
+  # --- A3: inverse property pairs, 27 OEO axioms --------------------------
+  InverseObjectProperties(PartOf HasPart)  # ax02975 - A3 InverseObjectProperties
+  # --- A4: property chains, 5 OEO axioms ----------------------------------
+  SubObjectPropertyOf(ObjectPropertyChain(IsAbout CoversEnergyCarrier) CoversEnergyCarrierShortcut)  # ax03301 - A4 ObjectPropertyChain
+  # --- A5: disjoint properties, 17 OEO axioms -----------------------------
+  DisjointObjectProperties(HasSink HasSource)  # ax03144 - A5 DisjointObjectProperties
+  # --- A6: the role characteristics besides Transitive --------------------
+  SymmetricObjectProperty(IsConnectedTo)  # ax03140 - A6 Symmetric
+  AsymmetricObjectProperty(HasPhysicalInput)  # ax03160 - A6 Asymmetric
+  IrreflexiveObjectProperty(HasPhysicalInput)  # ax03161 - A6 Irreflexive
+  ReflexiveObjectProperty(OverlapsWith)  # not in OEO - A6 Reflexive
+  FunctionalObjectProperty(HasNormalStateOfMatter)  # not in OEO - A6 Functional
+  InverseFunctionalObjectProperty(HasNormalStateOfMatter)  # not in OEO - A6 InverseFunctional
+  EquivalentObjectProperties(HasSink HasOutput)  # not in OEO - A6 EquivalentObjectProperties
+  # --- A7: the data layer, 28 OEO axioms ----------------------------------
+  DataPropertyDomain(HasScenarioYearValue ScenarioFactsheet)  # ax03395 - A7 DataPropertyDomain
+  DataPropertyRange(HasScenarioYearValue xsd:dateTime)  # ax03396 - A7 DataPropertyRange
+  SubDataPropertyOf(HasScenarioYearValue HasNumber)  # not in OEO (ax03394 is the owl:topDataProperty case, see A9) - A7 SubDataPropertyOf
+  SubClassOf(TypicalYear DataHasValue(HasNumber "1"^^xsd:integer))  # ax01728 (its DataHasValue conjunct) - A7 DataHasValue
+  ClassAssertion(DataSomeValuesFrom(HasNumber DatatypeRestriction(xsd:decimal xsd:minInclusive "10000"^^xsd:decimal xsd:maxInclusive "30000"^^xsd:decimal)) MediumElectricityGridVoltageLevel)  # ax04017 - A7 DataSomeValuesFrom + DatatypeRestriction facets
+  DatatypeDefinition(OboRoIdrange1 DatatypeRestriction(xsd:integer xsd:minInclusive "10502"^^xsd:integer xsd:maxInclusive "19999"^^xsd:integer))  # ax03411 - A7 DatatypeDefinition
+  DataPropertyAssertion(HasNumber LowElectricityGridVoltageLevel "400"^^xsd:integer)  # ax04014 - A7 DataPropertyAssertion
+  NegativeDataPropertyAssertion(HasNumber LowElectricityGridVoltageLevel "401"^^xsd:integer)  # not in OEO - lead decision 9: build it
+  FunctionalDataProperty(HasNumber)  # not in OEO - lead decision 9: build it
+  DisjointDataProperties(HasNumber HasScenarioYearValue)  # not in OEO - lead decision 9: build it
+  # --- A8: individual identity --------------------------------------------
+  SameIndividual(CRFSectorIPCC2006Transport NCBRSectorTransport)  # ax03484 - A8 SameIndividual
+  NegativeObjectPropertyAssertion(IsDefinedBy MMRSectorMInternationalAviationInTheEUETS GovRegSectorDivision)  # ax04031 - A8 NegativeObjectPropertyAssertion
+  # --- A9: the OWL 2 built-in top properties, 31 + 1 OEO axioms -----------
+  SubObjectPropertyOf(PartOf owl:topObjectProperty)  # ax02974 - A9 owl:topObjectProperty as a super-role
+  SubDataPropertyOf(HasScenarioYearValue owl:topDataProperty)  # ax03394 - A9 owl:topDataProperty as a super-role
+  # --- further constructs the scouting pass named; none occurs in OEO -----
+  SubClassOf(Gaseous ObjectOneOf(Gaseous Liquid Solid))  # not in OEO - nominal concepts (ObjectOneOf)
+  SubClassOf(SelfConnectedObject ObjectHasSelf(IsConnectedTo))  # not in OEO - Self restrictions (ObjectHasSelf)
+  DisjointUnion(StateOfMatter Gaseous Liquid Solid)  # not in OEO - disjoint union class axioms
+  HasKey(ScenarioFactsheet () (HasScenarioYearValue))  # not in OEO - lead decision 9: refuse by name
+  # --- A10: an axiom with no model-theoretic effect, 4 OEO axioms ---------
+  SubAnnotationPropertyOf(BFOOWLSpecificationLabel Label)  # ax03407 - A10: logically void, to be REPORTED not dropped
+)

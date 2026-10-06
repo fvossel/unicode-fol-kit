@@ -50,6 +50,15 @@ which atoms end up outside it). ``∀``/``∃`` in the goal are expanded, before
 evaluation, into a finite ``∧``/``∨`` over the same finite constant domain
 used for grounding rules.
 
+**Truth constants.** ``⊤`` (``$true``) and ``⊥`` (``$false``) are the constants
+true and false, not atoms that a rule has to derive: they have that value in
+every total choice (:func:`~unicode_fol_kit.fol._truth_constants.truth_value`),
+so ``P(⊤) = 1``, ``P(¬⊤) = 0`` and ``P(Rain ∧ ⊤) = P(Rain)``. In a rule body
+``⊤`` is a conjunct that always holds and ``⊥`` makes the clause never fire. As
+the head of a clause, as a hard fact or as a :class:`ProbFact` a constant is
+refused by name: it derives nothing, or (``⊥``) is an integrity constraint that a
+definite program has no least model for.
+
 **Correctness-preserving pruning (``prune=True``, the default).** Only
 probabilistic facts that lie in the goal's GROUND DEPENDENCY CONE — reachable
 by walking grounded-rule body→head edges backward from a goal atom — can
@@ -103,6 +112,8 @@ from typing import Dict, List, Literal, Sequence, Set, Tuple
 from ..fol.nodes import (
     Node, Atom, Not, And, Or, Implies, Quantifier, Variable, Constant, substitute,
 )
+from ..fol._atom_keys import AtomKeys
+from ..fol._truth_constants import truth_value
 from ._bdd import BDDManager, weighted_model_count, FALSE as _BDD_FALSE, TRUE as _BDD_TRUE
 
 __all__ = ["ProbFact", "ProbProgram", "query"]
@@ -150,6 +161,12 @@ class ProbFact:
     def __post_init__(self):
         if not isinstance(self.atom, Atom):
             raise ValueError(f"ProbFact: atom must be an Atom, got {type(self.atom).__name__}.")
+        if truth_value(self.atom) is not None:
+            raise ValueError(
+                f"ProbFact: {self.atom.to_unicode_str()!r} is a truth constant, which is "
+                "true (or false) in every total choice and so has no probability of its own; "
+                "a probabilistic fact is a ground atom of the program."
+            )
         if self.atom.variables():
             names = sorted(v.name for v in self.atom.variables())
             raise ValueError(
@@ -197,6 +214,26 @@ class ProbProgram:
 # Definite-clause validation
 # ---------------------------------------------------------------------------
 
+def _refuse_truth_constant_head(atom: Atom, kind: str) -> None:
+    """Refuse a clause whose head (or whose bare fact) is a truth constant, by name.
+
+    A definite clause derives an atom. ``⊤`` is true in every total choice, so
+    deriving it adds nothing, and ``⊥`` as a head is an integrity constraint
+    (``Body → ⊥`` says the body never holds), which a definite program has no
+    least model for: this module has no conditioning on evidence, so it refuses
+    both rather than read one as an atom named ``⊥``. A truth constant in a
+    BODY is fine: it is read as the value it is (see :func:`_ground_definite_clauses`).
+    """
+    if truth_value(atom) is not None:
+        raise ValueError(
+            f"ProbProgram: {kind} has the truth constant {atom.to_unicode_str()!r} as its "
+            "head (or is that constant): a definite clause derives an atom, and a truth "
+            "constant is true (or false) in every total choice -- deriving it adds nothing, "
+            "and a clause that derives falsity is an integrity constraint this module does "
+            "not have. Leave the clause out, or use the constant only in a body."
+        )
+
+
 def _decompose_rule(node: Node, kind: str) -> Tuple[Tuple[Atom, ...], Atom, Tuple[str, ...]]:
     """Validate ``node`` as a definite clause; return ``(body_atoms, head, bound_var_names)``.
 
@@ -210,6 +247,7 @@ def _decompose_rule(node: Node, kind: str) -> Tuple[Tuple[Atom, ...], Atom, Tupl
     chain — raises ``ValueError`` naming ``kind`` (``"rule"`` / ``"hard fact"``).
     """
     if isinstance(node, Atom):
+        _refuse_truth_constant_head(node, kind)
         if node.variables():
             names = sorted(v.name for v in node.variables())
             raise ValueError(
@@ -245,6 +283,7 @@ def _decompose_rule(node: Node, kind: str) -> Tuple[Tuple[Atom, ...], Atom, Tupl
             f"{type(head).__name__} — negation or disjunction in the head is not a "
             "definite clause."
         )
+    _refuse_truth_constant_head(head, kind)
 
     body_atoms: List[Atom] = []
 
@@ -316,16 +355,23 @@ def _ground_definite_clauses(nodes: Sequence[Node], kind: str, constants: Tuple[
     """Validate+ground every clause in ``nodes``; split into always-true seeds and body-gated rules.
 
     A grounding whose body comes out empty (a bare fact, or a clause whose
-    body atoms all disappeared — impossible here since body atoms are never
-    dropped, only substituted, but kept general) is a SEED — always true,
+    body atoms were all the truth constant ``⊤``) is a SEED — always true,
     independent of any total choice. Everything else is a grounded rule
     ``(ground_body, ground_head)`` for forward chaining.
+
+    A truth constant in a body is read as the value it is, not as an atom that
+    some rule has to derive: ``⊤`` holds in every total choice, so it is dropped
+    from the body, and a body that holds ``⊥`` holds in none, so the grounded
+    clause is dropped.
     """
     seeds: List[Atom] = []
     grounded: List[Tuple[Tuple[Atom, ...], Atom]] = []
     for node in nodes:
         body_atoms, head, bound_vars = _decompose_rule(node, kind)
         for g_body, g_head in _ground_clause(body_atoms, head, bound_vars, constants):
+            if any(truth_value(a) is False for a in g_body):
+                continue
+            g_body = tuple(a for a in g_body if truth_value(a) is None)
             if g_body:
                 grounded.append((g_body, g_head))
             else:
@@ -382,9 +428,14 @@ def _expand_goal(node: Node, constants: Tuple[str, ...]) -> Node:
 
 
 def _goal_atom_keys(node: Node, out: Set[str]) -> None:
-    """Collect the surface-form keys of every Atom leaf in a (already-expanded) goal."""
+    """Collect the surface-form keys of every Atom leaf in a (already-expanded) goal.
+
+    A truth constant is not an atom of the program and has no key: it is true or
+    false in every total choice, so it depends on no probabilistic fact.
+    """
     if isinstance(node, Atom):
-        out.add(node.to_unicode_str())
+        if truth_value(node) is None:
+            out.add(node.to_unicode_str())
         return
     if isinstance(node, Not):
         _goal_atom_keys(node.formula, out)
@@ -397,8 +448,15 @@ def _goal_atom_keys(node: Node, out: Set[str]) -> None:
 
 
 def _eval_goal(node: Node, known_true: Set[str]) -> bool:
-    """Evaluate an expanded ground goal against a least-model's atom-key set."""
+    """Evaluate an expanded ground goal against a least-model's atom-key set.
+
+    A truth constant is the value it is in every total choice; it is never looked
+    up in the model.
+    """
     if isinstance(node, Atom):
+        constant = truth_value(node)
+        if constant is not None:
+            return constant
         return node.to_unicode_str() in known_true
     if isinstance(node, Not):
         return not _eval_goal(node.formula, known_true)
@@ -415,9 +473,12 @@ def _goal_bdd(node: Node, atom_bdd: Dict[str, int], manager: BDDManager) -> int:
     Same ∧/∨/¬ recursive structure, same default-``False`` (here: the BDD
     ``FALSE`` terminal) treatment of an atom key absent from ``atom_bdd`` —
     mirroring ``node.to_unicode_str() in known_true`` being ``False`` when the
-    key was never derived.
+    key was never derived. A truth constant is the BDD terminal of its value.
     """
     if isinstance(node, Atom):
+        constant = truth_value(node)
+        if constant is not None:
+            return _BDD_TRUE if constant else _BDD_FALSE
         return atom_bdd.get(node.to_unicode_str(), _BDD_FALSE)
     if isinstance(node, Not):
         return manager.NOT(_goal_bdd(node.formula, atom_bdd, manager))
@@ -550,7 +611,10 @@ def query(program: ProbProgram, goal: Node, *, max_choice_facts: int = 16,
             explicit, overridable brake on a different failure mode); an
             unrecognised ``method``; or if ``program`` itself is malformed
             (raised eagerly by :class:`ProbProgram` / :class:`ProbFact` at
-            construction time, before ``query`` is ever called).
+            construction time, before ``query`` is ever called); or if two different
+            ground atoms of the program and goal print alike (the numeral ``1`` and a
+            constant named ``1``, which would be ONE probabilistic variable), or an atom
+            holds a sorted constant.
     """
     constant_names: Set[str] = set()
     for f in program.facts:
@@ -568,6 +632,12 @@ def query(program: ProbProgram, goal: Node, *, max_choice_facts: int = 16,
     hard_seeds, hard_grounded = _ground_definite_clauses(program.hard_facts, "hard fact", constants)
     always_true = {a.to_unicode_str() for a in rule_seeds + hard_seeds}
     all_grounded_rules = grounded_rules + hard_grounded
+
+    # An atom is named by the text it prints as: two different ground atoms that print alike
+    # (the numeral 1 and a constant named 1) would be one probabilistic variable.
+    AtomKeys("query", "refuse", ValueError).letters(
+        [*(f.atom for f in program.facts), *rule_seeds, *hard_seeds,
+         *(a for body, head in all_grounded_rules for a in (*body, head)), ground_goal])
 
     if prune:
         goal_keys: Set[str] = set()

@@ -27,12 +27,17 @@ These tests pin four things that could silently drift apart:
 import pytest
 
 from unicode_fol_kit.fol.msflparser import MSFLParser
+from unicode_fol_kit.fol.nodes import (
+    Atom, Constant, Might, Not, Or, Variable, Would,
+)
 from unicode_fol_kit.hol.isabelle_conditional import (
     isabelle_conditional_theory, battery_proof, nitpick_proof,
+    to_isabelle_conditional, to_thf_conditional,
 )
 from unicode_fol_kit.semantics.conditional import (
     CENTERING_LEVELS, DEFAULT_MAX_WORLDS, check_centering, cf_valid,
-    cf_countermodel, cf_satisfies, _sphere_chains, _centering_ok,
+    cf_countermodel, cf_satisfies, CounterfactualModel,
+    _sphere_chains, _centering_ok,
 )
 
 MODAL = MSFLParser(modal=True)
@@ -409,3 +414,106 @@ class TestIsabellePremise:
         assert proof.splitlines()[-1].strip() == "by (blast)"
         with pytest.raises(ValueError, match="at least one proof method"):
             battery_proof([])
+
+
+# =============================================================================
+# Equality is not a proposition here
+# =============================================================================
+
+_A, _B = Constant("a"), Constant("b")
+_EQ = Atom("=", (_A, _B))
+_NEQ = Atom("≠", (_A, _B))
+_P, _Q = Atom("P", ()), Atom("Q", ())
+
+#: Every shape that must be refused, and the shape-matched control that must NOT
+#: be. Hand-derived: the sphere semantics keys an atom by its rendered form and
+#: interprets no term, so it can give ``=`` no meaning at all — while the control,
+#: an ordinary propositional letter, is exactly what it CAN decide.
+_EQUALITY_SHAPES = [
+    ("bare", Atom("=", (_A, _A)), _P),
+    ("disequality", _NEQ, _P),
+    ("negated", Not(_EQ), Not(_P)),
+    ("excluded middle", Or(_EQ, Not(_EQ)), Or(_P, Not(_P))),
+    ("in an antecedent", Would(_EQ, _Q), Would(_P, _Q)),
+    ("in a consequent", Would(_P, _EQ), Would(_P, _Q)),
+    ("under a might", Might(_P, _EQ), Might(_P, _Q)),
+    ("nested", Would(Would(_P, _EQ), _Q), Would(Would(_P, _Q), _Q)),
+]
+_EQUALITY_IDS = [row[0] for row in _EQUALITY_SHAPES]
+
+
+class TestEqualityIsRefusedBySphereRoutes:
+    """``a = a`` used to come back "not valid" from the sphere semantics.
+
+    The evaluator reads an atom as a proposition keyed by ``to_unicode_str()``, so
+    ``a = b`` was the key ``'a = b'`` — an unconstrained letter. Hand-derived
+    consequences, both measured on 0.28.1: ``a = a`` is not valid (no valuation
+    lists the key, so it is false at some world), and ``a = b ∨ ¬(a = b)`` IS
+    valid, but for the wrong reason — as an instance of ``p ∨ ¬p``, with the
+    identity never read. The exporters did the same with the Isabelle constant
+    ``p_a___b`` and a THF ``w > $o`` functor. Since 0.30.0 all three refuse the
+    atom by name, through the one shared helper.
+    """
+
+    @pytest.mark.parametrize("name, refused, control", _EQUALITY_SHAPES,
+                             ids=_EQUALITY_IDS)
+    def test_the_evaluator_refuses_it_and_still_decides_the_control(
+            self, name, refused, control):
+        with pytest.raises(NotImplementedError, match="refused by name"):
+            cf_valid(refused, 2)
+        with pytest.raises(NotImplementedError, match="refused by name"):
+            cf_countermodel(refused, 2)
+        # the control of the same shape is still decided, either way round
+        assert cf_valid(control, 2) in (True, False)
+
+    @pytest.mark.parametrize("name, refused, control", _EQUALITY_SHAPES,
+                             ids=_EQUALITY_IDS)
+    def test_both_exporters_refuse_it_and_still_emit_the_control(
+            self, name, refused, control):
+        for emit in (to_isabelle_conditional, to_thf_conditional):
+            with pytest.raises(NotImplementedError, match="refused by name"):
+                emit(refused)
+            assert emit(control)          # non-empty text for the control
+
+    def test_the_refusal_reaches_cf_satisfies_itself_not_only_the_search(self):
+        """The search scans the tree; the point evaluator must refuse too.
+
+        A caller with its own model and world goes through ``cf_satisfies``
+        directly, and it must not be the one route that still answers.
+        """
+        model = CounterfactualModel(worlds={"w"}, spheres={"w": [frozenset({"w"})]},
+                                    valuation={"w": frozenset()})
+        with pytest.raises(NotImplementedError, match="refused by name"):
+            cf_satisfies(Atom("=", (_A, _A)), model, "w")
+        # control: the same call on a letter answers
+        assert cf_satisfies(_P, model, "w") is False
+
+    def test_the_refusal_is_not_a_verdict_the_search_short_circuited_into(self):
+        """``a = b ∨ ¬(a = b)`` is where a lazy check would have been skipped.
+
+        The disjunction is true at every world under EVERY valuation of the one
+        key, so the search finds no countermodel without ever needing to read the
+        atom as identity — and before 0.30.0 returned True. It is refused now, and
+        the propositional instance of the same schema is still valid, so the
+        refusal is about the atom and not about the schema.
+        """
+        with pytest.raises(NotImplementedError, match="refused by name"):
+            cf_valid(Or(_EQ, Not(_EQ)), 2)
+        assert cf_valid(Or(_P, Not(_P)), 2) is True
+
+    def test_the_refusal_says_where_identity_is_decided(self):
+        with pytest.raises(NotImplementedError, match="qml_is_valid"):
+            cf_valid(Atom("=", (_A, _A)), 2)
+
+    def test_an_ordering_atom_stays_an_ordinary_proposition(self):
+        """Only ``=`` / ``≠`` are refused: ``<`` has no built-in reading here either,
+        but it never had one anywhere in the kit's propositional layers, so it stays
+        the keyed letter it always was."""
+        less = Atom("<", (_A, _B))
+        assert cf_valid(Or(less, Not(less)), 2) is True
+        assert to_thf_conditional(Would(less, less))
+
+    def test_a_free_variable_atom_is_still_its_own_refusal(self):
+        """The pre-existing refusal is untouched and keeps its own error type."""
+        with pytest.raises(TypeError, match="free variable"):
+            cf_valid(Atom("P", (Variable("x"),)), 2)

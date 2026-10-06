@@ -9,7 +9,7 @@ Classical FOL assumes every term denotes an existing individual, so universal in
 A `FreeModel` carries the `outer` tuple, the `existing` inner subset, a (possibly partial) constant/function interpretation — a name absent from `constants` is non-denoting — and predicate tables over `outer`. Two policies govern an atom containing a non-denoting term: `"negative"` (default) makes it simply false (so `t = t` also fails), while `"positive"` keeps self-identity `t = t` true for any term.
 
 ```python
-from unicode_fol_kit.fol.nodes import Atom, And, Implies, Quantifier, Variable, Constant
+from unicode_fol_kit.fol.nodes import Atom, And, Or, Not, Implies, Quantifier, Variable, Constant
 from unicode_fol_kit.semantics.free_logic import FreeModel, free_holds
 
 x, c = Variable("x"), Constant("c")
@@ -181,9 +181,9 @@ free_holds(Atom("E!", [g(f_c)]), m_chain)       # → False
 free_holds(Atom("P", [g(f_c)]), m_chain)        # → False
 ```
 
-### Quantifying over non-existing objects
+### Quantifiers do not reach non-existing objects
 
-Variables can range over the full outer domain (existing and merely-possible), independent of whether a particular binding refers to an existing object. This enables reasoning about generic properties of all objects, or specific exceptional cases:
+A bound variable ranges over the existing objects only. A merely-possible object of the outer domain is reached by a constant, a function term or an assignment, never by a quantifier, whatever the predicates say about it:
 
 ```python
 y = Variable("y")
@@ -193,12 +193,13 @@ m_exist = FreeModel(outer=(0, 1), existing=frozenset({0}), constants={},
                     predicates={})
 free_holds(Quantifier("∃", y, Atom("E!", [y])), m_exist)   # → True
 
-# Quantify over outer domain; some quantified individuals do not exist
+# Object 2 belongs to the outer domain only: no quantifier ranges over it
 Fy = lambda: Atom("F", [y])
 m_mixed = FreeModel(outer=(0, 1, 2), existing=frozenset({0, 1}),
-                    constants={}, predicates={("F", 1): frozenset({(0,), (1,), (2,)})})
-free_holds(Quantifier("∀", y, Fy()), m_mixed)    # → True  (all outer objects in F)
-free_holds(Quantifier("∀", y, Atom("E!", [y])), m_mixed)   # → False (not all are existing)
+                    constants={}, predicates={("F", 1): frozenset({(0,), (1,)})})
+free_holds(Quantifier("∀", y, Fy()), m_mixed)    # → True  (F holds of every existing object; object 2 is not in F, but ∀ does not look at it)
+free_holds(Quantifier("∀", y, Atom("E!", [y])), m_mixed)   # → True  (every object a quantifier ranges over exists)
+free_satisfies(Fy(), m_mixed, {"y": 2})         # → False  (an assignment can bind y to object 2)
 ```
 
 ### Large domains: outer vs existing
@@ -214,7 +215,7 @@ m_large = FreeModel(
     predicates={("Real", 1): frozenset({(i,) for i in range(10)})}
 )
 
-free_holds(Quantifier("∀", y, Atom("Real", [y])), m_large)   # → False (many merely-possible objects)
+free_holds(Quantifier("∀", y, Atom("Real", [y])), m_large)   # → True  (∀ ranges over the ten existing objects, all of them Real; the 990 merely-possible ones are outside its range)
 free_holds(Atom("Real", [Constant("actual")]), m_large)      # → True
 ```
 
@@ -235,7 +236,7 @@ free_holds(Atom("=", [k, k]), m_k, policy="positive")    # → True   (self-iden
 
 ### Deciding free-logic validity: bounded search
 
-Everything above evaluates a formula against one hand-built `FreeModel`. `free_is_valid` / `free_countermodel` / `free_find_model` / `free_entails` add the missing **decision-procedure** layer on top: a bounded exhaustive search over inner/outer-domain splits and partial denotations, with the same honest contract as `rel_valid` / `cf_valid` — `False` is *definitive*, backed by an explicit `free_satisfies`-verified countermodel; `True` means only "no countermodel with outer domain size ≤ `max_size`" (free FOL is as undecidable as classical FOL, so raising `max_size` can turn a `True` into `False` but never the reverse).
+Everything above evaluates a formula against one hand-built `FreeModel`. `free_is_valid` / `free_countermodel` / `free_find_model` / `free_entails` add the missing **decision-procedure** layer on top: a bounded exhaustive search over inner/outer-domain splits and partial denotations, with the same honest contract as `rel_valid` / `cf_valid` — `False` is *definitive*, backed by an explicit `free_satisfies`-verified countermodel; `True` means only "no countermodel with outer domain size ≤ `max_size`, among the sizes searched" (a size whose number of candidate models exceeds `max_candidates`, 1048576 by default, is skipped, and a call that would skip every size raises `ValueError`; free FOL is as undecidable as classical FOL, so raising `max_size` can turn a `True` into `False` but never the reverse).
 
 ```python
 from unicode_fol_kit import free_is_valid, free_countermodel, free_entails
@@ -250,10 +251,27 @@ free_is_valid(guarded_eg)                          # → True    (P(c) ∧ E!(c)
 unguarded_ui = Implies(all_P, Px(c))
 free_is_valid(unguarded_ui)                        # → False
 m = free_countermodel(unguarded_ui)
-"c" in m.constants, m.constants["c"] in m.existing  # → (True, False)  c denotes a non-existing object
+m.constants.get("c") in m.existing                  # → False  c is non-denoting or denotes a non-existing object
 
 free_entails([all_P], Px(c))                       # → False   unguarded UI fails as entailment too
 free_entails([all_P, Ec], Px(c))                   # → True    the guard restores it
+```
+
+A free variable of a formula handed to these four functions is a **parameter**: one unknown *existing* individual, the same in every formula of the call. Each one is replaced by a constant of its own name and the model must satisfy `E!` of that constant, so a model with no existing object is no model of a problem that has a free variable, and a countermodel reports the parameter in `constants` under the variable's name. No premise is closed universally: `P(y) ⊢ P(y)` and `P(y) ⊢ ∃x P(x)` are valid, `P(y) ⊢ P(alpha)` is not. (`free_satisfies`, by contrast, evaluates under the assignment you hand it, which may name a non-existing element.)
+
+```python
+free_is_valid(Implies(all_P, Px(y)))                          # → True    y exists, so ∀x P(x) reaches it
+free_entails([Px(y)], Quantifier("∃", x, Px(x)))              # → True
+free_entails([Px(y)], Px(Constant("alpha")))                  # → False   y is one individual, alpha another
+free_countermodel(Implies(Px(y), Atom("Q", [y]))).constants  # → {'y': 0}   the parameter, under its own name
+```
+
+A free variable spelled like a constant of the formulas is refused by name (`NotImplementedError`). A cardinality term `|{x : φ}|` is not a term of free logic, and an evaluator or a search that meets one raises `TypeError`:
+
+```python
+from unicode_fol_kit.fol.nodes import Cardinality
+
+free_is_valid(Atom("Q", [Cardinality(x, Px(x))]))   # raises TypeError: free_logic: not a term: Cardinality
 ```
 
 `policy=` (`"negative"` default / `"positive"`) and `domain_split=` (`"any"` by default, restricting how the outer domain may exceed the existing one) are threaded through exactly as on `FreeModel`; `free_find_model` is the satisfiability-witness counterpart of `free_countermodel` for a formula you expect to hold somewhere.
@@ -356,27 +374,27 @@ r = Atom("r", ())
 worlds_3a = [0, 1, 2, 3]  # 0={p,q,r} 1={p,q} 2={p} 3={}
 val_3a = {0: {"p", "q", "r"}, 1: {"p", "q"}, 2: {"p"}, 3: set()}
 
-Ka_3a = {(0, 0), (0, 1), (1, 0), (1, 1), (2, 2), (3, 3)}   # a knows p
-Kb_3a = {(0, 0), (0, 2), (2, 0), (2, 2), (1, 1), (3, 3)}   # b knows q
-Kc_3a = {(0, 0), (0, 3), (3, 0), (3, 3), (1, 1), (2, 2)}   # c knows r
+Ka_3a = {(0, 0), (0, 1), (1, 0), (1, 1), (2, 2), (3, 3)}   # a cannot tell 0 from 1 (p holds at both)
+Kb_3a = {(0, 0), (0, 2), (2, 0), (2, 2), (1, 1), (3, 3)}   # b cannot tell 0 from 2 (q holds at 0, not at 2)
+Kc_3a = {(0, 0), (0, 3), (3, 0), (3, 3), (1, 1), (2, 2)}   # c cannot tell 0 from 3 (r holds at 0, not at 3)
 
 M_3a = KripkeModel(worlds_3a, {"K:a": Ka_3a, "K:b": Kb_3a, "K:c": Kc_3a}, val_3a)
 
 # Before announcement
 satisfies_modal(Knows("a", p), M_3a, 0)         # → True (a knows p)
-satisfies_modal(Knows("b", q), M_3a, 0)         # → True (b knows q)
-satisfies_modal(Knows("c", Not(r)), M_3a, 0)    # → False (c does not know ¬r)
+satisfies_modal(Knows("b", q), M_3a, 0)         # → False (b cannot rule out world 2, where q fails)
+satisfies_modal(Knows("c", r), M_3a, 0)         # → False (c cannot rule out world 3, where r fails)
 
-# Announce p: worlds without p (1,3) are dropped
+# Announce p: world 3 is the only world without p, so it is dropped
 M_after_p = announce(M_3a, p)
-sorted(M_after_p.worlds)                        # → [0, 2] (1, 3 removed)
+sorted(M_after_p.worlds)                        # → [0, 1, 2] (3 removed)
 
 # After announcing p, c learns something
-satisfies_modal(Knows("c", Not(r)), M_after_p, 0)    # → True (now c knows ¬r)
+satisfies_modal(Knows("c", r), M_after_p, 0)    # → True (now c knows r)
 
 # Announce q: further constrains the survivors
 M_after_pq = announce(M_after_p, q)
-sorted(M_after_pq.worlds)                       # → [0] (only 0 has both p and q)
+sorted(M_after_pq.worlds)                       # → [0, 1] (0 and 1 are the worlds with both p and q)
 ```
 
 ### Vacuous announcements and untruthful scenarios
@@ -392,7 +410,7 @@ box_announce(M2, 1, q, Not(Kap))                # → True
 diamond_announce(M2, 1, q, Knows("a", q))       # → False
 
 # Announcing ¬q (which IS true at 1) works normally
-box_announce(M2, 1, Not(q), Knows("a", Not(q))) # → True (after dropping p-worlds)
+box_announce(M2, 1, Not(q), Knows("a", Not(q))) # → True (after dropping the q-worlds 0 and 2)
 ```
 
 ### The parsed operators `[φ!]ψ` and `⟨φ!⟩ψ`
@@ -475,10 +493,11 @@ cf_satisfies(p.parse("A □→ (C □→ A)"), CF, 0)    # → True   (nested)
 
 They sit at the `Ⓤ`/`⒮` precedence level — tighter than `→` and `↔`, looser than `∧`/`∨` — so `A ∧ B □→ C` groups as `(A ∧ B) □→ C`, the reading the English has. The glyphs begin with `□` and `◇`, and their terminals carry explicit priority so `A □→ B` never lexes as a box followed by a material arrow.
 
-Two boundaries are enforced rather than guessed:
+Three boundaries are enforced rather than guessed:
 
 - **No first-order export.** `to_z3` / `to_prover9` / `to_tptp` raise. Collapsing `□→` to the material `→` is exactly the mistake the connective exists to avoid.
 - **Spheres are not an accessibility relation.** `satisfies_modal` rejects a counterfactual and `cf_satisfies` rejects `□`/`◇`; the modal and classical tableaux raise rather than return a verdict they cannot justify. Similarity ordering and accessibility are different structures, so the two evaluators stay apart.
+- **Equality is not a proposition.** An atom here is a proposition keyed by its rendered form, and no term is interpreted, so `=` and `≠` are refused by name — by `cf_satisfies`, by `cf_valid` / `cf_countermodel` (a whole-tree scan before the search starts) and by both Isabelle/THF exporters, with the same reasons and the same pointer to `fol.qml.qml_is_valid`. Before 0.30.0 `a = b` was the key `'a = b'`, which made `a = a` come back *not valid* and made `a = b ∨ ¬(a = b)` come back valid as an instance of `p ∨ ¬p`, without the identity having been read at all. Decide identity with `fol.qml.qml_is_valid`, where it is rigid over the object domain; `<`, `≤` and the other comparisons stay ordinary keyed atoms, as before.
 
 With a local Isabelle/HOL, `isabelle_decide_counterfactual` decides a parsed counterfactual against the same sphere semantics — see [Higher-order logic](higher-order.md).
 
@@ -487,6 +506,8 @@ With a local Isabelle/HOL, `isabelle_decide_counterfactual` decides a parsed cou
 `cf_satisfies` evaluates a formula in **one** hand-built model. `cf_valid(φ, max_worlds)` quantifies over a *class*: it enumerates every valuation and every nested sphere system on up to `max_worlds` worlds and returns `False` the moment one of them refutes `φ`. `cf_countermodel` returns that refuting `(model, world)` pair instead of the verdict, so a `False` is never a bare claim — you can re-check it with `cf_satisfies`.
 
 The honest contract is the same as `rel_valid` / `free_is_valid`: **`False` is definitive** (an explicit countermodel exists), while `True` means "no countermodel with at most `max_worlds` worlds".
+
+A letter is named by the text its atom prints as, so `cf_valid` and `cf_countermodel` refuse by name (`NotImplementedError`) two different atoms that print alike — the numeral `1` and a constant `'1'` in `P(1)` — and a sorted constant `c:S`, whose sort is a fact the sphere models have no statement of. `cf_satisfies` refuses a sorted constant too.
 
 **The default bound is level-dependent**, because two worlds is *structurally* too few at the centered levels. `DEFAULT_MAX_WORLDS` is `{"none": 2, "weak": 3, "strong": 3}`:
 
@@ -552,7 +573,7 @@ The Isabelle route takes the same argument with the same default, so `isabelle_d
 
 ### Complex sphere systems and multi-layer counterfactuals
 
-More intricate models can represent graded similarity. A world\s sphere system is a nested list, so you can express "closest", "next-closest", and so on:
+More intricate models can represent graded similarity. A world's sphere system is a nested list, so you can express "closest", "next-closest", and so on:
 
 ```python
 A, B, C, D = Atom("A", ()), Atom("B", ()), Atom("C", ()), Atom("D", ())
@@ -577,7 +598,7 @@ CF_layers = CounterfactualModel(
 
 # The closest A-world is 1 (in layer 1)
 would(CF_layers, 0, A, B)                        # → True
-# But if we look at the next layer of A-worlds (2 and 3), not all have B
+# The closest A-world without B is 2 (in layer 2), and 2 is a C-world
 would(CF_layers, 0, And(A, Not(B)), Not(C))      # → False
 
 # "Might" allows any closest A-world to witness the consequent
@@ -592,7 +613,7 @@ Counterfactuals work with propositional formulas of arbitrary complexity (¬, �
 E = Atom("E", ())
 # (A ∨ D) □→ (B ∧ E): "if A or D were, then B and E would both be"
 would(CF_layers, 0, Or(A, D), And(B, E))        # → False (world 1 is A but not E)
-would(CF_layers, 0, Or(A, D), B)                # → False (world 3 is A but not B)
+would(CF_layers, 0, Or(A, D), B)                # → True  (the closest A ∨ D world is 1, which has B; world 3 lies farther out)
 
 # Conditional consequent: (A → B) in the closest world
 would(CF_layers, 0, A, Implies(Not(A), B))      # → True (1 has A and B, so the conditional holds)
@@ -730,7 +751,7 @@ minimal_entails([Or(Pa, Pb)], Or(Pa, Pb), circumscribed={"P"}, max_size=2)  # �
 
 ### Comparing minimal models across domain sizes
 
-Minimal models are found independently at each domain size (1, 2, 3, …). Models are grouped by their "fixed part" — shared constants, functions, and non-circumscribed predicates — and only models that are minimal *within their group* are returned. This allows reasoning with a tight domain bound:
+Minimal models are found independently at each domain size (1, 2, 3, …). Models are grouped by their "fixed part" — shared constants, functions, and non-circumscribed predicates — and only models that are minimal *within their group* are returned. Because the constants belong to the fixed part, every way the constants can denote the domain elements has its own minimal `P`: here one model at size 1 and 2³ = 8 at size 2. This allows reasoning with a tight domain bound:
 
 ```python
 c = Constant("c")
@@ -741,15 +762,15 @@ print(f"Number of minimal models: {len(models_list)}")
 for i, m in enumerate(models_list):
     P_ext = sorted(m.predicates.get(("P", 1), set()))
     print(f"  Model {i}: domain {m.domain}, P = {P_ext}")
-# → Number of minimal models: 4
+# → Number of minimal models: 9
 #   Model 0: domain (0,), P = [(0,)]
-#   Model 1: domain (0, 1), P = [(0,), (1,)]
+#   Model 1: domain (0, 1), P = [(0,)]
 #   ...etc
 ```
 
 ### Quantified rules and existential bases
 
-Theories with quantified rules combine non-monotonicity with first-order quantification. A rule "all Ps are Qs" with P minimised can express defaults that are retracted as examples accumulate:
+Theories with quantified rules combine non-monotonicity with first-order quantification. Only the circumscribed predicates are minimised and every other predicate of the rule is held fixed, so the rule "birds fly unless abnormal" does not make `Flies` true by default:
 
 ```python
 Bird = lambda t: Atom("Bird", [t])
@@ -765,13 +786,15 @@ rules = [
     Bird(ostrich)
 ]
 
-# By default (Ab_flies minimised), both fly
-minimal_entails(rules, Flies(robin), circumscribed={"Ab_flies"}, max_size=2)   # → True
-minimal_entails(rules, Flies(ostrich), circumscribed={"Ab_flies"}, max_size=2)  # → True
+# Flies is held fixed, so a model in which nothing flies and both birds are abnormal
+# is as minimal as one in which they fly: neither Flies is entailed
+minimal_entails(rules, Flies(robin), circumscribed={"Ab_flies"}, max_size=2)   # → False
+minimal_entails(rules, Flies(ostrich), circumscribed={"Ab_flies"}, max_size=2)  # → False
 
-# Learn ostrich does not fly → mark it abnormal
+# Learn ostrich does not fly → the rule marks it abnormal
 rules_fact = rules + [Not(Flies(ostrich))]
-minimal_entails(rules_fact, Flies(robin), circumscribed={"Ab_flies"}, max_size=2)   # → True
+minimal_entails(rules_fact, Ab_flies(ostrich), circumscribed={"Ab_flies"}, max_size=2)   # → True
+minimal_entails(rules_fact, Flies(robin), circumscribed={"Ab_flies"}, max_size=2)   # → False
 minimal_entails(rules_fact, Flies(ostrich), circumscribed={"Ab_flies"}, max_size=2)  # → False
 ```
 

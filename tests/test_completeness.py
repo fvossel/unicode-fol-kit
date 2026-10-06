@@ -52,7 +52,7 @@ class TestToFolContract:
     def test_sorted_count_keeps_its_guard_inside(self):
         ms = MSFLParser(many_sorted=True)
         out = to_fol(ms.parse("∃≥1 x:S P(x)")).to_unicode_str()
-        assert out == "∃x_0 (S(x_0) ∧ P(x_0))"
+        assert out == "∃x0 (S(x0) ∧ P(x0))"
 
 
 # --------------------------------------------------------------------------- #

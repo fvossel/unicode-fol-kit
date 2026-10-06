@@ -19,15 +19,24 @@ route — the one implemented here for robustness — turns each sort into a una
 predicate and relativizes the quantifiers (``∀x:S φ ↦ ∀x. S(x) → φ``, ``∃x:S φ ↦
 ∃x. S(x) ∧ φ``). That reduction is exactly the toolkit's
 :func:`~unicode_fol_kit.fol.nodes.to_fol`, so the MSFOL exporters reuse it and then
-emit the resulting plain-FOL formula. Pass ``include_sort_facts=True`` to also conjoin
-the sort-membership facts of any sorted constants.
+emit the resulting plain-FOL formula. That reduction forgets two facts the many-sorted
+reading carries — no sort is empty, and a sorted constant ``c:S`` is an element of ``S``
+(:func:`~unicode_fol_kit.fol.nodes.sort_axioms`) — so the MSFOL exporters state them
+(``include_sort_facts=True``, the default). They are stated OUTSIDE the conjecture: a
+THF ``axiom`` line per fact, Isabelle hypotheses ``⟦…⟧ ⟹ φ`` of the lemma, a hypothesis
+of the Lean theorem. A fact conjoined to the goal itself (``Human(socrates) ∧ φ``) could
+never be proved, even for a tautology ``φ``, because the guard is an uninterpreted
+predicate. Only a formula that is itself ASSERTED (``conjecture=False``) keeps the
+membership facts as a conjunct — there they are part of what is asserted — and gets the
+non-emptiness facts as separate ``axiom`` lines. ``include_sort_facts=False`` is the bare
+relativisation, with no sort facts at all.
 
 **Equality.** By default, to stay consistent with the rest of the toolkit's HOL layer
 (``qml.to_thf_modal``), ``=`` / ``≠`` are emitted as *uninterpreted* binary predicates
 (``feq`` / ``fneq``), **not** primitive HOL identity. Pass ``native_equality=True`` to
 :func:`to_thf_fol` / :func:`to_isabelle_fol` (and the MSFOL wrappers) to emit ``=`` /
 ``≠`` as the target logic's own built-in identity instead — TPTP THF's native infix
-``=`` / ``!=`` and Isabelle/HOL's polymorphic ``=`` / ``\<noteq>`` are both genuine,
+``=`` / ``!=`` and Isabelle/HOL's polymorphic ``=`` / ``\\<noteq>`` are both genuine,
 axiom-free HOL identity at every type (including the uninterpreted individual type
 ``$i`` / ``i``), so this is a *rendering* choice, not new machinery: no congruence or
 reflexivity axiom is generated or needed, because the target format's own ``=``
@@ -50,15 +59,17 @@ Public API: :func:`to_thf_fol`, :func:`to_isabelle_fol`, :func:`to_thf_msfol`,
 :func:`to_isabelle_msfol`.
 """
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Sequence, Tuple
 
 from ..fol._fol_nodes import constant_name_to_ascii
+from ..fol._numeral_symbols import numerals_as_constants, prefixed_numeral_name
 from ..fol._symbol_names import dedupe
+from ..fol._truth_constants import truth_value
 from ..fol._msfl_nodes import _reduce_nl_nodes
 from ..fol.nodes import (
     Node, Variable, Constant, Number, Function, Measure,
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
-    SortedQuantifier, to_fol,
+    SortedQuantifier, to_fol, sort_axioms, nonempty_sort_axioms,
 )
 
 # Equality / inequality are uninterpreted binary predicates in this toolkit's HOL
@@ -146,7 +157,8 @@ def _signature(formula: Node):
     preds, funcs, consts = set(), set(), set()
     for n in formula.walk():
         if isinstance(n, Atom):
-            preds.add((n.predicate, len(n.args)))
+            if truth_value(n) is None:      # `$true` / `$false` are written as THF's / HOL's own
+                preds.add((n.predicate, len(n.args)))
         elif isinstance(n, Function):
             funcs.add((n.name, len(n.args)))
         elif isinstance(n, Measure):
@@ -239,11 +251,18 @@ class _VarResolver:
     THF upper-cases variable tokens, so distinct source names that differ only in
     case (``x`` vs. ``X``) would otherwise collide on one token. De-collide by
     suffixing while preserving the natural token for the first claimant.
+
+    ``used`` is the set of tokens a variable must not take. THF needs none (a variable is
+    upper-case and a functor lower-case, so the two never meet). Isabelle needs the
+    functor tokens: its binder ``\\<forall> x.`` shadows a constant ``x`` in its own
+    scope, so a variable spelled like a constant of the theory would capture it. The
+    set is shared, not copied: a symbol that the functor resolver names later is kept
+    off the variables' tokens as well.
     """
 
-    def __init__(self, render):
+    def __init__(self, render, used=None):
         self._render = render          # raw_name -> base token
-        self._used = set()
+        self._used = set() if used is None else used
         self._map: Dict[str, str] = {}
 
     def token(self, raw: str) -> str:
@@ -320,6 +339,9 @@ def _thf_formula(node: Node, syms: "_SymbolResolver", vars_: "_VarResolver",
     def f(n):
         return _thf_formula(n, syms, vars_, native_equality)
     if isinstance(node, Atom):
+        constant = truth_value(node)
+        if constant is not None:
+            return "$true" if constant else "$false"    # THF's own constants
         if _is_native_eq(node.predicate, len(node.args), native_equality):
             op = "=" if node.predicate == "=" else "!="
             left = _thf_term(node.args[0], syms, vars_)
@@ -392,9 +414,17 @@ def to_thf_fol(formula: Node, conjecture: bool = True, native_equality: bool = F
     the formula is valid; with ``conjecture=False`` it is emitted as an ``axiom``
     (e.g. to assert it as a hypothesis in a larger problem).
 
-    Free variables in ``formula`` are universally closed before emission (TPTP
-    formula roles do not admit free variables). By default, equality ``=`` / ``≠``
-    becomes the uninterpreted predicate ``feq`` / ``fneq`` (see module docstring);
+    A free variable of a CONJECTURE is closed universally before emission (TPTP formula
+    roles do not admit free variables). A free variable is a parameter of the problem, one
+    unknown individual, and for a single formula with no premise the two readings
+    coincide: the formula is valid for the parameter iff it is valid for every individual.
+    An ASSERTED formula (``conjecture=False``) is a premise of a larger problem, and there
+    the closure would say more than the formula says: ``∀x P(x)`` entails ``P(a)``, the
+    premise ``P(x)`` does not. So an asserted formula with a free variable is refused by
+    name; state the parameter with a constant, or bind the variable with a quantifier.
+
+    By default, equality ``=`` / ``≠`` becomes the uninterpreted predicate ``feq`` /
+    ``fneq`` (see module docstring);
     pass ``native_equality=True`` to instead emit THF's own built-in infix
     ``=`` / ``!=`` — genuine HOL identity, so congruence/substitutivity for every
     declared function and predicate is free (no axioms to add). The comparison
@@ -403,13 +433,80 @@ def to_thf_fol(formula: Node, conjecture: bool = True, native_equality: bool = F
     Classical FOL is *semi-decidable only*: a prover may confirm a valid conjecture
     but is not guaranteed to terminate otherwise. This function only emits the
     problem; it does not run any prover.
+
+    Raises:
+        NotImplementedError: ``conjecture`` is false and ``formula`` has a free variable;
+            or a numeral and a constant are spelled alike.
+    """
+    return _thf_problem(formula, conjecture, native_equality)
+
+
+def _scope(formula: Node, background: Sequence[Node]) -> Node:
+    """``formula`` and every background fact as one tree, for signature scans only.
+
+    A problem's declarations and symbol names must cover the sort facts it states
+    as well as its formula — a sort that occurs only through a sorted constant is
+    mentioned by the fact alone. With no background this is ``formula`` itself, so
+    a problem without sort facts is resolved and declared exactly as it was.
+    """
+    scope = formula
+    for fact in background:
+        scope = And(scope, fact)
+    return scope
+
+
+def _refuse_open_assertion(formula: Node, conjecture: bool, where: str) -> None:
+    """Refuse an ASSERTED ``formula`` that has a free variable, by name.
+
+    A free variable is a parameter of the problem: one unknown individual, the same in
+    every formula. Closing it universally is the same thing for a conjecture that stands
+    alone (valid for the parameter iff valid for every individual), but an axiom is a
+    premise of a larger problem, and ``∀x P(x)`` says more than ``P(x)`` does. So the
+    writer states no closure for an axiom and tells the caller how to state the parameter.
+    ``where`` is the name of the writer, which the refusal opens with.
+
+    Raises:
+        NotImplementedError: ``conjecture`` is false and ``formula`` has a free variable.
+    """
+    if conjecture:
+        return
+    free = _free_variables(formula)
+    if free:
+        names = ", ".join(repr(name) for name in free)
+        noun = "variable" if len(free) == 1 else "variables"
+        raise NotImplementedError(
+            f"{where}: the asserted formula (conjecture=False) has the free {noun} "
+            f"{names}, and an axiom cannot say what a free variable stands for. Closing it "
+            "universally would assert more than the formula says (a free variable is a "
+            "PARAMETER of the problem, one unknown individual shared by every formula: "
+            "'∀x P(x)' entails 'P(a)', the premise 'P(x)' does not). State the parameter "
+            "yourself: replace the variable by a constant, or bind it with a quantifier, "
+            "or emit the formula as the conjecture (conjecture=True), where, for one "
+            "formula with no premise, the closure and the parameter reading coincide.")
+
+
+def _thf_problem(formula: Node, conjecture: bool, native_equality: bool,
+                 background: Sequence[Node] = (), where: str = "to_thf_fol") -> str:
+    """The THF problem of ``formula``, with ``background`` as ``axiom`` lines before it.
+
+    ``background`` are closed sentences (the many-sorted reading's sort facts, see
+    :func:`_msfol_split`). They are named ``nonempty_sort_<i>`` (an ``∃``) and
+    ``sort_member_<i>`` (an atom) and come after the type declarations, so a prover
+    can use them but never has to prove them. ``where`` names the public writer that
+    is calling, for the refusal of an asserted formula that has a free variable.
     """
     formula = _reduce_nl_nodes(formula)   # Contrast → ∧, Count → witnesses
+    # A numeral is a constant identified by its value (1 and 1.0 are one), named ``n1``:
+    # a user constant spelled like it is refused, not merged with it.
+    [formula], _ = numerals_as_constants([formula], where="to_thf_fol",
+                                         spell=prefixed_numeral_name)
+    _refuse_open_assertion(formula, conjecture, where)
     closed = formula
     for name in reversed(_free_variables(formula)):
         closed = Quantifier(_FORALL, Variable(name), closed)
     role = "conjecture" if conjecture else "axiom"
-    syms = _SymbolResolver(closed, native_equality=native_equality)
+    scope = _scope(closed, background)
+    syms = _SymbolResolver(scope, native_equality=native_equality)
     vars_ = _VarResolver(lambda raw: _sanitize(raw).upper())
     lines = [
         "% Classical FOL embedded into THF (first-order fragment of HOL).",
@@ -418,15 +515,50 @@ def to_thf_fol(formula: Node, conjecture: bool = True, native_equality: bool = F
     # Only the comment differs, and only when '=' / '≠' actually occur at their
     # native binary arity — a formula without them emits byte-identical output
     # whether native_equality is True or False (nothing about it would differ).
-    preds, _, _ = _signature(closed)
+    preds, _, _ = _signature(scope)
     if any(_is_native_eq(n, a, native_equality) for n, a in preds):
         lines.append("% '=' / '≠' are THF's native, built-in HOL identity (no axioms needed).")
     else:
         lines.append("% '=' / '≠' are uninterpreted predicates (feq / fneq), not HOL identity.")
-    lines += _thf_signature_decls(closed, syms, native_equality=native_equality)
+    if background:
+        lines.append("% The sort facts below are axioms of the problem, not conjuncts of the goal.")
+    lines += _thf_signature_decls(scope, syms, native_equality=native_equality)
+    nonempty = member = 0
+    for fact in background:
+        if isinstance(fact, Quantifier):
+            name, nonempty = f"nonempty_sort_{nonempty}", nonempty + 1
+        else:
+            name, member = f"sort_member_{member}", member + 1
+        lines.append(f"thf({name}, axiom, "
+                     f"{_thf_formula(fact, syms, vars_, native_equality=native_equality)}).")
     lines.append(f"thf(goal, {role}, "
                  f"{_thf_formula(closed, syms, vars_, native_equality=native_equality)}).")
     return "\n".join(lines) + "\n"
+
+
+def _msfol_split(formula: Node, conjecture: bool,
+                 include_sort_facts: bool) -> Tuple[Node, Tuple[Node, ...]]:
+    """Split a many-sorted ``formula`` into its plain-FOL image and the sort facts to state beside it.
+
+    The image is :func:`~unicode_fol_kit.fol.nodes.to_fol`: each sort a unary guard
+    predicate, each sorted quantifier relativized, each sorted constant its plain
+    name. What that forgets is stated separately, by
+    :func:`~unicode_fol_kit.fol.nodes.sort_axioms` — no sort is empty, and a sorted
+    constant ``c:S`` is an element of ``S``.
+
+    For a CONJECTURE both kinds are returned as background facts, never folded into
+    the formula: a conjunct ``S(c) ∧ φ`` could not be proved even for a tautology
+    ``φ``. For an asserted formula (``conjecture=False``) the membership atoms are
+    part of what is asserted and stay the conjunct ``to_fol`` builds, and only the
+    non-emptiness facts are returned. ``include_sort_facts=False`` is the bare
+    relativisation, with no facts at all. A formula with no sorted node returns
+    ``to_fol(formula)`` and ``()``.
+    """
+    if not include_sort_facts:
+        return to_fol(formula), ()
+    if conjecture:
+        return to_fol(formula), tuple(sort_axioms(formula))
+    return to_fol(formula, include_sort_facts=True), tuple(nonempty_sort_axioms(formula))
 
 
 def to_thf_msfol(formula: Node, conjecture: bool = True,
@@ -436,15 +568,27 @@ def to_thf_msfol(formula: Node, conjecture: bool = True,
     Each sort becomes a unary guard predicate and each sorted quantifier is
     relativized (``∀x:S φ ↦ ∀x. S(x) → φ``, ``∃x:S φ ↦ ∃x. S(x) ∧ φ``) by the
     toolkit's :func:`~unicode_fol_kit.fol.nodes.to_fol`; the resulting plain-FOL
-    formula is then emitted with :func:`to_thf_fol`. With
-    ``include_sort_facts=True`` (default) the sort-membership facts of any sorted
-    constants are conjoined first, so e.g. ``Mortal(socrates:Human)`` carries
-    ``Human(socrates)``. All sorts share the single THF individual type ``$i`` —
-    the relativization, not the type system, keeps the sorts apart. See
-    :func:`to_thf_fol` for ``native_equality``.
+    formula is then emitted as :func:`to_thf_fol` does. With
+    ``include_sort_facts=True`` (default) the two facts that reduction forgets are
+    stated too (:func:`~unicode_fol_kit.fol.nodes.sort_axioms`): every sort is
+    non-empty (``∃x S(x)``) and a sorted constant is in its sort
+    (``Mortal(socrates:Human)`` carries ``Human(socrates)``). For a ``conjecture``
+    each is a separate THF ``axiom`` (``nonempty_sort_<i>`` / ``sort_member_<i>``) —
+    a fact conjoined to the goal, ``Human(socrates) ∧ φ``, could never be proved,
+    even for a tautology ``φ`` — so the problem asks whether the formula follows from
+    them, which is the many-sorted question. An asserted formula
+    (``conjecture=False``) keeps the membership atoms as a conjunct, since they are
+    part of what is asserted, and gets the non-emptiness facts as ``axiom`` lines.
+    ``include_sort_facts=False`` emits the bare relativisation, no sort facts. All
+    sorts share the single THF individual type ``$i`` — the relativization, not the
+    type system, keeps the sorts apart. See :func:`to_thf_fol` for ``native_equality``
+    and for the free variable of an asserted formula, which is refused by name.
+
+    Raises:
+        NotImplementedError: ``conjecture`` is false and ``formula`` has a free variable.
     """
-    return to_thf_fol(to_fol(formula, include_sort_facts=include_sort_facts),
-                      conjecture=conjecture, native_equality=native_equality)
+    plain, background = _msfol_split(formula, conjecture, include_sort_facts)
+    return _thf_problem(plain, conjecture, native_equality, background, where="to_thf_msfol")
 
 
 # ===========================================================================
@@ -492,6 +636,9 @@ def _isa_formula(node: Node, syms: "_SymbolResolver", vars_: "_VarResolver",
     def g(n):
         return _isa_formula(n, syms, vars_, native_equality)
     if isinstance(node, Atom):
+        constant = truth_value(node)
+        if constant is not None:
+            return "True" if constant else "False"      # HOL's own constants
         if _is_native_eq(node.predicate, len(node.args), native_equality):
             left = _isa_term(node.args[0], syms, vars_)
             right = _isa_term(node.args[1], syms, vars_)
@@ -560,7 +707,11 @@ def to_isabelle_fol(formula: Node, theory_name: str = "FOL_Export",
     ``consts`` entry for every predicate / function / constant in the signature,
     then states the formula as ``lemma <lemma_name>: "⌜formula⌝"`` over those
     uninterpreted symbols. Free variables are left as Isabelle schematic/free
-    term variables (HOL closes them implicitly at the lemma level).
+    term variables (HOL closes them implicitly at the lemma level). The lemma is a
+    goal, never an assertion, so a free variable is the parameter it is: one
+    individual, for which the lemma holds iff it holds for every individual (the
+    refusal that :func:`to_thf_fol` makes for an asserted formula has no counterpart
+    here).
 
     The proof line defaults to ``oops`` (the lemma is *stated* but deliberately
     left open, so the theory loads without claiming a proof). Pass
@@ -574,11 +725,30 @@ def to_isabelle_fol(formula: Node, theory_name: str = "FOL_Export",
     no axioms added. The comparison predicates ``<`` ``>`` ``≤`` ``≥`` are
     unaffected either way.
     """
+    return _isabelle_problem(formula, theory_name, lemma_name, proof, native_equality)
+
+
+def _isabelle_problem(formula: Node, theory_name: str, lemma_name: str, proof: str,
+                      native_equality: bool, background: Sequence[Node] = ()) -> str:
+    r"""The Isabelle theory of ``formula``, with ``background`` as the HYPOTHESES of the lemma.
+
+    ``background`` are closed sentences (the many-sorted reading's sort facts, see
+    :func:`_msfol_split`). They are not ``axiomatization`` facts and not conjuncts of
+    the goal but premises of the lemma, ``\<lbrakk>f1; f2\<rbrakk> \<Longrightarrow> φ``: a premise is used by
+    ``blast`` / ``auto`` / ``metis`` / ``nitpick`` without a ``using`` clause, which an
+    ``axiomatization`` fact is not — and the proof battery of
+    :func:`~unicode_fol_kit.hol.isabelle_runner.isabelle_decide_fol` names no facts.
+    """
     formula = _reduce_nl_nodes(formula)   # Contrast → ∧, Count → witnesses
+    # A numeral is a constant identified by its value (1 and 1.0 are one), named ``n1``:
+    # a user constant spelled like it is refused, not merged with it.
+    [formula], _ = numerals_as_constants([formula], where="to_isabelle_fol",
+                                         spell=prefixed_numeral_name)
+    scope = _scope(formula, background)
     # Only the comment differs, and only when '=' / '≠' actually occur at their
     # native binary arity — a formula without them emits byte-identical output
     # whether native_equality is True or False (nothing about it would differ).
-    preds, _, _ = _signature(formula)
+    preds, _, _ = _signature(scope)
     if any(_is_native_eq(n, a, native_equality) for n, a in preds):
         eq_comment = "   '=' / '≠' are Isabelle's own built-in HOL identity (no axioms needed)."
     else:
@@ -595,12 +765,18 @@ def to_isabelle_fol(formula: Node, theory_name: str = "FOL_Export",
         "",
         "typedecl i  \\<comment> \\<open>uninterpreted individuals\\<close>",
     ]
-    syms = _SymbolResolver(formula, native_equality=native_equality)
-    vars_ = _VarResolver(_sanitize)
-    lines += _isa_consts_block(formula, syms, native_equality=native_equality)
+    syms = _SymbolResolver(scope, native_equality=native_equality)
+    # A binder shadows the constants of its own name, so the bound variables take their
+    # tokens from the pool the constants, functions and predicates already took theirs from.
+    vars_ = _VarResolver(_sanitize, used=syms._used)
+    lines += _isa_consts_block(scope, syms, native_equality=native_equality)
     lines.append("")
-    lines.append(f"lemma {lemma_name}: "
-                 f"\"{_isa_formula(formula, syms, vars_, native_equality=native_equality)}\"")
+    statement = _isa_formula(formula, syms, vars_, native_equality=native_equality)
+    if background:
+        facts = "; ".join(_isa_formula(fact, syms, vars_, native_equality=native_equality)
+                          for fact in background)
+        statement = f"\\<lbrakk>{facts}\\<rbrakk> \\<Longrightarrow> {statement}"
+    lines.append(f"lemma {lemma_name}: \"{statement}\"")
     lines.append(f"  {proof}")
     lines.append("")
     lines.append("end")
@@ -614,11 +790,20 @@ def to_isabelle_msfol(formula: Node, theory_name: str = "MSFOL_Export",
 
     Reduces ``formula`` with :func:`~unicode_fol_kit.fol.nodes.to_fol` (each sort
     becomes a unary guard predicate over the single individual type ``i``, each
-    sorted quantifier is relativized) and emits the result with
-    :func:`to_isabelle_fol`. With ``include_sort_facts=True`` (default) the
-    sort-membership facts of sorted constants are conjoined first. See
+    sorted quantifier is relativized) and emits the result as
+    :func:`to_isabelle_fol` does. With ``include_sort_facts=True`` (default) the two
+    facts that reduction forgets are stated too
+    (:func:`~unicode_fol_kit.fol.nodes.sort_axioms`): every sort is non-empty
+    (``∃x S(x)``) and a sorted constant is in its sort (``Human(socrates)`` for
+    ``Mortal(socrates:Human)``). They are HYPOTHESES of the lemma, not conjuncts of
+    the goal — ``lemma goal: "⟦∃x. human x; human socrates⟧ ⟹ φ"`` — because a goal
+    ``human socrates ∧ φ`` could never be proved, even for a tautology ``φ``, the
+    guard being an uninterpreted predicate; and a premise needs no ``using`` clause
+    for ``blast`` / ``auto`` / ``nitpick`` to use it. So the lemma asks whether the
+    formula follows from the sort facts, which is the many-sorted question.
+    ``include_sort_facts=False`` is the bare relativisation, no sort facts. See
     :func:`to_isabelle_fol` for ``native_equality``.
     """
-    return to_isabelle_fol(to_fol(formula, include_sort_facts=include_sort_facts),
-                           theory_name=theory_name, lemma_name=lemma_name, proof=proof,
-                           native_equality=native_equality)
+    plain, background = _msfol_split(formula, True, include_sort_facts)
+    return _isabelle_problem(plain, theory_name, lemma_name, proof, native_equality,
+                             background)

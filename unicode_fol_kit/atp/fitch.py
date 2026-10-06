@@ -22,7 +22,9 @@ Two checking regimes share one proof representation:
   assumptions in scope must entail the line under that logic's consequence
   relation. This is sound by construction and, unlike a hand-rolled rule table,
   cannot accidentally license a classically-valid-but-non-classically-invalid
-  step (LP rejects modus ponens and explosion; K3 has no logical truths).
+  step (LP rejects modus ponens and explosion; K3 has no logical truths over
+  letters alone — only a formula built from the truth constants ``⊤`` / ``⊥``
+  can be one).
 
 Soundness design (the non-obvious parts):
 
@@ -70,7 +72,7 @@ from ..fol.frames import (
     FRAMES as _SHARED_FRAMES, UnsupportedFrameCondition,
     resolve_frame, unguarded_frame_axiom,
 )
-from ..fol._msfl_nodes import _rename, _fresh_name, subst_slash_set
+from ..fol._msfl_nodes import _rename, _fresh_binder_name, subst_slash_set
 from ._html import esc_html, html_page
 
 
@@ -89,6 +91,13 @@ from ._html import esc_html, html_page
 _FALSUM_NAME = "⊥"
 FALSUM: Atom = Atom(_FALSUM_NAME, ())
 
+# The truth constants ``$true`` / ``$false`` (the atoms the unicode glyphs ``⊤`` /
+# ``⊥`` and the TPTP reader produce). ``$false`` is a falsum exactly like ``⊥``
+# (:func:`is_falsum`); ``$true`` has its own rule, ``⊤I``.
+_TRUE_CONSTANT = "$true"
+_FALSE_CONSTANT = "$false"
+_TRUE_GLYPH = "⊤"
+
 # A reserved propositional letter used only to desugar ⊥ into (p ∧ ¬p) for the
 # classical oracle. Chosen so it cannot collide with a user predicate (uppercase
 # rule requires PREDICATE start with A–Z; this name is not parseable, so it can
@@ -98,8 +107,11 @@ _BOT_CONTRADICTION: And = And(_BOT_SENTINEL, Not(_BOT_SENTINEL))
 
 
 def is_falsum(node: Node) -> bool:
-    """Return True iff ``node`` is the reserved falsum constant ⊥."""
-    return isinstance(node, Atom) and node.predicate == _FALSUM_NAME and not node.args
+    """Return True iff ``node`` is a falsum: the reserved atom ``⊥`` or the truth
+    constant ``$false`` (what the unicode glyph ``⊥`` parses to). Both are the
+    genuine constant, never a letter."""
+    return (isinstance(node, Atom) and not node.args
+            and node.predicate in (_FALSUM_NAME, _FALSE_CONSTANT))
 
 
 def _desugar_falsum(node: Node) -> Node:
@@ -708,6 +720,20 @@ def _r_bot_e(concl, refs, extra, oa):
     return None
 
 
+def _r_top_i(concl, refs, extra, oa):
+    """⊤I: infer the truth constant ``$true`` (or ``⊤``) from nothing (no citations).
+
+    Only the truth constant itself: no other atom, and not ``$false``, is licensed by
+    this rule.
+    """
+    if not (isinstance(concl, Atom) and not concl.args
+            and concl.predicate in (_TRUE_CONSTANT, _TRUE_GLYPH)):
+        return "⊤I must conclude $true"
+    if refs:
+        return "⊤I cites nothing"
+    return None
+
+
 def _r_not_i(concl, refs, extra, oa):
     """¬I: from a subproof [φ ⊢ ⊥] infer ¬φ (discharge φ)."""
     if not isinstance(concl, Not):
@@ -749,7 +775,7 @@ _PROP_RULES: Dict[str, RuleFn] = {
     "∨I": _r_or_i, "∨E": _r_or_e,
     "→I": _r_imp_i, "→E": _r_imp_e,
     "↔I": _r_iff_i, "↔E": _r_iff_e,
-    "⊥I": _r_bot_i, "⊥E": _r_bot_e,
+    "⊥I": _r_bot_i, "⊥E": _r_bot_e, "⊤I": _r_top_i,
     "¬I": _r_not_i, "RAA": _r_raa, "¬E": _r_dne,
 }
 
@@ -797,13 +823,14 @@ _VAR_BINDERS = (Quantifier, SortedQuantifier, Count, Cardinality,
 def _subst_var(formula: Node, var: Variable, replacement: Node) -> Node:
     """Capture-avoiding substitution of a *logical Variable* by a term.
 
-    The kit's :func:`substitute` is written for ``LambdaVar`` targets and does not
-    stop at a re-binding ``∀x`` / ``∃x`` inside the body, so it is unsound for
-    substituting a logical ``Variable``. This implements the correct first-order
-    substitution: occurrences of ``var`` bound by an inner quantifier are left
+    The same specification as the kit's :func:`substitute`, restricted to a logical
+    ``Variable`` target: occurrences of ``var`` bound by an inner quantifier are left
     untouched (shadowing), and a bound variable that would capture a free variable
-    of ``replacement`` is α-renamed first (reusing the kit's ``_rename`` /
-    ``_fresh_name``). The input is not mutated.
+    of ``replacement`` is α-renamed first. The new name is minted by the rule the
+    generic substitution uses (``_fresh_binder_name``), so both give the same formula
+    spelled the same way, and a checker that recomputes an instance with
+    :func:`substitute` finds the one a search recorded with this function.
+    The input is not mutated.
     """
     return _subst_var_inner(formula, var, replacement, _free_vars(replacement))
 
@@ -829,12 +856,15 @@ def _subst_var_inner(t: Node, var: Variable, repl: Node, fv: set) -> Node:
         body = t.formula
         if bound in fv:
             # The binder would capture a free variable of the replacement; rename it.
-            # Slash names are plain strings, so they are added explicitly — a fresh
+            # The fresh name must differ from EVERY name inside the scope, bound ones
+            # included: _rename moves the old binder's occurrences onto it, and an inner
+            # binder that already uses the name (``∃y0`` when the fresh name is ``y0``)
+            # would capture them. It must also differ from the substituted variable (the
+            # renamed scope is substituted next) and from the names of the replacement;
+            # slash names are plain strings, so they are passed explicitly — a fresh
             # name colliding with one would silently rewire the independence set.
-            avoid = fv | _free_vars(body) | {var, bound}
-            if isinstance(t, SlashedExists):
-                avoid = avoid | {Variable(n) for n in t.slashed}
-            fresh = Variable(_fresh_name(bound.name, avoid))
+            slash = t.slashed if isinstance(t, SlashedExists) else ()
+            fresh = Variable(_fresh_binder_name(bound, body, var, repl, fv, slashed=slash))
             body = _rename(body, bound, fresh)
             bound = fresh
         inner = _subst_var_inner(body, var, repl, fv)
@@ -1281,9 +1311,25 @@ def _make_modal_checker(alethic_system: str):
                 except UnsupportedFrameCondition as exc:
                     return (False, f"modal: {exc}")
         try:
-            from ..fol.modal_translation import standard_translation
-            st_concl = standard_translation(_desugar_falsum(formula), world="w")
-            st_oa = [standard_translation(_desugar_falsum(g), world="w") for g in oa]
+            from ..fol._identifiers import symbol_names
+            from ..fol.modal_translation import _check_nominal_collision, standard_translation
+            # The line and its open assumptions are translated one by one but form ONE
+            # obligation, so each translation avoids the names of all of them: a variable
+            # the user spelled like the world variable is renamed to the same name in every
+            # formula, and never to a name another of the formulas uses for something else.
+            line, assumptions = _desugar_falsum(formula), [_desugar_falsum(g) for g in oa]
+            # The same holds for the world constants of the nominals (``nom_a``): the
+            # translation refuses a user symbol spelled like one, but looks at one formula at
+            # a time, and an assumption that names the nominal ``a`` next to a line that
+            # holds a user constant ``nom_a`` would pass both looks and then be read by Z3 as
+            # one symbol. So the guard runs once over everything the obligation holds.
+            try:
+                _check_nominal_collision(reduce(And, [line, *assumptions]))
+            except ValueError as e:
+                return False, f"modal: {e}"
+            names = symbol_names(line, *assumptions)
+            st_concl = standard_translation(line, world="w", avoid=names)
+            st_oa = [standard_translation(g, world="w", avoid=names) for g in assumptions]
         except NotImplementedError as e:
             return False, f"modal: {e}"
         antecedents = axioms + st_oa

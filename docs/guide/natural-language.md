@@ -56,6 +56,8 @@ vacuously true on a non-empty domain — both stay symbolic `Count` nodes, not c
 forms:
 
 ```python
+from unicode_fol_kit import is_valid
+
 p.parse("∃=0 x P(x)").op            # → 'eq'   (a genuine Count, n=0)
 is_valid(p.parse("(∃=0 x P(x)) ↔ ¬∃x P(x)"))     # True
 is_valid(p.parse("(∃=0 x P(x)) ↔ ∀x ¬P(x)"))     # True
@@ -120,7 +122,7 @@ from unicode_fol_kit.fol.nodes import Measure
 
 cmp = p.parse("μ(x, height) > μ(y, height)")   # Atom('>', [Measure(x, height), Measure(y, height)])
 isinstance(cmp.args[0], Measure)               # True
-cmp.to_prover9()                               # uses the function measure(x, height)
+cmp.to_prover9()                               # → '(measure(X, height) > measure(Y, height))'
 ```
 
 To *evaluate* a degree comparison, interpret `measure`/2 — the same symbol the
@@ -279,13 +281,15 @@ The same `systems={"assertive": ...}` / `{"bouletic": ...}` keys work across `qm
 
 The Prover9 reader complements `load_tptp` and `load_smtlib`: `load_prover9(path)` and
 `parse_prover9_problem(text)` read a whole Prover9/LADR input file — `set`/`clear`/
-`assign` directives (skipped), `formulas(LIST). … end_of_list.` blocks, and bare
-top-level formulas — into `Prover9Formula(role, formula)` records, with the list name as
-each formula's role. See {doc}`transforms` for the full import/export reference.
+`assign` directives (skipped, but for the `prolog_style_variables` flag),
+`formulas(LIST). … end_of_list.` blocks, and bare top-level formulas — into
+`Prover9Formula(role, formula)` records, with the list name as each formula's role.
+See {doc}`transforms` for the full import/export reference.
 
-`parse_prover9_problem` takes the file text directly. Directives are dropped, `%` comments
-are ignored, and each formula's `role` is the name of the `formulas(...)` list it came
-from:
+`parse_prover9_problem` takes the file text directly. `set`, `clear` and `assign`
+directives are dropped (but the `prolog_style_variables` flag, see below; an `op(...)`
+directive is applied to the formulas after it, see {doc}`interoperability`), `%` comments
+are ignored, and each formula's `role` is the name of the `formulas(...)` list it came from:
 
 ```python
 from unicode_fol_kit import parse_prover9_problem
@@ -309,6 +313,23 @@ problem = parse_prover9_problem(src)
 type(problem[0]).__name__   # → 'Prover9Formula'
 ```
 
+A quantifier binds the symbol it names, whatever its case, so the three `x` of the first
+assumption are one bound variable and the assumptions prove the goal:
+
+```python
+from unicode_fol_kit import api
+
+assumptions = [f.formula for f in problem if f.role == "assumptions"]
+goal = [f.formula for f in problem if f.role == "goals"][0]
+api.prove(goal, assumptions).status   # → 'proved'
+```
+
+A name that no quantifier binds is a variable or a constant by the file's own convention:
+the last `set(prolog_style_variables)` or `clear(prolog_style_variables)` in the file
+decides for every formula (under the flag a name beginning with an upper-case letter is a
+variable), and a file with neither reads Prover9's default, in which a name beginning with
+`u` to `z` is a variable.
+
 A formula written outside any `formulas(...)` block (a bare top-level formula) is kept
 with an empty role `''`:
 
@@ -330,6 +351,25 @@ from unicode_fol_kit import load_prover9
 [(f.role, f.formula.to_unicode_str()) for f in load_prover9(path)]
 # → [('sos', '∀x (P(x) → Q(x))'), ('sos', 'P(a)')]
 os.remove(path)
+```
+
+Double-quoted symbols are read too. A quoted name is never a variable, whatever its first
+letter (`"Rain"` is the proposition `Rain`, `P("Gaseous")` has the constant `Gaseous`); a
+quoted numeral in its canonical spelling reads as a `Number` (`"2.5"`, but `"1.0"` is refused,
+because Prover9 keeps it apart from `"1"`); and `-(a, b)` reads as the binary function `-`.
+A file that writes one symbol both quoted and bare (`P("rain")` next to `Q(rain)`) is refused
+by name with a `Prover9ParsingError` (in `unicode_fol_kit.fol.prover9_input`), because
+Prover9 keeps `"rain"` and `rain` apart and the kit has one name for both:
+
+```python
+def read(text):
+    return parse_prover9_problem(text)[0].formula.to_unicode_str()
+
+read('P("Gaseous").')    # → 'P(Gaseous)'
+read('P("2.5").')        # → 'P(2.5)'
+read('P(-(a, b)).')      # → 'P(a - b)'
+read('P("rain"). Q(rain).')
+# raises Prover9ParsingError: SYNTAX_ERROR: the constant 'rain' is written both with and without double quotes ...
 ```
 
 ## Making imported names re-parseable — `sanitize_names`
@@ -508,7 +548,7 @@ equality or a comparative is refused by name rather than silently losing the mod
 
 ```python
 modal_formula_to_ace(modal.parse("□Man(john)"))
-# → AceVerbalizationError: drs_to_ace: a modal box with 1 clause(s) under its
+# raises AceVerbalizationError: drs_to_ace: a modal box with 1 clause(s) under its
 #   modality is outside the probed ACE fragment — only a single verb clause
 #   has been measured under a modal auxiliary ('must'/'can'/'should'/'may')
 ```

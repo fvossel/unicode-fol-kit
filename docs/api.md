@@ -11,13 +11,14 @@ module view is the last section. A name re-exported at top level is documented
 under that path; a name that exists only inside a subpackage is documented
 there. Two deliberate exceptions:
 
-- Five names appear twice, under different paths, because they are **different
-  objects** that happen to share a name: `check_theory`
+- Fifteen names appear twice, under different paths, because they are
+  **different objects** that happen to share a name: `check_theory`
   ({func}`unicode_fol_kit.check_theory` builds and runs an Isabelle theory,
-  {func}`unicode_fol_kit.eval.check_theory` audits a set of definitions), and
-  the description-logic concept constructors `And`/`Or`/`Not`/`Top`, which are
-  ALC concepts rather than formula nodes.
-- Ten dict registries and naming maps are documented at their **definition
+  {func}`unicode_fol_kit.eval.check_theory` audits a set of definitions), the
+  description-logic concept constructors `And`/`Or`/`Not`/`Top`/`Nominal`,
+  which are description-logic concepts rather than formula nodes, and the nine
+  `external_*` functions, which `dl` (HermiT) and `hets` (FaCT++) each define.
+- Fourteen dict registries and naming maps are documented at their **definition
   site** rather than at the re-export path, because that is the only place
   their documentation exists: a name imported into a module carries no
   attribute comment there, and the reference would fall back to describing the
@@ -40,7 +41,10 @@ there. Two deliberate exceptions:
    free_variables
    to_fol
    nonempty_sort_axioms
+   sort_membership_axioms
+   sort_axioms
    subsort_axioms
+   signature_axioms
    serialize
    deserialize
    SCHEMA_VERSION
@@ -182,7 +186,8 @@ above it — a predicate standing in ARGUMENT position, which is what makes a
 formula third-order. What each argument slot holds is not in the surface syntax
 and is inferred across a whole theory by `analyse_signatures`, which returns a
 `Signatures` and raises `MixedSlotError` for a slot used once for an individual
-and once for a property.
+and once for a property, and `NestedPropertySlotError` for a slot that would hold
+a predicate which itself takes a property (a fourth-order typing).
 
 ```{eval-rst}
 .. autosummary::
@@ -192,6 +197,7 @@ and once for a property.
    analyse_signatures
    Signatures
    MixedSlotError
+   NestedPropertySlotError
 ```
 
 ## AST: substructural and many-valued connectives
@@ -257,10 +263,10 @@ legal in the source but not a legal kit token survives verbatim; run
 back to kit text.
 
 {func}`~unicode_fol_kit.parse_prolog_clause` additionally asks the caller to
-decide what a clause MEANS — the universally closed implication, or the
-condition alone with the head's variables free (`mode="body"`). Those are
-different formulas, so it will not choose for you. See
-{doc}`guide/interoperability`.
+decide what a clause MEANS — the universally closed implication
+(`mode="clause"`, the default), or the condition alone with the head's
+variables free (`mode="body"`). Those are different formulas, so state the one
+you mean. See {doc}`guide/interoperability`.
 
 {func}`~unicode_fol_kit.formula_to_prolog_clause` is the return leg: a
 formula built to look like a fact or a definite/normal clause renders back
@@ -465,6 +471,22 @@ below. A Scott–Lemmon spec such as `"G(1,1,1,1)"` is accepted
 wherever a frame name is. What a route cannot express soundly it refuses with
 `UnsupportedFrameCondition` rather than ignoring.
 
+The first-order route's side conditions are explicit. A formula's translation
+mentions several accessibility relations (`R`, `T`, `N`, `D` and one per agent),
+and {func}`unicode_fol_kit.fol.modal_translation.frame_axioms` returns the frame
+axioms for exactly those, and for each sorted constant `c:S` the axiom that it
+lies in `S` at every world, while
+{func}`unicode_fol_kit.fol.modal_translation.relations_used` names the relations.
+{func}`~unicode_fol_kit.hybrid_is_valid` and {func}`~unicode_fol_kit.down_is_valid`
+take `systems=` and `temporal_closure=` and assert them, which is what brings
+them into line with {func}`~unicode_fol_kit.qml_is_valid`. The two helpers live
+in the module and are not re-exported at the top level, so they have no row in
+the table; the module section at the end of this page documents them. The
+propositional standard translation and the propositional Kripke evaluator both
+refuse an equality atom by name; `qml_translate` is the route where `=` is rigid
+identity. The translations are catalogued, with their guarantees, in
+{doc}`guide/logic-graph`.
+
 ```{eval-rst}
 .. autosummary::
    :toctree: _autosummary
@@ -568,6 +590,7 @@ wherever a frame name is. What a route cannot express soundly it refuses with
    so_find_countermodel
    so_is_satisfiable_finite
    so_is_valid_finite
+   CandidateBoundExceeded
 ```
 
 ## Model checking in a given structure
@@ -850,6 +873,9 @@ enumerating any.
    FiniteStructure
    structure_from_dict
    graph_to_structure
+   IllegalStructureError
+   check_structure
+   structure_violations
    evaluate_in_structure
    evaluate_detailed
    EvalResult
@@ -1009,6 +1035,157 @@ fragment via an external, HermiT-backed reasoner (owlready2, optional
 `[owl]` extra), mirroring every `dl.tableau` function's own reduction under
 an `external_` prefix.
 
+The first-order image of a knowledge base is split on purpose. A `TBox` holds the
+concept inclusions *and* the role box, but `tbox_to_fol` renders only the
+inclusions, so it raises `RoleBoxOmittedError` for a TBox that has a role box
+unless `concept_inclusions_only=True` says that is intended. `kb_to_fol` is the
+supported entry point: it returns a `KnowledgeBaseFOL` with the knowledge base as
+one formula and the role-box axioms **separately**, to be passed as premises
+(`premises`, `tbox_premises`), never conjoined into the formula.
+`concept_to_fol`, `subsumption_to_fol` and `abox_to_fol` render exactly what
+they are given, so each is an answer about the empty knowledge base. The
+convention is the one every translation in {doc}`guide/logic-graph` follows.
+
+Each side axiom is a `SideAxiom`, carrying the OWL 2 keyword it came from, so
+`kb.axioms_of_kind("TransitiveObjectProperty")` is a question with an answer;
+`kb.axioms` is the bare-formula view of the same one field. Which axiom kinds
+the two routes handle, and how, is one table — `dl.tableau._AXIOM_KINDS`. An
+axiom kind the in-house tableau has no rule for is refused BY NAME, by
+`UnsupportedAxiomError`, from `concept_satisfiable`/`abox_consistent` and so
+from everything that reduces to them; the builders `TBox.add_*`/`ABox.assert_*`
+accept every kind, because a TBox is what a parser fills from a file.
+
+A `TBox` carries the whole OWL 2 object property box: role inclusions and
+transitivity (`add_role_inclusion`, `add_transitive_role`), role equivalence
+and disjointness (`add_equivalent_roles`, `add_disjoint_roles`), inverse-property
+pairs (`add_inverse_roles`), property chains (`add_role_chain`) and the six
+remaining characteristics (`add_symmetric_role`, `add_asymmetric_role`,
+`add_reflexive_role`, `add_irreflexive_role`, `add_functional_role`,
+`add_inverse_functional_role`). The in-house tableau decides asymmetry,
+irreflexivity, role disjointness (one clash condition each) and functionality
+(internalised as the GCI `⊤ ⊑ ≤1 P.⊤`); it refuses inverse pairs, symmetric
+roles, reflexive roles, inverse-functionality and property chains BY NAME, each
+message saying why and what to use instead. `rbox_to_fol` renders all of them,
+so `kb_to_fol` + `api.prove` and the external `external_*` reasoner answer what
+the tableau will not. A role-box builder handed something that is not a usable
+role in that position — a tuple where a chain belongs, an `InverseRole` where a
+plain name belongs, or one of the four OWL 2 built-in property names — raises
+`RoleExpressionError` on the call that is wrong. `add_role_domain` /
+`add_role_range` store `ObjectPropertyDomain`/`ObjectPropertyRange` natively
+rather than as the GCIs they are equivalent to, because their FOL image is the
+direct `∀x ∀y (P(x, y) → C(x))` sentence and because `to_owl_functional` must
+round-trip the axiom to itself; the tableau decides them by internalising those
+GCIs, so no new rule.
+
+`HasValue(role, individual)` (`∃r.{a}`, OWL's `ObjectHasValue`) is a nominal in
+disguise, and the in-house tableau REFUSES it, by name (`UnsupportedConceptError`),
+wherever it occurs, as it refuses a bare `Nominal`: it gives a generated node an
+edge back to a named one, which subset blocking does not cover (the module
+docstring of `dl.tableau` has the two-axiom counterexample). Its FOL image is the
+ground atom `r(x, a)`, the one-point reduction of `∃y (r(x, y) ∧ y = a)`, and
+that image with `api.prove`, or `dl.external_*` (HermiT), decides it.
+`ABox.assert_same` and `assert_negative_role` are the two ABox assertions that
+complete the OWL 2 set: sameness is decided by node merging before any rule
+runs, a negative role assertion by a clash condition over forbidden edges, which
+it refuses on a NON-SIMPLE role by name since the tableau never materialises a
+transitive role's derived edges.
+
+The data half of OWL 2 — the second sort — is stored and translated, and the
+in-house tableau refuses it by name. The restrictions are `DataExists`,
+`DataForAll`, `DataHasValue`, `DataAtLeast` and `DataAtMost`; their second
+argument is a data range (`Datatype`, `DatatypeRestriction`, `DataOneOf`,
+`DataComplementOf`, `DataIntersectionOf`, `DataUnionOf`) over `Literal` values.
+A `TBox` gets `add_data_property_inclusion`, `add_equivalent_data_properties`,
+`add_disjoint_data_properties`, `add_functional_data_property`,
+`add_data_property_domain`, `add_data_property_range` and
+`add_datatype_definition` (a datatype has one definition and the definitions
+are acyclic, OWL 2 §9.4: a second one or a cycle, direct or indirect, is
+refused by name); an `ABox` gets `assert_data` and
+`assert_negative_data`. Every one is a row of `dl.tableau._AXIOM_KINDS` with
+`layer="data"`, and `concept_satisfiable`/`abox_consistent`/`classify` raise
+`UnsupportedAxiomError` (an axiom) or `UnsupportedConceptError` (a concept) for
+it, as does `dl.owl_reasoner`; HermiT is not wired to it either. What
+answers is the FOL image, and the facets are decided by `atp.z3_arith`.
+
+That image is a *guarded one-sorted* theory, not MSFOL: two reserved predicates,
+`OWL_THING` (`OwlThing`) and `OWL_DATA` (`OwlData`), stand for the two domains,
+a datatype is a unary predicate, a data property a binary one, and a literal a
+term (the number itself for an exact-number literal, a constant named by its OWL
+text otherwise; `xsd:float`/`xsd:double` literals are refused, because their
+value space is not the exact numbers', and so are `xsd:language`, `xsd:Name`,
+`xsd:NCName` and `xsd:NMTOKEN`, whose lexical spaces the kit does not validate;
+an `xsd:token` or `xsd:normalizedString` literal is the `xsd:string` value of its
+whitespace-processed text). The two sorts are kept apart by
+**side axioms** — `OwlThing` and `OwlData` disjoint and both non-empty, every
+data property typed `OwlThing → OwlData`, the datatype lattice, literal
+distinctness — so `kb_to_fol` is sound for the two-sorted question only if they
+are *premises*. To ask it, pass `kb.premises` (or `kb.tbox_premises` for a
+question about the terminology), never `kb.formula` alone, and let the bundle
+build the goal: `kb.subsumption_goal(sub, sup)`, `kb.unsatisfiability_goal(concept)`
+and `kb.instance_goal(individual, concept)` relativise it the way `kb.separation`
+says. The side axioms are derived from the names the knowledge base uses, so hand
+the concepts you will ask about to `kb_to_fol(tbox, abox, query=[...])` (their
+vocabulary joins the knowledge base's, and a data restriction in the query makes
+the image two-sorted even for a TBox with no data layer); a goal over a name the
+bundle does not cover is refused by name (`UnsupportedDatatypeError`), not
+answered wrongly. The registry edge `alc → fol` refuses a concept with a data
+restriction for the same reason. (A hand-built goal needs
+`subsumption_to_fol(sub, sup, object_sort=True)`.)
+`kb.separation == "two-sorted"` says the knowledge base was built that way; every
+GCI of its `formula` is already restricted to `OwlThing`, which is not
+decoration — without it `⊤ ⊑ {a}` would also range over data values and make an
+OWL-consistent knowledge base inconsistent. `separation="data-lattice"` keeps
+the datatype facts without the separation, which for that very reason is not
+sound for a knowledge base with a data layer (the goal methods refuse such a
+bundle), and a knowledge base with no data layer is byte-for-byte what it was. One name is ONE predicate, so a name used
+both as an object property and a data property, or both as a class and a
+datatype, would be conflated and change what follows: OWL 2 DL forbids both, and
+`kb_to_fol`, `data_sort_axioms`, `databox_to_fol` and `abox_to_fol` refuse it by
+name with `UnsupportedDatatypeError` (rename one of the two). The image is sound — every OWL model
+expands to a model of it — and deliberately not complete: a facet is an
+uninterpreted comparison for `api.prove` (use `atp.z3_arith.is_valid_arith` for
+facet entailment over integers or reals), a literal is typed only by the
+datatype it was written with, and the number of values in a value space is not
+stated. So `proved` transfers to OWL 2 and `refuted` does not:
+`kb.refutation_is_decisive` is `False` exactly when there is a data layer.
+`databox_to_fol`, `data_sort_axioms` and `datarange_to_fol` render the three
+parts on their own. The name rule above looks only at what one call is given,
+so boxes rendered one call at a time and conjoined by hand escape it;
+`check_kb_names(*parts)` runs it over the union of several `TBox`, `ABox` and
+`KnowledgeBaseFOL` pieces.
+
+`parse_owl_functional` is strict: it raises on the first construct outside the
+fragment, so one `HasKey` in a 4041-axiom ontology yields no TBox at
+all. `parse_owl_functional_axioms` is the per-axiom reader for a real document
+— one pass, recovering at axiom boundaries — returning an `OwlFunctionalResult`
+with the TBox/ABox it could build, one `RefusedAxiom` per axiom it could not
+(keyword, position, source text, reason), one `ConsumedAxiom` per axiom it read
+and found to carry no logical content (an annotation-property axiom, a
+tautological inclusion into `owl:topObjectProperty`: reported, so that they do
+not vanish from a census), `ok`, `refused_keywords` and `to_kb()`.
+It recovers from `OwlFunctionalUnsupportedError` (valid OWL 2, outside this
+fragment) and from nothing else: malformed input still raises, because
+recovering from an unbalanced paren could drop arbitrary content (and a class
+expression nested about a thousand levels deep is a `RecursionError`). Both
+OWL readers refuse a built-in datatype name where a class is wanted and
+`owl:Thing`/`owl:Nothing` where a data range is wanted, and the Functional-Syntax
+reader also refuses a literal with no first-order term (`xsd:float`/`xsd:double`,
+`xsd:language`/`xsd:Name`/`xsd:NCName`/`xsd:NMTOKEN`, a decimal of more than 15
+significant digits) as a `RefusedAxiom` keyed by its datatype, so an axiom that is `accepted` is one
+`to_kb()` can render — though `to_kb()` may still refuse the knowledge base as a
+whole (see the name rule above). The strict `parse_owl_functional` drops the
+annotation-property axioms and the tautological property inclusions without a
+report; `parse_owl_functional_axioms` lists them in `consumed`.
+
+One limit worth knowing before printing an image that mentions an individual:
+the kit decides predicate-versus-term by the first character's case, so an
+upper-case individual name — the norm for an OWL IRI — prints as itself and does
+not read back as the same formula. `Alice = Bob` does not parse at all;
+`HasStateOfMatter(x, Liquid)` parses only as third-order, with `Liquid` as a
+`PredicateTerm` rather than a `Constant`. The AST is sound either way, and the
+`dl` routes that never go through text (the tableau, and `api.prove` over
+`kb_to_fol`'s nodes) are unaffected.
+
 ```{eval-rst}
 .. currentmodule:: unicode_fol_kit.dl
 
@@ -1028,6 +1205,20 @@ an `external_` prefix.
    AtMost
    InverseRole
    Nominal
+   HasValue
+   DataExists
+   DataForAll
+   DataHasValue
+   DataAtLeast
+   DataAtMost
+   Literal
+   DataRange
+   Datatype
+   DatatypeRestriction
+   DataOneOf
+   DataComplementOf
+   DataIntersectionOf
+   DataUnionOf
    TBox
    ABox
    Classification
@@ -1036,13 +1227,20 @@ an `external_` prefix.
    parse_gci
    parse_manchester
    parse_manchester_axiom
+   parse_manchester_data_range
+   parse_manchester_literal
+   to_manchester_data_range
    to_manchester
    parse_manchester_role_axiom
    role_axiom_to_manchester
    parse_owl_functional
+   parse_owl_functional_axioms
    parse_owl_functional_class_expression
    to_owl_functional
    to_owl_functional_class_expression
+   OwlFunctionalResult
+   RefusedAxiom
+   ConsumedAxiom
    concept_satisfiable
    concept_unsatisfiable
    subsumes
@@ -1058,9 +1256,21 @@ an `external_` prefix.
    rbox_to_fol
    abox_to_fol
    subsumption_to_fol
+   databox_to_fol
+   data_sort_axioms
+   check_kb_names
+   datarange_to_fol
+   OWL_THING
+   OWL_DATA
+   kb_to_fol
+   KnowledgeBaseFOL
+   SideAxiom
+   RoleBoxOmittedError
+   RoleExpressionError
    ConceptSyntaxError
    ManchesterSyntaxError
    OwlFunctionalSyntaxError
+   OwlFunctionalUnsupportedError
    owl_reasoner_available
    external_concept_satisfiable
    external_concept_unsatisfiable
@@ -1074,6 +1284,8 @@ an `external_` prefix.
    OwlReasonerError
    NonSimpleRoleError
    UnsupportedConceptError
+   UnsupportedAxiomError
+   UnsupportedDatatypeError
 ```
 
 ## Discourse representation theory
@@ -1243,6 +1455,73 @@ fragment.
    HetsOwlError
 ```
 
+### Reading a real HETS translation of an ontology
+
+HETS 0.108.0's `GET /dg` serialises OWL axiom strings through Haskell's
+`show`, which emits a DECIMAL escape for every character above 127
+(`"Verdi\226\128\153s Requiem"` for `"Verdi’s Requiem"`). That is not JSON, so
+the whole development graph is unreadable for any library with one non-ASCII
+annotation. {func}`~unicode_fol_kit.hets.repair_haskell_json` recovers it —
+losslessly, because the emitter is known and enumerable — and
+{meth}`~unicode_fol_kit.hets.HetsClient.dg` applies it ONLY after `json.loads`
+has already failed, so a body the standard library accepts is never touched.
+{meth}`~unicode_fol_kit.hets.HetsClient.dg_raw` returns the body untouched.
+
+The text `GET /theory` returns for a TPTP comorphism is not a TPTP problem
+either: HETS prefixes it with a DOL `logic TPTP.FOF` line and a CASL
+`%{ ... }%` signature block, neither of which is TPTP syntax.
+{func}`~unicode_fol_kit.hets.strip_hets_theory_header` splits the two and
+{meth}`~unicode_fol_kit.hets.HetsClient.theory_tptp` fetches it already
+stripped; `parse_tptp` refuses the unstripped text by name rather than
+learning a comment form that would make it accept a CASL theory and answer
+with an empty formula list.
+
+{func}`~unicode_fol_kit.hets.hets_symbol_table` joins HETS' mangled TPTP
+symbols (`pred_https_u_u_uopenenergyplatform_uorg_uontology_uoeo_uOEO_00000072`)
+back onto the OWL entities, IRIs and `rdfs:label`s they came from, and
+{func}`~unicode_fol_kit.hets.untranslated_axioms` names the axioms a
+translation dropped. Both are pure functions over a `/dg` dict and a TPTP
+string. {func}`~unicode_fol_kit.hets.owl_to_tptp` is the COMMAND-LINE route,
+and exists for one reason: `hets-server`'s lossy `-Y` switch, which has no
+REST equivalent. It runs the non-lossy translation first so a loss is always
+reported on the result rather than silent.
+
+```{eval-rst}
+.. currentmodule:: unicode_fol_kit.hets
+
+.. autosummary::
+   :nosignatures:
+
+   repair_haskell_json
+   HaskellJsonRepair
+   HaskellJsonRepairError
+   strip_hets_theory_header
+   HetsNoTranslationsError
+   HetsSublogicError
+   hets_symbol_table
+   HetsSymbolTable
+   HetsSymbol
+   HetsSymbolCollisionError
+   untranslated_axioms
+   UntranslatedAxiom
+   hets_prefixes
+   owl_to_tptp
+   OwlTptpResult
+   SublogicMismatch
+   HetsOwlNormalizationError
+```
+
+### Translations between logics
+
+The registry is a graph of nine one-way translations between logic labels
+(`modal`, `qml`, `msfol`, `fuzzy`, `drs`, `fol`, `alc`, `team`, `eso`). Each
+edge declares a **guarantee** (one of `GUARANTEES`, or none), the **side
+axioms** its image needs, and the **options** it accepts. A converted term is
+never a term alone: `TranslationResult` carries the axioms and the guarantee of
+the whole path, and they are separate premises of any question asked about the
+image, never part of it. {func}`~unicode_fol_kit.comorphism.weakest_guarantee`
+is what a composed path promises.
+
 ```{eval-rst}
 .. currentmodule:: unicode_fol_kit.comorphism
 
@@ -1254,6 +1533,44 @@ fragment.
    register_comorphism
    TranslationResult
    DEFAULT_REGISTRY
+   GUARANTEES
+   weakest_guarantee
+```
+
+`unicode_fol_kit.logic` is the typed surface over that graph. A
+{class}`~unicode_fol_kit.logic.Logic` is a callable value (`FOL`, `MSFOL`,
+`MODAL`, `QML`, `ALC`, `DRT`, `TEAM`, `ESO`, `FUZZY`, collected in `LOGICS`):
+`FOL(term)` wraps a bare term as a `Sentence` and `FOL(sentence)` converts one,
+with its side axioms. {class}`~unicode_fol_kit.Sentence` is exported at the top
+level.
+
+```{eval-rst}
+.. currentmodule:: unicode_fol_kit
+
+.. autosummary::
+   :toctree: _autosummary
+   :nosignatures:
+
+   Sentence
+```
+
+```{eval-rst}
+.. currentmodule:: unicode_fol_kit.logic
+
+.. autosummary::
+   :nosignatures:
+
+   Logic
+   LOGICS
+   FOL
+   MSFOL
+   MODAL
+   QML
+   ALC
+   DRT
+   TEAM
+   ESO
+   FUZZY
 ```
 
 ## Further HOL exports and deep embeddings
@@ -1308,6 +1625,31 @@ fragment.
 
 ## Optional prover backends and modal tableaux
 
+A TPTP problem for a prover is built with the checked writers below —
+{func}`~unicode_fol_kit.atp.generate_tptp_problem_with_mapping` (classical
+`fof`), {func}`~unicode_fol_kit.atp.generate_tff_problem_with_mapping` (many-sorted
+TF0) and {func}`~unicode_fol_kit.generate_tff_arith_problem` (one numeric
+sort) — never by joining `Node.to_tptp()` strings, which cannot see that two
+formulas use one TPTP word for two symbols (a single `to_tptp()` call does check the
+one formula it renders). They refuse two legal names of one
+kind that fold together (a sort counts as the guard predicate of its name,
+and TF0 refuses a sort and a predicate that share a word), rename a
+function/constant that would share a word with a predicate, rewrite a name
+TPTP cannot spell, and hand back the {class}`~unicode_fol_kit.atp.TptpNameMap`
+that {func}`~unicode_fol_kit.atp.apply_reverse_tptp` uses to translate a
+proof or a model back. A conclusion is optional: `conclusion=None` writes no
+`conjecture` line, for a satisfiability question. The `fof` and TF0 writers
+read a numeral as an uninterpreted constant, one per value (`1` and `1.0` are
+one), and `+ - * /` and `< > ≤ ≥` as uninterpreted symbols, all recorded in the
+map; only `generate_tff_arith_problem` reads them as arithmetic. All three
+refuse a free variable by name rather than choose a closure for it, and the TF0
+writer refuses (`Tf0Refusal`) a problem whose typed text would not ask the
+kit's question, such as one with an unannotated constant or a function value
+that the type inference would put into a sort, or an equation over an
+unsorted-quantified variable next to a sort. The Vampire and E backends'
+automatic mode (`tff=None`) then writes the `fof` text instead. See "Building
+a TPTP problem for a prover" in {doc}`guide/classical-reasoning`.
+
 ```{eval-rst}
 .. currentmodule:: unicode_fol_kit.atp
 
@@ -1315,6 +1657,11 @@ fragment.
    :toctree: _autosummary
    :nosignatures:
 
+   generate_tptp_problem
+   generate_tptp_problem_with_mapping
+   generate_tff_problem_with_mapping
+   TptpNameMap
+   apply_reverse_tptp
    EProverBackend
    eprover_available
    check_entailment_eprover_detailed
@@ -1409,10 +1756,12 @@ its submodules.
    chem
    fol.prolog_input
    fol.dialect_repair
+   fol.modal_translation
    eval.chem_batch
    eval.datasets
    hets
    comorphism
+   logic
    drt
    ace
    ilp

@@ -155,13 +155,45 @@ def test_tptp_single_quoted_atoms():
 # Prover9
 # ---------------------------------------------------------------------------
 
+def _re_binds_a_name(node, enclosing=frozenset()):
+    """Whether a binder of the formula sits inside the scope of a binder of the same name."""
+    if isinstance(node, Quantifier):
+        if node.variable.name in enclosing:
+            return True
+        enclosing = enclosing | {node.variable.name}
+    return any(_re_binds_a_name(child, enclosing) for child in node._child_nodes())
+
+
+def _bound_names_by_depth(node, scope=()):
+    """``node`` with every bound variable named by the depth of its binder: two formulas that differ only in
+    the names of their bound variables have one such form."""
+    if isinstance(node, Quantifier):
+        name = f"#{len(scope)}"
+        return Quantifier(node.type, Variable(name),
+                          _bound_names_by_depth(node.formula, scope + ((node.variable.name, name),)))
+    if isinstance(node, Variable):
+        for original, bound in reversed(scope):
+            if original == node.name:
+                return Variable(bound)
+        return node
+    return node.map_children(lambda child: _bound_names_by_depth(child, scope))
+
+
+def _same_formula(read, original):
+    """Equal, or equal up to the names of the bound variables when the formula re-binds a name: the text of
+    such a formula is written under a fresh variable for the inner binder, so that Prover9 renames nothing."""
+    if _re_binds_a_name(original):
+        return _bound_names_by_depth(read) == _bound_names_by_depth(original)
+    return read == original
+
+
 def test_prover9_round_trip_random():
     rng = random.Random(424242)
     # to_prover9 desugars Xor, so exclude it from the structural round-trip.
     conn = ["not", "and", "or", "imp", "iff"]
     for _ in range(1500):
         f = _rand_formula(rng, rng.randint(1, 4), [], connectives=conn)
-        assert parse_prover9(f.to_prover9()) == f, f.to_unicode_str()
+        assert _same_formula(parse_prover9(f.to_prover9()), f), f.to_unicode_str()
 
 
 def test_prover9_curated():
@@ -231,10 +263,11 @@ def test_prover9_problem_round_trip_random():
     from unicode_fol_kit import parse_prover9_problem
     for _ in range(200):
         f = _rand_formula(rng, rng.randint(1, 3), [], connectives=conn)
-        text = f"formulas(sos).\n  {f.to_prover9()}.\nend_of_list.\n"
+        # to_prover9 writes for set(prolog_style_variables), as every file of the writer says so
+        text = f"set(prolog_style_variables).\nformulas(sos).\n  {f.to_prover9()}.\nend_of_list.\n"
         recs = parse_prover9_problem(text)
         assert len(recs) == 1 and recs[0].role == "sos"
-        assert recs[0].formula == f, f.to_unicode_str()
+        assert _same_formula(recs[0].formula, f), f.to_unicode_str()
 
 
 @pytest.mark.parametrize("bad", [

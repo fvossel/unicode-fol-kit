@@ -16,7 +16,11 @@ Four things are checked, none of them by trusting a flag the search itself set:
 1. **Root** — ``proof.root_formulas`` must be EXACTLY ``premises`` followed by
    ``¬conclusion``, structurally, in that order. This is the boundary that
    catches a proof that is internally flawless but answers a different
-   question (e.g. the conclusion left un-negated).
+   question (e.g. the conclusion left un-negated). For MANY-SORTED input the
+   expected root is the one :func:`_expected_roots` derives: the guard image of
+   each of those formulas followed by the background facts of
+   :func:`~unicode_fol_kit.fol.nodes.sort_axioms` — computed here from the
+   premises and the conclusion, never read off the proof.
 2. **Every step is a genuine rule instance, RE-DERIVED from scratch** —
    first, the step's ``principal_formula`` must GENUINELY BE ON THE BRANCH it
    extends (a root formula, or produced by an ancestor step — for a β split,
@@ -32,8 +36,9 @@ Four things are checked, none of them by trusting a flag the search itself set:
    be exactly its two alternatives, in either order; γ's ``produced``/``terms``
    must be the matrix substituted by each declared term — the substitution is
    RECOMPUTED here, not trusted; δ's ``produced`` must be the matrix
-   substituted by the declared ``fresh_constant``, AND that constant must not
-   occur anywhere earlier on the same branch (nor in the root formulas) —
+   substituted by the declared ``fresh_constant``, AND no node earlier on the
+   same branch (nor of the root formulas) may carry that constant's NAME, as a
+   constant or as any other kind of symbol —
    re-checked independently, since a reused "fresh" constant is the classical
    soundness hole in this rule: it lets a witness for one existential silently
    stand for an already-constrained individual, licensing an unsound proof.
@@ -58,10 +63,16 @@ be invisible to both. Substitution reuses
 :func:`unicode_fol_kit.fol.nodes.substitute` — the generic, capture-avoiding
 MSFL-level substitution already used elsewhere in the kit for beta-reduction
 and quantifier grounding — rather than :mod:`atp.tableau`'s own ``_subst_var``:
-a DIFFERENT implementation of the same specification, which is exactly the
+a DIFFERENT traversal of the same specification, which is exactly the
 independence a checker needs (the same principle behind ``atp.twee_check``
 reusing only the generic, direction-agnostic ``apply_subst`` while
-re-implementing the direction-SENSITIVE rewrite matching itself).
+re-implementing the direction-SENSITIVE rewrite matching itself). The one thing the
+two share is the rule that names a binder renamed to avoid capture: the recorded
+instance is compared with the recomputed one formula for formula, not up to the
+spelling of bound variables, so the two have to spell a renamed binder alike. The rule
+itself is the capture-avoidance both need, and the substitution lemma
+(``tests/test_substitution_lemma.py``) is checked against a Tarski evaluator that
+shares nothing with either.
 Complementarity (``_is_complement``) and falsum recognition (``_is_falsum``)
 are likewise re-implemented locally here, not imported from
 ``atp.fitch``/``atp.tableau``.
@@ -70,11 +81,14 @@ Public API: :class:`TableauCheckError`, :func:`check_tableau_proof`,
 :func:`check_entailment_tableau_detailed`.
 """
 
+import sys
 from typing import Dict, List, Optional, Sequence, Tuple
 
+from ..fol._identifiers import symbol_names
 from ..fol.nodes import (
     Node, Atom, Not, And, Or, Xor, Implies, Iff, Quantifier, Variable, Constant,
     Contrast, Count, substitute,
+    SortedQuantifier, SortedConstant, SortedCount, SortedCardinality, to_fol, sort_axioms,
 )
 from .tableau import TableauProof, TableauStep, TableauClosure, prove_tableau_detailed
 
@@ -93,8 +107,17 @@ class TableauCheckError(ValueError):
 # ---------------------------------------------------------------------------
 
 def _is_falsum(f: Node) -> bool:
-    """True iff ``f`` is the reserved nullary falsum atom ``⊥``."""
-    return isinstance(f, Atom) and f.predicate == "⊥" and not f.args
+    """True iff ``f`` closes a branch on its own: the nullary falsum atom ``⊥`` or
+    ``$false``, or the negation of the nullary truth atom ``$true`` or ``⊤``
+    (re-derived here from the names, like the rest of this vocabulary).
+
+    The converse literals — ``$true`` / ``⊤`` and ``¬$false`` / ``¬⊥`` — close
+    nothing: they hold in every interpretation, so a closure that cites one of them
+    with no complement is rejected."""
+    if isinstance(f, Not):
+        inner = f.formula
+        return isinstance(inner, Atom) and inner.predicate in ("$true", "⊤") and not inner.args
+    return isinstance(f, Atom) and not f.args and f.predicate in ("⊥", "$false")
 
 
 def _is_complement(a: Node, b: Node) -> bool:
@@ -181,9 +204,11 @@ def _expected_shape(f: Node):
 def _expected_instance(var: Variable, body: Node, neg: bool, term: Node) -> Node:
     """Independently recompute ``body[var := term]`` (negated when ``neg``).
 
-    Uses :func:`unicode_fol_kit.fol.nodes.substitute` — capture-avoiding, but a
-    DIFFERENT implementation from :mod:`atp.tableau`'s own ``_subst_var`` (see
-    module docstring, independence requirement 2).
+    Uses :func:`unicode_fol_kit.fol.nodes.substitute` — capture-avoiding, and a
+    DIFFERENT traversal from :mod:`atp.tableau`'s own ``_subst_var`` (see module
+    docstring, independence requirement 2), with which it shares only the name of a
+    renamed binder, so that an instance at a term whose free variable a binder of the
+    matrix would capture (``∀x1 P(x1)`` at ``x0 := x1``) is spelled the same way by both.
     """
     inst = substitute(body, var, term)
     return Not(inst) if neg else inst
@@ -192,6 +217,22 @@ def _expected_instance(var: Variable, body: Node, neg: bool, term: Node) -> Node
 def _same_formula_list(a: Sequence[Node], b: Sequence[Node]) -> bool:
     """True iff the two SEQUENCES are pairwise equal, position by position."""
     return len(a) == len(b) and all(x == y for x, y in zip(a, b))
+
+
+def _expected_roots(premises, conclusion: Node) -> Tuple[Node, ...]:
+    """The root formulas a proof of ``premises ⊨ conclusion`` must start from.
+
+    The premises followed by ``¬conclusion``. When any of them contains a many-sorted
+    node, the guard image (:func:`~unicode_fol_kit.fol.nodes.to_fol`) of each, followed
+    by :func:`~unicode_fol_kit.fol.nodes.sort_axioms` of all of them: every sort is
+    non-empty and a sorted constant lies in its sort. The axioms are roots of their own,
+    never part of the negated conclusion.
+    """
+    formulas = tuple(premises) + (Not(conclusion),)
+    sorted_nodes = (SortedQuantifier, SortedConstant, SortedCount, SortedCardinality)
+    if not any(isinstance(n, sorted_nodes) for f in formulas for n in f.walk()):
+        return formulas
+    return tuple(to_fol(f) for f in formulas) + tuple(sort_axioms(*formulas))
 
 
 # ---------------------------------------------------------------------------
@@ -219,9 +260,17 @@ def _formulas_up_to(node_id: int, steps_by_id: Dict[int, TableauStep],
     return formulas
 
 
-def _occurs_anywhere(term: Node, formulas: Sequence[Node]) -> bool:
-    """True iff ``term`` occurs as a subterm (structurally) anywhere in ``formulas``."""
-    return any(node == term for f in formulas for node in f.walk())
+def _occurs_anywhere(term: Constant, formulas: Sequence[Node]) -> bool:
+    """True iff the name of the constant ``term`` is carried by any node of ``formulas``.
+
+    A witness is fresh only when nothing else of the branch has its spelling. That is
+    more than "the constant itself does not occur": a function symbol, a predicate, a
+    sort or a variable of the same name is a symbol the witness would be confused with
+    in any target that keeps one namespace, and a zero-argument function is the
+    constant of its name in every writer of the kit. So every name any node holds is
+    compared, whatever the node.
+    """
+    return term.name in symbol_names(*formulas)
 
 
 # ---------------------------------------------------------------------------
@@ -299,15 +348,31 @@ def check_tableau_proof(proof: TableauProof, premises, conclusion: Node) -> None
     Raises :class:`TableauCheckError` naming the first problem found (see the
     module docstring for the four things checked). Returns ``None`` (no
     exception) iff every check passes.
+
+    A proof of a formula nested deeper than the checker's recursive substitution can
+    follow within the interpreter's recursion limit is not certified: the call raises
+    :class:`TableauCheckError` that says so, never :class:`RecursionError`.
     """
+    try:
+        _check_tableau_proof(proof, premises, conclusion)
+    except RecursionError:
+        raise TableauCheckError(
+            "the proof could not be checked: a formula of it is nested deeper than the "
+            "checker's recursive helpers can walk within the interpreter's recursion "
+            f"limit ({sys.getrecursionlimit()}), so it is not certified") from None
+
+
+def _check_tableau_proof(proof: TableauProof, premises, conclusion: Node) -> None:
+    """The checks of :func:`check_tableau_proof`, without its guard against a deep formula."""
     if not isinstance(proof, TableauProof):
         raise TableauCheckError(f"expected a TableauProof, got {type(proof).__name__}")
 
-    expected_root = tuple(premises) + (Not(conclusion),)
+    expected_root = _expected_roots(premises, conclusion)
     if not _same_formula_list(proof.root_formulas, expected_root):
         raise TableauCheckError(
             "root formulas are not exactly premises followed by the negated "
-            "conclusion (structurally) — got "
+            "conclusion (structurally; for many-sorted input their guard images "
+            "followed by the sort axioms) — got "
             f"{[f.to_unicode_str() for f in proof.root_formulas]}, expected "
             f"{[f.to_unicode_str() for f in expected_root]}")
 
@@ -427,7 +492,7 @@ def check_tableau_proof(proof: TableauProof, premises, conclusion: Node) -> None
             if not _is_falsum(closure.literal):
                 raise TableauCheckError(
                     f"closure at node {closure.leaf_id} has no complement but its "
-                    "literal is not ⊥")
+                    "literal is not ⊥, $false or ¬$true")
         else:
             if closure.complement_step_id is None:
                 raise TableauCheckError(
@@ -451,10 +516,11 @@ def check_tableau_proof(proof: TableauProof, premises, conclusion: Node) -> None
 
 
 def check_entailment_tableau_detailed(premises, conclusion: Node, max_steps: int = 20000,
-                                      max_terms: int = 8) -> dict:
+                                      max_terms: int = 8, timeout: Optional[int] = None) -> dict:
     """Search AND independently check a tableau proof of ``premises ⊨ conclusion``.
 
-    Runs :func:`unicode_fol_kit.atp.tableau.prove_tableau_detailed`, then — iff
+    Runs :func:`unicode_fol_kit.atp.tableau.prove_tableau_detailed` (``timeout`` is its
+    wall-clock bound in milliseconds, default none), then — iff
     it found a closed tableau — :func:`check_tableau_proof`. Returns a dict:
 
     * ``proved``: True iff a closed tableau was found within the budget (the
@@ -466,7 +532,8 @@ def check_entailment_tableau_detailed(premises, conclusion: Node, max_steps: int
     * ``check_error``: the :class:`TableauCheckError` message when
       ``check_passed`` is False, else ``None``.
     """
-    proof = prove_tableau_detailed(premises, conclusion, max_steps=max_steps, max_terms=max_terms)
+    proof = prove_tableau_detailed(premises, conclusion, max_steps=max_steps, max_terms=max_terms,
+                                   timeout=timeout)
     if proof is None:
         return {"proved": False, "proof": None, "check_passed": None, "check_error": None}
     try:

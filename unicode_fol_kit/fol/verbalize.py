@@ -7,6 +7,11 @@ rather than fluent, and — unlike ``to_unicode_str``/``parse`` — it is **not*
 round-trip: the English phrasing of nested connectives can be ambiguous. Use it to
 explain a formula, not to re-parse one.
 
+The two truth constants (the nullary atoms ``$true`` / ``⊤`` and ``$false`` / ``⊥``) are
+not propositional letters and are not printed as one: ``⊤`` is read "truth" and ``⊥``
+"falsity", so ``P → ⊥`` is "if P, then falsity" and ``¬⊥`` is "it is not the case that
+falsity". A nullary atom of any other name is read as its name.
+
 Public API: :func:`to_english`.
 """
 
@@ -29,6 +34,7 @@ from ..fol.nodes import (
 )
 from ._so_nodes import SecondOrderQuantifier
 from ._modal_nodes import Announce, AnnounceDiamond
+from ._truth_constants import truth_value
 
 
 # Counting-quantifier op codes → English determiner phrases.
@@ -71,7 +77,11 @@ def _atom(node: Atom, negated: bool = False) -> str:
         phrase = _COPULA[pred][1 if negated else 0]
         return f"{_term(args[0])} {phrase} {_term(args[1])}"
     if len(args) == 0:
-        body = pred
+        constant = truth_value(node)
+        if constant is None:
+            body = pred
+        else:
+            body = "truth" if constant else "falsity"       # the truth constants, not letters
         return f"it is not the case that {body}" if negated else body
     if len(args) == 1:
         # "x is human" / "x is not human"

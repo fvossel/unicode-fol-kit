@@ -46,7 +46,9 @@ from ..fol.nodes import (
     Variable,
     SortedQuantifier, SecondOrderQuantifier, SlashedExists,
 )
-from ..fol._msfl_nodes import _rename, _fresh_name
+from ..fol._identifiers import fresh_variables, variable_names
+from ..fol._msfl_nodes import _rename, _fresh_name, _names_in
+from ..fol._truth_constants import is_true_constant, is_false_constant
 from .fitch import _subst_var, _free_vars, _is_term, _q_kind, _VAR_BINDERS
 from ._html import esc_html, html_page
 
@@ -290,13 +292,24 @@ RuleFn = Callable[[Sequent, List[Sequent], tuple], Optional[str]]
 
 
 def _r_axiom(concl, prems, extra):
-    """Ax: ``Γ, A ⊢ A, Δ`` — some formula occurs on both sides."""
+    """Ax: ``Γ, A ⊢ A, Δ`` — some formula occurs on both sides.
+
+    Also the two axioms of the truth constants: ``Γ ⊢ Δ, $true`` (the constant
+    ``$true`` on the right) and ``Γ, $false ⊢ Δ`` (the constant ``$false`` on the
+    left). Nothing else is licensed: ``$true`` on the LEFT and ``$false`` on the RIGHT
+    say nothing, so a sequent that has only those is no axiom.
+    """
     if prems:
         return "Ax takes no premises"
     shared = set(concl.antecedent) & set(concl.succedent)
-    if not shared:
-        return "Ax: no formula occurs on both sides of the sequent"
-    return None
+    if shared:
+        return None
+    if any(is_true_constant(f) for f in concl.succedent):
+        return None
+    if any(is_false_constant(f) for f in concl.antecedent):
+        return None
+    return ("Ax: no formula occurs on both sides of the sequent, and neither $true "
+            "on the right nor $false on the left")
 
 
 def _r_weaken_l(concl, prems, extra):
@@ -644,7 +657,14 @@ def _all_pred_names(node: Node) -> set:
 
 
 def _fresh_pred_name(base: str, avoid: set) -> str:
-    """Return the first ``base_N`` (N = 0, 1, …) not in ``avoid``."""
+    """Return the first ``base_N`` (N = 0, 1, …) not in ``avoid``.
+
+    Legal as it stands, unlike an object variable's ``y_0``: a second-order variable
+    is a PREDICATE, and PREDICATE takes underscores and digits after its uppercase
+    first letter, so ``W`` becomes ``W_0`` and the text still parses (checked in
+    ``tests/test_alpha_renaming_names.py``). ``avoid`` is every predicate name in
+    the scope, bound ones included.
+    """
     i = 0
     while True:
         candidate = f"{base}_{i}"
@@ -687,15 +707,18 @@ def _subst_simultaneous(psi: Node, params: Tuple[Variable, ...], args) -> Node:
     """
     if not params:
         return psi
-    avoid = _free_vars(psi)
-    for arg in args:
-        avoid = avoid | _free_vars(arg)
-    avoid = avoid | set(params)
+    # A temporary is an ordinary variable (it goes through _subst_var, which treats it
+    # as a free variable of the replacement), so it takes a name the parser reads back
+    # -- letter ``c`` and digits -- and it avoids EVERY name in play, bound ones too:
+    # a temporary called like a binder of psi would make _subst_var rename that
+    # binder, and the result would come back with bound variables nobody asked to
+    # rename.
+    taken = set(variable_names(psi, *args)) | {p.name for p in params}
     result = psi
     temps: List[Variable] = []
     for p in params:
-        tmp = Variable(_fresh_name("_c", avoid))
-        avoid = avoid | {tmp}
+        tmp = Variable(fresh_variables(1, letter="c", avoid=taken)[0])
+        taken.add(tmp.name)
         result = _subst_var(result, p, tmp)
         temps.append(tmp)
     for tmp, arg in zip(temps, args):
@@ -735,7 +758,11 @@ def _subst_pred_inner(node, x_name, params, psi, psi_fv, psi_pred_fv):
             # An object binder of A would capture a free object variable of ψ. The
             # target here is a PREDICATE, so a slash set is never itself substituted —
             # but its names must still be avoided when minting the fresh binder.
-            avoid = psi_fv | _free_vars(body) | {y}
+            # The fresh name must also differ from every BOUND name inside the scope
+            # (``_names_in``, not ``_free_vars``): _rename moves y's occurrences
+            # onto it, and an inner binder that already uses the name would capture
+            # them.
+            avoid = psi_fv | _names_in(body) | {y}
             if isinstance(node, SlashedExists):
                 avoid = avoid | {Variable(n) for n in node.slashed}
             fresh = Variable(_fresh_name(y.name, avoid))

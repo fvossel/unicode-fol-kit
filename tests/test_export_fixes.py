@@ -55,11 +55,35 @@ class TestTptpComparisons:
 
 
 class TestProver9NullaryAtom:
-    def test_nullary_atom_is_bare(self):
-        assert Atom("Rain", []).to_prover9() == "Rain"
+    # These pin what the single NODE renderer writes. Node.to_prover9() has no view
+    # of the other formulas and no name map, so it cannot rename; the PROBLEM writer
+    # can, and does (see test_the_problem_writer_does_not_write_it_bare). Under
+    # set(prolog_style_variables) Prover9 reads a bare upper-case atom as a VARIABLE
+    # and refuses the file (measured on Prover9 2026-8A: "cannot be used as atomic
+    # formulas, because they are variables"), so the bare `Rain` this class used to
+    # expect was text Prover9 rejects. A double-quoted symbol is never a variable in
+    # Prover9, and the renderer writes the proposition that way.
+    def test_nullary_atom_is_quoted(self):
+        assert Atom("Rain", []).to_prover9() == '"Rain"'
 
     def test_nullary_atom_in_conjunction(self):
-        assert FOL.parse("Rain ∧ Wind").to_prover9() == "(Rain & Wind)"
+        assert FOL.parse("Rain ∧ Wind").to_prover9() == '("Rain" & "Wind")'
+
+    def test_lower_case_nullary_atom_is_bare(self):
+        assert Atom("rain", []).to_prover9() == "rain"
+
+    def test_an_atom_with_arguments_keeps_its_upper_case_name(self):
+        # Only an arity-0 term is read as a variable; Rain(a) is a predicate applied.
+        assert Atom("Rain", [Constant("a")]).to_prover9() == "Rain(a)"
+
+    def test_the_problem_writer_does_not_write_it_bare(self):
+        # Under set(prolog_style_variables) an upper-case arity-0 symbol is read as
+        # a VARIABLE (LADR set_vars_recurse, applied to a bare atom too), so the file
+        # the kit hands Prover9 spells the proposition lower-case-initial.
+        from unicode_fol_kit.atp.prover9_entailment import generate_prover9_input_with_mapping
+        text, _ = generate_prover9_input_with_mapping([Atom("Rain", [])], Atom("Wind", []))
+        assert "  rain." in text and "  wind." in text
+        assert "  Rain." not in text and "  Wind." not in text
 
 
 class TestProver9Variables:
@@ -151,11 +175,14 @@ class TestTptpNameFolding:
     def test_first_letter_fold_alone_still_collides_on_case_of_first_letter(self):
         """'Foo' and 'foo' differ ONLY in the case of their first letter, so
         folding just that one character still maps both to 'foo' — this
-        residual collision is exactly what the collision guard in
-        atp._tptp_problem.generate_tptp_problem (and atp.tptp_ncl.to_tptp_ncl)
-        exists to catch across a WHOLE problem's formulas; a single node's
-        to_tptp() has no way to detect it in isolation. See
-        tests/test_tptp_problem.py for the guard itself.
+        residual collision is exactly what the collision guard exists to
+        catch: inside ONE formula, the outermost to_tptp() call refuses it
+        (tests/test_tptp_single_formula_guard.py), and across a WHOLE
+        problem's formulas atp._tptp_problem.generate_tptp_problem (and
+        atp.tptp_ncl.to_tptp_ncl) do (tests/test_tptp_problem.py). Here the
+        two predicates are rendered in two SEPARATE calls, so each call sees
+        one name and there is nothing to refuse: the fold alone maps both to
+        'foo'.
         """
         assert (Atom("Foo", [Variable("a")]).to_tptp()
                 == Atom("foo", [Variable("a")]).to_tptp()

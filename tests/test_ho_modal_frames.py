@@ -41,7 +41,9 @@ from unicode_fol_kit.fol.nodes import (
     Nominal, At, Constant,
 )
 from unicode_fol_kit.hol.ho_modal import HoGoal, isabelle_ho_modal_theory, to_thf_ho_modal
-from unicode_fol_kit.hol.isabelle_runner import check_theory, isabelle_available
+from unicode_fol_kit.hol.isabelle_runner import (
+    check_theory, isabelle_available, isabelle_decide_modal,
+)
 from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
 
 TOM = MSFLParser(third_order=True, modal=True)
@@ -410,3 +412,223 @@ def test_two_agent_indexed_systems_at_once_type_check_live():
         systems={"epistemic": "S5", "doxastic": "KD45"})
     r = check_theory(thy, "TwoSystems", session_timeout=240)
     assert r.ok, f"two-system theory did not even type-check:\n{r.output[-2000:]}"
+
+
+# --------------------------------------------------------------------------- #
+# Identity: rigid HOL equality, decided the same way by the modal routes that read it.
+#
+# `=` between individuals is HOL's own identity over the individual type `i`, with no
+# world argument, so it cannot vary with the world - the reading of
+# `fol.qml.qml_is_valid`, `hol.thf_modal` and `hol.isabelle_modal`. This route used to
+# declare an uninterpreted world-relativised `feq` instead and so called `a = a`
+# INVALID. Every verdict below is derived by hand from this semantics, never read off
+# the code:
+#
+#   a model is a frame <W, R>, a non-empty set `i` of individuals (the same at every
+#   world: constant domain, unless the row says `varying`), constants a, b, c denoting
+#   elements of `i`, and an arbitrary world-indexed extension for every predicate;
+#   `a = b` is true at a world iff a and b are the same element - at EVERY world alike.
+#
+# A countermodel is named in each INVALID row; each VALID row says why none exists.
+# Three independent checks then run against the table: Z3 on the first-order shallow
+# embedding (`qml_is_valid`), the third-order finite-model evaluator for the rows with a
+# property argument, and - live - a real Isabelle kernel on this route's own theories.
+# --------------------------------------------------------------------------- #
+
+_MP = MSFLParser(modal=True)
+
+# (label, text, frame, mode, valid, why).  In the `why` column a, b, c stand for the named
+# constants alice, bob, carol of the formula (constants, not free variables: whether a
+# constant lies in the quantifiers' range is exactly what the `varying` rows are about).
+_IDENTITY_TABLE = [
+    ("refl", "alice = alice", "K", "constant", True,
+     "reflexivity of identity: the atom names no world, so it is true at every one"),
+    ("distinct", "alice = bob", "K", "constant", False,
+     "countermodel: one world, i = {e1, e2}, a = e1, b = e2 - identity is false"),
+    ("necessity", "alice = bob → □(alice = bob)", "K", "constant", True,
+     "necessity of identity: if a = b then the atom is true at every world, so at every "
+     "successor - no frame condition needed"),
+    ("necessity-neq", "alice ≠ bob → □(alice ≠ bob)", "K", "constant", True,
+     "necessity of distinctness: ¬(a = b) is world-independent for the same reason"),
+    ("possibly", "◇(alice = bob) → alice = bob", "K", "constant", True,
+     "a successor satisfies a = b; identity is world-independent, so it holds here too"),
+    ("box-dead-end", "□(alice = bob) → alice = bob", "K", "constant", False,
+     "countermodel: one world with NO successor (R empty): □(a = b) is vacuously true "
+     "while a = e1 and b = e2 are different"),
+    ("box-reflexive", "□(alice = bob) → alice = bob", "T", "constant", True,
+     "reflexive frame: w is its own successor, so □(a = b) gives a = b at w"),
+    ("necessity-reflexive", "alice = bob → □(alice = bob)", "T", "constant", True,
+     "extra frame axioms cannot remove a theorem of K, and unlike the row above this one "
+     "does not lean on reflexivity: an uninterpreted relation would not satisfy it"),
+    ("box-serial", "□(alice = bob) → alice = bob", "KD", "constant", True,
+     "serial frame: some successor v exists, a = b holds there, and identity is rigid"),
+    ("leibniz", "alice = bob → (G(alice) → G(bob))", "K", "constant", True,
+     "Leibniz's law for a predicate: substitution of equals - a and b are one element"),
+    ("leibniz-box", "alice = bob → □(G(alice) → G(bob))", "K", "constant", True,
+     "the same under □: a and b are one element at every world"),
+    ("quantified", "∀x ∀y (x = y → □(x = y))", "K", "constant", True,
+     "necessity of identity for quantified variables"),
+    ("exists-constant", "∃x (x = carol)", "K", "constant", True,
+     "constant domain: c itself is the witness"),
+    ("exists-varying", "∃x (x = carol)", "K", "varying", False,
+     "countermodel: one world, i = {e1, e2}, D(w) = {e1}, c = e2 - c exists nowhere"),
+    ("refl-varying", "alice = alice", "K", "varying", True,
+     "identity is not existence-guarded: a = a holds even where a does not exist"),
+    # third order: a predicate whose argument is a property DEFINED by identity
+    ("congruence-third", "alice = bob → (Pos(λx. x = alice) → Pos(λx. x = bob))", "K", "constant", True,
+     "if a = b the two λ-terms denote the SAME property, and Pos - an uninterpreted "
+     "predicate of properties - gives equal results on equal arguments"),
+    ("distinct-third", "Pos(λx. x = alice) → Pos(λx. x = bob)", "K", "constant", False,
+     "countermodel: one world, i = {e1, e2}, a = e1, b = e2, Pos true of exactly the "
+     "property {e1}: Pos('is a') holds and Pos('is b') does not"),
+    ("leibniz-quantified", "alice = bob → ∀P (P(alice) ↔ P(bob))", "K", "constant", True,
+     "Leibniz's law quantified over every property: a and b are one element"),
+    ("indiscernibles", "∀P (P(alice) → P(bob)) → alice = bob", "K", "constant", True,
+     "the converse. ∀P ranges over EVERY function i ⇒ world ⇒ bool, so P := 'is a' "
+     "(true of a at every world, by a = a) is among them; then P(b) says b = a"),
+]
+
+
+def _has_property_argument(text):
+    return "Pos" in text or "∀P" in text
+
+
+@pytest.mark.parametrize("label,text,frame,mode,valid,why", [
+    pytest.param(*row, id=row[0]) for row in _IDENTITY_TABLE
+    if not _has_property_argument(row[1])])
+def test_identity_table_agrees_with_the_first_order_oracle(label, text, frame, mode,
+                                                           valid, why):
+    """Z3 on the first-order shallow embedding gives the hand-derived verdict, with a
+    DEFINITE answer both ways: a valid row is unsat on its negation, and an invalid row
+    is sat - a Z3 'unknown' would satisfy neither, so it cannot pass as 'not valid'."""
+    from unicode_fol_kit.atp.z3_models import is_satisfiable, is_valid
+    from unicode_fol_kit.fol.nodes import Not
+    from unicode_fol_kit.fol.qml import qml_validity_formula
+    query = qml_validity_formula(_MP.parse(text), mode=mode, frame=frame)
+    if valid:
+        assert is_valid(query), why
+    else:
+        assert not is_valid(query), why
+        assert is_satisfiable(Not(query)), f"Z3 found no countermodel and no proof: {why}"
+
+
+def _refuted_by_a_small_structure(text, max_size=2):
+    """True iff some classical structure with at most ``max_size`` individuals refutes
+    ``text`` (a modal-free third-order formula over the constants ``alice``, ``bob``,
+    which may denote any elements; the unary predicate ``G`` and the predicate of
+    properties ``Pos`` range over EVERYTHING).
+
+    A modal-free formula holds at every world of every model iff it holds in every
+    classical structure (a model with one world IS a structure, and the truth of such a
+    formula at a world depends on that world's extensions alone), so this is the
+    third-order evaluator's independent verdict for the rows without □/◇. Identity is
+    Python's own ``==`` on the domain elements there.
+    """
+    from itertools import combinations, product
+    from unicode_fol_kit.semantics import Structure
+    from unicode_fol_kit.semantics.thirdorder import satisfies_to
+    formula = TOM.parse(text)
+    for n in range(1, max_size + 1):
+        domain = tuple(range(n))
+        properties = [frozenset((d,) for d in subset)
+                      for r in range(n + 1) for subset in combinations(domain, r)]
+        for pos_choice in product((False, True), repeat=len(properties)):
+            pos = {(prop,) for prop, chosen in zip(properties, pos_choice) if chosen}
+            for g in properties:
+                for alice, bob in product(domain, repeat=2):
+                    structure = Structure(
+                        domain, constants={"alice": alice, "bob": bob},
+                        predicates={("Pos", 1): pos, ("G", 1): set(g)})
+                    if not satisfies_to(formula, structure):
+                        return True
+    return False
+
+
+@pytest.mark.parametrize("label,text,frame,mode,valid,why", [
+    pytest.param(*row, id=row[0]) for row in _IDENTITY_TABLE
+    if _has_property_argument(row[1])])
+def test_property_rows_agree_with_the_third_order_finite_model_evaluator(
+        label, text, frame, mode, valid, why):
+    """The rows qml cannot read (a property argument) against `semantics.thirdorder`,
+    which interprets `=` as real identity on a finite domain. A refutation is a
+    definite countermodel; the absence of one below three individuals is consistent
+    with validity (not a proof of it - the live Isabelle test supplies that)."""
+    assert (not _refuted_by_a_small_structure(text)) is valid, why
+
+
+# --- live: this route's own theories, run by a real Isabelle ---------------- #
+
+_IDENTITY_TACTIC = {
+    "T": "using R_refl by blast",
+    "KD": "using R_serial by blast",
+}
+# The one row automation cannot close unaided: it must INSTANTIATE the property
+# quantifier at 'is a' (blast / auto / metis all time out). The proof says exactly that.
+_INSTANTIATE_AT_IS_A = r"""proof (intro allI impI)
+    fix v
+    assume H: "\<forall>P::i \<Rightarrow> sigma. P alice v \<longrightarrow> P bob v"
+    have "(\<lambda>(x::i) (_::world). x = alice) alice v \<longrightarrow> (\<lambda>(x::i) (_::world). x = alice) bob v"
+      using H by (rule spec)
+    thus "alice = bob" by simp
+  qed"""
+_IDENTITY_PROOF = {"indiscernibles": _INSTANTIATE_AT_IS_A}
+_PROVE = "by (blast | auto | metis)"
+_REFUTE = "nitpick [user_axioms, expect = genuine]\n  oops"
+
+
+def _identity_groups():
+    groups = {}
+    for label, text, frame, mode, valid, why in _IDENTITY_TABLE:
+        groups.setdefault((frame, mode), []).append((label, text, valid))
+    return groups
+
+
+@_isa_live
+@_isa
+@pytest.mark.parametrize("frame,mode", sorted(_identity_groups()),
+                         ids=lambda v: str(v))
+def test_identity_table_is_decided_by_isabelle_as_derived(frame, mode):
+    """Every row of this (frame, mode) group in ONE theory: a VALID row is closed by a
+    proof, an INVALID row by ``nitpick [expect = genuine]`` - which FAILS the whole build
+    if nitpick finds no genuine countermodel. So the build succeeds iff every row came
+    out exactly as derived above."""
+    rows = _identity_groups()[(frame, mode)]
+    default = _IDENTITY_TACTIC.get(frame, _PROVE)
+    goals = [HoGoal("row_" + label.replace("-", "_"), TOM.parse(text),
+                    proof=_IDENTITY_PROOF.get(label, default) if valid else _REFUTE)
+             for label, text, valid in rows]
+    name = f"Identity_{frame}_{mode}"
+    theory = isabelle_ho_modal_theory(name, (), goals, frame=frame, mode=mode)
+    result = check_theory(theory, name, session_timeout=300)
+    assert result.ok, (f"frame={frame} mode={mode}: a row did not come out as derived "
+                       f"(exit {result.exit_code}):\n{result.output[-2500:]}")
+
+
+@_isa_live
+@_isa
+def test_the_live_identity_check_can_fail_in_both_directions():
+    """Negative controls, so the test above is not vacuous: a build that claims a proof
+    of the NON-theorem ``a = b`` must fail, and so must one that claims a genuine
+    countermodel of the theorem ``a = a``."""
+    wrong_proof = isabelle_ho_modal_theory(
+        "WrongProof", (), [HoGoal("g", TOM.parse("a = b"), proof=_PROVE)])
+    assert not check_theory(wrong_proof, "WrongProof", session_timeout=240).ok
+    wrong_refutation = isabelle_ho_modal_theory(
+        "WrongRefutation", (), [HoGoal("g", TOM.parse("a = a"), proof=_REFUTE)])
+    assert not check_theory(wrong_refutation, "WrongRefutation", session_timeout=240).ok
+
+
+@_isa_live
+@_isa
+def test_isabelle_decide_modal_keeps_its_verdict_on_identity():
+    """The runner decides identity on the FIRST-order route and used to raise after it
+    already held nitpick's verdict (it asked ``satisfies_modal`` for a witness, which
+    refuses an identity atom). ``a = b`` is invalid, ``a = b → □(a = b)`` valid, and
+    neither call may raise; there is no propositional Kripke witness to exhibit for
+    identity, so ``countermodel`` stays ``None``."""
+    a_is_b = Atom("=", [Constant("a"), Constant("b")])
+    invalid = isabelle_decide_modal(a_is_b)
+    assert invalid.is_invalid, invalid
+    assert invalid.countermodel is None
+    valid = isabelle_decide_modal(Implies(a_is_b, Box(a_is_b)))
+    assert valid.is_valid, valid

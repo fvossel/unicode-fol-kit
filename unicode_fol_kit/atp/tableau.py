@@ -8,6 +8,11 @@ branch **closes** when it contains both ``φ`` and ``¬φ`` (or ``⊥``); the se
 **unsatisfiable** iff *every* branch closes. An *open* saturated branch is, by
 contrast, a model — so a failed refutation hands back a countermodel for free.
 
+The truth constants ``$true`` and ``$false`` (``⊤`` and ``⊥`` in the unicode syntax)
+are constants, not letters: a branch that holds ``$false`` or ``¬$true`` closes on
+its own, and ``$true`` and ``¬$false`` hold in every interpretation, so they are
+dropped (they neither close a branch nor appear in the model an open branch gives).
+
 This gives a fourth proof method alongside resolution, Fitch, and the sequent
 calculus: ``is_valid_tableau(φ)`` builds a tableau for ``¬φ`` (valid iff it closes),
 and ``tableau_model`` returns the open branch's literals as a satisfying assignment.
@@ -15,7 +20,20 @@ and ``tableau_model`` returns the open branch's literals as a satisfying assignm
 Propositional tableaux are decidable and complete; the first-order rules are run under
 a step bound (``γ``-instantiation is only semi-decidable), so — like the resolution
 prover — a non-closing first-order tableau within the bound is reported as "open"
-without claiming satisfiability.
+without claiming satisfiability. The bounds are the step budget (``max_steps`` rule
+applications and closure tests in all, so no branch can be longer than that), the
+per-branch term pool (``max_terms``) and an optional wall-clock ``timeout``. The search
+is a loop over an explicit stack of pending branches, so the LENGTH of a branch does not
+depend on the interpreter's recursion limit: a branch of any length up to ``max_steps`` is
+searched. The NESTING of a formula does: the helpers that walk a formula (substitution of a
+witness, the collection of its terms, hashing) recurse once per level, so a formula nested
+deeper than they can walk within the interpreter's recursion limit (hundreds of levels)
+ends the search like a bound: "no closed tableau", never a :class:`RecursionError` and never
+a claim of satisfiability (:func:`nesting_depth` measures it).
+
+Many-sorted input is searched through its guard image: ``∀x:S φ`` is ``∀x (S(x) → φ)``,
+and the facts that reading needs (no sort is empty, a sorted constant ``c:S`` lies in
+``S``) join the formulas as further members of the refuted set — see :func:`tableau_closed`.
 
 Public API: :func:`tableau_closed`, :func:`is_valid_tableau`, :func:`prove_tableau`,
 :func:`tableau_model`, and — for a recorded, independently-checkable proof object —
@@ -23,13 +41,18 @@ Public API: :func:`tableau_closed`, :func:`is_valid_tableau`, :func:`prove_table
 :mod:`unicode_fol_kit.atp.tableau_check`).
 """
 
+import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
+from ..fol._atom_keys import AtomKeys
+from ..fol._identifiers import symbol_names
 from ..fol.nodes import (
     Node, Atom, Not, And, Or, Xor, Implies, Iff, Quantifier, Variable, Constant, Number, Function,
     Contrast, Count, Cardinality,
+    SortedQuantifier, SortedConstant, SortedCount, SortedCardinality, to_fol, sort_axioms,
 )
+from ..fol._truth_constants import is_true_constant, is_false_constant
 from .fitch import FALSUM, is_falsum, _subst_var, _q_kind, _free_vars
 
 
@@ -77,6 +100,10 @@ def _reject_exotic(formulas, entry: str) -> None:
         (FUZZY_TYPES,
          "a Łukasiewicz connective; evaluate with semantics.fuzzy.evaluate or "
          "decide with atp.z3_fuzzy.fuzzy_is_valid"),
+        ((SortedCardinality,),
+         "a many-sorted set-cardinality term, which is second-order; evaluate it "
+         "with semantics.tarski.satisfies / the finite model finder, or export to "
+         "HOL via hol.secondorder"),
     )
     for f in formulas:
         for sub in f.walk():
@@ -130,19 +157,64 @@ def _is_literal(f: Node) -> bool:
     return False
 
 
-class _Ctx:
-    """Search context: a step budget, a fresh-constant source, and a term-pool cap."""
+def _closes_alone(f: Node) -> bool:
+    """True iff the literal ``f`` closes its branch with no partner: ⊥, the truth
+    constant ``$false`` (``is_falsum`` reads both), or ``¬$true``."""
+    return is_falsum(f) or (isinstance(f, Not) and is_true_constant(f.formula))
 
-    def __init__(self, max_steps: int, max_terms: int):
+
+def _holds_always(f: Node) -> bool:
+    """True iff the literal ``f`` holds in every interpretation and so adds nothing
+    to a branch: the truth constant ``$true`` or ``¬$false``. It is dropped, never
+    recorded as a literal (so it can neither close a branch nor appear in a model)."""
+    return is_true_constant(f) or (isinstance(f, Not) and is_false_constant(f.formula))
+
+
+class _Ctx:
+    """Search context: a step budget, a wall-clock deadline, a fresh-constant source
+    and a term-pool cap.
+
+    ``avoid`` holds every name the problem carries (:func:`symbol_names` of ALL the
+    formulas the search starts from): a generated constant never has one of them.
+    """
+
+    def __init__(self, max_steps: int, max_terms: int, timeout: Optional[int] = None,
+                 avoid=frozenset()):
         self.budget = [max_steps]
         self.max_terms = max_terms
         self._fresh = [0]
+        self._avoid = frozenset(avoid)
         self.open_branch: Optional[frozenset] = None
+        # ``timeout`` is in milliseconds, counted from the moment the search starts.
+        self.deadline = None if timeout is None else time.perf_counter() + timeout / 1000.0
+
+    def spend(self) -> bool:
+        """Charge one step; False once the step budget is gone or the deadline has passed.
+
+        The deadline is read at every step, so the search ends within one step's work
+        of it. After it has passed the budget is emptied, which makes every pending
+        branch return at once.
+        """
+        if self.budget[0] <= 0:
+            return False
+        if self.deadline is not None and time.perf_counter() > self.deadline:
+            self.budget[0] = 0
+            return False
+        self.budget[0] -= 1
+        return True
 
     def fresh_const(self) -> Constant:
-        name = f"_t{self._fresh[0]}"
-        self._fresh[0] += 1
-        return Constant(name)
+        """The next generated constant: ``_t0``, ``_t1``, … skipping every name of the problem.
+
+        A user constant spelled ``_t0`` is not the witness of an existential: the witness
+        of ``∃x P(x)`` is an element nothing else is known about, so it must not be
+        a symbol that another formula already talks about.
+        """
+        while True:
+            name = f"_t{self._fresh[0]}"
+            self._fresh[0] += 1
+            if name not in self._avoid:
+                return Constant(name)
 
 
 def _rule(f: Node):
@@ -216,71 +288,103 @@ def _instance(var: Variable, body: Node, neg: bool, term: Node) -> Node:
 def _close(work: Tuple[Node, ...], lits: frozenset,
            gammas: Tuple[Tuple, ...], terms: Tuple[Node, ...],
            used: frozenset, ctx: "_Ctx") -> bool:
-    """Return True iff this branch (and all its splits) close."""
-    if ctx.budget[0] <= 0:
-        return False
-    ctx.budget[0] -= 1
+    """Return True iff this branch (and all its splits) close.
 
-    if work:
-        f, rest = work[0], work[1:]
+    The search is depth-first and runs in a loop: one pass of it is one rule application
+    (or one closure test) and costs one step of ``ctx``. A branching rule puts its second
+    alternative on a stack of pending branches and goes on with the first; a branch that
+    closes takes the next pending one; the first branch that cannot close (saturated, the
+    term pool full, or the steps or the deadline used up) ends the whole search with False.
+    Nothing recurses, so how deep a branch may grow is bounded by the step budget alone,
+    never by the interpreter's recursion limit.
+    """
+    pending: List[Tuple] = []           # the alternatives still to close, the newest last
+    while True:
+        if not ctx.spend():
+            return False
 
-        if _is_literal(f):
-            if is_falsum(f) or _neg(f) in lits:
+        closed = False
+        if work:
+            f, rest = work[0], work[1:]
+
+            if _is_literal(f):
+                if _closes_alone(f) or _neg(f) in lits:
+                    closed = True
+                else:
+                    if not (_holds_always(f) or f in lits):
+                        # A new literal may introduce ground terms a universal can instantiate at.
+                        lits = lits | {f}
+                        terms = _terms_of(f, terms, ctx.max_terms)
+                    work = rest
+                    continue
+            else:
+                rule = _rule(f)
+                kind = rule[0]
+                if kind == "alpha":
+                    work = tuple(rule[1]) + rest
+                    continue
+                if kind == "beta":
+                    left, right = rule[1]
+                    pending.append((tuple(right) + rest, lits, gammas, terms, used))
+                    work = tuple(left) + rest
+                    continue
+                if kind == "delta":
+                    _, var, body, neg = rule
+                    if len(terms) >= ctx.max_terms:
+                        # Term-pool cap reached: give up on this branch (sound but incomplete).
+                        if ctx.open_branch is None:
+                            ctx.open_branch = lits
+                        return False
+                    c = ctx.fresh_const()
+                    work = (_instance(var, body, neg, c),) + rest
+                    terms = terms + (c,)
+                    continue
+                if kind == "gamma":
+                    _, var, body, neg = rule
+                    key = f
+                    gammas = gammas + ((key, var, body, neg),)
+                    pool = terms if terms else (ctx.fresh_const(),)
+                    insts = tuple(_instance(var, body, neg, t) for t in pool)
+                    used = used | {(key, t) for t in pool}
+                    terms = terms if terms else pool
+                    work = insts + rest
+                    continue
+                raise AssertionError(kind)
+        else:
+            # No compound work left: re-instantiate a universal at a term it has not used.
+            instantiated = False
+            for key, var, body, neg in gammas:
+                for t in terms:
+                    if (key, t) not in used:
+                        work = (_instance(var, body, neg, t),)
+                        used = used | {(key, t)}
+                        instantiated = True
+                        break
+                if instantiated:
+                    break
+            if instantiated:
+                continue
+            # Saturated and not closed: an OPEN branch — record it as a (counter)model.
+            if ctx.open_branch is None:
+                ctx.open_branch = lits
+            return False
+
+        # This branch closed: go on with the next alternative, if there is one.
+        if closed:
+            if not pending:
                 return True
-            if f in lits:
-                return _close(rest, lits, gammas, terms, used, ctx)
-            # A new literal may introduce ground terms a universal can instantiate at.
-            return _close(rest, lits | {f}, gammas, _terms_of(f, terms, ctx.max_terms), used, ctx)
-
-        kind = _rule(f)[0]
-        rule = _rule(f)
-        if kind == "alpha":
-            return _close(tuple(rule[1]) + rest, lits, gammas, terms, used, ctx)
-        if kind == "beta":
-            left, right = rule[1]
-            return (_close(tuple(left) + rest, lits, gammas, terms, used, ctx)
-                    and _close(tuple(right) + rest, lits, gammas, terms, used, ctx))
-        if kind == "delta":
-            _, var, body, neg = rule
-            if len(terms) >= ctx.max_terms:
-                # Term-pool cap reached: give up on this branch (sound but incomplete).
-                if ctx.open_branch is None:
-                    ctx.open_branch = lits
-                return False
-            c = ctx.fresh_const()
-            inst = _instance(var, body, neg, c)
-            return _close((inst,) + rest, lits, gammas, terms + (c,), used, ctx)
-        if kind == "gamma":
-            _, var, body, neg = rule
-            key = f
-            new_gammas = gammas + ((key, var, body, neg),)
-            pool = terms if terms else (ctx.fresh_const(),)
-            insts = tuple(_instance(var, body, neg, t) for t in pool)
-            new_used = used | {(key, t) for t in pool}
-            new_terms = terms if terms else pool
-            return _close(insts + rest, lits, new_gammas, new_terms, new_used, ctx)
-        raise AssertionError(kind)
-
-    # No compound work left: re-instantiate a universal at a term it has not used.
-    for key, var, body, neg in gammas:
-        for t in terms:
-            if (key, t) not in used:
-                inst = _instance(var, body, neg, t)
-                return _close((inst,), lits, gammas, terms,
-                              used | {(key, t)}, ctx)
-    # Saturated and not closed: an OPEN branch — record it as a (counter)model.
-    if ctx.open_branch is None:
-        ctx.open_branch = lits
-    return False
+            work, lits, gammas, terms, used = pending.pop()
 
 
 def _initial_terms(formulas, cap: int) -> Tuple[Node, ...]:
     """The γ-instantiation seed: initial ground terms plus the input's free variables.
 
-    A FREE variable of the input is treated as a constant — the standard reading
-    under which validity of a formula with free variables is validity of its
-    universal closure (``valid ∀a.φ  ⟺  unsat ¬φ[a := fresh constant]``), which is
-    also how the Z3 and resolution back-ends read free variables. Without this a
+    A FREE variable of the input is a PARAMETER of the problem: one unknown element, the
+    same in every formula (the assignment-wise consequence relation, ``Γ ⊨ φ`` iff every
+    structure AND assignment that satisfies ``Γ`` satisfies ``φ``), so it is treated as a
+    constant (``valid ∀a.φ  ⟺  unsat ¬φ[a := fresh constant]``). That is how the
+    resolution prover, the finite model finder, Z3 and cvc5 read it too: ``P(x) ⊢ P(alpha)``
+    is not valid, ``P(x) ⊢ ∃y P(y)`` is. Without this a
     γ-formula was never instantiated at a free variable and e.g.
     ``¬∃x P(x) → ¬P(a)`` (free ``a``) was silently left unproved.
     Bound occurrences never reach this seed: it runs on the top-level input only,
@@ -300,81 +404,167 @@ def _initial_terms(formulas, cap: int) -> Tuple[Node, ...]:
     return terms
 
 
-def tableau_closed(formulas, max_steps: int = 20000, max_terms: int = 8) -> bool:
+_SORTED_NODES = (SortedQuantifier, SortedConstant, SortedCount, SortedCardinality)
+
+
+def _lower_sorted(formulas) -> List[Node]:
+    """The formulas a tableau works on: ``formulas`` themselves, or their guard images.
+
+    A many-sorted formula has no tableau rule of its own. It is read as the one-universe
+    reading of the kit says (:func:`~unicode_fol_kit.fol.nodes.to_fol`): ``∀x:S φ`` is
+    ``∀x (S(x) → φ)``, ``∃x:S φ`` is ``∃x (S(x) ∧ φ)`` and ``c:S`` is the constant ``c``.
+    That image forgets two facts the reading needs: no sort is empty and a sorted
+    constant lies in its sort. They are :func:`~unicode_fol_kit.fol.nodes.sort_axioms` of
+    ALL the formulas, appended to the image as further members of the set the tableau
+    refutes. The set is unsatisfiable under the definition exactly when the tableau of
+    these roots closes; the axioms are never part of a negated conclusion, because the
+    conclusion's negation is one member of the set and they are others.
+
+    Formulas without a sorted node are returned as they are, so an unsorted problem is
+    searched exactly as it always was.
+    """
+    formulas = list(formulas)
+    if not any(isinstance(node, _SORTED_NODES) for f in formulas for node in f.walk()):
+        return formulas
+    return [to_fol(f) for f in formulas] + list(sort_axioms(*formulas))
+
+
+def nesting_depth(*formulas: Node) -> int:
+    """The deepest nesting of the nodes of ``formulas``: the most nodes on one path from a root down.
+
+    A proposition ``A`` is 1, ``¬A`` is 2, and ``P(x)`` is 2 (the atom and its argument).
+    Computed with a stack of its own, so it answers for a formula of any depth. A
+    formula nested deeper than the interpreter's recursion limit lets the tableau's
+    recursive helpers (the substitution of a term for a bound variable, the
+    collection of ground terms, the hashing of a formula) raise
+    :class:`RecursionError`; the search then ends as "no closed tableau" and this is
+    the number that names the reason.
+    """
+    deepest = 0
+    pending = [(formula, 1) for formula in formulas]
+    while pending:
+        node, depth = pending.pop()
+        if depth > deepest:
+            deepest = depth
+        pending.extend((child, depth + 1) for child in node._child_nodes())
+    return deepest
+
+
+def tableau_closed(formulas, max_steps: int = 20000, max_terms: int = 8,
+                   timeout: Optional[int] = None) -> bool:
     """Return True iff ``formulas`` are jointly unsatisfiable (every branch closes).
 
     Sound; complete and decidable for the propositional fragment. First-order
     ``γ``-instantiation is bounded by ``max_terms`` (the size of the per-branch term
     pool) and ``max_steps``, so a False on a first-order input is "no closed tableau
-    within the bounds", never a claim of satisfiability.
+    within the bounds", never a claim of satisfiability. ``max_steps`` also bounds how
+    long a branch can grow (every rule application on it is a step); the interpreter's
+    recursion limit does not, because the search does not recurse over a branch. A
+    formula nested deeper than the helpers that walk it can follow within that limit
+    (see :func:`nesting_depth`) is a bound too: the call returns False, it never raises
+    :class:`RecursionError`. ``timeout``
+    (milliseconds, default none) is one more bound, checked at every step: the search
+    returns False within one step's work of it.
+
+    Many-sorted formulas are read with the guard reading of
+    :func:`~unicode_fol_kit.fol.nodes.to_fol` and gain the background facts that reading
+    needs, as further members of the set: every sort is non-empty and a sorted constant
+    ``c:S`` lies in ``S`` (:func:`~unicode_fol_kit.fol.nodes.sort_axioms`). So
+    ``∀x:Human Mortal(x), ¬Mortal(socrates:Human)`` is unsatisfiable and
+    ``∀x:Human Mortal(x), ¬Mortal(socrates)`` is not.
 
     Modal/temporal/epistemic/deontic formulas have no classical rule; they are routed
     to the labelled modal tableau (over the system **K** by default — for other frames
     call :mod:`unicode_fol_kit.atp.modal_tableau` directly).
     """
     formulas = list(formulas)
-    _reject_exotic(formulas, "tableau_closed")
-    if _any_modal(formulas):
-        from .modal_tableau import modal_tableau_closed
-        return modal_tableau_closed(formulas)
-    ctx = _Ctx(max_steps, max_terms)
-    return _close(tuple(formulas), frozenset(), (),
-                  _initial_terms(formulas, max_terms), frozenset(), ctx)
+    try:
+        _reject_exotic(formulas, "tableau_closed")
+        if _any_modal(formulas):
+            from .modal_tableau import modal_tableau_closed
+            return modal_tableau_closed(formulas, timeout=timeout)
+        formulas = _lower_sorted(formulas)
+        ctx = _Ctx(max_steps, max_terms, timeout, symbol_names(*formulas))
+        return _close(tuple(formulas), frozenset(), (),
+                      _initial_terms(formulas, max_terms), frozenset(), ctx)
+    except RecursionError:
+        return False
 
 
-def is_valid_tableau(formula: Node, max_steps: int = 20000, max_terms: int = 8) -> bool:
+def is_valid_tableau(formula: Node, max_steps: int = 20000, max_terms: int = 8,
+                     timeout: Optional[int] = None) -> bool:
     """Return True iff ``formula`` is valid — its negation's tableau closes.
 
     A modal formula is decided over the system **K** by the labelled modal tableau;
     use :func:`unicode_fol_kit.atp.modal_tableau.is_modal_valid` for other frames.
+    ``timeout`` is as for :func:`tableau_closed`.
     """
-    _reject_exotic([formula], "is_valid_tableau")
-    if _any_modal([formula]):
-        from .modal_tableau import is_modal_valid
-        return is_modal_valid(formula)
-    return tableau_closed([Not(formula)], max_steps, max_terms)
+    try:
+        _reject_exotic([formula], "is_valid_tableau")
+        if _any_modal([formula]):
+            from .modal_tableau import is_modal_valid
+            return is_modal_valid(formula, timeout=timeout)
+    except RecursionError:
+        return False
+    return tableau_closed([Not(formula)], max_steps, max_terms, timeout)
 
 
-def prove_tableau(premises, conclusion: Node, max_steps: int = 20000, max_terms: int = 8) -> bool:
+def prove_tableau(premises, conclusion: Node, max_steps: int = 20000, max_terms: int = 8,
+                  timeout: Optional[int] = None) -> bool:
     """Return True iff ``premises`` entail ``conclusion`` (premises + ¬conclusion close).
 
     For modal inputs this is **local** consequence over the system **K** (see
     :func:`unicode_fol_kit.atp.modal_tableau.modal_prove` for other frames).
+    Many-sorted input is read as in :func:`tableau_closed`; ``timeout`` too.
     """
-    return tableau_closed(list(premises) + [Not(conclusion)], max_steps, max_terms)
+    return tableau_closed(list(premises) + [Not(conclusion)], max_steps, max_terms, timeout)
 
 
-def tableau_model(formulas, max_steps: int = 20000, max_terms: int = 8) -> Optional[dict]:
+def tableau_model(formulas, max_steps: int = 20000, max_terms: int = 8,
+                  timeout: Optional[int] = None) -> Optional[dict]:
     """Return a satisfying literal assignment if ``formulas`` are satisfiable, else None.
 
     On an open (saturated) branch the literals are returned as a dict mapping each
     atom's surface form to its truth value; ``None`` means the tableau closed
-    (unsatisfiable) within the bound.
+    (unsatisfiable) within the bound. Two different atoms that print alike (the numeral
+    ``1`` and a constant named ``1``, a free variable ``x`` and a constant named ``x``)
+    would be ONE key of that dict, so an open branch that holds both is refused by name
+    (``NotImplementedError``) instead of being reported with one of them lost.
 
     A modal model is a Kripke structure, not a flat literal assignment, so a modal
     input is rejected here with a pointer to
     :func:`unicode_fol_kit.atp.modal_tableau.modal_countermodel`, which returns a
     verified :class:`~unicode_fol_kit.semantics.kripke.KripkeModel`.
+
+    For many-sorted input the assignment is over the guard image (see
+    :func:`tableau_closed`): the sort predicates ``S(x)`` are atoms of it like any other.
+    ``timeout`` is as for :func:`tableau_closed`; a formula nested too deep to walk (see
+    there) gives ``None`` as well.
     """
     formulas = list(formulas)
-    _reject_exotic(formulas, "tableau_model")
-    if _any_modal(formulas):
-        raise NotImplementedError(
-            "tableau_model: a modal formula's model is a Kripke structure, not a flat "
-            "assignment — use unicode_fol_kit.atp.modal_tableau.modal_countermodel "
-            "(or modal_decide) instead.")
-    ctx = _Ctx(max_steps, max_terms)
-    closed = _close(tuple(formulas), frozenset(), (),
-                    _initial_terms(formulas, max_terms), frozenset(), ctx)
-    if closed or ctx.open_branch is None:
+    try:
+        _reject_exotic(formulas, "tableau_model")
+        if _any_modal(formulas):
+            raise NotImplementedError(
+                "tableau_model: a modal formula's model is a Kripke structure, not a flat "
+                "assignment — use unicode_fol_kit.atp.modal_tableau.modal_countermodel "
+                "(or modal_decide) instead.")
+        formulas = _lower_sorted(formulas)
+        ctx = _Ctx(max_steps, max_terms, timeout, symbol_names(*formulas))
+        closed = _close(tuple(formulas), frozenset(), (),
+                        _initial_terms(formulas, max_terms), frozenset(), ctx)
+        if closed or ctx.open_branch is None:
+            return None
+        assignment = {}
+        keys = AtomKeys("tableau_model")
+        for lit in ctx.open_branch:
+            if isinstance(lit, Not) and isinstance(lit.formula, Atom):
+                assignment[keys.key(lit.formula)] = False
+            elif isinstance(lit, Atom):
+                assignment[keys.key(lit)] = True
+        return assignment
+    except RecursionError:
         return None
-    assignment = {}
-    for lit in ctx.open_branch:
-        if isinstance(lit, Not) and isinstance(lit.formula, Atom):
-            assignment[lit.formula.to_unicode_str()] = False
-        elif isinstance(lit, Atom):
-            assignment[lit.to_unicode_str()] = True
-    return assignment
 
 
 # ---------------------------------------------------------------------------
@@ -567,85 +757,137 @@ def _close_recording(work: Tuple[Node, ...], lits: frozenset,
     ``True`` return means every :class:`TableauStep`/:class:`TableauClosure`
     recorded during the whole call genuinely lies on the closed proof: nothing
     here is spliced out afterwards, and nothing is recorded that a failed
-    sub-call later discards (a ``False`` anywhere propagates straight up
-    through this call's own ``and``/return, which is why :func:`prove_tableau_detailed`
-    simply discards the whole recorder when the top call returns ``False``).
+    sub-call later discards (a ``False`` anywhere ends the whole search, which is why
+    :func:`prove_tableau_detailed` simply discards the whole recorder when the top call
+    returns ``False``).
+
+    Like :func:`_close` it runs in a loop with a stack of pending branches instead of
+    recursing; a branching rule records both of its steps before the first alternative is
+    searched, as the recursive search did, so the step numbers of the proof are the same.
     """
-    if ctx.budget[0] <= 0:
-        return False
-    ctx.budget[0] -= 1
+    pending: List[Tuple] = []           # the alternatives still to close, the newest last
+    while True:
+        if not ctx.spend():
+            return False
 
-    if work:
-        f, rest = work[0], work[1:]
+        closed = False
+        if work:
+            f, rest = work[0], work[1:]
 
-        if _is_literal(f):
-            if is_falsum(f):
-                rec.close(node_id, root_formulas, f)
+            if _is_literal(f):
+                if _closes_alone(f):
+                    rec.close(node_id, root_formulas, f)
+                    closed = True
+                elif _neg(f) in lits:
+                    rec.close(node_id, root_formulas, f, _neg(f))
+                    closed = True
+                else:
+                    if not (_holds_always(f) or f in lits):
+                        lits = lits | {f}
+                        terms = _terms_of(f, terms, ctx.max_terms)
+                    work = rest
+                    continue
+            else:
+                rule = _rule(f)
+                kind = rule[0]
+                if kind == "alpha":
+                    node_id = rec.add(node_id, "alpha", f, rule[1])
+                    work = tuple(rule[1]) + rest
+                    continue
+                if kind == "beta":
+                    left, right = rule[1]
+                    left_id = rec.add(node_id, "beta", f, left, branch_split=True)
+                    right_id = rec.add(node_id, "beta", f, right, branch_split=True)
+                    pending.append((tuple(right) + rest, lits, gammas, terms, used, right_id))
+                    work = tuple(left) + rest
+                    node_id = left_id
+                    continue
+                if kind == "delta":
+                    _, var, body, neg = rule
+                    if len(terms) >= ctx.max_terms:
+                        # Term-pool cap reached: give up on this branch (sound but incomplete) —
+                        # mirrors _close exactly; this path is never on a path that ends up True.
+                        if ctx.open_branch is None:
+                            ctx.open_branch = lits
+                        return False
+                    c = ctx.fresh_const()
+                    inst = _instance(var, body, neg, c)
+                    node_id = rec.add(node_id, "delta", f, (inst,), fresh_constant=c)
+                    work = (inst,) + rest
+                    terms = terms + (c,)
+                    continue
+                if kind == "gamma":
+                    _, var, body, neg = rule
+                    key = f
+                    gammas = gammas + ((key, var, body, neg),)
+                    pool = terms if terms else (ctx.fresh_const(),)
+                    insts = tuple(_instance(var, body, neg, t) for t in pool)
+                    used = used | {(key, t) for t in pool}
+                    terms = terms if terms else pool
+                    node_id = rec.add(node_id, "gamma", f, insts, terms=pool)
+                    work = insts + rest
+                    continue
+                raise AssertionError(kind)
+        else:
+            # No compound work left: re-instantiate a universal at a term it has not used.
+            instantiated = False
+            for key, var, body, neg in gammas:
+                for t in terms:
+                    if (key, t) not in used:
+                        inst = _instance(var, body, neg, t)
+                        node_id = rec.add(node_id, "gamma", key, (inst,), terms=(t,))
+                        work = (inst,)
+                        used = used | {(key, t)}
+                        instantiated = True
+                        break
+                if instantiated:
+                    break
+            if instantiated:
+                continue
+            # Saturated and not closed: an OPEN branch — never reached on a path that ends up True.
+            if ctx.open_branch is None:
+                ctx.open_branch = lits
+            return False
+
+        # This branch closed: go on with the next alternative, if there is one.
+        if closed:
+            if not pending:
                 return True
-            if _neg(f) in lits:
-                rec.close(node_id, root_formulas, f, _neg(f))
-                return True
-            if f in lits:
-                return _close_recording(rest, lits, gammas, terms, used, ctx, rec, node_id, root_formulas)
-            return _close_recording(rest, lits | {f}, gammas, _terms_of(f, terms, ctx.max_terms),
-                                    used, ctx, rec, node_id, root_formulas)
+            work, lits, gammas, terms, used, node_id = pending.pop()
 
-        kind = _rule(f)[0]
-        rule = _rule(f)
-        if kind == "alpha":
-            child = rec.add(node_id, "alpha", f, rule[1])
-            return _close_recording(tuple(rule[1]) + rest, lits, gammas, terms, used,
-                                    ctx, rec, child, root_formulas)
-        if kind == "beta":
-            left, right = rule[1]
-            left_id = rec.add(node_id, "beta", f, left, branch_split=True)
-            right_id = rec.add(node_id, "beta", f, right, branch_split=True)
-            return (_close_recording(tuple(left) + rest, lits, gammas, terms, used,
-                                     ctx, rec, left_id, root_formulas)
-                    and _close_recording(tuple(right) + rest, lits, gammas, terms, used,
-                                         ctx, rec, right_id, root_formulas))
-        if kind == "delta":
-            _, var, body, neg = rule
-            if len(terms) >= ctx.max_terms:
-                # Term-pool cap reached: give up on this branch (sound but incomplete) —
-                # mirrors _close exactly; this path is never on a path that ends up True.
-                if ctx.open_branch is None:
-                    ctx.open_branch = lits
-                return False
-            c = ctx.fresh_const()
-            inst = _instance(var, body, neg, c)
-            child = rec.add(node_id, "delta", f, (inst,), fresh_constant=c)
-            return _close_recording((inst,) + rest, lits, gammas, terms + (c,), used,
-                                    ctx, rec, child, root_formulas)
-        if kind == "gamma":
-            _, var, body, neg = rule
-            key = f
-            new_gammas = gammas + ((key, var, body, neg),)
-            pool = terms if terms else (ctx.fresh_const(),)
-            insts = tuple(_instance(var, body, neg, t) for t in pool)
-            new_used = used | {(key, t) for t in pool}
-            new_terms = terms if terms else pool
-            child = rec.add(node_id, "gamma", f, insts, terms=pool)
-            return _close_recording(insts + rest, lits, new_gammas, new_terms, new_used,
-                                    ctx, rec, child, root_formulas)
-        raise AssertionError(kind)
 
-    # No compound work left: re-instantiate a universal at a term it has not used.
-    for key, var, body, neg in gammas:
-        for t in terms:
-            if (key, t) not in used:
-                inst = _instance(var, body, neg, t)
-                child = rec.add(node_id, "gamma", key, (inst,), terms=(t,))
-                return _close_recording((inst,), lits, gammas, terms, used | {(key, t)},
-                                        ctx, rec, child, root_formulas)
-    # Saturated and not closed: an OPEN branch — never reached on a path that ends up True.
-    if ctx.open_branch is None:
-        ctx.open_branch = lits
-    return False
+def _search_detailed(premises, conclusion: Node, max_steps: int = 20000,
+                     max_terms: int = 8, timeout: Optional[int] = None):
+    """:func:`prove_tableau_detailed`, returning ``(proof, nesting)``.
+
+    ``nesting`` is ``None`` unless the search ended because a formula was nested deeper
+    than its helpers can walk within the interpreter's recursion limit; it is then the
+    :func:`nesting_depth` of the problem, and ``proof`` is ``None``.
+    """
+    formulas = list(premises) + [Not(conclusion)]
+    try:
+        _reject_exotic(formulas, "prove_tableau_detailed")
+        if _any_modal(formulas):
+            raise NotImplementedError(
+                "prove_tableau_detailed: modal tableaux do not build a detailed proof "
+                "object here — use modal_tableau.modal_prove for the plain verdict.")
+        formulas = _lower_sorted(formulas)
+        root_formulas = tuple(formulas)
+        ctx = _Ctx(max_steps, max_terms, timeout, symbol_names(*formulas))
+        rec = _Recorder()
+        closed = _close_recording(
+            root_formulas, frozenset(), (), _initial_terms(formulas, max_terms),
+            frozenset(), ctx, rec, 0, root_formulas)
+        if not closed:
+            return None, None
+        return TableauProof(root_formulas, tuple(rec.steps), tuple(rec.closures)), None
+    except RecursionError:
+        return None, nesting_depth(*formulas)
 
 
 def prove_tableau_detailed(premises, conclusion: Node, max_steps: int = 20000,
-                           max_terms: int = 8) -> Optional["TableauProof"]:
+                           max_terms: int = 8,
+                           timeout: Optional[int] = None) -> Optional["TableauProof"]:
     """Return a :class:`TableauProof` if a closed tableau is found within budget, else ``None``.
 
     Builds the SAME tableau :func:`prove_tableau` would — :func:`_close_recording`
@@ -653,28 +895,24 @@ def prove_tableau_detailed(premises, conclusion: Node, max_steps: int = 20000,
     recording every rule application and every branch's closure pair.
 
     ``None`` is NEVER a verdict of invalidity, exactly as for :func:`prove_tableau`:
-    it only means no closed tableau was found within ``max_steps``/``max_terms``
-    (first-order γ-instantiation is merely semi-decidable). Call
+    it only means no closed tableau was found within ``max_steps``/``max_terms``/
+    ``timeout`` (first-order γ-instantiation is merely semi-decidable; ``timeout`` is in
+    milliseconds, default none, and is checked at every step). The length of a branch is
+    bounded by ``max_steps``, not by the interpreter's recursion limit; a formula nested
+    deeper than the helpers that walk it can follow (see :func:`nesting_depth`) is a bound
+    too and gives ``None``, never :class:`RecursionError`. Call
     :func:`unicode_fol_kit.atp.tableau_check.check_tableau_proof` to independently
     verify a returned proof before trusting it — this function's own bookkeeping is
     not a soundness guarantee.
+
+    For many-sorted input the proof's root formulas are the guard images of the premises
+    and of the negated conclusion followed by the background facts of
+    :func:`~unicode_fol_kit.fol.nodes.sort_axioms` (see :func:`tableau_closed`); the
+    checker derives the same roots from the premises and the conclusion.
 
     Raises the same ``NotImplementedError`` as :func:`prove_tableau` for a
     non-classical node family. A modal input is also rejected here (with a
     pointer to :mod:`unicode_fol_kit.atp.modal_tableau`) since the labelled modal
     tableau does not build a detailed proof object of this shape.
     """
-    formulas = list(premises) + [Not(conclusion)]
-    _reject_exotic(formulas, "prove_tableau_detailed")
-    if _any_modal(formulas):
-        raise NotImplementedError(
-            "prove_tableau_detailed: modal tableaux do not build a detailed proof "
-            "object here — use modal_tableau.modal_prove for the plain verdict.")
-    root_formulas = tuple(formulas)
-    ctx = _Ctx(max_steps, max_terms)
-    rec = _Recorder()
-    closed = _close_recording(root_formulas, frozenset(), (), _initial_terms(formulas, max_terms),
-                              frozenset(), ctx, rec, 0, root_formulas)
-    if not closed:
-        return None
-    return TableauProof(root_formulas, tuple(rec.steps), tuple(rec.closures))
+    return _search_detailed(premises, conclusion, max_steps, max_terms, timeout)[0]

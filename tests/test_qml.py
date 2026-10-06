@@ -10,14 +10,16 @@ Three layers, cross-checked against each other:
   by construction, using the same SSE clauses; running it needs Leo-III / Satallax).
 """
 
+import random
 from itertools import product, combinations
 
 import pytest
 
 from unicode_fol_kit.fol.msflparser import MSFLParser
 from unicode_fol_kit.fol.nodes import (
-    Atom, Not, And, Or, Implies, Box, Diamond, Quantifier, Variable,
+    Atom, Not, And, Or, Implies, Iff, Box, Diamond, Quantifier, Variable, Constant,
 )
+from unicode_fol_kit.fol.qml import qml_axioms
 from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
 from unicode_fol_kit import (
     qml_is_valid, qml_equivalent, qml_translate, to_thf_modal, to_isabelle_modal,
@@ -259,22 +261,28 @@ def test_thf_possibilist_emits_const_dom():
     assert "const_dom" in thf
 
 
-def test_thf_equality_is_uninterpreted_predicate():
-    # `=` / `≠` must be emitted as ordinary uninterpreted world-relativized predicates
-    # (NOT primitive HOL identity), so the THF export agrees with satisfies_modal and
-    # the FO embedding: `∀x. x=x` is NOT valid (= is keyed, not identity).
+def test_thf_equality_is_rigid_identity_and_agrees_with_the_fo_route():
+    # The THF export used to render `=` / `≠` as uninterpreted world-relativized
+    # predicates (feq / fneq), which made `∀x. x = x` unprovable from the THF problem
+    # while the first-order embedding called it valid. Both now read identity the same
+    # way: `meq` is a macro for HOL's OWN `=` on objects, with the world argument
+    # dropped, which is exactly this module's "Equality is rigid".
     eq = Atom("=", [Variable("x"), Variable("x")])
     phi = Quantifier("∀", Variable("x"), eq)
     thf = to_thf_modal(phi, "constant", "K")
-    assert "feq" in thf and "feq_decl" in thf      # declared as a predicate
-    assert "X = X" not in thf and " != " not in thf  # no primitive identity
-    # all three layers agree it is NOT valid:
+    assert "feq" not in thf                              # no uninterpreted predicate
+    assert "( meq @ X @ X )" in thf
+    assert ("thf(meq, definition, ( meq = ( ^ [A: $i, B: $i, W: mu] : ( A = B ) ) ))."
+            in thf)
+    assert qml_is_valid(phi, mode="constant", frame="K") is True      # rigid identity
+    # the propositional Kripke evaluator has no term semantics: it refuses by name
     m = KripkeModel({"w"}, domain=["a", "b"], valuation={"w": set()})
-    assert satisfies_modal(phi, m, "w") is False
-    assert qml_is_valid(phi, mode="constant", frame="K") is False
-    # ≠ maps to its own distinct uninterpreted functor.
+    with pytest.raises(NotImplementedError, match="equality is not interpreted"):
+        satisfies_modal(phi, m, "w")
+    # ≠ is ¬(=), the same lowering the first-order route uses — not its own functor.
     thf_ne = to_thf_modal(Atom("≠", [Variable("x"), Variable("y")]), "constant", "K")
-    assert "fneq" in thf_ne
+    assert "fneq" not in thf_ne
+    assert "( mnot @ ( meq @ X @ Y ) )" in thf_ne
 
 
 def test_thf_distinct_predicates_not_collapsed():
@@ -422,10 +430,10 @@ def test_reserved_user_predicate_is_renamed_only_when_it_collides():
     from unicode_fol_kit.fol.qml import qml_translate
     parse = MSFLParser(modal=True).parse
     assert (qml_translate(parse("R(alice) → ◇R(alice)")).to_unicode_str()
-            == "R·(alice, w) → ∃_w0 (World(_w0) ∧ R(w, _w0) ∧ R·(alice, _w0))")
+            == "R·(alice, w) → ∃w0 (World(w0) ∧ R(w, w0) ∧ R·(alice, w0))")
     # a formula that avoids the reserved names translates exactly as before
     assert (qml_translate(parse("P(alice) → ◇P(alice)")).to_unicode_str()
-            == "P(alice, w) → ∃_w0 (World(_w0) ∧ R(w, _w0) ∧ P(alice, _w0))")
+            == "P(alice, w) → ∃w0 (World(w0) ∧ R(w, w0) ∧ P(alice, w0))")
 
 
 def test_sort_named_like_an_internal_predicate_keeps_its_non_emptiness_axiom():
@@ -434,3 +442,356 @@ def test_sort_named_like_an_internal_predicate_keeps_its_non_emptiness_axiom():
     renamed guard, or the axiom would constrain the accessibility relation."""
     formula = MSFLParser(many_sorted=True).parse("(∀x:R P(x)) → ∃x:R P(x)")
     assert qml_is_valid(formula, mode="constant", frame="K") is True
+
+
+# ---------------------------------------------------------------------------
+# Equality is RIGID identity in the first-order embedding (fol.qml).
+#
+# ``=`` used to be translated like any other atom: the world was appended, so
+# ``a = b`` became the TERNARY uninterpreted predicate ``=(a, b, w)`` and
+# ``a = a`` was not valid. It is now the SAME binary identity with no world
+# argument, hence rigid; ``a ≠ b`` is ``¬(a = b)``. Every expected verdict below
+# is derived by hand from the semantics (reason in the row), never read off the
+# implementation, and the equality-and-existence rows are cross-checked against an
+# independent brute-force Kripke evaluator further down.
+# ---------------------------------------------------------------------------
+
+_MP = MSFLParser(modal=True).parse
+# the same table is run with a, b, c as FREE VARIABLES (the parser reads a single
+# lower-case letter as a variable) and as named CONSTANTS (a longer lower-case word)
+_SPELLINGS = [
+    pytest.param(dict(a="a", b="b", c="c"), id="free-variables"),
+    pytest.param(dict(a="alice", b="bob", c="carol"), id="constants"),
+]
+
+# (template, frame, expected, why).  Verdicts hold under mode constant AND varying:
+# identity mentions no world and no existence predicate, so the regime cannot matter.
+_RIGID_EQUALITY_TABLE = [
+    ("{a} = {a}", "K", True,
+     "reflexivity of identity, at every world (no world argument to vary)"),
+    ("{a} = {b} → {b} = {a}", "K", True, "symmetry of identity"),
+    ("{a} = {b} ∧ {b} = {c} → {a} = {c}", "K", True, "transitivity of identity"),
+    ("{a} = {b} → □({a} = {b})", "K", True,
+     "NECESSITY OF IDENTITY: the atom does not mention the world, so it has the same "
+     "truth value at every successor - no frame condition needed"),
+    ("{a} ≠ {b} → □({a} ≠ {b})", "K", True,
+     "necessity of distinctness: ¬(a = b) is world-independent for the same reason"),
+    ("◇({a} = {b}) → {a} = {b}", "K", True,
+     "a successor satisfies a = b; identity is world-independent, so it holds here too"),
+    ("□({a} = {b}) → {a} = {b}", "K", False,
+     "a DEAD-END world makes □(a = b) vacuously true while a and b may be two objects"),
+    ("□({a} = {b}) → {a} = {b}", "K4", False,
+     "transitivity does not remove dead ends: the same one-world countermodel"),
+    ("□({a} = {b}) → {a} = {b}", "T", True,
+     "reflexive: w is its own successor, so □(a = b) gives a = b at w"),
+    ("□({a} = {b}) → {a} = {b}", "S4", True, "reflexive, as T"),
+    ("□({a} = {b}) → {a} = {b}", "S5", True, "reflexive, as T"),
+    ("□({a} = {b}) → {a} = {b}", "KD", True,
+     "serial: a successor v exists, a = b holds there, and identity is rigid"),
+    ("□({a} = {b}) → {a} = {b}", "KD45", True, "serial, as KD"),
+    ("{a} = {b} → (P({a}) ↔ P({b}))", "K", True, "Leibniz's law for a predicate"),
+    ("{a} = {b} → (□P({a}) ↔ □P({b}))", "K", True,
+     "Leibniz under □: a and b are the same object at every world, so P(a, v) ↔ P(b, v)"),
+    ("{a} = {b}", "K", False, "a and b may denote two different objects"),
+    ("¬({a} = {b})", "K", False, "a and b may denote one object"),
+    ("{a} ≠ {a}", "K", False, "never true (a = a always holds), so certainly not valid"),
+    ("¬({a} ≠ {a})", "K", True, "the negation of the previous row"),
+    ("({a} ≠ {b}) ↔ ¬({a} = {b})", "K", True, "≠ is the negation of = by definition"),
+    ("{a} = {b} → f({a}) = f({b})", "K", True,
+     "congruence for a function symbol (rigid): comes from Z3's identity, not an axiom"),
+    ("{a} = {b} → □(f({a}) = f({b}))", "K", True, "congruence, under □"),
+]
+
+
+@pytest.mark.parametrize("mode", ["constant", "varying"])
+@pytest.mark.parametrize("names", _SPELLINGS)
+@pytest.mark.parametrize("template,frame,expected,why", _RIGID_EQUALITY_TABLE,
+                         ids=[f"{t}|{fr}" for t, fr, _, _ in _RIGID_EQUALITY_TABLE])
+def test_rigid_equality_table(template, frame, expected, why, names, mode):
+    formula = _MP(template.format(**names))
+    assert qml_is_valid(formula, mode=mode, frame=frame, timeout=20000) is expected, why
+
+
+_ALL_MODES = ("constant", "possibilist", "varying", "increasing", "cumulative", "decreasing")
+
+# Varying domains.  The module's choice: identity ranges over the whole OBJECT domain
+# and is not existence-guarded, so it holds of a constant that is not in the local
+# domain D_w; existence is EXPRESSED by ∃x (x = c).  Rows: (formula, modes in which it
+# is valid, why).  "Valid in" = exactly that set; every other mode is a refutation.
+_CONST = {"constant", "possibilist"}
+_EXISTENCE_TABLE = [
+    ("∃x (x = alice)", _CONST,
+     "says alice ∈ D_w. A constant domain contains every object; in any other regime a "
+     "one-world model with D_w = {b} and alice ↦ a (an object outside every D_w) refutes it"),
+    ("∃x (x = alice) → □∃x (x = alice)", _CONST | {"increasing", "cumulative"},
+     "existence persists along R exactly in the cumulative regime (E(x,w) ∧ wRv → E(x,v)); "
+     "varying/decreasing refute it with 0R1, D_0 = {a}, D_1 = {b}, alice ↦ a"),
+    ("◇∃x (x = alice) → ∃x (x = alice)", _CONST | {"decreasing"},
+     "the converse: existence at a successor gives existence here exactly in the decreasing "
+     "regime (E(x,v) ∧ wRv → E(x,w)); varying/increasing refute it with 0R1, D_0 = {b}, "
+     "D_1 = {a, b}, alice ↦ a"),
+    ("alice = alice", set(_ALL_MODES),
+     "identity is not existence-guarded: alice is itself even where she does not exist"),
+    ("alice = bob → bob = alice", set(_ALL_MODES), "symmetry needs no existence either"),
+    ("alice = bob → □(alice = bob)", set(_ALL_MODES),
+     "necessity of identity holds for constants outside D_w too"),
+    ("∀x ∀y (x = y → □(x = y))", set(_ALL_MODES),
+     "necessity of identity for quantified variables, which range over D_w"),
+    ("¬∃x (x = alice) → alice = alice", set(_ALL_MODES),
+     "a non-existent alice is still identical to herself: NOT negative free logic"),
+    ("¬∃x (x = alice) → alice ≠ alice", _CONST,
+     "the negative-free-logic reading; vacuously valid for a constant domain (the antecedent "
+     "is unsatisfiable there) and refuted in every regime where alice can lie outside D_w"),
+]
+
+
+@pytest.mark.parametrize("mode", _ALL_MODES)
+@pytest.mark.parametrize("text,valid_in,why", _EXISTENCE_TABLE,
+                         ids=[t for t, _, _ in _EXISTENCE_TABLE])
+def test_equality_under_every_domain_regime(text, valid_in, why, mode):
+    assert qml_is_valid(_MP(text), mode=mode, frame="K", timeout=20000) is (mode in valid_in), why
+
+
+def test_equality_translates_to_the_same_binary_atom_with_no_world_argument():
+    a, b = Variable("a"), Variable("b")
+    eq = Atom("=", (a, b))
+    # hand-derived: ST(a = b, w) = a = b ; ST(a ≠ b, w) = ¬(a = b); other atoms still get w
+    assert qml_translate(eq) == eq
+    assert qml_translate(Atom("≠", (a, b))) == Not(eq)
+    assert qml_translate(And(Atom("P", (a,)), eq)) == And(Atom("P", (a, Variable("w"))), eq)
+    # under □ the equality stays world-free inside the relativised body
+    boxed = qml_translate(Box(Atom("≠", (a, b))))
+    assert boxed == Quantifier("∀", Variable("w0"), Implies(
+        And(Atom("World", (Variable("w0"),)), Atom("R", (Variable("w"), Variable("w0")))),
+        Not(eq)))
+    # varying domains change only the quantifier guard, not the identity
+    ex = qml_translate(_MP("∃x (x = alice)"), mode="varying")
+    assert ex == Quantifier("∃", Variable("x"), And(
+        And(Atom("Object", (Variable("x"),)), Atom("E", (Variable("x"), Variable("w")))),
+        Atom("=", (Variable("x"), Constant("alice")))))
+
+
+@pytest.mark.parametrize("atom", [Atom("=", (Variable("a"),)),
+                                  Atom("=", ()),
+                                  Atom("≠", (Variable("a"), Variable("b"), Variable("c")))])
+def test_non_binary_equality_atom_is_refused_not_read_as_a_predicate(atom):
+    with pytest.raises(ValueError, match="needs exactly two terms"):
+        qml_translate(atom)
+    with pytest.raises(ValueError, match="needs exactly two terms"):
+        qml_is_valid(atom)
+
+
+def test_no_translated_query_contains_a_world_relative_equality():
+    """Every '=' in the validity query - formula AND axioms - is binary, and no '≠'
+    survives: the old ternary ``=(a, b, w)`` can no longer be produced."""
+    from unicode_fol_kit.fol.qml import qml_validity_formula
+    f = _MP("□(alice = bob) ∧ ◇(alice ≠ bob) ∧ ∀x □(x = x)")
+    for mode, frame in (("constant", "K"), ("varying", "S5")):
+        q = qml_validity_formula(f, mode=mode, frame=frame)
+        atoms = [n for n in q.walk() if isinstance(n, Atom)]
+        assert any(n.predicate == "=" for n in atoms)
+        assert all(len(n.args) == 2 for n in atoms if n.predicate == "=")
+        assert not any(n.predicate == "≠" for n in atoms)
+
+
+def test_no_equality_axiom_is_needed_or_emitted():
+    """Reflexivity, symmetry, transitivity and congruence come from Z3's own identity
+    (rows of the table above are PROVED with no equality axiom): ``qml_axioms`` has no
+    '=' atom except the world-identities frame conditions state themselves."""
+    from unicode_fol_kit.fol.nodes import Always, Next
+    f = _MP("alice = bob → f(alice) = f(bob)")
+    for mode, frame in (("constant", "K"), ("varying", "S5"), ("increasing", "KD45")):
+        axioms = qml_axioms(mode, frame, formula=f)
+        assert not [n for ax in axioms for n in ax.walk()
+                    if isinstance(n, Atom) and n.predicate in ("=", "≠")]
+        assert qml_is_valid(f, mode=mode, frame=frame)
+    # the only '=' atoms any axiom set carries are the frame conditions' WORLD
+    # identities (here the temporal first_step axiom: w = v, both World-guarded)
+    temporal = And(Always(Atom("P", ())), Next(Atom("P", ())))
+    eqs = [n for ax in qml_axioms("constant", "K", formula=temporal) for n in ax.walk()
+           if isinstance(n, Atom) and n.predicate == "="]
+    assert len(eqs) == 1 and {t.name for t in eqs[0].args} == {"w", "v"}
+
+
+def test_equality_inside_many_sorted_quantifiers():
+    ms = MSFLParser(many_sorted=True).parse
+    for mode in ("constant", "varying"):
+        # ∀x:S x = x : every sorted x is itself.  ∃x:S x = x : needs the per-world
+        # non-empty-sort axiom for its witness, which qml_axioms supplies.
+        assert qml_is_valid(ms("∀x:S (x = x)"), mode=mode) is True
+        assert qml_is_valid(ms("∃x:S (x = x)"), mode=mode) is True
+        # two sorted objects need not be equal
+        assert qml_is_valid(ms("∀x:S ∀y:S (x = y)"), mode=mode) is False
+
+
+# ---------------------------------------------------------------------------
+# Independent oracle: brute-force Kripke enumeration with RIGID identity, written
+# here (satisfies_modal refuses '=' by name, so it cannot serve). A constant denotes
+# one object at every world; ``=`` is identity of the denoted objects; quantifiers
+# range over the local domain D_w (the constant regime: every object, everywhere).
+# ---------------------------------------------------------------------------
+
+_OBJECTS = ("a", "b")
+
+
+def _val(term, env, const):
+    if isinstance(term, Variable):
+        return env[term.name]
+    if isinstance(term, Constant):
+        return const[term.name]
+    raise TypeError(term)
+
+
+def _holds(f, rel, dom, ext, const, w, env):
+    rec = lambda g, v=w, e=env: _holds(g, rel, dom, ext, const, v, e)
+    if isinstance(f, Atom):
+        if f.predicate == "=":
+            return _val(f.args[0], env, const) == _val(f.args[1], env, const)
+        if f.predicate == "≠":
+            return _val(f.args[0], env, const) != _val(f.args[1], env, const)
+        assert f.predicate == "P" and len(f.args) == 1
+        return _val(f.args[0], env, const) in ext[w]
+    if isinstance(f, Not):
+        return not rec(f.formula)
+    if isinstance(f, And):
+        return rec(f.left) and rec(f.right)
+    if isinstance(f, Or):
+        return rec(f.left) or rec(f.right)
+    if isinstance(f, Implies):
+        return (not rec(f.left)) or rec(f.right)
+    if isinstance(f, Iff):
+        return rec(f.left) == rec(f.right)
+    if isinstance(f, Box):
+        return all(rec(f.formula, v) for (u, v) in rel if u == w)
+    if isinstance(f, Diamond):
+        return any(rec(f.formula, v) for (u, v) in rel if u == w)
+    if isinstance(f, Quantifier):
+        insts = (rec(f.formula, w, {**env, f.variable.name: d}) for d in dom[w])
+        return all(insts) if f.type == "∀" else any(insts)
+    raise TypeError(f)
+
+
+def _universes(regime):
+    """The object universe U of a model. Constant domain: U IS every local domain, and it
+    may be any non-empty set (a one-object universe refutes ``∃x ∃y ¬(x = y)``); any other
+    regime: local domains are non-empty subsets of the two-object universe, and an object
+    may lie outside every one of them (which is how a constant fails to exist)."""
+    if regime == "constant":
+        return [frozenset(c) for r in range(1, len(_OBJECTS) + 1)
+                for c in combinations(_OBJECTS, r)]
+    return [frozenset(_OBJECTS)]
+
+
+def _regime_domains(worlds, rel, regime, universe):
+    if regime == "constant":      # every object of the universe exists everywhere
+        yield {w: universe for w in worlds}
+    else:
+        yield from _domain_choices(worlds, rel, regime)
+
+
+def _oracle_valid(formula, regime, max_worlds=2):
+    """True iff no model with <= max_worlds worlds and the objects {a, b} refutes
+    ``formula`` (non-empty local domains, constants rigid, regime as in qml_is_valid)."""
+    names = sorted({n.name for n in formula.walk() if isinstance(n, Constant)})
+    uses_p = any(isinstance(n, Atom) and n.predicate == "P" for n in formula.walk())
+    for universe in _universes(regime):
+        # extensions of the unary P: any subset of the universe, per world
+        subsets = [frozenset(c) for r in range(len(universe) + 1)
+                   for c in combinations(sorted(universe), r)]
+        for n in range(1, max_worlds + 1):
+            worlds = list(range(n))
+            edges = [(i, j) for i in worlds for j in worlds]
+            for mask in product((False, True), repeat=len(edges)):
+                rel = {e for e, on in zip(edges, mask) if on}
+                for dom in _regime_domains(worlds, rel, regime, universe):
+                    exts = (product(subsets, repeat=n)
+                            if uses_p else [tuple(frozenset() for _ in worlds)])
+                    for ext_t in exts:
+                        ext = dict(zip(worlds, ext_t))
+                        for cmap in product(sorted(universe), repeat=len(names)):
+                            const = dict(zip(names, cmap))
+                            for w in worlds:
+                                if not _holds(formula, rel, dom, ext, const, w, {}):
+                                    return False
+    return True
+
+
+_ORACLE_REGIMES = ["constant", "increasing", "decreasing", "varying"]
+_ORACLE_BATTERY = [
+    "alice = alice",
+    "alice = bob → bob = alice",
+    "alice = bob → □(alice = bob)",
+    "alice ≠ bob → □(alice ≠ bob)",
+    "◇(alice = bob) → alice = bob",
+    "□(alice = bob) → alice = bob",
+    "alice = bob",
+    "¬(alice = bob)",
+    "alice = bob → (P(alice) ↔ P(bob))",
+    "alice = bob → (□P(alice) ↔ □P(bob))",
+    "∃x (x = alice)",
+    "∃x (x = alice) → □∃x (x = alice)",
+    "◇∃x (x = alice) → ∃x (x = alice)",
+    "∀x ∀y (x = y → □(x = y))",
+    "∀x ∀y (x = y → (P(x) ↔ P(y)))",
+    "∀x ∀y (x = y)",
+    "∃x ∃y ¬(x = y)",
+    "∃x ∃y (x = y)",
+    "∀x ◇(x = alice) → ◇∀x (x = alice)",
+    "¬∃x (x = alice) → alice ≠ alice",
+]
+
+
+@pytest.mark.parametrize("regime", _ORACLE_REGIMES)
+@pytest.mark.parametrize("text", _ORACLE_BATTERY)
+def test_rigid_equality_agrees_with_brute_force_kripke_enumeration(text, regime):
+    """Z3 on the embedding == exhaustive enumeration of every small model, per regime
+    (the table cases are the ones whose countermodels fit in <= 2 worlds / 2 objects,
+    which the rows' stated countermodels do)."""
+    formula = _MP(text)
+    z3_says = qml_is_valid(formula, mode=regime, frame="K", timeout=20000)
+    assert z3_says == _oracle_valid(formula, regime), f"{text} [{regime}]"
+
+
+def _random_equality_formula(rng, depth, bound):
+    terms = [Constant("alice"), Constant("bob")] + [Variable(v) for v in bound]
+    if depth == 0 or rng.random() < 0.2:
+        kind = rng.choice(["=", "=", "≠", "P"])
+        if kind == "P":
+            return Atom("P", (rng.choice(terms),))
+        return Atom(kind, (rng.choice(terms), rng.choice(terms)))
+    op = rng.choice(["not", "and", "or", "imp", "iff", "box", "dia", "all", "ex"])
+    sub = lambda: _random_equality_formula(rng, depth - 1, bound)
+    if op == "not":
+        return Not(sub())
+    if op == "box":
+        return Box(sub())
+    if op == "dia":
+        return Diamond(sub())
+    if op in ("all", "ex"):
+        v = rng.choice(["x", "y"])
+        return Quantifier("∀" if op == "all" else "∃", Variable(v),
+                          _random_equality_formula(rng, depth - 1, bound + [v]))
+    cls = {"and": And, "or": Or, "imp": Implies, "iff": Iff}[op]
+    return cls(sub(), sub())
+
+
+@pytest.mark.parametrize("regime", _ORACLE_REGIMES)
+def test_random_equality_formulas_agree_with_brute_force_enumeration(regime):
+    """Seeded random modal formulas WITH equality (closed, over alice/bob and bound
+    x/y, all connectives, □/◇ and both quantifiers): the verdict of Z3 on the embedding
+    equals the verdict of exhaustive enumeration, formula by formula. Z3 is sound but
+    bounded-incomplete and the enumeration is bounded (<= 2 worlds, 2 objects), so
+    agreement is an empirical fact of this seed - measured 800/800 on 200 formulas x
+    4 regimes, zero disagreement in either direction - not a theorem; a failure would
+    still be a real signal, because a formula Z3 calls valid and the enumeration refutes
+    is a soundness bug and the converse is a missing axiom."""
+    rng = random.Random(20261003)
+    verdicts = []
+    for _ in range(60):
+        formula = _random_equality_formula(rng, rng.choice([2, 3, 3, 4]), [])
+        z3_says = qml_is_valid(formula, mode=regime, frame="K", timeout=10000)
+        assert z3_says == _oracle_valid(formula, regime), (
+            f"{formula.to_unicode_str()} [{regime}]: Z3={z3_says}")
+        verdicts.append(z3_says)
+    # not vacuous: the seed yields both valid and refuted formulas
+    assert 5 <= sum(verdicts) <= len(verdicts) - 5

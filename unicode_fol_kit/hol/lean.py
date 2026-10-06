@@ -53,20 +53,20 @@ propositional modal-K embedding does the same for its Kripke world type
 with :func:`~unicode_fol_kit.fol.nodes.to_fol` (each sort becomes a unary
 guard predicate over the single flat ``Ind``, each sorted quantifier is
 relativised — ``∀x:S φ ↦ ∀x (S(x) → φ)``, ``∃x:S φ ↦ ∃x (S(x) ∧ φ)``) and
-then emits the resulting plain-FOL formula with :func:`to_lean_fol`, **exactly
-like** :func:`~unicode_fol_kit.hol.classical.to_isabelle_msfol` /
-:func:`~unicode_fol_kit.hol.classical.to_thf_msfol` — this module adds no new
-semantics beyond that existing pair. ``Ind`` itself is guaranteed non-empty
-(above); an individual per-sort guard predicate is **not** additionally
-forced non-empty (the sort could still denote the empty guard in a model), the
-same reading the two existing MSFOL exporters already have — sort
-non-emptiness is a caller concern (:func:`~unicode_fol_kit.fol.nonempty_sort_axioms`
-for the callers that want it, e.g. ``api.prove``), never assumed silently
-inside a single-formula translation (see
-:func:`~unicode_fol_kit.semantics.kripke.satisfies_modal`'s module docstring
-for why: an extra existential baked into a polarity-blind per-node
-translation would land under the wrong polarity whenever the sorted node
-occurs negated).
+then emits the resulting plain-FOL formula as :func:`to_lean_fol` does,
+**exactly like** :func:`~unicode_fol_kit.hol.classical.to_isabelle_msfol` /
+:func:`~unicode_fol_kit.hol.classical.to_thf_msfol`. That reduction forgets the
+two facts of the many-sorted reading (:func:`~unicode_fol_kit.fol.nodes.sort_axioms`):
+no sort is empty, and a sorted constant ``c:S`` is an element of ``S``. For a
+theorem they are stated as HYPOTHESES of it — ``theorem goal (sort_nonempty_0 :
+∃ x : Ind, human x) (sort_member_0 : human socrates) : φ`` — never conjoined to
+the goal (``human socrates ∧ φ`` could not be proved even for a tautology ``φ``)
+and never folded into the per-node translation, which is polarity-blind (an
+existential baked in there would land under the wrong polarity whenever the
+sorted node occurs negated). Being local hypotheses they are visible to
+``tauto`` and ``simp``, which a global ``axiom`` is not. ``Ind`` itself is
+guaranteed non-empty (above); ``include_sort_facts=False`` is the bare
+relativisation with no sort facts at all.
 
 **Equality.** By default ``=`` / ``≠`` are the *uninterpreted* predicates
 ``feq`` / ``fneq`` (not Lean's own ``=``), matching the toolkit-wide HOL
@@ -137,15 +137,18 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from ..fol._msfl_nodes import _reduce_nl_nodes
+from ..fol._numeral_symbols import numerals_as_constants, prefixed_numeral_name
 from ..fol._symbol_names import dedupe
+from ..fol._truth_constants import truth_value
 from ..fol.nodes import (
     Node, Variable, Constant, Number, Function, Measure,
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
-    Box, Diamond, to_fol,
+    Box, Diamond,
 )
 from .classical import (
     _signature, _sanitize, _SymbolResolver, _VarResolver, _free_variables,
     _CAT_PRED, _CAT_FUNC, _CAT_CONST, _is_native_eq, _FORALL,
+    _scope, _msfol_split, _refuse_open_assertion,
 )
 
 __all__ = [
@@ -263,7 +266,7 @@ def _lean_term(node: Node, syms: "_SymbolResolver", vars_: "_VarResolver",
     if isinstance(node, Constant):
         return names.safe((_CAT_CONST, node.name, 0), syms.name(_CAT_CONST, node.name, 0))
     if isinstance(node, Number):
-        raw = "n" + str(node.value)
+        raw = prefixed_numeral_name(node.value)     # one constant per VALUE: 1 and 1.0 are ``n1``
         return names.safe((_CAT_CONST, raw, 0), syms.name(_CAT_CONST, raw, 0))
     if isinstance(node, Function):
         key = (_CAT_FUNC, node.name, len(node.args))
@@ -301,6 +304,8 @@ def _lean_formula(node: Node, syms: "_SymbolResolver", vars_: "_VarResolver",
     def f(n):
         return _lean_formula(n, syms, vars_, names, native_equality)
     if isinstance(node, Atom):
+        if truth_value(node) is not None:
+            return "True" if truth_value(node) else "False"
         if _is_native_eq(node.predicate, len(node.args), native_equality):
             op = "=" if node.predicate == "=" else "≠"
             left = _lean_term(node.args[0], syms, vars_, names)
@@ -384,10 +389,18 @@ def to_lean_fol(formula: Node, conjecture: bool = True, native_equality: bool = 
     — no proof needed, useful for asserting the formula as a hypothesis in a
     larger hand-written problem.
 
-    Free variables in ``formula`` are universally closed before emission
-    (matching :func:`~unicode_fol_kit.hol.classical.to_thf_fol` /
-    :func:`~unicode_fol_kit.hol.classical.to_isabelle_fol`, which do the
-    same). By default, equality ``=`` / ``≠`` becomes the uninterpreted
+    A free variable of a theorem is closed universally before emission (matching
+    :func:`~unicode_fol_kit.hol.classical.to_thf_fol` /
+    :func:`~unicode_fol_kit.hol.classical.to_isabelle_fol`). A free variable is a
+    parameter of the problem, one unknown individual, and for a single formula with no
+    premise the two readings coincide: the formula is valid for the parameter iff it is
+    valid for every individual. An ASSERTED formula (``conjecture=False``) is a premise
+    of a larger problem, and there the closure would say more than the formula says
+    (``∀x P(x)`` entails ``P(a)``, the premise ``P(x)`` does not), so an asserted
+    formula with a free variable is refused by name: state the parameter with a
+    constant, or bind the variable with a quantifier.
+
+    By default, equality ``=`` / ``≠`` becomes the uninterpreted
     predicate ``feq`` / ``fneq`` (see module docstring); pass
     ``native_equality=True`` to instead emit Lean's own built-in ``=`` / ``≠``.
 
@@ -395,12 +408,38 @@ def to_lean_fol(formula: Node, conjecture: bool = True, native_equality: bool = 
     every valid goal. This function only emits the file; it does not run
     Lean — see :func:`check_theory` / :func:`lean_decide_fol` for the optional
     live tier.
+
+    Raises:
+        NotImplementedError: ``conjecture`` is false and ``formula`` has a free variable;
+            or a numeral and a constant are spelled alike.
     """
+    return _lean_problem(formula, conjecture, native_equality, proof)
+
+
+def _lean_problem(formula: Node, conjecture: bool, native_equality: bool, proof: str,
+                  background: Sequence[Node] = (), where: str = "to_lean_fol") -> str:
+    """The Lean source of ``formula``, with ``background`` as hypotheses of its theorem.
+
+    ``background`` are closed sentences (the many-sorted reading's sort facts, see
+    :func:`~unicode_fol_kit.hol.classical._msfol_split`). For a theorem each becomes
+    a named hypothesis (``sort_nonempty_<i>`` for an ``∃``, ``sort_member_<i>`` for
+    an atom), so they are in the local context a tactic searches; for an asserted
+    formula each is an ``axiom`` line of its own.
+
+    A numeral is a constant identified by its value (``1`` and ``1.0`` are the one constant
+    ``n1``); a constant spelled like it, in the formula or in ``background``, is refused by
+    name (``where`` is the function that is writing, which the refusal names).
+    """
+    formulas, _ = numerals_as_constants([formula, *background], where=where,
+                                        spell=prefixed_numeral_name)
+    formula, background = formulas[0], formulas[1:]
     formula = _reduce_nl_nodes(formula)   # Contrast -> And, Count -> witnesses
+    _refuse_open_assertion(formula, conjecture, where)
     closed = formula
     for name in reversed(_free_variables(formula)):
         closed = Quantifier(_FORALL, Variable(name), closed)
-    syms = _SymbolResolver(closed, native_equality=native_equality)
+    scope = _scope(closed, background)
+    syms = _SymbolResolver(scope, native_equality=native_equality)
     vars_ = _VarResolver(_sanitize)
     names = _LeanNames(_FOL_RESERVED)
 
@@ -409,7 +448,7 @@ def to_lean_fol(formula: Node, conjecture: bool = True, native_equality: bool = 
         "-- uninterpreted, EXPLICITLY NONEMPTY individual type `Ind` and",
         "-- uninterpreted predicates/functions/constants declared as `axiom`s.",
     ]
-    preds, _, _ = _signature(closed)
+    preds, _, _ = _signature(scope)
     if any(_is_native_eq(n, a, native_equality) for n, a in preds):
         lines.append("-- '=' / '≠' are Lean's own built-in identity (no axioms needed).")
     else:
@@ -423,15 +462,26 @@ def to_lean_fol(formula: Node, conjecture: bool = True, native_equality: bool = 
         "open Classical",
         "",
     ]
-    decls = _lean_signature_decls(closed, syms, names, native_equality=native_equality)
+    decls = _lean_signature_decls(scope, syms, names, native_equality=native_equality)
     if decls:
         lines += decls
         lines.append("")
     body = _lean_formula(closed, syms, vars_, names, native_equality=native_equality)
+    facts = []
+    nonempty = member = 0
+    for fact in background:
+        if isinstance(fact, Quantifier):
+            label, nonempty = f"sort_nonempty_{nonempty}", nonempty + 1
+        else:
+            label, member = f"sort_member_{member}", member + 1
+        facts.append((names.safe(("sort_fact", label), label),
+                      _lean_formula(fact, syms, vars_, names, native_equality=native_equality)))
     if conjecture:
-        lines.append(f"theorem goal : {body} := by")
+        hypotheses = "".join(f" ({label} : {text})" for label, text in facts)
+        lines.append(f"theorem goal{hypotheses} : {body} := by")
         lines.extend(f"  {pl}" for pl in proof.split("\n"))
     else:
+        lines.extend(f"axiom {label} : {text}" for label, text in facts)
         lines.append(f"axiom goal : {body}")
     return "\n".join(lines) + "\n"
 
@@ -446,15 +496,27 @@ def to_lean_msfol(formula: Node, conjecture: bool = True, include_sort_facts: bo
     plain-FOL formula is then emitted with :func:`to_lean_fol` — exactly the
     same reduction :func:`~unicode_fol_kit.hol.classical.to_isabelle_msfol` /
     :func:`~unicode_fol_kit.hol.classical.to_thf_msfol` already use, so this
-    adds no new semantics. With ``include_sort_facts=True`` (default) the
-    sort-membership facts of any sorted constants are conjoined first. All
-    sorts share the single Lean type ``Ind`` — the relativisation, not the
-    type system, keeps the sorts apart; see the module docstring for why sort
-    non-emptiness (as opposed to ``Ind`` non-emptiness) is a caller concern,
-    not assumed here. See :func:`to_lean_fol` for ``native_equality`` / ``proof``.
+    adds no new semantics. With ``include_sort_facts=True`` (default) the two
+    facts that reduction forgets are stated too
+    (:func:`~unicode_fol_kit.fol.nodes.sort_axioms`): every sort is non-empty
+    (``∃ x : Ind, S x``) and a sorted constant is in its sort (``Human socrates``
+    for ``Mortal(socrates:Human)``). For a theorem each is a named HYPOTHESIS of
+    it — ``theorem goal (sort_nonempty_0 : …) (sort_member_0 : …) : φ`` — never a
+    conjunct of the goal, which could not be proved even for a tautology ``φ``.
+    An asserted formula (``conjecture=False``) keeps the membership atoms as a
+    conjunct, since they are part of what is asserted, and gets the non-emptiness
+    facts as ``axiom`` lines. ``include_sort_facts=False`` is the bare
+    relativisation, no sort facts. All sorts share the single Lean type ``Ind`` —
+    the relativisation, not the type system, keeps the sorts apart. See
+    :func:`to_lean_fol` for ``native_equality`` / ``proof`` and for the free variable of an
+    asserted formula, which is refused by name.
+
+    Raises:
+        NotImplementedError: ``conjecture`` is false and ``formula`` has a free variable.
     """
-    return to_lean_fol(to_fol(formula, include_sort_facts=include_sort_facts),
-                       conjecture=conjecture, native_equality=native_equality, proof=proof)
+    plain, background = _msfol_split(formula, conjecture, include_sort_facts)
+    return _lean_problem(plain, conjecture, native_equality, proof, background,
+                         where="to_lean_msfol")
 
 
 # ===========================================================================
@@ -520,6 +582,8 @@ def _lean_modal_body(node: Node, world: str, counter: List[int],
     ``∀ v, R w v → ⟦φ⟧v`` / ``∃ v, R w v ∧ ⟦φ⟧v``.
     """
     if isinstance(node, Atom):
+        if truth_value(node) is not None:
+            return "True" if truth_value(node) else "False"
         atom_key = node.to_unicode_str()
         ident = names.safe(("atom", atom_key), atoms.ident(atom_key))
         return f"({ident} {world})"
@@ -571,19 +635,26 @@ def to_lean_modal_k(formula: Node, conjecture: bool = True, proof: str = "sorry"
     modalities, or deontic/temporal operators) — anything else raises
     ``NotImplementedError`` naming the construct (see module docstring for
     the two-way validation of this encoding against
-    :func:`~unicode_fol_kit.semantics.kripke.satisfies_modal`).
+    :func:`~unicode_fol_kit.semantics.kripke.satisfies_modal`). A numeral inside an atom is
+    the constant of its value (``P(1)`` and ``P(1.0)`` are one letter); a constant spelled
+    like it (``n1`` next to the number ``1``) is refused by name.
 
     This function only emits the file; it does not run Lean — see
     :func:`check_theory` / :func:`lean_decide_modal_k` for the optional live tier.
     """
     _reject_non_propositional_modal(formula)
+    # An atom is a propositional letter keyed by its printed text, so ``P(1)`` and ``P(1.0)`` --
+    # one atom, a numeral is identified by its value -- would be two letters. Writing each numeral
+    # as the constant of its value gives them one text (and refuses a constant spelled like it).
+    [formula], _ = numerals_as_constants([formula], where="to_lean_modal_k",
+                                         spell=prefixed_numeral_name)
     names = _LeanNames(_MODAL_RESERVED)
     atoms = _ModalAtomNames()
 
     seen: List[str] = []
     seen_set = set()
     for n in formula.walk():
-        if isinstance(n, Atom):
+        if isinstance(n, Atom) and truth_value(n) is None:
             key = n.to_unicode_str()
             if key not in seen_set:
                 seen_set.add(key)

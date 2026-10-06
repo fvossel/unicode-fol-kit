@@ -6,9 +6,10 @@ precedence-climbing algorithm against Prover9's own default operator table
 (cited, with the exact numbers, in prover9_input.py's module docstring and
 ``_DEFAULT_OPS`` — the manual's "Clauses and Formulas" / parsing-declarations
 page, mirroring ``declare_standard_parse_types()`` in the Prover9/LADR source),
-never captured from a run of this reader. There is no live Prover9 binary in
-this dev environment (confirmed by ``Prover9Backend().available()`` below, the
-same fallback convention ``test_prover9_entailment.py``'s module docstring
+never captured from a run of this reader. A live Prover9 binary is not there on
+every machine (``Prover9Backend().available()`` below says whether this one has
+one, through ``$UFK_PROVER9`` and, for a binary inside WSL, ``$UFK_PROVER9_WSL=1``;
+the same fallback convention ``test_prover9_entailment.py``'s module docstring
 already establishes: "wo ein externes Werkzeug fehlt, ist der kit-eigene Leser
 der Prüfstein" — where an external tool is missing, the kit's own reader is
 the touchstone) — so the independent second route used throughout is the
@@ -20,7 +21,6 @@ binary when one happens to be available.
 """
 
 import random
-import subprocess
 from dataclasses import dataclass
 
 import pytest
@@ -37,7 +37,8 @@ from unicode_fol_kit.fol.prover9_input import (
 _prover9 = Prover9Backend()
 live_prover9 = pytest.mark.skipif(
     not _prover9.available(),
-    reason="no Prover9 binary found ($UFK_PROVER9 or PATH) -- this test is optional")
+    reason="no Prover9 binary found ($UFK_PROVER9, with $UFK_PROVER9_WSL=1 for a path inside "
+           "WSL, or PATH) -- this test is optional")
 
 
 # ---------------------------------------------------------------------------
@@ -179,15 +180,18 @@ def test_op_symbol_bare_single_uppercase_letter_applied():
 
 def test_term_tier_mixed_case_infix_prefix_postfix_applied():
     a, b, c, x = Constant("a"), Constant("b"), Constant("c"), Constant("x")
+    # These files say which names are variables: without the flag Prover9 reads ``x`` as a
+    # variable (names that begin with u to z), and the constant these texts mean is ``x``.
+    flag = "set(prolog_style_variables).\n"
     # myOp (camelCase) as a term-tier infix operator -- same placement/shape
     # as the lowercase "o" hand-check above.
-    infix = parse_prover9_problem('op(450, infix_left, "myOp").\nf(a myOp b) = c.')[0].formula
+    infix = parse_prover9_problem(flag + 'op(450, infix_left, "myOp").\nf(a myOp b) = c.')[0].formula
     assert infix == Atom("=", [Function("f", [Function("myOp", [a, b])]), c])
     # Neg (leading uppercase) as a term-tier prefix operator.
-    prefix = parse_prover9_problem('op(150, prefix, "Neg").\n(Neg x) = x.')[0].formula
+    prefix = parse_prover9_problem(flag + 'op(150, prefix, "Neg").\n(Neg x) = x.')[0].formula
     assert prefix == Atom("=", [Function("Neg", [x]), x])
     # Prime (leading uppercase) as a term-tier postfix operator.
-    postfix = parse_prover9_problem('op(150, postfix, "Prime").\n(x Prime) = x.')[0].formula
+    postfix = parse_prover9_problem(flag + 'op(150, postfix, "Prime").\n(x Prime) = x.')[0].formula
     assert postfix == Atom("=", [Function("Prime", [x]), x])
 
 
@@ -219,7 +223,7 @@ def test_prover9_op_round_trip_random_uppercase_symbols():
 
         text2 = parsed.to_prover9()
         reparsed = parse_prover9(text2)
-        assert reparsed == parsed, f"{text2!r} -> {reparsed} != {parsed}"
+        assert _same_formula(reparsed, parsed), f"{text2!r} -> {reparsed} != {parsed}"
 
 
 # ---------------------------------------------------------------------------
@@ -264,13 +268,15 @@ def test_term_tier_left_vs_right_associativity_hand_derived():
 
 def test_term_tier_prefix_and_postfix_applied():
     x = Constant("x")
-    prefix = parse_prover9_problem("op(150, prefix, negsym).\n(negsym x) = x.")[0].formula
+    # The files set the flag: without it Prover9 reads ``x`` as a variable, and these texts mean the constant.
+    flag = "set(prolog_style_variables).\n"
+    prefix = parse_prover9_problem(flag + "op(150, prefix, negsym).\n(negsym x) = x.")[0].formula
     assert prefix == Atom("=", [Function("negsym", [x]), x])
-    postfix = parse_prover9_problem("op(150, postfix, primed).\n(x primed) = x.")[0].formula
+    postfix = parse_prover9_problem(flag + "op(150, postfix, primed).\n(x primed) = x.")[0].formula
     assert postfix == Atom("=", [Function("primed", [x]), x])
     # fy-style self-chaining is accepted (see the module docstring's deviation
     # note: this reader does not distinguish fy from fx self-chaining).
-    double = parse_prover9_problem("op(150, prefix, negsym).\n(negsym negsym x) = x.")[0].formula
+    double = parse_prover9_problem(flag + "op(150, prefix, negsym).\n(negsym negsym x) = x.")[0].formula
     assert double == Atom("=", [Function("negsym", [Function("negsym", [x])]), x])
 
 
@@ -364,8 +370,9 @@ def test_op_directive_only_affects_later_formulas():
         # "before" used ahead of its own declaration: an ordinary undeclared
         # name, not an operator -- the same generic syntax error as always.
         parse_prover9_problem("X before Y.\nop(650, infix, before).")
-    # Declared first, then used: applies.
-    recs = parse_prover9_problem("op(650, infix, before).\nX before Y.")
+    # Declared first, then used: applies. (The file sets the flag: without it ``X`` and ``Y`` are
+    # constants, which is what Prover9 reads.)
+    recs = parse_prover9_problem("set(prolog_style_variables).\nop(650, infix, before).\nX before Y.")
     assert recs[0].formula == Atom("before", [Variable("x"), Variable("y")])
 
 
@@ -478,6 +485,38 @@ _ATOM_TIER_PRECS = (501, 550, 600, 650, 699, 710, 740)
 _TERM_TIER_PRECS = (1, 50, 120, 200, 260, 290, 310, 330, 360, 400, 490, 499)
 
 
+def _re_binds_a_name(node, enclosing=frozenset()):
+    """Whether a binder of the formula sits inside the scope of a binder of the same name."""
+    if isinstance(node, Quantifier):
+        if node.variable.name in enclosing:
+            return True
+        enclosing = enclosing | {node.variable.name}
+    return any(_re_binds_a_name(child, enclosing) for child in node._child_nodes())
+
+
+def _bound_names_by_depth(node, scope=()):
+    """``node`` with every bound variable named by the depth of its binder: two formulas that differ only in
+    the names of their bound variables have one such form."""
+    if isinstance(node, Quantifier):
+        name = f"#{len(scope)}"
+        return Quantifier(node.type, Variable(name),
+                          _bound_names_by_depth(node.formula, scope + ((node.variable.name, name),)))
+    if isinstance(node, Variable):
+        for original, bound in reversed(scope):
+            if original == node.name:
+                return Variable(bound)
+        return node
+    return node.map_children(lambda child: _bound_names_by_depth(child, scope))
+
+
+def _same_formula(read, original):
+    """Equal, or equal up to the names of the bound variables when the formula re-binds a name: the text of
+    such a formula is written under a fresh variable for the inner binder, so that Prover9 renames nothing."""
+    if _re_binds_a_name(original):
+        return _bound_names_by_depth(read) == _bound_names_by_depth(original)
+    return read == original
+
+
 def test_prover9_op_round_trip_random():
     rng = random.Random(20260918)
     for i in range(300):
@@ -504,7 +543,7 @@ def test_prover9_op_round_trip_random():
         # form -- so the re-parse below needs no custom_ops.
         text2 = parsed.to_prover9()
         reparsed = parse_prover9(text2)
-        assert reparsed == parsed, f"{text2!r} -> {reparsed} != {parsed}"
+        assert _same_formula(reparsed, parsed), f"{text2!r} -> {reparsed} != {parsed}"
 
 
 def test_prover9_op_problem_round_trip_random():
@@ -530,13 +569,12 @@ def test_prover9_op_problem_round_trip_random():
 # ---------------------------------------------------------------------------
 
 @live_prover9
-def test_prover9_accepts_our_op_declaration_live(tmp_path):
+def test_prover9_accepts_our_op_declaration_live():
     """When a real Prover9 binary IS available, confirm it accepts exactly the
     op() declaration this reader assumes (a "before" relation at precedence
     650, a free precedence no Prover9 built-in occupies) by running a real,
     trivially-provable problem through it end to end."""
-    problem = tmp_path / "custom_op.in"
-    problem.write_text(
+    problem = (
         "set(prolog_style_variables).\n"
         "op(650, infix, before).\n"
         "formulas(sos).\n"
@@ -547,7 +585,9 @@ def test_prover9_accepts_our_op_declaration_live(tmp_path):
         "  -(b before a).\n"
         "end_of_list.\n"
     )
-    result = subprocess.run(
-        [_prover9._binary(), "-f", str(problem)],
-        capture_output=True, text=True, timeout=30)
-    assert "THEOREM PROVED" in result.stdout, result.stdout + result.stderr
+    # Through the kit's own runner, which drives a binary inside WSL when
+    # $UFK_PROVER9_WSL=1 (a raw subprocess call with a Windows path could not), and
+    # raises Prover9Rejected, with Prover9's own message, if it refuses the file.
+    from unicode_fol_kit.atp.prover9_entailment import _run_prover9
+    assert _run_prover9(problem, _prover9._binary(), timeout=30, raise_on_rejection=True,
+                        use_wsl=_prover9._uses_wsl()) is True

@@ -60,6 +60,7 @@ that quietly dropped a cut would change what the program means.
 import re
 from typing import List, Optional, Tuple
 
+from ._fol_nodes import _numeral_from_text
 from .naming import ParsingError
 from .nodes import (
     Node, Variable, Constant, Number, Function, Atom, Not, And, Or, Implies,
@@ -229,7 +230,11 @@ class _Parser:
                 "importer has no first-order reading for '.'/2 list terms; "
                 "rewrite the clause without lists")
         if kind == "number":
-            return Number(float(value) if "." in value else int(value))
+            try:
+                return Number(_numeral_from_text(value))
+            except ValueError as exc:
+                raise PrologParsingError(
+                    f"SYNTAX_ERROR: at position {position}: {exc}") from None
         if kind == "quoted":
             name = _unquote(value)
             return self._compound_or_constant(name, quoted=True)

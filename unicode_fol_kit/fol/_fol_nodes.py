@@ -1,15 +1,131 @@
 """Z3 environment, base Node class, classical FOL nodes, registry, and Lark transformer."""
 
+import contextvars
+import functools
 import re
-from typing import List, Optional, Tuple, Union, Dict
+import types
+from decimal import Decimal
+from typing import Any, Callable, List, Optional, Tuple, TypeVar, Union, Dict, cast
 from lark import Transformer
 from dataclasses import dataclass, fields
 
 import z3
 
 from . import _identifiers
+from ._tptp_symbols import check_variable_names as _check_variable_names
+from ._tptp_symbols import guard_class as _guard_to_tptp
+from ._tptp_symbols import is_tptp_boolean_atom as _is_tptp_boolean_atom
+from ._tptp_symbols import truth_constant_word as _truth_constant_word
+from .naming import ParsingError
 
 _SORT = z3.DeclareSort("S")
+
+
+def numeral_key(value) -> str:
+    """The text a numeral is known by: ONE text per VALUE.
+
+    ``Number(1) == Number(1.0)`` is ``True`` in the kit (the two hash alike), so ``1``, ``1.0``
+    and ``01`` are one numeral and a route that makes a constant of a numeral makes ONE
+    constant of them. An integral value is written as an integer (``1.0`` and ``1`` are
+    ``'1'``, ``-0.0`` is ``'0'``), any other value as ``str`` of it (``'2.5'``, ``'-1'``,
+    ``'1e-07'``). Two numerals have the same key exactly when they are equal.
+
+    A :class:`Number` already stores an integral float as the integer it equals, so the key of
+    a node's value is ``str`` of it; the function takes any value, a raw ``1.0`` too.
+    """
+    if isinstance(value, bool):
+        value = int(value)
+    elif isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return str(value)
+
+
+#: What a Z3 name ends in when the symbol is a VARIABLE (``x`` is written ``x!v``), and what a
+#: constant whose own name already ends that way, or in this, gets appended (``x!v`` is written
+#: ``x!v!c``). A variable's name always ends in the first mark and a constant's never does, so a
+#: constant and a variable of one name are two symbols, and the two maps are injective.
+_VARIABLE_MARK = "!v"
+_ESCAPE_MARK = "!c"
+
+
+def z3_constant_name(name: str) -> str:
+    """The name of the Z3 symbol of the constant ``name``: the name itself, except for a name
+    that ends in ``!v`` or ``!c``, which gets ``!c`` appended so that no constant is spelled
+    like a variable's symbol (see :func:`z3_variable_name`)."""
+    return name + _ESCAPE_MARK if name.endswith((_VARIABLE_MARK, _ESCAPE_MARK)) else name
+
+
+def z3_variable_name(name: str) -> str:
+    """The name of the Z3 symbol of the variable ``name``: ``name`` followed by ``!v``."""
+    return name + _VARIABLE_MARK
+
+
+def kit_name_of_z3_symbol(z3_name: str) -> Tuple[str, bool]:
+    """Read the name of a Z3 constant of sort ``S`` back as ``(kit name, is it a variable)``.
+
+    The inverse of :func:`z3_variable_name` and of :func:`z3_constant_name`, and of nothing
+    else: ``x!v`` is the variable ``x``, ``x!v!c`` the constant ``x!v``, ``x`` the constant
+    ``x``. A name that neither writer produces is a constant of exactly that name: ``x!c``
+    is not written for any constant (the constant ``x`` is written ``x``, and only a name
+    that already ends in a mark gets ``!c`` appended), so a text that holds the symbols
+    ``x`` and ``x!c`` reads them as two constants, ``x`` and ``x!c``, never as one. The
+    function reads ONE name, so it is no more than the inverse of the writers: a text that holds
+    ``a!c`` (no writer's) and ``a!c!c`` (the writer's name of the constant ``a!c``) would be read
+    as one constant, ``a!c``, by calling it on each; the reader of a text
+    (:func:`~unicode_fol_kit.atp.z3_input.from_z3`) reads the second as written, ``a!c!c``.
+    Only the names of the nullary symbols of sort ``S`` are written this way (a function, a
+    predicate and a proposition keep their names), so only those are to be read with it.
+    """
+    if z3_name.endswith(_VARIABLE_MARK):
+        return z3_name[:-len(_VARIABLE_MARK)], True
+    if z3_name.endswith(_ESCAPE_MARK):
+        stripped = z3_name[:-len(_ESCAPE_MARK)]
+        if stripped.endswith((_VARIABLE_MARK, _ESCAPE_MARK)):
+            return stripped, False
+    return z3_name, False
+
+
+def check_z3_name(name: str) -> None:
+    """Refuse a symbol name that the Z3 C API cannot carry.
+
+    Z3 reads a name as a C string: it ends at the first NUL character, so ``a\\x00b`` and
+    ``a\\x00c`` would be the one symbol ``a``, and a lone surrogate (which no UTF-8 text
+    holds) makes the call raise ``UnicodeEncodeError``. A problem that names two things
+    alike is not the problem that was asked, so the name is refused before anything is
+    declared, by every translation into Z3 (:class:`Z3Env`, the arithmetic environment).
+
+    Raises:
+        NotImplementedError: the name holds a NUL character or a lone surrogate.
+    """
+    if "\x00" in name:
+        raise NotImplementedError(
+            f"to_z3: the name {name!r} holds a NUL character, which Z3 reads as the end of a name "
+            f"(so it would be the symbol {name.split(chr(0))[0]!r}). Rename the symbol.")
+    try:
+        name.encode("utf-8")
+    except UnicodeEncodeError:
+        raise NotImplementedError(
+            f"to_z3: the name {name!r} holds a lone surrogate, which is no text that Z3 can take "
+            f"as the name of a symbol. Rename the symbol.") from None
+
+
+def numeral_constant_clash(text: str):
+    """Refuse a numeral and a constant that are one symbol.
+
+    A numeral is translated to the symbol of its own text (:func:`numeral_key`), so
+    ``Number(1)`` and a constant named ``1`` (``Constant('1')``) are the same Z3
+    symbol and ``P(1)`` would say what ``P('1')`` says. The problem writers for TPTP
+    refuse the pair for the same reason. Raised by :class:`Z3Env` and by the cvc5
+    sanitiser. A VARIABLE spelled like a numeral is another symbol and is not refused.
+
+    Raises:
+        NotImplementedError: always, naming the text and what to do instead.
+    """
+    raise NotImplementedError(
+        f"to_z3: the numeral {text} and a constant named {text!r} are one symbol "
+        f"(a numeral is the symbol of its own text), so the problem would say about one "
+        f"thing what it says about two. Rename the constant, or write the number as a "
+        f"constant of another name.")
 
 
 # =========================
@@ -17,31 +133,120 @@ _SORT = z3.DeclareSort("S")
 # =========================
 
 class Z3Env:
-    """Tracks declared Z3 symbols. Single sort for all terms."""
+    """Tracks declared Z3 symbols. Single sort for all terms.
 
-    def __init__(self):
+    **What is one symbol.** A constant is keyed on its name; a function and a
+    predicate on ``(name, arity)`` each, in a table of their own. So ``P(a)`` and
+    ``P(a, b)`` are two predicates, ``f(a)`` and ``f(a, b)`` two functions,
+    ``P(f(a))`` with a predicate ``P`` and a function ``P`` two symbols, and the
+    guard predicate ``Car`` of a sort (arity 1) is not the predicate ``Car`` of
+    ``Car(x, y)`` (arity 2). A function of no arguments is the constant of its name;
+    a predicate of no arguments (a proposition) is not.
+
+    **A variable is a symbol of its own.** A :class:`~unicode_fol_kit.fol.nodes.Variable`
+    and a :class:`~unicode_fol_kit.fol.nodes.Constant` of one name are two symbols, in
+    every position: the quantifier of ``∀x P(x, c)`` with ``c = Constant('x')`` binds the
+    variable and leaves the constant alone. The Z3 symbol of the variable ``x`` is named
+    ``x!v`` and a constant's is named as it is, except that a constant whose name ends in
+    ``!v`` or ``!c`` gets ``!c`` appended (:func:`z3_constant_name`), so no constant can be
+    spelled like a variable's symbol, and the naming needs no state: two environments, or
+    two translations with no environment at all, agree on every name. ``variables_apart=False``
+    names a variable as it is named, like a constant; it is for a caller that has already
+    given every symbol of the problem a name of its own, in ONE namespace (the SMT-LIB text
+    routes do: their sanitiser gives every predicate, function, constant and variable a token
+    that no other has, and none that ends in ``!v`` or ``!c``, and they lower every counting
+    quantifier before they sanitise, so that the witnesses are in that namespace too) and wants
+    the text to hold the names it writes. A name minted for this environment by a ``to_z3``
+    method (the witnesses of a counting quantifier, the variable of a sort-axiom) is a
+    variable, so with the default naming it is a symbol ``x0!v`` that no name of a problem can
+    be, and needs no avoid set.
+
+    **One exception, refused.** The numeral ``Number(1)`` is written as the symbol of its
+    VALUE (``Number(1.0)`` is the same constant, see :func:`numeral_key`), which is also what
+    a constant named ``1`` is, so the two would be ONE Z3 symbol and ``P(1)`` would say the
+    same as ``P('1')`` (a TPTP writer refuses the pair for the same reason). The environment
+    remembers which kind of node first asked for a name and raises
+    :class:`NotImplementedError` when a numeral and a constant meet on one name. Translate
+    every formula of a problem through ONE environment (``to_z3(env)``) and the refusal
+    covers the whole problem, not only one formula.
+    """
+
+    def __init__(self, variables_apart: bool = True):
         """Initialise empty symbol, function, and predicate tables."""
+        self.variables_apart = variables_apart
         self.symbols: Dict[str, z3.ExprRef] = {}
-        self.funcs: Dict[str, z3.FuncDeclRef] = {}
-        self.preds: Dict[str, z3.FuncDeclRef] = {}
+        self.variables: Dict[str, z3.ExprRef] = {}
+        self.funcs: Dict[Tuple[str, int], z3.FuncDeclRef] = {}
+        self.preds: Dict[Tuple[str, int], z3.FuncDeclRef] = {}
+        # name -> "numeral" / "name": which kind of node asked for the symbol first
+        self._claims: Dict[str, str] = {}
 
-    def get_symbol(self, name: str) -> z3.ExprRef:
-        """Get or create a Z3 constant (used for both variables and constants)."""
+    def copy(self) -> "Z3Env":
+        """An independent environment that knows everything this one knows."""
+        other = Z3Env(self.variables_apart)
+        other.symbols.update(self.symbols)
+        other.variables.update(self.variables)
+        other.funcs.update(self.funcs)
+        other.preds.update(self.preds)
+        other._claims.update(self._claims)
+        return other
+
+    def _claim(self, name: str, kind: str) -> None:
+        """Record that ``kind`` (``"numeral"`` or ``"name"``) uses the symbol ``name``; refuse a mixture."""
+        seen = self._claims.setdefault(name, kind)
+        if seen != kind:
+            numeral_constant_clash(name)
+
+    def get_symbol(self, name: str, numeral: bool = False) -> z3.ExprRef:
+        """Get or create the Z3 constant of the constant (or numeral) ``name``.
+
+        ``numeral=True`` is the call of :class:`Number`, whose symbol is named by the text of
+        its value; it is refused (``NotImplementedError``) when a constant of the same name was
+        met, and the other way round. A variable is not asked for here (:meth:`get_variable`).
+        """
+        self._claim(name, "numeral" if numeral else "name")
         if name not in self.symbols:
-            self.symbols[name] = z3.Const(name, _SORT)
+            check_z3_name(name)
+            self.symbols[name] = z3.Const(z3_constant_name(name), _SORT)
         return self.symbols[name]
 
+    def get_variable(self, name: str) -> z3.ExprRef:
+        """Get or create the Z3 constant that stands for the variable ``name``.
+
+        A symbol of its own, apart from the constant of the same name (see the class
+        docstring), so a quantifier over it never captures that constant.
+        """
+        if not self.variables_apart:
+            return self.get_symbol(name)
+        if name not in self.variables:
+            check_z3_name(name)
+            self.variables[name] = z3.Const(z3_variable_name(name), _SORT)
+        return self.variables[name]
+
     def get_func(self, name: str, arity: int) -> z3.FuncDeclRef:
-        """Get or create an uninterpreted Z3 function of the given arity mapping S^arity -> S."""
-        if name not in self.funcs:
-            self.funcs[name] = z3.Function(name, *([_SORT] * arity), _SORT)
-        return self.funcs[name]
+        """Get or create an uninterpreted Z3 function of the given arity mapping S^arity -> S.
+
+        Keyed on ``(name, arity)``: one name at two arities is two functions.
+        """
+        if arity == 0:
+            self._claim(name, "name")           # a function of no arguments is a constant
+        key = (name, arity)
+        if key not in self.funcs:
+            check_z3_name(name)
+            z3_name = z3_constant_name(name) if arity == 0 else name
+            self.funcs[key] = z3.Function(z3_name, *([_SORT] * arity), _SORT)
+        return self.funcs[key]
 
     def get_pred(self, name: str, arity: int) -> z3.FuncDeclRef:
-        """Get or create an uninterpreted Z3 predicate of the given arity mapping S^arity -> Bool."""
-        if name not in self.preds:
-            self.preds[name] = z3.Function(name, *([_SORT] * arity), z3.BoolSort())
-        return self.preds[name]
+        """Get or create an uninterpreted Z3 predicate of the given arity mapping S^arity -> Bool.
+
+        Keyed on ``(name, arity)``: one name at two arities is two predicates.
+        """
+        key = (name, arity)
+        if key not in self.preds:
+            check_z3_name(name)
+            self.preds[key] = z3.Function(name, *([_SORT] * arity), z3.BoolSort())
+        return self.preds[key]
 
 
 # =========================
@@ -50,6 +255,38 @@ class Z3Env:
 
 class Node:
     """Base class for all AST nodes."""
+
+    def __init_subclass__(cls, **kwargs):
+        """Guard the new class's ``to_tptp`` (see :meth:`to_tptp`).
+
+        Whatever ``to_tptp`` the class resolves to, its own or one inherited
+        from a mixin, is replaced by the single-formula collision guard of
+        :mod:`unicode_fol_kit.fol._tptp_symbols`. This is what covers every
+        node family without each one being edited, and a family added later
+        without anyone remembering to ask.
+        """
+        super().__init_subclass__(**kwargs)
+        _guard_to_tptp(cls)
+
+    def _tptp_symbol(self):
+        """The name this node itself writes into TPTP text, or ``None``.
+
+        ``(resolver, kit name)``: the kit name in the AST and the module-level
+        function (:func:`_predicate_symbol`, :func:`_function_symbol`,
+        :func:`_constant_symbol`) that turns it into ``(namespace, word, kind)``,
+        the identifier :meth:`to_tptp` writes for it. Only a node that writes a
+        NAME, a numeral or a variable overrides this (:class:`Atom`,
+        :class:`Function`, :class:`Constant`, :class:`Measure`, ``SortedConstant``,
+        :class:`Number`, :class:`Variable`); a node that LOWERS to others
+        (``SortedQuantifier`` writes the guard predicate of its sort, a ``Count``
+        its witnesses) names nothing itself and is seen through the nodes it is
+        rendered as. The single-formula guard and the
+        problem writers' collision check both read it, which is why they cannot
+        disagree about what a node writes. It only NAMES the symbol (it runs once
+        per rendered node); the fold runs once per distinct name, when the symbols
+        are checked.
+        """
+        return None
 
     def to_dict(self) -> dict:
         """Serialise this node to a JSON-compatible dictionary."""
@@ -60,11 +297,108 @@ class Node:
         raise NotImplementedError
 
     def to_prover9(self) -> str:
-        """Render this node as a Prover9-syntax string."""
+        """Render this node as a Prover9-syntax string.
+
+        **What it sees.** The OUTERMOST call of a node that has a binder in it sees the whole
+        node and writes text that means it: a binder that sits inside the scope of a binder of
+        its own name (the free variables of the node count: Prover9 closes a formula
+        universally) is renamed to a fresh variable, because LADR would rename it itself, to
+        ``x0``, ``x1``, ... , and a constant of that spelling would then be bound by it; the
+        witnesses of a counting quantifier are fresh against every name of the node, of every
+        kind, compared case-folded (Prover9 writes a variable in upper case, so ``x0`` and
+        ``X0`` are one variable there); and sorted nodes are lowered first. The problem writer
+        makes the same preparation of every formula of a problem, with the same functions.
+
+        **What it cannot see.** It renders ONE node and has no whole-problem view.
+        A variable is written as the upper-case of its name, so two variables that
+        differ only in case are one variable in the text unless a binder is renamed:
+        a binder inside the scope of another is (``∀x ∃X R(x, X)`` is written
+        ``(all X (exists X0 R(X, X0)))``). What no renaming of a binder repairs is
+        refused by name instead of written as one variable: an occurrence that a
+        binder of another spelling encloses (a free ``x`` inside ``∀X``), and two free
+        variables of one upper-case name (``P(x) ∧ Q(X)``).
+        :func:`unicode_fol_kit.atp.prover9_entailment
+        .generate_prover9_input_with_mapping` checks every formula of a problem for
+        every such pair, harmless ones included, and refuses it by name (the check
+        :meth:`to_tptp` makes on its own, from :mod:`unicode_fol_kit.fol._tptp_symbols`);
+        build a problem with it, never by joining ``to_prover9()`` strings. A constant
+        or a propositional atom that
+        Prover9 would read as a variable (a name that begins with an upper-case
+        letter or an underscore) is written in double quotes, which Prover9 never
+        reads as a variable (see :meth:`Constant.to_prover9`); the writer renames
+        such a symbol instead and records the rename. For the same reason it cannot
+        see that one name is used for two symbols: a predicate of two arities, or one
+        word as a predicate and as a constant, is ONE symbol to Prover9, which
+        refuses the file, and the writer gives the later symbol a name of its own.
+        A name that is no word Prover9 reads as one symbol (a space, a non-ASCII
+        letter, a ``$``-word) is refused by name; the writer renames it. A numeral
+        that is not a digit string (``2.5``, ``-1``) is written in double quotes.
+        """
         raise NotImplementedError
 
     def to_tptp(self) -> str:
-        """Render this node as a TPTP-syntax string."""
+        """Render this node as a TPTP-syntax string.
+
+        **One formula, checked.** The OUTERMOST call refuses (``NotImplementedError``,
+        naming both kit names and the word they share) when two DISTINCT names
+        of one kind inside this one formula would be written as the same TPTP
+        identifier. A name is written with its first character folded to
+        lower-case, so ``gaseous`` and ``Gaseous`` (two constants), ``Foo`` and
+        ``foo`` (two predicates) or ``Bar`` and ``bar`` (two functions) would
+        otherwise become one symbol and ``P(gaseous) <-> P(Gaseous)`` would be
+        written as a tautology. The check sees every name that reaches the
+        text, including those a reduction introduces (the sort guard predicate
+        of a ``SortedQuantifier``), and is installed on every node class by
+        :meth:`__init_subclass__`; a nested call only records.
+
+        Three more cases are written as one word, and refused the same way: a
+        number and a constant spelled like it (``Number(1)`` and ``Constant('1')``
+        are both ``1``), an arithmetic or comparison symbol and a symbol written
+        like it (``+`` is ``$sum``, so a function named ``$sum`` is the same
+        word), and two variables that are one TPTP variable (``x`` and ``X``:
+        ``∀x ∃X R(x, X)`` would be written ``![X]: ?[X]: r(X,X)``). A formula that
+        binds ``x`` in one place and ``X`` in another, even where they never meet,
+        is refused too, rather than analysed for scope.
+
+        A name that is written as something that is not a TPTP word is refused as
+        well, never written as it is: an unquoted TPTP name is a lower-case letter
+        followed by letters, digits and underscores, so ``has-part``,
+        ``2008SummerOlympics``, ``_x`` and a non-ASCII predicate or function name
+        (a constant is transliterated, ``θ`` is ``theta``) have no rendering. The
+        problem writers rewrite such a name under a legal replacement and return
+        the map. A word that starts with ``$`` is one of TPTP's own, and is refused
+        as a RESERVED word, with ONE exception: the NULLARY atoms ``$true`` and
+        ``$false`` are TPTP's defined propositions (this kit's TPTP reader produces
+        them), they are written verbatim and are no symbol of the user's, and
+        ``to_z3`` reads them as true and false. A VARIABLE that is written as no
+        TPTP variable (``ä`` is written ``Ä``, ``x-1``, ``1x``) is refused by name
+        too; the problem writers rename a variable, which is bound, without
+        recording anything.
+
+        **What it cannot see, and what is not refused.** It sees ONE formula. A
+        problem assembled from several ``to_tptp()`` strings can still merge
+        ``gaseous`` in one premise with ``Gaseous`` in another, so build a
+        problem with :func:`unicode_fol_kit.atp.generate_tptp_problem_with_mapping`
+        (or the TF0 / TFA writers), which check every premise and the
+        conclusion together. A predicate and a function/constant that share a
+        word (the class ``Agent`` and the role function ``agent``) are NOT
+        refused here: the text is unambiguous by position and this kit's reader
+        reads it back, but a prover may not, so the writers rename the term side
+        and return the map.
+
+        **The asymmetry is deliberate, for this release.** A name TPTP cannot
+        spell, or a predicate/term clash, is renamed and recorded in a
+        ``TptpNameMap`` by the writers; two LEGAL names of one kind that fold
+        together are refused by name, never renamed, here and in the writers
+        alike. The same-kind refusal predates the name map and stays so that no
+        existing caller silently receives a symbol renamed behind its back.
+
+        Raises:
+            NotImplementedError: two symbols written as one word, or a name
+                that is not a TPTP word (above), or a construct outside the
+                classical first-order fragment (modal, second-order,
+                Łukasiewicz, lambda, ...), which names itself.
+        """
         raise NotImplementedError
 
     @staticmethod
@@ -113,11 +447,12 @@ class Node:
         return label, children
 
     def to_unicode_str(self) -> str:
-        """Render this node back to a parseable Unicode formula string.
+        """Render this node back to a Unicode formula string.
 
         The result, re-parsed in the matching MSFLParser mode, yields a
         structurally equal AST (parser round-trip): ``parse(n.to_unicode_str())
-        == n``. For the classical FOL fragment (``∀ ∃ ¬ ∧ ∨ → ↔ ⊕`` and
+        == n`` -- for every node that has a text form (see the last paragraph:
+        a node that mixes sorted and unsorted occurrences has none). For the classical FOL fragment (``∀ ∃ ¬ ∧ ∨ → ↔ ⊕`` and
         predicates over constants/variables — no lambda, no modal, no
         second-order) this is the B2 roundtrip guarantee, exercised
         example-by-example in ``tests/test_to_unicode_str.py`` and, starting
@@ -128,6 +463,18 @@ class Node:
         see the module docstring of ``fol/nodes.py``. The renderer lives in
         _msfl_nodes.py (imported lazily to avoid a circular import) because it
         dispatches over both the FOL nodes here and the MSFL/lambda nodes there.
+
+        **A node that mixes sorted and unsorted occurrences has no text form.**
+        The many-sorted text grammar is all-sorted or all-unsorted: a sorted
+        quantifier over an unsorted one (``∀x:A ∃y P(x, y)``), a constant written
+        ``carl:A`` in one place and plain ``carl`` in another, or an unsorted
+        quantifier around a sorted constant prints text that every parser refuses
+        (``NamingError``), in every mode. The refusal is loud: such text is never
+        read back as a different formula. The node itself is a legitimate formula
+        (``c:S`` and plain ``c`` are one constant in the kit's semantics, and an
+        unsorted variable ranges over the whole universe), so decide, translate
+        and export it as a node, or write the sort on every occurrence (or on none)
+        before printing it.
         """
         from ._msfl_nodes import _uni
         return _uni(self)
@@ -266,10 +613,18 @@ class Node:
         return type(self)(**new_kwargs)
 
     def walk(self):
-        """Yield this node and every descendant in pre-order (depth-first)."""
-        yield self
-        for child in self._child_nodes():
-            yield from child.walk()
+        """Yield this node and every descendant in pre-order (depth-first).
+
+        A node comes before its children and the children come left to right, in the
+        order of ``Node._child_nodes``. The traversal keeps its own stack, so a formula
+        nested thousands of levels deep is walked as readily as a shallow one: it does
+        not depend on the interpreter's recursion limit.
+        """
+        stack = [self]
+        while stack:
+            node = stack.pop()
+            yield node
+            stack.extend(reversed(node._child_nodes()))
 
     def subformulas(self):
         """Yield every sub-node that is a formula (i.e. not an atomic term).
@@ -320,6 +675,12 @@ class Node:
         emit(self)
         lines.append("}")
         return "\n".join(lines)
+
+
+# ``__init_subclass__`` guards every SUBCLASS; the base's own ``to_tptp`` (it
+# raises, and a subclass without one inherits it) is guarded here so that every
+# node class, ``Node`` included, answers ``is_guarded`` the same way.
+_guard_to_tptp(Node)
 
 
 # =========================
@@ -500,22 +861,59 @@ class Variable(Node):
         return Variable(d["name"])
 
     def to_z3(self, env: Z3Env = None):
-        """Translate to a Z3 constant in the uninterpreted sort S."""
-        return (env or Z3Env()).get_symbol(self.name)
+        """Translate to a Z3 constant in the uninterpreted sort S.
+
+        A variable is a symbol of its own, apart from a constant of the same name (see
+        :class:`Z3Env`): the quantifier that binds ``x`` binds no constant named ``x``.
+        """
+        return (env or Z3Env()).get_variable(self.name)
 
     def to_prover9(self) -> str:
         """Render the variable name in uppercase.
 
         The Prover9 driver enables ``set(prolog_style_variables)``, under which a
-        symbol is a variable only if it begins with an uppercase letter or an
-        underscore. Grammar variable names are always lowercase, so they are
-        uppercased here; constants and predicate/function names stay as-is.
+        symbol that no quantifier binds is a variable only if it begins with an
+        uppercase letter (an underscore does not make one: measured on Prover9
+        2026-8A, ``_x`` is a constant with the flag and without it). Grammar variable
+        names are always lowercase, so they are uppercased here; constants and
+        predicate/function names stay as-is.
+
+        A name with a non-ASCII character is refused: Prover9 reads ASCII only,
+        and upper-casing can give the SAME text for two different variables
+        (``ı`` and ``i`` both print as ``I``, ``ſ`` and ``s`` as ``S``, the
+        ligatures ``ﬅ`` and ``ﬆ`` as ``ST``), which would silently merge them. A name that
+        is no word either (``x-1``, ``1x``, ``x'``, an empty name) is refused as well: written
+        bare, Prover9 reads an operator or another symbol in it, and the kit's own reader
+        could not read the text back.
         """
+        if not self.name.isascii():
+            raise NotImplementedError(
+                f"to_prover9: variable {self.name!r} has a non-ASCII character. "
+                f"Prover9 reads ASCII only, and upper-casing {self.name!r} gives "
+                f"{self.name.upper()!r}, which is either text Prover9 cannot read "
+                f"or the same text as another variable (ı and i both print as 'I'). "
+                f"Rename the variable to an ASCII letter followed by digits "
+                f"(x, y1) before exporting.")
+        if not _PROVER9_IDENTIFIER_RE.fullmatch(self.name):
+            raise NotImplementedError(
+                f"to_prover9: variable {self.name!r} is no word Prover9 reads as one symbol: "
+                f"it is written as {self.name.upper()!r}, and only letters, digits and "
+                f"underscores, not beginning with a digit, make a word (a '-', a '.', a quote "
+                f"or a leading digit is read as an operator or as another symbol). "
+                f"Rename the variable to an ASCII letter followed by digits "
+                f"(x, y1) before exporting.")
         return self.name.upper()
 
     def to_tptp(self) -> str:
-        """Render variable in TPTP syntax. TPTP requires variables to be uppercase; single lowercase letters are capitalized."""
+        """Render variable in TPTP syntax. TPTP requires variables to be uppercase; single lowercase letters are capitalized.
+
+        The outermost :meth:`Node.to_tptp` call refuses a variable whose upper-case
+        is no TPTP variable (``ä``, ``x-1``, ``1x``); the problem writers rename it."""
         return self.name.upper()
+
+    def _tptp_symbol(self):
+        """The TPTP variable :meth:`to_tptp` writes: the upper-case of the name, so ``x`` and ``X`` are one."""
+        return (_variable_symbol, self.name)
 
 
 # --------------------------------------------------------------------------- #
@@ -576,6 +974,305 @@ def constant_name_from_ascii(s: str) -> str:
     return s
 
 
+def _prover9_reads_as_variable(token: str) -> bool:
+    """Whether Prover9, under ``set(prolog_style_variables)``, reads the symbol
+    ``token`` in TERM position as a VARIABLE rather than as a constant.
+
+    Prover9's own rule (LADR ``ladr/symbols.c``, ``variable_name``): with that
+    flag set, a symbol is a variable iff its first character is ``A``..``Z``
+    (the manual: "If this flag is set, variables in clauses start with (upper
+    case) 'A' through 'Z'"). It applies to every ARITY-0 symbol in term
+    position (``set_vars_recurse`` converts a ``CONSTANT`` term), so a constant
+    is affected; a function or predicate WITH arguments is not (the symbol is
+    not a constant term, only its arguments are examined). The LADR source reads
+    only ``A``..``Z``: measured on Prover9 2026-8A, ``_x`` is a constant with the
+    flag and without it, and this kit's own Prover9 reader
+    (:mod:`~unicode_fol_kit.fol.prover9_input`) reads it as one too. A leading
+    underscore is nevertheless treated like a capital here, because the Prolog
+    convention reads it as a variable and a text that another reader may take
+    for a variable must not carry the name bare; the cost is a rename or a pair of
+    quotes that Prover9 did not need.
+    """
+    first = token[:1]
+    return first == "_" or ("A" <= first <= "Z")
+
+
+_PROVER9_IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+#: A name Prover9 reads as ONE symbol when it is written bare: ASCII letters,
+#: digits and underscores (a digit-leading word is one symbol too: ``2nd(X)`` is
+#: read, measured on Prover9 2026-8A).
+_PROVER9_WORD_RE = re.compile(r"[A-Za-z0-9_]+")
+
+#: The two words LADR reads as quantifiers. As a predicate or a function applied to a
+#: variable at the start of an operand, ``exists(X) & ...`` is read as ``exists X``
+#: followed by a stray ``&`` (measured on Prover9 2026-8A: Prover9 echoes
+#: ``(exists W exists W &(Q(c) & R(c)))`` and ends with ``symbols used with multiple
+#: arities: &/1, &/2``). A double-quoted symbol is never a keyword, so these are written
+#: in double quotes at every arity; the problem writer renames them instead.
+_PROVER9_QUANTIFIERS = frozenset({"all", "exists"})
+
+#: Symbols, by name AND arity, that Prover9 or this kit's own reader of Prover9 files reads as
+#: something other than an ordinary symbol (measured on Prover9 2026-8A):
+#:
+#: * ``if`` at three arguments: LADR reads the first argument as a FORMULA, so
+#:   ``(all W if(W, a, a))`` is refused ("cannot be used as atomic formulas, because they are
+#:   variables: W") and ``if(a, b, c)`` makes ``a`` a relation symbol, which a constant ``a``
+#:   elsewhere in the file contradicts;
+#: * ``end_of_list`` with no argument: inside a ``formulas(...)`` list the bare word ends the
+#:   list, so a proposition of that name is "Unrecognized command or list";
+#: * ``formulas`` at one argument: Prover9 reads ``formulas(alpha)`` in a list as an atom, but a
+#:   file reader that takes it for the header of a nested list cannot read the text back.
+#:
+#: A double-quoted symbol is a symbol of its own that none of this applies to, so a single
+#: renderer writes these in double quotes; the problem writer renames them instead.
+_PROVER9_RESERVED_SYMBOLS = frozenset({("if", 3), ("end_of_list", 0), ("formulas", 1)})
+
+
+def _prover9_arity_zero_symbol(token: str) -> Optional[str]:
+    """The text that makes Prover9 read the arity-0 symbol ``token`` as itself: a
+    constant in term position, a proposition in formula position.
+
+    A name that Prover9 would not read as a variable
+    (:func:`_prover9_reads_as_variable`) is written as it is. One that it would
+    is written in double quotes. LADR stores a double-quoted symbol WITH its
+    quote characters, so the first character it tests for the variable rule is
+    the quote, in every variable style; ``"Gaseous"`` is a constant and
+    ``"Rain"`` a proposition, each distinct from the bare word of the same
+    letters (measured on Prover9 2026-8A, with and without
+    ``prolog_style_variables``). The quantifier words ``all`` and ``exists`` are
+    written in double quotes too (:data:`_PROVER9_QUANTIFIERS`), and so is a word that is
+    reserved at no argument (:data:`_PROVER9_RESERVED_SYMBOLS`). LADR has no escape
+    inside quotes, so a name can be quoted only when it is a plain word (ASCII
+    letters, digits and underscore, which excludes the quote itself). ``None`` says
+    the name is no such word (it holds a space, a punctuation mark, a non-ASCII
+    letter, or nothing at all): it can be written neither bare nor quoted, and the
+    caller refuses it by name (:func:`_prover9_name_refusal`).
+    """
+    if _PROVER9_WORD_RE.fullmatch(token) is None:
+        return None
+    if (token in _PROVER9_QUANTIFIERS or (token, 0) in _PROVER9_RESERVED_SYMBOLS
+            or _prover9_reads_as_variable(token)):
+        return '"' + token + '"'
+    return token
+
+
+def _prover9_name_refusal(what: str, name: str, written: Optional[str] = None
+                          ) -> NotImplementedError:
+    """The refusal for a symbol name that can be written neither bare nor in quotes.
+
+    ``what`` says which symbol (``"the predicate"``, ``"the constant"``), ``name``
+    is the kit name and ``written`` the text it was reduced to when that differs
+    (a constant is transliterated first). A name that begins with ``$`` gets the
+    reason that is its own: Prover9 keeps those words for itself.
+    """
+    if name.startswith("$"):
+        return NotImplementedError(
+            f"to_prover9: {what} {name!r} is a '$'-word. Prover9 keeps the words that begin "
+            f"with '$' for itself (its truth constants are $T and $F), so a symbol spelled "
+            f"like that is not a name of the user's, and the text would say something else; "
+            f"the kit writes only the nullary atoms $true and $false, as $T and $F. Rename "
+            f"the symbol before exporting it.")
+    shown = f" (written {written!r})" if written is not None and written != name else ""
+    return NotImplementedError(
+        f"to_prover9: {what} {name!r}{shown} cannot be written for Prover9. Prover9 reads a "
+        f"bare word of ASCII letters, digits and underscores as one symbol and a "
+        f"double-quoted word as another, and this name is neither: it holds a space, a "
+        f"punctuation mark or a non-ASCII letter, or it is empty, so any text for it would "
+        f"be read as several symbols or refused. Build the problem with "
+        f"unicode_fol_kit.atp.prover9_entailment.generate_prover9_input_with_mapping, which "
+        f"writes such a name under an ASCII replacement and returns the map, or rename it.")
+
+
+def _prover9_word(name: str, what: str, arity: Optional[int] = None) -> str:
+    """``name`` as the word of a predicate or function that has ``arity`` arguments, or a
+    refusal by name. Such a symbol is never read as a variable, whatever its first
+    letter, so only its shape matters; the quantifier words ``all`` and ``exists``, and a
+    word reserved at this number of arguments (:data:`_PROVER9_RESERVED_SYMBOLS`), are the
+    exception, which are written in double quotes (:data:`_PROVER9_QUANTIFIERS`)."""
+    if _PROVER9_WORD_RE.fullmatch(name) is None:
+        raise _prover9_name_refusal(what, name)
+    if name in _PROVER9_QUANTIFIERS or (name, arity) in _PROVER9_RESERVED_SYMBOLS:
+        return '"' + name + '"'
+    return name
+
+
+#: True while the OUTERMOST ``to_prover9`` of a node writes the tree :func:`_prover9_prepared` made of
+#: it, and in every call nested below it: such a call writes its node as it is.
+_PROVER9_PREPARED: "contextvars.ContextVar[bool]" = contextvars.ContextVar(
+    "unicode_fol_kit_prover9_prepared", default=False)
+
+
+def _prover9_scope_scan(node: "Node") -> Tuple[bool, frozenset]:
+    """Whether a binder of ``node`` is read by Prover9 as one that re-binds a name, and the upper-case
+    names of the free variables of ``node``. Iterative: it costs no recursion depth.
+
+    A binder re-binds when it sits inside the scope of a binder of its own name, or when a variable of
+    its name is free somewhere in the node (Prover9 closes a formula universally, so the closure is a
+    binder that every other one sits in). Names are compared as Prover9 reads them, in upper case.
+    """
+    free: set = set()
+    binders: list = []
+    rebound = False
+    stack: list = [(node, frozenset())]
+    while stack:
+        current, bound = stack.pop()
+        if isinstance(current, Variable):
+            if current.name.upper() not in bound:
+                free.add(current.name.upper())
+        elif isinstance(current, Quantifier):
+            name = current.variable.name.upper()
+            rebound = rebound or name in bound
+            binders.append(name)
+            stack.append((current.formula, bound | {name}))
+        else:
+            stack.extend((child, bound) for child in current._child_nodes())
+    return rebound or any(name in free for name in binders), frozenset(free)
+
+
+def _prover9_merged_variables(node: "Node") -> Optional[Tuple[str, str]]:
+    """Two variables of ``node`` that its text would read as ONE, or ``None``. Iterative.
+
+    Prover9 reads a variable by the upper-case of its name, so ``x`` and ``X`` are one variable in the
+    text. That is harmless where the two are bound apart (``(all X P(X)) & (all X Q(X))``), and a binder
+    inside the scope of another of the same upper-case name is renamed (:func:`_prover9_prepared`). What
+    is left, and what no renaming of a binder can repair, is an occurrence that the binder of ITS name
+    does not enclose but a binder of the same upper-case name does (``∀X P(x)`` with a free ``x``: the
+    text binds it), and two free variables of one upper-case name (``P(x) ∧ Q(X)``: two parameters
+    become one). Call it on a tree whose re-bound binders are already renamed.
+    """
+    free: dict = {}
+    stack: list = [(node, {})]
+    while stack:
+        current, binders = stack.pop()
+        if isinstance(current, Variable):
+            upper = current.name.upper()
+            binder = binders.get(upper)
+            if binder is None:
+                first = free.setdefault(upper, current.name)
+                if first != current.name:
+                    return first, current.name
+            elif binder != current.name:
+                return binder, current.name
+        elif isinstance(current, Quantifier):
+            stack.append((current.formula, {**binders, current.variable.name.upper(): current.variable.name}))
+        else:
+            stack.extend((child, binders) for child in current._child_nodes())
+    return None
+
+
+def _prover9_refuse_merged_variables(node: "Node") -> None:
+    """Refuse ``node`` by name when two of its variables would be read as one (see
+    :func:`_prover9_merged_variables`); the refusal is the one the problem writer makes."""
+    pair = _prover9_merged_variables(node)
+    if pair is not None:
+        _check_variable_names(Atom("variables", tuple(Variable(name) for name in pair)),
+                              where="Node.to_prover9", subject="formula", dialect="prover9")
+
+
+def _prover9_prepared(node: "Node") -> "Node":
+    """The tree whose text means what ``node`` means: ``node`` with its binders made safe for Prover9.
+
+    Prover9 reads the names of a text, not the tree, and two things make it read another formula than
+    the node whose text it is. LADR renames a variable that a quantifier binds inside the scope of a
+    quantifier of the same name, to ``x0``, ``x1``, ... (the first that is no variable in scope), and
+    takes a constant of that spelling for it: ``(all W (all W P(W, x0)))`` is clausified to
+    ``P(A, A)``. And a counting witness is a name minted for the text: Prover9 writes a variable in
+    upper case, so a witness ``x0`` next to a variable ``X0`` is ONE variable.
+
+    This is the preparation the problem writer makes of every formula of a problem, with the same two
+    functions (``_lower_for_prover9`` and ``_rename_rebound_binders`` of
+    ``unicode_fol_kit.atp.prover9_entailment``): sorted nodes are lowered, the witnesses of a counting
+    quantifier are fresh against every name of the whole node, of every kind, compared case-folded, and
+    a binder that re-binds a name (see :func:`_prover9_scope_scan`) is renamed to a fresh variable. A
+    node that needs none of this is returned as it is, so a formula that holds no re-bound binder and
+    no counting quantifier is written exactly as deep as it always was, and so is a node that holds a
+    Lukasiewicz connective (the connective refuses itself when it is written).
+
+    Two variables that differ only in case and that no renaming of a binder can tell apart are refused by
+    name (:func:`_prover9_merged_variables`), as the problem writer refuses them.
+
+    Raises:
+        NotImplementedError: two variables of ``node`` would be written as one.
+    """
+    from ..atp.prover9_entailment import _LUKASIEWICZ_NODES, _lower_for_prover9, _rename_rebound_binders
+    nodes = list(node.walk())
+    names = {n.name for n in nodes if isinstance(n, Variable)}
+    merged = len({name.upper() for name in names}) < len(names)
+    if not any(getattr(n, "variable", None) is not None for n in nodes):
+        if merged:
+            _prover9_refuse_merged_variables(node)
+        return node
+    if any(isinstance(n, _LUKASIEWICZ_NODES) for n in nodes):
+        return node
+    if any(isinstance(n, Variable) and not n.name.isascii() for n in nodes):
+        return node          # a variable that Prover9 cannot read is refused by name when it is written
+    lowering = any(isinstance(n, Count) or type(n).__name__ in ("SortedQuantifier", "SortedCount")
+                   for n in nodes)
+    if not lowering and not _prover9_scope_scan(node)[0]:
+        if merged:
+            _prover9_refuse_merged_variables(node)
+        return node
+    avoid = set(_identifiers.symbol_names(node, fold=str.casefold))
+    lowered = node
+    if lowering:
+        try:
+            lowered = _lower_for_prover9(node, avoid)
+        except NotImplementedError:
+            return node      # the node that cannot be written says so itself, when it is written
+    rebinds, free = _prover9_scope_scan(lowered)
+    prepared = _rename_rebound_binders(lowered, avoid, free) if rebinds else lowered
+    if merged:
+        _prover9_refuse_merged_variables(prepared)
+    return prepared
+
+
+def _prover9_write_outermost(node: "Node") -> str:
+    """Write the text of ``node`` from the tree :func:`_prover9_prepared` makes of it."""
+    prepared = _prover9_prepared(node)
+    token = _PROVER9_PREPARED.set(True)
+    try:
+        return prepared.to_prover9()
+    finally:
+        _PROVER9_PREPARED.reset(token)
+
+
+class _Prover9Entry:
+    """The descriptor :func:`_prover9_outermost` puts in place of a ``to_prover9`` method.
+
+    ``Class.to_prover9`` is a function of the node. ``node.to_prover9`` is the method that writes the
+    prepared tree (:func:`_prover9_prepared`) when no ``to_prover9`` is in progress in this context, and
+    the ORIGINAL bound method when one is: a nested call costs no stack frame of its own, so a deep
+    formula is written as deep as it was before. ``__wrapped__`` is the original function.
+    """
+
+    def __init__(self, function: Callable[..., str]) -> None:
+        for attribute in ("__module__", "__name__", "__qualname__", "__doc__"):
+            setattr(self, attribute, getattr(function, attribute))
+        self.__wrapped__ = function
+        self._function = function
+
+        @functools.wraps(function)
+        def outermost(node: Any) -> str:
+            return function(node) if _PROVER9_PREPARED.get() else _prover9_write_outermost(node)
+
+        self._outermost = outermost
+
+    def __get__(self, node: Any, owner: Any = None) -> Any:
+        write = self._function if _PROVER9_PREPARED.get() else self._outermost
+        return write if node is None else types.MethodType(write, node)
+
+
+_F = TypeVar("_F", bound=Callable[..., str])
+
+
+def _prover9_outermost(function: _F) -> _F:
+    """Mark the ``to_prover9`` of a node class whose text can hold a binder, or stand around one:
+    the outermost call prepares the whole node once (:func:`_prover9_prepared`), the calls nested in
+    it write their nodes as they are."""
+    return cast(_F, _Prover9Entry(function))
+
+
 # --------------------------------------------------------------------------- #
 # TPTP name folding — the exact mirror of tptp_input.py's ``_cap()``.
 #
@@ -603,14 +1300,43 @@ def constant_name_from_ascii(s: str) -> str:
 #     old whole-string `.lower()` mangled it to ``hasbond`` anyway.
 #
 # Folding only the first character does NOT by itself make the export
-# injective: ``Foo`` and ``foo`` still both fold to ``foo``. That residual
-# case is caught at the point where all of a TPTP PROBLEM's formulas come
-# together — see :func:`unicode_fol_kit.atp._tptp_problem.generate_tptp_problem`
-# (the three external-prover backends) and
-# :func:`unicode_fol_kit.atp.tptp_ncl.to_tptp_ncl` (the NXF modal export) —
-# neither of which a single node's ``to_tptp()`` can check on its own, since
-# a collision is a property of the WHOLE set of symbols in a problem, not of
-# one node in isolation.
+# injective: ``Foo`` and ``foo`` still both fold to ``foo``. A collision is a
+# property of the whole SET of symbols a text contains, never of one node, so
+# it is caught where a set of symbols is known:
+#
+#  * for ONE formula, by the OUTERMOST ``to_tptp()`` call — every node class's
+#    ``to_tptp`` is guarded (``Node.__init_subclass__``, see
+#    :mod:`unicode_fol_kit.fol._tptp_symbols`), the guard records each name the
+#    render actually writes and, when the outermost call returns, refuses with
+#    ``NotImplementedError`` if two DISTINCT names of one kind (predicates; or
+#    functions and constants together) were written as one word. It reads what
+#    is rendered, not what is in the source tree, so a name a reduction
+#    introduces (the sort guard predicate of a ``SortedQuantifier``) is seen;
+#  * for a PROBLEM made of several formulas, by the checked writers —
+#    :func:`unicode_fol_kit.atp._tptp_problem.generate_tptp_problem` (the
+#    external-prover backends), the TF0/TFA writers, and
+#    :func:`unicode_fol_kit.atp.tptp_ncl.to_tptp_ncl` (the NXF modal export) —
+#    which check every premise and the conclusion TOGETHER. A caller that
+#    joins ``to_tptp()`` strings itself is outside every check: ``gaseous`` in
+#    one premise and ``Gaseous`` in another reach the prover as one symbol, and
+#    no per-formula check can see it.
+#
+# Both use the SAME check (``_tptp_symbols.check_symbols``), reading the same
+# per-node hook (``Node._tptp_symbol``), so they cannot disagree about what a
+# node writes.
+#
+# What is refused and what is renamed differ, deliberately, for this release.
+# Two LEGAL names of one kind that fold together (``Foo``/``foo``) are refused
+# by name, by both the guard and the writers: the refusal predates the writers'
+# name map, and stays so that no existing caller silently receives a symbol
+# renamed behind its back. A name TPTP cannot spell, and a predicate that
+# shares its word with a function/constant (the class ``Agent`` and the role
+# function ``agent``), are renamed by the WRITERS and recorded in the returned
+# ``TptpNameMap``. The guard does not refuse the cross-kind case: the text of
+# one formula is unambiguous by position and this kit's reader reads it back,
+# and only a writer has a map to hand back. A name TPTP cannot spell is another
+# matter for ONE formula: the guard cannot rename it and will not write it, so
+# it refuses it by name (an illegal word is not a rendering).
 # --------------------------------------------------------------------------- #
 
 def tptp_fold_first_letter(name: str) -> str:
@@ -623,6 +1349,48 @@ def tptp_fold_first_letter(name: str) -> str:
     :meth:`Constant.to_tptp` for their predicate/function/constant name.
     """
     return (name[:1].lower() + name[1:]) if name else name
+
+
+# The resolvers behind ``Node._tptp_symbol``: kit name -> (namespace, word, kind),
+# exactly the word the matching ``to_tptp`` writes for it; ``None`` for a token
+# that is not an identifier. Predicates are one namespace; functions and
+# constants share the other.
+
+def _predicate_symbol(name: str):
+    # Equality and the comparisons are written with a token of their own
+    # (``=``, ``!=``, ``$less`` ...). Such a token is not a name, but a user's
+    # predicate named ``$less`` would be written as the same word.
+    if name in Atom.INFIX_PREDS_TPTP:
+        return ("predicate", Atom.INFIX_PREDS_TPTP[name], "reserved predicate")
+    if name in Atom.PREFIX_PREDS_TPTP:
+        return ("predicate", Atom.PREFIX_PREDS_TPTP[name], "reserved predicate")
+    return ("predicate", tptp_fold_first_letter(name), "predicate")
+
+
+def _function_symbol(name: str):
+    if name in Function.TPTP_ARITH_OPS:
+        return ("term", Function.TPTP_ARITH_OPS[name], "reserved function")
+    return ("term", tptp_fold_first_letter(name), "function")
+
+
+def _constant_symbol(name: str):
+    return ("term", tptp_fold_first_letter(constant_name_to_ascii(name)), "constant/function")
+
+
+def _measure_symbol(name: str):
+    return ("term", name, "function")
+
+
+def _variable_symbol(name: str):
+    return ("variable", name.upper(), "variable")
+
+
+def _numeral_symbol(value):
+    # The word is the text the number is written as, which is also what a number
+    # is called in a refusal. A value has one spelling (``Number(1.0)`` is
+    # ``Number(1)``), so the value alone keys the entry of the render log.
+    text = _number_text(value)
+    return ("term", text, "numeral", text)
 
 
 @dataclass(frozen=True)
@@ -650,8 +1418,52 @@ class Constant(Node):
         return (env or Z3Env()).get_symbol(self.name)
 
     def to_prover9(self) -> str:
-        """Render the constant name, transliterating any non-ASCII to ASCII (Prover9 is ASCII-only)."""
-        return constant_name_to_ascii(self.name)
+        """Render the constant name, transliterating any non-ASCII to ASCII (Prover9 is ASCII-only).
+
+        A name that begins with an upper-case letter or an underscore
+        (:func:`_prover9_reads_as_variable`) is written in double quotes:
+        ``Gaseous`` is written ``"Gaseous"``. Every Prover9 file this kit writes
+        sets ``prolog_style_variables``, under which the bare word in term
+        position is a VARIABLE when it begins with an upper-case letter, so
+        ``P(Gaseous)`` would read as ``∀X P(X)`` and the text would denote a
+        different formula (an underscore-initial name is a constant to Prover9
+        itself, and is quoted all the same, because the Prolog convention reads
+        it as a variable); a double-quoted symbol is
+        never a variable and is a symbol of its own, distinct from the bare word
+        of the same letters. The kit's own Prover9 reader reads it back as this
+        constant.
+
+        Raises:
+            NotImplementedError: the name would be read as a variable and cannot
+                be quoted, because it holds a character other than a letter, a
+                digit or an underscore (LADR has no escape for a double quote
+                inside quotes). A single node cannot rename (a rename must be the
+                same in every formula of the problem and stay injective), so the
+                refusal points at the problem writer, which does. A name that is
+                no word at all (a space, a dot, a ``$``-word, empty) is refused the
+                same way, whatever its first letter: written bare it would be read
+                as several symbols or as one of Prover9's own.
+        """
+        text = constant_name_to_ascii(self.name)
+        quoted = _prover9_arity_zero_symbol(text)
+        if quoted is not None:
+            return quoted
+        if _prover9_reads_as_variable(text):
+            raise NotImplementedError(
+                f"to_prover9: constant {self.name!r} cannot be written for Prover9 on its "
+                f"own: it would be read as a variable, and it cannot be put in double "
+                f"quotes (which Prover9 never reads as a variable) because it holds a "
+                f"character other than a letter, a digit or an underscore. Every "
+                f"Prover9 file this kit writes sets prolog_style_variables, "
+                f"under which a term-position symbol that begins with an upper-case "
+                f"letter or an underscore is a VARIABLE: the text {text!r} would read "
+                f"as a variable, and the formula around it would say something else "
+                f"('P({text})' reads as 'for all X, P(X)'). Build the problem with "
+                f"unicode_fol_kit.atp.prover9_entailment.generate_prover9_input_with_mapping "
+                f"(check_logical_entailment and the Prover9 backend use it), which renames "
+                f"such a constant to a lower-case token and returns the mapping, or name "
+                f"the constant with a lower-case first letter.")
+        raise _prover9_name_refusal("the constant", self.name, text)
 
     def to_tptp(self) -> str:
         """Render constant in TPTP syntax (ASCII, lowercase-initial): transliterate, then fold the first letter.
@@ -663,15 +1475,174 @@ class Constant(Node):
         """
         return tptp_fold_first_letter(constant_name_to_ascii(self.name))
 
+    def _tptp_symbol(self):
+        """The constant word :meth:`to_tptp` writes (shares the term namespace with functions)."""
+        return (_constant_symbol, self.name)
+
+
+def _number_text(value) -> str:
+    """The text a :class:`Number` prints as in every textual syntax of the kit
+    (unicode, LaTeX, TPTP, Prover9), and that the kit's own readers read back as
+    the SAME value.
+
+    The NUMBER terminal of every reader is ``-?[0-9]+(\\.[0-9]+)?``: digits, an
+    optional fractional part, no exponent. Python's ``str(1e-07)`` is ``'1e-07'``,
+    which the unicode reader reads as the subtraction ``1e - 07`` and
+    ``str(1.5e-05)`` is not text it can read at all. So a float whose ``repr`` is
+    in exponent form is written in plain positional notation instead, from the
+    digits of that same ``repr`` (the shortest string that round-trips) with
+    decimal arithmetic, never a rounding format: ``float(text) == value`` exactly.
+    A float always keeps a ``.`` so it reads back as a float, not an int
+    (``1e16`` is ``10000000000000000.0``). An int, and every float whose ``repr``
+    is already positional (``2.5``, ``12345.678``, ``0.0001``), prints exactly as
+    before. A :class:`Number` never holds a float with a whole value (it stores the
+    integer it equals, so ``Number(1e16)`` prints ``10000000000000000``); the point
+    of such a raw float is kept only for a caller that hands a bare float to this
+    function.
+
+    Raises:
+        ValueError: ``value`` is ``inf``, ``-inf`` or ``nan``. No syntax of the
+            kit has a literal for it, and the word ``inf`` would read back as a
+            CONSTANT of that name, a different formula.
+    """
+    if isinstance(value, float):
+        if value != value or value in (float("inf"), float("-inf")):
+            raise ValueError(
+                f"Number({value!r}) has no literal: a non-finite float cannot be "
+                f"written in the unicode, LaTeX, TPTP or Prover9 syntax, and the "
+                f"word {str(value)!r} would read back as a constant of that name, "
+                f"not as a number. Use a finite value (or a constant such as "
+                f"'infinity' for a symbolic bound).")
+        text = repr(float(value))
+        if "e" in text or "E" in text:
+            text = format(Decimal(text), "f")
+            if "." not in text:
+                text += ".0"
+        return text
+    return str(value)
+
+
+#: The most significant digits a decimal text may have and still be read as the float it spells.
+_DECIMAL_DIGITS_READ_EXACTLY = 15
+
+#: The smallest positive normal double (``sys.float_info.min``): below it the doubles carry fewer
+#: than 53 significant bits.
+_SMALLEST_NORMAL_DOUBLE = 2.2250738585072014e-308
+
+
+def _numeral_from_text(text: str) -> Union[int, float]:
+    """The value of a decimal numeral as it is written, ``-?[0-9]+(\\.[0-9]+)?``: read exactly or refused.
+
+    This is the ONE reading every text reader of the kit gives a NUMBER token, the inverse of
+    :func:`_number_text`. A text without a point is the ``int`` of its digits, and so is a text
+    with a point whose fractional digits are all zero, whatever its size
+    (``100000000000000000000000.0`` is 10**23, where ``float`` would give the nearest double,
+    ``99999999999999991611392``). Any other decimal is the ``float`` it spells when it has at most
+    15 significant digits, counted after the sign, the leading zeros and the trailing zeros of the
+    fraction are dropped (``0.1`` and ``0.10`` are one numeral, ``3.14159265358979`` is read), and
+    is refused when it has more (``3.141592653589793``).
+
+    Fifteen is the bound because two different decimals of at most 15 significant digits differ by
+    at least 1e-15 of the larger one, while two numbers that are one double differ by at most
+    2**-52 (about 2.2e-16) of it, so no two such decimals are one float. With 16 digits the gap can
+    be 1e-16 of the number, below the spacing of the doubles, and two decimals can be one float
+    (``8.000000000000001`` and ``8.000000000000002``, ``0.30000000000000004`` and
+    ``0.30000000000000005``).
+
+    Raises:
+        ValueError: the decimal has more than 15 significant digits (two different decimals of that
+            length can be one float, and a numeral is identified by its value, so reading it as a
+            float could make two numerals one), or is nearer to zero than the smallest normal
+            double (2.2250738585072014e-308), where a double holds fewer than 15 digits and a
+            different decimal can be the same double, or zero. The message names the numeral and
+            says why; a numeral is never read as another one.
+    """
+    whole, point, fraction = text.partition(".")
+    if not point:
+        return int(text)
+    if not fraction.strip("0"):
+        return int(whole)
+    digits = len((whole.lstrip("+-") + fraction.rstrip("0")).lstrip("0"))
+    if digits > _DECIMAL_DIGITS_READ_EXACTLY:
+        raise ValueError(
+            f"the numeral {text} has {digits} significant digits, more than the "
+            f"{_DECIMAL_DIGITS_READ_EXACTLY} that a floating-point number tells apart: two different "
+            f"decimals of that length can be one float (0.30000000000000004 and 0.30000000000000005 "
+            f"are), and a numeral is identified by its value, so reading it as a float could make "
+            f"two numerals one. Write it with at most {_DECIMAL_DIGITS_READ_EXACTLY} significant "
+            f"digits, or as an integer")
+    value = float(text)
+    if abs(value) < _SMALLEST_NORMAL_DOUBLE:
+        raise ValueError(
+            f"the numeral {text} is so close to zero that a floating-point number cannot hold "
+            f"{_DECIMAL_DIGITS_READ_EXACTLY} digits of it (the nearest float is {value!r}), and "
+            f"reading it as that number could make two different numerals one. Write it as 0, or "
+            f"with a larger magnitude")
+    return value
+
+
+class NumeralTextError(ParsingError):
+    """A numeral the unicode reader cannot read as the number it was written as.
+
+    A :class:`~unicode_fol_kit.fol.naming.ParsingError`, so the CLI, ``api.parse_any`` and every
+    caller that catches the parser's error type report it as the one-line SYNTAX_ERROR it is. It
+    is constructed directly from the message of :func:`_numeral_from_text`, not from a Lark
+    exception, so it sets its own message.
+    """
+
+    def __init__(self, message: str):
+        self.args = (f"SYNTAX_ERROR: {message}",)
+
+    def __str__(self):
+        return self.args[0]
+
 
 @dataclass(frozen=True)
 class Number(Node):
-    """A numeric literal node, produced by the NUMBER terminal in the grammar."""
+    """A numeral, produced by the NUMBER terminal of the grammar: a constant identified by its VALUE.
+
+    On every route that was not asked for arithmetic by name a numeral is an ordinary constant
+    and nothing else is known about it: two numerals of different value may denote the same
+    element (``1 ≠ 2`` is not valid), ``+ - * /`` are uninterpreted function symbols and
+    ``< > ≤ ≥`` uninterpreted predicates. The arithmetic reading is asked for by name (the
+    ``*_arith`` functions and ``sort="int"`` / ``sort="real"``); there ``Number(3)`` is the
+    integer 3, or the real 3.0 under ``sort="real"``.
+
+    There is ONE constant per value and ONE spelling per value. A float whose value is a whole
+    number is stored as the ``int`` it equals: ``Number(1.0)`` IS ``Number(1)``, with the same
+    ``value``, the same ``repr``, the same ``to_dict`` and the same printed text (``1``) in every
+    syntax, and ``Number(-0.0)`` is ``Number(0)``. A value that is no whole number keeps its type
+    (``Number(2.5)`` is a float). A float too large to have a fractional part is the integer it
+    exactly is (the double nearest ``1e23`` is ``99999999999999991611392``).
+
+    The readers read a decimal text exactly or refuse it. One whose fractional digits are all zero
+    is the integer it spells (``100000000000000000000000.0`` is ``10**23``, not that double), any
+    other is the float it spells when it has at most 15 significant digits (``0.1`` and ``0.10``
+    are one numeral), and one with more is refused by name, because two different decimals of 16
+    digits or more can be one float (``0.30000000000000004`` and ``0.30000000000000005`` are) and
+    a numeral is identified by its value.
+
+    Numerals of equal value are equal nodes and print alike, so a route that keys an atom by its
+    printed text reads ``P(1)`` and ``P(1.0)`` as the one atom they are. A ``bool`` is no number:
+    it is kept as it is, not read as ``1`` or ``0``, and the routes that need an integer refuse
+    it by name.
+
+    Fields:
+
+    * ``value`` -- the number: an ``int``, or a ``float`` that is not a whole number (a
+      non-finite float is stored as it is; no syntax of the kit has a literal for it).
+    """
 
     value: Union[int, float]
 
+    def __post_init__(self):
+        """Store a float with a whole value as the ``int`` it equals: one numeral, one spelling."""
+        value = self.value
+        if isinstance(value, float) and value.is_integer():
+            object.__setattr__(self, "value", int(value))
+
     def to_dict(self):
-        """Serialise to dict with type tag and numeric value."""
+        """Serialise to dict with type tag and numeric value (an integral value is an ``int``)."""
         return {"_type": "Number", "value": self.value}
 
     @staticmethod
@@ -680,16 +1651,58 @@ class Number(Node):
         return Number(d["value"])
 
     def to_z3(self, env: Z3Env = None):
-        """Encode the number as a named constant in the uninterpreted sort S."""
-        return (env or Z3Env()).get_symbol(str(self.value))
+        """Encode the number as a named constant in the uninterpreted sort S.
+
+        The symbol is named by the VALUE of the number (:func:`numeral_key`), so
+        ``Number(1)`` and ``Number(1.0)`` are one constant, and a constant of that very
+        name would be the same symbol; the environment refuses the pair (see
+        :class:`Z3Env`) with a ``NotImplementedError``. Nothing else is known about a
+        numeral: ``1`` and ``2`` may denote the same element.
+        """
+        return (env or Z3Env()).get_symbol(numeral_key(self.value), numeral=True)
 
     def to_prover9(self) -> str:
-        """Render the numeric value as a plain string."""
-        return str(self.value)
+        """Render the numeral as ONE Prover9 constant: its value in double quotes.
+
+        A numeral is a constant identified by its VALUE, so ``Number(1)`` and
+        ``Number(1.0)`` -- equal nodes -- are one symbol, ``"1"``; ``2.5`` is
+        ``"2.5"`` and ``-1`` is ``"-1"``, the positional text of the number (see
+        :func:`~unicode_fol_kit.fol._numeral_symbols.numeral_name`: an integral
+        float is spelled as the integer, nothing is written in exponent form).
+        The kit's Prover9 reader reads that quoted text back as the
+        :class:`Number`.
+
+        Every numeral is quoted, also a non-negative integer, for three reasons
+        measured on Prover9 and Mace4 2026-8A. Bare, ``2.5`` ends the statement
+        (Prover9 refuses the file) and ``-1`` is the function ``-`` applied to the
+        constant ``1``. And Mace4 reads a bare integer as a domain element of its own,
+        all of them pairwise distinct (``1 != 2`` has no countermodel at any size it
+        searched, and the smallest model of ``P(1) & P(2)`` has three elements), whereas
+        the kit's numerals are ordinary constants that may denote one thing (``⊢ 1 ≠ 2``
+        is not valid); a quoted symbol is a plain constant to both tools. Prover9 has no arithmetic: ``+ - * /`` and
+        ``< > ≤ ≥`` are uninterpreted symbols, as they are for the Z3 route.
+        """
+        from ._numeral_symbols import numeral_name
+        return '"' + numeral_name(self.value) + '"'
 
     def to_tptp(self) -> str:
-        """Render number in TPTP syntax as an integer or rational literal."""
-        return str(self.value)
+        """Render number in TPTP syntax as an integer or rational literal, a float in positional notation (see :func:`_number_text`).
+
+        This is the ARITHMETIC spelling: a bare TPTP number is a literal of the prover's own
+        arithmetic (Vampire and E type ``1`` as ``$int``, so ``p(1)`` is a type error for a
+        predicate over individuals, and ``1 != 2`` is a theorem). On every route that was not
+        asked for arithmetic the kit reads a numeral as a CONSTANT identified by its value, and a
+        PROBLEM for a prover is written by the checked writers
+        (:func:`~unicode_fol_kit.atp._tptp_problem.generate_tptp_problem_with_mapping`,
+        :func:`~unicode_fol_kit.atp.tptp_tff.generate_tff_problem_with_mapping`), which write the
+        numeral as an ordinary constant of a word of their own and record it in the name map.
+        Use this method for the text of ONE formula, never to assemble a problem.
+        """
+        return _number_text(self.value)
+
+    def _tptp_symbol(self):
+        """The numeral :meth:`to_tptp` writes, which is also the word of a constant spelled like it."""
+        return (_numeral_symbol, self.value)
 
 
 @dataclass(frozen=True)
@@ -727,14 +1740,35 @@ class Function(Node):
         return func(*z3_args)
 
     def to_prover9(self) -> str:
-        """Render in Prover9 syntax, using infix notation for arithmetic operators."""
+        """Render in Prover9 syntax, using infix notation for ``+``, ``*`` and ``/``.
+
+        Prover9 has no infix minus: ``(a - b)`` is a syntax error there (measured on
+        2026-8A), so a binary ``-`` is written in functional notation, ``-(a, b)``,
+        the same symbol that ``-(a)`` is at one argument. None of these symbols is
+        interpreted by Prover9, as none is by the Z3 route: they are uninterpreted
+        functions. A function with no arguments is a constant (see
+        :meth:`Constant.to_prover9`).
+
+        Raises:
+            NotImplementedError: the name is no word Prover9 reads as one symbol (a
+                space, a dot, a non-ASCII letter, a ``$``-word, an arithmetic
+                symbol at a number of arguments it has no notation for); the problem
+                writer renames such a name.
+        """
         if self.name in self.INFIX_OPS and len(self.args) == 2:
             left = self.args[0].to_prover9()
             right = self.args[1].to_prover9()
+            if self.name == "-":
+                return f"-({left}, {right})"
             return f"({left} {self.name} {right})"
+        if self.name == "-" and len(self.args) == 1:
+            return f"-({self.args[0].to_prover9()})"
+        if not self.args:
+            return Constant(self.name).to_prover9()
 
+        name = _prover9_word(self.name, "the function", len(self.args))
         args_str = ", ".join(a.to_prover9() for a in self.args)
-        return f"{self.name}({args_str})"
+        return f"{name}({args_str})"
 
     TPTP_ARITH_OPS = {
         "+": "$sum",
@@ -753,10 +1787,36 @@ class Function(Node):
         a parenthesised argument list, with only the first character folded
         to lower-case (see :func:`tptp_fold_first_letter`) — a mixed-case
         function name is otherwise preserved verbatim.
+
+        The dollar-words are the ARITHMETIC spelling: a prover reads ``$sum(1,1) = 2`` as a
+        theorem of its own arithmetic. On every route that was not asked for arithmetic the kit
+        reads ``+ - * /`` as uninterpreted function symbols, and a PROBLEM for a prover is
+        written by the checked writers
+        (:func:`~unicode_fol_kit.atp._tptp_problem.generate_tptp_problem_with_mapping`,
+        :func:`~unicode_fol_kit.atp.tptp_tff.generate_tff_problem_with_mapping`), which write
+        the operator as an ordinary function of a word of their own and record it in the name
+        map; the typed arithmetic writer
+        (:func:`~unicode_fol_kit.atp._tff_problem.generate_tff_arith_problem`) keeps the
+        dollar-words, typed ``$int`` or ``$real``. Use this method for the text of ONE formula,
+        never to assemble a problem.
+
+        A function with no arguments is the constant of its name, and is written as that
+        constant (:meth:`Constant.to_tptp`): TPTP has no empty argument list, ``f()`` is no
+        term, and a prover stops at it with a parse error. The refusals of the constant apply to
+        it, so an arithmetic symbol with no argument (``+``) is refused by name rather than
+        written as ``$sum()``.
         """
+        if not self.args:
+            return Constant(self.name).to_tptp()
         args_str = ",".join(a.to_tptp() for a in self.args)
         tptp_name = self.TPTP_ARITH_OPS.get(self.name, tptp_fold_first_letter(self.name))
         return f"{tptp_name}({args_str})"
+
+    def _tptp_symbol(self):
+        """The word :meth:`to_tptp` writes: the function word, or for a function with no arguments the word of the constant of its name (an arithmetic operator is a fixed ``$``-word)."""
+        if not self.args:
+            return (_constant_symbol, self.name)
+        return (_function_symbol, self.name)
 
 
 # =========================
@@ -797,9 +1857,15 @@ class Atom(Node):
         """Translate to a Z3 boolean expression.
 
         Equality and disequality map to native Z3 operators; all other
-        predicates become uninterpreted Z3 functions returning Bool.
+        predicates become uninterpreted Z3 functions returning Bool. The nullary
+        atoms ``$true`` and ``$false`` (TPTP's defined propositions, which this
+        kit's TPTP reader produces) are the constants true and false, so z3 and a
+        TPTP prover answer the question the TPTP text asks; the nullary atoms named
+        ``⊤`` and ``⊥`` are the same two constants.
         """
         env = env or Z3Env()
+        if _is_tptp_boolean_atom(self):
+            return z3.BoolVal(_truth_constant_word(self) == "$true")
         z3_args = [a.to_z3(env) for a in self.args]
 
         if self.predicate == "=" and len(self.args) == 2:
@@ -813,8 +1879,35 @@ class Atom(Node):
     def to_prover9(self) -> str:
         """Render in Prover9 syntax, using infix notation for comparison predicates.
 
-        A nullary predicate renders as a bare propositional atom; Prover9 rejects
-        an empty argument list (``P()``).
+        A nullary predicate renders as a propositional atom without an argument
+        list; Prover9 rejects an empty one (``P()``). The nullary atoms ``$true``
+        and ``$false`` (TPTP's defined propositions, see :meth:`to_z3`) are
+        Prover9's constants ``$T`` and ``$F``.
+
+        A predicate whose name is no word (a space, a dot, a non-ASCII letter, a
+        ``$``-word, empty) is refused by name, at every arity: written bare it would
+        be read as several symbols or as one of Prover9's own, and it cannot be
+        quoted. A comparison symbol at a number of arguments other than two is
+        refused the same way.
+
+        A nullary predicate that begins with an upper-case letter or an underscore
+        — ``Rain``, the usual spelling of a proposition in this kit — is written in
+        double quotes, ``"Rain"``. Every Prover9 file this kit writes sets
+        ``prolog_style_variables``, under which an arity-0 symbol that begins with
+        an upper-case letter is a VARIABLE, an atom with no arguments included
+        (measured on Prover9 2026-8A: the bare ``Rain`` is refused as "cannot be
+        used as atomic formulas, because they are variables"). A double-quoted
+        symbol is never a variable and is a symbol of its own, distinct from the
+        bare word of the same letters; the kit's own Prover9 reader reads it back
+        as this atom. A lower-case nullary predicate is written bare. The same
+        word used both as a proposition and as a constant, or as a predicate of
+        two arities, is one symbol to Prover9,
+        which refuses the file; this method has no view of the other formulas and
+        cannot see that. The problem writer (:func:`unicode_fol_kit.atp
+        .prover9_entailment.generate_prover9_input_with_mapping`) renames such
+        symbols to lower-case tokens, one per role, and records the renaming; text
+        for Prover9 is built with the writer, not by joining ``to_prover9()``
+        strings.
         """
         if self.predicate in self.INFIX_PREDS_P9 and len(self.args) == 2:
             left = self.args[0].to_prover9()
@@ -822,11 +1915,18 @@ class Atom(Node):
             op = self.INFIX_PREDS_P9[self.predicate]
             return f"({left} {op} {right})"
 
-        if not self.args:
-            return self.predicate
+        if _is_tptp_boolean_atom(self):
+            return "$T" if _truth_constant_word(self) == "$true" else "$F"
 
+        if not self.args:
+            quoted = _prover9_arity_zero_symbol(self.predicate)
+            if quoted is None:
+                raise _prover9_name_refusal("the proposition", self.predicate)
+            return quoted
+
+        name = _prover9_word(self.predicate, "the predicate", len(self.args))
         args_str = ", ".join(a.to_prover9() for a in self.args)
-        return f"{self.predicate}({args_str})"
+        return f"{name}({args_str})"
 
     # The only genuine infix predicates in TPTP are equality and disequality.
     INFIX_PREDS_TPTP = {
@@ -857,16 +1957,33 @@ class Atom(Node):
         character of a parsed predicate name on import. A nullary predicate
         becomes a bare propositional atom.
 
+        The four comparisons are the ARITHMETIC spelling: a prover proves
+        ``$less(1,2)`` from its own arithmetic. On every route that was not asked for
+        arithmetic the kit reads ``< > ≤ ≥`` as uninterpreted binary predicates, and a
+        PROBLEM for a prover is written by the checked writers
+        (:func:`~unicode_fol_kit.atp._tptp_problem.generate_tptp_problem_with_mapping`,
+        :func:`~unicode_fol_kit.atp.tptp_tff.generate_tff_problem_with_mapping`), which write a
+        comparison as an ordinary predicate of a word of its own and record it in the name
+        map; the typed arithmetic writer
+        (:func:`~unicode_fol_kit.atp._tff_problem.generate_tff_arith_problem`) keeps the
+        dollar-words. Use this method for the text of ONE formula, never to assemble a
+        problem.
+
         This first-letter fold is NOT injective on its own — ``Foo`` and
         ``foo`` both render as ``foo`` — so two distinct predicates that
-        differ only in their first letter's case still collide here; a
-        caller assembling a whole TPTP problem from several formulas (as the
-        three external-prover backends and the NXF export do) is
-        responsible for checking that collision across the WHOLE problem
-        and refusing rather than silently merging two symbols, since a
-        single node has no visibility into its siblings elsewhere in the
-        problem.
+        differ only in their first letter's case collide. Inside ONE formula
+        the outermost ``to_tptp()`` call refuses that (see
+        :meth:`Node.to_tptp`); across several formulas only the checked
+        problem writers can, since a single formula has no visibility into its
+        siblings elsewhere in the problem.
+
+        The two truth constants are TPTP's own words: the nullary atoms ``$true``
+        and ``⊤`` are written ``$true``, ``$false`` and ``⊥`` are written ``$false``.
         """
+        truth_word = _truth_constant_word(self)
+        if truth_word is not None:
+            return truth_word
+
         if self.predicate in self.INFIX_PREDS_TPTP and len(self.args) == 2:
             left = self.args[0].to_tptp()
             right = self.args[1].to_tptp()
@@ -884,6 +2001,15 @@ class Atom(Node):
 
         args_str = ",".join(a.to_tptp() for a in self.args)
         return f"{tptp_fold_first_letter(self.predicate)}({args_str})"
+
+    def _tptp_symbol(self):
+        """The predicate word :meth:`to_tptp` writes (none for equality and the arithmetic comparisons: fixed tokens).
+
+        None for the nullary atoms ``$true`` / ``$false`` either: they are TPTP's own
+        propositions, written verbatim, and no symbol of the user's."""
+        if _is_tptp_boolean_atom(self):
+            return None
+        return (_predicate_symbol, self.predicate)
 
 
 @dataclass(frozen=True)
@@ -905,6 +2031,7 @@ class Not(Node):
         """Translate to a Z3 Not expression."""
         return z3.Not(self.formula.to_z3(env or Z3Env()))
 
+    @_prover9_outermost
     def to_prover9(self) -> str:
         """Render negation in Prover9 syntax using the dash operator."""
         return f"-({self.formula.to_prover9()})"
@@ -935,6 +2062,7 @@ class And(Node):
         env = env or Z3Env()
         return z3.And(self.left.to_z3(env), self.right.to_z3(env))
 
+    @_prover9_outermost
     def to_prover9(self) -> str:
         """Render conjunction in Prover9 syntax using the ampersand operator."""
         return f"({self.left.to_prover9()} & {self.right.to_prover9()})"
@@ -965,6 +2093,7 @@ class Or(Node):
         env = env or Z3Env()
         return z3.Or(self.left.to_z3(env), self.right.to_z3(env))
 
+    @_prover9_outermost
     def to_prover9(self) -> str:
         """Render disjunction in Prover9 syntax using the pipe operator."""
         return f"({self.left.to_prover9()} | {self.right.to_prover9()})"
@@ -995,6 +2124,7 @@ class Xor(Node):
         env = env or Z3Env()
         return z3.Xor(self.left.to_z3(env), self.right.to_z3(env))
 
+    @_prover9_outermost
     def to_prover9(self) -> str:
         """Render exclusive or in Prover9 syntax by expanding to (l | r) & -(l & r)."""
         l = self.left.to_prover9()
@@ -1031,6 +2161,7 @@ class Implies(Node):
         env = env or Z3Env()
         return z3.Implies(self.left.to_z3(env), self.right.to_z3(env))
 
+    @_prover9_outermost
     def to_prover9(self) -> str:
         """Render implication in Prover9 syntax using the -> operator."""
         return f"({self.left.to_prover9()} -> {self.right.to_prover9()})"
@@ -1061,6 +2192,7 @@ class Iff(Node):
         env = env or Z3Env()
         return self.left.to_z3(env) == self.right.to_z3(env)
 
+    @_prover9_outermost
     def to_prover9(self) -> str:
         """Render biconditional in Prover9 syntax using the <-> operator."""
         return f"({self.left.to_prover9()} <-> {self.right.to_prover9()})"
@@ -1104,8 +2236,13 @@ class Quantifier(Node):
             return z3.Exists([z3_var], body)
         raise ValueError(f"Unknown quantifier: {self.type}")
 
+    @_prover9_outermost
     def to_prover9(self) -> str:
-        """Render the quantified formula in Prover9 syntax using all/exists keywords."""
+        """Render the quantified formula in Prover9 syntax using all/exists keywords.
+
+        A binder that sits inside the scope of a binder of its own name is written under a fresh
+        variable, so that Prover9 has nothing to rename (see :meth:`Node.to_prover9`).
+        """
         var = self.variable.to_prover9()
         body = self.formula.to_prover9()
 
@@ -1242,31 +2379,57 @@ class Count(Node):
         return Count(d["op"], Node.from_dict(d["n"]),
                      Node.from_dict(d["variable"]), Node.from_dict(d["formula"]))
 
-    def _expand(self) -> "Node":
+    def _expand(self, avoid_names=None) -> "Node":
         """Lower to plain FOL via the standard distinct-witnesses counting encoding.
 
-        ``∃≥m x φ`` becomes ``∃x_0 … ∃x_{m-1} (⋀ φ[x_i] ∧ ⋀_{i<j} x_i ≠ x_j)``;
-        ``∃≤n`` is ``¬(∃≥n+1)``; ``∃=n`` is ``∃≥n ∧ ¬(∃≥n+1)``. Fresh witness
-        variables are chosen to avoid the matrix's free variables, and the bound
-        variable is substituted out capture-avoidingly, so the result is a closed,
+        ``avoid_names`` is a set the caller owns: every name in it is avoided as a
+        witness too (the problem writers pass every variable name of the whole
+        problem), and every witness minted is added to it, so that a second
+        expansion with the same set mints other names.
+
+        ``∃≥m x φ`` becomes ``∃x0 … ∃x{m-1} (⋀ φ[x_i] ∧ ⋀_{i<j} x_i ≠ x_j)``;
+        ``∃≤n`` is ``¬(∃≥n+1)``; ``∃=n`` is ``∃≥n ∧ ¬(∃≥n+1)``. The witnesses are
+        named like the counting variable, one letter and digits (``x0``, ``x1``, …:
+        the shape the VARIABLE terminal reads back, so the printed expansion parses),
+        and they avoid EVERY name in the matrix, bound ones included, so the
+        substitution below never has to rename an inner binder. The bound variable
+        is substituted out capture-avoidingly, so the result is a closed,
         meaning-preserving classical formula.
+
+        "Every name" means a name of EVERY kind that the matrix holds
+        (:func:`~unicode_fol_kit.fol._identifiers.symbol_names`): the constants,
+        and also the functions (the nullary one is a constant), the predicates and
+        the sorts. A constant may be spelled like a variable — the grammar cannot
+        write one, but a caller who builds nodes can, and so do the
+        description-logic image (an individual named ``y0``) and the TPTP reader
+        (``p(x0)``). ``Variable("y0")`` and ``Constant("y0")`` print the same and
+        are the same symbol in a text with one namespace, so a witness named ``y0``
+        would CAPTURE that constant: ``∃≥1 y1 r(y0, y1)`` used to expand to
+        ``∃y0 r(y0, y0)``, which an irreflexive ``r`` contradicts — a consistent
+        knowledge base came out inconsistent. A witness named like a predicate or
+        a function is the same defect in SMT-LIB text, where a bound variable and
+        the symbol it shadows are one identifier (``(exists ((x0 S)) (x0 x0))``).
+        What the matrix does not hold is the caller's to pass: the other formulas
+        of the problem, in ``avoid_names``.
         """
-        from ._msfl_nodes import substitute, free_variables  # lazy: avoid import cycle
+        from ._msfl_nodes import substitute  # lazy: avoid import cycle
         if self.n.value > _COUNT_EXPAND_MAX:
             raise NotImplementedError(
                 _COUNT_TOO_LARGE.format(n=self.n.value, limit=_COUNT_EXPAND_MAX))
         var, phi = self.variable, self.formula
-        avoid = {v.name for v in free_variables(phi)} | {var.name}
+        avoid = set(_identifiers.symbol_names(phi)) | {var.name}
+        if avoid_names is not None:
+            avoid |= avoid_names
 
         def fresh(k):
             """Return k fresh Variables not clashing with the matrix or each other."""
-            out, i = [], 0
-            while len(out) < k:
-                cand = f"{var.name}_{i}"
-                if cand not in avoid:
-                    out.append(Variable(cand))
-                    avoid.add(cand)
-                i += 1
+            out = []
+            for _ in range(k):
+                name = _identifiers.fresh_variable_like(var.name, avoid)
+                avoid.add(name)
+                if avoid_names is not None:
+                    avoid_names.add(name)
+                out.append(Variable(name))
             return out
 
         def at_least(m):
@@ -1295,8 +2458,14 @@ class Count(Node):
         """Lower to the distinct-witnesses encoding, then translate to Z3."""
         return self._expand().to_z3(env)
 
+    @_prover9_outermost
     def to_prover9(self) -> str:
-        """Lower to the distinct-witnesses encoding, then render Prover9 syntax."""
+        """Lower to the distinct-witnesses encoding, then render Prover9 syntax.
+
+        The witnesses are fresh against every name of the whole node that is written, of every
+        kind, compared case-folded, because Prover9 writes a variable in upper case: ``x0`` and
+        ``X0`` are one variable there (see :meth:`Node.to_prover9`).
+        """
         return self._expand().to_prover9()
 
     def to_tptp(self) -> str:
@@ -1346,6 +2515,11 @@ class Measure(Node):
     def to_tptp(self) -> str:
         """Render as the TPTP function ``measure(entity, dimension)``."""
         return f"measure({self.entity.to_tptp()},{self.dimension.to_tptp()})"
+
+    def _tptp_symbol(self):
+        """The function ``measure`` this node writes — the very symbol ``Function('measure', ...)`` is,
+        so it collides with a differently-spelled ``Function('Measure', ...)`` and with nothing else."""
+        return (_measure_symbol, "measure")
 
 
 # Shared rejection message: a set-cardinality term is not first-order definable.
@@ -1424,6 +2598,7 @@ class Contrast(Node):
         env = env or Z3Env()
         return z3.And(self.left.to_z3(env), self.right.to_z3(env))
 
+    @_prover9_outermost
     def to_prover9(self) -> str:
         """Render like And, using the Prover9 ampersand operator."""
         return f"({self.left.to_prover9()} & {self.right.to_prover9()})"
@@ -1715,6 +2890,7 @@ _BASE_GRAMMAR_TEMPLATE = '''\
 ?atom: infix_predicate
      | PREDICATE "(" %%ATOM_ARGS%% ")"           -> atom_
      | PREDICATE                            -> atom0_
+%%TRUTH_ATOMS%%
 %%ATOM_EXTRA%%
 
 ?infix_predicate: term "<"  term            -> lt_
@@ -1858,6 +3034,20 @@ _MODE_ATOM_EXTRA = {
 }
 
 
+# The two truth constants as atoms: ``⊤`` is the nullary atom ``$true`` and ``⊥`` the
+# nullary atom ``$false`` (the atoms the TPTP reader builds), which is also what
+# ``Node.to_unicode_str`` prints them as, so a formula that contains one reads back to
+# itself. Every mode that has propositional atoms reads them. The two modes that do
+# not are left alone: ``linear`` already gives the glyph ``⊤`` a meaning of its own
+# (the additive unit of ``&``, a ``Top`` node, registered in ``_linear_nodes``) and
+# ``lambek`` is a calculus of category types, with no propositional constants.
+_TRUTH_ATOM_ALTS = (
+    '     | "⊤"                                 -> true_\n'
+    '     | "⊥"                                 -> false_\n'
+)
+_NO_TRUTH_ATOM_MODES = frozenset({"linear", "lambek"})
+
+
 def build_grammar(mode: str) -> str:
     """Assemble the Lark grammar STRING for ``mode`` from the registry + template.
 
@@ -1964,6 +3154,8 @@ def build_grammar(mode: str) -> str:
     # only) for every mode but the third-order ones, which widen it to
     # ``hoarglist`` and bring the two extra rules along with it.
     grammar = grammar.replace("%%ATOM_ARGS%%", _MODE_ATOM_ARGS.get(mode, "termlist"))
+    grammar = grammar.replace(
+        "%%TRUTH_ATOMS%%\n", "" if mode in _NO_TRUTH_ATOM_MODES else _TRUTH_ATOM_ALTS)
     atom_extra = _MODE_ATOM_EXTRA.get(mode, "")
     grammar = grammar.replace("%%ATOM_EXTRA%%\n", (atom_extra + "\n") if atom_extra else "")
     return grammar
@@ -1999,6 +3191,14 @@ class FOLTransformer(Transformer):
         pred = str(items[0])
         return Atom(pred, [])
 
+    def true_(self, items):
+        """Transform the glyph ``⊤`` into the truth constant, the atom ``$true``."""
+        return Atom("$true", [])
+
+    def false_(self, items):
+        """Transform the glyph ``⊥`` into the falsity constant, the atom ``$false``."""
+        return Atom("$false", [])
+
     def VARIABLE(self, items):
         """Transform variable token into Variable node."""
         return Variable(str(items))
@@ -2013,9 +3213,10 @@ class FOLTransformer(Transformer):
 
     def number_(self, items):
         """Transform numeric literal token into Number node."""
-        text = str(items[0])
-        value = float(text) if "." in text else int(text)
-        return Number(value)
+        try:
+            return Number(_numeral_from_text(str(items[0])))
+        except ValueError as exc:
+            raise NumeralTextError(str(exc)) from None
 
     def function_(self, items):
         """Transform function application into Function node."""
@@ -2260,15 +3461,50 @@ _NL_NODE_MODES = ("fol", "modal", "second_order")
 # --- counting quantifier: ∃≥n / ∃≤n / ∃=n (Count), fol + modal modes ---
 # COUNTOP is one named terminal matching all three glyphs (∃ followed by ≥/≤/=),
 # at lexer priority 5 so it wins over EXISTS (∃) on the longer match; the matched
-# glyph in items[0] selects the op code. The bound NUMBER must be an integer.
+# glyph in items[0] selects the op code. The bound NUMBER must be a non-negative
+# integer: the terminal reads a sign and a decimal point because TERMS need them
+# (``P(-3)``, ``x < 2.5``), so ``∃≥-2`` and ``∃≥2.5`` reach this rule and are
+# refused here, as a parse error (see CountBoundError).
+class CountBoundError(ParsingError):
+    """A counting quantifier whose bound is not a non-negative integer.
+
+    Subclasses ParsingError, so the CLI, ``api.parse_any`` and every caller that
+    catches the parser's error type report it as the one-line SYNTAX_ERROR it is
+    (the parser re-raises a ParsingError a transformer handler produced instead
+    of lark's opaque VisitError, as it does for ConflictingArityError). It is
+    constructed directly, not from a Lark exception, so it sets its own message.
+    """
+
+    def __init__(self, glyph: str, bound: str, column=None):
+        where = f" at position {column}" if isinstance(column, int) and column >= 0 else ""
+        message = (
+            f"SYNTAX_ERROR: the bound of a counting quantifier must be a "
+            f"non-negative integer, got {bound!r}{where} after {glyph!r}. A count "
+            f"is a whole number of witnesses: write it without a sign or a "
+            f"decimal point, e.g. {glyph}2.")
+        self.args = (message,)
+
+    def __str__(self):
+        return self.args[0]
+
+
+def _count_bound(glyph_token, number_token) -> int:
+    """The integer a counting quantifier's bound token stands for.
+
+    A bound is an unsigned numeral: a sign makes it a CountBoundError whatever
+    the number is (``-2``, and also ``-0``, which equals 0 as a number but is not
+    the numeral ``0``), and so does a decimal point (``2.5``, and also ``2.0``).
+    """
+    text = str(number_token)
+    if "." not in text and not text.startswith(("-", "+")):
+        return int(text)
+    raise CountBoundError(str(glyph_token), text, getattr(number_token, "column", None))
+
+
 def _count_transform(items):
     """Build a Count from [COUNTOP glyph token, NUMBER token, Variable, body]."""
     op = _COUNT_TOKEN_TO_OP[str(items[0])]
-    text = str(items[1])
-    if "." in text:
-        raise ValueError(
-            f"counting quantifier bound must be an integer, got {text!r}.")
-    return Count(op, Number(int(text)), items[2], items[3])
+    return Count(op, Number(_count_bound(items[0], items[1])), items[2], items[3])
 
 
 for _m in _NL_NODE_MODES:

@@ -30,10 +30,16 @@ from unicode_fol_kit.fol.nodes import (
     Lambda,
     Application,
     LambdaVar,
-    SortedQuantifier,
     SortedConstant,
     free_variables,
 )
+# The node types that carry a sort name (SortedQuantifier, SortedConstant,
+# SortedCount, SortedCardinality): one definition, shared with the reduction to
+# plain FOL, so a sorted node added there is read here too.
+from unicode_fol_kit.fol._msfl_nodes import _SORTED_NODE_TYPES
+# The two truth constants are the logical constants true and false, not predicates
+# of the user's: one definition, shared with every route that reads them.
+from unicode_fol_kit.fol._truth_constants import is_truth_constant
 
 
 # ---------------------------------------------------------------------------
@@ -69,9 +75,12 @@ class ValidationReport:
         True iff any Lambda / Application / LambdaVar remains.
     ``predicates`` / ``functions`` / ``constants``
         sorted ``name/arity`` (predicates, functions) or ``name`` (constants)
-        inventories for quick inspection.
+        inventories for quick inspection. The comparison atoms, the arithmetic
+        functions and the two truth constants (``⊤`` / ``$true``, ``⊥`` /
+        ``$false``) are built in and are not listed.
     ``sorts_used``
-        sorted sort names from SortedQuantifier / SortedConstant.
+        sorted sort names from every node that carries one: SortedQuantifier,
+        SortedConstant, SortedCount and SortedCardinality.
     ``parseable``
         True for ``validate(node)``; ``validate_text`` sets it False on a
         parse failure.
@@ -134,7 +143,11 @@ class _Inventory:
 
 # Comparison atoms (=, ≠, <, >, ≤, ≥) and arithmetic functions (+, -, *, /) are
 # built-in operators, not user predicate/function symbols, so they are excluded
-# from the inventories and from arity-consistency checking.
+# from the inventories and from arity-consistency checking. So are the two truth
+# constants (the nullary atoms ``$true`` / ``⊤`` and ``$false`` / ``⊥``): a
+# formula that mentions ``⊥`` uses no predicate named ``$false``, and the
+# nullary constant never conflicts with a user predicate spelled like it that
+# takes arguments.
 _BUILTIN_PREDS = frozenset({"=", "≠", "<", ">", "≤", "≥"})
 _BUILTIN_FUNCS = frozenset({"+", "-", "*", "/"})
 
@@ -151,7 +164,7 @@ def _collect(node: Node, inv: _Inventory) -> None:
             inv.has_lambdas = True
 
         if isinstance(n, Atom):
-            if n.predicate not in _BUILTIN_PREDS:
+            if n.predicate not in _BUILTIN_PREDS and not is_truth_constant(n):
                 inv.pred_arities.setdefault(n.predicate, set()).add(len(n.args))
         elif isinstance(n, Function):
             if n.name not in _BUILTIN_FUNCS:
@@ -161,7 +174,9 @@ def _collect(node: Node, inv: _Inventory) -> None:
         elif isinstance(n, SortedConstant):
             inv.constants.add(n.name)
             inv.sorts.add(n.sort)
-        elif isinstance(n, SortedQuantifier):
+        elif isinstance(n, _SORTED_NODE_TYPES):
+            # SortedQuantifier, and the sorted counting quantifier and cardinality
+            # term: a sort that occurs only in one of the last two is a sort used.
             inv.sorts.add(n.sort)
 
 

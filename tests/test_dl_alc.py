@@ -275,7 +275,11 @@ def test_instance_and_realize_edge_cases():
     # default-individual fallback) into A.
     assert dl.instance_check(empty, "a", A) is False
     assert dl.instance_retrieval(empty, A) == set()
-    assert dl.realize_all(empty, [A, dl.Top()]) == {"a": [dl.Top()]}
+    # An ABox that names nobody has nobody to realize: the answer is {}. This
+    # asserted {"a": [Top()]} until 0.30.0 -- the sweep read abox_consistent's
+    # anonymous node as an individual of the knowledge base, which
+    # kb_to_fol(...).individuals (the same scan, minus the fallback) never did.
+    assert dl.realize_all(empty, [A, dl.Top()]) == {}
 
     # An individual mentioned only via a role assertion is still a valid target.
     ab = dl.ABox().assert_role("alice", "bob", "hasChild")
@@ -301,9 +305,12 @@ def test_instance_and_realize_edge_cases():
     lambda: dl.abox_consistent(
         dl.ABox().assert_concept("x", dl.Atomic("A")),
         dl.TBox().add(dl.Atomic("B"), dl.Exists(dl.InverseRole("r"), dl.Top()))),
-    # Pure reductions (subsumes/equivalent/instance_check/classify) inherit the
-    # guard "for free" through concept_satisfiable/abox_consistent — no separate
-    # guard call of their own exists, so this also checks the reduction wiring.
+    # Reductions (subsumes/equivalent/instance_check) inherit the guard "for
+    # free" through concept_satisfiable/abox_consistent — no separate guard call
+    # of their own exists, so this also checks the reduction wiring. (classify,
+    # instance_retrieval, realize and realize_all carry their own guard, because
+    # with nothing to reduce there is no call to inherit it from: see
+    # tests/test_dl_entry_guards.py.)
     lambda: dl.subsumes(dl.Nominal("a"), dl.Top()),
     lambda: dl.equivalent(dl.Atomic("A"), dl.Nominal("a")),
     lambda: dl.instance_check(dl.ABox(), "x", dl.Nominal("a")),
@@ -324,7 +331,11 @@ def test_inverse_role_and_nominal_refused_by_tableau(build):
     lambda: dl.classify(dl.TBox().add(dl.Atomic("A"), dl.Exists(dl.InverseRole("r"), dl.Top()))),
 ])
 def test_classify_refuses_inverse_role_and_nominal(build):
-    with pytest.raises(TypeError):
+    # The refusal is the tableau's own (UnsupportedConceptError), the one every
+    # other entry point gives for the same construct; until 0.30.0 classify
+    # raised a bare TypeError here, which the MCP tools do not turn into a
+    # structured error.
+    with pytest.raises(dl.UnsupportedConceptError):
         build()
 
 

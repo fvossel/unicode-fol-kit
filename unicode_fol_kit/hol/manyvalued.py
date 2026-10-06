@@ -71,6 +71,8 @@ from ..fol.nodes import (
     Node, Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
     Variable, Constant, Number, Function,
 )
+from ..fol._atom_keys import AtomKeys
+from ..fol._truth_constants import truth_value as _truth_value
 from ..semantics.matrix import (
     TruthMatrix, Value, matrix_value, matrix_is_valid, matrix_entails,
     K3_MATRIX, LP_MATRIX,
@@ -146,16 +148,16 @@ def _check_propositional(formula: Node) -> None:
 # (e.g. ``valuation[atom.to_unicode_str()]`` in matrix_value). Distinct atoms
 # become distinct universally-quantified valuation variables.
 
-def _atom_keys(formula: Node) -> List[str]:
-    """Distinct atom keys (canonical ``to_unicode_str``) in first-seen order."""
-    keys: List[str] = []
-    seen = set()
-    for atom in formula.atoms():
-        key = atom.to_unicode_str()
-        if key not in seen:
-            seen.add(key)
-            keys.append(key)
-    return keys
+def _atom_keys(*formulas: Node) -> List[str]:
+    """Distinct atom keys (canonical ``to_unicode_str``) in first-seen order, over all
+    ``formulas`` of one problem.
+
+    ``$true`` / ``$false`` are the matrix's top / bottom value, not letters. Two different atoms
+    that print alike (the numeral ``1`` and a constant named ``1``) would be ONE valuation
+    variable and the exported problem another one, and a sorted constant has no reading in a
+    matrix, so both are refused by name with ``NotImplementedError``.
+    """
+    return AtomKeys("many-valued HOL export", "refuse").letters(formulas)
 
 
 def _safe_name(key: str) -> str:
@@ -303,6 +305,29 @@ def _resolve_conn_names(conn_names: Optional[Dict[Type[Node], str]]) -> Dict[Typ
     return resolved
 
 
+def _constant_names(matrix: TruthMatrix, names: Dict[Value, str]) -> Dict[bool, Optional[str]]:
+    """The value constants that stand for the truth constants ``$true`` / ``$false``.
+
+    ``True`` maps to the name of ``matrix.top`` and ``False`` to the name of
+    ``matrix.bottom``; ``None`` for a value the matrix does not declare.
+    """
+    return {True: names[matrix.top] if matrix.top is not None else None,
+            False: names[matrix.bottom] if matrix.bottom is not None else None}
+
+
+def _constant_term(constants: Optional[Dict[bool, Optional[str]]], truth: bool,
+                   node: Atom, route: str) -> str:
+    """The value constant for the truth constant ``node``, or a refusal by name."""
+    name = (constants or {}).get(truth)
+    if name is None:
+        raise NotImplementedError(
+            f"{route}: the matrix declares no {'top' if truth else 'bottom'} value, so "
+            f"it has no reading of the truth constant {node.predicate}; declare one "
+            "with TruthMatrix.from_functions(..., top=..., bottom=...), or write the "
+            "formula without the constant.")
+    return name
+
+
 def _matrix_falsifying_assignment(formula: Node, matrix: TruthMatrix, keys: List[str]):
     """A ``matrix``-value assignment (in ``keys`` order) making ``formula`` non-designated.
 
@@ -403,16 +428,24 @@ def _thf_designated_predicate(matrix: TruthMatrix, names: Dict[Value, str],
             f"( {predicate_name} = ( ^ [D: {type_name}] : {body} ) )).")
 
 
-def _thf_eval_matrix(node: Node, names_by_key: dict, conns: Dict[Type[Node], str]) -> str:
-    """Render the formula as a truth-value-typed THF term using the connective fns."""
+def _thf_eval_matrix(node: Node, names_by_key: dict, conns: Dict[Type[Node], str],
+                     constants: Optional[Dict[bool, Optional[str]]] = None) -> str:
+    """Render the formula as a truth-value-typed THF term using the connective fns.
+
+    ``constants`` names the value constants of the truth constants ``$true`` /
+    ``$false`` (see :func:`_constant_names`).
+    """
     if isinstance(node, Atom):
+        truth = _truth_value(node)
+        if truth is not None:
+            return _constant_term(constants, truth, node, "to_thf_matrix")
         return names_by_key[node.to_unicode_str()]
     if isinstance(node, Not):
-        return f"( {conns[Not]} @ {_thf_eval_matrix(node.formula, names_by_key, conns)} )"
+        return f"( {conns[Not]} @ {_thf_eval_matrix(node.formula, names_by_key, conns, constants)} )"
     for cls in (And, Or, Xor, Implies, Iff):
         if isinstance(node, cls):
-            return (f"( {conns[cls]} @ {_thf_eval_matrix(node.left, names_by_key, conns)} "
-                    f"@ {_thf_eval_matrix(node.right, names_by_key, conns)} )")
+            return (f"( {conns[cls]} @ {_thf_eval_matrix(node.left, names_by_key, conns, constants)} "
+                    f"@ {_thf_eval_matrix(node.right, names_by_key, conns, constants)} )")
     raise NotImplementedError(
         f"to_thf_matrix: unsupported node {type(node).__name__}.")
 
@@ -465,7 +498,7 @@ def to_thf_matrix(formula: Node, matrix: TruthMatrix, *,
     lines.extend(_thf_op_axioms(matrix, names, conns))
     lines.append(_thf_designated_predicate(matrix, names, type_name, predicate_name))
 
-    body = _thf_eval_matrix(formula, names_by_key, conns)
+    body = _thf_eval_matrix(formula, names_by_key, conns, _constant_names(matrix, names))
     if keys:
         binder = ", ".join(f"{names_by_key[k]}: {type_name}" for k in keys)
         conj = f"! [{binder}] : ( {predicate_name} @ {body} )"
@@ -499,13 +532,7 @@ def to_thf_matrix_entailment(premises: Sequence[Node], conclusion: Node, matrix:
     names = _resolve_value_names(matrix, value_names)
     conns = _resolve_conn_names(conn_names)
 
-    keys: List[str] = []
-    seen = set()
-    for f in [*premises, conclusion]:
-        for k in _atom_keys(f):
-            if k not in seen:
-                seen.add(k)
-                keys.append(k)
+    keys = _atom_keys(*premises, conclusion)
     names_by_key = _assign_var_names(keys)
 
     lines = [
@@ -518,10 +545,12 @@ def to_thf_matrix_entailment(premises: Sequence[Node], conclusion: Node, matrix:
     lines.extend(_thf_op_axioms(matrix, names, conns))
     lines.append(_thf_designated_predicate(matrix, names, type_name, predicate_name))
 
-    concl = f"( {predicate_name} @ {_thf_eval_matrix(conclusion, names_by_key, conns)} )"
+    consts = _constant_names(matrix, names)
+    concl = f"( {predicate_name} @ {_thf_eval_matrix(conclusion, names_by_key, conns, consts)} )"
     if premises:
         prem = " & ".join(
-            f"( {predicate_name} @ {_thf_eval_matrix(p, names_by_key, conns)} )" for p in premises)
+            f"( {predicate_name} @ {_thf_eval_matrix(p, names_by_key, conns, consts)} )"
+            for p in premises)
         goal_body = f"( ( {prem} ) => {concl} )"
     else:
         goal_body = concl
@@ -611,15 +640,19 @@ def _isa_matrix_prelude(theory_name: str, matrix: TruthMatrix, names: Dict[Value
     return parts
 
 
-def _isa_eval_matrix(node: Node, names_by_key: dict, conns: Dict[Type[Node], str]) -> str:
+def _isa_eval_matrix(node: Node, names_by_key: dict, conns: Dict[Type[Node], str],
+                     constants: Optional[Dict[bool, Optional[str]]] = None) -> str:
     if isinstance(node, Atom):
+        truth = _truth_value(node)
+        if truth is not None:
+            return _constant_term(constants, truth, node, "to_isabelle_matrix")
         return names_by_key[node.to_unicode_str()].lower()
     if isinstance(node, Not):
-        return f"({conns[Not]} {_isa_eval_matrix(node.formula, names_by_key, conns)})"
+        return f"({conns[Not]} {_isa_eval_matrix(node.formula, names_by_key, conns, constants)})"
     for cls in (And, Or, Xor, Implies, Iff):
         if isinstance(node, cls):
-            return (f"({conns[cls]} {_isa_eval_matrix(node.left, names_by_key, conns)} "
-                    f"{_isa_eval_matrix(node.right, names_by_key, conns)})")
+            return (f"({conns[cls]} {_isa_eval_matrix(node.left, names_by_key, conns, constants)} "
+                    f"{_isa_eval_matrix(node.right, names_by_key, conns, constants)})")
     raise NotImplementedError(
         f"to_isabelle_matrix: unsupported node {type(node).__name__}.")
 
@@ -701,7 +734,7 @@ def to_isabelle_matrix(formula: Node, matrix: TruthMatrix, *,
     isa_vars = [names_by_key[k].lower() for k in keys]
 
     valid = matrix_is_valid(formula, matrix)
-    body = _isa_eval_matrix(formula, names_by_key, conns)
+    body = _isa_eval_matrix(formula, names_by_key, conns, _constant_names(matrix, names))
     if keys:
         binder = " ".join(isa_vars)
         if valid:
@@ -763,21 +796,17 @@ def to_isabelle_matrix_entailment(premises: Sequence[Node], conclusion: Node, ma
     names = _resolve_value_names(matrix, value_names)
     conns = _resolve_conn_names(conn_names)
 
-    keys: List[str] = []
-    seen = set()
-    for f in [*premises, conclusion]:
-        for k in _atom_keys(f):
-            if k not in seen:
-                seen.add(k)
-                keys.append(k)
+    keys = _atom_keys(*premises, conclusion)
     names_by_key = _assign_var_names(keys)
     isa_vars = [names_by_key[k].lower() for k in keys]
 
     valid = matrix_entails(premises, conclusion, matrix)
-    concl = f"{predicate_name} ({_isa_eval_matrix(conclusion, names_by_key, conns)})"
+    consts = _constant_names(matrix, names)
+    concl = f"{predicate_name} ({_isa_eval_matrix(conclusion, names_by_key, conns, consts)})"
     if premises:
         prem = " \\<and> ".join(
-            f"{predicate_name} ({_isa_eval_matrix(p, names_by_key, conns)})" for p in premises)
+            f"{predicate_name} ({_isa_eval_matrix(p, names_by_key, conns, consts)})"
+            for p in premises)
         if valid:
             body = f"({prem}) \\<longrightarrow> {concl}"
         else:
@@ -821,7 +850,7 @@ def to_isabelle_matrix_entailment(premises: Sequence[Node], conclusion: Node, ma
 # exactly (cross-checked in tests/test_matrix.py); these wrappers just pin the
 # historical constant/function names so the emitted text keeps its old shape.
 
-_K3LP_VALUE_NAMES = {1.0: "tT", 0.5: "tB", 0.0: "tF"}
+_K3LP_VALUE_NAMES: Dict[Value, str] = {1.0: "tT", 0.5: "tB", 0.0: "tF"}
 _K3LP_CONN_NAMES = {
     Not: "kneg", And: "kand", Or: "kor", Implies: "kimp", Iff: "kiff", Xor: "kxor",
 }

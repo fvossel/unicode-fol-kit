@@ -11,19 +11,23 @@ import pytest
 
 from unicode_fol_kit.semantics.kripke import (
     KripkeModel, satisfies_modal, models_at, reflexive_transitive_closure,
+    ctl_ex, ctl_af, ctl_eg, ctl_au,
 )
 from unicode_fol_kit.semantics.action_models import (
     everybody_knows, distributed_knowledge_holds, common_knowledge_holds,
 )
 from unicode_fol_kit.fol.nodes import (
-    Atom, Constant, Not, And, Or, Implies, Iff,
-    Box, Diamond, Knows, Believes,
+    Atom, Constant, Not, And, Or, Xor, Implies, Iff,
+    Box, Diamond, Knows, Believes, Says, Wants,
     Always, Eventually, Next, Until,
+    Historically, Once, Previous, Since,
+    Obligatory, Permitted, Nominal, At, Down,
     Quantifier, Variable, SortedQuantifier,
     LukNegation, Lambda, LambdaVar,
 )
 from unicode_fol_kit.fol._modal_nodes import (
     EverybodyKnows, DistributedKnowledge, CommonKnowledge,
+    Announce, AnnounceDiamond,
 )
 
 P = Atom("P", [])
@@ -469,6 +473,197 @@ def test_lambda_node_rejected():
     model = KripkeModel(worlds={0})
     with pytest.raises(NotImplementedError):
         satisfies_modal(f, model, 0)
+
+
+# ---------------------------------------------------------------------------
+# Equality is NOT interpreted: an '=' / '≠' atom is refused BY NAME, wherever it
+# sits. This evaluator has no term semantics (an atom is looked up by its rendered
+# key in the valuation), so reading ``a = b`` as the proposition keyed "a = b"
+# would answer wrongly (``a = a`` false). The first-order route fol.qml reads '='
+# as rigid identity instead; tests/test_qml.py holds that table.
+# ---------------------------------------------------------------------------
+
+_A, _B = Constant("a"), Constant("b")
+EQ = Atom("=", (_A, _B))
+NEQ = Atom("≠", (_A, _B))
+Z = Atom("Z", ())          # the control: the same wrapper around an ordinary atom
+_REFUSAL = r"equality is not interpreted.*qml_is_valid"
+
+
+def _everything_model():
+    """Worlds 0 -> 1 on every relation family the evaluator reads, plus a nominal
+    and a domain, so EVERY wrapper below is evaluable when it holds a normal atom
+    (the control) and the refusal can only be due to the equality atom."""
+    rels = {name: {(0, 1)} for name in
+            ("alethic", "temporal", "deontic", "K:a", "B:a", "Say:a", "Want:a")}
+    return KripkeModel(worlds={0, 1}, relations=rels,
+                       valuation={0: {"Z"}, 1: {"Z"}},
+                       domain={"a", "b"}, nominals={"i": 0})
+
+
+# every place an equality atom can sit: each node type that has a sub-formula
+_WRAPPERS = {
+    "bare": lambda e: e,
+    "not": Not,
+    "and_left": lambda e: And(e, Z),
+    "and_right": lambda e: And(Z, e),
+    "or_left": lambda e: Or(e, Z),
+    "or_right": lambda e: Or(Z, e),
+    "xor": lambda e: Xor(Z, e),
+    "implies_antecedent": lambda e: Implies(e, Z),
+    "implies_consequent": lambda e: Implies(Z, e),
+    "iff": lambda e: Iff(Z, e),
+    "box": Box,
+    "diamond": Diamond,
+    "knows": lambda e: Knows(Constant("a"), e),
+    "believes": lambda e: Believes(Constant("a"), e),
+    "says": lambda e: Says(Constant("a"), e),
+    "wants": lambda e: Wants(Constant("a"), e),
+    "obligatory": Obligatory,
+    "permitted": Permitted,
+    "next": Next,
+    "always": Always,
+    "eventually": Eventually,
+    "until_left": lambda e: Until(e, Z),
+    "until_right": lambda e: Until(Z, e),
+    "historically": Historically,
+    "once": Once,
+    "previous": Previous,
+    "since_left": lambda e: Since(e, Z),
+    "since_right": lambda e: Since(Z, e),
+    "at": lambda e: At(Nominal("i"), e),
+    "down": lambda e: Down(Nominal("j"), e),
+    "announce_announcement": lambda e: Announce(e, Z),
+    "announce_body": lambda e: Announce(Z, e),
+    "announce_diamond_announcement": lambda e: AnnounceDiamond(e, Z),
+    "announce_diamond_body": lambda e: AnnounceDiamond(Z, e),
+    "everybody_knows": lambda e: EverybodyKnows((Constant("a"),), e),
+    "distributed_knowledge": lambda e: DistributedKnowledge((Constant("a"),), e),
+    "common_knowledge": lambda e: CommonKnowledge((Constant("a"),), e),
+    "forall": lambda e: Quantifier("∀", Variable("x"), e),
+    "exists": lambda e: Quantifier("∃", Variable("x"), e),
+    "sorted_forall": lambda e: SortedQuantifier("∀", Variable("x"), "S", e),
+    "sorted_exists": lambda e: SortedQuantifier("∃", Variable("x"), "S", e),
+    "deep": lambda e: Box(Diamond(And(Z, Or(Not(Z), Knows(Constant("a"), e))))),
+}
+
+
+@pytest.mark.parametrize("name", sorted(_WRAPPERS))
+def test_equality_atom_is_refused_wherever_it_sits(name):
+    """Control: the wrapper around an ordinary atom evaluates (no refusal, a bool).
+    Then the very same wrapper around ``a = b`` / ``a ≠ b`` is refused, by name."""
+    model = _everything_model()
+    wrap = _WRAPPERS[name]
+    assert satisfies_modal(wrap(Z), model, 0) in (True, False)      # control
+    with pytest.raises(NotImplementedError, match=_REFUSAL):
+        satisfies_modal(wrap(EQ), model, 0)
+    with pytest.raises(NotImplementedError, match=r"disequality atom.*" + _REFUSAL):
+        satisfies_modal(wrap(NEQ), model, 0)
+
+
+def test_equality_refusal_names_the_atom_and_the_route():
+    with pytest.raises(NotImplementedError) as info:
+        satisfies_modal(Box(EQ), _everything_model(), 0)
+    msg = str(info.value)
+    assert msg.startswith("satisfies_modal:")         # the module's own refusal style
+    assert "'a = b'" in msg and "'='" in msg           # the atom, by name
+    assert "fol.qml.qml_is_valid" in msg and "first-order" in msg
+    with pytest.raises(NotImplementedError) as info:
+        satisfies_modal(NEQ, _everything_model(), 0)
+    assert "disequality" in str(info.value) and "'≠'" in str(info.value)
+
+
+# Places where evaluation would NEVER reach the atom: a lazy check on the Atom
+# case would let each of these return a verdict that did not look at it. Each row
+# gives (wrapper, model builder, evaluation world, hand-derived control verdict);
+# the control is the same wrapper around the ordinary atom Z.
+def _dead_end():
+    """0 -> 1 on alethic and temporal; nothing leaves 1; Z is true at 0 only."""
+    return KripkeModel(worlds={0, 1}, relations={"alethic": {(0, 1)}, "temporal": {(0, 1)}},
+                       valuation={0: {"Z"}}, domain={"a"})
+
+
+def _empty_domain():
+    """One world whose domain is empty: ∀x ranges over nothing, ∃x over nothing."""
+    return KripkeModel(worlds={0}, valuation={0: {"Z"}}, domains={0: set()})
+
+
+_VACUOUS = {
+    # Z is true at 0, so Z ∨ _ is true without looking at _
+    "or_short_circuit": (lambda e: Or(Z, e), _dead_end, 0, True),
+    # ¬Z is false at 0, so ¬Z ∧ _ is false without looking at _
+    "and_short_circuit": (lambda e: And(Not(Z), e), _dead_end, 0, False),
+    # ¬Z is false at 0, so ¬Z → _ is true without looking at _
+    "implies_false_antecedent": (lambda e: Implies(Not(Z), e), _dead_end, 0, True),
+    # world 1 has no alethic successor: □_ is vacuously true there ...
+    "box_at_dead_end": (Box, _dead_end, 1, True),
+    # ... and ◇_ is false there
+    "diamond_at_dead_end": (Diamond, _dead_end, 1, False),
+    # empty domain: ∀x _ is vacuously true, ∃x _ is false
+    "forall_over_empty_domain": (lambda e: Quantifier("∀", Variable("x"), e), _empty_domain, 0, True),
+    "exists_over_empty_domain": (lambda e: Quantifier("∃", Variable("x"), e), _empty_domain, 0, False),
+    # Until: the right argument holds at once, so the left is never evaluated
+    "until_left_never_reached": (lambda e: Until(e, Z), _dead_end, 0, True),
+    # an untruthful announcement (¬Z is false at 0) is vacuously fine; body never evaluated
+    "announce_untruthful": (lambda e: Announce(Not(Z), e), _dead_end, 0, True),
+}
+
+
+@pytest.mark.parametrize("name", sorted(_VACUOUS))
+def test_equality_refusal_survives_short_circuit_and_vacuous_evaluation(name):
+    wrap, make_model, world, expected = _VACUOUS[name]
+    model = make_model()
+    # control: the ordinary atom evaluates fine, to the vacuous / short-circuited verdict
+    assert satisfies_modal(wrap(Z), model, world) is expected
+    # ... and with an equality atom in the position evaluation skips, it still refuses
+    with pytest.raises(NotImplementedError, match=_REFUSAL):
+        satisfies_modal(wrap(EQ), model, world)
+
+
+def test_equality_refused_in_a_substituted_quantifier_instance():
+    """∀x (x = x): each instance ``a = a`` would be looked up by key; it is refused up
+    front, so a caller never sees the false the lookup would give (even when the key
+    "a = a" happens to be listed in the valuation)."""
+    x = Variable("x")
+    m = KripkeModel(worlds={0}, valuation={0: {"a = a"}}, domain={"a"})
+    with pytest.raises(NotImplementedError, match=_REFUSAL):
+        satisfies_modal(Quantifier("∀", x, Atom("=", (x, x))), m, 0)
+
+
+def test_equality_refused_by_the_ctl_entry_points_too():
+    """ctl_ex at a world with NO successor never calls satisfies_modal (``any`` over an
+    empty set), so the refusal has to sit in the CTL functions themselves."""
+    dead = KripkeModel(worlds={0}, relations={}, valuation={})
+    assert ctl_ex(dead, 0, Z) is False                       # control: no successor
+    with pytest.raises(NotImplementedError, match=_REFUSAL):
+        ctl_ex(dead, 0, EQ)
+    # 0 -> 1 -> 1 (total); Z holds at 1 only. Hand-derived controls: AF Z at 0 is true
+    # (every path reaches 1), EG Z at 0 is false (0 itself lacks Z), A[¬Z U Z] at 0 true.
+    loop = KripkeModel(worlds={0, 1}, relations={"temporal": {(0, 1), (1, 1)}},
+                       valuation={1: {"Z"}})
+    assert ctl_af(loop, 0, Z) is True and ctl_eg(loop, 0, Z) is False
+    assert ctl_au(loop, 0, Not(Z), Z) is True
+    for call in (lambda: ctl_ex(loop, 0, EQ), lambda: ctl_af(loop, 0, EQ),
+                 lambda: ctl_eg(loop, 0, NEQ), lambda: ctl_au(loop, 0, EQ, Z),
+                 lambda: ctl_au(loop, 0, Z, NEQ)):
+        with pytest.raises(NotImplementedError, match=_REFUSAL):
+            call()
+
+
+def test_equality_refused_by_the_group_operators_through_satisfies_modal():
+    """The group operators dispatch into action_models; the refusal fires before."""
+    for node in (EverybodyKnows, DistributedKnowledge, CommonKnowledge):
+        with pytest.raises(NotImplementedError, match=_REFUSAL):
+            satisfies_modal(node((Constant("a"),), EQ), _everything_model(), 0)
+
+
+def test_other_infix_atoms_are_still_ordinary_keyed_atoms():
+    """Only '=' / '≠' are refused: '<', '≤' ... are looked up by key exactly as before."""
+    lt = Atom("<", (_A, _B))
+    m = KripkeModel(worlds={0, 1}, valuation={0: {lt.to_unicode_str()}})
+    assert lt.to_unicode_str() == "a < b"
+    assert satisfies_modal(lt, m, 0) is True and satisfies_modal(lt, m, 1) is False
+    assert satisfies_modal(Atom("≤", (_A, _B)), m, 0) is False
 
 
 # ---------------------------------------------------------------------------

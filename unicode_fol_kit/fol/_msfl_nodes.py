@@ -2,14 +2,17 @@
 
 import logging
 from dataclasses import dataclass, is_dataclass, replace
-from typing import List, Tuple, TYPE_CHECKING
+from typing import List, Optional, Tuple, TYPE_CHECKING
 
 from ._fol_nodes import (
     Node, Z3Env, Variable, Constant, Number, Function,
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
-    Count, Cardinality, Contrast, _COUNT_OPS, _COUNT_TOKEN_TO_OP,
+    Count, Cardinality, Contrast, _COUNT_OPS, _COUNT_TOKEN_TO_OP, _count_bound,
     NODE_CLASSES, OPERATORS, register_operator,
-    register_parser_op, _fold_binary,
+    register_parser_op, _fold_binary, _number_text, _prover9_outermost,
+)
+from ._identifiers import (
+    fresh_like, fresh_variable_like, fresh_variables, symbol_names, variable_names,
 )
 from ._team_nodes import SlashedExists
 # PredicateTerm is a term-level leaf like Variable/Constant, so the shared
@@ -87,17 +90,18 @@ class SortedQuantifier(Node):
 
     def _relativize(self, facts: list) -> "Node":
         body = self.formula._relativize(facts)
-        sort_atom = Atom(self.sort, [self.variable])
+        sort_atom = Atom(self.sort, (self.variable,))
         if self.type == "∀":
             return Quantifier("∀", self.variable, Implies(sort_atom, body))
         elif self.type == "∃":
             return Quantifier("∃", self.variable, And(sort_atom, body))
         raise ValueError(f"Unknown quantifier type: {self.type}")
 
-    def to_z3(self, env: Z3Env = None):
+    def to_z3(self, env: Optional[Z3Env] = None):
         _logger.info("Auto-reducing %s to FOL for Z3 export.", type(self).__name__)
         return to_fol(self).to_z3(env)
 
+    @_prover9_outermost
     def to_prover9(self) -> str:
         _logger.info("Auto-reducing %s to FOL for Prover9 export.", type(self).__name__)
         return to_fol(self).to_prover9()
@@ -132,10 +136,10 @@ class SortedConstant(Node):
         return SortedConstant(self.name, self.sort)
 
     def _relativize(self, facts: list) -> "Node":
-        facts.append(Atom(self.sort, [Constant(self.name)]))
+        facts.append(Atom(self.sort, (Constant(self.name),)))
         return Constant(self.name)
 
-    def to_z3(self, env: Z3Env = None):
+    def to_z3(self, env: Optional[Z3Env] = None):
         _logger.info("Auto-reducing %s to FOL for Z3 export.", type(self).__name__)
         return to_fol(self).to_z3(env)
 
@@ -146,6 +150,10 @@ class SortedConstant(Node):
     def to_tptp(self) -> str:
         _logger.info("Auto-reducing %s to FOL for TPTP export.", type(self).__name__)
         return to_fol(self).to_tptp()
+
+    def _tptp_symbol(self):
+        """The constant word this node writes: it renders as the plain ``Constant`` of the same name."""
+        return Constant(self.name)._tptp_symbol()
 
 
 @dataclass(frozen=True)
@@ -207,14 +215,15 @@ class SortedCount(Node):
         :class:`Count`'s encoding is correct for EVERY op, because Count's ≤/= readings are
         themselves defined via 'at least' over the (now sort-guarded) matrix.
         """
-        guarded = And(Atom(self.sort, [self.variable]), self.formula._relativize(facts))
+        guarded = And(Atom(self.sort, (self.variable,)), self.formula._relativize(facts))
         return Count(self.op, self.n, self.variable, guarded)
 
-    def to_z3(self, env: Z3Env = None):
+    def to_z3(self, env: Optional[Z3Env] = None):
         """Auto-reduce to FOL (sort-guarded Count), then translate to Z3."""
         _logger.info("Auto-reducing %s to FOL for Z3 export.", type(self).__name__)
         return to_fol(self).to_z3(env)
 
+    @_prover9_outermost
     def to_prover9(self) -> str:
         """Auto-reduce to FOL (sort-guarded Count), then render Prover9 syntax."""
         _logger.info("Auto-reducing %s to FOL for Prover9 export.", type(self).__name__)
@@ -273,10 +282,10 @@ class SortedCardinality(Node):
         ``|{v:S : φ}|`` = ``|{v : S(v) ∧ φ}|``. The result is still export-free (Cardinality
         rejects), but the reduction keeps the term semantically faithful under to_fol.
         """
-        guarded = And(Atom(self.sort, [self.variable]), self.formula._relativize(facts))
+        guarded = And(Atom(self.sort, (self.variable,)), self.formula._relativize(facts))
         return Cardinality(self.variable, guarded)
 
-    def to_z3(self, env: Z3Env = None):
+    def to_z3(self, env: Optional[Z3Env] = None):
         """Reject Z3 export: sorted set cardinality has no first-order counterpart."""
         raise NotImplementedError(_NO_SORTED_CARDINALITY_EXPORT)
 
@@ -315,7 +324,7 @@ class WeakConjunction(Node):
     def _relativize(self, facts: list) -> "Node":
         raise RuntimeError("WeakConjunction._relativize called; call to_msfol() before _relativize.")
 
-    def to_z3(self, env: Z3Env = None):
+    def to_z3(self, env: Optional[Z3Env] = None):
         """Reject Z3 export: the classical collapse must be explicit (to_fol first)."""
         raise NotImplementedError(f"to_z3: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
@@ -354,7 +363,7 @@ class WeakDisjunction(Node):
     def _relativize(self, facts: list) -> "Node":
         raise RuntimeError("WeakDisjunction._relativize called; call to_msfol() before _relativize.")
 
-    def to_z3(self, env: Z3Env = None):
+    def to_z3(self, env: Optional[Z3Env] = None):
         """Reject Z3 export: the classical collapse must be explicit (to_fol first)."""
         raise NotImplementedError(f"to_z3: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
@@ -390,7 +399,7 @@ class StrongConjunction(Node):
     def _relativize(self, facts: list) -> "Node":
         raise RuntimeError("StrongConjunction._relativize called; call to_msfol() before _relativize.")
 
-    def to_z3(self, env: Z3Env = None):
+    def to_z3(self, env: Optional[Z3Env] = None):
         """Reject Z3 export: the classical collapse must be explicit (to_fol first)."""
         raise NotImplementedError(f"to_z3: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
@@ -426,7 +435,7 @@ class StrongDisjunction(Node):
     def _relativize(self, facts: list) -> "Node":
         raise RuntimeError("StrongDisjunction._relativize called; call to_msfol() before _relativize.")
 
-    def to_z3(self, env: Z3Env = None):
+    def to_z3(self, env: Optional[Z3Env] = None):
         """Reject Z3 export: the classical collapse must be explicit (to_fol first)."""
         raise NotImplementedError(f"to_z3: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
@@ -464,7 +473,7 @@ class LukNegation(Node):
     def _relativize(self, facts: list) -> "Node":
         raise RuntimeError("LukNegation._relativize called; call to_msfol() before _relativize.")
 
-    def to_z3(self, env: Z3Env = None):
+    def to_z3(self, env: Optional[Z3Env] = None):
         """Reject Z3 export: the classical collapse must be explicit (to_fol first)."""
         raise NotImplementedError(f"to_z3: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
@@ -503,7 +512,7 @@ class LukImplication(Node):
     def _relativize(self, facts: list) -> "Node":
         raise RuntimeError("LukImplication._relativize called; call to_msfol() before _relativize.")
 
-    def to_z3(self, env: Z3Env = None):
+    def to_z3(self, env: Optional[Z3Env] = None):
         """Reject Z3 export: the classical collapse must be explicit (to_fol first)."""
         raise NotImplementedError(f"to_z3: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
@@ -542,7 +551,7 @@ class LukEquivalence(Node):
     def _relativize(self, facts: list) -> "Node":
         raise RuntimeError("LukEquivalence._relativize called; call to_msfol() before _relativize.")
 
-    def to_z3(self, env: Z3Env = None):
+    def to_z3(self, env: Optional[Z3Env] = None):
         """Reject Z3 export: the classical collapse must be explicit (to_fol first)."""
         raise NotImplementedError(f"to_z3: {type(self).__name__} — " + _LUK_NO_CLASSICAL_EXPORT)
 
@@ -655,12 +664,9 @@ for _m in ("msfol", "msfl"):
 def _sorted_count_transform(items):
     """Build a SortedCount from [COUNTOP glyph, NUMBER, Variable, SORT, body]."""
     op = _COUNT_TOKEN_TO_OP[str(items[0])]
-    text = str(items[1])
-    if "." in text:
-        raise ValueError(
-            f"counting quantifier bound must be an integer, got {text!r}.")
+    n = _count_bound(items[0], items[1])   # a CountBoundError (ParsingError) if not a count
     sort = str(items[3])[1:]  # strip leading ':'
-    return SortedCount(op, Number(int(text)), items[2], sort, items[4])
+    return SortedCount(op, Number(n), items[2], sort, items[4])
 
 
 def _sorted_cardinality_transform(items):
@@ -713,7 +719,7 @@ class LambdaVar(Node):
     def _relativize(self, facts: list) -> "Node":
         raise NotImplementedError("Beta-reduce lambda terms before the MSFL export pipeline.")
 
-    def to_z3(self, env: Z3Env = None):
+    def to_z3(self, env: Optional[Z3Env] = None):
         raise NotImplementedError("Lambda terms must be beta-reduced and lambda-eliminated before export.")
 
     def to_prover9(self) -> str:
@@ -749,7 +755,7 @@ class Lambda(Node):
     def _relativize(self, facts: list) -> "Node":
         raise NotImplementedError("Beta-reduce lambda terms before the MSFL export pipeline.")
 
-    def to_z3(self, env: Z3Env = None):
+    def to_z3(self, env: Optional[Z3Env] = None):
         raise NotImplementedError("Lambda terms must be beta-reduced and lambda-eliminated before export.")
 
     def to_prover9(self) -> str:
@@ -782,7 +788,7 @@ class Application(Node):
     def _relativize(self, facts: list) -> "Node":
         raise NotImplementedError("Beta-reduce lambda terms before the MSFL export pipeline.")
 
-    def to_z3(self, env: Z3Env = None):
+    def to_z3(self, env: Optional[Z3Env] = None):
         raise NotImplementedError("Lambda terms must be beta-reduced and lambda-eliminated before export.")
 
     def to_prover9(self) -> str:
@@ -905,14 +911,72 @@ def subst_slash_set(term: "SlashedExists", target: Node, replacement: Node) -> N
 
 
 def _fresh_name(base: str, avoid: set) -> str:
-    """Return the first name of the form base_N (N = 0, 1, …) not in {n.name for n in avoid}."""
-    avoid_names = {n.name for n in avoid}
-    i = 0
-    while True:
-        candidate = f"{base}_{i}"
-        if candidate not in avoid_names:
-            return candidate
-        i += 1
+    """A fresh object-variable name for the binder ``base`` that is being alpha-renamed.
+
+    ``avoid`` is a set of ``Variable`` / ``LambdaVar`` nodes and the result differs
+    from the name of every one of them. It is also a name the kit's own parser
+    reads back: one letter and digits (``y`` becomes ``y0``, then ``y1``, …).
+    The earlier ``y_0`` was printed by ``to_unicode_str`` and rejected by every
+    parser mode, because VARIABLE takes no underscore. Deterministic: the first
+    free ``letter`` + N, N = 0, 1, …
+
+    A name is only as safe as the set it is checked against: the caller passes
+    the replacement's free variables AND every name inside the scope being
+    renamed, bound ones included, or the renamed occurrences are captured by an
+    inner binder that already used the new name.
+    """
+    return fresh_variable_like(base, {n.name for n in avoid})
+
+
+def _binder_avoid(binder: Node, body: Node, target: Node, replacement: Node,
+                  fv_repl: set, slashed: Tuple[str, ...] = ()) -> frozenset:
+    """Every name a binder that is renamed during ``body[target := replacement]`` must avoid.
+
+    ``binder`` is the bound variable being given a new name and ``body`` its scope. The new
+    name is checked, as a string, against
+
+    * every name the scope and the replacement carry, of every kind: a constant, a function,
+      a predicate or a sort spelled like the new binder would print as the very same word,
+      and a constant of the replacement that ends up inside the scope is one of them;
+    * the free variables of the replacement: the binder is renamed because of them;
+    * the TARGET: the renamed scope is substituted next, and a binder renamed onto the
+      target's own spelling would have its occurrences replaced by the replacement (``∀x1 P(x1)``
+      under ``x0 := x1`` would come out as ``∀x0 P(x1)``, with a free ``x1`` the input
+      does not have);
+    * the old binder itself, and the slash names of a slashed existential, which refer to
+      enclosing variables and are plain strings no walk of the scope would find.
+
+    The one place this set is built, so the generic substitution and the proof searches'
+    substitution (:func:`unicode_fol_kit.atp.fitch._subst_var`) mint the same name: a checker
+    that recomputes an instance compares it with the searched one structurally.
+    """
+    names = set(symbol_names(body, replacement))
+    names.update(v.name for v in fv_repl)
+    names.update(slashed)
+    names.add(binder.name)
+    target_name = getattr(target, "name", None)
+    if target_name is not None:
+        names.add(target_name)
+    return frozenset(names)
+
+
+def _fresh_binder_name(binder: Node, body: Node, target: Node, replacement: Node,
+                       fv_repl: set, slashed: Tuple[str, ...] = ()) -> str:
+    """A name for the renamed object variable ``binder`` (see :func:`_binder_avoid`)."""
+    return fresh_variable_like(
+        binder.name, _binder_avoid(binder, body, target, replacement, fv_repl, slashed))
+
+
+def _spelled_like_a_free_variable(binder: Node, fv_repl: set) -> bool:
+    """True iff ``binder`` has the name of a free variable of the replacement, of either kind.
+
+    A :class:`Variable` and a :class:`LambdaVar` of one name are two nodes, but one name in
+    every text the kit writes: under ``λy.`` the text ``R(y, y)`` cannot say that its first
+    ``y`` is the free variable that was substituted in and its second the parameter, and it
+    reads back with both bound. So a binder is renamed whenever the NAME meets, whichever
+    kind of variable it binds.
+    """
+    return any(free.name == binder.name for free in fv_repl)
 
 
 def _rename(term: Node, old_var, new_var) -> Node:
@@ -972,12 +1036,20 @@ def _subst(term: Node, target: LambdaVar, replacement: Node, fv_repl: set) -> No
     if isinstance(term, Lambda):
         if term.param == target:
             return term  # target rebound here — substitution stops
-        if term.param in fv_repl:
-            # Lambda binder would capture a free LambdaVar from replacement; alpha-convert.
-            avoid = fv_repl | _names_in(term.body)
-            fresh = LambdaVar(_fresh_name(term.param.name, avoid))
-            new_body = _rename(term.body, term.param, fresh)
-            return Lambda(fresh, _subst(new_body, target, replacement, fv_repl))
+        if _spelled_like_a_free_variable(term.param, fv_repl):
+            # The binder is spelled like a free variable of the replacement (a LambdaVar it
+            # would capture, or a Variable its text could not tell from itself); alpha-convert.
+            # A parameter may be a variable (``λx.``), a NAME (``λfoo.``) or a predicate
+            # (``λP.``), and the body uses it in that position, so the new name keeps the
+            # kind: ``x`` becomes ``x0``, ``foo`` becomes ``foo_0`` and ``P`` becomes
+            # ``P_0`` (see :func:`~unicode_fol_kit.fol._identifiers.fresh_like`). It avoids
+            # the target as well as the scope and the replacement: the renamed body is
+            # substituted next.
+            fresh_param = LambdaVar(fresh_like(
+                term.param.name,
+                _binder_avoid(term.param, term.body, target, replacement, fv_repl)))
+            new_body = _rename(term.body, term.param, fresh_param)
+            return Lambda(fresh_param, _subst(new_body, target, replacement, fv_repl))
         return Lambda(term.param, _subst(term.body, target, replacement, fv_repl))
     if isinstance(term, Quantifier):
         # If the quantifier rebinds the target, the body is shadowed and substitution
@@ -987,9 +1059,9 @@ def _subst(term: Node, target: LambdaVar, replacement: Node, fv_repl: set) -> No
         if term.variable == target:
             return term
         # Otherwise the quantifier variable may capture a free Variable from replacement.
-        if term.variable in fv_repl:
-            avoid = fv_repl | _names_in(term.formula)
-            fresh = Variable(_fresh_name(term.variable.name, avoid))
+        if _spelled_like_a_free_variable(term.variable, fv_repl):
+            fresh = Variable(_fresh_binder_name(
+                term.variable, term.formula, target, replacement, fv_repl))
             new_formula = _rename(term.formula, term.variable, fresh)
             return Quantifier(term.type, fresh,
                               _subst(new_formula, target, replacement, fv_repl))
@@ -998,9 +1070,9 @@ def _subst(term: Node, target: LambdaVar, replacement: Node, fv_repl: set) -> No
     if isinstance(term, SortedQuantifier):
         if term.variable == target:
             return term  # target rebound here — substitution stops
-        if term.variable in fv_repl:
-            avoid = fv_repl | _names_in(term.formula)
-            fresh = Variable(_fresh_name(term.variable.name, avoid))
+        if _spelled_like_a_free_variable(term.variable, fv_repl):
+            fresh = Variable(_fresh_binder_name(
+                term.variable, term.formula, target, replacement, fv_repl))
             new_formula = _rename(term.formula, term.variable, fresh)
             return SortedQuantifier(term.type, fresh, term.sort,
                                     _subst(new_formula, target, replacement, fv_repl))
@@ -1014,9 +1086,13 @@ def _subst(term: Node, target: LambdaVar, replacement: Node, fv_repl: set) -> No
         term = rewritten
         if term.variable == target:
             return term  # target rebound here — substitution stops
-        if term.variable in fv_repl:
-            avoid = fv_repl | _names_in(term.formula)
-            fresh = Variable(_fresh_name(term.variable.name, avoid))
+        if _spelled_like_a_free_variable(term.variable, fv_repl):
+            # The slash set names variables too (plain strings, so no walk of the
+            # matrix can see them): a fresh binder called like one of them would
+            # silently rewire the independence set.
+            fresh = Variable(_fresh_binder_name(
+                term.variable, term.formula, target, replacement, fv_repl,
+                slashed=term.slashed))
             new_formula = _rename(term.formula, term.variable, fresh)
             return replace(term, variable=fresh,
                            formula=_subst(new_formula, target, replacement, fv_repl))
@@ -1027,9 +1103,9 @@ def _subst(term: Node, target: LambdaVar, replacement: Node, fv_repl: set) -> No
         # preserves Count's op/n and the sorted variants' sort).
         if term.variable == target:
             return term  # target rebound here — substitution stops
-        if term.variable in fv_repl:
-            avoid = fv_repl | _names_in(term.formula)
-            fresh = Variable(_fresh_name(term.variable.name, avoid))
+        if _spelled_like_a_free_variable(term.variable, fv_repl):
+            fresh = Variable(_fresh_binder_name(
+                term.variable, term.formula, target, replacement, fv_repl))
             new_formula = _rename(term.formula, term.variable, fresh)
             return replace(term, variable=fresh,
                            formula=_subst(new_formula, target, replacement, fv_repl))
@@ -1181,7 +1257,7 @@ def _resolve(node: Node, bound: frozenset) -> Node:
         # same name, exactly like a quantifier (replace() keeps op/n/sort/slash).
         return replace(node, formula=_resolve(node.formula, bound - {node.variable.name}))
     if isinstance(node, Atom):
-        resolved_args = [_resolve(a, bound) for a in node.args]
+        resolved_args = tuple(_resolve(a, bound) for a in node.args)
         if node.predicate in bound:
             result: Node = LambdaVar(node.predicate)
             for arg in resolved_args:
@@ -1191,7 +1267,7 @@ def _resolve(node: Node, bound: frozenset) -> Node:
     if isinstance(node, Function):
         # Function names can be lambda-bound (e.g. λfoo. P(foo(x)) parses body as
         # Atom("P", [Function("foo", ...)]) because NAME "(" termlist ")" → function_).
-        resolved_args = [_resolve(a, bound) for a in node.args]
+        resolved_args = tuple(_resolve(a, bound) for a in node.args)
         if node.name in bound:
             result = LambdaVar(node.name)
             for arg in resolved_args:
@@ -1274,6 +1350,12 @@ _UNI_BASE_PREC = {
 _UNI_INFIX_COMPARE = frozenset({"=", "≠", "<", ">", "≤", "≥"})
 _UNI_ARITH_OPS = frozenset({"+", "-", "*", "/"})
 
+#: The two truth constants (the nullary atoms ``$true`` / ``$false``, and the nullary
+#: atoms named like their glyphs, which are the same constants) as
+#: ``(unicode glyph, LaTeX command)``.
+_TRUTH_GLYPH = {"$true": ("⊤", "\\top"), "$false": ("⊥", "\\bot"),
+                "⊤": ("⊤", "\\top"), "⊥": ("⊥", "\\bot")}
+
 
 def _uni_prec(node) -> float:
     """Formula precedence of a node; atomic nodes (atoms, terms) default to 5.
@@ -1289,7 +1371,7 @@ def _uni_prec(node) -> float:
     return _UNI_BASE_PREC.get(cls, 5)
 
 
-def _uni_wrap(node, min_prec: int) -> str:
+def _uni_wrap(node, min_prec: float) -> str:
     """Render node, parenthesising it when it binds looser than the slot allows."""
     s = _uni(node)
     return f"({s})" if _uni_prec(node) < min_prec else s
@@ -1315,6 +1397,9 @@ def _uni_atom(node) -> str:
     """Render an Atom: infix comparison, nullary predicate, or applied predicate."""
     if node.predicate in _UNI_INFIX_COMPARE and len(node.args) == 2:
         return f"{_uni_term(node.args[0])} {node.predicate} {_uni_term(node.args[1])}"
+    if not node.args and node.predicate in _TRUTH_GLYPH:
+        # The truth constants, which every unicode grammar mode reads back.
+        return _TRUTH_GLYPH[node.predicate][0]
     if not node.args:
         return node.predicate
     return f"{node.predicate}(" + ", ".join(_uni_term(a) for a in node.args) + ")"
@@ -1359,7 +1444,7 @@ def _uni_term(node) -> str:
     if cls in ("Variable", "LambdaVar", "Constant", "PredicateTerm"):
         return node.name
     if cls == "Number":
-        return str(node.value)
+        return _number_text(node.value)
     if cls == "SortedConstant":
         return f"{node.name}:{node.sort}"
     if cls == "Measure":
@@ -1519,7 +1604,7 @@ def _latex_escape(name: str) -> str:
     return name.replace("_", "\\_")
 
 
-def _latex_wrap(node, min_prec: int) -> str:
+def _latex_wrap(node, min_prec: float) -> str:
     s = _latex(node)
     return f"({s})" if _uni_prec(node) < min_prec else s
 
@@ -1539,7 +1624,7 @@ def _latex_term(node) -> str:
     if cls in ("Variable", "LambdaVar", "Constant", "PredicateTerm"):
         return _latex_escape(node.name)
     if cls == "Number":
-        return str(node.value)
+        return _number_text(node.value)
     if cls == "SortedConstant":
         return f"{_latex_escape(node.name)}{{:}}\\mathrm{{{node.sort}}}"
     if cls == "Measure":
@@ -1575,6 +1660,8 @@ def _latex_term(node) -> str:
 def _latex_atom(node) -> str:
     if node.predicate in _UNI_INFIX_COMPARE and len(node.args) == 2:
         return f"{_latex_term(node.args[0])} {_LATEX_COMPARE[node.predicate]} {_latex_term(node.args[1])}"
+    if not node.args and node.predicate in _TRUTH_GLYPH:
+        return _TRUTH_GLYPH[node.predicate][1]
     if not node.args:
         return node.predicate
     return f"{node.predicate}(" + ", ".join(_latex_term(a) for a in node.args) + ")"
@@ -1731,9 +1818,98 @@ def subsort_axioms(signature: "Signature") -> Tuple[Node, ...]:
     subsorts. Duck-typed: only ``signature.subsorts`` is read.
     """
     x = Variable("x")
-    return tuple(Quantifier("∀", x, Implies(Atom(child, [x]), Atom(parent, [x])))
+    return tuple(Quantifier("∀", x, Implies(Atom(child, (x,)), Atom(parent, (x,))))
                  for child in sorted(signature.subsorts)
                  for parent in sorted(signature.subsorts[child]))
+
+
+def signature_axioms(signature: "Signature") -> Tuple[Node, ...]:
+    """Return everything a :class:`~unicode_fol_kit.fol.signature.Signature` asserts, as plain FOL sentences.
+
+    A signature that declares sorts, constant sorts, function ranks and subsort
+    edges says more than a decision procedure reads from the formulas alone. This
+    function writes those declarations down, in the vocabulary of the one-universe
+    reading of sorts (a sort ``S`` is the non-empty extension of the unary
+    predicate ``S``; see :func:`sort_membership_axioms`), so that a caller can add
+    them to the premises of ``premises ⊨ goal`` and ask the question the
+    signature asks. The sentences, in this order (each family sorted by name):
+
+    1. ``∃x S(x)`` for every sort the signature names: the sorts it lists, the
+       sorts of its constants, the argument and result sorts of its functions
+       and the argument sorts of its predicates, and both ends of a subsort edge.
+    2. :func:`subsort_axioms`: ``∀x (S(x) → T(x))`` for every direct edge
+       ``S < T``.
+    3. ``S(c)`` for every constant ``c`` declared with sort ``S``.
+    4. ``∀x1 … ∀xn (S1(x1) ∧ … ∧ Sn(xn) → S(f(x1, …, xn)))`` for every function
+       ``f`` declared with result sort ``S`` and argument sorts ``S1 … Sn``. An
+       argument position declared without a sort contributes no guard, a function
+       declared without a result sort contributes no sentence, and a nullary
+       function gives ``S(f)``.
+
+    A predicate's declared argument sorts give NO sentence. Under the one-universe
+    reading a predicate is a relation over the whole universe and may hold of
+    anything, whatever sort its arguments were declared with: ``P: A`` does not
+    say ``∀x (P(x) → A(x))``, and a sentence saying so would be a different
+    question. The relativisation of a sorted theory to plain first-order logic
+    needs non-emptiness of the sorts and closure of the declared functions, and
+    nothing about predicates.
+
+    The contract is that of :func:`nonempty_sort_axioms` and
+    :func:`subsort_axioms`: the sentences are background facts that a caller adds
+    as its own top-level, never-negated assumptions (premises for an entailment,
+    extra asserted conjuncts for a satisfiability question). ``api.prove`` and
+    ``api.countermodel`` add them when given ``signature=``. Duck-typed: the
+    ``sorts``, ``predicates``, ``functions``, ``constants`` and ``subsorts``
+    attributes are read. An empty tuple for an empty signature.
+
+    Returns:
+        The sentences, with exact repetitions removed.
+    """
+    named = set(signature.sorts)
+    for predicate in signature.predicates.values():
+        named.update(s for s in (predicate.arg_sorts or ()) if s is not None)
+    for function in signature.functions.values():
+        named.update(s for s in (function.arg_sorts or ()) if s is not None)
+        if function.result_sort is not None:
+            named.add(function.result_sort)
+    for constant in signature.constants.values():
+        if constant.sort is not None:
+            named.add(constant.sort)
+    for child, parents in signature.subsorts.items():
+        named.add(child)
+        named.update(parents)
+
+    x = Variable("x")
+    sentences: List[Node] = [Quantifier("∃", x, Atom(sort, (x,))) for sort in sorted(named)]
+    sentences.extend(subsort_axioms(signature))
+    for name in sorted(signature.constants):
+        sort = signature.constants[name].sort
+        if sort is not None:
+            sentences.append(Atom(sort, (Constant(name),)))
+    for name in sorted(signature.functions):
+        function = signature.functions[name]
+        if function.result_sort is None:
+            continue
+        arguments = [Variable(f"x{i + 1}") for i in range(function.arity)]
+        term = Function(name, tuple(arguments)) if arguments else Constant(name)
+        body: Node = Atom(function.result_sort, (term,))
+        guards = [Atom(sort, (argument,))
+                  for sort, argument in zip(function.arg_sorts or (), arguments)
+                  if sort is not None]
+        if guards:
+            guard: Node = guards[0]
+            for extra in guards[1:]:
+                guard = And(guard, extra)
+            body = Implies(guard, body)
+        for argument in reversed(arguments):
+            body = Quantifier("∀", argument, body)
+        sentences.append(body)
+
+    unique: List[Node] = []
+    for sentence in sentences:
+        if sentence not in unique:
+            unique.append(sentence)
+    return tuple(unique)
 
 
 def to_fol(node: Node, include_sort_facts: bool = False) -> Node:
@@ -1792,7 +1968,7 @@ def to_fol(node: Node, include_sort_facts: bool = False) -> Node:
 _SORTED_NODE_TYPES = (SortedQuantifier, SortedConstant, SortedCount, SortedCardinality)
 
 
-def nonempty_sort_axioms(*sentences: Node) -> Tuple[Node, ...]:
+def nonempty_sort_axioms(*sentences: Node, avoid_names=()) -> Tuple[Node, ...]:
     """Return one ``∃x (S(x))`` sentence per distinct sort name in ``sentences``.
 
     Many-sorted FOL (MSFOL), by convention, never gives a sort an EMPTY
@@ -1838,14 +2014,123 @@ def nonempty_sort_axioms(*sentences: Node) -> Tuple[Node, ...]:
     Returns an EMPTY tuple when no sentence contains any of the four sorted
     node types — the same no-op signal :func:`lower_msfol` uses to guarantee
     a fully unsorted caller sees byte-identical solver input.
+
+    The witness variable is named by
+    :func:`~unicode_fol_kit.fol._identifiers.fresh_variables` (``x0``, ``x1``,
+    … skipping every name the input uses, of every kind: a predicate, a
+    function, a constant and a sort are skipped as well as a variable). Until
+    0.28.2 it was ``_msfol_<Sort>_witness``, which the kit's OWN parser rejects
+    — VARIABLE is one letter plus digits — so an axiom this function returned
+    could be printed but not read back, and ``api.parse_any`` said no to text
+    the kit had just written. The sort is still visible in the axiom: the guard
+    atom is the sort predicate itself (``∃x0 Human(x0)``).
+
+    A sort named like the witness would make ``∃x0 x0(x0)``, which a text with
+    one namespace for variables and predicates (SMT-LIB, where cvc5 ends the
+    process on it) cannot say, so the witness is fresh against the sorts too.
+    ``avoid_names`` adds names that the CALLER knows and the sentences do not
+    hold (the other formulas of the problem, when the axioms are asked for
+    apart from them); the default is none.
     """
     sort_names: List[str] = []
     for s in sentences:
         for node in s.walk():
             if isinstance(node, _SORTED_NODE_TYPES) and node.sort not in sort_names:
                 sort_names.append(node.sort)
+    witnesses = fresh_variables(len(sort_names),
+                                avoid=symbol_names(*sentences) | frozenset(avoid_names))
     return tuple(
-        Quantifier("∃", Variable(f"_msfol_{name}_witness"),
-                  Atom(name, [Variable(f"_msfol_{name}_witness")]))
-        for name in sort_names
+        Quantifier("∃", Variable(witness), Atom(name, (Variable(witness),)))
+        for name, witness in zip(sort_names, witnesses)
     )
+
+
+def sort_membership_axioms(*sentences: Node) -> Tuple[Node, ...]:
+    """Return the atom ``S(c)`` for every distinct sorted constant ``c:S`` in ``sentences``.
+
+    What a sort IS in this kit, stated once. There is ONE universe. A sort ``S``
+    is the extension of the unary predicate ``S`` -- the sort and the predicate
+    of that name are one symbol -- and it is never empty. Sorts may overlap. A
+    sorted quantifier ``∀x:S φ`` ranges over ``S``, an unsorted one over
+    everything. A sorted constant ``c:S`` denotes an element of ``S``; a constant
+    written with two sorts lies in both, and ``c:S`` here and plain ``c`` there
+    are one constant. An unsorted constant and the value of a function may be
+    any element. That is what the finite model finder
+    (:mod:`~unicode_fol_kit.semantics.modelfinder`) enumerates.
+
+    :func:`to_fol` writes the first half of that: ``∀x:S φ`` becomes
+    ``∀x (S(x) → φ)`` and ``c:S`` becomes ``c``. :func:`nonempty_sort_axioms`
+    states that no sort is empty. THIS function states the remaining fact, that
+    a sorted constant is in its sort. Without it the reduction forgets the
+    annotation altogether, and ``∀x:Human Mortal(x) ⊢ Mortal(socrates:Human)``
+    has the countermodel in which ``socrates`` is no ``Human`` at all.
+
+    The contract is :func:`nonempty_sort_axioms`' own. The atoms are background
+    facts: a caller adds them as its OWN top-level, never-negated assumptions --
+    premises for an entailment, extra asserted conjuncts for a satisfiability
+    question -- next to whatever it decides, and computes them over the premises
+    AND the conclusion. They are never folded into the per-formula translation,
+    which is polarity-blind: conjoined onto a conclusion, ``S(c)`` would become
+    something to prove. (``to_fol(..., include_sort_facts=True)`` does conjoin
+    them, and is therefore right only for a sentence that is itself asserted.)
+
+    One atom per distinct ``(constant, sort)`` pair, in first-occurrence order;
+    an empty tuple when there is no sorted constant. The atom is built over the
+    name AS WRITTEN IN ``sentences``. A writer that renames a constant on its
+    way out (the TPTP, Prover9 and SMT-LIB writers do) must therefore take the
+    atoms from the formulas it actually writes, or the fact would be about
+    another symbol than the one its premises mention. A modal route, whose sort
+    guard carries a world argument, lifts the atom itself.
+    """
+    pairs: List[Tuple[str, str]] = []
+    for s in sentences:
+        for node in s.walk():
+            if isinstance(node, SortedConstant) and (node.sort, node.name) not in pairs:
+                pairs.append((node.sort, node.name))
+    return tuple(Atom(sort, (Constant(name),)) for sort, name in pairs)
+
+
+def sort_axioms(*sentences: Node, avoid_names=()) -> Tuple[Node, ...]:
+    """Everything the guard reading of ``sentences`` needs as background:
+    :func:`nonempty_sort_axioms` followed by :func:`sort_membership_axioms`.
+    ``avoid_names`` is :func:`nonempty_sort_axioms`' own.
+
+    This is the premise list to hand to a decision procedure together with the
+    :func:`to_fol` images (or with the sorted sentences themselves, whose
+    ``to_z3`` / ``to_tptp`` / ``to_prover9`` reduce on their own)::
+
+        api.prove(to_fol(goal), [to_fol(p) for p in premises] + list(sort_axioms(*premises, goal)))
+
+    ``api.prove`` and the backends add it themselves for sorted input.
+    :func:`subsort_axioms` is the third family, for a
+    :class:`~unicode_fol_kit.fol.signature.Signature` that declares subsorts.
+    """
+    return nonempty_sort_axioms(*sentences, avoid_names=avoid_names) + sort_membership_axioms(*sentences)
+
+
+def lower_counting(node: Node, avoid_names=None) -> Node:
+    """Replace every counting quantifier of ``node``, plain and sorted, by its expansion.
+
+    ``∃≥n x φ`` becomes the distinct-witnesses formula of :meth:`Count._expand`, and a
+    sorted ``∃≥n x:S φ`` the same over the guarded matrix ``S(x) ∧ φ`` (what
+    :meth:`SortedCount._relativize` makes of it). Nothing else changes: the other sorted
+    nodes stay, so a caller that goes on to translate or rename the result sees them.
+
+    This is the step to take BEFORE a problem's symbols are renamed for a text with one
+    namespace (the SMT-LIB writers): the witnesses are minted here, so they are names of
+    the problem like any other and the renaming keeps every symbol of every kind apart.
+    ``avoid_names`` is the set of every name of the whole problem (see
+    :func:`~unicode_fol_kit.fol._identifiers.symbol_names`); the witnesses are fresh
+    against it and are added to it, so that the expansions of one problem mint distinct
+    names. ``None`` avoids only the names of ``node`` itself.
+
+    Raises:
+        NotImplementedError: a bound beyond what :meth:`Count._expand` materialises.
+    """
+    node = node.map_children(lambda child: lower_counting(child, avoid_names))
+    if isinstance(node, SortedCount):
+        node = Count(node.op, node.n, node.variable,
+                     And(Atom(node.sort, (node.variable,)), node.formula))
+    if isinstance(node, Count):
+        return node._expand(avoid_names)
+    return node

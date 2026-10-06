@@ -12,6 +12,8 @@ adjust the import if the parent integrates it elsewhere.
 """
 
 import re
+import uuid
+
 import pytest
 
 from unicode_fol_kit.hol.isabelle_modal import (
@@ -19,11 +21,12 @@ from unicode_fol_kit.hol.isabelle_modal import (
 )
 
 from unicode_fol_kit.fol.nodes import (
-    Variable, Constant, Atom, Not, And, Or, Implies, Iff, Xor, Quantifier,
+    Variable, Constant, Function, Atom, Not, And, Or, Implies, Iff, Xor, Quantifier,
     Box, Diamond, Knows, Believes, Obligatory, Permitted,
     Always, Eventually, Next, Until, Since, SortedQuantifier,
 )
 
+from unicode_fol_kit.fol.qml import qml_is_valid
 from unicode_fol_kit.hol.isabelle_runner import isabelle_available
 from unicode_fol_kit.hol.isabelle_runner import check_theory
 
@@ -220,13 +223,6 @@ def test_predicate_signature_typing():
     assert re.search(r"consts likes :: \"e \\<Rightarrow> e \\<Rightarrow> i \\<Rightarrow> bool\"", thy), thy
     # the constant alice is typed e
     assert re.search(r"consts alice :: \"e\"", thy), thy
-
-
-def test_equality_uninterpreted_alias():
-    thy = to_isabelle_modal(Atom("=", [alice, Constant("bob")]))
-    assert "feq" in thy
-    # not primitive HOL equality lifted as identity; feq is a declared const.
-    assert re.search(r"consts feq ::", thy), thy
 
 
 # --------------------------------------------------------------------------- #
@@ -578,3 +574,226 @@ def test_non_ascii_variable_is_ascii_legal_and_deduped():
         ln.isascii() for ln in thy.splitlines() if ln.strip().startswith("lemma"))
     assert "u015bwiu0105tek" in thy
     assert "świątek" not in thy
+
+
+# --------------------------------------------------------------------------- #
+# Rigid identity.
+#
+# `=` is Isabelle's own polymorphic `=` over the entity type `e`, lifted under a world
+# binder it never uses -- `(\<lambda>_. a = b)` -- so it takes no world argument and cannot
+# vary by world; `≠` is `¬(=)`. This is the reading of fol.qml.qml_is_valid. The static
+# tests pin the emitted text against hand-derived expected output; the live battery
+# (isabelle_live) asks a real Isabelle the same questions qml_is_valid answers.
+# --------------------------------------------------------------------------- #
+
+_ea, _eb, _ec = Constant("a"), Constant("b"), Constant("c")
+
+
+def _id(s, t):
+    return Atom("=", [s, t])
+
+
+def _nid(s, t):
+    return Atom("≠", [s, t])
+
+
+def _Pa(t):
+    return Atom("P", [t])
+
+
+_ef = lambda t: Function("f", [t])           # noqa: E731
+
+_L = "\\<lambda>_."                           # the unused world binder, as emitted
+_IALL = {"K": True, "T": True, "S4": True, "S5": True, "KD": True, "KD45": True}
+_IBOX_BACK = {"K": False, "T": True, "S4": True, "S5": True, "KD": True, "KD45": True}
+_INEVER = {k: False for k in _IALL}
+
+# (id, formula, hand-derived lemma body, validity per frame, the reason)
+_ISA_IDENTITY_BATTERY = [
+    ("refl", _id(_ea, _ea), f"({_L} a = a)", _IALL, "reflexivity"),
+    ("sym", Implies(_id(_ea, _eb), _id(_eb, _ea)),
+     f"(mimp ({_L} a = b) ({_L} b = a))", _IALL, "symmetry"),
+    ("trans", Implies(And(_id(_ea, _eb), _id(_eb, _ec)), _id(_ea, _ec)),
+     f"(mimp (mand ({_L} a = b) ({_L} b = c)) ({_L} a = c))", _IALL, "transitivity"),
+    ("necessity", Implies(_id(_ea, _eb), Box(_id(_ea, _eb))),
+     f"(mimp ({_L} a = b) (mbox ({_L} a = b)))", _IALL,
+     "rigid: no world argument, so it holds at every successor"),
+    ("distinctness", Implies(_nid(_ea, _eb), Box(_nid(_ea, _eb))),
+     f"(mimp (mnot ({_L} a = b)) (mbox (mnot ({_L} a = b))))", _IALL,
+     "≠ is ¬(=), rigid too"),
+    ("possible_identity", Implies(Diamond(_id(_ea, _eb)), _id(_ea, _eb)),
+     f"(mimp (mdia ({_L} a = b)) ({_L} a = b))", _IALL,
+     "a = b does not depend on the world the diamond's witness lives at"),
+    ("box_back", Implies(Box(_id(_ea, _eb)), _id(_ea, _eb)),
+     f"(mimp (mbox ({_L} a = b)) ({_L} a = b))", _IBOX_BACK,
+     "needs a successor-or-self; in K a dead-end world makes the box vacuous"),
+    ("leibniz", Implies(_id(_ea, _eb), Iff(_Pa(_ea), _Pa(_eb))),
+     f"(mimp ({_L} a = b) (miff (p a) (p b)))", _IALL, "substitutivity"),
+    ("leibniz_box", Implies(_id(_ea, _eb), Iff(Box(_Pa(_ea)), Box(_Pa(_eb)))),
+     f"(mimp ({_L} a = b) (miff (mbox (p a)) (mbox (p b))))", _IALL,
+     "the same two objects, so the same boxed predicate"),
+    ("contingent", _id(_ea, _eb), f"({_L} a = b)", _INEVER,
+     "two constants may denote two objects"),
+    ("contingent_neg", Not(_id(_ea, _eb)), f"(mnot ({_L} a = b))", _INEVER,
+     "two constants may denote one object"),
+    ("congruence", Implies(_id(_ea, _eb), _id(_ef(_ea), _ef(_eb))),
+     f"(mimp ({_L} a = b) ({_L} (f a) = (f b)))", _IALL, "functions respect identity"),
+]
+_ISA_IDS = [row[0] for row in _ISA_IDENTITY_BATTERY]
+
+
+def _lemma_body(thy: str) -> str:
+    m = re.search(r'lemma modal_goal: "\\<lfloor> (.*) \\<rfloor>"', thy)
+    assert m, thy
+    return m.group(1)
+
+
+def test_identity_is_native_hol_equality_not_a_declared_predicate():
+    thy = to_isabelle_modal(Atom("=", [alice, Constant("bob")]))
+    assert _lemma_body(thy) == "(\\<lambda>_. alice = bob)"
+    assert "feq" not in thy and "fneq" not in thy
+    # the two entities and nothing else: identity declares no predicate constant
+    assert sorted(re.findall(r"^consts (\w+) ::", thy, re.M)) == ["alice", "bob"]
+    assert _balanced(thy, "(", ")") and _quotes_balanced(thy)
+
+
+@pytest.mark.parametrize("name, formula, body, validity, why", _ISA_IDENTITY_BATTERY,
+                         ids=_ISA_IDS)
+def test_identity_lemma_text_is_pinned(name, formula, body, validity, why):
+    thy = to_isabelle_modal(formula)
+    assert _lemma_body(thy) == body
+    assert "feq" not in thy and "fneq" not in thy
+    # exactly the constants, function symbols and (non-identity) predicates it uses
+    declared = set(re.findall(r"^consts (\w+) ::", thy, re.M)) - {"r"}
+    used = {n.name for n in formula.walk() if isinstance(n, (Constant, Function))}
+    used |= {n.predicate.lower() for n in formula.walk()
+             if isinstance(n, Atom) and n.predicate not in ("=", "≠")}
+    assert declared == used, (name, declared, used)
+    # ... and the axioms in scope for the proof are the frame's, identity adds none
+    assert modal_axiom_names(formula, frame="S4") == (
+        ["r_refl", "r_trans"]
+        if any(isinstance(n, (Box, Diamond)) for n in formula.walk()) else [])
+
+
+def test_identity_and_the_thf_export_lower_the_same_atoms_the_same_way():
+    # Agreement between the two HOL exporters, atom for atom: one world-free equality
+    # per identity atom after lowering ≠ to ¬(=) in both, none where there is none.
+    from unicode_fol_kit.hol.thf_modal import to_thf_modal_full
+    for name, formula, body, validity, why in _ISA_IDENTITY_BATTERY:
+        thy, thf = to_isabelle_modal(formula), to_thf_modal_full(formula)
+        goal = [ln for ln in thf.splitlines() if ln.startswith("thf(goal,")][0]
+        assert thy.count(_L) == goal.count("( meq @"), name
+    plain = Implies(Box(_Pa(_ea)), _Pa(_ea))
+    assert _L not in to_isabelle_modal(plain)
+    assert "( meq @" not in to_thf_modal_full(plain)
+
+
+def test_inequality_is_lowered_to_negated_identity():
+    thy = to_isabelle_modal(_nid(_ea, _eb))
+    assert _lemma_body(thy) == f"(mnot ({_L} a = b))"
+    assert "noteq" not in thy and "fneq" not in thy
+    assert thy == to_isabelle_modal(Not(_id(_ea, _eb)))      # literally ¬(a = b)
+
+
+def test_identity_world_binder_is_anonymous_so_a_variable_called_w_is_not_captured():
+    w = Variable("w")
+    thy = to_isabelle_modal(Quantifier("∀", w, _id(w, w)))
+    assert _lemma_body(thy) == f"(mforall (\\<lambda>w. ({_L} w = w)))"
+    thy2 = to_isabelle_modal(Quantifier("∀", w, Quantifier("∃", x, _id(w, x))))
+    assert _lemma_body(thy2) == (
+        f"(mforall (\\<lambda>w. (mexists (\\<lambda>x. ({_L} w = x)))))")
+
+
+def test_user_predicate_called_feq_stays_unique_next_to_identity():
+    f = And(Atom("feq", [_ea]), And(Atom("fneq", [_ea, _eb]), _id(_ea, _eb)))
+    thy = to_isabelle_modal(f)
+    consts = re.findall(r"^consts (\w+) ::", thy, re.M)
+    assert len(consts) == len(set(consts))
+    assert f"({_L} a = b)" in thy
+    assert sum(c.startswith("feq") for c in consts) == 1
+    assert sum(c.startswith("fneq") for c in consts) == 1
+
+
+def test_non_binary_identity_is_refused_like_qml_refuses_it():
+    for atom in (Atom("=", [_ea]), Atom("=", [_ea, _eb, _ec]), Atom("≠", [_ea])):
+        with pytest.raises(ValueError, match="exactly two terms"):
+            to_isabelle_modal(Box(atom))
+        with pytest.raises(ValueError, match="exactly two terms"):
+            modal_axiom_names(Box(atom))
+
+
+def test_identity_adds_no_axioms_and_needs_no_quantifier_block():
+    assert modal_axiom_names(Implies(_id(_ea, _eb), Box(_id(_ea, _eb))), frame="T") == ["r_refl"]
+    assert modal_axiom_names(_id(_ea, _ea)) == []
+    # the existence predicate appears only under a quantifier, identity or not
+    assert "existsAt" not in to_isabelle_modal(Implies(_id(_ea, _eb), Box(_id(_ea, _eb))))
+    assert "existsAt" in to_isabelle_modal(Quantifier("∃", x, _id(x, _ea)))
+
+
+# --- live: a real Isabelle answers the same questions qml_is_valid answers --------
+
+_LIVE_SKIP = pytest.mark.skipif(
+    not isabelle_available(),
+    reason="no Isabelle installation found (set UFK_ISABELLE_HOME / ISABELLE_HOME)")
+
+
+def _isabelle_verdict(formula, frame="K", mode="constant") -> str:
+    """'valid' if a proof battery closes the lemma; 'invalid' if nitpick finds a genuine
+    countermodel; 'quasi-invalid' if the countermodel is only quasi-genuine; else
+    'unknown'. The runner's own two steps (isabelle_decide_modal) without its Kripke-
+    witness step, which cannot evaluate an identity atom (and without its
+    ``expect = genuine`` being the last word: under a varying domain nitpick reports
+    EVERY refutation as quasi-genuine -- Barcan's formula included -- because it cannot
+    use the ``nonempty_dom`` axiom, so a genuine-only runner answers 'unknown' there)."""
+    axioms = modal_axiom_names(formula, mode=mode, frame=frame)
+    tok = "G" + uuid.uuid4().hex[:8]
+    using = ("  using " + " ".join(axioms) + "\n") if axioms else ""
+    proof = using + "  by (blast | force | fastforce | auto)"
+    thy = isabelle_modal_theory(formula, mode=mode, frame=frame, tactic="oops",
+                                theory_name=tok, proof=proof)
+    if check_theory(thy, tok, session_timeout=90).ok:
+        return "valid"
+    for expect, verdict in (("genuine", "invalid"), ("quasi_genuine", "quasi-invalid")):
+        tok = "G" + uuid.uuid4().hex[:8]
+        nit = f"  nitpick[card i = 1-3, timeout = 40, expect = {expect}]\n  oops"
+        thy = isabelle_modal_theory(formula, mode=mode, frame=frame, tactic="oops",
+                                    theory_name=tok, proof=nit)
+        if check_theory(thy, tok, session_timeout=90, wall_timeout=300).ok:
+            return verdict
+    return "unknown"
+
+
+def _live_cases():
+    """The battery on K, plus the one formula whose verdict depends on the frame."""
+    for name, formula, body, validity, why in _ISA_IDENTITY_BATTERY:
+        yield pytest.param(formula, "K", validity["K"], id=f"{name}-K")
+    for frame in ("T", "S4", "S5"):
+        yield pytest.param(_ISA_IDENTITY_BATTERY[6][1], frame, True, id=f"box_back-{frame}")
+
+
+@pytest.mark.isabelle_live
+@_LIVE_SKIP
+@pytest.mark.parametrize("formula, frame, expected_valid", list(_live_cases()))
+def test_rigid_identity_battery_live_matches_qml_is_valid(formula, frame, expected_valid):
+    assert qml_is_valid(formula, frame=frame) is expected_valid       # hand == qml
+    assert _isabelle_verdict(formula, frame=frame) == (
+        "valid" if expected_valid else "invalid")                     # ... == Isabelle
+
+
+@pytest.mark.isabelle_live
+@_LIVE_SKIP
+@pytest.mark.parametrize("mode, exists_valid", [("constant", True), ("varying", False)])
+def test_identity_is_not_existence_guarded_live(mode, exists_valid):
+    """`a = a` is a theorem even where `a` does not exist; `∃x (x = a)` is one only when
+    every object exists everywhere (qml's documented choice for varying domains).
+    Under ``varying`` nitpick's countermodel to the second is quasi-genuine (see
+    :func:`_isabelle_verdict`); it is also what the proof battery fails to prove."""
+    exists = Quantifier("∃", x, _id(x, _ea))
+    assert qml_is_valid(_id(_ea, _ea), mode=mode) is True
+    assert _isabelle_verdict(_id(_ea, _ea), mode=mode) == "valid"
+    assert qml_is_valid(exists, mode=mode) is exists_valid
+    got = _isabelle_verdict(exists, mode=mode)
+    if exists_valid:
+        assert got == "valid"
+    else:
+        assert got in ("invalid", "quasi-invalid"), got

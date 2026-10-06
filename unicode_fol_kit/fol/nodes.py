@@ -74,7 +74,10 @@ from ._msfl_nodes import (
     resolve_lambda_scope,
     to_fol,
     nonempty_sort_axioms,
+    sort_membership_axioms,
+    sort_axioms,
     subsort_axioms,
+    signature_axioms,
 )
 from ._modal_nodes import (
     Box, Diamond, Knows, Believes, Says, Wants,
@@ -97,7 +100,7 @@ from ._lambek_nodes import Product, Under, Over
 # that registers an operator for those modes -- _hybrid_nodes included --
 # has to have run first.
 from ._ho_nodes import (
-    PredicateTerm, Signatures, analyse_signatures, MixedSlotError,
+    PredicateTerm, Signatures, analyse_signatures, MixedSlotError, NestedPropertySlotError,
     _clone_parser_ops,
 )
 # PARSER_OPS/ParserOp/parser_ops_for_mode: needed below by
@@ -219,12 +222,15 @@ __all__ = [
     "Obligatory", "Permitted",
     "Would", "Might",
     "SecondOrderQuantifier",
-    "PredicateTerm", "Signatures", "analyse_signatures", "MixedSlotError",
+    "PredicateTerm", "Signatures", "analyse_signatures", "MixedSlotError", "NestedPropertySlotError",
     "free_variables",
     "substitute", "beta_reduce", "ReductionLimitError",
     "eta_reduce", "beta_eta_normalize",
     "resolve_lambda_scope",
     "to_fol",
     "nonempty_sort_axioms",
+    "sort_membership_axioms",
+    "sort_axioms",
     "subsort_axioms",
+    "signature_axioms",
 ]

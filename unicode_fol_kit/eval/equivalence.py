@@ -57,7 +57,7 @@ the exact rubric.
 from dataclasses import dataclass
 from typing import Optional
 
-from unicode_fol_kit.fol._msfl_nodes import nonempty_sort_axioms
+from unicode_fol_kit.fol._msfl_nodes import sort_axioms
 from unicode_fol_kit.fol.nodes import (
     Node, Iff, Quantifier, SortedQuantifier,
 )
@@ -119,6 +119,13 @@ class EquivalenceResult:
         frozen dataclass over ``Optional[bool]``/``str``/``dict`` fields
         only), which matters for a caller that evaluates candidates in a
         worker pool and inspects failures back in the parent process.
+    ``reason``
+        why the solver level gave no verdict, when it REFUSED the input: the
+        refusal's own text (a family with no first-order image, a numeral and a
+        constant that are one symbol, a construct the modal route does not
+        decide), so that ``equivalent is None`` can be told from "undecided within
+        the budget". ``None`` in every other case: a verdict, an undecided search,
+        or a call that never reached the solver.
     ``partial_credit``
         a heuristic RANKING signal in ``{0.0, 0.25, 0.5, 0.75, 1.0}`` —
         explicitly NOT a probability of correctness, just a coarse ordinal
@@ -176,6 +183,7 @@ class EquivalenceResult:
     counterexample: Optional[dict] = None
     partial_credit: Optional[float] = None
     partial_credit_components: Optional[dict] = None
+    reason: Optional[str] = None
 
     def __bool__(self) -> bool:
         return self.equivalent is True
@@ -192,6 +200,7 @@ class EquivalenceResult:
             "counterexample": self.counterexample,
             "partial_credit": self.partial_credit,
             "partial_credit_components": self.partial_credit_components,
+            "reason": self.reason,
         }
 
 
@@ -202,21 +211,30 @@ def _has_object_quantifier(node: Node) -> bool:
 
 def _solver_tristate(f1: Node, f2: Node, timeout: int, frame: str, systems,
                      converse_axioms: tuple = ()):
-    """Return ``(verdict, counterexample)`` for genuine logical equivalence.
+    """Return ``(verdict, counterexample, reason)`` for genuine logical equivalence.
+
+    ``reason`` is ``None`` unless the solver level REFUSED the input (a
+    ``NotImplementedError`` from the translation, which says why: a family with no
+    first-order image, a numeral and a constant that are one symbol): then it is the
+    text of the refusal and the verdict is ``None``.
 
     Classical route: Z3 on ``¬(φ ↔ ψ)`` — ``unsat`` proves equivalence, ``sat``
     refutes it (the model is the counterexample), ``unknown`` stays ``None``.
-    Many-sorted input: ``nonempty_sort_axioms(f1, f2)`` is asserted as extra,
-    UNNEGATED premises alongside ``¬(φ ↔ ψ)`` — the same soundness fix
-    :mod:`unicode_fol_kit.atp.z3_models`/``atp.protocol.Z3Backend`` apply,
-    needed here for the identical reason: MSFOL, by convention, never gives a
-    sort an empty universe, and ``to_z3()``'s relativisation alone carries no
-    such guarantee (see the classical-reasoning guide's many-sorted section).
-    Empty for an unsorted pair, so behaviour there is unchanged.
+    Many-sorted input: ``sort_axioms(f1, f2)`` — every sort of either formula
+    is non-empty, and every sorted constant ``c:S`` of either formula is in
+    ``S`` — is asserted as extra, UNNEGATED premises alongside ``¬(φ ↔ ψ)``:
+    the same soundness fix :mod:`unicode_fol_kit.atp.z3_models`/
+    ``atp.protocol.Z3Backend`` apply, needed here for the identical reason.
+    MSFOL, by convention, never gives a sort an empty universe, and a sorted
+    constant denotes an element of its sort, but ``to_z3()``'s relativisation
+    alone carries neither guarantee (see the classical-reasoning guide's
+    many-sorted section). The facts of BOTH formulas are asserted: a legal
+    structure fixes ``c`` in ``S`` for either side. Empty for an unsorted pair,
+    so behaviour there is unchanged.
     ``converse_axioms`` (see :mod:`unicode_fol_kit.eval.converses`) are
     asserted the same way — extra, UNNEGATED premises alongside
     ``¬(φ ↔ ψ)`` — before that negated goal is added, so ``solver.add`` sees
-    every premise (non-emptiness AND converse) ahead of the goal it bridges.
+    every premise (sort facts AND converse) ahead of the goal it bridges.
     Empty by default, so behaviour is unchanged unless a caller opts in.
     Modal route: ``modal_decide(Iff(φ, ψ))`` for the propositional fragment
     (tri-state; a Kripke counter-model witnesses refutation); quantified or
@@ -247,45 +265,48 @@ def _solver_tristate(f1: Node, f2: Node, timeout: int, frame: str, systems,
             except NotImplementedError:
                 status = None                     # fragment the tableau rejects
             if status == "valid":
-                return True, None
+                return True, None, None
             if status == "invalid":
                 cm = modal_countermodel(iff, frame=frame, systems=systems)
                 witness = {"kind": "kripke", "repr": repr(cm)} if cm is not None else None
-                return False, witness
+                return False, witness, None
             # "unknown" or rejected: fall through to the QML embedding.
         try:
             proved = qml_equivalent(f1, f2, frame=frame, systems=systems,
                                     timeout=timeout)
-        except NotImplementedError:
-            return None, None
-        return (True, None) if proved else (None, None)
+        except NotImplementedError as exc:
+            return None, None, str(exc)
+        return (True, None, None) if proved else (None, None, None)
 
     # Classical route: tri-state Z3 (deliberately NOT formulas_are_equivalent,
     # which collapses unknown to False — unusable as a metric verdict).
     from z3 import Solver, Not as _ZNot, sat, unsat
 
+    from unicode_fol_kit.fol.nodes import Z3Env
+
     try:
-        phi, psi = f1.to_z3(), f2.to_z3()
-        nonempty = [axiom.to_z3() for axiom in nonempty_sort_axioms(f1, f2)]
-        converses_z3 = [axiom.to_z3() for axiom in converse_axioms]
-    except NotImplementedError:
-        return None, None                         # no Z3 image for this family
+        env = Z3Env()                     # one environment for both formulas and every extra assertion
+        phi, psi = f1.to_z3(env), f2.to_z3(env)
+        sort_facts = [axiom.to_z3(env) for axiom in sort_axioms(f1, f2)]
+        converses_z3 = [axiom.to_z3(env) for axiom in converse_axioms]
+    except NotImplementedError as exc:
+        return None, None, str(exc)               # no Z3 image for this input: the refusal says why
     solver = Solver()
     solver.set("timeout", timeout)
     solver.set("random_seed", 42)
-    for axiom in nonempty:
+    for axiom in sort_facts:
         solver.add(axiom)
     for axiom in converses_z3:
         solver.add(axiom)
     solver.add(_ZNot(phi == psi))
     res = solver.check()
     if res == unsat:
-        return True, None
+        return True, None, None
     if res == sat:
-        model = solver.model()
-        assignment = {str(d.name()): str(model[d]) for d in model.decls()}
-        return False, {"kind": "z3_model", "assignment": assignment}
-    return None, None
+        from unicode_fol_kit.atp.z3_models import model_assignment
+        assignment = model_assignment(solver.model())
+        return False, {"kind": "z3_model", "assignment": assignment}, None
+    return None, None, None
 
 
 def _partial_credit(prediction: Node, reference: Node, verdict: Optional[bool],
@@ -401,14 +422,14 @@ def equivalent(prediction: Node, reference: Node, *, method: str = "auto",
             aligned_equal=eq)
 
     if method == "solver":
-        verdict, cex = _solver_tristate(prediction, reference, timeout, frame,
-                                        systems, axioms)
+        verdict, cex, reason = _solver_tristate(prediction, reference, timeout, frame,
+                                                systems, axioms)
         pc, components = _partial_credit(prediction, reference, verdict, max_norm_distance)
         method_used = "solver_modulo_converses" if axioms else "solver"
         return EquivalenceResult(
             equivalent=verdict, method_used=method_used,
             logically_equivalent=verdict, counterexample=cex,
-            partial_credit=pc, partial_credit_components=components)
+            partial_credit=pc, partial_credit_components=components, reason=reason)
 
     # auto: cheapest first, stop at the first True; solver decides the rest.
     # Every branch below computes partial_credit (method="auto" is one of the
@@ -434,12 +455,12 @@ def equivalent(prediction: Node, reference: Node, *, method: str = "auto",
             syntax_equal=False, structurally_equal=False, aligned_equal=True,
             partial_credit=1.0)
 
-    verdict, cex = _solver_tristate(prediction, reference, timeout, frame,
-                                    systems, axioms)
+    verdict, cex, reason = _solver_tristate(prediction, reference, timeout, frame,
+                                            systems, axioms)
     pc, components = _partial_credit(prediction, reference, verdict, max_norm_distance)
     method_used = "solver_modulo_converses" if axioms else "solver"
     return EquivalenceResult(
         equivalent=verdict, method_used=method_used,
         syntax_equal=False, structurally_equal=False, aligned_equal=False,
         logically_equivalent=verdict, counterexample=cex,
-        partial_credit=pc, partial_credit_components=components)
+        partial_credit=pc, partial_credit_components=components, reason=reason)

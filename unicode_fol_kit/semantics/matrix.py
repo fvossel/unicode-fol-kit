@@ -15,8 +15,11 @@ Three matrices ship built in:
 - :data:`FDE_MATRIX` — the Belnap–Dunn four-valued logic **FDE** (first-degree
   entailment), values ``T``/``F``/``N`` (neither)/``B`` (both), designate the
   *true-containing* values ``{T, B}``. FDE is both paraconsistent (``p ∧ ¬p ⊭ q``)
-  and paracomplete (``p ⊭ q ∨ ¬q``), and — unlike K3/LP — has **no** logical
-  truths at all (even ``p → p`` fails, taking value ``N`` at ``N``).
+  and paracomplete (``p ⊭ q ∨ ¬q``). Like K3, and unlike LP, it has no logical truth built
+  from letters alone: the valuation that gives every letter ``N`` (K3: ``½``) gives every
+  such formula that value, which is not designated (``p → p`` takes the value ``N`` at
+  ``N``). With the truth constants it has some: ``⊤``, ``⊥ → p`` and ``p → ⊤`` are
+  FDE-valid.
 
 K3 and LP are re-expressed here as matrices, so this layer reproduces the existing
 three-valued decisions exactly (cross-checked in the tests). Build your own with
@@ -33,7 +36,11 @@ from itertools import product
 from typing import Callable, Dict, FrozenSet, Hashable, List, Optional, Sequence, Tuple
 
 from ..fol.nodes import Node, Atom, Not, And, Or, Xor, Implies, Iff, Quantifier
-from .manyvalued import _atom_keys, _instantiate, _ground, _reject_if_unsupported, MAX_MODELS
+from ..fol._atom_keys import AtomKeys, atom_key
+from ..fol._truth_constants import truth_value as _truth_value
+from . import manyvalued as _manyvalued
+from .manyvalued import (_atom_keys, _instantiate, _ground, _parameter_instances,
+                         _reject_if_unsupported, MAX_MODELS)
 
 Value = Hashable
 
@@ -58,6 +65,8 @@ class TruthMatrix:
     impl: Dict[Tuple[Value, Value], Value]
     iff: Dict[Tuple[Value, Value], Value]
     xor: Dict[Tuple[Value, Value], Value]
+    top: Optional[Value] = None
+    bottom: Optional[Value] = None
 
     @staticmethod
     def from_functions(
@@ -68,6 +77,8 @@ class TruthMatrix:
         conj: Callable[[Value, Value], Value],
         disj: Callable[[Value, Value], Value],
         impl: Optional[Callable[[Value, Value], Value]] = None,
+        top: Optional[Value] = None,
+        bottom: Optional[Value] = None,
     ) -> "TruthMatrix":
         """Materialise a matrix from value-level operations.
 
@@ -75,9 +86,19 @@ class TruthMatrix:
         biconditional is ``(a→b) ∧ (b→a)`` and exclusive-or is ``¬(a↔b)``. Every
         operation is checked to land back in ``values`` (a closed matrix), and every
         designated value to be a value, so a malformed table is caught at build time.
+
+        ``top`` and ``bottom`` are the values of the truth constants ``$true`` and
+        ``$false`` (``⊤`` and ``⊥``). A matrix does not determine them (a finite
+        logic may have several candidates, or none), so they are declared, and a
+        matrix that declares neither refuses a formula that uses the constants. A
+        declared one must be a value of the matrix.
         """
         values = tuple(values)
         vset = set(values)
+        for label, constant in (("top", top), ("bottom", bottom)):
+            if constant is not None and constant not in vset:
+                raise ValueError(
+                    f"TruthMatrix {name!r}: {label} value {constant!r} is not a value.")
         if impl is None:
             impl = lambda a, b: disj(neg(a), b)
         iff = lambda a, b: conj(impl(a, b), impl(b, a))
@@ -96,6 +117,7 @@ class TruthMatrix:
             name=name, values=values, designated=frozenset(designated),
             neg=_u(neg), conj=_b(conj), disj=_b(disj),
             impl=_b(impl), iff=_b(iff), xor=_b(xor),
+            top=top, bottom=bottom,
         )
 
     def is_designated(self, v: Value) -> bool:
@@ -120,27 +142,50 @@ def matrix_value(formula: Node, valuation: Dict[str, Value],
     ``matrix``. Quantifiers fold ``conj`` (∀) / ``disj`` (∃) over ``domain`` (a set
     of constant names), generalising min/max. A missing atom key raises ``KeyError``;
     a value outside the matrix raises ``ValueError``; a modal/fuzzy/sorted/lambda
-    node is rejected with the same message :func:`kleene_value` uses.
+    node is rejected with the same message :func:`kleene_value` uses, and so is a
+    sorted constant inside an atom and a pair of different atoms that print alike (the
+    numeral ``1`` and a constant named ``1``, a free variable ``x`` and a constant
+    named ``x``), which one key of the valuation could not tell apart. The atom ``P(x)``
+    of a free variable is one more key of the valuation.
     """
+    return _matrix_value(formula, valuation, matrix, domain,
+                         AtomKeys("matrix_value", "refuse"))
+
+
+def _matrix_value(formula: Node, valuation: Dict[str, Value], matrix: TruthMatrix,
+                  domain: Optional[Sequence[str]], keys: Optional[AtomKeys]) -> Value:
+    """The body of :func:`matrix_value`; ``keys`` records and checks the key of every atom
+    reached, and is ``None`` where the atoms were checked already."""
     if isinstance(formula, Atom):
-        key = formula.to_unicode_str()
+        constant = _truth_value(formula)
+        if constant is not None:
+            value = matrix.top if constant else matrix.bottom
+            if value is None:
+                raise NotImplementedError(
+                    f"matrix_value: the matrix {matrix.name!r} declares no "
+                    f"{'top' if constant else 'bottom'} value, so it has no reading "
+                    f"of the truth constant {formula.predicate}; declare one with "
+                    "TruthMatrix.from_functions(..., top=..., bottom=...), or write "
+                    "the formula without the constant.")
+            return value
+        key = atom_key(formula) if keys is None else keys.key(formula)
         if key not in valuation:
             raise KeyError(f"No value for ground atom {key!r} in the valuation.")
         v = valuation[key]
         return _check(v, set(matrix.values), matrix.name)
     if isinstance(formula, Not):
-        return matrix.neg[matrix_value(formula.formula, valuation, matrix, domain)]
+        return matrix.neg[_matrix_value(formula.formula, valuation, matrix, domain, keys)]
     if isinstance(formula, (And, Or, Xor, Implies, Iff)):
-        a = matrix_value(formula.left, valuation, matrix, domain)
-        b = matrix_value(formula.right, valuation, matrix, domain)
+        a = _matrix_value(formula.left, valuation, matrix, domain, keys)
+        b = _matrix_value(formula.right, valuation, matrix, domain, keys)
         table = {And: matrix.conj, Or: matrix.disj, Implies: matrix.impl,
                  Iff: matrix.iff, Xor: matrix.xor}[type(formula)]
         return table[(a, b)]
     if isinstance(formula, Quantifier):
         if not domain:
             raise ValueError("Evaluating a Quantifier requires a non-empty 'domain'.")
-        vals = [matrix_value(_ground(formula.formula, formula.variable.name, d),
-                             valuation, matrix, domain) for d in domain]
+        vals = [_matrix_value(_ground(formula.formula, formula.variable.name, d),
+                              valuation, matrix, domain, keys) for d in domain]
         combine = matrix.conj if formula.type in ("∀", "forall") else matrix.disj
         acc = vals[0]
         for nxt in vals[1:]:
@@ -150,7 +195,7 @@ def matrix_value(formula: Node, valuation: Dict[str, Value],
 
 
 def _prepare(formulas: Sequence[Node], matrix: TruthMatrix,
-             domain: Optional[Sequence[str]]):
+             domain: Optional[Sequence[str]], route: str = "matrix"):
     """Ground quantifiers, collect ground-atom keys, and bound the enumeration."""
     grounded: List[Node] = []
     for f in formulas:
@@ -160,12 +205,15 @@ def _prepare(formulas: Sequence[Node], matrix: TruthMatrix,
             grounded.append(_instantiate(f, set(domain)))
         else:
             grounded.append(f)
-    keys = _atom_keys(*grounded)
+    keys = _atom_keys(*grounded, route=route)
     total = len(matrix.values) ** len(keys)
-    if total > MAX_MODELS:
+    # Read where the message says to set it: a name imported into this module would be a
+    # copy that a caller's ``manyvalued.MAX_MODELS = ...`` does not reach.
+    bound = _manyvalued.MAX_MODELS
+    if total > bound:
         raise ValueError(
             f"Matrix enumeration would visit {len(matrix.values)}**{len(keys)} = "
-            f"{total} assignments, above MAX_MODELS = {MAX_MODELS}. Reduce the number "
+            f"{total} assignments, above MAX_MODELS = {bound}. Reduce the number "
             "of distinct ground atoms, or raise manyvalued.MAX_MODELS.")
     return keys, grounded
 
@@ -176,23 +224,40 @@ def matrix_is_valid(formula: Node, matrix: TruthMatrix,
 
     Enumerates ``len(matrix.values) ** n`` assignments of the ``n`` distinct ground
     atoms (after grounding quantifiers over ``domain``). Exponential in ``n``; capped
-    at :data:`manyvalued.MAX_MODELS`.
+    at :data:`manyvalued.MAX_MODELS`. A variable that is free in a quantified formula is a
+    parameter: one element of ``domain``, and the formula is valid when it is designated
+    under every assignment of the domain's elements to its free variables as well (see
+    :mod:`~unicode_fol_kit.semantics.manyvalued`). A sorted constant, and two different
+    atoms that print alike, are refused by name with ``NotImplementedError``.
     """
-    keys, (grounded,) = _prepare([formula], matrix, domain)
-    return all(
-        matrix_value(grounded, dict(zip(keys, combo)), matrix, domain) in matrix.designated
-        for combo in product(matrix.values, repeat=len(keys))
-    )
+    for instance in _parameter_instances([formula], domain):
+        keys, (grounded,) = _prepare(instance, matrix, domain, "matrix_is_valid")
+        if not all(
+            _matrix_value(grounded, dict(zip(keys, combo)), matrix, domain, None)
+            in matrix.designated
+            for combo in product(matrix.values, repeat=len(keys))
+        ):
+            return False
+    return True
 
 
 def matrix_is_satisfiable(formula: Node, matrix: TruthMatrix,
                           domain: Optional[Sequence[str]] = None) -> bool:
-    """True iff ``formula`` is designated under *some* assignment over ``matrix``."""
-    keys, (grounded,) = _prepare([formula], matrix, domain)
-    return any(
-        matrix_value(grounded, dict(zip(keys, combo)), matrix, domain) in matrix.designated
-        for combo in product(matrix.values, repeat=len(keys))
-    )
+    """True iff ``formula`` is designated under *some* assignment over ``matrix``.
+
+    A variable that is free in a quantified formula is a parameter over ``domain``: the
+    formula is satisfiable when it is under some assignment of the domain's elements to
+    its free variables (see :func:`matrix_is_valid`).
+    """
+    for instance in _parameter_instances([formula], domain):
+        keys, (grounded,) = _prepare(instance, matrix, domain, "matrix_is_satisfiable")
+        if any(
+            _matrix_value(grounded, dict(zip(keys, combo)), matrix, domain, None)
+            in matrix.designated
+            for combo in product(matrix.values, repeat=len(keys))
+        ):
+            return True
+    return False
 
 
 def matrix_entails(premises: Sequence[Node], conclusion: Node, matrix: TruthMatrix,
@@ -200,16 +265,21 @@ def matrix_entails(premises: Sequence[Node], conclusion: Node, matrix: TruthMatr
     """True iff every assignment designating all ``premises`` designates ``conclusion``.
 
     Matrix consequence: ``Γ ⊨ φ`` holds when no assignment over ``matrix`` makes every
-    premise designated yet the conclusion undesignated.
+    premise designated yet the conclusion undesignated. A variable that is free in some
+    formula of a problem that has a quantifier is a parameter: ONE element of ``domain``,
+    the same in the premises and the conclusion, and the conclusion must follow under every
+    assignment of the domain's elements to the free variables (see :func:`matrix_is_valid`).
     """
     formulas = list(premises) + [conclusion]
-    keys, grounded = _prepare(formulas, matrix, domain)
-    prem, concl = grounded[:-1], grounded[-1]
-    for combo in product(matrix.values, repeat=len(keys)):
-        val = dict(zip(keys, combo))
-        if all(matrix_value(p, val, matrix, domain) in matrix.designated for p in prem):
-            if matrix_value(concl, val, matrix, domain) not in matrix.designated:
-                return False
+    for instance in _parameter_instances(formulas, domain):
+        keys, grounded = _prepare(instance, matrix, domain, "matrix_entails")
+        prem, concl = grounded[:-1], grounded[-1]
+        for combo in product(matrix.values, repeat=len(keys)):
+            val = dict(zip(keys, combo))
+            if all(_matrix_value(p, val, matrix, domain, None) in matrix.designated
+                   for p in prem):
+                if _matrix_value(concl, val, matrix, domain, None) not in matrix.designated:
+                    return False
     return True
 
 
@@ -227,10 +297,10 @@ _k_impl = lambda a, b: max(1.0 - a, b)
 
 K3_MATRIX = TruthMatrix.from_functions(
     "K3", _THREE, designated=(1.0,),
-    neg=_k_neg, conj=_k_conj, disj=_k_disj, impl=_k_impl)
+    neg=_k_neg, conj=_k_conj, disj=_k_disj, impl=_k_impl, top=1.0, bottom=0.0)
 LP_MATRIX = TruthMatrix.from_functions(
     "LP", _THREE, designated=(0.5, 1.0),
-    neg=_k_neg, conj=_k_conj, disj=_k_disj, impl=_k_impl)
+    neg=_k_neg, conj=_k_conj, disj=_k_disj, impl=_k_impl, top=1.0, bottom=0.0)
 
 
 # Belnap–Dunn FDE: each value is a (has-true, has-false) bit pair.
@@ -258,7 +328,8 @@ def _fde_disj(a, b):
 
 FDE_MATRIX = TruthMatrix.from_functions(
     "FDE", ("F", "N", "T", "B"), designated=("T", "B"),
-    neg=_fde_neg, conj=_fde_conj, disj=_fde_disj)   # material → via ¬a ∨ b
+    neg=_fde_neg, conj=_fde_conj, disj=_fde_disj,   # material → via ¬a ∨ b
+    top="T", bottom="F")        # the extremes of the truth order: told-true-only, told-false-only
 
 
 #: The built-in truth matrices by name — ``"K3"``, ``"LP"`` and ``"FDE"``.

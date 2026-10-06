@@ -209,9 +209,10 @@ def _with_all_different(formula: Node, enclosing: Tuple[str, ...] = ()) -> Node:
     existential ``u`` it is nested in. Placing the atom inside the binder is
     the whole difficulty: conjoining ``u ≠ v`` to the formula as a whole
     would leave both variables FREE there, and the model finder reads a free
-    variable as universally quantified — which turns the constraint into
-    "all individuals are pairwise distinct, including each from itself" and
-    makes every formula unsatisfiable.
+    variable as a parameter: an unknown element of its own, which has nothing
+    to do with the bound variables of that name. The constraint would then say
+    "two parameters differ": it would leave the existentials it was written
+    for free to coincide, and only force the domain to have two elements.
 
     A formula with no nested existentials comes back unchanged, so the
     convention costs nothing where it says nothing.
@@ -327,9 +328,15 @@ def minimal_model_size(
         formula: the definitional BODY to test (e.g. the right-hand side of
             a ``class <=> body`` definition) — not the whole biconditional,
             which would trivially be satisfiable by choosing the class
-            predicate's extension to match whatever the body denotes. Free
-            variables are read as universally quantified, matching
-            :mod:`~unicode_fol_kit.semantics.modelfinder`'s own convention.
+            predicate's extension to match whatever the body denotes. A free
+            variable is a PARAMETER, matching
+            :mod:`~unicode_fol_kit.semantics.modelfinder`'s own reading: one
+            unknown element, the same wherever the variable occurs, and a
+            model the search finds interprets it as the constant of its name.
+            So ``P(x) ∧ ¬P(y)`` has a model of size 2 (``x`` and ``y`` two
+            elements) and is not read as ``∀x ∀y (P(x) ∧ ¬P(y))``, which has
+            none. (The closed-form witness of ``all_different`` has no entry
+            for a free variable: every element satisfies the formula there.)
         signature: if given, ``formula`` is validated against it first
             (:meth:`~unicode_fol_kit.fol.signature.Signature.validate`) and a
             formula using any undeclared predicate/function/constant is

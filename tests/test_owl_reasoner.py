@@ -87,15 +87,65 @@ def test_unavailable_raises_owl_reasoner_error(monkeypatch):
 
 
 def test_all_individuals_helper():
-    # _all_individuals mirrors dl.tableau._individuals's own convention (see
-    # test_dl_alc.py's test_instance_and_realize_edge_cases for the tableau
-    # side of this same contract): a role-only individual still counts, and a
-    # wholly empty ABox falls back to {"a"}.
+    # _all_individuals is the SWEEP's scan, the same one the tableau's
+    # instance_retrieval/realize_all and kb_to_fol(...).individuals read
+    # (dl.tableau._abox_individual_names, driven by the axiom-kind table): a
+    # role-only individual still counts, and an ABox that names nobody has NO
+    # individual. Hand-derived: the sweep reports the individuals the knowledge
+    # base NAMES, and an empty ABox names none, so there is nobody to retrieve or
+    # realize -- the answer is the empty set. (The anonymous "a" that
+    # dl.tableau._individuals falls back to is a convention of abox_consistent
+    # alone: the node a TBox has to run on. Reporting it from a sweep answered
+    # about an individual nobody named; the FOL image, which invents none, is
+    # checked below. This test pinned {"a"} until the sweeps stopped inventing it.)
     from unicode_fol_kit.dl.owl_reasoner import _all_individuals
 
     ab = dl.ABox().assert_role("alice", "bob", "hasChild")
     assert _all_individuals(ab) == {"alice", "bob"}
-    assert _all_individuals(dl.ABox()) == {"a"}
+    assert _all_individuals(dl.ABox()) == set()
+    assert dl.kb_to_fol(None, dl.ABox()).individuals == ()
+
+
+def test_a_fresh_individual_is_the_base_or_the_first_numbered_name_outside_the_taken_ones():
+    from unicode_fol_kit.dl.owl_reasoner import _fresh_individual
+
+    assert _fresh_individual("_probe", set()) == "_probe"
+    assert _fresh_individual("_probe", {"a", "b"}) == "_probe"
+    assert _fresh_individual("_probe", {"_probe"}) == "_probe1"
+    assert _fresh_individual("_probe", {"_probe", "_probe1", "_probe3"}) == "_probe2"
+    # names are compared exactly: a name that differs in case is another name
+    assert _fresh_individual("_probe", {"_Probe"}) == "_probe"
+
+
+@pytest.mark.parametrize("where", ["nominal in the concept", "nominal in a GCI",
+                                   "value restriction in a domain axiom", "both numbered names taken"])
+def test_the_probe_individual_of_a_satisfiability_question_is_not_an_individual_of_the_question(
+        where, monkeypatch):
+    # The question "is C satisfiable?" is asked as "is {probe : C} consistent?", and the probe
+    # is ONE element. A probe called like an individual that a nominal or a value restriction
+    # of the question names would BE that individual (one element, not "some element"):
+    # `{p} ⊑ A` with C = ¬A is then inconsistent, although ¬A is satisfiable (the nominal's
+    # element in A, another one outside it).
+    import unicode_fol_kit.dl.owl_reasoner as module
+
+    taken = {"_probe"}
+    concept, tbox = dl.Not(A), dl.TBox()
+    if where == "nominal in the concept":
+        concept = dl.And(dl.Not(A), dl.Not(dl.Nominal("_probe")))
+    elif where == "nominal in a GCI":
+        tbox.add(dl.Nominal("_probe"), A)
+    elif where == "value restriction in a domain axiom":
+        tbox.add_role_domain("r", dl.HasValue("r", "_probe"))
+    else:
+        tbox.add(dl.Nominal("_probe"), A).add(dl.Nominal("_probe1"), A)
+        taken = {"_probe", "_probe1"}
+    seen = []
+    monkeypatch.setattr(module, "_require_available", lambda: object())
+    monkeypatch.setattr(module, "_kb_consistent", lambda tbox_, abox_: seen.append(abox_) or True)
+    assert module.external_concept_satisfiable(concept, tbox) is True
+    ((probe, asserted),) = seen[0].concept_assertions
+    assert probe not in taken and asserted == concept
+    assert probe == ("_probe2" if where == "both numbered names taken" else "_probe1")
 
 
 # --------------------------------------------------------------------------- #
@@ -244,6 +294,25 @@ def test_nominal_with_distinctness_is_unsatisfiable():
 
 @owl_live
 @live
+@pytest.mark.parametrize("individual", ["p", "_probe", "_probe1"])
+def test_a_nominal_named_like_the_probe_does_not_make_a_satisfiable_concept_unsatisfiable(individual):
+    # {i} ⊑ A and the concept ¬A. Satisfiable, whatever the individual i is called:
+    # the structure {0, 1} with i ↦ 0, A = {0} puts the element 1 in ¬A (the nominal's own
+    # element is in A, and a concept asks for SOME element). For the same reason A does not
+    # subsume ⊤ here: the element 1 is no A.
+    tbox = dl.TBox().add(dl.Nominal(individual), A)
+    assert dl.external_concept_satisfiable(dl.Not(A), tbox) is True
+    assert dl.external_subsumes(dl.Top(), A, tbox) is False
+    # and the FOL image agrees: ¬A is not refuted from the terminology
+    from unicode_fol_kit import api
+    kb = dl.kb_to_fol(tbox, None, query=[dl.Not(A)])
+    status = api.prove(kb.unsatisfiability_goal(dl.Not(A)), list(kb.tbox_premises),
+                       backends=["z3"], timeout=20000).status
+    assert status == "refuted"
+
+
+@owl_live
+@live
 def test_inverse_role_entailment_corrected_textbook_case():
     # Corrected test-oracle example (concept-level InverseRole wrapper, not a
     # named-inverse-role RBox declaration, which this kit's AST does not
@@ -275,3 +344,229 @@ def test_inverse_role_with_role_hierarchy_and_number_restriction():
     ab = dl.ABox().assert_role("a", "b", "hasSon")
     query = dl.Exists(dl.InverseRole("hasChild"), dl.Top())
     assert dl.external_instance_check(ab, "b", query, t) is True
+
+
+# =============================================================================
+# B1b: every role-box field reaches the ontology this module builds. The whole
+# point of this module is to be an INDEPENDENT oracle, and it is the route the
+# in-house tableau's own refusal messages send the user to -- an oracle that
+# silently drops the axiom under test agrees with everything, and those
+# messages would be dishonest. Measured before 0.30.0: `_build_kb` read only
+# `role_inclusions` and `transitive_roles`, so all nine new fields were lost,
+# and an InverseRole in an inclusion came out as a BRAND-NEW atomic property.
+#
+# Each case is chosen so the verdict FLIPS when the field is dropped, which is
+# what makes it a test of the wiring rather than of HermiT.
+# =============================================================================
+
+def _flips(expected, with_box, without_box=None):
+    """``(expected, tbox)`` pairs: the axiom present, and absent."""
+    return [(expected, with_box), (not expected, without_box or dl.TBox())]
+
+
+@owl_live
+@live
+def test_external_route_carries_an_inverse_property_pair():
+    # PartOf(alice, bob) and PartOf ≡ HasPart⁻ give HasPart(bob, alice).
+    ab = dl.ABox().assert_role("alice", "bob", "partOf")
+    query = dl.Exists("hasPart", dl.Top())
+    for expected, t in _flips(True, dl.TBox().add_inverse_roles("partOf", "hasPart")):
+        assert dl.external_instance_check(ab, "bob", query, t) is expected
+
+
+@owl_live
+@live
+def test_external_route_carries_a_property_chain():
+    # alice -p-> bob -q-> carol is the chain's antecedent, so (alice, carol)
+    # is a t-pair.
+    ab = dl.ABox().assert_role("alice", "bob", "p").assert_role("bob", "carol", "q")
+    query = dl.Exists("t", dl.Top())
+    for expected, t in _flips(True, dl.TBox().add_role_chain(("p", "q"), "t")):
+        assert dl.external_instance_check(ab, "alice", query, t) is expected
+
+
+@owl_live
+@live
+def test_external_route_carries_role_disjointness():
+    # p ⊑ q makes every p-pair a q-pair, so a p-pair would be in both; with
+    # Disj(p, q) that is impossible, hence p is empty and ∃p.⊤ unsatisfiable.
+    full = dl.TBox().add_role_inclusion("p", "q").add_disjoint_roles("p", "q")
+    hierarchy_only = dl.TBox().add_role_inclusion("p", "q")
+    for expected, t in _flips(False, full, hierarchy_only):
+        assert dl.external_concept_satisfiable(dl.Exists("p", dl.Top()), t) is expected
+
+
+@owl_live
+@live
+def test_external_route_carries_a_symmetric_role():
+    ab = dl.ABox().assert_role("alice", "bob", "p")
+    query = dl.Exists("p", dl.Top())
+    for expected, t in _flips(True, dl.TBox().add_symmetric_role("p")):
+        assert dl.external_instance_check(ab, "bob", query, t) is expected
+
+
+@owl_live
+@live
+def test_external_route_carries_a_reflexive_role():
+    # Every individual is its own p-neighbour, so ∀p.A forces A onto it.
+    for expected, t in _flips(True, dl.TBox().add_reflexive_role("p")):
+        assert dl.external_subsumes(dl.ForAll("p", A), A, t) is expected
+
+
+@owl_live
+@live
+def test_external_route_carries_an_asymmetric_role():
+    ab = dl.ABox().assert_role("alice", "bob", "p").assert_role("bob", "alice", "p")
+    for expected, t in _flips(False, dl.TBox().add_asymmetric_role("p")):
+        assert dl.external_abox_consistent(ab, t) is expected
+
+
+@owl_live
+@live
+def test_external_route_carries_an_irreflexive_role():
+    ab = dl.ABox().assert_role("alice", "alice", "p")
+    for expected, t in _flips(False, dl.TBox().add_irreflexive_role("p")):
+        assert dl.external_abox_consistent(ab, t) is expected
+
+
+@owl_live
+@live
+def test_external_route_carries_a_functional_role():
+    sub = dl.And(dl.Exists("p", A), dl.Exists("p", B))
+    sup = dl.Exists("p", dl.And(A, B))
+    for expected, t in _flips(True, dl.TBox().add_functional_role("p")):
+        assert dl.external_subsumes(sub, sup, t) is expected
+
+
+@owl_live
+@live
+def test_external_route_carries_an_inverse_functional_role():
+    # alice and bob are both p-predecessors of carol, so ≤1 p⁻.⊤ identifies
+    # them -- and they are forced distinct.
+    ab = (dl.ABox().assert_role("alice", "carol", "p")
+          .assert_role("bob", "carol", "p").assert_distinct("alice", "bob"))
+    for expected, t in _flips(False, dl.TBox().add_inverse_functional_role("p")):
+        assert dl.external_abox_consistent(ab, t) is expected
+
+
+@owl_live
+@live
+def test_external_route_carries_an_inverse_role_in_a_role_inclusion():
+    # r ⊑ s⁻ makes r(alice, bob) witness s(bob, alice). Measured before 0.30.0:
+    # this returned False, SILENTLY -- `_build_kb` used the InverseRole as a
+    # dict key, so the axiom became `r ⊑ <a fresh atomic property>`.
+    ab = dl.ABox().assert_role("alice", "bob", "r")
+    query = dl.Exists("s", dl.Top())
+    t = dl.TBox().add_role_inclusion("r", dl.InverseRole("s"))
+    assert dl.external_instance_check(ab, "bob", query, t) is True
+    assert dl.external_instance_check(ab, "bob", query, dl.TBox()) is False
+
+
+def test_external_route_refuses_a_non_simple_role_box_with_the_kits_own_error():
+    # Not a live test: the check runs BEFORE owlready2 is touched, so the
+    # kit's own NonSimpleRoleError is what the user sees on every route rather
+    # than a HermiT error on one and a tableau error on another.
+    t = dl.TBox().add_transitive_role("r").add_asymmetric_role("r")
+    with pytest.raises(dl.NonSimpleRoleError, match="AsymmetricObjectProperty"):
+        dl.external_concept_satisfiable(A, t)
+    with pytest.raises(dl.NonSimpleRoleError, match="'r'"):
+        dl.external_abox_consistent(dl.ABox(), t)
+
+
+def _data_layer_sample(holder_name, field):
+    """A knowledge base ``(tbox, abox)`` whose ONLY content is one valid entry of
+    the data-layer ``field``, its shape read off the dataclass annotation
+    (``List[Tuple[str, DataRange]]``, ``Set[str]``, ...) so that a field added to
+    the table needs no sample written by hand — and one with an annotation this
+    helper has no value for fails here with the instruction to add one."""
+    import typing
+
+    from unicode_fol_kit.dl.datatypes import DataRange, Datatype, Literal
+
+    holder_cls = dl.TBox if holder_name == "tbox" else dl.ABox
+    hint = typing.get_type_hints(holder_cls)[field]
+    container_type, (element_type,) = typing.get_origin(hint), typing.get_args(hint)
+    names = iter("pqrstuvw")
+
+    def sample(tp):
+        if typing.get_origin(tp) is tuple:
+            return tuple(sample(arg) for arg in typing.get_args(tp))
+        if tp is str:
+            return next(names)
+        if tp is dl.Concept:
+            return dl.Atomic("A")
+        if tp is DataRange:
+            return Datatype("xsd:integer")
+        if tp is Literal:
+            return Literal("1", "xsd:integer")
+        raise AssertionError(
+            f"{holder_cls.__name__}.{field}: no sample value for the annotation "
+            f"{tp!r}: add one to _data_layer_sample so the data-layer refusal "
+            "stays derived from the table")
+
+    holder = holder_cls()
+    entry = sample(element_type)
+    stored = getattr(holder, field)
+    assert isinstance(stored, container_type)
+    if container_type is list:
+        stored.append(entry)
+    else:
+        stored.add(entry)
+    return (holder, dl.ABox()) if holder_name == "tbox" else (dl.TBox(), holder)
+
+
+def test_characteristics_table_covers_every_characteristic_field():
+    # The bases tuple owlready2 needs is built from a table; a field missing
+    # from it would be dropped SILENTLY, since owlready2 cannot add a
+    # characteristic after the property class is created.
+    #
+    # Two halves, both derived from the axiom-kind table's LAYER column rather
+    # than from a list of names, so that a future TBox field cannot slip
+    # between them: an OBJECT-layer side field is rendered here (a
+    # characteristic, or one of the six handled explicitly in _build_kb), and
+    # every DATA-layer field makes this route refuse by name.
+    from unicode_fol_kit.dl import owl_reasoner as _r
+    from unicode_fol_kit.dl.tableau import _AXIOM_KINDS, _holder_fields
+
+    side = set(_holder_fields("tbox", part="side"))
+    object_side = set(_holder_fields("tbox", part="side", layer="object"))
+    data_side = set(_holder_fields("tbox", part="side", layer="data"))
+    assert side == object_side | data_side and not object_side & data_side
+    characteristic_fields = set(_r._CHARACTERISTIC_BASES)
+    assert characteristic_fields <= object_side
+    # the OBJECT fields that are NOT one-role characteristics are handled
+    # explicitly in _build_kb instead
+    assert object_side - characteristic_fields == {
+        "role_inclusions", "disjoint_role_pairs", "inverse_role_pairs",
+        "role_chains", "role_domains", "role_ranges"}
+    # the DATA fields are not rendered at all, and none of them is a
+    # characteristic: this route has no data domain
+    assert data_side and not data_side & characteristic_fields
+
+    # The second half of the statement above (the same test: it needs the
+    # same table, and starts no JVM either). dl.owl_reasoner does not render the
+    # data layer, and an oracle that dropped a data axiom silently would agree
+    # with everything -- so a knowledge base carrying ANY data-layer field is
+    # refused by name, from every entry point, before any reasoner is started.
+    # The fields are read off _AXIOM_KINDS' layer column, TBox and ABox alike;
+    # an empty vocabulary reaches no HermiT call, so this starts no JVM.
+    checked = []
+    for holder_name in ("tbox", "abox"):
+        for field in _holder_fields(holder_name, layer="data"):
+            tbox, abox = _data_layer_sample(holder_name, field)
+            kinds = [row.kind for row in _AXIOM_KINDS
+                     if row.holder == holder_name and row.field == field]
+            assert kinds, field
+            with pytest.raises(dl.UnsupportedAxiomError, match="data-layer") as info:
+                dl.external_realize(abox, "a", [], tbox)
+            for kind in kinds:
+                assert kind in str(info.value), (field, kind, str(info.value))
+            with pytest.raises(dl.UnsupportedAxiomError, match="data-layer"):
+                dl.external_realize_all(abox, [], tbox)
+            with pytest.raises(dl.UnsupportedAxiomError, match="data-layer"):
+                dl.external_instance_retrieval(abox, A, tbox)
+            checked.append(field)
+    # not vacuous, and every data-layer field of BOTH holders was visited
+    assert checked and len(checked) == len(set(checked))
+    assert set(checked) == (set(_holder_fields("tbox", layer="data"))
+                            | set(_holder_fields("abox", layer="data")))

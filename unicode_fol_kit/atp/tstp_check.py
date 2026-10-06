@@ -16,13 +16,17 @@ Three tiers
 1. **Core, independently-checked rules** (:data:`VAMPIRE_CHECKED_RULES` /
    :data:`EPROVER_CHECKED_RULES`): binary resolution, factoring,
    superposition/paramodulation, equality resolution, forward/backward
-   demodulation, and forward/backward subsumption resolution. Each step's
+   demodulation, forward/backward subsumption resolution, and the removal of
+   the literals that are false in every interpretation
+   (``true_and_false_elimination``). Each step's
    clause and its cited parents' clauses are converted from the general
    :class:`~fol.nodes.Node` :func:`atp.tstp.parse_tstp_derivation` already
    produced into :mod:`atp.resolution_check`'s frozenset-of-literals clause
    shape (:func:`_node_to_clause`), and the re-derivation itself reuses that
    module's :func:`~atp.resolution_check._unify` /
-   :func:`~atp.resolution_check._apply` /
+   :func:`~atp.resolution_check._apply` (a unifier's output, whose bindings are
+   followed) / :func:`~atp.resolution_check._apply_matcher` (a one-sided
+   matcher, applied in one simultaneous step) /
    :func:`~atp.resolution_check._is_variant` /
    :func:`~atp.resolution_check._term_gt` primitives directly (imported as
    ``_rc.<name>`` throughout this module) — no code is shared with any
@@ -44,6 +48,16 @@ Three tiers
    bounded backtracking one-sided match (the subsumer clause's variables
    bind, the target clause is held fixed), independently reimplemented here
    rather than reusing :mod:`atp.resolution`'s own subsumption/matching code.
+   ``true_and_false_elimination`` (Vampire's name for it, captured live in
+   ``tests/fixtures/tstp_check/vampire_true_and_false_elimination.txt``; the kit's
+   own ``truth_constants`` rule is written under it) takes ONE parent and
+   licenses its clause minus some literals, each of which is ``$false`` or
+   ``¬$true`` (:func:`_check_tstp_truth_constants`): dropping any other literal,
+   or keeping a literal the parent does not have, is rejected. It reads the
+   parent with its constant literals kept (:func:`_node_to_clause` with
+   ``keep_constants=True``), which no other core rule sees. A step whose
+   formula is not a flat clause (Vampire also uses the rule on whole formulas)
+   comes back unchecked, never approximately checked.
 
 2. **Clausification checked by entailment** (:data:`VAMPIRE_CLAUSIFICATION_RULES` /
    :data:`EPROVER_CLAUSIFICATION_RULES`): steps whose rule identifies them as
@@ -191,11 +205,15 @@ VAMPIRE_CLAUSIFICATION_RULES: FrozenSet[str] = frozenset({
 # 'backward_demodulation' are the standard TPTP-family names for the
 # remaining core rules (not independently captured this session) — see the
 # module docstring for 'equality_factoring', deliberately absent.
+# 'true_and_false_elimination' is confirmed from a real captured fixture too
+# (tests/fixtures/tstp_check/vampire_true_and_false_elimination.txt, Vampire
+# 5.0.1): it drops the literals $false and ~$true from a clause.
 VAMPIRE_CHECKED_RULES: FrozenSet[str] = frozenset({
     "resolution", "factoring", "superposition",
     "forward_demodulation", "backward_demodulation",
     "equality_resolution",
     "forward_subsumption_resolution", "backward_subsumption_resolution",
+    "true_and_false_elimination",
 })
 
 # Confirmed against tests/fixtures/eprover_3_5_1_theorem.txt (already
@@ -263,7 +281,7 @@ def _normalize_literal(lit: Node) -> Node:
     return lit
 
 
-def _flatten_or_into(node: Node, out: List[Node]) -> bool:
+def _flatten_or_into(node: Node, out: List[Node], keep_constants: bool = False) -> bool:
     """Append ``node``'s literals (recursing through ``Or``) onto ``out``.
 
     Returns False — leaving ``out`` in an unspecified partial state the
@@ -271,21 +289,25 @@ def _flatten_or_into(node: Node, out: List[Node]) -> bool:
     or a literal reduces to the ``$true``/``$false`` marker atoms (neither is
     a genuine literal within a clause; ``$false`` alone as the WHOLE matrix
     is handled separately by :func:`_node_to_clause`, as the empty clause).
+    With ``keep_constants`` the marker atoms are kept as literals instead: the
+    one rule that reads them (``true_and_false_elimination``) needs to see
+    which ones its parent holds.
     """
     if isinstance(node, Or):
-        return _flatten_or_into(node.left, out) and _flatten_or_into(node.right, out)
+        return (_flatten_or_into(node.left, out, keep_constants)
+                and _flatten_or_into(node.right, out, keep_constants))
     lit = _normalize_literal(node)
     parsed = _rc._lit_atom_polarity(lit)
     if parsed is None:
         return False
     atom, _is_positive = parsed
-    if atom.predicate in ("$true", "$false"):
+    if atom.predicate in ("$true", "$false") and not keep_constants:
         return False
     out.append(lit)
     return True
 
 
-def _node_to_clause(node: Node) -> Optional[FrozenSet[Node]]:
+def _node_to_clause(node: Node, keep_constants: bool = False) -> Optional[FrozenSet[Node]]:
     """Convert a TSTP step's formula into a clause (frozenset of literals).
 
     Strips a leading chain of universal (``"∀"``) quantifiers (an
@@ -294,6 +316,9 @@ def _node_to_clause(node: Node) -> Optional[FrozenSet[Node]]:
     universally quantified), then reads the remaining matrix as ``$false``
     (the empty clause) or a flat ``Or``-tree of literals
     (:func:`_flatten_or_into`). Returns ``None`` on any other shape.
+    ``keep_constants`` keeps a ``$true`` / ``$false`` literal of a longer clause
+    as a literal (see :func:`_flatten_or_into`); the formula ``$false`` alone is
+    the empty clause either way.
     """
     n = node
     while isinstance(n, Quantifier):
@@ -303,7 +328,7 @@ def _node_to_clause(node: Node) -> Optional[FrozenSet[Node]]:
     if isinstance(n, Atom) and n.predicate == "$false" and not n.args:
         return frozenset()
     literals: List[Node] = []
-    if not _flatten_or_into(n, literals):
+    if not _flatten_or_into(n, literals, keep_constants):
         return None
     return frozenset(literals)
 
@@ -547,7 +572,14 @@ def _check_tstp_demodulation(clause: FrozenSet[Node], ci: FrozenSet[Node],
     equation, which literal of the other parent is the target, and which
     subterm position is rewritten. Whichever of ``ci``/``cj`` is a unit
     clause carrying a positive equality literal is tried as the equation
-    side; if both are, both are tried."""
+    side; if both are, both are tried.
+
+    The matcher binds the equation's variables to subterms of the target, and the
+    two clauses are not standardized apart (a prover numbers the variables of every
+    clause from ``X0``), so an image can be spelled like a variable the matcher
+    binds. The matcher is therefore applied to the right-hand side in ONE
+    simultaneous step (:func:`atp.resolution_check._apply_matcher`), never by
+    following its bindings."""
     for tgt_side, eq_side in ((cj, ci), (ci, cj)):
         if len(eq_side) != 1:
             continue
@@ -573,7 +605,7 @@ def _check_tstp_demodulation(clause: FrozenSet[Node], ci: FrozenSet[Node],
                     sigma = _rc._match_term(l, subterm, {})
                     if sigma is None:
                         continue
-                    r_sigma = _rc._apply(r, sigma)
+                    r_sigma = _rc._apply_matcher(r, sigma)
                     if not _rc._term_gt(subterm, r_sigma):
                         continue
                     try:
@@ -686,6 +718,45 @@ def _check_tstp_subsumption_resolution(clause: FrozenSet[Node], target: FrozenSe
             "one-sided match of its clause-mates licenses the stated clause")
 
 
+def _is_false_constant_literal(lit: Node) -> bool:
+    """Whether ``lit`` holds in no interpretation: the atom ``$false`` or the
+    negation of the atom ``$true``."""
+    parsed = _rc._lit_atom_polarity(lit)
+    if parsed is None:
+        return False
+    atom, is_positive = parsed
+    if atom.args:
+        return False
+    return (atom.predicate == "$false") if is_positive else (atom.predicate == "$true")
+
+
+def _check_tstp_truth_constants(clause: FrozenSet[Node], ci: FrozenSet[Node]) -> Optional[str]:
+    """``"true_and_false_elimination"``: the stated clause is the parent clause
+    without some literals, each of which is false in every interpretation
+    (``$false`` or ``¬$true``) — and without any other literal.
+
+    Both clauses are read with their constant literals kept
+    (:func:`_node_to_clause` with ``keep_constants=True``). The literals that are
+    not such a constant must be the same on both sides up to a renaming of
+    variables (a prover renames the variables of each statement); the constant
+    literals of the stated clause must be among the parent's, so the step can
+    neither keep a literal the parent does not have nor drop a literal that is
+    not false. ``$true`` and ``¬$false`` are NOT false: a step that drops one of
+    them (a tautology's literal) is rejected like any other dropped literal.
+    """
+    kept_by_parent = frozenset(lit for lit in ci if not _is_false_constant_literal(lit))
+    constants_of_parent = frozenset(lit for lit in ci if _is_false_constant_literal(lit))
+    kept_by_step = frozenset(lit for lit in clause if not _is_false_constant_literal(lit))
+    constants_of_step = frozenset(lit for lit in clause if _is_false_constant_literal(lit))
+    if not constants_of_step <= constants_of_parent:
+        return "'true_and_false_elimination': the stated clause has a constant literal the parent does not have"
+    if not _rc._is_variant(kept_by_parent, kept_by_step):
+        return ("'true_and_false_elimination': the stated clause is not the parent clause "
+                "without literals that are false in every interpretation ($false or ~$true): "
+                "another literal was added or dropped")
+    return None
+
+
 _CHECKED_DISPATCH: Dict[str, Tuple[int, Callable]] = {
     "resolution": (2, _check_tstp_resolve),
     "factoring": (1, _check_tstp_factor),
@@ -698,8 +769,13 @@ _CHECKED_DISPATCH: Dict[str, Tuple[int, Callable]] = {
     "spm": (2, _check_tstp_superposition),
     "rw": (2, _check_tstp_demodulation),
     "er": (1, _check_tstp_equality_resolution),
+    "true_and_false_elimination": (1, _check_tstp_truth_constants),
 }
 assert set(_CHECKED_DISPATCH) == VAMPIRE_CHECKED_RULES | EPROVER_CHECKED_RULES
+
+#: The core rules that read the ``$true`` / ``$false`` literals of a clause, and so
+#: are handed clauses that keep them (every other rule gets the clause without).
+_CONSTANT_READING_RULES: FrozenSet[str] = frozenset({"true_and_false_elimination"})
 
 
 # ---------------------------------------------------------------------------
@@ -934,6 +1010,7 @@ def check_tstp_derivation(derivation: TstpDerivation, premises: Sequence[Node],
     by_name: Dict[str, TstpStep] = {step.name: step for step in derivation.steps}
     results: Dict[str, TstpStepResult] = {}
     clause_by_name: Dict[str, FrozenSet[Node]] = {}
+    clause_with_constants_by_name: Dict[str, FrozenSet[Node]] = {}
     step_results: List[TstpStepResult] = []
     refuted = False
     first_error: Optional[str] = None
@@ -946,6 +1023,10 @@ def check_tstp_derivation(derivation: TstpDerivation, premises: Sequence[Node],
         clause = _node_to_clause(step.formula) if step.formula is not None else None
         if clause is not None:
             clause_by_name[step.name] = clause
+        clause_with_constants = (_node_to_clause(step.formula, keep_constants=True)
+                                 if step.formula is not None else None)
+        if clause_with_constants is not None:
+            clause_with_constants_by_name[step.name] = clause_with_constants
 
         if step.rule is None:
             tier = "leaf"
@@ -964,8 +1045,13 @@ def check_tstp_derivation(derivation: TstpDerivation, premises: Sequence[Node],
                 ok, detail = False, _conjecture_misuse(step.rule, cited)
             else:
                 arity, checker = _CHECKED_DISPATCH[step.rule]
-                ok, detail = _check_checked_step(step, arity, checker, results,
-                                                 clause_by_name, clause)
+                if step.rule in _CONSTANT_READING_RULES:
+                    ok, detail = _check_checked_step(step, arity, checker, results,
+                                                     clause_with_constants_by_name,
+                                                     clause_with_constants)
+                else:
+                    ok, detail = _check_checked_step(step, arity, checker, results,
+                                                     clause_by_name, clause)
         else:
             tier = "unchecked"
             ok, detail = False, f"rule {step.rule!r} is not in this checker's clausification or core-checked tables"

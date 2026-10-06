@@ -47,6 +47,7 @@ import re
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
 
+from ..fol._fol_nodes import _numeral_from_text
 from .runner import AceError
 
 __all__ = [
@@ -99,7 +100,15 @@ class AceInt:
 
 @dataclass(frozen=True)
 class AceReal:
-    value: float
+    """``real(3.14)`` — a decimal value, read exactly or refused.
+
+    A ``float`` when a float holds the numeral exactly, the ``int`` itself when only an integer
+    does (``real(100000000000000000000000.0)`` is ``10**23``, which no float is). A decimal of
+    more than 15 significant digits is refused by the reader with :class:`AceDrsUnreadError`: two
+    different decimals of that length can be one float, and a numeral is identified by its value.
+    """
+
+    value: Union[int, float]
 
     def render(self) -> str:
         return f"real({self.value})"
@@ -469,6 +478,22 @@ class _Parser:
                 f"found {quoted!r}")
         return sentence, None
 
+    def real(self, text: str) -> Union[int, float]:
+        """The value of the decimal ``text``, read exactly or refused by name.
+
+        The rule of every numeral reader of the kit: a whole value is an ``int`` of its digits, any
+        other decimal is the float it spells when it has at most 15 significant digits, and a
+        longer one is refused, because two different decimals of that length can be one float and
+        a numeral is identified by its value.
+
+        Raises:
+            AceDrsUnreadError: the text is a decimal that no float holds exactly.
+        """
+        try:
+            return _numeral_from_text(text)
+        except ValueError as exc:
+            raise AceDrsUnreadError(f"DRS reader: the real {text} is not read: {exc}") from None
+
     def term(self) -> AceTerm:
         kind, value = self.peek()
         if kind == "var":
@@ -479,7 +504,7 @@ class _Parser:
             return int(value)
         if kind == "real":
             self.take()
-            return float(value)
+            return self.real(value)
         if kind == "quoted":
             self.take()
             return _unquote(value)
@@ -492,7 +517,7 @@ class _Parser:
                 num_kind, num_value = self.peek()
                 self.take()
                 return (-int(num_value) if num_kind == "int"
-                        else -float(num_value))
+                        else -self.real(num_value))
             self.take()
             return value
         if kind == "atom":
@@ -510,6 +535,17 @@ def _unquote(quoted: str) -> str:
     return quoted[1:-1].replace("''", "'")
 
 
+def _real_value(number: Union[int, float]) -> Union[int, float]:
+    """``number`` as the float that holds it exactly, else as the ``int`` itself (never a float that is another number)."""
+    if isinstance(number, float):
+        return number
+    try:
+        as_float = float(number)
+    except OverflowError:
+        return number
+    return as_float if as_float == number else number
+
+
 def _wrap_term(functor: str, args: List, text: str) -> AceTerm:
     """Specialize the wrapped-value terms; keep everything else verbatim."""
     if functor == "named" and len(args) == 1 and isinstance(args[0], str):
@@ -517,7 +553,7 @@ def _wrap_term(functor: str, args: List, text: str) -> AceTerm:
     if functor == "int" and len(args) == 1 and isinstance(args[0], int):
         return AceInt(args[0])
     if functor == "real" and len(args) == 1 and isinstance(args[0], (int, float)):
-        return AceReal(float(args[0]))
+        return AceReal(_real_value(args[0]))
     if functor == "string" and len(args) == 1 and isinstance(args[0], str):
         return AceString(args[0])
     if functor == "expr" and len(args) == 3 and isinstance(args[0], str):

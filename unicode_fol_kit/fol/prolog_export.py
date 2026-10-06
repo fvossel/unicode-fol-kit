@@ -111,6 +111,13 @@ same reason: Prolog syntax cannot write ``f()`` distinct from the bare atom
 confirmed with the kit's own resolution prover that the two are not
 logically equivalent.
 
+**One numeral per value.** ``Number(1)`` and ``Number(1.0)`` are equal nodes, one constant,
+but Prolog keeps the integer ``1`` and the float ``1.0`` apart (they do not unify), so a
+float with a whole value is written as the integer it equals: ``p(1.0)`` is exported as
+``p(1)``, and ``p(1) :- p(1.0)`` as ``p(1) :- p(1)``. A :class:`Constant` named ``'1'``
+is the quoted atom ``'1'``, another Prolog term than the number ``1``, and is read back as
+the constant.
+
 Public API: :func:`formula_to_prolog_clause` (one clause) and
 :func:`formula_to_prolog_program` (several, one per line, splitting a
 top-level conjunction the way
@@ -126,6 +133,8 @@ from .nodes import (
     Quantifier, free_variables,
 )
 from .normalforms import is_horn, _unsupported_hint
+from ._numeral_symbols import numeral_name
+from ._truth_constants import refuse_truth_constants
 
 __all__ = [
     "PrologExportError", "formula_to_prolog_clause", "formula_to_prolog_program",
@@ -272,7 +281,10 @@ def _render_term(node: Node, names: dict) -> str:
                 "value — refused rather than emitted as text the kit's own "
                 "importer could not parse (or, for nan/inf, would silently "
                 "misread as a Constant instead of a Number)")
-        return text
+        # A numeral is identified by its VALUE: Prolog keeps the integer 1 and the float 1.0 apart
+        # (they do not unify), the kit's Number(1) == Number(1.0) does not, so a float with a
+        # whole value is written as the integer it equals.
+        return numeral_name(node.value)
     if isinstance(node, Function):
         if not node.args:
             raise PrologExportError(
@@ -313,6 +325,12 @@ def _check_not_comparison(atom: Atom) -> None:
 
 
 def _render_atom(atom: Atom, names: dict) -> str:
+    refuse_truth_constants(
+        [atom], "formula_to_prolog_clause",
+        "Prolog's own true / fail are control goals that cannot head a clause, "
+        "and parse_prolog_clause reads them back as the ordinary predicates "
+        "True / Fail, so the clause would not round trip",
+        error=PrologExportError)
     _check_not_comparison(atom)
     predicate = _predicate_text(atom.predicate)
     if not atom.args:

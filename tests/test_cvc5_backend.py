@@ -132,13 +132,25 @@ def test_decide_never_raises_on_a_crash_inducing_bad_option():
 # C12: an Alethe proof term + unsat core on every PROVED verdict
 # ---------------------------------------------------------------------------
 
-def test_proved_verdict_carries_an_alethe_proof():
-    v = _backend.decide(_VALID)
+def test_proved_verdict_carries_an_alethe_proof_when_asked_for():
+    # RE-PINNED. This test used to read the Alethe text off every PROVED verdict. cvc5's proof PRINTER can end
+    # the calling process (a native access violation no `try` catches; see test_cvc5_proof_text.py), so the
+    # text is produced only on request, `proof=True`, by a second solver run in a child process. Asking for it
+    # is what this test now does; the text it reads is the same one.
+    v = _backend.decide(_VALID, proof=True)
     assert v.status == PROVED
     assert v.proof["kind"] == "cvc5_alethe"
     # A real Alethe proof step line, not an empty/placeholder string --
     # every Alethe proof is a sequence of "(step ... :rule ...)" forms.
     assert v.proof["text"] and ":rule" in v.proof["text"]
+    assert v.proof["unsat_core"]        # non-empty: at least the negated goal
+
+
+def test_proved_verdict_carries_the_core_and_says_why_it_has_no_text_by_default():
+    v = _backend.decide(_VALID)
+    assert v.status == PROVED
+    assert v.proof["kind"] == "cvc5_alethe"
+    assert v.proof["text"] is None and "proof=True" in v.proof["text_unavailable"]
     assert v.proof["unsat_core"]        # non-empty: at least the negated goal
 
 
@@ -230,11 +242,17 @@ def test_unsat_core_excludes_the_synthetic_non_emptiness_axiom():
     core = v.proof["unsat_core"]
     assert len(core) == 2          # exactly the caller's premise and negated goal
     core_text = " ".join(core)
-    # nonempty_sort_axioms names its bound variable "_msfol_<Sort>_witness"
-    # (fol/_msfl_nodes.py) -- that token appearing here would mean the
-    # synthetic axiom leaked into the reported core.
-    assert "_msfol_Ghost_witness" not in core_text
+    # The synthetic axiom is the ONLY assertion in this problem that mentions
+    # Ghost without mentioning P, so its presence in the core is decidable
+    # without pinning the name of its bound variable: every entry here has to
+    # be one of the caller's two, each of which mentions both. (Until 0.30.0
+    # the check was that the token "_msfol_Ghost_witness" was absent, which
+    # stopped meaning anything the moment nonempty_sort_axioms started naming
+    # its witness "x0" -- an assertion about a name no code produces passes
+    # whatever the code does.)
+    assert all("Ghost" in entry and "P" in entry for entry in core), core
     assert "Ghost" in core_text and "P" in core_text
+    assert not any(entry.lstrip().startswith("(exists") for entry in core), core
 
 
 def test_reported_sorted_premise_was_really_needed_not_just_padding():
@@ -266,7 +284,7 @@ def test_alethe_proof_checks_with_carcara_when_installed():
     if carcara is None:
         pytest.skip("no carcara binary found — this check is opt-in only")
 
-    v = _backend.decide(_VALID)
+    v = _backend.decide(_VALID, proof=True)         # the text is opt-in (see test_cvc5_proof_text.py)
     assert v.status == PROVED
     with tempfile.NamedTemporaryFile(mode="w", suffix=".alethe", delete=False,
                                      encoding="utf-8") as tmp:
@@ -423,11 +441,19 @@ class TestSixReservedGrammarWordsZ3DoesNotSpecialCase:
     can be emitted in (bare declaration, applied predicate/function head,
     argument) — so ``_sanitize_for_smtlib`` must leave them identity-mapped,
     exactly like R1's non-ASCII case below, not rename something that
-    already worked."""
+    already worked.
+
+    RE-PINNED for ``par``: that claim is about Z3's parser, and cvc5 is the
+    reader the sanitiser exists for. cvc5 reads ``par`` as the keyword of a
+    parametric declaration, and a constant or a function named ``par`` ends
+    the Python process with a native access violation (measured on cvc5
+    1.3.4, in a child process; ``test_cvc5_theory_symbols.py`` runs it). So
+    ``par`` is renamed like the seven; the other five stay identity-mapped,
+    cvc5 accepting each of them in every role."""
 
     _WORDS = ["BINARY", "DECIMAL", "HEXADECIMAL", "NUMERAL", "par", "STRING"]
 
-    @pytest.mark.parametrize("word", _WORDS)
+    @pytest.mark.parametrize("word", [w for w in _WORDS if w != "par"])
     def test_identity_mapped_by_the_sanitiser(self, word):
         from unicode_fol_kit.fol.nodes import Atom, Constant
 
@@ -435,6 +461,15 @@ class TestSixReservedGrammarWordsZ3DoesNotSpecialCase:
         goal = _implication(f, [])
         _, mapping = _sanitize_for_smtlib(goal)
         assert mapping.mapping[word] == word
+
+    def test_par_is_renamed_by_the_sanitiser_because_cvc5_reads_it_as_a_keyword(self):
+        from unicode_fol_kit.fol.nodes import Atom, Constant
+
+        f = Atom("P", [Constant("par")])
+        sanitised, mapping = _sanitize_for_smtlib(_implication(f, []))
+        assert mapping.mapping["par"] != "par"
+        assert sanitised.args[0].name == mapping.mapping["par"]
+        assert mapping.reverse()[mapping.mapping["par"]] == "par"
 
     @pytest.mark.parametrize("word", _WORDS)
     def test_applied_as_a_predicate_head_parses_via_z3_unsanitised(self, word):

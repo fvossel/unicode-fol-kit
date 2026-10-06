@@ -8,8 +8,8 @@ Oracles, hand-checked, each justified inline:
   reproduces the input up to the documented, already-tested lossiness table
   in ``z3_input.py``'s own module docstring (free :class:`Variable`/
   :class:`Constant`/:class:`Number` collapse onto one uninterpreted sort;
-  bound :class:`Variable`\\ s are preserved) — checked either structurally
-  (where no lossiness applies) or via ``is_valid(Iff(original, round_tripped))``;
+  bound :class:`Variable`\\ s are preserved) — checked structurally, against the
+  formula the name map of the sanitiser says the text holds;
 * **differential against Z3 itself**: the SAME entailment question, asked
   once directly via ``Node.to_z3()`` into a fresh ``z3.Solver`` and once by
   reparsing ``to_smtlib``'s own output text, must get the SAME sat/unsat
@@ -42,9 +42,9 @@ that module's docstring and ``_SMTLIB_RESERVED_WORDS``.
 import pytest
 import z3
 
-from unicode_fol_kit import MSFLParser, is_valid
+from unicode_fol_kit import MSFLParser
 from unicode_fol_kit.fol.nodes import (
-    Atom, Constant, Function, Iff, Number, Variable,
+    Atom, Constant, Function, Number, Variable,
 )
 from unicode_fol_kit.atp.z3_input import to_smtlib, parse_smtlib
 from unicode_fol_kit.atp.cvc5_backend import _sanitize_many_for_smtlib
@@ -90,10 +90,30 @@ def test_arithmetic_flavoured_round_trip():
     # x is FREE here, so from_z3 reads it back as a Constant, not a
     # Variable (the documented free-variable lossiness) — checked via
     # logical equivalence rather than structural equality.
+    #
+    # RE-PINNED. The kit reads ``+`` and ``>`` here as UNINTERPRETED symbols,
+    # and an export that declared them under those names (``(declare-fun + (S S)
+    # S)``) is text a solver of the SMT-LIB theories cannot take: the default
+    # logic is ALL, and cvc5 ends the Python process on it (see
+    # test_cvc5_theory_symbols.py). A name of an SMT-LIB theory is therefore
+    # renamed in the text, so what comes back is the formula over the RENAMED
+    # symbols; the numerals 1 and 0 keep their names. The old expectation, that
+    # the reread formula is equivalent to the original one over the SAME names,
+    # only held because the theory names were written as they were.
     f = Atom(">", [Function("+", [Variable("x"), Number(1)]), Number(0)])
     text = to_smtlib(f)
+    assert "(declare-fun + " not in text and "(declare-fun > " not in text
     [back] = parse_smtlib(text)
-    assert is_valid(Iff(f, back))
+    # The tokens are what the sanitiser chose for the two symbols (its own name map, not read off ``back``):
+    # the token of the predicate ``>`` stands in the predicate's place, the token of the function ``+`` in the
+    # function's, the numerals keep their names, and a free x is the constant of that name (the text of a free
+    # variable is a constant of its name, the documented lossiness). A text that exchanged the two tokens, or
+    # put either in the other's place, is a different formula and fails here.
+    _, names = _sanitize_many_for_smtlib([f])
+    greater, plus = names.get(">"), names.get("+")
+    assert greater != ">" and plus != "+" and greater != plus
+    assert names.reverse()[greater] == ">" and names.reverse()[plus] == "+"
+    assert back == Atom(greater, [Function(plus, [Constant("x"), Number(1)]), Number(0)])
 
 
 def test_multi_premise_entailment_round_trip():
@@ -220,26 +240,36 @@ class TestReservedWordName:
             z3.parse_smt2_string(solver.to_smt2())
 
 
-class TestSixReservedGrammarWordsStayUntouched:
+class TestFiveReservedGrammarWordsStayUntouched:
     """Review finding, R1-style: SMT-LIB2 v2.6's grammar lists 13
     ``<reserved>`` words, but ``cvc5_backend._SMTLIB_RESERVED_WORDS`` (which
     ``to_smtlib`` inherits via ``_sanitize_many_for_smtlib``) only queues the
-    7 Z3's own parser actually special-cases. These 6 (``BINARY``,
-    ``DECIMAL``, ``HEXADECIMAL``, ``NUMERAL``, ``par``, ``STRING``) already
-    round-trip through Z3 with no help from this module, so ``to_smtlib``
-    must reproduce the ORIGINAL name through ``parse_smtlib``, not a
-    synthesised ``n``-prefixed one — see test_cvc5_backend.py's
-    ``TestSixReservedGrammarWordsZ3DoesNotSpecialCase`` for the same claim
-    checked directly against the shared sanitiser."""
+    7 Z3's own parser actually special-cases, and ``par``, which cvc5 reads as
+    a keyword (RE-PINNED: this class used to hold ``par`` too, on Z3's word
+    alone; cvc5 ends the Python process on a constant named ``par``, see
+    test_cvc5_backend.py's ``TestSixReservedGrammarWordsZ3DoesNotSpecialCase``).
+    These 5 (``BINARY``, ``DECIMAL``, ``HEXADECIMAL``, ``NUMERAL``,
+    ``STRING``) already round-trip through Z3 with no help from this module,
+    so ``to_smtlib`` must reproduce the ORIGINAL name through
+    ``parse_smtlib``, not a synthesised ``n``-prefixed one — see
+    test_cvc5_backend.py's ``TestSixReservedGrammarWordsZ3DoesNotSpecialCase``
+    for the same claim checked directly against the shared sanitiser."""
 
     @pytest.mark.parametrize(
-        "word", ["BINARY", "DECIMAL", "HEXADECIMAL", "NUMERAL", "par", "STRING"]
+        "word", ["BINARY", "DECIMAL", "HEXADECIMAL", "NUMERAL", "STRING"]
     )
     def test_round_trips_through_parse_smtlib_unrenamed(self, word):
         f = Atom("P", [Constant(word)])
         text = to_smtlib(f)
         [back] = parse_smtlib(text)
         assert back == f
+
+    def test_par_is_written_under_a_token_cvc5_reads_as_a_symbol(self):
+        f = Atom("P", [Constant("par")])
+        text = to_smtlib(f)
+        [back] = parse_smtlib(text)
+        assert "(declare-fun par " not in text
+        assert back == Atom("P", [Constant(back.args[0].name)]) and back.args[0].name != "par"
 
 
 class TestNonAsciiName:

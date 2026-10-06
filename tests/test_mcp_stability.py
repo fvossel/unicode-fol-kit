@@ -2,8 +2,8 @@
 STABILITY POLICY (see :mod:`unicode_fol_kit.mcp.server`'s and
 :mod:`unicode_fol_kit.comorphism`'s module docstrings for the prose).
 
-Two baselines are pinned here, both hand-transcribed from ONE real call to
-the introspection API they describe:
+Three baselines are pinned here, each hand-transcribed from ONE real call to
+the introspection API it describes:
 
 * ``TOOL_SCHEMA_BASELINE`` -- every registered tool's ``(sorted(required),
   {property: type-signature})``, obtained by calling
@@ -16,21 +16,33 @@ the introspection API they describe:
   silently turned optional would still pass that test, and is exactly what
   this one is for.
 * ``COMORPHISM_EDGE_BASELINE`` -- ``sorted((name, source, target, lossy)
-  for e in DEFAULT_REGISTRY.edges())`` for the registry's current 4 edges,
+  for e in DEFAULT_REGISTRY.edges())`` for the registry's current 9 edges,
   strengthening ``test_mcp_server.py::test_list_translations_names_the_
   default_edges``'s name-only ``<=`` check to also pin each edge's
   source/target/lossy, all three of which comorphism.py's own STABILITY
-  POLICY docstring names as stable.
+  POLICY docstring names as stable. The five edges after the original four
+  (``to_fol``, ``qml_translate``, ``to_msfol``, ``drs_to_fol``,
+  ``fol_to_drs``) were added, never changed: the original four are pinned
+  exactly as they were before the registry grew.
+* ``RESULT_KEYS_BASELINE`` -- the top-level keys of what ``translate`` and
+  ``list_translations`` return (and of each ``list_translations`` edge row).
+  The tool layer promises "dict keys only ever gain siblings"; the schema
+  baseline cannot see that, because a result's shape is not in the input
+  schema. ``axioms`` / ``axioms_unicode`` / ``guarantee`` (translate) and
+  ``logics`` / ``guarantee`` / ``options`` / ``side_axioms``
+  (list_translations) are the siblings gained when the registry started
+  carrying side axioms; the keys that were there before are still pinned.
 
-Both checks are SUBSET checks in the allowed direction (a new tool, a new
-optional parameter, or a new comorphism edge must never fail them) and
-EQUALITY-grade in the forbidden direction (a pinned tool/parameter/edge
-disappearing, a parameter's required-ness changing in EITHER direction, a
-parameter's type changing, or an edge's ``source``/``target``/``lossy``
-changing must all fail them). The two ``_..._violations`` helpers below are
-exercised directly against small, hand-built MCPServer / ComorphismRegistry
-fixtures ("a monkeypatched server") to prove they actually draw that line,
-not just that today's real registry happens to be clean.
+All three checks are SUBSET checks in the allowed direction (a new tool, a new
+optional parameter, a new comorphism edge, or a new result key must never fail
+them) and EQUALITY-grade in the forbidden direction (a pinned
+tool/parameter/edge/key disappearing, a parameter's required-ness changing in
+EITHER direction, a parameter's type changing, or an edge's
+``source``/``target``/``lossy`` changing must all fail them). The
+``_..._violations`` helpers below are exercised directly against small,
+hand-built MCPServer / ComorphismRegistry / dict fixtures ("a monkeypatched
+server") to prove they actually draw that line, not just that today's real
+registry happens to be clean.
 """
 
 import asyncio
@@ -52,7 +64,10 @@ from unicode_fol_kit.mcp.server import create_server   # noqa: E402
 # a per-property type signature. Transcribed from one
 # ``asyncio.run(create_server().list_tools())`` call (2026, after the
 # probability_bounds strategy/max_columns passthrough landed -- both
-# already appear below as optional ``integer``/``string`` parameters).
+# already appear below as optional ``integer``/``string`` parameters; and
+# again for ``translate`` once it forwarded the comorphism edges' own options
+# -- ``frame``/``systems``/``temporal_closure``/``signature``/``mode``/
+# ``bridges``, every one optional).
 # ---------------------------------------------------------------------------
 
 TOOL_SCHEMA_BASELINE = {
@@ -157,8 +172,12 @@ TOOL_SCHEMA_BASELINE = {
         "all_different": "boolean", "dialect": "string",
         "formula": "string"}),
     "translate": (["from_logic", "term", "to_logic"], {
-        "dialect": "anyOf[null,string]", "from_logic": "string",
-        "term": "string", "to_logic": "string"}),
+        "bridges": "anyOf[array,null]", "dialect": "anyOf[null,string]",
+        "frame": "anyOf[null,string]", "from_logic": "string",
+        "mode": "anyOf[null,string]", "signature": "anyOf[null,object]",
+        "systems": "anyOf[null,object]",
+        "temporal_closure": "anyOf[boolean,null]", "term": "string",
+        "to_logic": "string"}),
     "truth_table": (["text"], {
         "dialect": "anyOf[null,string]", "logic": "string",
         "text": "string"}),
@@ -167,13 +186,16 @@ TOOL_SCHEMA_BASELINE = {
 }
 
 # ---------------------------------------------------------------------------
-# Pinned baseline #2: the comorphism DEFAULT_REGISTRY's 4 edges, by
+# Pinned baseline #2: the comorphism DEFAULT_REGISTRY's 9 edges, by
 # (name, source, target, lossy) -- ``lossy`` is part of the STABILITY POLICY
 # comorphism.py's own docstring states ("no edge ... has its
 # source/target/lossy changed"), so it is pinned alongside source/target,
 # not just the two. Transcribed from one
 # ``sorted((e.name, e.source, e.target, e.lossy) for e in
-# DEFAULT_REGISTRY.edges())`` call (all 4 default edges are non-lossy today).
+# DEFAULT_REGISTRY.edges())`` call. The first four are the edges the registry
+# had before it grew side axioms; the last five are new, and ``to_msfol``
+# (fuzzy -> msfol, a two-valued projection) is the registry's first lossy
+# edge.
 # ---------------------------------------------------------------------------
 
 COMORPHISM_EDGE_BASELINE = sorted([
@@ -181,7 +203,35 @@ COMORPHISM_EDGE_BASELINE = sorted([
     ("concept_to_modal", "alc", "modal", False),
     ("dependence_to_eso", "team", "eso", False),
     ("standard_translation", "modal", "fol", False),
+    ("drs_to_fol", "drs", "fol", False),
+    ("fol_to_drs", "fol", "drs", False),
+    ("qml_translate", "qml", "fol", False),
+    ("to_fol", "msfol", "fol", False),
+    ("to_msfol", "fuzzy", "msfol", True),
 ])
+
+# The edges that predate the side-axiom work, kept apart so a test can say
+# "these four are unchanged" rather than only "these nine exist".
+_ORIGINAL_EDGES = frozenset({
+    "concept_to_fol", "concept_to_modal", "dependence_to_eso",
+    "standard_translation"})
+
+# ---------------------------------------------------------------------------
+# Pinned baseline #3: the top-level keys the translation tools return.
+# ``translate`` before the side-axiom work returned exactly
+# {result, source, target, path, lossy, note, unicode}; its siblings
+# ``axioms`` / ``axioms_unicode`` / ``guarantee`` came with it.
+# ``list_translations`` returned {edges}, each row {name, source, target,
+# lossy, note}; ``logics`` and the three per-row keys came with it.
+# ---------------------------------------------------------------------------
+
+RESULT_KEYS_BASELINE = {
+    "translate": {"result", "source", "target", "path", "lossy", "note",
+                  "unicode", "axioms", "axioms_unicode", "guarantee"},
+    "list_translations": {"edges", "logics"},
+    "list_translations.edge": {"name", "source", "target", "lossy", "note",
+                               "guarantee", "options", "side_axioms"},
+}
 
 
 # ---------------------------------------------------------------------------
@@ -303,6 +353,40 @@ def _comorphism_violations(baseline, current) -> list:
     return violations
 
 
+def _result_key_violations(baseline: dict, current: dict) -> list:
+    """``[]`` iff every pinned result key is still present.
+
+    A key that GAINED a sibling is never a violation (that is the whole
+    point of "keys only ever gain siblings"); a pinned key that vanished is.
+    ``baseline`` / ``current`` map a result name to its set of keys.
+    """
+    violations = []
+    for name, keys in baseline.items():
+        if name not in current:
+            violations.append(f"result {name!r}: no longer produced")
+            continue
+        vanished = sorted(set(keys) - set(current[name]))
+        if vanished:
+            violations.append(
+                f"result {name!r}: key(s) {vanished} disappeared "
+                f"(pinned {sorted(keys)}, now {sorted(current[name])})")
+    return violations
+
+
+def _current_result_keys() -> dict:
+    """The key sets the real tools return today (one real call each)."""
+    from unicode_fol_kit.mcp.server import list_translations, translate
+
+    translated = translate("□P", "modal", "fol")
+    assert "error" not in translated, translated
+    listing = list_translations()
+    return {
+        "translate": set(translated),
+        "list_translations": set(listing),
+        "list_translations.edge": set(listing["edges"][0]),
+    }
+
+
 # ---------------------------------------------------------------------------
 # The pinned checks against the REAL, current registries.
 # ---------------------------------------------------------------------------
@@ -319,6 +403,29 @@ def test_comorphism_edge_baseline_holds_against_the_real_registry():
     current = sorted((e.name, e.source, e.target, e.lossy)
                      for e in DEFAULT_REGISTRY.edges())
     violations = _comorphism_violations(COMORPHISM_EDGE_BASELINE, current)
+    assert violations == []
+
+
+def test_the_original_four_edges_are_unchanged_by_the_registry_growing():
+    """The promise is about edges that EXISTED: name, source, target and
+    lossy of the original four must read exactly as they did before the
+    registry gained side axioms, guarantees and five more edges. (Their
+    ``guarantee`` is new vocabulary and is deliberately not pinned: declaring
+    a weaker one is a correction, not a break.)"""
+    originals = {(e.name, e.source, e.target, e.lossy)
+                 for e in DEFAULT_REGISTRY.edges()
+                 if e.name in _ORIGINAL_EDGES}
+    assert originals == {
+        ("concept_to_fol", "alc", "fol", False),
+        ("concept_to_modal", "alc", "modal", False),
+        ("dependence_to_eso", "team", "eso", False),
+        ("standard_translation", "modal", "fol", False),
+    }
+
+
+def test_result_key_baseline_holds_against_the_real_tools():
+    violations = _result_key_violations(RESULT_KEYS_BASELINE,
+                                        _current_result_keys())
     assert violations == []
 
 
@@ -495,3 +602,22 @@ def test_comorphism_check_fails_when_an_edges_lossy_flag_changes():
     violations = _comorphism_violations(COMORPHISM_EDGE_BASELINE, current)
     assert len(violations) == 1
     assert name in violations[0] and "lossy" in violations[0]
+
+
+def test_result_key_check_passes_when_a_key_is_added():
+    baseline = {"translate": {"result", "path"}}
+    current = {"translate": {"result", "path", "axioms"}}
+    assert _result_key_violations(baseline, current) == []
+
+
+def test_result_key_check_fails_when_a_key_disappears():
+    baseline = {"translate": {"result", "path", "note"}}
+    current = {"translate": {"result", "path"}}
+    violations = _result_key_violations(baseline, current)
+    assert len(violations) == 1
+    assert "translate" in violations[0] and "note" in violations[0]
+
+
+def test_result_key_check_fails_when_a_result_is_no_longer_produced():
+    violations = _result_key_violations({"translate": {"result"}}, {})
+    assert len(violations) == 1 and "translate" in violations[0]

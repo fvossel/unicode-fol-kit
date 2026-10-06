@@ -77,24 +77,26 @@ f5.to_unicode_str()  # → '∃x (∃y Loves(x, y) ∧ ◇Happy(x))'
 
 ### Comparing modal quantifier orders
 
-The **order** of quantifiers matters crucially. Swapping `∃x` and `□` can change validity:
+The **order** of quantifiers matters crucially. Swapping `∃x` and `□` gives two formulas that are not equivalent under any domain regime (frame `K`, the default), and whether the first implies the second depends on the regime:
 
 ```python
-# Existential inside the box: some specific thing is necessarily P
+from unicode_fol_kit import qml_is_valid, qml_equivalent
+
+# Existential outside the box: some specific thing is necessarily A
 ex_box = Quantifier("∃", x, Box(A(x)))
 
-# Box around existential: necessarily, there exists something that is P
+# Box around existential: necessarily, there exists something that is A
 box_ex = Box(Quantifier("∃", x, A(x)))
 
-# Compare their validity across regimes
-qml_is_valid(ex_box, mode="constant")      # → True
-qml_is_valid(box_ex, mode="constant")      # → True
+# Neither is valid on its own (A may hold of nothing), so compare them as an implication
+qml_is_valid(Implies(ex_box, box_ex), mode="constant")      # → True
+qml_is_valid(Implies(ex_box, box_ex), mode="increasing")    # → True   (existing objects stay)
+qml_is_valid(Implies(ex_box, box_ex), mode="decreasing")    # → False  (the object may leave)
 
-qml_is_valid(ex_box, mode="increasing")    # → True   (existing objects stay)
-qml_is_valid(box_ex, mode="increasing")    # → False  (new objects might appear)
+# The converse fails in every regime: the witness may differ from world to world
+qml_is_valid(Implies(box_ex, ex_box), mode="constant")      # → False
 
-# Their equivalence depends on the regime
-qml_equivalent(ex_box, box_ex, mode="constant")    # → True
+qml_equivalent(ex_box, box_ex, mode="constant")    # → False
 qml_equivalent(ex_box, box_ex, mode="increasing")  # → False
 ```
 
@@ -158,7 +160,7 @@ from unicode_fol_kit import Constant
 a = Constant("a")
 b = Constant("b")
 satisfies_modal(A(a), m, 0)  # → True   (A(a) holds at world 0)
-satisfies_modal(A(b), m, 0)  # → False  (b does not exist at world 0)
+satisfies_modal(A(b), m, 0)  # → False  (the valuation of world 0 has no A(b))
 satisfies_modal(A(b), m, 1)  # → True   (A(b) holds at world 1)
 
 # Existential quantifiers range over the actualist domain
@@ -202,7 +204,7 @@ satisfies_modal(Quantifier("∀", x, Person(x)), model, 0)  # → True (only ali
 satisfies_modal(
     Quantifier("∀", x, Implies(Person(x), Happy(x))),
     model, 1
-)  # → True  (alice and bob are both happy here)
+)  # → False  (alice is not happy here)
 
 # "It's possible that everyone is a person" — true at 0, since worlds 1,2 have all
 satisfies_modal(
@@ -296,11 +298,11 @@ When domains can move arbitrarily (neither growing nor shrinking), neither Barca
 oscillating = KripkeModel(
     worlds={0, 1}, relations={"alethic": {(0, 1), (1, 0)}},
     domains={0: {"a"}, 1: {"b"}},
-    valuation={0: {"A(a)"}, 1: {"A(b)"}}
+    valuation={0: {"A(b)"}, 1: {"A(b)"}}
 )
 
-satisfies_modal(BARCAN, oscillating, 0)          # → False  (breaks on growth)
-satisfies_modal(CONVERSE_BARCAN, oscillating, 0)  # → False  (breaks on shrinkage)
+satisfies_modal(BARCAN, oscillating, 0)           # → False  (b appears at world 1: breaks on growth)
+satisfies_modal(CONVERSE_BARCAN, oscillating, 1)  # → False  (b is gone at world 0: breaks on shrinkage)
 ```
 
 ## (A) First-order shallow embedding → Z3
@@ -315,10 +317,10 @@ satisfies_modal(CONVERSE_BARCAN, oscillating, 0)  # → False  (breaks on shrink
 from unicode_fol_kit.fol.qml import qml_translate
 
 qml_translate(Box(A(x)), mode="constant").to_unicode_str()
-# → '∀_w0 (World(_w0) ∧ R(w, _w0) → A(x, _w0))'
+# → '∀w0 (World(w0) ∧ R(w, w0) → A(x, w0))'
 
 qml_translate(Diamond(A(x)), mode="constant").to_unicode_str()
-# → '∃_w0 (World(_w0) ∧ R(w, _w0) ∧ A(x, _w0))'
+# → '∃w0 (World(w0) ∧ R(w, w0) ∧ A(x, w0))'
 ```
 
 More complex formulas show how structure is preserved:
@@ -327,12 +329,12 @@ More complex formulas show how structure is preserved:
 # Nested: □(∃x A(x))
 nested = Box(Quantifier("∃", x, A(x)))
 qml_translate(nested, mode="constant").to_unicode_str()
-# → '∀_w0 (World(_w0) ∧ R(w, _w0) → ∃x (Object(x) → A(x, _w0)))'
+# → '∀w0 (World(w0) ∧ R(w, w0) → ∃x (Object(x) ∧ A(x, w0)))'
 
 # With box: □∀x A(x)
 forall_box = Box(Quantifier("∀", x, A(x)))
 qml_translate(forall_box, mode="constant").to_unicode_str()
-# → '∀_w0 (World(_w0) ∧ R(w, _w0) → ∀x (Object(x) → A(x, _w0)))'
+# → '∀w0 (World(w0) ∧ R(w, w0) → ∀x (Object(x) → A(x, w0)))'
 ```
 
 The domain regime shows up in how the *object* quantifiers are guarded. Under a **constant / possibilist** mode `∀x` is unrelativised (just typed `Object(x)`); under an **actualist** mode (`increasing` / `decreasing` / `varying`) it is additionally guarded by the existence predicate `E(x, w)` ("`x` exists at world `w`"):
@@ -473,6 +475,23 @@ qml_is_valid(CONVERSE_BARCAN, mode="varying")     # → False
 
 This reproduces, decision-procedure-style, exactly the by-hand verdicts from `satisfies_modal` above.
 
+### Free variables are parameters
+
+A variable that is free in a formula is a **parameter**: one unknown individual, the same everywhere in the formula and rigid like a constant (the same individual at every world). Under `constant` and `possibilist` domains it is an element of the object domain, so `∀x P(x) → P(y)` and `P(y) → ∃x P(x)` are valid. Under `varying`, `increasing` and `decreasing` domains it exists at the world of evaluation and need not exist at any other world. Those two formulas stay valid there, but `□∀x P(x) → □P(y)` and `□∃x (x = y)` are valid only under `constant`, `possibilist` and `increasing` domains, where an individual that exists here exists at every accessible world. `P(y) → P(alice)` is valid under none, since `y` need not be `alice`. For a formula with no premise the reading is its universal closure, guarded by existence under an actualist mode (`increasing` / `decreasing` / `varying`):
+
+```python
+box_inst = pm("□∀x P(x) → □P(y)")                         # y is free: a parameter
+qml_is_valid(pm("∀x P(x) → P(y)"), mode="varying")        # → True
+qml_is_valid(pm("P(y) → ∃x P(x)"), mode="varying")        # → True
+qml_is_valid(box_inst, mode="increasing")                 # → True   (y exists here, so at every later world)
+qml_is_valid(box_inst, mode="decreasing")                 # → False  (y may be gone from a later world)
+qml_is_valid(box_inst, mode="varying")                    # → False
+qml_is_valid(pm("∀y (□∀x P(x) → □P(y))"), mode="varying")  # → False  (the guarded closure gives the same verdict)
+qml_is_valid(pm("□∃x (x = y)"), mode="constant")          # → True
+qml_is_valid(pm("□∃x (x = y)"), mode="varying")           # → False
+qml_is_valid(pm("P(y) → P(alice)"), mode="constant")      # → False  (y need not be alice)
+```
+
 ### Testing mixed quantifiers
 
 Quantifier nesting shows regime-dependent effects:
@@ -484,15 +503,17 @@ ex_nec = Quantifier("∃", x, Box(A(x)))
 # Box outside existential: "it is necessary that someone exists with P"
 nec_ex = Box(Quantifier("∃", x, A(x)))
 
-# Under constant domains, these are equivalent
-qml_is_valid(ex_nec, mode="constant")           # → True
-qml_is_valid(nec_ex, mode="constant")           # → True
-qml_equivalent(ex_nec, nec_ex, mode="constant") # → True
+# Neither is valid on its own (A may hold of nothing). Under constant domains the
+# first implies the second, but not the other way round: the witness may change
+qml_is_valid(Implies(ex_nec, nec_ex), mode="constant")  # → True
+qml_is_valid(Implies(nec_ex, ex_nec), mode="constant")  # → False
+qml_equivalent(ex_nec, nec_ex, mode="constant")         # → False
 
-# Under increasing domains, they diverge
-qml_is_valid(ex_nec, mode="increasing")           # → True  (a fixed object)
-qml_is_valid(nec_ex, mode="increasing")           # → False (new objects appear)
-qml_equivalent(ex_nec, nec_ex, mode="increasing") # → False
+# Under increasing domains the implication still holds (a fixed object stays),
+# under decreasing domains it fails (the object may be gone at the successor)
+qml_is_valid(Implies(ex_nec, nec_ex), mode="increasing")  # → True
+qml_is_valid(Implies(ex_nec, nec_ex), mode="decreasing")  # → False
+qml_equivalent(ex_nec, nec_ex, mode="increasing")         # → False
 ```
 
 ### Adding a frame system
@@ -522,6 +543,8 @@ qml_is_valid(Implies(Diamond(p), Box(Diamond(p))), frame="S4")  # → False
 Test the deontic frame (seriality):
 
 ```python
+from unicode_fol_kit import Not
+
 # KD: serial frame (every world has a successor)
 qml_is_valid(Implies(Diamond(p), Implies(Box(Not(p)), Diamond(p))), frame="KD")  # → True
 ```
@@ -540,13 +563,16 @@ qml_equivalent(BARCAN, CONVERSE_BARCAN, mode="decreasing")   # → False   (only
 Test complex equivalences:
 
 ```python
-# These two are equivalent under constant domains
+# f1 is weaker than f2 (f2 implies f1, but f1 also holds where □A(x) fails),
+# so the two are not equivalent
 f1 = Implies(Box(A(x)), Diamond(A(x)))
 f2 = Diamond(A(x))
 
-qml_equivalent(f1, f2, mode="constant")    # → False  (f1 is actually too strong)
+qml_equivalent(f1, f2, mode="constant")    # → False
 
 # A simpler test: are quantifiers commutative under all regimes?
+from unicode_fol_kit import And
+
 y = Variable("y")
 B = lambda t: Atom("B", [t])
 
@@ -565,7 +591,7 @@ This embedding is **sound but bounded-incomplete**: first-order modal logic is u
 ```python
 qml_is_valid(BARCAN, mode="weird")   # raises ValueError: unknown mode 'weird'
 qml_is_valid(BARCAN, frame="ZZ")     # raises ValueError: unknown frame 'ZZ'
-qml_is_valid(BARCAN, frame="GL")     # raises NotImplementedError: GL is not first-order definable
+qml_is_valid(BARCAN, frame="GL")     # raises NotImplementedError: the frame 'GL' needs the condition 'loeb' (… NOT first-order definable …)
 ```
 
 `GL` (Gödel–Löb provability) is transitive + converse-well-founded, which is **not** first-order definable, so the Z3 path rejects it; reach it only through the higher-order exporters below.
@@ -592,9 +618,9 @@ resolution.prove([], BARCAN)              # → True
 resolution.prove([], CONVERSE_BARCAN)     # → True
 ```
 
-Like `qml_is_valid`, this is **sound but bounded-incomplete**: `False` means "not proved within `max_steps`", never "definitely invalid" — reach for `satisfies_modal` on an explicit model when you need a guaranteed countermodel. Unlike `qml_is_valid`, there is no `mode=`/`frame=` choice here; it is fixed to constant-domain K, matching `qml_is_valid`'s own defaults.
+Like `qml_is_valid`, this is **sound but bounded-incomplete**: `False` means "not proved within `max_steps` (or within `timeout=`, in milliseconds, when one is given)", never "definitely invalid" — reach for `satisfies_modal` on an explicit model when you need a guaranteed countermodel. Unlike `qml_is_valid`, there is no `mode=`/`frame=` choice here; it is fixed to constant-domain K, matching `qml_is_valid`'s own defaults.
 
-One route difference is worth knowing before you compare verdicts on a **temporal or deontic** formula. Purely propositional modal input is lowered by `standard_translation`, which emits the accessibility relation and no frame conditions at all, so `resolution.prove([], Ⓖ P → P)` is `False` where `qml_is_valid` is `True` — the resolution route is answering for a temporal logic with an unconstrained relation. (`modal_decide` returns `'unknown'` on the same formula, for its own reason: the tableau has no rule for the henceforth closure.) Nothing here is unsound — a resolution `False` never claims invalidity — but it is not evidence against `qml_is_valid`'s `True`.
+One route difference is worth knowing before you compare verdicts on a **temporal or deontic** formula. Purely propositional modal input is lowered by `standard_translation`, which emits the accessibility relation and no frame conditions at all, so `resolution.prove([], Ⓖ P → P)` is `False` where `qml_is_valid` is `True` — the resolution route is answering for a temporal logic with an unconstrained relation. (`modal_decide` returns `'unknown'` on the same formula, for its own reason: the tableau has no rule for the henceforth closure.) Nothing here is unsound — a resolution `False` never claims invalidity — but it is not evidence against `qml_is_valid`'s `True`. The one fact this route does add is the rigid membership of a sorted constant: for a sorted constant `c:S` (read by `MSFLParser(modal=True, many_sorted=True)`) the lowered problem takes `∀v0 S(c, v0)` as a hypothesis, so `□Human(carl:Human)` is proved while `◇Human(carl:Human)` is not (in K a world may have no successor). That lowering mints its world variables clear of every name of the formula, so a variable or constant named `w`, `w0`, `v0` or `x0` is not captured (the rule is stated with the hybrid translation, {doc}`hybrid`); the embedding of `qml_is_valid` keeps such a name apart from its own world variables too.
 
 ## (B) Higher-order shallow embedding → TPTP THF
 
@@ -670,11 +696,43 @@ f = Quantifier("∀", x, Implies(Atom("Person", [x]), Diamond(Atom("Happy", [x])
 thf_person = to_thf_modal(f, mode="constant", frame="S5")
 
 # Check that the formula appears in the THF
-"mforall" in thf_person  # → True
-"mdia" in thf_person     # → True
+"mforall @" in thf_person  # → True   (applied in the conjecture, not only defined in the preamble)
+"mdia @" in thf_person     # → True
 ```
 
 The function **emits** the problem (like the other `to_*` exporters); it does not run a prover in-process. The conjecture comes out a `Theorem` for the prover exactly when the formula is QML-valid under the given regime.
+
+THF has no free variable, so `to_thf_modal` binds a parameter in front of the conjecture and, under an actualist mode, guards it with `existsAt` inside the conjecture, which is the reading `qml_is_valid` has. `hol.thf_modal.to_thf_modal_full` binds it the same way, so the two writers emit the same conjecture on the alethic fragment, also for a formula with a free variable:
+
+```python
+from unicode_fol_kit.hol.thf_modal import to_thf_modal_full
+
+goal_of = lambda text: [l for l in text.splitlines() if l.startswith("thf(goal")][0]
+box_y = pm("□P(y)")
+goal_of(to_thf_modal(box_y, mode="constant", frame="K"))   # → 'thf(goal, conjecture, ( ! [Y: $i] : ( mvalid @ ( mbox @ ( p @ Y ) ) ) )).'
+goal_of(to_thf_modal(box_y, mode="varying", frame="K"))    # → 'thf(goal, conjecture, ( ! [Y: $i] : ( mvalid @ ( mimplies @ ( existsAt @ Y ) @ ( mbox @ ( p @ Y ) ) ) ) )).'
+goal_of(to_thf_modal_full(box_y, mode="varying", frame="K")) == goal_of(to_thf_modal(box_y, mode="varying", frame="K"))  # → True
+```
+
+Object identity is **rigid** here, the same reading `qml_is_valid` has: `=` becomes THF's own `=` over the individual sort `$i`, with no world argument, through one extra macro that is emitted only when the formula mentions identity, and `t₁ ≠ t₂` is lowered to `¬(t₁ = t₂)`. So the prover answers the question `qml_is_valid` answers — `a = b → □(a = b)` is a theorem even in `K`, while `□(a = b) → a = b` needs a reflexive or serial frame. Until 0.30.0 the exporters rendered identity as an uninterpreted world-relativised predicate `feq`, which made `∀x (x = x)` unprovable from the THF problem while `qml_is_valid` called it valid; `feq` is gone.
+
+```python
+from unicode_fol_kit.fol.nodes import Constant
+
+thf_eq = to_thf_modal(Atom("=", [Constant("a"), Constant("b")]), frame="K")
+"feq" in thf_eq                                                    # → False
+[l for l in thf_eq.splitlines() if l.startswith("thf(meq,")][0]
+# → 'thf(meq, definition, ( meq = ( ^ [A: $i, B: $i, W: mu] : ( A = B ) ) )).'
+"thf(meq," in to_thf_modal(Atom("P", [Constant("a")]), frame="K")  # → False
+```
+
+The truth constants `⊤` / `⊥` are the same at every world, so the exporters lift them to a constant function of the world (`( ^ [W: mu] : $true )` in THF, `(\<lambda>_. True)` in Isabelle) and never declare them as atoms:
+
+```python
+box_top = to_thf_modal(MSFLParser(modal=True).parse("□⊤"), frame="K")
+box_top.splitlines()[-1]
+# → 'thf(goal, conjecture, ( mvalid @ ( mbox @ ( ^ [W: mu] : $true ) ) )).'
+```
 
 ### A loadable Isabelle/HOL theory
 
@@ -694,7 +752,7 @@ Inspect the Isabelle output structure:
 iz_lines = iz.splitlines()
 print(iz_lines[0])     # → 'theory ModalEmbedding'
 print(iz_lines[-3:])   # → end / proof lines
-"imports HOL.Equiv_Relations" in iz  # → True (imports standard HOL libraries)
+"imports Main" in iz     # → True (the theory needs nothing beyond Main)
 ```
 
 This covers the alethic □/◇ fragment; for the full modal family (epistemic / doxastic / deontic / temporal) and the additional exporter options, see {doc}`higher-order`.
@@ -766,8 +824,8 @@ satisfies_modal(formula, knows_model, 0)  # → True (alice and bob in world 1)
 
 # Path 3: Export to THF for external verification
 thf_custom = to_thf_modal(custom, mode="constant", frame="S5")
-len(thf_custom.splitlines())  # → (large problem, many axiom lines)
-"mforall" in thf_custom  # → True (existentials become mforall in the embedding)
+len(thf_custom.splitlines())  # → 22  (comments, declarations, lifted operators, axioms, the conjecture)
+"mexists @" in thf_custom  # → True (the existentials become applications of mexists)
 ```
 
 ## A fifth view: NXF export, and reading QMLTP problems back
@@ -812,4 +870,4 @@ formula.to_unicode_str()
 qml_is_valid(formula, mode="constant", frame="S4")  # → True -- agrees with the file's own status table
 ```
 
-That agreement is not incidental: QMLTP's logic names (`K`/`D`/`T`/`S4`/`S5`) and domain-condition names (`varying`/`cumulative`/`constant`) are used verbatim as `qml_is_valid`'s own `frame=`/`mode=` values, and every `(logic, domain)` cell of every bundled fixture is cross-checked against `qml_is_valid` this way in `tests/test_qmltp_input.py`. The kit ships no QMLTP file — no redistribution licence for the library could be found — so those fixtures are small stand-ins written in the same syntax with hand-derived status tables; point `load_qmltp` at your own copy of QMLTP to read the real problems — the reader and this page's own oracle are required to agree on all of them, not just the one shown here. See `atp.tptp_ncl` / `fol.qmltp_input`'s own module docstrings for the exact supported fragment (mono-modal alethic, native quantifiers, non-nullary atoms — compound function terms and indexed multi-modal connectives are refused by name as documented extensions) and the primary sources each syntax choice was checked against.
+That agreement is not incidental: QMLTP's logic names (`K`/`D`/`T`/`S4`/`S5`) and domain-condition names (`varying`/`cumulative`/`constant`) are used verbatim as `qml_is_valid`'s own `frame=`/`mode=` values, and every `(logic, domain)` cell of every bundled fixture is cross-checked against `qml_is_valid` this way in `tests/test_qmltp_input.py`. The kit ships no QMLTP file — no redistribution licence for the library could be found — so those fixtures are small stand-ins written in the same syntax with hand-derived status tables; point `load_qmltp` at your own copy of QMLTP to read the real problems — the reader and this page's own oracle are required to agree on all of them, not just the one shown here. See `atp.tptp_ncl` / `fol.qmltp_input`'s own module docstrings for the exact supported fragment (mono-modal alethic, native quantifiers, atoms over variables and constants — the exporter refuses a compound function term and a variable that no quantifier binds, the reader an indexed multi-modal connective, each by name, as documented extensions) and the primary sources each syntax choice was checked against.

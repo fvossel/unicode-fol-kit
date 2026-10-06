@@ -95,9 +95,11 @@ is legal NAME continuation with one more letter further on). Lark resolves
 same-span multi-terminal ambiguity by priority, and CONSTANT was already
 declared at priority 3 against NAME's 2 (``CONSTANT.3`` / ``NAME.2`` in the
 grammar, both unchanged by this module), so ``c_alpha`` still lexes as
-CONSTANT and ``Constant("alpha")`` (the ``c_`` prefix stripped, per the
-existing ``const_`` transform) rather than as NAME's
-``Constant("c_alpha")`` — but the two terminals now genuinely overlap where
+CONSTANT. The node is ``Constant("c_alpha")`` on either path: the ``const_``
+transform keeps the mark as part of the name, so no text reads as a
+``Constant`` whose name is a variable token (``Constant("k2")`` can only be
+built by hand, and it prints the bare ``k2``, which reads back as a
+variable) — but the two terminals now genuinely overlap where
 they never used to, so that priority ordering has gone from "never
 exercised" to "load-bearing", and is exercised by an explicit regression
 test (see ``tests/test_identifier_widening.py``) rather than left to be an
@@ -253,18 +255,232 @@ mode's grammar text. :data:`HUMAN_READABLE_PATTERNS` maps each widened
 terminal's name to a short English description of its shape, for
 ``fol/naming.py`` to show in a NamingError instead of the generated regex
 text.
+
+The same module is the one place a MINTED name gets its shape, because the
+shapes are the terminals' business: :func:`fresh_variables` (a batch of
+``letter`` + digits), :func:`fresh_variable_like` (one alpha-renamed binder,
+keeping the old letter), :func:`fresh_like` (a lambda parameter, which keeps its
+kind: variable, NAME or PREDICATE) and :func:`variable_names` (what a minted
+name has to avoid). Anything that prints a formula the kit cannot read back has
+minted a name some other way.
 """
 
+import dataclasses
+import re
 import unicodedata
 from functools import lru_cache
-from typing import Callable, NamedTuple
+from typing import Callable, NamedTuple, Optional
 
 __all__ = [
     "uppercase_class", "lowercase_class", "combining_class",
     "predicate_pattern", "name_pattern", "constant_pattern",
     "variable_pattern", "sort_pattern",
     "terminal_block", "HUMAN_READABLE_PATTERNS",
+    "fresh_variables", "fresh_variable_like", "fresh_like", "variable_names",
+    "symbol_names",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Fresh names the kit's own parser reads back
+#
+# Every generator that mints a bound name (alpha-renaming, witnesses for a
+# counting quantifier, a relativisation guard, a frame axiom, ...) has to mint a
+# name of the SHAPE the position needs, or the text it prints is text the kit
+# cannot read back: ``∀y_0 R(y, y_0)`` was printed by capture-avoiding
+# substitution and rejected by ``api.parse_any``. These helpers are the one place
+# such names are made.
+#
+# The shapes, from the terminals above:
+#   * an object variable: ONE term-valued letter, then ASCII digits only
+#     (``y``, ``y0``, ``y12``) -- no underscore, no prefix;
+#   * a NAME (function symbol, lambda parameter): two or more letters, and
+#     underscores and digits are fine after the first (``foo_0``);
+#   * a PREDICATE (second-order variable, lambda parameter): an uppercase-led
+#     run that likewise takes ``_`` and digits (``P_0``).
+# ---------------------------------------------------------------------------
+
+#: ``[a-z][0-9]*`` -- the ASCII core of VARIABLE. Every string it accepts the full
+#: VARIABLE terminal accepts too, and it needs no scan of the Unicode tables, so
+#: the common case (``x``, ``y1``) never pays the one-off start-up cost of
+#: :func:`variable_pattern`.
+_ASCII_VARIABLE = re.compile(r"[a-z][0-9]*")
+
+
+@lru_cache(maxsize=None)
+def _compiled(which: str):
+    """The compiled terminal pattern called ``which`` (cached per process)."""
+    builder = {"variable": variable_pattern, "name": name_pattern,
+               "predicate": predicate_pattern}[which]
+    return re.compile(builder())
+
+
+def _is_variable(text: str) -> bool:
+    """Whether the VARIABLE terminal accepts ``text`` as one whole token."""
+    return bool(_ASCII_VARIABLE.fullmatch(text)) or bool(
+        _compiled("variable").fullmatch(text))
+
+
+def variable_names(*nodes) -> frozenset:
+    """Every variable name occurring in ``nodes``, bound or free.
+
+    What a minted name has to avoid: see :func:`fresh_variables`. Three kinds of
+    occurrence count, because a fresh name that equals any of them changes what
+    the formula says:
+
+    * an object ``Variable`` and every quantifier / counting binder;
+    * a lambda-bound ``LambdaVar`` (the text ``λy. … y …`` reads an object
+      variable ``y`` under it as the lambda's own parameter, so the two kinds
+      cannot share a name);
+    * a name in an IF-logic slash set (``∃y/{z} …``): it is a plain string, not
+      a node, yet it refers to an enclosing variable.
+    """
+    names = set()
+    for node in nodes:
+        for inner in node.walk():
+            name = getattr(inner, "name", None)
+            if name is not None and type(inner).__name__ in ("Variable", "LambdaVar"):
+                names.add(name)
+            # a quantifier's own binder is a Variable in .variable
+            binder = getattr(inner, "variable", None)
+            if binder is not None and getattr(binder, "name", None):
+                names.add(binder.name)
+            names.update(getattr(inner, "slashed", ()) or ())
+    return frozenset(names)
+
+
+def symbol_names(*nodes, fold: Optional[Callable[[str], str]] = None) -> frozenset:
+    """Every name that ``nodes`` carry, of every kind: what a MINTED name has to avoid.
+
+    :func:`variable_names` is the avoid set for a new bound variable inside one
+    formula of this kit, where a variable can only meet another variable. A name
+    that is minted for a TARGET -- a Skolem constant, a tableau parameter, a
+    tracking literal of a solver, a witness written into SMT-LIB or Prover9
+    text, a node of a description-logic tableau -- can meet any symbol there:
+    a constant ``_sk0``, a proposition ``goal``, a predicate ``x0``, a sort
+    ``x0``. So this returns every string a node of the formulas holds: the name
+    of a predicate, function, constant, sorted constant, variable, nominal or
+    agent, the sort of a sorted node, the names in a slash set. It is an
+    over-approximation on purpose (the glyph of a quantifier is a string a node
+    holds too): for an avoid set a name too many costs nothing, and a node class
+    added later is covered without being listed here.
+
+    Pass every formula of the problem -- the premises, the conclusion and the
+    background sentences that are added -- or the name is fresh for one formula
+    and taken in the next.
+
+    ``fold`` maps each name to the form the target compares names in:
+    ``str.casefold`` for a target that reads ``x0`` and ``X0`` as one word (TPTP
+    and Prover9 fold the case of a first letter), nothing for a target with
+    case-sensitive names. Mint in the same form: a candidate is fresh when
+    ``fold(candidate)`` is not in the result.
+    """
+    names = set()
+    for node in nodes:
+        for inner in node.walk():
+            values = (getattr(inner, field.name, None) for field in dataclasses.fields(inner)) \
+                if dataclasses.is_dataclass(inner) else vars(inner).values()
+            for value in values:
+                if isinstance(value, str):
+                    names.add(value)
+                elif isinstance(value, (tuple, list, set, frozenset)):
+                    names.update(item for item in value if isinstance(item, str))
+    return frozenset(fold(name) for name in names) if fold is not None else frozenset(names)
+
+
+def fresh_variables(count: int, *, letter: str = "x", avoid=()) -> tuple:
+    """``count`` variable names that the VARIABLE terminal actually accepts.
+
+    A translation that mints its own bound variables has to mint names the
+    kit's own parser reads back, or its output is a formula the kit cannot
+    re-read: ``∃x_1 (…)``, ``∀_hw0 R(_hw0, _hw0)`` and
+    ``∃_msfol_Human_witness Human(…)`` were all printed by the kit and all
+    rejected by :func:`unicode_fol_kit.api.parse_any`, because VARIABLE is one
+    term-valued letter followed by ASCII DIGITS only — no underscore, no
+    prefix (see :func:`variable_pattern`).
+
+    So the shape here is ``letter`` + digits (``x0``, ``x1``, …), skipping
+    everything in ``avoid`` — pass :func:`variable_names` of whatever the
+    result will sit next to. Collisions are only a READABILITY matter for
+    bound variables (two quantifiers may bind the same name without either
+    capturing the other), but a collision with a FREE variable of the host
+    formula would change its meaning, which is what ``avoid`` is for.
+
+    Raises:
+        ValueError: ``letter`` is not a single character the terminal accepts.
+    """
+    if not _is_variable(letter):
+        raise ValueError(
+            f"fresh_variables: {letter!r} is not a legal variable name on its "
+            f"own, so {letter!r} + digits is not one either")
+    avoid = set(avoid)
+    out: list = []
+    index = 0
+    while len(out) < count:
+        candidate = f"{letter}{index}"
+        index += 1
+        if candidate not in avoid:
+            out.append(candidate)
+    return tuple(out)
+
+
+def _variable_letter(base: str) -> str:
+    """The letter an alpha-renamed variable called ``base`` keeps.
+
+    ``base``'s own first character when the VARIABLE terminal accepts it (so
+    ``y`` is renamed to ``y0``, not to an unrelated letter), else its lowercase
+    form (a Prolog-style ``Y`` becomes ``y0``), else ``x``. The last two cover a
+    binder whose name was not minted by this kit -- an imported or hand-built
+    ``Variable("_tmp")`` -- which still has to be renameable: renaming a binder to
+    a fresh LEGAL name is exactly alpha-equivalence, whatever it was called.
+    """
+    first = base[:1]
+    for candidate in (first, first.lower()):
+        if candidate and _is_variable(candidate):
+            return candidate
+    return "x"
+
+
+def fresh_variable_like(base: str, avoid=()) -> str:
+    """One fresh object-variable name for a binder that is called ``base``.
+
+    The alpha-renaming counterpart of :func:`fresh_variables`: ``letter`` is
+    taken from ``base`` (see ``_variable_letter``), the digits count up from 0,
+    and every name in ``avoid`` is skipped. The result is always a legal
+    VARIABLE, which is why it is the right name for any quantifier, counting or
+    cardinality binder -- whatever kind of name ``base`` was.
+
+    ``avoid`` must hold EVERY name that could be confused with the new binder:
+    the free variables of whatever gets substituted in, and every name -- bound
+    ones too -- inside the scope being renamed, because renaming ``y`` to a name
+    that an inner binder already uses captures the occurrences that moved.
+    :func:`variable_names` collects exactly that.
+    """
+    return fresh_variables(1, letter=_variable_letter(base), avoid=avoid)[0]
+
+
+def fresh_like(base: str, avoid=()) -> str:
+    """A fresh name of the same terminal kind as ``base``, for a lambda parameter.
+
+    A lambda parameter may be a VARIABLE (``λx.``), a NAME (``λfoo.``) or a
+    PREDICATE (``λP.``), and the body uses it in the matching position -- as an
+    argument, or as the head of an application -- so renaming it must keep its
+    kind. A VARIABLE is renamed like any variable (``y`` → ``y0``); a NAME or a
+    PREDICATE takes a ``_N`` suffix (``foo`` → ``foo_0``, ``P`` → ``P_0``), which
+    is legal for both because underscore and digits are continuation characters
+    of either terminal. A ``base`` that is none of the three (it was not made by
+    the kit's parser) is renamed to a legal variable.
+    """
+    avoid = set(avoid)
+    if not _is_variable(base) and (_compiled("name").fullmatch(base)
+                                   or _compiled("predicate").fullmatch(base)):
+        index = 0
+        while True:
+            candidate = f"{base}_{index}"
+            index += 1
+            if candidate not in avoid:
+                return candidate
+    return fresh_variable_like(base, avoid)
 
 # Single-character operator glyphs that Unicode also classifies as uppercase
 # letters. Each is a registered operator symbol (``_fol_nodes.OPERATORS``), and

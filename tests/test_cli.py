@@ -3,7 +3,11 @@
 import json
 import sys
 
+import pytest
+
+from unicode_fol_kit import api
 from unicode_fol_kit.__main__ import main
+from unicode_fol_kit.fol.nodes import And, Atom, Constant, Number
 
 
 def test_tptp_output(capsys):
@@ -410,7 +414,7 @@ def test_translate_cmd_modal_to_fol(capsys):
 
 def test_translate_cmd_alc_to_fol_json(capsys):
     """∃r.C (an ALC concept: 'has an r-successor in C') translates to the FOL
-    formula ∃x_1 (r(x,x_1) ∧ C(x_1)) with x the free anchor individual
+    formula ∃x0 (r(x, x0) ∧ C(x0)) with x the free anchor individual
     (comorphism.py's 'concept_to_fol' edge, dl/translate.py's convention)."""
     rc = main(["translate", "∃r.C", "--from", "alc", "--to-logic", "fol", "--json"])
     assert rc == 0
@@ -450,3 +454,113 @@ def test_legacy_regression_after_subcommand_dispatch_added(capsys):
     assert rc == 0
     out = capsys.readouterr().out.strip()
     assert out == "∀x (P(x) → Q(x))"
+
+
+# -- a rendering that REFUSES its formula: both paths report it, neither crashes -- #
+#
+# Before this change the subcommand path caught NotImplementedError/ValueError
+# and exited 3, while the legacy path caught only parse errors, so a formula that
+# parsed but that the chosen rendering refuses ended in a Python traceback.
+
+
+def _assert_reported(capsys, rc, *fragments):
+    """The one shape of a reported refusal: exit 3, the message on stderr (and
+    nothing on stdout), and no traceback."""
+    captured = capsys.readouterr()
+    assert rc == 3
+    assert captured.out == ""
+    assert "Traceback" not in captured.err
+    for fragment in fragments:
+        assert fragment in captured.err, (fragment, captured.err)
+
+
+@pytest.mark.parametrize("fmt", ["tptp", "prover9", "smtlib"])
+def test_legacy_modal_formula_rendered_to_a_first_order_syntax_is_reported(capsys, fmt):
+    """A modal operator has no first-order image, so ``□P`` has no TPTP, Prover9
+    or SMT-LIB text: each renderer refuses with NotImplementedError('Modal
+    operators have no direct first-order export ...'). Reported, exit 3."""
+    rc = main(["□P", "--mode", "modal", "--to", fmt])
+    _assert_reported(capsys, rc, f"--to {fmt}: ", "Modal operators have no direct first-order export")
+
+
+@pytest.mark.parametrize("mode, formula, fmt, fragment", [
+    ("fl", "P(x) ⊕ Q(x)", "tptp", "StrongDisjunction"),
+    ("second_order", "∀P P(x)", "prover9", "Second-order quantification"),
+    ("linear", "A ⊗ B", "tptp", "Linear-logic"),
+], ids=["lukasiewicz", "second-order", "linear"])
+def test_legacy_every_non_classical_mode_refuses_by_name_not_by_traceback(
+        capsys, mode, formula, fmt, fragment):
+    rc = main([formula, "--mode", mode, "--to", fmt])
+    _assert_reported(capsys, rc, fragment)
+
+
+def _legacy_with(monkeypatch, node):
+    """Run the legacy path on a hand-built ``node`` (the parser of the unicode
+    grammar cannot spell these: an upper-case constant, two predicates that fold
+    together, a non-finite number)."""
+    class _Parser:
+        def __init__(self, **kwargs):
+            pass
+
+        def parse(self, text):
+            return node
+
+    monkeypatch.setattr("unicode_fol_kit.__main__.MSFLParser", _Parser)
+
+
+def test_legacy_name_collision_is_reported_with_both_names(capsys, monkeypatch):
+    """Foo(a) and foo(a) fold to the one TPTP word ``foo``: the renderer refuses
+    (NotImplementedError) rather than write ``(foo(a) & foo(a))``."""
+    _legacy_with(monkeypatch, And(Atom("Foo", [Constant("a")]), Atom("foo", [Constant("a")])))
+    rc = main(["ignored", "--to", "tptp"])
+    _assert_reported(capsys, rc, "'Foo'", "'foo'", "would both render as the TPTP identifier")
+
+
+def test_legacy_constant_prover9_would_read_as_a_variable_is_written_in_double_quotes(capsys, monkeypatch):
+    """Under prolog_style_variables the bare ``P(Gaseous)`` reads as ``all X P(X)``
+    (Prover9 2026-8A proves ``P(c)`` from it), so the single-node Prover9 renderer
+    writes the constant in double quotes, which Prover9 never reads as a variable.
+    (It used to refuse the constant by name; the quoting makes the refusal needless.)"""
+    _legacy_with(monkeypatch, Atom("P", [Constant("Gaseous")]))
+    rc = main(["ignored", "--to", "prover9"])
+    captured = capsys.readouterr()
+    assert rc == 0 and captured.err == ""
+    assert captured.out.strip() == 'P("Gaseous")'
+
+
+def test_legacy_constant_prover9_would_read_as_a_variable_and_cannot_be_quoted_is_reported(capsys, monkeypatch):
+    """A name that would be read as a variable and holds a character other than a
+    letter, a digit or an underscore cannot stand in double quotes (LADR has no
+    escape), so the single-node renderer still refuses it by name."""
+    _legacy_with(monkeypatch, Atom("P", [Constant("Gas eous")]))
+    rc = main(["ignored", "--to", "prover9"])
+    _assert_reported(capsys, rc, "'Gas eous'", "VARIABLE", "double quotes")
+
+
+def test_legacy_value_error_from_a_renderer_is_reported(capsys, monkeypatch):
+    """A non-finite number has no literal in any syntax: the renderer raises
+    ValueError, which is reported like a NotImplementedError (exit 3)."""
+    _legacy_with(monkeypatch, Atom("P", [Number(float("inf"))]))
+    rc = main(["ignored", "--to", "tptp"])
+    _assert_reported(capsys, rc, "has no literal")
+
+
+def test_legacy_a_rendering_that_works_is_untouched(capsys, monkeypatch):
+    _legacy_with(monkeypatch, Atom("P", [Constant("a")]))
+    assert main(["ignored", "--to", "prover9"]) == 0
+    assert capsys.readouterr().out.strip() == "P(a)"
+
+
+@pytest.mark.parametrize("error", [NotImplementedError("no TPTP form for the construct X"),
+                                   ValueError("the number Y has no literal")],
+                         ids=["not-implemented", "value-error"])
+def test_the_subcommand_path_reports_the_same_two_failures_the_same_way(
+        capsys, monkeypatch, error):
+    """The reference the legacy path now matches: exit 3, message on stderr,
+    nothing on stdout, no traceback."""
+    def refuse(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(api, "prove", refuse)
+    rc = main(["prove", "P"])
+    _assert_reported(capsys, rc, str(error))

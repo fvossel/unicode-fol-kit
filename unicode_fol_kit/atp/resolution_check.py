@@ -66,11 +66,19 @@ Checking semantics (soundness is the only job; the searcher's search *strategy*
   ``"paramodulate"``, the rewrite uses one-sided MATCHING, not unification
   (the equation's stated side must literally instantiate, via its own free
   variables only, the subterm at ``step.position`` — the target's variables
-  are never bound), and the orientation is re-checked with this module's own
+  are never bound; the matcher is applied to the other side in ONE
+  simultaneous step, :func:`_apply_matcher`, because its images are terms of
+  the target and may be spelled like the equation's own variables), and the
+  orientation is re-checked with this module's own
   term order (``_term_gt`` — see :mod:`atp.resolution`'s module docstring for
   the order's definition): a direction that does not strictly decrease under
   it is rejected, independent of what the derivation claims. No standardizing
   apart is needed here (see the module's own note on that, near ``_match_term``).
+- ``"truth_constants"`` (1 parent ``i``): the stated clause is the cited clause
+  with some of its literals removed, and every removed literal is ``$false`` or
+  ``¬$true`` (false in every interpretation), so ``{$false}`` gives the empty
+  clause and ``{P, $false}`` gives ``{P}``; removing any other literal is
+  rejected.
 - The empty step list is ``ok=True, refuted=False`` (a derivation may verify
   ok without proving anything); ``refuted`` is True iff some *successfully
   verified* step's clause is empty, tracked independently of whether a later
@@ -130,10 +138,13 @@ class ResolutionStep:
     ``rule`` is one of ``"input"`` (0 parents — the clause must be a variant
     of one of the derivation's inputs), ``"resolve"`` (2 parents — a binary
     resolvent of the two cited earlier clauses), ``"factor"`` (1 parent — a
-    factor of the one cited earlier clause), or the three equality rules
+    factor of the one cited earlier clause), the three equality rules
     ``"paramodulate"``/``"reflexivity"``/``"demodulate"``
     (see the module docstring for each — including why a
-    ``"self_paramodulate"`` rule deliberately does NOT exist). ``parents``
+    ``"self_paramodulate"`` rule deliberately does NOT exist), or
+    ``"truth_constants"`` (1 parent — the cited clause with some of its literals
+    that are false in every interpretation, ``$false`` and ``¬$true``, removed).
+    ``parents``
     holds the 1-based
     ``index`` values of the cited earlier steps, in citation order (so for
     ``"resolve"`` the pair is *not* order-sensitive — both orderings of the
@@ -235,7 +246,14 @@ class ResolutionCheckResult:
 # ---------------------------------------------------------------------------
 
 def _apply(node: Node, subst: Dict[str, Node]) -> Node:
-    """Apply ``subst`` to ``node``, following chained bindings, without mutation."""
+    """Apply ``subst`` to ``node``, following chained bindings, without mutation.
+
+    This reads a UNIFIER's output, whose bindings are triangular (``{x: y, y: a}`` says
+    ``x`` is ``a``), so the chain has to be followed. It is NOT how a one-sided matcher is
+    applied: the images of a matcher are terms of the target, and following them reads a
+    variable of the target as a variable of the pattern that happens to be spelled the
+    same (see :func:`_apply_matcher`).
+    """
     if isinstance(node, Variable):
         if node.name in subst:
             return _apply(subst[node.name], subst)
@@ -254,6 +272,32 @@ def _apply_literal(literal: Node, subst: Dict[str, Node]) -> Node:
     if isinstance(literal, Not):
         return Not(_apply(literal.formula, subst))
     return _apply(literal, subst)
+
+
+def _apply_matcher(node: Node, matcher: Dict[str, Node]) -> Node:
+    """Apply the one-sided matcher ``matcher`` to ``node`` in ONE simultaneous step.
+
+    A matcher (:func:`_match_term`) maps each variable of the PATTERN to a subterm of the
+    TARGET. The target's own variables are held fixed, not bound, and nothing is standardized
+    apart, so an image may mention a variable spelled like one the matcher binds: the
+    pattern ``f(x, y)`` against ``f(y, z)`` gives ``{x: y, y: z}``, and the instance of
+    ``g(x)`` is ``g(y)``, with that ``y`` the target's. An image is a finished term and is
+    never looked up again; :func:`_apply` would read it as the pattern's ``y`` and answer
+    ``g(z)``, and it would not end on ``{x: y, y: x}`` or ``{y: y}`` (a matcher that
+    is cyclic, or that binds a variable to itself, both arise from a rule matched against a
+    clause that shares its variable names).
+
+    A variable the matcher does not bind is left as it is, and so is every other leaf.
+    """
+    if isinstance(node, Variable):
+        return matcher.get(node.name, node)
+    if isinstance(node, (Constant, Number)):
+        return node
+    if isinstance(node, Function):
+        return Function(node.name, tuple(_apply_matcher(a, matcher) for a in node.args))
+    if isinstance(node, Atom):
+        return Atom(node.predicate, tuple(_apply_matcher(a, matcher) for a in node.args))
+    raise TypeError(f"_apply_matcher: unsupported node type {type(node).__name__}")
 
 
 def _occurs(name: str, term: Node, subst: Dict[str, Node]) -> bool:
@@ -592,7 +636,8 @@ def _match_term(pattern: Node, target: Node, subst: Dict[str, Node]) -> Optional
     opaque — never instantiated). A repeated pattern variable must match the
     same target subterm everywhere (checked by structural equality against
     the existing binding). Returns the extended substitution, or None on
-    failure. Used only by ``"demodulate"``'s checker, to re-derive whether
+    failure. The result is applied with :func:`_apply_matcher`, never with
+    :func:`_apply`. Used only by ``"demodulate"``'s checker, to re-derive whether
     the cited equation's stated side genuinely matches the target subterm —
     an independent reimplementation of the same one-sided-matching idea
     :mod:`unicode_fol_kit.atp.resolution` uses for both subsumption and its
@@ -833,7 +878,10 @@ def _check_demodulate_step(step: ResolutionStep, ci: FrozenSet[Node], cj: Frozen
     name shared between ``ci`` and ``cj`` cannot cause capture (the same
     reasoning :mod:`unicode_fol_kit.atp.resolution` relies on for its own
     demodulation and for clause subsumption, neither of which standardizes
-    apart either).
+    apart either). The matcher is applied to the right-hand side in ONE
+    simultaneous step (:func:`_apply_matcher`): its images are terms of the
+    target, which may be spelled like the equation's variables, so they are
+    not looked up again.
 
     The non-unit restriction on ``cj`` is a soundness requirement, not a
     convenience: a clause ``{u≈v, Q}`` only asserts ``u≈v ∨ Q``, not the
@@ -873,7 +921,7 @@ def _check_demodulate_step(step: ResolutionStep, ci: FrozenSet[Node], cj: Frozen
     if sigma is None:
         return "'demodulate': the equation's stated left side does not MATCH the subterm at position"
 
-    r_sigma = _apply(r, sigma)
+    r_sigma = _apply_matcher(r, sigma)
     if not _term_gt(subterm, r_sigma):
         return "'demodulate': the orientation does not strictly decrease under the documented term order"
 
@@ -890,9 +938,39 @@ def _check_demodulate_step(step: ResolutionStep, ci: FrozenSet[Node], cj: Frozen
     return "'demodulate': the recomputed clause is not a variant of the stated clause"
 
 
+def _is_false_constant_literal(literal: Node) -> bool:
+    """True iff ``literal`` holds in no interpretation: the truth constant ``$false``
+    (or the atom ``⊥``) or the negation of the truth constant ``$true`` (or ``⊤``)
+    (re-derived here from the names, like the rest of this checker's vocabulary).
+    ``$true`` and ``¬$false`` are NOT false: nothing may be removed because of them."""
+    if isinstance(literal, Not):
+        inner = literal.formula
+        return isinstance(inner, Atom) and not inner.args and inner.predicate in ("$true", "⊤")
+    return isinstance(literal, Atom) and not literal.args and literal.predicate in ("$false", "⊥")
+
+
+def _check_truth_constants_step(step: ResolutionStep, ci: FrozenSet[Node]) -> Optional[str]:
+    """``"truth_constants"``: from the cited clause, drop literals that are false in
+    every interpretation (``$false`` and ``¬$true``).
+
+    The stated clause must be a SUBSET of the cited one and every literal missing
+    from it must be such a constant, so ``C ∨ $false`` gives ``C`` and nothing
+    else is licensed: a literal of any other atom, ``$true`` and ``¬$false`` stay
+    (a clause that has those is simply true, which no step has to derive).
+    """
+    if not step.clause <= ci:
+        return "'truth_constants': the stated clause must be a subset of the cited clause"
+    for literal in ci - step.clause:
+        if not _is_false_constant_literal(literal):
+            return (f"'truth_constants': {literal.to_unicode_str()!r} is not a literal "
+                    "that is false in every interpretation ($false or ¬$true)")
+    return None
+
+
 _RULE_ARITY = {
     "input": 0, "resolve": 2, "factor": 1,
     "paramodulate": 2, "reflexivity": 1, "demodulate": 2,
+    "truth_constants": 1,
 }
 # NO "self_paramodulate": the shared-instance shortcut (equation and target
 # from ONE instantiation, both dropped) is UNSOUND — for {u ≈ v, L[u]} it
@@ -971,6 +1049,9 @@ def verify_resolution_proof(derivation: "ResolutionDerivation") -> ResolutionChe
         elif step.rule == "reflexivity":
             (i,) = step.parents
             err = _check_reflexivity_step(step, clause_by_index[i])
+        elif step.rule == "truth_constants":
+            (i,) = step.parents
+            err = _check_truth_constants_step(step, clause_by_index[i])
         else:  # "demodulate"
             i, j = step.parents
             err = _check_demodulate_step(step, clause_by_index[i], clause_by_index[j])

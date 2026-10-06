@@ -44,6 +44,20 @@ drop ! erases exactly the resource distinctions ILL draws (it is *sound* — eve
 theorem collapses to a classical one, which the test-suite checks against Z3 — but
 wildly incomplete in reverse).
 
+**What is read.** The calculus reads exactly the node classes it has rules for: ``⊗``
+(``Tensor``), ``&`` (``With``), ``⊕`` (``OPlus``), ``⊸`` (``LinearImplies``), ``!``
+(``OfCourse``), ``𝟙`` (``One``), ``⊤`` (``Top``) and ``𝟘`` (``Zero``), over atoms. The atoms
+are the propositional letters of the ``linear`` grammar, and an atom over terms (``P(alpha)``,
+``Loves(john, mary)``, a free variable included) is ONE category, identified by its predicate
+and its terms as written; that reading is sound in both directions, because a quantifier-free,
+equality-free sequent has no rule that substitutes one term for another. Every other node is
+refused by name with ``NotImplementedError``: a quantifier (sorted or not), a counting or
+cardinality node, a sorted constant, an equality atom, and a node of another logic (``And``,
+``Or``, ``Not``, ``Box``, a connective of the Lambek calculus, ...). Read as one more category
+they would answer about another formula (``∀x P(x) ⊢ P(alpha)`` holds in first-order linear
+logic and has no derivation between the two categories; ``And(A, B) ⊢ A`` holds classically and
+has none between ``And(A, B)`` and ``A``). Decide such input with a route of its own logic.
+
 Public API: :class:`ILLSequent`, :class:`ILLDerivation`, :func:`ill_prove`,
 :func:`ill_derivable`, :func:`check_ill_proof`, :func:`verify_ill_proof`,
 :func:`render_ill_proof`.
@@ -66,7 +80,17 @@ from ..fol.nodes import Node, Tensor, With, OPlus, LinearImplies, OfCourse, One
 # rendering gap: to_unicode_str()/to_latex() already render Top/Zero
 # correctly.
 from ..fol._linear_nodes import Top, Zero, render_ill_formula, _ill_sort_key
+from ..fol._truth_constants import refuse_truth_constants
+from ._substructural_input import ILL, refuse_unreadable_input, unreadable_reason
 from .sequent import SequentResult
+
+#: Why ILL has no reading of the TPTP constants ``$true`` / ``$false`` (the reason
+#: :func:`ill_prove` and the Isabelle export name when they refuse one).
+_NO_TRUTH_CONSTANT_WHY = (
+    "intuitionistic linear logic has two truths, the additive ⊤ and the "
+    "multiplicative 1, which are not interderivable, and a falsity 0 of its own, "
+    "and TPTP's $true / $false name none of them; write ⊤, 1 or 0 in the linear "
+    "grammar for the unit meant")
 
 
 # ---------------------------------------------------------------------------
@@ -348,8 +372,21 @@ def ill_prove(antecedents: Iterable[Node], goal: Node,
     ``max_depth`` counts rule applications along a branch; pass it explicitly to
     search deeper !-sequents. ``max_steps`` bounds total node expansions and is
     ignored for !-free sequents (where it could otherwise break completeness).
+
+    The sequent is read through the connectives ``⊗ & ⊕ ⊸ ! 𝟙 ⊤ 𝟘`` and atoms: an atom over
+    terms is one category, and every other node (a quantifier, a counting or cardinality node,
+    a sorted constant, an equality atom, a connective of another logic) is refused by name (see
+    the module docstring).
+
+    Raises:
+        NotImplementedError: a truth constant ``$true`` / ``$false``, or a node ILL has no
+            rule for (a quantifier, a counting or cardinality node, a sorted constant, an
+            equality atom, a connective of another logic) occurs in the sequent; the message
+            names the node and what to use instead.
     """
     ants = tuple(antecedents)
+    refuse_truth_constants([*ants, goal], "ill_prove", _NO_TRUTH_CONSTANT_WHY)
+    refuse_unreadable_input([*ants, goal], "ill_prove", ILL)
     cnt = _cnt_of(ants)
     total = sum(_size(f) for f in ants) + _size(goal)
     bang = any(_has_bang(f) for f in ants) or _has_bang(goal)
@@ -371,6 +408,7 @@ def ill_derivable(antecedents: Iterable[Node], goal: Node,
 
     Decides derivability for !-free sequents; for sequents containing ``!`` a
     ``False`` means only "no derivation within the bound" (see :func:`ill_prove`).
+    Refuses by name every node ILL has no rule for, as :func:`ill_prove` does.
     """
     return ill_prove(antecedents, goal, max_depth=max_depth, max_steps=max_steps) is not None
 
@@ -665,6 +703,19 @@ def _verify(deriv: "ILLDerivation"):
     return None, None
 
 
+def _formulas_of(derivation: "ILLDerivation") -> List[Node]:
+    """Every formula of every sequent of a derivation tree."""
+    formulas: List[Node] = []
+    pending = [derivation]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, ILLDerivation) and isinstance(node.conclusion, ILLSequent):
+            formulas.extend(node.conclusion.antecedent)
+            formulas.append(node.conclusion.succedent)
+            pending.extend(node.premises)
+    return formulas
+
+
 def verify_ill_proof(derivation: "ILLDerivation") -> SequentResult:
     """Check an ILL derivation and return a
     :class:`~unicode_fol_kit.atp.sequent.SequentResult`.
@@ -672,8 +723,12 @@ def verify_ill_proof(derivation: "ILLDerivation") -> SequentResult:
     Recursively re-validates that every node's conclusion follows from its
     premises' conclusions by the node's rule (antecedents compared as multisets),
     returning the end-sequent and, on failure, the first offending rule and reason.
+    A derivation whose sequents hold a node ILL has no rule for (a quantifier, an
+    equality atom, a connective of another logic, ...) is not a derivation of ILL:
+    it does not check, and the reason names the node (``error_rule`` is ``"formula"``).
     """
-    err_rule, err = _verify(derivation)
+    unreadable = unreadable_reason(_formulas_of(derivation), "verify_ill_proof", ILL)
+    err_rule, err = ("formula", unreadable) if unreadable is not None else _verify(derivation)
     end = derivation.conclusion if isinstance(derivation, ILLDerivation) else None
     return SequentResult(err is None, end, err_rule, err)
 

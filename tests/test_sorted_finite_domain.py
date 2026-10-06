@@ -101,8 +101,9 @@ class TestLowerMsfolUnit:
         # structural equality (Node is a frozen dataclass) AND by rendering
         # both through to_asp, pinning that the ENCODED program text is
         # byte-identical too, not merely that the AST happens to compare
-        # equal.
-        sentences = (_F.parse("∀x (P(x) → Q(x))"), _F.parse("P(a)"))
+        # equal. The sentences are closed (``alpha`` is a constant; a single letter would be
+        # a free variable, which the writer refuses).
+        sentences = (_F.parse("∀x (P(x) → Q(x))"), _F.parse("P(alpha)"))
         result = lower_msfol(sentences)
         assert result == sentences
         assert to_asp(FiniteDomainProblem(result, 2)) == to_asp(FiniteDomainProblem(sentences, 2))

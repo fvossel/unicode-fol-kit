@@ -176,6 +176,451 @@ def test_translate_modal_to_fol_standard_translation():
     assert result["unicode"] == "∀w0 (R(w, w0) → P(w0))"
 
 
+# ---------------------------------------------------------------------------
+# translate: the side axioms, the guarantee, the per-edge options, and the
+# logic labels the registry grew (qml, msfol, fuzzy, drs).
+#
+# A translated formula without its side axioms answers a different question,
+# so most of these decide something THROUGH the tool (translate -> prove with
+# the returned texts) and compare with a verdict worked out by hand from the
+# frame conditions / sort semantics, and where the kit has a second,
+# independent route (the modal tableau, the native many-sorted prover) with
+# that as well.
+# ---------------------------------------------------------------------------
+
+def _canon(text):
+    """Alpha/commutativity-quotiented form of formula TEXT — compares a
+    rendering with a hand-written formula without caring which bound-variable
+    names the translation happened to mint."""
+    from unicode_fol_kit import api
+    from unicode_fol_kit.eval import canonicalize
+
+    parsed = api.parse_any(text)
+    assert parsed.ok, (text, parsed.errors[:1])
+    return canonicalize(parsed.formula)
+
+
+def _canons(texts):
+    return sorted(repr(_canon(t)) for t in texts)
+
+
+def _verdict(result, **extra):
+    """prove() the translated text WITH its axioms as separate premises."""
+    return prove(result["unicode"], premises=result["axioms_unicode"],
+                 **extra)["status"]
+
+
+def test_translate_description_tells_the_client_to_pass_the_axioms_as_premises():
+    """The one sentence an LLM client reads first: it is the whole
+    description's first paragraph, and it names both the field and the
+    mode of use (SEPARATE premise)."""
+    tools = asyncio.run(create_server().list_tools())
+    description = next(t for t in tools if t.name == "translate").description
+    first_paragraph = description.split("\n\n")[0]
+    assert "axioms" in first_paragraph
+    assert "SEPARATE premise" in first_paragraph
+    assert "never conjoined" in first_paragraph
+
+
+def test_server_instructions_carry_the_same_warning():
+    from unicode_fol_kit.mcp.server import _INSTRUCTIONS
+
+    assert "SEPARATE premises" in _INSTRUCTIONS
+
+
+def test_translate_modal_s4_returns_frame_conditions_as_axioms():
+    """□P → □□P through frame="S4". Hand-derived image: □P is
+    ∀w0 (R(w,w0) → P(w0)), □□P is ∀w1 (R(w,w1) → ∀w2 (R(w1,w2) → P(w2))).
+    S4 = reflexive + transitive, which are exactly the two axioms."""
+    result = translate("□P → □□P", "modal", "fol", frame="S4")
+    assert result["unicode"] == (
+        "∀w0 (R(w, w0) → P(w0)) → ∀w1 (R(w, w1) → ∀w2 (R(w1, w2) → P(w2)))")
+    assert result["guarantee"] == "faithful"
+    assert result["lossy"] is False
+    assert len(result["axioms"]) == len(result["axioms_unicode"]) == 2
+    assert _canons(result["axioms_unicode"]) == _canons([
+        "∀x R(x, x)",
+        "∀x ∀y ∀z (R(x, y) ∧ R(y, z) → R(x, z))"])
+
+
+def test_translate_default_frame_is_K_and_needs_no_axiom():
+    result = translate("□P → P", "modal", "fol")
+    assert result["axioms"] == [] and result["axioms_unicode"] == []
+    assert result["guarantee"] == "faithful"
+
+
+def test_translate_result_alone_answers_a_different_question():
+    """The failure the description warns about: 4 (□P → □□P) is valid on a
+    transitive frame, and its image is only provable once the frame
+    conditions are premises. Alone it is refuted — a countermodel with a
+    non-transitive R."""
+    result = translate("□P → □□P", "modal", "fol", frame="S4")
+    assert _verdict(result) == "proved"
+    assert prove(result["unicode"])["status"] == "refuted"
+
+
+# Validity of each schema on each frame class, worked out by hand from the
+# frame conditions (T: reflexive, 4: transitive, B: symmetric, D: serial;
+# a frame validates a schema iff its conditions entail the schema's):
+#   K axiom: every frame.   T-axiom □P→P: refl.   4: trans.
+#   B-axiom P→□◇P: sym.     D-axiom □P→◇P: serial (refl entails serial).
+_MODAL_SCHEMAS = {
+    "K": "□(P → Q) → (□P → □Q)",
+    "T": "□P → P",
+    "4": "□P → □□P",
+    "B": "P → □◇P",
+    "D": "□P → ◇P",
+}
+_VALID_ON = {
+    "K": {"K"},
+    "T": {"K", "T", "D"},
+    "S4": {"K", "T", "D", "4"},
+    "S5": {"K", "T", "D", "4", "B"},
+    "B": {"K", "T", "D", "B"},
+    "K4": {"K", "4"},
+    "KD": {"K", "D"},
+}
+
+
+def test_translate_modal_frames_decide_like_the_hand_table_and_the_tableau():
+    """Three routes must agree on every (frame, schema): the tool's
+    translate -> prove, the hand table above, and the modal tableau (a
+    different decision procedure that never sees a first-order image)."""
+    from unicode_fol_kit import api
+
+    disagreements = []
+    for frame, valid in _VALID_ON.items():
+        for name, schema in _MODAL_SCHEMAS.items():
+            image = translate(schema, "modal", "fol", frame=frame)
+            through_tool = _verdict(image)
+            tableau = api.prove(api.parse_any(schema, hint="modal").formula,
+                                logic="modal", frame=frame,
+                                backends=["modal-tableau"]).status
+            expected = "proved" if name in valid else "refuted"
+            if not (through_tool == tableau == expected):
+                disagreements.append(
+                    (frame, name, through_tool, tableau, expected))
+    assert disagreements == []
+
+
+def test_translate_temporal_closure_option_reaches_the_edge():
+    """Ⓖ P → P needs T reflexive: with the default closure the image comes
+    with T's reflexivity and transitivity, with temporal_closure=False it
+    comes with neither (the strictly weaker temporal logic)."""
+    closed = translate("Ⓖ P → P", "modal", "fol")
+    open_ = translate("Ⓖ P → P", "modal", "fol", temporal_closure=False)
+    assert _canons(closed["axioms_unicode"]) == _canons([
+        "∀x T(x, x)", "∀x ∀y ∀z (T(x, y) ∧ T(y, z) → T(x, z))"])
+    assert open_["axioms_unicode"] == []
+    assert _verdict(closed) == "proved"
+    assert _verdict(open_) == "refuted"
+
+
+def test_translate_systems_option_makes_knowledge_factive():
+    """K_a P → P is valid exactly when the epistemic relation is reflexive:
+    systems={"epistemic": "S5"} supplies it (plus S5's other conditions),
+    omitting it leaves the relation unconstrained."""
+    plain = translate("K_a P → P", "modal", "fol")
+    s5 = translate("K_a P → P", "modal", "fol", systems={"epistemic": "S5"})
+    assert plain["axioms_unicode"] == []
+    assert _canon("∀x Rk_a(x, x)") in [_canon(a) for a in s5["axioms_unicode"]]
+    assert _verdict(plain) == "refuted"
+    assert _verdict(s5) == "proved"
+
+
+def test_translate_msfol_nonempty_sorts_decide_the_verdict():
+    """(∀x:Human M(x)) → ∃x:Human M(x) is valid in many-sorted logic
+    because sorts are non-empty, and its unsorted image is not valid on its
+    own — the sort's non-emptiness is a side condition. The kit's native
+    many-sorted prover is the second route."""
+    from unicode_fol_kit import api
+
+    formula = "(∀x:Human Mortal(x)) → ∃x:Human Mortal(x)"
+    result = translate(formula, "msfol", "fol")
+    assert result["unicode"] == (
+        "∀x (Human(x) → Mortal(x)) → ∃x (Human(x) ∧ Mortal(x))")
+    assert _canons(result["axioms_unicode"]) == _canons(["∃x Human(x)"])
+    assert result["guarantee"] == "faithful"
+    assert _verdict(result) == "proved"
+    assert prove(result["unicode"])["status"] == "refuted"
+    assert api.prove(api.parse_any(formula).formula).status == "proved"
+
+
+def test_translate_signature_option_adds_the_subsort_axioms():
+    """With Human < Animal: every human is an animal, so
+    (∀x:Animal M) → ∀x:Human M and (∃x:Human M) → ∃x:Animal M are valid,
+    while the converse universal is not (a non-human animal). Without the
+    signature none of the subsort facts exist and the first two fail."""
+    signature = {"subsorts": {"Human": ["Animal"]}}
+    cases = [
+        ("(∀x:Animal Mortal(x)) → ∀x:Human Mortal(x)", "proved"),
+        ("(∃x:Human Mortal(x)) → ∃x:Animal Mortal(x)", "proved"),
+        ("(∀x:Human Mortal(x)) → ∀x:Animal Mortal(x)", "refuted"),
+    ]
+    for formula, expected in cases:
+        with_sig = translate(formula, "msfol", "fol", signature=signature)
+        assert _canon("∀x (Human(x) → Animal(x))") in [
+            _canon(a) for a in with_sig["axioms_unicode"]], formula
+        assert _verdict(with_sig) == expected, formula
+        without = translate(formula, "msfol", "fol")
+        assert _verdict(without) == "refuted", formula
+
+
+def test_translate_msfol_signature_errors_surface_structured():
+    result = translate("∀x:Human Mortal(x)", "msfol", "fol",
+                       signature={"subsorts": {"Human": "Animal"}})
+    assert result["error"]["type"] == "TypeError"
+    assert "subsorts" in result["error"]["message"]
+    cyclic = translate("∀x:Human Mortal(x)", "msfol", "fol",
+                       signature={"subsorts": {"A": ["B"], "B": ["A"]}})
+    assert cyclic["error"]["type"] == "ValueError"
+    assert "cycle" in cyclic["error"]["message"]
+
+
+def test_translate_option_no_edge_on_the_path_takes_is_refused_by_name():
+    """A silently ignored frame= would answer a different question than the
+    caller asked: the error names the option, the path, and what IS taken."""
+    result = translate("Human", "alc", "fol", frame="S4")
+    assert result["error"]["type"] == "ValueError"
+    message = result["error"]["message"]
+    assert "['frame']" in message and "concept_to_fol" in message
+    mismatch = translate("□P", "modal", "fol", mode="varying")
+    assert "['mode']" in mismatch["error"]["message"]
+    assert "'frame'" in mismatch["error"]["message"]      # what IS accepted
+
+
+def test_translate_enum_options_name_what_is_accepted():
+    unknown_frame = translate("□P", "modal", "fol", frame="S9")
+    assert unknown_frame["error"]["type"] == "ValueError"
+    assert "'S4'" in unknown_frame["error"]["message"]
+    assert "Scott" in unknown_frame["error"]["message"]
+
+    non_first_order = translate("□P", "modal", "fol", frame="GL")
+    assert non_first_order["error"]["type"] == "UnsupportedFrameCondition"
+
+    unknown_family = translate("K_a P", "modal", "fol", systems={"foo": "S5"})
+    assert "'epistemic'" in unknown_family["error"]["message"]
+
+    unknown_system = translate("K_a P", "modal", "fol",
+                               systems={"epistemic": "S9"})
+    assert "'S5'" in unknown_system["error"]["message"]
+
+    unknown_mode = translate("□P(a)", "qml", "fol", mode="bogus")
+    assert "'varying'" in unknown_mode["error"]["message"]
+    assert "'constant'" in unknown_mode["error"]["message"]
+
+    unknown_bridge = translate("K_a P → B_a P", "qml", "fol",
+                               bridges=["no_such_bridge"])
+    assert "knowledge_implies_belief" in unknown_bridge["error"]["message"]
+
+
+def test_translate_option_values_must_have_the_right_shape():
+    """A string 'false' is truthy: taken for True it would silently turn the
+    temporal closure ON for a caller who asked it off."""
+    for kwargs, needle in (
+        ({"temporal_closure": "false"}, "temporal_closure must be true or false"),
+        ({"frame": 4}, "frame must be a string"),
+        ({"frame": True}, "frame must be a string"),
+        ({"systems": ["epistemic"]}, "systems must be an object"),
+        ({"systems": {"epistemic": 5}}, "both strings"),
+        ({"bridges": "sincerity"}, "bridges must be a list"),
+        ({"signature": ["Human"]}, "signature must be a signature object"),
+    ):
+        result = translate("□P", "modal", "fol", **kwargs)
+        assert result["error"]["type"] == "ValueError", kwargs
+        assert needle in result["error"]["message"], kwargs
+
+
+def test_translate_option_names_are_exactly_the_edges_options():
+    """The tool invents no option: its parameters are the union of what the
+    registry's edges declare, so an edge that grows an option must be wired
+    through here (and an option here must exist on some edge)."""
+    import inspect
+
+    from unicode_fol_kit.comorphism import DEFAULT_REGISTRY
+    from unicode_fol_kit.mcp.server import _TRANSLATE_OPTIONS
+
+    declared = set().union(*(e.options for e in DEFAULT_REGISTRY.edges()))
+    parameters = set(inspect.signature(translate).parameters)
+    assert set(_TRANSLATE_OPTIONS) == declared
+    assert declared <= parameters
+    assert parameters - declared == {"term", "from_logic", "to_logic",
+                                     "dialect"}
+
+
+def test_translate_qml_is_reachable_and_carries_the_domain_regime():
+    """□∀x P(x) → ∀x □P(x) is the Barcan formula's shape: whether it holds
+    depends on the domain regime, which is an AXIOM of the image. Under
+    mode="varying" the axioms hold that every world has an existing
+    individual; under the default constant domains they do not."""
+    varying = translate("□∀x P(x) → ∀x □P(x)", "qml", "fol",
+                        frame="S5", mode="varying")
+    constant = translate("□∀x P(x) → ∀x □P(x)", "qml", "fol", frame="S5")
+    assert varying["path"] == ["qml_translate"]
+    assert varying["guarantee"] == "faithful"
+    nonempty_world = "∀w (World(w) → ∃x (Object(x) ∧ E(x, w)))"
+    assert _canon(nonempty_world) in [_canon(a)
+                                      for a in varying["axioms_unicode"]]
+    assert _canon(nonempty_world) not in [_canon(a)
+                                          for a in constant["axioms_unicode"]]
+    reflexive = _canon("∀w (World(w) → R(w, w))")      # S5 is reflexive
+    assert reflexive in [_canon(a) for a in varying["axioms_unicode"]]
+
+
+def test_translate_qml_reads_sorted_quantifiers_under_modal_operators():
+    """No single parse_any mode reads □ and ∀x:S together; the qml source
+    falls back to the one parser that does, so the sorted formula the qml
+    edge translates is reachable as text."""
+    result = translate("□∀x:Human Mortal(x)", "qml", "fol")
+    assert result.get("ok") is not False and "error" not in result
+    # the sort is non-empty at EVERY world, as an axiom
+    assert _canon("∀w (World(w) → ∃x (Object(x) ∧ Human(x, w)))") in [
+        _canon(a) for a in result["axioms_unicode"]]
+
+
+def test_translate_fuzzy_is_read_in_the_lukasiewicz_dialect():
+    """'P ⊕ Q' is Xor to the classical modes of parse_any's ladder and the
+    strong disjunction to the fuzzy ones; a fuzzy source must be read the
+    second way, or the 'translation' is of a formula the caller never wrote.
+    The edge is a lossy two-valued projection and says so."""
+    result = translate("P ⊕ Q", "fuzzy", "msfol")
+    assert result["unicode"] == "P ∨ Q"
+    assert result["lossy"] is True and result["guarantee"] == "lossy"
+    assert "TWO-VALUED" in result["note"]
+    # the reading the ladder alone would have chosen, forced by dialect=
+    assert translate("P ⊕ Q", "fuzzy", "msfol", dialect="fol")["unicode"] == "P ⊕ Q"
+    # the two fuzzy modes are disjoint (unsorted vs sorted quantifiers), and
+    # a quantified term must reach whichever one reads it
+    assert translate("∀x (P(x) ⊕ Q(x))", "fuzzy", "msfol")["unicode"] ==         "∀x (P(x) ∨ Q(x))"
+    assert translate("∀x:S (P(x) ⊕ Q(x))", "fuzzy", "msfol")["unicode"] ==         "∀x:S (P(x) ∨ Q(x))"
+    # a term neither reads reports BOTH dialects' diagnoses
+    refused = translate("P ⊕", "fuzzy", "msfol")
+    assert refused["ok"] is False and refused["argument"] == "term"
+    assert {e["dialect"] for e in refused["errors"]} == {"fl", "msfl"}
+
+
+def test_translate_fuzzy_through_two_edges_keeps_the_weakest_guarantee():
+    """fuzzy → fol is fuzzy→msfol (lossy) then msfol→fol (faithful, with a
+    non-emptiness axiom): the path is lossy, and the axiom of the LATER edge
+    is still reported."""
+    result = translate("∀x:Human (P(x) ⊕ Q(x))", "fuzzy", "fol")
+    assert result["path"] == ["to_msfol", "to_fol"]
+    assert result["guarantee"] == "lossy" and result["lossy"] is True
+    assert result["unicode"] == "∀x (Human(x) → P(x) ∨ Q(x))"
+    assert _canons(result["axioms_unicode"]) == _canons(["∃x Human(x)"])
+
+
+def test_translate_drs_both_directions():
+    """Donkey sentence, hand-derived: 'every farmer who owns a donkey beats
+    it' is ∀x∀y (Farmer(x) ∧ Donkey(y) ∧ Owns(x,y) → Beats(x,y)). The
+    inverse edge rebuilds a box that exports to the same formula."""
+    box = "[x, y | Farmer(x), Donkey(y), Owns(x, y)] -> [ | Beats(x, y)]"
+    forward = translate(box, "drs", "fol")
+    assert forward["path"] == ["drs_to_fol"]
+    assert forward["unicode"] == (
+        "∀x ∀y (Farmer(x) ∧ Donkey(y) ∧ Owns(x, y) → Beats(x, y))")
+    assert forward["guarantee"] == "faithful" and forward["axioms"] == []
+
+    backward = translate(forward["unicode"], "fol", "drs")
+    assert backward["path"] == ["fol_to_drs"]
+    assert "unicode" not in backward                 # a box is not a formula
+    assert translate(backward["box"], "drs", "fol")["unicode"] == \
+        forward["unicode"]
+
+    simple = translate("∃x (Farmer(x) ∧ Runs(x))", "fol", "drs")
+    assert simple["box"] == "[x | Farmer(x), Runs(x)]"
+
+
+def test_translate_drs_failures_are_structured():
+    bad_box = translate("[x | ", "drs", "fol")
+    assert bad_box["ok"] is False and bad_box["argument"] == "term"
+    assert bad_box["errors"][0]["dialect"] == "drs_box"
+    outside_image = translate("□P", "fol", "drs")
+    assert outside_image["error"]["type"] == "FolToDrsError"
+
+
+def test_translate_unknown_logic_names_the_known_labels():
+    result = translate("P", "fol", "nonsense")
+    assert result["error"]["type"] == "ValueError"
+    for label in ("qml", "msfol", "fuzzy", "drs"):
+        assert f"'{label}'" in result["error"]["message"]
+
+
+def test_translate_texts_read_back_as_what_the_ast_says():
+    """Every text the tool returns can be handed to the other tools: it
+    parses, and it is the same formula as its JSON AST up to the names of
+    bound variables. The translations mint names the text grammar rejects
+    (_hw0, _msfol_Human_witness), which the rendering must not leak."""
+    from unicode_fol_kit.eval import canonicalize
+    from unicode_fol_kit.fol.nodes import Node
+
+    battery = [
+        ("□P → □□P", "modal", "fol", {"frame": "S4"}),
+        ("Ⓖ P → P", "modal", "fol", {}),
+        ("Ⓖ P → Ⓝ P", "modal", "fol", {}),
+        ("Ⓞ P → Ⓟ P", "modal", "fol", {}),
+        ("K_a P → P", "modal", "fol", {"systems": {"epistemic": "S5"}}),
+        ("(∀x:Human Mortal(x)) → ∃x:Animal Mortal(x)", "msfol", "fol",
+         {"signature": {"subsorts": {"Human": ["Animal"]}}}),
+        ("□∀x P(x) → ∀x □P(x)", "qml", "fol",
+         {"frame": "S5", "mode": "varying"}),
+        ("□∀x:Human Mortal(x)", "qml", "fol", {}),
+        ("∀x:Human (P(x) ⊕ Q(x))", "fuzzy", "fol", {}),
+    ]
+    for term, source, target, options in battery:
+        result = translate(term, source, target, **options)
+        assert "error" not in result, (term, result)
+        pairs = [(result["unicode"], result["result"])] + list(
+            zip(result["axioms_unicode"], result["axioms"]))
+        for text, ast in pairs:
+            assert "_" not in text.replace("Rk_", ""), (term, text)
+            assert _canon(text) == canonicalize(Node.from_dict(ast)), \
+                (term, text)
+
+
+def test_list_translations_advertises_every_logic_label_and_edge_contract():
+    result = list_translations()
+    assert result["logics"] == sorted(result["logics"])
+    assert {"fol", "modal", "alc", "team", "eso",
+            "qml", "msfol", "fuzzy", "drs"} <= set(result["logics"])
+    by_name = {e["name"]: e for e in result["edges"]}
+    assert {"qml_translate", "to_fol", "to_msfol", "drs_to_fol",
+            "fol_to_drs"} <= set(by_name)
+    st = by_name["standard_translation"]
+    assert st["guarantee"] == "faithful"
+    assert st["options"] == ["frame", "systems", "temporal_closure"]
+    assert st["side_axioms"] is True
+    assert by_name["to_fol"]["options"] == ["signature"]
+    assert by_name["qml_translate"]["options"] == [
+        "bridges", "frame", "mode", "systems", "temporal_closure"]
+    assert by_name["to_msfol"]["guarantee"] == "lossy"
+    assert by_name["to_msfol"]["lossy"] is True
+    assert by_name["concept_to_fol"]["side_axioms"] is False
+    # every label an edge mentions is advertised
+    mentioned = {e[k] for e in result["edges"] for k in ("source", "target")}
+    assert mentioned <= set(result["logics"])
+
+
+def test_call_tool_translate_accepts_options_over_the_wire_path():
+    """Schema validation must accept the new optional parameters (an object
+    for systems/signature, a list for bridges, a boolean) and the result must
+    come back with axioms — the path a real client takes."""
+    import json
+
+    server = create_server()
+    result = asyncio.run(server.call_tool(
+        "translate", {"term": "□P → □□P", "from_logic": "modal",
+                      "to_logic": "fol", "frame": "S4",
+                      "temporal_closure": True,
+                      "systems": {"epistemic": "S5"}}))
+    payload = getattr(result, "structured_content", None)
+    if payload is None:
+        payload = json.loads(result.content[0].text)
+    assert payload["guarantee"] == "faithful"
+    assert len(payload["axioms_unicode"]) == 2
+    assert payload["axioms"] and payload["unicode"]
+
+
 def test_verbalize_renders_english():
     """Hand-checked against fol.to_english's deterministic phrasing."""
     result = verbalize("∀x (P(x) → Q(x))")
@@ -696,7 +1141,8 @@ def test_list_translations_names_the_default_edges():
     names = {e["name"] for e in result["edges"]}
     assert {"concept_to_fol", "concept_to_modal", "standard_translation",
             "dependence_to_eso"} <= names
-    assert all(set(e) == {"name", "source", "target", "lossy", "note"}
+    assert all(set(e) == {"name", "source", "target", "lossy", "note",
+                          "guarantee", "options", "side_axioms"}
                for e in result["edges"])
 
 
@@ -913,6 +1359,65 @@ def test_dl_parse_manchester_axiom_and_role_axiom():
     assert trans == {"ok": True, "kind": "transitive", "role": "hasDescendant"}
 
 
+@pytest.mark.parametrize("text, expected", [
+    # The four role-to-role frames. Until 0.30.0 this branch of the tool ended
+    # in `_, role = axiom`, so EVERY shape other than ("subproperty", sub, sup)
+    # and a characteristic crashed it with `ValueError: too many values to
+    # unpack` -- an InverseOf, DisjointWith or EquivalentTo axiom the reader
+    # already read perfectly well.
+    ("partOf InverseOf hasPart",
+     {"ok": True, "kind": "inverse",
+      "sub_role": "partOf", "super_role": "hasPart"}),
+    ("hasSink DisjointWith hasSource",
+     {"ok": True, "kind": "disjoint",
+      "sub_role": "hasSink", "super_role": "hasSource"}),
+    ("hasSink EquivalentTo hasOutput",
+     {"ok": True, "kind": "equivalentproperty",
+      "sub_role": "hasSink", "super_role": "hasOutput"}),
+    # ... and the two whose right-hand side is a CLASS EXPRESSION, which get a
+    # `concept_unicode` rather than a second role.
+    ("Covers Domain: Study",
+     {"ok": True, "kind": "domain", "role": "Covers",
+      "concept_unicode": "Study"}),
+    ("HasUnit Range: Unit and Measurable",
+     {"ok": True, "kind": "range", "role": "HasUnit",
+      "concept_unicode": "Unit ⊓ Measurable"}),
+], ids=["inverse", "disjoint", "equivalent", "domain", "range"])
+def test_dl_parse_manchester_role_axiom_covers_every_reader_shape(text, expected):
+    assert dl_parse_manchester(text, kind="role_axiom") == expected
+
+
+def test_the_role_axiom_payload_tags_come_from_the_readers_own_tables():
+    """A shape the reader gains cannot be spelled differently by the tool: the
+    payload's tags are derived from dl.owl_manchester's own frame tables, so
+    this test is what notices a reader shape with no payload."""
+    from unicode_fol_kit.dl import owl_manchester as _manchester
+    from unicode_fol_kit.mcp.server import _role_axiom_payload
+
+    tags = ({tag for tag, _ in _manchester._BINARY_ROLE_FRAMES.values()}
+            | {tag for tag, _ in _manchester._FILLER_ROLE_FRAMES.values()}
+            | set(_manchester._CHARACTERISTIC_TAGS.values()))
+    assert len(tags) == 4 + 2 + 7
+    # an unknown shape is an ERROR naming itself, not a crash
+    payload = _role_axiom_payload(("bogus", "r", "s"))
+    assert payload["error"]["type"] == "ValueError"
+    assert "bogus" in payload["error"]["message"]
+
+
+def test_dl_abox_tools_accept_the_two_identity_assertion_lists():
+    """``same`` and ``negative_roles`` are the two optional row lists the MCP
+    description-logic tools gained with A8; without them the tools could
+    describe a strictly smaller class of knowledge bases than the Python API."""
+    # a = b together with a : C entails b : C
+    assert dl_instance_check("b", "C", [["a", "C"]], None, None, None, "alc",
+                             same=[["a", "b"]]) == {
+        "ok": True, "entailed": True, "individual": "b", "concept_unicode": "C"}
+    # ... and r(a, b) with the same edge forbidden has no model
+    assert dl_abox_consistent([], [["a", "b", "r"]], None, None, "alc",
+                              negative_roles=[["a", "b", "r"]]) == {
+        "ok": True, "consistent": False}
+
+
 def test_dl_parse_manchester_unknown_kind_is_structured_error():
     result = dl_parse_manchester("Person", kind="nope")
     assert result["error"]["type"] == "ValueError"
@@ -937,14 +1442,18 @@ def test_dl_tools_report_bad_concept_text_in_the_uniform_shape():
 
 
 def test_dl_parse_manchester_rejects_constructs_outside_alc():
-    """'value' restrictions are real Manchester syntax but outside ALCHQ —
-    dl.owl_manchester rejects them by NAME (see its own module docstring's
+    """A ``Self`` restriction is real Manchester syntax but outside ALCHQ —
+    dl.owl_manchester rejects it by NAME (see its own module docstring's
     'Rejected constructs'); the tool surfaces that as the uniform ok=False
-    shape, naming the construct in the message."""
-    result = dl_parse_manchester("hasChild value Doctor")
+    shape, naming the construct in the message.
+
+    (``hasChild value Doctor`` stood here until 0.30.0 and is now READ, as
+    dl.HasValue — see tests/test_dl_has_value.py. ``Self`` is the nearest
+    remaining sibling, so the refusal path itself stays covered.)"""
+    result = dl_parse_manchester("hasChild Self")
     assert result["ok"] is False
     assert result["argument"] == "text"
-    assert "value restrictions" in result["errors"][0]["message"]
+    assert "Self restrictions" in result["errors"][0]["message"]
     assert result["spec_topic"] == "description-logic"
 
 
@@ -1261,3 +1770,388 @@ def test_call_tool_dl_subsumes_over_the_wire_path():
         payload = json.loads(result.content[0].text)
     assert payload["ok"] is True
     assert payload["subsumes"] is True
+
+
+# ---------------------------------------------------------------------------
+# The data layer through the description-logic tools (A7)
+# ---------------------------------------------------------------------------
+
+_DATA_TBOX_ROWS = [
+    {"subdata": "HasYear", "supdata": "HasNumber"},
+    {"equivdata": ["HasA", "HasB"]},
+    {"disjointdata": ["HasNumber", "HasName"]},
+    {"functionaldata": "HasNumber"},
+    {"domaindata": "HasNumber", "domain": "Factsheet"},
+    {"rangedata": "HasNumber", "range": "xsd:integer[>= 0, <= 150]"},
+    {"datatype": "Digit", "definition": "xsd:integer[>= 0, <= 9]"},
+]
+
+
+def test_dl_tbox_data_row_shapes_build_the_data_box():
+    from unicode_fol_kit.mcp.server import _build_dl_tbox
+    import unicode_fol_kit.dl as dl
+
+    tbox, err = _build_dl_tbox(_DATA_TBOX_ROWS, "alc")
+    assert err is None
+    assert tbox.data_property_inclusions == [
+        ("HasYear", "HasNumber"), ("HasA", "HasB"), ("HasB", "HasA")]
+    assert tbox.disjoint_data_property_pairs == [("HasName", "HasNumber")]
+    assert tbox.functional_data_properties == {"HasNumber"}
+    assert tbox.data_property_domains == [("HasNumber", dl.Atomic("Factsheet"))]
+    assert tbox.data_property_ranges == [("HasNumber", dl.parse_manchester_data_range(
+        "xsd:integer[>= 0, <= 150]"))]
+    assert tbox.datatype_definitions == [("Digit", dl.parse_manchester_data_range(
+        "xsd:integer[>= 0, <= 9]"))]
+
+
+def test_dl_data_rows_are_checked_before_the_role_rows_that_share_a_key():
+    # {"domaindata": p, "domain": text} carries the key "domain", which the
+    # role-domain row claims too ({"domainrole": r, "domain": text}). The data
+    # row must win, and a role row must still be a role row.
+    from unicode_fol_kit.mcp.server import _build_dl_tbox
+    import unicode_fol_kit.dl as dl
+
+    tbox, err = _build_dl_tbox([{"domaindata": "D", "domain": "A"},
+                                {"domainrole": "r", "domain": "B"}], "alc")
+    assert err is None
+    assert tbox.data_property_domains == [("D", dl.Atomic("A"))]
+    assert tbox.role_domains == [("r", dl.Atomic("B"))]
+
+
+@pytest.mark.parametrize("row, needle", [
+    ({"subdata": "d"}, "supdata"),
+    ({"domaindata": "d"}, "'domain'"),
+    ({"rangedata": "d"}, "'range'"),
+    ({"datatype": "T"}, "'definition'"),
+    ({"equivdata": ["d"]}, "at least 2"),
+    ({"disjointdata": "d"}, "at least 2"),
+    ({"functionaldata": ["d"]}, "data property name"),
+    ({"datatype": 3, "definition": "xsd:integer"}, "datatype name"),
+    ({"subdata": "d", "supdata": "e", "functionaldata": "f"}, "exactly one"),
+])
+def test_dl_a_malformed_data_row_is_a_structured_error(row, needle):
+    result = dl_concept_satisfiable("A", tbox=[row])
+    assert result["error"]["type"] == "ValueError"
+    assert needle in result["error"]["message"]
+
+
+def test_dl_a_bad_data_range_or_literal_is_the_uniform_parse_failure():
+    bad_range = dl_concept_satisfiable("A", tbox=[{"rangedata": "d", "range": "xsd:pattern["}])
+    assert bad_range["ok"] is False
+    assert bad_range["argument"] == "tbox[0].range"
+    assert bad_range["errors"][0]["dialect"] == "manchester"
+    out_of_scope = dl_concept_satisfiable(
+        "A", tbox=[{"rangedata": "d", "range": "xsd:string[length 3]"}])
+    assert out_of_scope["ok"] is False and "xsd:length" in out_of_scope["errors"][0]["message"]
+    bad_literal = dl_abox_consistent([], data=[["a", "d", "nope"]])
+    assert bad_literal["ok"] is False
+    assert bad_literal["argument"] == "data[0][2]"
+    ill_typed = dl_abox_consistent([], data=[["a", "d", '"abc"^^xsd:integer']])
+    assert ill_typed["ok"] is False and "well-typed" in ill_typed["errors"][0]["message"]
+    # a redefinition of a built-in is a caller mistake, structured
+    redefined = dl_concept_satisfiable(
+        "A", tbox=[{"datatype": "xsd:integer", "definition": "xsd:string"}])
+    assert redefined["error"]["type"] == "UnsupportedDatatypeError"
+
+
+@pytest.mark.parametrize("bad", [
+    ["a", "d"], ["a", "d", "1", "extra"], [1, "d", "1"], ["a", 2, "1"], "a d 1",
+])
+def test_dl_a_malformed_data_assertion_row_is_a_structured_error(bad):
+    for argument in ("data", "negative_data"):
+        result = dl_abox_consistent([], **{argument: [bad]})
+        assert result["error"]["type"] == "ValueError"
+        assert argument in result["error"]["message"]
+
+
+def test_dl_the_three_abox_tools_accept_the_data_assertion_lists():
+    """``data`` and ``negative_data`` are the two optional row lists the data
+    layer added to the ABox tools. The in-house tableau REFUSES a data assertion
+    by name -- so each tool reports the refusal as a structured error rather than
+    answer for a knowledge base missing half its axioms."""
+    calls = {
+        "dl_abox_consistent": lambda **kw: dl_abox_consistent([["a", "A"]], **kw),
+        "dl_instance_check": lambda **kw: dl_instance_check("a", "A", [["a", "A"]], **kw),
+        "dl_instance_retrieval": lambda **kw: dl_instance_retrieval("A", [["a", "A"]], **kw),
+    }
+    for name, call in calls.items():
+        for argument, kind in (("data", "DataPropertyAssertion"),
+                               ("negative_data", "NegativeDataPropertyAssertion")):
+            result = call(**{argument: [["a", "HasNumber", '"1"^^xsd:integer']]})
+            assert result["error"]["type"] == "UnsupportedAxiomError", (name, argument)
+            assert kind in result["error"]["message"], (name, argument)
+            assert "api.prove" in result["error"]["message"]
+
+
+def test_dl_the_tools_report_a_refused_data_kind_by_name_not_as_an_exception():
+    # Before the data layer an UnsupportedAxiomError / UnsupportedConceptError
+    # escaped these tools as a bare exception; now every tool reports it in the
+    # same {"error": ...} shape the decidability refusal always used.
+    refused = dl_concept_satisfiable("A", tbox=[{"functionaldata": "d"}])
+    assert refused["error"]["type"] == "UnsupportedAxiomError"
+    assert "FunctionalDataProperty" in refused["error"]["message"]
+    assert dl_subsumes("A", "B", tbox=[{"subdata": "d", "supdata": "e"}])["error"][
+        "type"] == "UnsupportedAxiomError"
+    assert dl_classify(tbox=[{"functionaldata": "d"}])["error"]["type"] == "UnsupportedAxiomError"
+    assert dl_equivalent("A", "B", tbox=[{"functionaldata": "d"}])["error"][
+        "type"] == "UnsupportedAxiomError"
+    # a role-box kind the tableau refuses is reported the same way
+    symmetric = dl_concept_satisfiable("A", tbox=[{"symmetric": "r"}])
+    assert symmetric["error"]["type"] == "UnsupportedAxiomError"
+    assert "SymmetricObjectProperty" in symmetric["error"]["message"]
+
+
+def test_dl_data_concepts_are_expressible_in_manchester_text_and_refused_by_the_tableau():
+    # `d some xsd:integer` reads as a DATA restriction (the A7-11 fix), so the
+    # tool reports the tableau's concept-level refusal by name instead of
+    # silently answering about an object restriction over a class "xsd:integer".
+    result = dl_concept_satisfiable("d some xsd:integer", syntax="manchester")
+    assert result["error"]["type"] == "UnsupportedConceptError"
+    assert "DataExists" in result["error"]["message"]
+    # an object restriction is untouched
+    assert dl_concept_satisfiable("hasPet some Dog", syntax="manchester") == {
+        "ok": True, "satisfiable": True, "concept_unicode": "∃hasPet.Dog"}
+    # a user-defined datatype is a datatype once a tbox row defines it
+    tbox = [{"datatype": "Digit", "definition": "{1, 2}"}]
+    defined = dl_concept_satisfiable("d some Digit", tbox=tbox, syntax="manchester")
+    assert defined["error"]["type"] == "UnsupportedAxiomError"     # the definition row refuses first
+    # (and without a defining row, `Digit` is just a class name: the documented
+    # limit of a context-free reader, the reason `datatypes=` exists)
+    assert dl_parse_manchester("d some Digit")["concept_unicode"] == "∃d.Digit"
+    # in the glyph syntax the data restriction cannot be said at all, and the
+    # parser says so by name instead of reading it as an object restriction
+    glyph = dl_concept_satisfiable("∃d.xsd:integer")
+    assert glyph["ok"] is False
+    assert "DATATYPE, not a class" in glyph["errors"][0]["message"]
+
+
+def test_dl_value_restrictions_are_read_in_manchester_text_and_refused_by_the_tableau():
+    """``hasChild value Doctor`` is READ (``ObjectHasValue``, since 0.30.0), so a
+    text tool never answers a syntax error for it — and the in-house tableau does
+    not decide a value restriction (a nominal in disguise: see "Value
+    restrictions (ObjectHasValue)" in dl.tableau), so EVERY reasoning tool
+    reports the tableau's concept-level refusal, by name, instead of a verdict.
+
+    A verdict would have been a claim about a construct the tableau cannot see
+    edges for: the FOL image decides ``∃hasChild.{Doctor}`` (satisfiable: a
+    domain {d, e} with Doctor = e and hasChild = {(d, e)}), and the refusal says
+    where to ask.
+    """
+    text = "hasChild value Doctor"
+    read = dl_parse_manchester(text)
+    assert read == {"ok": True, "concept_unicode": "∃hasChild.{Doctor}",
+                    "manchester": text}
+    results = [
+        dl_concept_satisfiable(text, syntax="manchester"),
+        dl_subsumes(text, "Person", syntax="manchester"),
+        dl_subsumes("Person", text, syntax="manchester"),
+        dl_equivalent(text, "Person", syntax="manchester"),
+        dl_abox_consistent([["alice", text]], syntax="manchester"),
+        dl_instance_check("alice", text, [["alice", "Person"]], syntax="manchester"),
+        dl_instance_retrieval(text, [["alice", "Person"]], syntax="manchester"),
+        dl_classify(tbox=[{"sub": text, "sup": "Person"}], syntax="manchester"),
+        dl_concept_satisfiable("Person", tbox=[{"domainrole": "p", "domain": text}],
+                               syntax="manchester"),
+    ]
+    for result in results:
+        assert result["error"]["type"] == "UnsupportedConceptError", result
+        message = result["error"]["message"]
+        assert "ObjectHasValue" in message
+        for pointer in ("dl.kb_to_fol", "api.prove", "dl.external_"):
+            assert pointer in message
+
+
+def test_dl_parse_manchester_reads_a_data_restriction():
+    result = dl_parse_manchester("d some xsd:integer[>= 18]")
+    assert result["ok"] is True
+    assert result["concept_unicode"] == "∃d.xsd:integer[≥ 18]"
+    assert result["manchester"] == "d some xsd:integer[>= 18]"
+    axiom = dl_parse_manchester("Adult SubClassOf age some xsd:integer[>= 18]", kind="axiom")
+    assert axiom == {"ok": True, "kind": "subclass", "sub_unicode": "Adult",
+                     "sup_unicode": "∃age.xsd:integer[≥ 18]"}
+
+
+# =============================================================================
+# Every refusal the dl package raises on purpose is REPORTED by every dl_* tool,
+# through ONE tuple (server._dl_errors), never raised at the caller.
+# =============================================================================
+
+#: ``(tool, the dl entry point it calls, a call that needs no particular KB)``.
+_DL_REASONING_TOOLS = [
+    ("dl_concept_satisfiable", "concept_satisfiable",
+     lambda tbox: dl_concept_satisfiable("A", tbox=tbox)),
+    ("dl_subsumes", "subsumes",
+     lambda tbox: dl_subsumes("A", "B", tbox=tbox)),
+    ("dl_equivalent", "equivalent",
+     lambda tbox: dl_equivalent("A", "B", tbox=tbox)),
+    ("dl_abox_consistent", "abox_consistent",
+     lambda tbox: dl_abox_consistent([["a", "A"]], tbox=tbox)),
+    ("dl_instance_check", "instance_check",
+     lambda tbox: dl_instance_check("a", "A", [["a", "A"]], tbox=tbox)),
+    ("dl_instance_retrieval", "instance_retrieval",
+     lambda tbox: dl_instance_retrieval("A", [["a", "A"]], tbox=tbox)),
+    ("dl_classify", "classify",
+     lambda tbox: dl_classify(tbox=tbox)),
+]
+
+
+def test_the_table_of_reasoning_tools_is_every_dl_tool_that_reasons():
+    """So a ``dl_*`` tool added later cannot dodge the checks below: every
+    public ``dl_*`` function of the server is either here or the one reader."""
+    from unicode_fol_kit.mcp import server
+
+    public = {name for name in dir(server) if name.startswith("dl_")}
+    assert public == {tool for tool, _entry, _call in _DL_REASONING_TOOLS} | {
+        "dl_parse_manchester"}
+
+
+@pytest.mark.parametrize("tool, entry, call", _DL_REASONING_TOOLS,
+                         ids=[row[0] for row in _DL_REASONING_TOOLS])
+def test_every_dl_tool_reports_a_refused_role_box_kind_by_name(tool, entry, call):
+    """``{"symmetric": "r"}`` is an axiom KIND no in-house rule decides. Each of
+    the seven tools answers with the structured error NAMING the construct —
+    the tool contract the data layer's builder introduced; this is the
+    per-tool pin the review of 0.30.0 asked for (already green on the build it
+    reviewed: the bare exception had been fixed there)."""
+    result = call([{"symmetric": "r"}])
+    assert result["error"]["type"] == "UnsupportedAxiomError", tool
+    assert "SymmetricObjectProperty" in result["error"]["message"], tool
+
+
+def _dl_exception_classes():
+    """Every exception class DEFINED in the dl package (any submodule), by name:
+    the scan, not a list, so a class added tomorrow is seen tomorrow."""
+    import importlib
+    import inspect
+    import pkgutil
+
+    import unicode_fol_kit.dl as dl
+
+    found = {}
+    for info in pkgutil.walk_packages(dl.__path__, dl.__name__ + "."):
+        module = importlib.import_module(info.name)
+        for obj in vars(module).values():
+            if (inspect.isclass(obj) and issubclass(obj, BaseException)
+                    and obj.__module__ == module.__name__):
+                found[obj.__name__] = obj
+    return found
+
+
+#: Exception classes the readers raise for a TEXT mistake: ``_parse_dl`` reports
+#: them in the uniform ``ok=False`` shape, so they are not tool-level errors.
+_DL_TEXT_ERRORS = {"ConceptSyntaxError", "ManchesterSyntaxError"}
+
+#: Exception classes no ``dl_*`` tool can reach, each with the reason. A class
+#: that is in none of the three groups (refusal / text error / this one) fails
+#: the classification test below, so adding one forces the decision.
+_DL_OFF_THE_TOOL_PATH = {
+    "OwlFunctionalSyntaxError": "the OWL Functional-Style reader; no tool reads it",
+    "OwlFunctionalUnsupportedError": "the OWL Functional-Style reader; no tool reads it",
+    "OwlReasonerError": "the external HermiT route; no dl_* tool calls it",
+    "RoleBoxOmittedError": "raised by dl.kb_to_fol; no dl_* tool renders FOL",
+}
+
+
+def _dl_refusal_classes():
+    found = _dl_exception_classes()
+    return {name: cls for name, cls in found.items()
+            if name not in _DL_TEXT_ERRORS and name not in _DL_OFF_THE_TOOL_PATH}
+
+
+def test_every_exception_class_of_the_dl_package_is_classified():
+    """Every class the package defines is a text error, off the tool path, or a
+    REFUSAL — and every refusal is in the one shared tuple the tools catch."""
+    from unicode_fol_kit.mcp.server import _dl_errors
+
+    found = _dl_exception_classes()
+    # the scan sees the classes it must (it is not vacuous) ...
+    assert {"NonSimpleRoleError", "UnsupportedAxiomError", "UnsupportedConceptError",
+            "UnsupportedDatatypeError", "RoleExpressionError"} <= set(found)
+    # ... the two groups name only classes that exist ...
+    assert _DL_TEXT_ERRORS | set(_DL_OFF_THE_TOOL_PATH) <= set(found)
+    # ... and every other class is a refusal the tools must catch
+    uncaught = {name for name, cls in _dl_refusal_classes().items()
+                if not issubclass(cls, _dl_errors())}
+    assert not uncaught, (
+        f"dl defines {sorted(uncaught)}: add each to server._dl_errors() (a "
+        "refusal the tools report), or classify it in _DL_TEXT_ERRORS / "
+        "_DL_OFF_THE_TOOL_PATH with the reason it cannot reach a tool")
+
+
+@pytest.mark.parametrize("tool, entry, call", _DL_REASONING_TOOLS,
+                         ids=[row[0] for row in _DL_REASONING_TOOLS])
+def test_every_dl_tool_reports_every_refusal_class_the_package_raises(
+        monkeypatch, tool, entry, call):
+    """The whole matrix: the dl entry point the tool calls raises each refusal
+    class in turn (and the tableau's step-budget ``RuntimeError``), and the tool
+    answers ``{"error": {"type": <class>, "message": <the message>}}`` —
+    never an exception. Red before for ``RoleExpressionError``, which was not
+    in the tuple."""
+    import unicode_fol_kit.dl as dl
+
+    classes = dict(_dl_refusal_classes())
+    classes["RuntimeError"] = RuntimeError
+    for name, cls in classes.items():
+        message = f"{tool}: refused construct <{name}>"
+
+        def refuse(*args, _cls=cls, _message=message, **kwargs):
+            raise _cls(_message)
+
+        monkeypatch.setattr(dl, entry, refuse)
+        assert call(None) == {"error": {"type": name, "message": message}}, (tool, name)
+
+
+@pytest.mark.parametrize("method", ["assert_concept", "assert_role", "assert_distinct",
+                                    "assert_same", "assert_negative_role",
+                                    "assert_data", "assert_negative_data"])
+@pytest.mark.parametrize("refusal", ["RoleExpressionError", "UnsupportedDatatypeError"])
+def test_a_refusal_raised_by_an_abox_builder_is_a_structured_error(
+        monkeypatch, method, refusal):
+    """The ABox row builders call ``dl.ABox.assert_*``; a refusal one of them
+    raises (a malformed or built-in role name, an ill-typed literal) must come
+    back as ``{"error": ...}`` from every tool that builds an ABox, not escape
+    from the row loop."""
+    import unicode_fol_kit.dl as dl
+
+    # the seven builders ARE the ABox's assertion methods, no more and no fewer
+    assert {"assert_concept", "assert_role", "assert_distinct", "assert_same",
+            "assert_negative_role", "assert_data", "assert_negative_data"} == {
+        name for name in dir(dl.ABox) if name.startswith("assert_")}
+
+    def refuse(self, *args, **kwargs):
+        raise getattr(dl, refusal)(f"builder {method} refuses")
+
+    monkeypatch.setattr(dl.ABox, method, refuse)
+    rows = dict(concepts=[["a", "A"]], roles=[["a", "b", "r"]], distinct=[["a", "b"]],
+                same=[["a", "b"]], negative_roles=[["a", "b", "r"]],
+                data=[["a", "d", '"1"^^xsd:integer']],
+                negative_data=[["a", "d", '"1"^^xsd:integer']])
+    for result in (
+            dl_abox_consistent(**rows),
+            dl_instance_check("a", "A", **rows),
+            dl_instance_retrieval("A", **rows)):
+        assert result == {"error": {"type": refusal,
+                                    "message": f"builder {method} refuses"}}
+
+
+@pytest.mark.parametrize("call, argument", [
+    (lambda: dl_abox_consistent([], roles=[[1, 2, "r"]]), "roles[0]"),
+    (lambda: dl_abox_consistent([], roles=[["a", "b", ["r"]]]), "roles[0]"),
+    (lambda: dl_abox_consistent([], distinct=[["a", 1]]), "distinct[0]"),
+    (lambda: dl_abox_consistent([], distinct=[[1, 2]]), "distinct[0]"),
+    (lambda: dl_abox_consistent([], same=[["a", 1]]), "same[0]"),
+    (lambda: dl_abox_consistent([], negative_roles=[["a", "b", None]]), "negative_roles[0]"),
+    (lambda: dl_abox_consistent([["a", 1]]), "concepts[0][1]"),
+    (lambda: dl_instance_check("a", "A", [[1, "A"]]), "concepts[0][0]"),
+    (lambda: dl_instance_retrieval("A", [], roles=[["a", "b", 3]]), "roles[0]"),
+    (lambda: dl_concept_satisfiable("A", tbox=[{"sub": 1, "sup": "A"}]), "tbox[0].sub"),
+    (lambda: dl_concept_satisfiable(5), "concept"),
+])
+def test_a_non_string_name_or_text_in_a_row_is_a_structured_error(call, argument):
+    """The tool contract is a structured error for a malformed row. A JSON
+    number or list where a name or a text belongs used to ESCAPE as a bare
+    ``TypeError`` / ``AttributeError`` from deep inside the reader or the
+    tableau (red before)."""
+    result = call()
+    assert result["error"]["type"] == "ValueError"
+    assert argument in result["error"]["message"]

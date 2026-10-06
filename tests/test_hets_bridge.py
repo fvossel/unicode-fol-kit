@@ -8,11 +8,16 @@ real container and replays the translation whose output syntax was verified
 by hand during the wire-protocol probing (``CASL2SoftFOL`` renders SoftFOL/
 DFG text with ``list_of_symbols``/``formula(...)`` items).
 
-Registry hygiene: offline tests register only clearly-fake edge names
-(``hets:TestOnly…``) whose source label ``"casl"`` no native edge shares, so
-the deliberately-global DEFAULT_REGISTRY keeps working for every other test
-in the process; the live test registers the server's real edges, which is
-exactly what a user would do.
+Registry hygiene: these tests register into DEFAULT_REGISTRY, which is
+process-global on purpose, so every test here runs inside the ``clean_registry``
+fixture below and the registry is restored afterwards — edge for edge. Picking
+clearly-fake names (``hets:TestOnly…``) under a source label no native edge
+shares is not enough on its own: a test elsewhere that asks a question ABOUT THE
+REGISTRY rather than about a path through it sees the leftovers, and one did —
+``tests/test_logic_graph.py``'s guarantee check went red in a full ``-n 8`` run
+and green on its own, because these edges declare no guarantee (deliberately:
+see ``hets.bridge._make_edge``). The live test registers the server's real edges,
+which is exactly what a user would do, and is restored the same way.
 """
 
 import pytest
@@ -25,6 +30,47 @@ from unicode_fol_kit.hets.bridge import (
     register_hets_comorphisms,
 )
 from unicode_fol_kit.hets.docker import hets_available
+
+
+@pytest.fixture(autouse=True)
+def clean_registry():
+    """Restore DEFAULT_REGISTRY after every test in this file.
+
+    Registration here is a side effect on a process-global object, so without
+    this the edges outlive the test and the rest of the suite runs against a
+    registry that depends on file order. Snapshot the edges, let the test do what
+    it likes, then put back exactly what was there — including re-registering an
+    edge a test unregistered, and dropping one it added.
+    """
+    before = {e.name: e for e in DEFAULT_REGISTRY.edges()}
+    try:
+        yield
+    finally:
+        after = {e.name: e for e in DEFAULT_REGISTRY.edges()}
+        for name in after:
+            if name not in before:
+                DEFAULT_REGISTRY.unregister(name)
+        for name, edge in before.items():
+            if name not in after or after[name] is not edge:
+                DEFAULT_REGISTRY.register(edge, replace=True)
+        bridge._CURRENTLY_REGISTERED = set()
+
+
+def test_the_registry_is_left_as_it_was_found():
+    """The fixture itself, checked once rather than trusted.
+
+    Registering inside a test and asserting here that the edge is gone would only
+    test pytest's ordering. Instead: register, then assert in the SAME test that
+    the edge is there, and let this file's final state be checked by the
+    cross-file run — what this test pins is that the fixture restores a registry
+    that a test has BOTH added to and unregistered from.
+    """
+    native = {e.name for e in DEFAULT_REGISTRY.edges()}
+    assert "standard_translation" in native       # a kit edge, before
+    DEFAULT_REGISTRY.unregister("standard_translation")
+    assert "standard_translation" not in {e.name for e in DEFAULT_REGISTRY.edges()}
+    # the fixture puts it back; the next test in this file would fail loudly
+    # otherwise, and so would most of the suite
 
 
 class _FakeClient:

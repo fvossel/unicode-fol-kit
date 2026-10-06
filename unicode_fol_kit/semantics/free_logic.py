@@ -43,6 +43,25 @@ LNH-canonical rather than exhaustive — the same symmetry-breaking pass
 :mod:`~unicode_fol_kit.semantics.modelfinder` applies (roadmap C23); see
 ``_search``'s docstring.
 
+**Numerals.** A numeral is a constant identified by its VALUE (``Number(1) == Number(1.0)``:
+one constant, named ``'1'`` in ``FreeModel.constants``), so it may fail to denote like any
+constant, and nothing else is known about it: ``P(1) ⊢ P(1.0)`` is valid and ``⊢ 1 ≠ 2`` is
+not. ``+ - * /`` are partial function symbols and ``< > ≤ ≥`` ordinary predicates. A
+numeral and a constant spelled like its value (``Number(1)`` next to ``Constant('1')``) would
+share one entry of ``constants``, so the pair is refused by name.
+
+**A free variable is a parameter.** The search routes read a free variable as ONE unknown
+EXISTING object, the same in every formula handed to a call (the assignment-wise consequence
+relation: a variable ranges over the inner domain, as a bound one does). It is replaced, in all
+the formulas of the call together, by a constant of its own name
+(:func:`~unicode_fol_kit.fol._free_parameters.parameterize`) and the model must satisfy
+``E!`` of that constant, so a model whose ``existing`` domain is empty is no model of a
+problem that has a free variable, and the constant is reported in ``FreeModel.constants`` under
+the variable's name. No formula is closed universally, and a conclusion is never negated
+before its variables are replaced: ``P(x) ⊢ P(x)`` and ``P(x) ⊢ ∃y P(y)`` are valid,
+``P(x) ⊢ P(alpha)`` is not. A free variable spelled like a constant of the problem is refused
+(``NotImplementedError``): ``FreeModel.constants`` holds one entry per name.
+
 Public API: :class:`FreeModel`, :data:`NONDENOTING`, :data:`SUPERVALUATION_MAX_GAPS`,
 :func:`free_satisfies`, :func:`free_holds`, :func:`free_find_model`,
 :func:`free_countermodel`, :func:`free_is_valid`, :func:`free_entails`.
@@ -56,7 +75,11 @@ from ..fol.nodes import (
     Node, Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
     Variable, Constant, Number, Function,
 )
+from ..fol._fol_nodes import numeral_key
+from ..fol._truth_constants import truth_value as _truth_value
+from ..fol._free_parameters import parameterize
 from .modelfinder import _lnh_choices
+from .tarski import _refuse_numeral_constant_pair
 
 # Sentinel returned by term evaluation when a term has no referent.
 NONDENOTING = object()
@@ -92,7 +115,8 @@ def _term_value(term: Node, model: FreeModel, assignment: Mapping[str, Any]):
     if isinstance(term, Constant):
         return model.constants.get(term.name, NONDENOTING)
     if isinstance(term, Number):
-        return model.constants.get(str(term.value), NONDENOTING)
+        # a numeral is the constant of its VALUE (1 and 1.0 are one), absent = non-denoting
+        return model.constants.get(numeral_key(term.value), NONDENOTING)
     if isinstance(term, Function):
         args = tuple(_term_value(a, model, assignment) for a in term.args)
         if any(v is NONDENOTING for v in args):
@@ -113,38 +137,55 @@ def free_satisfies(formula: Node, model: FreeModel,
     docstring). Under ``"supervaluation"`` this delegates to :func:`_supervaluate`,
     a bounded search over every classical completion of the formula's gap atoms
     (capped at :data:`SUPERVALUATION_MAX_GAPS` distinct gaps).
+
+    A numeral is a constant identified by its VALUE (``1`` and ``1.0`` are one, looked up
+    under ``'1'`` in ``model.constants``, and non-denoting when absent there).
+
+    Raises:
+        NotImplementedError: ``formula`` holds a :class:`Number` and a constant spelled like
+            its value (``Number(1)`` next to ``Constant('1')``): ``model.constants`` has ONE
+            entry ``'1'`` for both, so the kit refuses to merge a numeral with the constant
+            of the same spelling.
     """
     if assignment is None:
         assignment = {}
     if policy not in ("negative", "positive", "supervaluation"):
         raise ValueError(
             f"free_satisfies: unknown policy {policy!r} (negative / positive / supervaluation).")
+    _refuse_numeral_constant_pair([formula], "semantics.free_logic")
+    return _satisfies(formula, model, assignment, policy)
+
+
+def _satisfies(formula: Node, model: FreeModel, assignment: Mapping[str, Any],
+               policy: str) -> bool:
+    """:func:`free_satisfies` without the checks of the formula as a whole, which the
+    entry made: every recursive step and the model search land here."""
     if policy == "supervaluation":
         return _supervaluate(formula, model, assignment)
 
     if isinstance(formula, Atom):
         return _atom(formula, model, assignment, policy)
     if isinstance(formula, Not):
-        return not free_satisfies(formula.formula, model, assignment, policy)
+        return not _satisfies(formula.formula, model, assignment, policy)
     if isinstance(formula, And):
-        return (free_satisfies(formula.left, model, assignment, policy)
-                and free_satisfies(formula.right, model, assignment, policy))
+        return (_satisfies(formula.left, model, assignment, policy)
+                and _satisfies(formula.right, model, assignment, policy))
     if isinstance(formula, Or):
-        return (free_satisfies(formula.left, model, assignment, policy)
-                or free_satisfies(formula.right, model, assignment, policy))
+        return (_satisfies(formula.left, model, assignment, policy)
+                or _satisfies(formula.right, model, assignment, policy))
     if isinstance(formula, Xor):
-        return (free_satisfies(formula.left, model, assignment, policy)
-                != free_satisfies(formula.right, model, assignment, policy))
+        return (_satisfies(formula.left, model, assignment, policy)
+                != _satisfies(formula.right, model, assignment, policy))
     if isinstance(formula, Implies):
-        return ((not free_satisfies(formula.left, model, assignment, policy))
-                or free_satisfies(formula.right, model, assignment, policy))
+        return ((not _satisfies(formula.left, model, assignment, policy))
+                or _satisfies(formula.right, model, assignment, policy))
     if isinstance(formula, Iff):
-        return (free_satisfies(formula.left, model, assignment, policy)
-                == free_satisfies(formula.right, model, assignment, policy))
+        return (_satisfies(formula.left, model, assignment, policy)
+                == _satisfies(formula.right, model, assignment, policy))
     if isinstance(formula, Quantifier):
         var = formula.variable.name
         results = (
-            free_satisfies(formula.formula, model, {**assignment, var: d}, policy)
+            _satisfies(formula.formula, model, {**assignment, var: d}, policy)
             for d in model.existing
         )
         if formula.type in _FORALL:
@@ -157,6 +198,9 @@ def free_satisfies(formula: Node, model: FreeModel,
 
 def _atom(atom: Atom, model: FreeModel, assignment: Mapping[str, Any], policy: str) -> bool:
     """Truth value of an atom, applying the non-denoting policy."""
+    constant = _truth_value(atom)
+    if constant is not None:
+        return constant         # `$true` / `$false` have no term, so nothing can fail to denote
     values = tuple(_term_value(a, model, assignment) for a in atom.args)
     nondenoting = any(v is NONDENOTING for v in values)
 
@@ -216,14 +260,16 @@ def _term_repr(term: Node, assignment: Mapping[str, Any]) -> Tuple[Any, ...]:
     if isinstance(term, Constant):
         return ("const", term.name)
     if isinstance(term, Number):
-        return ("num", str(term.value))
+        return ("num", numeral_key(term.value))
     if isinstance(term, Function):
         return ("fn", term.name, tuple(_term_repr(a, assignment) for a in term.args))
     raise TypeError(f"free_logic: not a term: {type(term).__name__}")
 
 
 def _is_gap_candidate(atom: Atom) -> bool:
-    """Whether ``atom`` is ever subject to precisification (identity/E! never are)."""
+    """Whether ``atom`` is ever subject to precisification (identity/E!/$true/$false never are)."""
+    if _truth_value(atom) is not None:
+        return False
     if atom.predicate == _EXISTS_PRED and len(atom.args) == 1:
         return False
     if atom.predicate in ("=", "≠"):
@@ -387,9 +433,10 @@ def _universal_closure(node: Node) -> Node:
     """Wrap ``node`` in ∀ for each free variable (deterministic order).
 
     ∀ ranges over ``existing`` under free-logic semantics (see the module
-    docstring), so a free variable in a formula handed to the search functions is
-    read as ranging over whatever ``existing`` domain a candidate model has — the
-    free-logic-flavoured analogue of modelfinder's classical ∀-closure.
+    docstring), so the closure of ONE sentence says it holds under every assignment of
+    its free variables to existing objects. It is a tool for a single sentence that is
+    evaluated, never the reading of a problem: the search routes read a free variable as
+    a parameter shared by every formula of the call (:func:`_with_parameters`).
     """
     result = node
     for name in sorted(_free_var_names(node), reverse=True):
@@ -414,13 +461,13 @@ def _signature(node: Node) -> Tuple[set, set, set]:
         if isinstance(n, Constant):
             constants.add(n.name)
         elif isinstance(n, Number):
-            constants.add(str(n.value))
+            constants.add(numeral_key(n.value))
         elif isinstance(n, Function):
             functions.add((n.name, len(n.args)))
             for a in n.args:
                 scan(a)
         elif isinstance(n, Atom):
-            if n.predicate not in ("=", "≠", _EXISTS_PRED):
+            if n.predicate not in ("=", "≠", _EXISTS_PRED) and _truth_value(n) is None:
                 predicates.add((n.predicate, len(n.args)))
             for a in n.args:
                 scan(a)
@@ -649,14 +696,30 @@ def _canonical_candidate_models(domain, const_names, func_sig, pred_sig, domain_
                                     functions=functions, predicates=predicates)
 
 
+def _with_parameters(formulas: Sequence[Node]) -> Tuple[List[Node], List[Node]]:
+    """Read every free variable of ``formulas`` as a PARAMETER: ``(formulas, guards)``.
+
+    The variable is replaced, in all the formulas together, by a constant of its own name
+    (:func:`~unicode_fol_kit.fol._free_parameters.parameterize`). A variable of free logic
+    ranges over the EXISTING objects, so each parameter comes with the guard ``E!(c)``
+    that a model has to satisfy too: ``c`` denotes and is in ``existing``. A model with
+    no existing object therefore satisfies no problem that has a free variable.
+
+    Raises:
+        NotImplementedError: a free variable has the spelling of a constant of ``formulas``.
+    """
+    closed, parameters = parameterize(list(formulas), after_variables=True)
+    return closed, [Atom(_EXISTS_PRED, (constant,)) for constant in parameters.values()]
+
+
 def _search(formulas: Sequence[Node], max_size: int, policy: str, domain_split: str,
            max_candidates: int, symmetry_breaking: bool = True) -> Optional[FreeModel]:
     """Return the first FreeModel making every one of ``formulas`` true, or None.
 
-    Each formula is closed with :func:`_universal_closure` independently (mirrors
-    modelfinder.find_model), the signature (constants/functions/predicates) is
-    collected from the closed formulas jointly, and every domain size ``1..max_size``
-    is tried in turn.
+    ``formulas`` must not have a free variable: the callers read each one as a parameter
+    first (:func:`_with_parameters`), before any formula is negated. The signature
+    (constants/functions/predicates) is collected from the formulas jointly, and every
+    domain size ``1..max_size`` is tried in turn.
 
     ``symmetry_breaking`` (default True, roadmap C23) enumerates constants with
     :func:`_canonical_candidate_models` (LNH — see its docstring) instead of the
@@ -687,7 +750,8 @@ def _search(formulas: Sequence[Node], max_size: int, policy: str, domain_split: 
         raise ValueError(
             f"free_logic model search: unknown policy {policy!r} "
             "(negative / positive / supervaluation).")
-    closed = [_universal_closure(f) for f in formulas]
+    closed = list(formulas)
+    _refuse_numeral_constant_pair(closed, "semantics.free_logic")
 
     constants: set = set()
     functions: set = set()
@@ -721,14 +785,14 @@ def _search(formulas: Sequence[Node], max_size: int, policy: str, domain_split: 
             tried_any_size = True
             for model in _canonical_candidate_models(domain, const_names, func_sig,
                                                       pred_sig, domain_split):
-                if all(free_satisfies(f, model, {}, policy) for f in closed):
+                if all(_satisfies(f, model, {}, policy) for f in closed):
                     return model
             continue
         if _candidate_count(len(const_names), functions, predicates, k, domain_split) > max_candidates:
             continue
         tried_any_size = True
         for model in _candidate_models(domain, const_names, func_sig, pred_sig, domain_split):
-            if all(free_satisfies(f, model, {}, policy) for f in closed):
+            if all(_satisfies(f, model, {}, policy) for f in closed):
                 return model
     if not tried_any_size:
         raise ValueError(
@@ -753,7 +817,9 @@ def free_find_model(formula: Node, max_size: int = 3, *, policy: str = "negative
     ``existing == outer``), every partial constant/function assignment (a symbol may
     be non-denoting), and every predicate extension over the OUTER domain (predicates
     apply regardless of existence — see ``_atom``). ``formula``'s free variables are
-    closed with ∀, so they range over the model's ``existing`` domain. A domain size
+    PARAMETERS (see the module docstring): each is one existing object, reported in
+    ``constants`` under the variable's name, so ``P(x) ∧ ¬P(y)`` has a model and a model
+    with no existing object is none for a formula with a free variable. A domain size
     whose candidate count exceeds ``max_candidates`` is skipped; a function whose
     arity exceeds :data:`MAX_FUNCTION_ARITY` is rejected outright (see :func:`_search`).
     ``None`` means "none found within the bounds", not "unsatisfiable" — free FOL is
@@ -766,8 +832,13 @@ def free_find_model(formula: Node, max_size: int = 3, *, policy: str = "negative
     :func:`~unicode_fol_kit.semantics.modelfinder._canonical_interpretations`'s
     docstring for why this stays sound and complete, and why FUNCTIONS are
     deliberately not also LNH-reduced.
+
+    Raises:
+        NotImplementedError: a free variable has the spelling of a constant of ``formula``.
     """
-    return _search([formula], max_size, policy, domain_split, max_candidates, symmetry_breaking)
+    closed, guards = _with_parameters([formula])
+    return _search(closed + guards, max_size, policy, domain_split, max_candidates,
+                   symmetry_breaking)
 
 
 def free_countermodel(formula: Node, max_size: int = 3, *, policy: str = "negative",
@@ -783,8 +854,18 @@ def free_countermodel(formula: Node, max_size: int = 3, *, policy: str = "negati
     verify-before-return discipline as
     :func:`~unicode_fol_kit.semantics.relevant.rel_countermodel` /
     :func:`~unicode_fol_kit.semantics.conditional.cf_countermodel`.
+
+    A free variable is a parameter (see the module docstring) that is read BEFORE the
+    formula is negated: the countermodel falsifies ``formula`` under one assignment of
+    existing objects, reported in ``constants`` under the variables' names. (Negating
+    first would close ``¬formula`` as ``∀x ¬formula``, which an empty ``existing``
+    domain satisfies for every formula.)
+
+    Raises:
+        NotImplementedError: a free variable has the spelling of a constant of ``formula``.
     """
-    return _search([Not(formula)], max_size, policy, domain_split, max_candidates,
+    closed, guards = _with_parameters([formula])
+    return _search([Not(closed[0])] + guards, max_size, policy, domain_split, max_candidates,
                    symmetry_breaking)
 
 
@@ -816,14 +897,17 @@ def free_entails(premises: Sequence[Node], conclusion: Node, max_size: int = 3, 
     """Return True iff no bounded FreeModel satisfies every premise but not ``conclusion``.
 
     Same honest contract as :func:`free_is_valid`: a ``False`` is backed by a
-    verified countermodel (every premise closed-and-true there, ``conclusion``
-    closed-and-false there); ``True`` means only "none found within the bounds".
-    Each premise and the conclusion are closed with ∀ INDEPENDENTLY, mirroring
-    :func:`~unicode_fol_kit.semantics.modelfinder.find_countermodel`: a variable
-    name shared between a premise and the conclusion is NOT read as the same
-    witness across both (each gets its own ∀-closure) — pass a single implication
-    formula instead (``Implies(And(p1, p2), conclusion)``) if a shared witness is
-    the intended reading.
+    verified countermodel (every premise true there, ``conclusion`` false there, under
+    one assignment); ``True`` means only "none found within the bounds".
+    A free variable is a PARAMETER shared by every premise and the conclusion
+    (see the module docstring), as in
+    :func:`~unicode_fol_kit.semantics.modelfinder.find_countermodel`: ``P(x) ⊢ P(x)`` and
+    ``P(x) ⊢ ∃y P(y)`` are valid, ``P(x) ⊢ P(alpha)`` is not, and a premise is never
+    closed universally. The variables are read before the conclusion is negated.
+
+    Raises:
+        NotImplementedError: a free variable has the spelling of a constant of the formulas.
     """
-    return _search(list(premises) + [Not(conclusion)], max_size, policy, domain_split,
+    closed, guards = _with_parameters(list(premises) + [conclusion])
+    return _search(closed[:-1] + [Not(closed[-1])] + guards, max_size, policy, domain_split,
                    max_candidates, symmetry_breaking) is None

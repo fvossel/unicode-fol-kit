@@ -113,6 +113,8 @@ from ..fol._modal_nodes import (
     Announce, AnnounceDiamond,
     EverybodyKnows, DistributedKnowledge, CommonKnowledge,
 )
+from ..fol._atom_keys import atom_key
+from ..fol._truth_constants import truth_value as _truth_value
 from ._modal_reject import LAMBDA_TYPES, reject_quantifier, reject_lambda
 from .tnorm import TNorm, LUKASIEWICZ
 
@@ -172,7 +174,8 @@ class FuzzyKripkeModel:
             relation; within a named relation, a missing ``(w, w')`` pair
             reads as weight ``0.0``. Each weight is clamped into ``[0, 1]``.
         valuation: maps a world to a ``Dict[str, float]`` of GROUND-ATOM-KEY
-            (``atom.to_unicode_str()``, the same convention as
+            (``atom.to_unicode_str()`` with a sorted constant ``c:S`` read as the constant
+            ``c``, the same convention as
             :mod:`~unicode_fol_kit.semantics.fuzzy`'s valuation and
             :class:`~unicode_fol_kit.semantics.kripke.KripkeModel`'s atom
             keys) to a degree in ``[0, 1]``. A missing world, or a missing
@@ -348,7 +351,10 @@ def satisfies_fuzzy_modal(formula: Node, model: FuzzyKripkeModel, world: World) 
 
     # --- atomic ---
     if isinstance(formula, Atom):
-        return _clamp(model.atom_degree(world, formula.to_unicode_str()))
+        constant = _truth_value(formula)
+        if constant is not None:
+            return 1.0 if constant else 0.0     # the top / bottom degree at every world
+        return _clamp(model.atom_degree(world, atom_key(formula)))
 
     # --- Łukasiewicz connectives: verbatim dispatch into model.tnorm ---
     if isinstance(formula, LukNegation):

@@ -239,8 +239,20 @@ def test_arithmetic_function_symbol_is_refused_by_the_renderer_not_the_gate():
 
 
 def test_to_minizinc_rejects_non_integer_number_reachable_through_a_comparison():
+    # ``x = 1.5`` is refused, and now for the reason that holds for every numeral: it compares a
+    # numeral with no cardinality (a numeral is a constant, not a domain index, so the comparison
+    # of an individual with it is a statement about constants this backend does not state).
+    # Before, the refusal named the fraction ("not an integer") and ``x = 2`` was rendered as the
+    # index 2; the fraction as the bound of a count is refused in the next test.
     x = Variable("x")
     goal = Quantifier("exists", x, Atom("=", (x, Number(1.5))))
+    with pytest.raises(NotImplementedError, match="compares a numeral without a cardinality"):
+        to_minizinc(FiniteDomainProblem((goal,), 2))
+
+
+def test_to_minizinc_rejects_a_fraction_as_the_bound_of_a_count():
+    x = Variable("x")
+    goal = Atom("=", (Cardinality(x, Atom("P", (x,))), Number(1.5)))
     with pytest.raises(NotImplementedError, match="not an integer"):
         to_minizinc(FiniteDomainProblem((goal,), 2))
 
@@ -596,9 +608,10 @@ class _FakeCompletedProcess:
 def test_run_minizinc_builds_expected_cli_args(monkeypatch):
     captured = {}
 
-    def fake_run(args, capture_output, text, timeout):
+    def fake_run(args, capture_output, text, timeout, env):
         captured["args"] = args
         captured["timeout"] = timeout
+        captured["env"] = env
         return _FakeCompletedProcess("some stdout", "some stderr")
 
     monkeypatch.setattr(mb.subprocess, "run", fake_run)
@@ -609,6 +622,7 @@ def test_run_minizinc_builds_expected_cli_args(monkeypatch):
     ]
     # (5000 ms / 1000) + 10s backstop, per the function's own docstring.
     assert captured["timeout"] == pytest.approx(15.0)
+    assert captured["env"] is None     # a bare command name: the caller's environment
     assert (stdout, stderr, timed_out) == ("some stdout", "some stderr", False)
 
 

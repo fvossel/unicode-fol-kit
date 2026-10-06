@@ -79,17 +79,20 @@ def test_generate_tff_problem_socrates_syllogism_exact_text():
     alphabetically within their own section, sorts -> funcs -> consts ->
     preds -> premises -> goal (declaration-before-use ordering, matching
     casl_export.to_casl_spec's own convention)."""
-    premises = [MSFOL.parse("∀x:Human Mortal(x)"), MSFOL.parse("Human(socrates:Human)")]
+    # (The predicate is ``Philosopher``, not ``Human``: a sort and a predicate
+    # that render as one word are refused by the TF0 writer — see
+    # tests/test_tptp_writer_names.py.)
+    premises = [MSFOL.parse("∀x:Human Mortal(x)"), MSFOL.parse("Philosopher(socrates:Human)")]
     conclusion = MSFOL.parse("Mortal(socrates:Human)")
     text = generate_tff_problem(premises, conclusion)
     lines = [ln for ln in text.splitlines() if ln.strip()]
     assert lines == [
         "tff(sort_decl_1, type, human: $tType ).",
         "tff(const_decl_2, type, socrates: human ).",
-        "tff(pred_decl_3, type, human: human > $o ).",
-        "tff(pred_decl_4, type, mortal: human > $o ).",
+        "tff(pred_decl_3, type, mortal: human > $o ).",
+        "tff(pred_decl_4, type, philosopher: human > $o ).",
         "tff(premise_1, axiom, (![X: human]: mortal(X)) ).",
-        "tff(premise_2, axiom, human(socrates) ).",
+        "tff(premise_2, axiom, philosopher(socrates) ).",
         "tff(goal, conjecture, mortal(socrates) ).",
     ]
 
@@ -208,10 +211,17 @@ def test_refuses_sorted_cardinality_by_name():
         formula_to_tff(node)
 
 
+#
+# The writer (``formula_to_tff``, ``generate_tff_problem``) reads a numeral as a constant of
+# ``$i`` and an operator as an uninterpreted symbol, which is what this kit means by them on
+# every route that was not asked for arithmetic (tests/test_tptp_numerals.py). These three
+# used to assert that ``formula_to_tff`` REFUSED them; the entry point that still has no
+# reading of them, signature inference, keeps refusing them by name.
+
 def test_refuses_number_literal_by_name():
     node = Atom("P", [Number(3)])
     with pytest.raises(NotImplementedError, match="arithmetic"):
-        formula_to_tff(node)
+        infer_tff_signature([node])
 
 
 @pytest.mark.parametrize("op", ["<", ">", "≤", "≥"])
@@ -219,7 +229,7 @@ def test_refuses_arithmetic_comparison_predicate_by_name(op):
     node = SortedQuantifier("∀", Variable("x"), "Human",
                             Atom(op, [Variable("x"), Variable("x")]))
     with pytest.raises(NotImplementedError, match="arithmetic"):
-        formula_to_tff(node)
+        infer_tff_signature([node])
 
 
 @pytest.mark.parametrize("op", ["+", "-", "*", "/"])
@@ -227,7 +237,7 @@ def test_refuses_arithmetic_function_by_name(op):
     node = SortedQuantifier("∀", Variable("x"), "Human",
                             Atom("P", [Function(op, [Variable("x"), Variable("x")])]))
     with pytest.raises(NotImplementedError, match="arithmetic"):
-        formula_to_tff(node)
+        infer_tff_signature([node])
 
 
 def test_refuses_free_variable():
@@ -269,9 +279,9 @@ def test_refuses_constant_vs_function_name_clash():
 # =============================================================================
 
 @pytest.mark.parametrize("premises_txt, conclusion_txt", [
-    (["∀x:Human Mortal(x)", "Human(socrates:Human)"], "Mortal(socrates:Human)"),
+    (["∀x:Human Mortal(x)", "Philosopher(socrates:Human)"], "Mortal(socrates:Human)"),
     (["Owns(alice:Human, rex:Dog)"], "Owns(alice:Human, rex:Dog)"),
-    (["∀x:Human Mortal(father_of(x))", "Human(alice:Human)"],
+    (["∀x:Human Mortal(father_of(x))", "Philosopher(alice:Human)"],
      "Mortal(father_of(alice:Human))"),
     (["∃≥2 x:Human Mortal(x)"], "∃≥1 x:Human Mortal(x)"),
 ])
@@ -339,22 +349,19 @@ def test_eprover_generate_input_auto_selects_tff_when_sorted():
     assert text.startswith("tff(")
 
 
-def test_check_entailment_vampire_detailed_tff_route_excerpt_not_reverse_mapped(monkeypatch):
-    """The tff route's ``output_excerpt`` is NOT reverse-mapped (documented
-    non-goal -- see module docstring).
+def test_check_entailment_vampire_detailed_tff_route_excerpt_is_reverse_mapped(monkeypatch):
+    """The tff route's ``output_excerpt`` IS reverse-mapped, like the fof route's
+    (it used to discard the map: ``generate_tff_problem(...), None``; the writer
+    now returns it, ``generate_tff_problem_with_mapping``).
 
     Uses a constant whose kit-level name is non-ASCII (``θ``), so the tff
     writer genuinely ASCII-transliterates it to ``theta`` (see
     ``constant_name_to_ascii``'s Greek-letter table) -- a REAL sanitised
     token, not a stand-in. The fake stdout echoes that same sanitised
-    ``theta`` token back, exactly as a real Vampire proof would. On the
-    classical fof route this token would come back through
-    ``reverse_map_text`` and turn back into ``θ``; on the tff route
-    ``name_map`` is unconditionally ``None`` (see
-    ``check_entailment_vampire_detailed``'s source), so no such lookup is
-    attempted at all and ``theta`` must survive untouched in
-    ``output_excerpt`` -- this is the concrete, observable behaviour the
-    docstring's "un-reversed" claim describes, not just the status field."""
+    ``theta`` token back, exactly as a real Vampire proof would. It comes
+    back through ``reverse_map_text`` and turns back into ``θ`` (and the
+    folded predicate word ``mortal`` into ``Mortal``), so the caller reads the
+    names it wrote, not the tokens the prover saw."""
     def fake_spawn(input_str, vampire_path, timeout=30, use_wsl=False, extra_args=()):
         assert "tff(" in input_str
         assert "theta" in input_str    # the writer already sanitised θ -> theta
@@ -371,8 +378,8 @@ def test_check_entailment_vampire_detailed_tff_route_excerpt_not_reverse_mapped(
     result = check_entailment_vampire_detailed(
         [sorted_premise], conclusion, vampire_path="unused")
     assert result["status"] == "proved"
-    assert "theta" in result["output_excerpt"]
-    assert "θ" not in result["output_excerpt"]    # no reverse mapping attempted
+    assert "Mortal(θ)" in result["output_excerpt"]
+    assert "theta" not in result["output_excerpt"]    # the map undid the transliteration
 
 
 def test_check_entailment_vampire_detailed_tff_route_derivation_currently_always_none(monkeypatch):
@@ -462,32 +469,47 @@ def _vampire_kwargs():
 # Battery of sorted entailments, each (premises, conclusion, expect) -- the
 # expected SZS/bool verdict was worked out BY HAND (see each comment) before
 # being checked against Vampire live.
+#
+# No predicate here is named like a sort: the TF0 writer refuses that pair
+# (a sort is the guard predicate of its name in the kit's semantics, which TF0
+# cannot say -- see tests/test_tptp_writer_names.py), so every problem below
+# is one that BOTH routes can write. A sorted CONSTANT is a witness of its sort
+# on both routes (the fof text carries ``sort_member_<i>``, the TF0 text types
+# the constant); a function VALUE, an unannotated constant and an equation over
+# an unsorted variable are not here, because the TF0 writer refuses them (see
+# tests/test_tf0_typed_reading.py) -- the fof route answers those.
 _BATTERY = [
-    # Textbook syllogism, with an explicit witness constant.
-    (["∀x:Human Mortal(x)", "Human(socrates:Human)"], "Mortal(socrates:Human)", True,
-     "modus ponens over a sorted universal, witnessed"),
-    # Sort-relativisation THREADED across formulas via a function symbol:
-    # father_of's RESULT sort is pinned to Human only through Adult's own
-    # direct sorted binder ("∀y:Human Adult(y)") unifying with Adult's use
-    # over father_of(x) -- see test_infer_tff_signature_pins_every_argument
-    # _position's docstring for the hand-worked union-find trace. If sort
-    # info were dropped anywhere along that chain the exported tff problem
-    # would type father_of's result at plain $i instead of human (still
-    # sound, just LESS typed) -- this is the concrete, load-bearing case
-    # where relativisation threading multi-occurrence across the batch
-    # (not just one binder) actually matters for what gets declared.
-    (["∀x:Human Adult(father_of(x))", "∀y:Human Adult(y)", "Human(alice:Human)"],
-     "Adult(father_of(alice:Human))", True,
-     "sort-relativisation matters: threaded via a shared predicate across formulas"),
-    # A sorted existential witnessed by an explicit sorted constant.
-    (["∀x:Human Mortal(x)", "Human(alice:Human)"], "∃x:Human Mortal(x)", True,
-     "existential witnessed by a sorted constant"),
+    # Non-emptiness: with Human non-empty, a witness h has Mortal(h).
+    (["∀x:Human Mortal(x)"], "∃x:Human Mortal(x)", True,
+     "a sorted universal implies the sorted existential (non-empty sort)"),
+    # Sort-relativisation THREADED across formulas via a function ARGUMENT:
+    # father_of's argument position is pinned to Human by the sorted binder,
+    # its RESULT stays the implicit $i (nothing says father_of(x) is a Human,
+    # and the writer would refuse a problem that made it one -- see
+    # test_a_function_value_in_a_sort_is_refused_by_tf0_and_answered_by_fof
+    # below, which holds the problem this row used to be).
+    # Hand derivation: take h with Human(h) (non-empty); the premise gives
+    # Adult(father_of(h)); so exists y:Human Adult(father_of(y)).
+    (["∀x:Human Adult(father_of(x))"],
+     "∃y:Human Adult(father_of(y))", True,
+     "sort-relativisation matters: threaded through a function argument"),
+    # A sorted constant is in its sort: socrates is a Human, every Human is Mortal.
+    (["∀x:Human Mortal(x)"], "Mortal(socrates:Human)", True,
+     "a sorted constant is in its sort"),
+    # ... and nothing more is known of it: U={0}, Human={0}, Mortal={}, socrates=0.
+    ([], "Mortal(socrates:Human)", False,
+     "nothing follows about a sorted constant from nothing"),
+    # A sorted existential witness meets a sorted universal: take w with Wise(w);
+    # Mortal(w) by the universal, so the conjunction holds of w.
+    (["∀x:Human Mortal(x)", "∃x:Human Wise(x)"], "∃x:Human (Mortal(x) ∧ Wise(x))", True,
+     "existential witnessed by a sorted existential"),
     # Two disjoint sorts peacefully coexisting in one problem: the Robot
-    # fact is irrelevant to the Human conclusion, and must stay irrelevant.
-    (["∀x:Human Mortal(x)", "Human(alice:Human)", "Robot(gru:Robot)"],
-     "Mortal(alice:Human)", True, "unrelated second sort does not interfere"),
-    # A genuine non-entailment: no premise connects Human-hood to Rich-hood.
-    (["∀x:Human Mortal(x)", "Human(alice:Human)"], "∃x:Human Rich(x)", False,
+    # premise is irrelevant to the Human conclusion, and must stay irrelevant.
+    (["∀x:Human Mortal(x)", "∃y:Robot Rusty(y)"], "∃x:Human Mortal(x)", True,
+     "unrelated second sort does not interfere"),
+    # A genuine non-entailment: no premise connects Human-hood to Rich-hood
+    # (Human = {e}, Mortal = {e}, Rich = {} satisfies the premise only).
+    (["∀x:Human Mortal(x)"], "∃x:Human Rich(x)", False,
      "unrelated predicate is correctly NOT entailed"),
 ]
 

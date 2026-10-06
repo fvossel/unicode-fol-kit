@@ -25,9 +25,37 @@ The full modal family handled by the AST:
 
 The embedding is **faithful to** :func:`satisfies_modal` on the overlapping
 fragment: every modality is read as a box/diamond over the corresponding
-relation, object quantifiers are ``existsAt``-guarded (actualist), and equality
-``=`` / ``≠`` is an **uninterpreted, world-relativized predicate** (NOT primitive
-HOL identity), matching the toolkit convention.
+relation and object quantifiers are ``existsAt``-guarded (actualist).
+
+Identity is **rigid** (see "Equality" below), matching
+:func:`unicode_fol_kit.fol.qml.qml_is_valid`.
+
+Equality
+--------
+An identity atom ``t₁ = t₂`` is Isabelle's own polymorphic ``=`` over the entity
+type ``e``, lifted with a world binder that is never used —
+``(\<lambda>_. t₁ = t₂)`` — so it takes **no world argument** and cannot vary by
+world. ``t₁ ≠ t₂`` is lowered to ``¬(t₁ = t₂)`` first, exactly as
+:func:`unicode_fol_kit.fol.qml.qml_translate` does (the lowering is
+:func:`unicode_fol_kit.fol.qml._st_equality` itself, imported rather than
+copied). Consequences, each one a theorem of the emitted theory and the same
+verdict ``qml_is_valid`` gives: ``a = a``, ``a = b → b = a``, transitivity, the
+necessity of identity ``a = b → □(a = b)`` and of distinctness
+``a ≠ b → □(a ≠ b)`` (valid in every frame, under every ``mode``),
+``◇(a = b) → a = b``, and Leibniz's law ``a = b → (P(a) ↔ P(b))`` /
+``a = b → (□P(a) ↔ □P(b))`` and congruence over function symbols.
+``□(a = b) → a = b`` is **not** valid in ``K`` (a dead-end world makes the box
+vacuously true) and is valid exactly when the frame guarantees a
+successor-or-self (``T``, ``S4``, ``S5``, ``KD``, ``KD45``).
+
+Identity ranges over the whole entity type ``e`` and is **not** existence-guarded
+under a varying domain (``qml``'s documented choice): ``a = a`` holds at a world
+where ``a`` does not exist, and ``∃x (x = c)`` — which *does* go through the
+``existsAt``-guarded ``mexists`` — is valid under ``constant`` / ``possibilist``
+and not under the actualist modes. The ordering atoms ``<`` ``>`` ``≤`` ``≥`` are
+still ordinary uninterpreted world-relativized predicates (``flt`` …), as in
+``qml``. An ``=`` / ``≠`` atom that is not binary raises ``ValueError``, again as
+in ``qml``.
 
 Temporal caveat (henceforth / transitive closure)
 -------------------------------------------------
@@ -120,7 +148,7 @@ and the constants :data:`ISABELLE_TACTICS` and :data:`BRIDGES`.
 """
 
 import re
-from typing import Dict, Iterable, List, Optional, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple, TypedDict
 
 from unicode_fol_kit.fol.nodes import (
     Node, Variable, Constant, Number, Function,
@@ -131,8 +159,10 @@ from unicode_fol_kit.fol.nodes import (
     Obligatory, Permitted, SortedQuantifier,
 )
 from unicode_fol_kit.fol._fol_nodes import constant_name_to_ascii
-from unicode_fol_kit.fol._msfl_nodes import nonempty_sort_axioms
+from unicode_fol_kit.fol._msfl_nodes import nonempty_sort_axioms, sort_membership_axioms
+from unicode_fol_kit.fol._numeral_symbols import numerals_as_constants, prefixed_numeral_name
 from unicode_fol_kit.fol._symbol_names import SymbolNames, dedupe
+from unicode_fol_kit.fol._truth_constants import truth_value
 # Down (the ↓ binder, N1) is not yet re-exported through fol.nodes / fol's
 # public __init__ / the top-level unicode_fol_kit package (that three-file
 # edit is outside this change's file ownership — see the change's own
@@ -140,6 +170,10 @@ from unicode_fol_kit.fol._symbol_names import SymbolNames, dedupe
 # same class object either import path would give.
 from unicode_fol_kit.fol._hybrid_nodes import Down
 from unicode_fol_kit.fol.frames import FRAMES as _SHARED_FRAMES
+# Identity is RIGID here exactly as in the first-order embedding: the lowering rule
+# (``t1 != t2`` -> ``not (t1 = t2)``, binary-only) is qml's own, imported rather than
+# copied so the two routes cannot drift apart on what counts as an identity atom.
+from unicode_fol_kit.fol.qml import _st_equality, _EQUALITY_PREDICATES
 
 # --------------------------------------------------------------------------- #
 # Configuration tables (kept in sync with qml.py / satisfies_modal).
@@ -201,10 +235,50 @@ def _axiom_names(axiom_lines: List[str]) -> List[str]:
             out.append(m.group(1))
     return out
 
-# Equality / inequality are uninterpreted, world-relativized predicates here (NOT
-# primitive HOL `=`), matching satisfies_modal and the THF export. These aliases
-# give them valid, distinct Isabelle constant names.
+# Names for the symbolic predicates that are STILL ordinary uninterpreted world-
+# relativized predicates here (the orderings; same convention as fol.qml). ``=`` / ``≠``
+# are NOT among the predicates this table names any more: identity is rigid, lowered by
+# :func:`_lower_identity` to HOL's own ``=`` and never declared as a constant. The two
+# entries are kept only so that, in a formula that contains identity, they keep claiming
+# ``feq`` / ``fneq`` first (see :class:`_IsaNames`), as they do in the THF resolver --
+# a user predicate literally spelled ``feq`` is then pushed to ``feq_2`` in both.
 _PRED_ALIAS = {"=": "feq", "≠": "fneq", "<": "flt", ">": "fgt", "≤": "fle", "≥": "fge"}
+
+
+# --------------------------------------------------------------------------- #
+# Rigid identity.
+# --------------------------------------------------------------------------- #
+
+def _has_identity(formula: Node) -> bool:
+    """Whether ``formula`` contains an ``=`` / ``≠`` atom (of ANY arity)."""
+    return any(isinstance(n, Atom) and n.predicate in _EQUALITY_PREDICATES
+               for n in formula.walk())
+
+
+def _lower_identity(formula: Node, who: str) -> Node:
+    """Lower every ``≠`` to ``¬(=)`` and refuse a non-binary identity atom.
+
+    This is :func:`unicode_fol_kit.fol.qml._st_equality` applied to each ``=`` / ``≠``
+    atom -- the very rule ``qml_translate`` uses, so the HOL routes and the
+    first-order route read the same atoms the same way. ``who`` names the calling
+    exporter in the error message (qml's own message names qml). A formula with no
+    identity atom is returned UNCHANGED (the same object), so every equality-free
+    formula is emitted byte-for-byte as before.
+    """
+    if not _has_identity(formula):
+        return formula
+
+    def lower(node: Node) -> Node:
+        if isinstance(node, Atom) and node.predicate in _EQUALITY_PREDICATES:
+            try:
+                return _st_equality(node)
+            except ValueError as exc:
+                msg = str(exc)
+                raise ValueError(who + ": " + (msg[5:] if msg.startswith("qml: ")
+                                               else msg)) from None
+        return node.map_children(lower)
+
+    return lower(formula)
 
 
 # --------------------------------------------------------------------------- #
@@ -227,6 +301,10 @@ _RESERVED = frozenset({
     "mhistorically", "monce", "mprevious", "muntil", "msince",
     "mforall", "mexists",
 })
+
+#: The names of the lifted operators (the long entries of :data:`_RESERVED`): a binder spelled
+#: like one would shadow the operator in its own scope, so no bound variable gets one of them.
+_OPERATOR_NAMES = frozenset(name for name in _RESERVED if len(name) > 2)
 
 
 def _safe_name(name: str) -> str:
@@ -287,8 +365,17 @@ class _IsaNames(SymbolNames):
     ``consts`` (which Isabelle rejects).
     """
 
-    def __init__(self, formula: Node):
-        super().__init__(formula, _safe_name, _PRED_ALIAS)
+    def __init__(self, formula: Node, reserved=frozenset()):
+        # ``reserved`` holds the free variables of the axioms of this theory
+        # (:func:`_axiom_variable_names`): a symbol of the user never has one of those
+        # spellings, it gets a numbered variant instead.
+        super().__init__(formula, _safe_name, _PRED_ALIAS, reserved=reserved)
+        # Identity is rigid HOL ``=`` (see _atom), not a predicate: it gets no
+        # ``consts`` line and no entry here. (SymbolNames collected it with every other
+        # atom, and let it claim ``feq`` / ``fneq`` -- which only matters to a user
+        # predicate literally spelled that way, pushed to ``feq_2``: still unique.)
+        for key in [k for k in self.pred if k[0] in _EQUALITY_PREDICATES]:
+            del self.pred[key]
         # Nominals become world constants ``nom_<name> :: i`` — the same reserved
         # ``nom_`` prefix the standard translation uses, deduped against every
         # other emitted constant. _safe_name may append "_" to dodge reserved
@@ -297,7 +384,7 @@ class _IsaNames(SymbolNames):
         # dodges those names, so strip it; dedupe with digit suffixes (legal).
         taken = (set(self.pred.values()) | set(self.const.values())
                  | set(self.func.values()))
-        self.nom = {}
+        self.nom: Dict[str, str] = {}
         for n in formula.walk():
             if isinstance(n, Nominal) and n.name not in self.nom:
                 cand = "nom_" + (_safe_name(n.name).rstrip("_") or "x")
@@ -306,7 +393,10 @@ class _IsaNames(SymbolNames):
                 taken.add(cand)
                 self.nom[n.name] = cand
         self._var_map: Dict[str, str] = {}
-        self._var_used: set = set()
+        # A binder shadows every constant of its own name inside its scope, so a bound
+        # variable never has the spelling of a constant, predicate, function or nominal
+        # constant of the theory, nor of a lifted operator.
+        self._var_used: set = taken | _OPERATOR_NAMES
 
     def nominal(self, name: str) -> str:
         """The world constant naming nominal ``name``."""
@@ -321,11 +411,13 @@ class _IsaNames(SymbolNames):
         :func:`_var_name` closed for individual names: two distinct source names could
         still coincide AFTER transliteration (e.g. a literal ``theta`` and the Greek
         ``θ``, both -> ``theta``). Routed through
-        :func:`~unicode_fol_kit.fol._symbol_names.dedupe` against a token pool private
-        to this resolver instance (never shared with the pred/const/func pool: a
-        variable token and a functor token can never collide lexically, since variables
-        here stay whatever case `_var_name` gives them and functors are independently
-        de-collided already).
+        :func:`~unicode_fol_kit.fol._symbol_names.dedupe` against a token pool of this
+        resolver instance that STARTS with every token of the theory's own constants,
+        predicates, functions and nominal constants and with the names of the lifted
+        operators. That is not optional: a binder shadows a constant of its own name
+        inside its scope, so ``∀x P(x, c)`` with a constant spelled ``x`` would be written
+        ``(\\<lambda>x. (p x x))`` -- the constant captured, a different sentence. A variable
+        whose natural token is taken gets a numbered variant (``x_2``).
         """
         if name in self._var_map:
             return self._var_map[name]
@@ -345,7 +437,7 @@ def _term(node: Node, names: "_IsaNames") -> str:
     if isinstance(node, Constant):
         return names.constant(node.name)
     if isinstance(node, Number):
-        return names.constant("n" + str(node.value))
+        return names.constant(prefixed_numeral_name(node.value))
     if isinstance(node, Function):
         head = names.function(node)
         if not node.args:
@@ -360,7 +452,23 @@ def _term(node: Node, names: "_IsaNames") -> str:
 # --------------------------------------------------------------------------- #
 
 def _atom(node: Atom, names: "_IsaNames") -> str:
-    """Lift an atom to ``(pred a1 ... an)`` — a value of type ``i => bool``."""
+    r"""Lift an atom to ``(pred a1 ... an)`` — a value of type ``i => bool``.
+
+    An identity atom (``=``; ``≠`` was lowered to ``¬(=)`` by :func:`_lower_identity`
+    before any atom is lifted) is HOL's own ``=`` over the entity terms, under a
+    world binder it never uses: ``(\<lambda>_. a = b)``. No world argument means it
+    cannot vary by world (rigid identity, qml's reading), and the binder is the
+    anonymous ``_`` rather than a name so a user variable called ``w`` can never be
+    captured by it.
+    """
+    constant = truth_value(node)
+    if constant is not None:
+        # `$true` / `$false`: HOL's own True / False under the anonymous world binder,
+        # so they cannot vary by world.
+        return "(\\<lambda>_. True)" if constant else "(\\<lambda>_. False)"
+    if node.predicate == "=":
+        left, right = node.args
+        return f"(\\<lambda>_. {_term(left, names)} = {_term(right, names)})"
     head = names.atom(node)
     if not node.args:
         return head
@@ -435,8 +543,10 @@ def _lift(node: Node, names: "_IsaNames") -> str:
         # KripkeModel's nominals= assignment.
         return f"(\\<lambda>w. w = {names.nominal(node.name)})"
     if isinstance(node, At):
-        # @i φ: evaluate φ AT the named world, regardless of the current one.
-        return (f"(\\<lambda>w. {_lift(node.formula, names)} "
+        # @i φ: evaluate φ AT the named world, regardless of the current one. The world
+        # binder is anonymous: it is not used, and a named one would capture an object
+        # variable of the body spelled ``w`` (``∀w @i P(w)``).
+        return (f"(\\<lambda>_. {_lift(node.formula, names)} "
                 f"{names.nominal(node.nominal.name)})")
     if isinstance(node, Down):
         raise NotImplementedError(
@@ -518,7 +628,7 @@ def _scan_term(node: Node, sig: _Sig) -> None:
     if isinstance(node, Constant):
         sig.consts.add(_safe_name(node.name))
     elif isinstance(node, Number):
-        sig.consts.add(_safe_name("n" + str(node.value)))
+        sig.consts.add(_safe_name(prefixed_numeral_name(node.value)))
     elif isinstance(node, Function):
         sig.funcs[_safe_name(node.name)] = len(node.args)
         for a in node.args:
@@ -529,7 +639,8 @@ def _scan_term(node: Node, sig: _Sig) -> None:
 def _scan(node: Node, sig: _Sig) -> None:
     """Walk the formula collecting the signature and which modalities are used."""
     if isinstance(node, Atom):
-        sig.preds[_safe_name(node.predicate)] = len(node.args)
+        if node.predicate not in _EQUALITY_PREDICATES and truth_value(node) is None:
+            sig.preds[_safe_name(node.predicate)] = len(node.args)
         for a in node.args:
             _scan_term(a, sig)
         return
@@ -831,10 +942,17 @@ def _since_block() -> List[str]:
     ]
 
 
+#: The declaration of the existence predicate: ``existsAt x w`` says object ``x`` is in
+#: the domain of world ``w``. Written once, for :func:`_quant_block` and for the
+#: quantifier-free formula whose sort witness (an actualist mode) names it.
+_EXISTS_AT_DECL = ('consts existsAt :: "e \\<Rightarrow> i \\<Rightarrow> bool"  '
+                   '\\<comment> \\<open>object x exists at world w\\<close>')
+
+
 def _quant_block(mode: str) -> List[str]:
     """existsAt + actualist mforall/mexists (constant mode makes existsAt total)."""
     return [
-        'consts existsAt :: "e \\<Rightarrow> i \\<Rightarrow> bool"  \\<comment> \\<open>object x exists at world w\\<close>',
+        _EXISTS_AT_DECL,
         'abbreviation mforall :: "(e \\<Rightarrow> (i \\<Rightarrow> bool)) \\<Rightarrow> (i \\<Rightarrow> bool)" where',
         '  "mforall \\<Phi> \\<equiv> \\<lambda>w. \\<forall>x. existsAt x w \\<longrightarrow> \\<Phi> x w"',
         'abbreviation mexists :: "(e \\<Rightarrow> (i \\<Rightarrow> bool)) \\<Rightarrow> (i \\<Rightarrow> bool)" where',
@@ -1019,7 +1137,16 @@ _FAMILY_FLAG = {
 # the existing relation-shaped naming (``n_in_t``, ``t_in_nstar``, ``d_serial``)
 # and are reused VERBATIM as the THF formula names in hol.thf_modal, so a single
 # grep for a fact name finds both routes.
-_BRIDGES = {
+class _BridgeSpec(TypedDict):
+    """One entry of :data:`_BRIDGES`."""
+
+    needs: Tuple[Tuple[str, str], ...]
+    schema: str
+    rels: str
+    lines: List[str]
+
+
+_BRIDGES: Dict[str, _BridgeSpec] = {
     "knowledge_implies_belief": {
         "needs": (("epistemic", "Knows"), ("doxastic", "Believes")),
         "schema": "K_a phi -> B_a phi",
@@ -1199,10 +1326,71 @@ def _sort_consts(original: Node, names: "_IsaNames") -> List[str]:
     """
     out: List[str] = []
     for axiom in nonempty_sort_axioms(original):
+        assert isinstance(axiom, Quantifier) and isinstance(axiom.formula, Atom)   # ∃x S(x)
         const = names.pred.get((axiom.formula.predicate, 1))
         if const is not None and const not in out:
             out.append(const)
     return out
+
+
+def _names_with_sort_facts(relativized: Node, original: Node,
+                           reserved=frozenset()) -> "_IsaNames":
+    """The constant-name resolver of ``relativized``, extended by the sort facts of ``original``.
+
+    ``relativized`` is the formula the theory is lifted from; in it a sorted
+    constant ``c:S`` has become the plain ``c`` and the guard ``S`` is mentioned only
+    if some sorted QUANTIFIER used it. A sort that occurs only through a sorted
+    constant would therefore get neither a ``consts`` line nor a name for its
+    axioms. Resolving over ``relativized`` together with the membership atom
+    ``S(c)`` of every sorted constant declares that guard too — the very name the
+    membership axiom and the non-emptiness axiom then use. A formula without a sorted
+    constant is resolved over ``relativized`` itself, so its names and declarations
+    are exactly what they were. ``reserved`` is the set of names no symbol of the formula
+    may take (see :func:`_axiom_variable_names`).
+    """
+    scope = relativized
+    for atom in sort_membership_axioms(original):
+        scope = And(scope, atom)
+    return _IsaNames(scope, reserved)
+
+
+def _sort_members(original: Node, names: "_IsaNames") -> List[Tuple[str, str]]:
+    """``(guard constant, individual constant)`` of every sorted constant of ``original``.
+
+    One pair per distinct ``c:S``, in first-occurrence order (the order of
+    :func:`~unicode_fol_kit.fol._msfl_nodes.sort_membership_axioms`), each name
+    taken from ``names`` — which must come from :func:`_names_with_sort_facts`, so
+    both are declared and agree with the ones the lifted goal uses.
+    """
+    out: List[Tuple[str, str]] = []
+    for atom in sort_membership_axioms(original):
+        assert isinstance(atom, Atom) and isinstance(atom.args[0], Constant)    # ``S(c)``
+        pair = (names.pred[(atom.predicate, 1)], names.constant(atom.args[0].name))
+        if pair not in out:
+            out.append(pair)
+    return out
+
+
+def _sort_member_axioms(members: Sequence[Tuple[str, str]]) -> List[str]:
+    r"""Membership of every sorted constant in its sort, at EVERY world and unguarded.
+
+    ``c:S`` denotes an element of ``S`` (the many-sorted reading every route of the
+    kit shares, :func:`~unicode_fol_kit.fol._msfl_nodes.sort_membership_axioms`), and
+    a constant is a rigid designator, so ``S c w`` holds at every world ``w`` —
+    ``w`` is free, hence universally quantified by ``axiomatization``, exactly as in
+    the ``nonempty_sort`` lines. It is NOT guarded by ``existsAt c w``, in any
+    mode: a constant may lie outside the local domain (the route's reading of a
+    constant, see :mod:`unicode_fol_kit.fol.qml`), and the guarded form would never
+    fire in the modes where that matters. Without the line a countermodel with
+    ``socrates`` outside ``human`` refutes
+    ``∀x:Human Mortal(x) → Mortal(socrates:Human)`` in the constant-domain mode,
+    which the plain-FOL routes call valid.
+
+    The facts are named ``sort_member<i>``, a family distinct from
+    ``nonempty_sort<i>``, so :func:`modal_axiom_names` lists them separately.
+    """
+    return [f'axiomatization where sort_member{i}: "{sort} {const} w"'
+            for i, (sort, const) in enumerate(members)]
 
 
 def _nonempty_sort_axioms(sorts: Sequence[str], mode: str) -> List[str]:
@@ -1234,7 +1422,8 @@ def _collect_axioms(sig: "_Sig", frame: str, mode: str,
                     temporal_closure: bool, temporal_def: bool = False,
                     systems: Optional[dict] = None,
                     bridges: Optional[Iterable[str]] = None,
-                    sorts: Sequence[str] = ()) -> List[str]:
+                    sorts: Sequence[str] = (),
+                    members: Sequence[Tuple[str, str]] = ()) -> List[str]:
     """All ``axiomatization where ...`` lines the theory emits, in emission order.
 
     Centralised so the proof emitter and :func:`modal_axiom_names` agree on exactly
@@ -1293,7 +1482,50 @@ def _collect_axioms(sig: "_Sig", frame: str, mode: str,
     # modal_axiom_names result keeps its exact content and order (a formula
     # with no many-sorted node yields no sorts and no extra line).
     axioms += _nonempty_sort_axioms(sorts, mode)
+    # Then the sorted constants' membership (a formula without a sorted constant
+    # has none, so its axiom list is unchanged).
+    axioms += _sort_member_axioms(members)
     return axioms
+
+
+_ISABELLE_MACRO = re.compile(r"\\<[A-Za-z^]+>")
+_ONE_LETTER_NAME = re.compile(r"\b[a-z]\b")
+
+
+def _axiom_variable_names(sig: "_Sig", original: Node, frame: str, mode: str,
+                          temporal_closure: bool, temporal_def: bool = False,
+                          systems: Optional[dict] = None,
+                          bridges: Optional[Iterable[str]] = None) -> frozenset:
+    r"""The one-letter names the axioms and inductive definitions of THIS theory mention.
+
+    The fixed lines of a theory write their variables free and one letter long
+    (``r_eucl: "r w v ⟹ r w u ⟹ r v u"``, ``const_dom: "existsAt x w"``,
+    ``rk_refl: "rk a w w"``, the world ``w`` of the sort facts, the ``w`` and ``v`` of the
+    introduction rules of ``muntil``). ``axiomatization`` generalises a free name only if no
+    constant of that name is declared, so a constant, predicate, function or sort of the
+    user spelled like one of them would be read INSTEAD of the variable: ``consts x ::
+    "e"`` turns ``existsAt x w`` into a statement about that one constant, and the regime it
+    was meant to state (every object exists at every world) is gone. The theory therefore
+    never gives such a name to a symbol of the user.
+
+    The names are read off the text of the axioms the theory is going to emit (the sort
+    facts with placeholders for the user's names), so a line added to the module is
+    covered without being listed here. Only the lines that are in the theory count: a
+    formula without a modality, a quantifier or a sort has no axiom, and its symbols keep
+    their natural spelling.
+    """
+    sorts = ("SORT",) if nonempty_sort_axioms(original) else ()
+    members = (("SORT", "CONST"),) if sort_membership_axioms(original) else ()
+    lines = list(_collect_axioms(sig, frame, mode, temporal_closure, temporal_def, systems,
+                                 bridges, sorts, members))
+    if sig.uses_until:
+        lines += _until_block()
+    if sig.uses_since:
+        lines += _since_block()
+    found: set = set()
+    for line in lines:
+        found.update(_ONE_LETTER_NAME.findall(_ISABELLE_MACRO.sub(" ", line)))
+    return frozenset(found)
 
 
 def _proof_lines(tactic: str, axiom_ids: List[str]) -> List[str]:
@@ -1380,7 +1612,14 @@ def isabelle_modal_theory(
       faithfully to :func:`satisfies_modal`;
     - states the formula as a **real** ``lemma "\\<lfloor> ... \\<rfloor>"`` whose body is the
       *lifted* embedding (not a ``to_unicode_str`` dump in a comment), followed by
-      the proof text for ``tactic``.
+      the proof text for ``tactic``;
+    - for a many-sorted formula, states that every sort the formula uses is
+      non-empty (``nonempty_sort<i>``) and that every sorted constant ``c:S`` is an
+      element of ``S`` at EVERY world (``sort_member<i>``: ``S c w``, unguarded by
+      ``existsAt``, because a constant is rigid and may lie outside the domain of a
+      world). A sort that occurs only through a sorted constant gets its guard
+      declared too. A formula without a sorted constant gets no ``sort_member`` line
+      and its text is unchanged.
 
     Args:
         formula: the modal AST node to embed.
@@ -1443,6 +1682,11 @@ def isabelle_modal_theory(
     # typo fails fast rather than after the formula has been scanned and lifted.
     requested_bridges = _validate_bridges(bridges, "to_isabelle_modal")
 
+    # A numeral is a constant identified by its value (1 and 1.0 are one), named ``n1``:
+    # a user constant spelled like it is refused, not merged with it.
+    [formula], _ = numerals_as_constants([formula], where="to_isabelle_modal",
+                                         spell=prefixed_numeral_name)
+
     # A many-sorted formula (SortedQuantifier / SortedConstant) is relativized
     # ONCE, here, into the guarded plain FOL fol.to_fol also builds (∀x:S φ ->
     # ∀x (S(x) -> φ), etc.) — before _scan/_lift ever see it, rather than
@@ -1453,10 +1697,19 @@ def isabelle_modal_theory(
     # formula, not only directly under a SortedQuantifier).
     original = formula
     formula = formula._relativize([])
+    # Rigid identity (qml's reading): `≠` -> `¬(=)`, a non-binary `=` refused. A formula
+    # without an identity atom is returned unchanged.
+    formula = _lower_identity(formula, "to_isabelle_modal")
 
     sig = _Sig()
     _scan(formula, sig)               # which modalities occur (relation/operator blocks)
-    names = _IsaNames(formula)        # de-colliding constant names (decls + usages agree)
+    # de-colliding constant names (decls + usages agree); extended by the guard of a
+    # sort that occurs only through a sorted constant, so that guard is declared.
+    names = _names_with_sort_facts(
+        formula, original,
+        _axiom_variable_names(sig, original, frame, mode, temporal_closure, temporal_def,
+                              systems, bridges))
+    sort_consts = _sort_consts(original, names)
     body = _lift(formula, names)  # may raise on an unsupported node — do before emitting.
 
     lines: List[str] = []
@@ -1468,8 +1721,8 @@ def isabelle_modal_theory(
     lines.append(f"(* formula. mode={mode}, frame={frame}, tactic={tactic}. *)")
     lines.append("(* The toolkit EMITS this theory; it does not run Isabelle/Sledgehammer.  *)")
     lines.append("(* First-order modal logic is undecidable: an external prover must close  *)")
-    lines.append("(* the lemma. Equality =/<> is an uninterpreted world-relativized         *)")
-    lines.append("(* predicate (feq/fneq), NOT primitive HOL identity.                      *)")
+    lines.append("(* the lemma. Equality =/<> is RIGID identity: HOL's own =, no world      *)")
+    lines.append("(* argument, as in the first-order embedding (fol.qml).                   *)")
     if requested_bridges:
         # Comment only — the bridge AXIOMS are emitted with the other axioms below.
         named = ", ".join(n for n in _BRIDGES if n in requested_bridges)
@@ -1542,6 +1795,11 @@ def isabelle_modal_theory(
     if sig.has_quant:
         lines += _quant_block(mode)
         lines.append("")
+    elif sort_consts and mode in _ACTUALIST_MODES:
+        # An actualist sort witness (``_nonempty_sort_axioms``) names ``existsAt``;
+        # a formula with no quantifier has no ``_quant_block`` to declare it.
+        lines.append(_EXISTS_AT_DECL)
+        lines.append("")
     lines += _VALID_ABBREV
     lines.append("")
 
@@ -1553,7 +1811,8 @@ def isabelle_modal_theory(
 
     # Axioms.
     axioms = _collect_axioms(sig, frame, mode, temporal_closure, temporal_def,
-                             systems, bridges, _sort_consts(original, names))
+                             systems, bridges, sort_consts,
+                             _sort_members(original, names))
     if axioms:
         lines += axioms
         lines.append("")
@@ -1595,15 +1854,23 @@ def modal_axiom_names(
     axioms.
     """
     _validate(mode, frame, "oops")
+    # The same numeral rule as isabelle_modal_theory: a numeral spelled like a constant is refused.
+    [formula], _ = numerals_as_constants([formula], where="modal_axiom_names",
+                                         spell=prefixed_numeral_name)
     sig = _Sig()
     # Relativize first, same as isabelle_modal_theory — _scan's has_quant flag
     # only needs to know a quantifier occurs, sorted or not, and a sort guard
     # is an ordinary atom to it either way; see that function's comment.
-    relativized = formula._relativize([])
+    relativized = _lower_identity(formula._relativize([]), "modal_axiom_names")
     _scan(relativized, sig)
+    names = _names_with_sort_facts(
+        relativized, formula,
+        _axiom_variable_names(sig, formula, frame, mode, temporal_closure, False,
+                              systems, bridges))
     return _axiom_names(_collect_axioms(
         sig, frame, mode, temporal_closure, systems=systems, bridges=bridges,
-        sorts=_sort_consts(formula, _IsaNames(relativized))))
+        sorts=_sort_consts(formula, names),
+        members=_sort_members(formula, names)))
 
 
 def to_isabelle_modal(

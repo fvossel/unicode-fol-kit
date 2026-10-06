@@ -1,10 +1,10 @@
 # Transforming & exporting formulas
 
-Every AST node carries a uniform set of transformations: normal forms and Horn checks for classical FOL, lambda-calculus reduction, sort relativisation, a small traversal API, and round-tripping exporters/importers for LaTeX, TPTP, Prover9, SMT-LIB, and Graphviz. Most operations are methods on the node; the rest are free functions importable from `unicode_fol_kit`.
+Every AST node carries a uniform set of transformations: normal forms and Horn checks for classical FOL, lambda-calculus reduction, sort relativisation, a small traversal API, and round-tripping exporters/importers for LaTeX, TPTP, Prover9, SMT-LIB, and Graphviz. Most operations are methods on the node; the rest are free functions importable from `unicode_fol_kit`. Moving a formula into a *different logic* (modal or many-sorted to first-order, a description-logic concept to FOL, …) is a translation rather than a transformation: it hands back side axioms next to the term, and it lives on its own page, {doc}`logic-graph`.
 
 ## Normal forms
 
-`to_nnf()`, `to_pnf()`, `to_cnf()`, and `skolemize()` operate on classical FOL. They accept FOL and MSFOL directly — sorts are reduced via `to_fol()` internally. **Łukasiewicz (MSFL/FL) input is refused**, not silently classicalised: a Łukasiewicz connective is not classical, and treating `P ∨ ¬P` as excluded middle would decide the wrong logic (weak disjunction has no excluded middle). Evaluate fuzzy input with `semantics.fuzzy.evaluate` / `fuzzy_is_valid`, or collapse it explicitly first with `to_fol(node)` if the classical skeleton is really what you want. (Lambda terms must be beta-reduced and lambda-eliminated beforehand; see below.)
+`to_nnf()`, `to_pnf()`, `to_cnf()`, and `skolemize()` operate on classical FOL. They accept FOL and MSFOL directly — sorts are reduced via `to_fol()` internally, so the result is a normal form of the *relativised* formula, which does not say that a sort is non-empty (see [Sort relativisation](#sort-relativisation-to_fol)). **Łukasiewicz (MSFL/FL) input is refused**, not silently classicalised: a Łukasiewicz connective is not classical, and treating `P ∨ ¬P` as excluded middle would decide the wrong logic (weak disjunction has no excluded middle). Evaluate fuzzy input with `semantics.fuzzy.evaluate` / `fuzzy_is_valid`, or collapse it explicitly first with `to_fol(node)` if the classical skeleton is really what you want. (Lambda terms must be beta-reduced and lambda-eliminated beforehand; see below.)
 
 ```python
 from unicode_fol_kit import MSFLParser, to_nnf, to_pnf, to_cnf, to_dnf, skolemize
@@ -28,7 +28,7 @@ skolemize(p.parse("∀x ∃y Loves(x, y)")).to_unicode_str()
 ```
 
 - `to_nnf` / `to_pnf` / `to_cnf` / `to_dnf` are **equivalence-preserving**: the result is logically equivalent to the (classical) input. `to_dnf` is the dual of `to_cnf` — a prenex form whose matrix is a disjunction of conjunctive clauses.
-- `skolemize` is **satisfiability-preserving** (not equivalence-preserving): existentials are replaced by Skolem terms over the universals in scope, and the universal prefix is retained. Bound variables are standardised apart (renamed to fresh `v0, v1, …`); Skolem symbols are named `sk0, sk1, …`.
+- `skolemize` is **satisfiability-preserving** (not equivalence-preserving): existentials are replaced by Skolem terms over the universals in scope, and the universal prefix is retained. Bound variables are standardised apart (renamed to fresh `v0, v1, …`); Skolem symbols are named `sk0, sk1, …`. Both skip a name the formula already uses: `∃x P(x, sk0)` skolemizes to `P(sk1, sk0)`.
 
 ### NNF: every connective is eliminated
 
@@ -107,7 +107,7 @@ skolemize(p.parse("∃x (∀y P(x, y) ∧ ∃z Q(x, z))")).to_unicode_str()
 
 ### Tseitin CNF (equisatisfiable)
 
-`to_tseitin_cnf()` produces an **equisatisfiable** CNF using the Tseitin/definitional encoding: it introduces fresh auxiliary atoms (`ts0, ts1, …`) for compound subformulas, so the result grows linearly instead of risking the exponential blow-up of the distributive `to_cnf`. It is **not** logically equivalent to the input (the auxiliaries are existentially fresh), but the input is satisfiable iff its Tseitin CNF is. It operates on quantifier-free (propositional / ground) formulas and raises `ValueError` on quantified input.
+`to_tseitin_cnf()` produces an **equisatisfiable** CNF using the Tseitin/definitional encoding: it introduces fresh auxiliary atoms (`ts0, ts1, …`, skipping any name the formula uses) for compound subformulas, so the result grows linearly instead of risking the exponential blow-up of the distributive `to_cnf`. It is **not** logically equivalent to the input (the auxiliaries are existentially fresh), but the input is satisfiable iff its Tseitin CNF is. It operates on quantifier-free (propositional / ground) formulas and raises `ValueError` on quantified input.
 
 ```python
 from unicode_fol_kit import MSFLParser, to_tseitin_cnf, is_satisfiable
@@ -155,7 +155,23 @@ is_horn(p.parse("(P → Q) ∧ (R ∨ S)"))          # → False
 
 ## Sort relativisation: `to_fol()`
 
-`to_fol()` performs a two-phase reduction: it first lowers Łukasiewicz operators to classical ones (`to_msfol()`), then eliminates sort annotations via relativisation — a sorted `∀x:S φ` becomes `∀x (S(x) → φ)`.
+`to_fol()` performs a three-phase reduction: it first lowers Łukasiewicz operators to classical ones (`to_msfol()`), then eliminates sort annotations via relativisation — a sorted `∀x:S φ` becomes `∀x (S(x) → φ)` — and finally expands `Count` and `Contrast` nodes into plain classical connectives (`∃≥2 x P(x)` becomes `∃x0 ∃x1 (P(x0) ∧ P(x1) ∧ x0 ≠ x1)`, `Contrast(P, Q)` becomes `P ∧ Q`).
+
+The witnesses a `Count` expansion mints are named after the counting variable, as one letter and digits (`x0`, `x1`, …) — the one shape the kit's own parser reads back — and they avoid every name in the matrix, bound ones included. So the expansion is text you can hand straight back:
+
+```python
+from unicode_fol_kit import MSFLParser, to_fol, api
+
+expanded = to_fol(MSFLParser().parse("∃≥2 x P(x)"))
+expanded.to_unicode_str()
+# → '∃x0 ∃x1 (P(x0) ∧ P(x1) ∧ x0 ≠ x1)'
+
+api.parse_any(expanded.to_unicode_str()).ok
+# → True
+
+to_fol(MSFLParser().parse("∃≥2 x R(x, x0)")).to_unicode_str()   # x0 is already taken (it is free in the matrix)
+# → '∃x1 ∃x2 (R(x1, x0) ∧ R(x2, x0) ∧ x1 ≠ x2)'
+```
 
 ```python
 from unicode_fol_kit import MSFLParser, to_fol
@@ -177,8 +193,32 @@ to_fol(p.parse("∀x:Human ∃y:Animal Likes(x, y)")).to_unicode_str()
 # → '∀x (Human(x) → ∃y (Animal(y) ∧ Likes(x, y)))'
 
 to_fol(p.parse("∀x:Agent (∃y:Agent Knows(x, y) ∨ Alone(x))")).to_unicode_str()
-# → '∀x (Agent(x) → (∃y (Agent(y) ∧ Knows(x, y)) ∨ Alone(x)))'
+# → '∀x (Agent(x) → ∃y (Agent(y) ∧ Knows(x, y)) ∨ Alone(x))'
 ```
+
+**Relativisation alone does not say that a sort is non-empty.** The kit's many-sorted logic never lets a sort be empty ({doc}`classical-reasoning`), but the image of `∀x:S φ` is satisfied by a structure in which `S` has no members, so the image can have countermodels the sorted formula cannot. `(∀x:Human M(x)) → ∃x:Human M(x)` is valid; its image is not:
+
+```python
+from unicode_fol_kit import MSFLParser, to_fol, api, nonempty_sort_axioms
+
+valid = MSFLParser(many_sorted=True).parse("(∀x:Human M(x)) → ∃x:Human M(x)")
+image = to_fol(valid)
+image.to_unicode_str()
+# → '∀x (Human(x) → M(x)) → ∃x (Human(x) ∧ M(x))'
+
+api.prove(valid).status
+# → 'proved'
+api.prove(image).status
+# → 'refuted'                                     (an empty Human falsifies it)
+
+[a.to_unicode_str() for a in nonempty_sort_axioms(valid)]
+# → ['∃x0 Human(x0)']
+
+api.prove(image, nonempty_sort_axioms(valid)).status
+# → 'proved'                                      (the axiom is a separate premise)
+```
+
+The missing fact is `nonempty_sort_axioms(...)` (and `subsort_axioms(signature)` for a subsort hierarchy). They are passed as **separate premises** next to the image and never conjoined onto it: a conjunction would ask the prover to establish the axiom as well, and a conditional would make unsatisfiable formulas satisfiable. {doc}`logic-graph` shows both failures, and the `msfol → fol` edge of the translation registry (`FOL(MSFOL(f))`) does this bookkeeping for you.
 
 A **sorted constant** is written `alice:Human` (the constant name needs at least two letters, otherwise it lexes as a variable). `to_fol` drops the annotation to a plain constant; pass `include_sort_facts=True` to conjoin the membership atoms it implies at the top level:
 
@@ -197,21 +237,38 @@ to_fol(knows, include_sort_facts=True).to_unicode_str()
 # → 'Human(alice) ∧ Human(bob) ∧ Knows(alice, bob)'   (membership facts conjoined)
 ```
 
-```{note}
-This is a classical (Boolean) projection, not a fuzzy-preserving translation. `to_msfol()` maps *both* the strong (`⊗`/`⊕`) and the weak (`∧`/`∨`) Łukasiewicz connectives to the same classical `And`/`Or`. On crisp truth values {0, 1} the operators coincide, so the reduction is sound as the two-valued projection — but the genuinely many-valued content is discarded. To compute the real-valued Łukasiewicz degree, use `fuzzy_evaluate()` or the fuzzy Z3 solver instead.
+Those facts are conjoined *into* the formula, which is right for a formula you assert (a premise, a satisfiability check) and wrong for one you try to prove, because the goal then has to establish the facts too:
+
+```python
+from unicode_fol_kit import Atom, Not, Or, SortedConstant
+
+alice = SortedConstant("alice", "Human")
+tautology = Or(Atom("P", [alice]), Not(Atom("P", [alice])))
+
+to_fol(tautology, include_sort_facts=True).to_unicode_str()
+# → 'Human(alice) ∧ (P(alice) ∨ ¬P(alice))'
+
+api.prove(to_fol(tautology)).status
+# → 'proved'
+api.prove(to_fol(tautology, include_sort_facts=True)).status
+# → 'refuted'
 ```
 
-The normal-form functions above call `to_fol()` internally for **sorts**, so they accept sorted input directly — e.g. you can `skolemize` a sorted formula. Fuzzy input still needs the explicit `to_fol()` call first (see above); passing it straight to `skolemize`/`to_nnf`/etc. raises:
+```{note}
+This is a classical (Boolean) projection, not a fuzzy-preserving translation. `to_msfol()` maps *both* the strong (`⊗`/`⊕`) and the weak (`∧`/`∨`) Łukasiewicz connectives to the same classical `And`/`Or`. On crisp truth values {0, 1} the operators coincide, so the reduction is sound as the two-valued projection — but the genuinely many-valued content is discarded. To compute the real-valued Łukasiewicz degree, use `fuzzy_evaluate()` or the fuzzy Z3 solver instead. In the translation registry this is the `fuzzy → msfol` edge, declared `lossy` (see {doc}`logic-graph`).
+```
+
+The normal-form functions above call `to_fol()` internally for **sorts**, so they accept sorted input directly — e.g. you can `skolemize` a sorted formula (the result is the Skolemisation of the relativised image, so the non-emptiness caveat above applies to any validity or satisfiability conclusion drawn from it). Fuzzy input still needs the explicit `to_fol()` call first (see above); passing it straight to `skolemize`/`to_nnf`/etc. raises:
 
 ```python
 from unicode_fol_kit import skolemize
 
 skolemize(p.parse("∀x:Human ∃y:Human Loves(x, y)")).to_unicode_str()
-# → '∀v0 (Human(v0) → Human(sk0(v0)) ∧ Loves(v0, sk0(v0)))'
+# → '∀v0 (¬Human(v0) ∨ (Human(sk0(v0)) ∧ Loves(v0, sk0(v0))))'
 
 fuzzy = MSFLParser(fuzzy=True).parse("P ⊗ Q")
 skolemize(fuzzy)
-# raises NotImplementedError: StrongConjunction is a Łukasiewicz connective — classical
+# raises TypeError: to_pnf: StrongConjunction is a Łukasiewicz connective — classical
 # normal forms (and the resolution prover on top of them) would silently decide the
 # WRONG logic. Evaluate with semantics.fuzzy.evaluate or decide with
 # atp.z3_fuzzy.fuzzy_is_valid; collapse explicitly with to_fol(node) first if the
@@ -243,11 +300,14 @@ substitute(p.parse("P(x)"), Variable("x"), Constant("a")).to_unicode_str()
 # → 'P(a)'
 ```
 
-Substitution is **capture-avoiding**: replacing into a formula whose binder would capture the incoming variable renames the binder first.
+Substitution is **capture-avoiding**: replacing into a formula whose binder would capture the incoming variable renames the binder first. The new name is one letter and digits (`x0`, `x1`, …), which is the shape the kit's own parser reads back, and it is the first one that is none of: a free variable of what is substituted in, the variable being replaced, the old binder, or a name of any kind (variable, constant, function, predicate, sort) that the binder's scope or the replacement carries. A lambda parameter keeps its kind: `y` becomes `y0`, a name `foo` becomes `foo_0`, a predicate `P` becomes `P_0`. A binder is renamed whenever its name meets a free variable of what is substituted in, also when one is a lambda parameter and the other a logical variable: the text has one name for both, so `beta_reduce` of `(λx. λy. R(x, y))(y)` is `λy0. R(y, y0)`, which reads back as itself, and not `λy. R(y, y)`.
 
 ```python
 substitute(p.parse("∀x R(x, y)"), Variable("y"), Variable("x")).to_unicode_str()
-# → '∀x_0 R(x_0, x)'   (the bound x is renamed so the substituted x stays free)
+# → '∀x0 R(x0, x)'   (the bound x is renamed so the substituted x stays free)
+
+substitute(p.parse("∀x1 P(x1)"), Variable("x0"), Variable("x1")).to_unicode_str()
+# → '∀x2 P(x2)'   (x1 is free in the replacement and x0 is the variable being replaced: renaming the binder to x0 would let the substitution replace its own occurrences, '∀x0 P(x1)')
 ```
 
 ### Beta-, eta-, and beta-eta-reduction
@@ -374,8 +434,8 @@ f = MSFLParser().parse("∀x (Human(x) → Mortal(x))")
 
 list(f.walk())        # pre-order: every node and descendant
 f.subformulas()       # every sub-node that is a formula (terms excluded)
-f.atoms()             # → [Atom("Human", …), Atom("Mortal", …)]
-f.variables()         # → {Variable("x")}  (free + bound logical variables)
+f.atoms()             # → [Atom(predicate='Human', …), Atom(predicate='Mortal', …)]
+f.variables()         # → {Variable(name='x')}  (free + bound logical variables)
 f.count()             # → 7   total node count
 f.count(Atom)         # → 2   nodes of a given type
 f.depth()             # → 4   tree height (a leaf has depth 1)
@@ -398,7 +458,7 @@ f.depth()             # → 4   tree height (a leaf has depth 1)
 # More traversal examples
 f_complex = p.parse("∀x ((P(x) ∧ Q(x)) ∨ (R(x) → S(x)))")
 from unicode_fol_kit import And, Or, Implies
-f_complex.count()           # → 11
+f_complex.count()           # → 13
 f_complex.count(Atom)       # → 4
 f_complex.count(And)        # → 1
 f_complex.count(Or)         # → 1
@@ -413,7 +473,6 @@ for atom in f_relational.atoms():
         atoms_by_arity[arity] = []
     atoms_by_arity[arity].append(atom.predicate)
 # → {2: ['Knows', 'Likes']}
-```
 
 from unicode_fol_kit import Not
 
@@ -428,7 +487,7 @@ The `to_*` exporters are methods on every node and use the same precedence-aware
 ```python
 f = MSFLParser().parse("∀x (Human(x) → Mortal(x))")
 
-f.to_prover9()   # → '(all x (Human(x) -> Mortal(x)))'
+f.to_prover9()   # → '(all X (Human(X) -> Mortal(X)))'
 f.to_tptp()      # → '(![X]: (human(X) => mortal(X)))'
 f.to_latex()     # → '\\forall x\\, (Human(x) \\rightarrow Mortal(x))'
 f.to_dict()      # JSON-serialisable dict
@@ -442,9 +501,11 @@ comp_formula.to_tptp()
 # → '($less(X,5) & $greatereq(Y,0))'
 
 comp_formula.to_prover9()
-# → '((X < 5) & (Y >= 0))'
+# → '((X < "5") & (Y >= "0"))'
 
 ```
+
+`to_tptp()` of one formula writes the arithmetic spelling: `$less`, `$sum` and a bare numeral are TPTP's own arithmetic, which a prover reads as arithmetic. `to_prover9()` writes no arithmetic, because Prover9 has none: `<` and `+` are uninterpreted symbols there, and a numeral is a quoted constant (`"5"`, see below). The TPTP problem writers (see "Building a TPTP problem for a prover" in {doc}`classical-reasoning`) write a comparison, an arithmetic operator and a numeral as an ordinary renamed predicate, function and constant of the problem, and record the renaming; only the typed arithmetic writer (the TFA writer, `sort="int"` / `sort="real"`) keeps the dollar-words.
 
 `to_latex()` renders sorts as `\forall x{:}\mathrm{Human}\,` and the strong Łukasiewicz operators as `\otimes` / `\oplus`; symbol and predicate names are emitted verbatim. TPTP lowercases predicates and uppercases variables per its convention. Second-order formulas reject `to_z3` / `to_prover9` / `to_tptp` — round-trip those (and modal / fuzzy) through LaTeX or JSON instead.
 
@@ -469,18 +530,22 @@ so.to_tptp()       # raises NotImplementedError (no first-order image)
 
 ### ASCII-legal names in export, for a whole problem
 
-`to_tptp()` / `to_prover9()` render a predicate/function/constant name close to verbatim: TPTP folds only the exported name's first character to lower-case, Prover9 folds nothing at all, and neither transliterates a non-ASCII predicate or function name (only `Constant.to_tptp`/`to_prover9` transliterate, via `constant_name_to_ascii`). {doc}`parsing`'s identifier widening lets a predicate/function name carry a non-ASCII letter and a term start with a digit, so calling these two methods directly on such a formula can produce text that is not legal TPTP/Prover9 in the first place:
+`to_tptp()` / `to_prover9()` render a predicate/function/constant name close to verbatim: TPTP folds only the exported name's first character to lower-case, Prover9 folds nothing at all, and neither transliterates a non-ASCII predicate or function name (only `Constant.to_tptp`/`to_prover9` transliterate, via `constant_name_to_ascii`). Under `set(prolog_style_variables)`, which the kit's Prover9 text sets, Prover9 reads a bare constant or proposition that begins with an upper-case letter as a variable, so `to_prover9()` writes one in double quotes (`Gaseous` as `"Gaseous"`, `Rain` as `"Rain"`; so is a name that begins with an underscore, which Prover9 reads as a constant but the Prolog convention takes for a variable). A numeral is written the same way: `Number.to_prover9()` is its value in double quotes (`"1"` for `1` and `1.0`, `"2.5"`, `"-1"`), never bare digits, so that Prover9 and Mace4 read it as an ordinary constant (Mace4 reads a bare integer as a domain element of its own). {doc}`parsing`'s identifier widening lets a predicate/function name carry a non-ASCII letter and a term start with a digit, so a name can reach these two methods that is not legal TPTP, or not legal Prover9, in the first place. Neither writes an illegal word as it is: an illegal word is not a rendering (Vampire, E and Prover9 reject the text or read it as other symbols), so `to_tptp()` refuses by name a name that is not a TPTP word (a lower-case letter, then letters, digits and underscores), and `to_prover9()` one that is not a word of ASCII letters, digits and underscores (a constant is transliterated first; a digit-leading word is such a word, and Prover9 reads it as one symbol):
 
 ```python
-f = MSFLParser().parse("Świątek(x)")
-f.to_tptp()      # → 'świątek(X)'    — the raw non-ASCII letter, only the case folded
-f.to_prover9()   # → 'Świątek(X)'    — completely untouched
+f = MSFLParser().parse("∀x Świątek(x)")
+f.to_tptp()      # raises NotImplementedError: Node.to_tptp: the predicate name 'Świątek' would be
+                 # written as 'świątek', which is not a TPTP word …
+f.to_prover9()   # raises NotImplementedError: to_prover9: the predicate 'Świątek' cannot be
+                 # written for Prover9 …
 
 g = MSFLParser().parse("P(2008SummerOlympics)")
-g.to_tptp()      # → 'p(2008SummerOlympics)'   — leading digit intact, illegal TPTP lower_word
+g.to_tptp()      # raises NotImplementedError: Node.to_tptp: the constant name '2008SummerOlympics'
+                 # would be written as '2008SummerOlympics', which is not a TPTP word …
+g.to_prover9()   # → 'P(2008SummerOlympics)'   (Prover9 reads a digit-leading word as one symbol)
 ```
 
-That is deliberate at the node level, not an oversight: a single node has no view of the rest of the problem it belongs to, so it cannot keep two distinct names from colliding once "fixed", and a per-node fix could never reach a caller that later needs to read a prover's own answer back. The fix instead runs once, over a WHOLE set of premises and a conclusion together — inside every one of the kit's own external-prover entry points: `check_logical_entailment_vampire` / `atp.vampire_entailment.check_entailment_vampire_detailed`, `atp.eprover_backend.check_entailment_eprover_detailed` (E and Zipperposition), `atp.twee_entailment.check_entailment_twee_detailed`, `check_logical_entailment` (Prover9), and `Cvc5Backend.decide` (SMT-LIB2, narrower — only a digit-leading name needs fixing there, since Z3's own SMT-LIB2 serialiser already quotes a non-ASCII name correctly on its own). Call any of these — see {doc}`classical-reasoning`'s "External provers" section for the Prover9/Vampire pair — on the same two formulas above, and the external tool sees a legal, ASCII, non-digit-leading problem instead; an already-legal name passes through completely untouched, so nothing changes for a formula these entry points already handled correctly. Wherever the tool's own answer can carry a symbol name back (a TSTP proof step, a countermodel), that answer is translated back to the ORIGINAL kit-level names before it reaches the caller — a real `Świątek`/`2008SummerOlympics`, never the synthesised token the external tool actually saw. See `CHANGELOG.md`'s `fol.grammars` / `fol._identifiers` entry for the full mechanism (the injective, whole-problem-consistent rewrite; the reverse mapping; what was checked against a real E, Vampire, Twee, and cvc5).
+The refusal is all a single node can do: it has no view of the rest of the problem it belongs to, so it cannot rewrite a name without risking two distinct names colliding once "fixed", and a rewrite of its own could never reach a caller that later needs to read a prover's own answer back. (The other things the outermost `to_tptp()` call checks, for the one formula it renders, are that two distinct symbols are not written as one word: two names of the same kind that fold together, e.g. `gaseous` and `Gaseous`, a number and a constant spelled alike, an arithmetic symbol and a name written like it, `x` and `X`; and a word that starts with `$` (other than the nullary atoms `$true` / `$false`, which are TPTP's own propositions) and a variable that has no TPTP spelling, such as `ä`, are refused as well. It refuses rather than renames. See "Building a TPTP problem for a prover" in {doc}`classical-reasoning`.) The fix instead runs once, over a WHOLE set of premises and a conclusion together — inside every one of the kit's own external-prover entry points: `check_logical_entailment_vampire` / `atp.vampire_entailment.check_entailment_vampire_detailed`, `atp.eprover_backend.check_entailment_eprover_detailed` (E and Zipperposition), `atp.twee_entailment.check_entailment_twee_detailed`, `check_logical_entailment` (Prover9), and `Cvc5Backend.decide` (SMT-LIB2, narrower — Z3's own SMT-LIB2 serialiser already quotes a non-ASCII name correctly on its own, so such a name is left as it is; what is renamed is a digit-leading name, a reserved word of SMT-LIB (`let`, `par`, …), any name of an SMT-LIB theory under every logic (`select`, `distinct`, …), a name that starts with `.` or `@` or with `-` and a digit, a name that holds `|`, `\` or `'`, a name of the shape Z3 prints for a shared sub-term (`$x24`, `?x10`), a decimal or negative numeral, and the second symbol of one name at another arity or kind; a numeral and a constant of one text are refused by name). Call any of these — see {doc}`classical-reasoning`'s "External provers" section for the Prover9/Vampire pair — on the same two formulas above, and the external tool sees a legal, ASCII, letter-initial problem instead (a name with any other character, such as `has-part`, is rewritten the same way: `hasu002dpart`); an already-legal name passes through completely untouched, so nothing changes for a formula these entry points already handled correctly. Wherever the tool's own answer can carry a symbol name back (a TSTP proof step, a countermodel), that answer is translated back to the ORIGINAL kit-level names before it reaches the caller — a real `Świątek`/`2008SummerOlympics`, never the synthesised token the external tool actually saw. See `CHANGELOG.md`'s `fol.grammars` / `fol._identifiers` entry for the full mechanism (the injective, whole-problem-consistent rewrite; the reverse mapping; what was checked against a real E, Vampire, Twee, and cvc5).
 
 `hol.classical.to_thf_fol` / `to_isabelle_fol` (and their MSFOL/modal counterparts in `fol.qml` / `hol.isabelle_modal`, see {doc}`higher-order`) and `atp.minizinc_backend.to_minizinc` (see {doc}`finite-domain`) sanitise the same way on every call, with no separate step to remember: their own name resolvers already transliterate and de-collide every predicate, function, constant, and (for the modal exporters) bound variable name before any THF/Isabelle/MiniZinc text is emitted.
 
@@ -612,9 +677,9 @@ end_of_list.
 # → ['x < x + 1']
 ```
 
-- **TPTP** — `parse_tptp_formula(s)` reads one FOF/CNF formula; `parse_tptp(text)` reads a whole problem into a list of `TptpFormula(name, role, formula)` records; `load_tptp(path)` reads a `.p`/`.tptp` file. `%` and `/* */` comments are ignored. TPTP lowercases predicates, so a predicate is capitalised on import (`man` → `Man`); **single-quoted atoms** (`'http___example_org_Thing'`, the form OWL→FOL dumps use for IRIs) are read with the quotes stripped and `\'` / `\\` unescaped; `$true`/`$false` import as opaque atoms; the typed `tff`/`thf` dialects and `include` directives are out of scope.
-- **Prover9** — `parse_prover9(s)` reads a single Prover9/LADR formula (a trailing `.` is accepted); `parse_prover9_problem(text)` / `load_prover9(path)` read a whole input file — `set`/`clear`/`assign` directives (recognised and skipped), `formulas(LIST). … end_of_list.` blocks, and bare top-level formulas — into a list of `Prover9Formula(role, formula)` records (the list name is the role; `""` for a bare formula; a genuinely new `op(...)` operator declaration is applied to formulas parsed after it, refused by name if it would redeclare a built-in or is otherwise malformed). It follows `set(prolog_style_variables)` — uppercase/underscore-initial names are variables — matching `to_prover9()`'s output, and is case-preserving.
-- **Z3 / SMT-LIB** — `from_z3(expr)` turns a `z3.ExprRef` back into the AST; `parse_smtlib(text)` / `load_smtlib(path)` parse SMT-LIB2 and convert every assertion. The conversion is **meaning-preserving, not structure-preserving**: Z3 maps variables/constants/numbers onto one uninterpreted sort, so a *free* variable comes back as a `Constant` (only bound variables survive as `Variable`); `A == B` reads as `Iff` on Booleans and `=` on individuals.
+- **TPTP** — `parse_tptp_formula(s)` reads one FOF/CNF formula; `parse_tptp(text)` reads a whole problem into a list of `TptpFormula(name, role, formula)` records; `load_tptp(path)` reads a `.p`/`.tptp` file. `%` and `/* */` comments are ignored. TPTP lowercases predicates, so a predicate is capitalised on import (`man` → `Man`); **single-quoted atoms** (`'http___example_org_Thing'`, the form OWL→FOL dumps use for IRIs) are read with the quotes stripped and `\'` / `\\` unescaped; `$true`/`$false` import as the nullary atoms `Atom('$true')` / `Atom('$false')`, which are TPTP's own propositions and no symbol of yours: the TPTP writers and `to_tptp()` write them back verbatim, `to_z3()` reads them as true and false (so z3 and a TPTP prover answer the same question), and `to_prover9()` writes `$T` / `$F`; `tff` formulas of the monomorphic dialect (TF0) and `include` directives (`parse_tptp` resolves them against `base_dir=`) are read too, and `parse_tff_problem` also reads the type declarations (see {doc}`interoperability`), while `thf`, TF1 polymorphism and TPTP's arithmetic sorts (`$int`, `$rat`, `$real`) are refused by name.
+- **Prover9** — `parse_prover9(s)` reads a single Prover9/LADR formula (a trailing `.` is accepted); `parse_prover9_problem(text)` / `load_prover9(path)` read a whole input file — `set`/`clear`/`assign` directives (recognised and skipped, except `set` / `clear` of `prolog_style_variables`, which decides how a bare name is read), `formulas(LIST). … end_of_list.` blocks, and bare top-level formulas — into a list of `Prover9Formula(role, formula)` records (the list name is the role; `""` for a bare formula; a genuinely new `op(...)` operator declaration is applied to formulas parsed after it, refused by name if it would redeclare a built-in or is otherwise malformed). `parse_prover9(s)` reads a name that no quantifier binds under `set(prolog_style_variables)`, which is what `to_prover9()` writes: a variable if and only if it begins with `A` to `Z` (an underscore does not make one, as in Prover9 itself), unless it is called with `prolog_style_variables=False`, Prover9's default, where a name that begins with `u` to `z` is a variable. `parse_prover9_problem` / `load_prover9` read the convention of the file: the last `set(prolog_style_variables)` or `clear(prolog_style_variables)` decides for every formula of it, and a file with neither reads Prover9's default. A quantifier binds the symbol it names whatever its case, up to the end of its operand (the scope ends before a connective); `Xa` and `XA` are two variables, and so are `x` and `X`. `<-` is the reverse implication (`p <- q` is `q -> p`) and, as in Prover9, cannot be chained (`a <- b <- c` is refused). `all` and `exists` are keywords only as words of their own (`all(a)` and `allowed(a)` are atoms), `formulas(alpha, beta)` inside a list is an atom, and an unreadable numeral is a `Prover9ParsingError` that names its position. Constants, predicates and functions keep their case. A double-quoted symbol is read back as what `to_prover9()` wrote it for, never as a variable: a constant (`P("Gaseous")`), a proposition (`"Rain"`), or, when the quoted text is exactly the text `to_prover9()` writes for a numeral, the `Number` (`P("1")`, `P("2.5")`). A quoted text of any other shape (a second spelling of one number such as `"1.0"` or `"01"`, a name with a space, a name that begins with a digit and is no numeral) is refused by name; so is a decimal of more than 15 significant digits, quoted or bare (see {doc}`parsing`).
+- **Z3 / SMT-LIB** — `from_z3(expr)` turns a `z3.ExprRef` back into the AST; `parse_smtlib(text)` / `load_smtlib(path)` parse SMT-LIB2 and convert every assertion. The conversion is **meaning-preserving, not structure-preserving**: Z3 maps variables/constants/numbers onto one uninterpreted sort, so a *free* symbol comes back as a `Constant` and a bound variable as a `Variable`, with one exception: `x!v`, the symbol `to_z3` writes for a free variable `x`, is read as the variable `x`. A bound or free `x!v` is read as `x` unless `x` is itself a variable of the text, so a text that binds `a!v` and `a` binds two variables; a symbol `x!c` is the constant named `x!c` (only `x!v!c` and `x!c!c` are escapes, read as the constants `x!v` and `x!c`). A symbol is read as a `Number` only when it is of an uninterpreted sort (the kind `to_z3` writes) and its name is exactly the text a numeral is written as (`5`, `-3`, `2.5`, `1e-07`); `inf`, `nan`, `+5`, `1_000` and names in other digits are constants, and so is a symbol of sort `Int` or `Real` named like a numeral (a declared `|1|` next to the numeral `1` is the constant `1`, not the number). `A == B` reads as `Iff` on Booleans and `=` on individuals.
 
 The TPTP and Prover9 readers map the comparison and arithmetic operators back to their glyph atoms/functions, and TPTP's `=` / `!=` / dollar-words too:
 
@@ -649,7 +714,7 @@ from unicode_fol_kit import MSFLParser, from_z3
 
 g = MSFLParser().parse("P(x) ∧ Q(x)")
 from_z3(g.to_z3()).to_unicode_str()
-# → 'P(x) ∧ Q(x)'   (note: a free x round-trips through to_z3 as a Constant)
+# → 'P(x) ∧ Q(x)'   (a free x is written by to_z3 as the symbol x!v and read back as the variable x)
 ```
 
 A classical formula survives a full **export → re-import** through TPTP unchanged (modulo the predicate-case convention):

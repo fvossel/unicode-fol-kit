@@ -149,6 +149,50 @@ def test_out_of_fragment_is_unsupported_before_any_network(monkeypatch):
     assert verdict.reason == "unsupported"
 
 
+# ---------------------------------------------------------------------------
+# A typed reading that differs from the kit's is refused, not answered
+#
+# The CASL export declares an unannotated constant or a function value at the sort of
+# the position it is used in, and CASL's sorts are disjoint types. The kit's own reading
+# of a sort: ONE universe, a sort is a non-empty subset of it, a constant `c:S` is in S,
+# an unannotated constant / an unsorted variable / a function value is ANY element. So
+# Hets (measured live, SPASS) PROVES `∀x:Human Mortal(x) ⊢ Mortal(socrates)`, which is
+# invalid (U={0,1}, Human={0}, Mortal={0}, socrates=1), and REFUTES
+# `∀x ∀y x = y ⊢ ∀x:A ∀z:A x = z`, which is valid (a one-element universe, A a subset).
+# ---------------------------------------------------------------------------
+
+_DIFFERENT_READING = [
+    # premises, conclusion, what the refusal must name
+    ([_PARSE_MS("∀x:Human Mortal(x)")], _PARSE("Mortal(socrates)"), "'socrates'"),
+    ([_PARSE_MS("∀x:Foo R(x)"), _PARSE("Q(g(alpha))")], _PARSE("R(g(alpha))"), "'g'"),
+    ([_PARSE("∀x ∀y x = y")], _PARSE_MS("∀x:A ∀z:A x = z"), "UNSORTED"),
+    ([], _PARSE_MS("∃y:Car Car(y)"), "'Car'"),
+]
+
+
+@pytest.mark.parametrize("premises, goal, names", _DIFFERENT_READING)
+def test_a_differing_typed_reading_is_unsupported_before_any_network(
+        monkeypatch, premises, goal, names):
+    """The verdict is unknown / unsupported, the detail names the term (or the sort) and what
+    to do instead, and no server is contacted."""
+    def _boom(**kw):
+        raise AssertionError("discovery must not run for a problem the backend refuses")
+    monkeypatch.setattr(hets_pkg, "discover_hets_url", _boom)
+    verdict = get_backend("hets").decide(goal, premises)
+    assert (verdict.status, verdict.reason) == ("unknown", "unsupported")
+    assert names in verdict.detail
+    assert "fof writer" in verdict.detail
+
+
+def test_a_problem_whose_typed_reading_agrees_still_reaches_the_server(stubbed_server):
+    """``P(carl), Q(carl:A) ⊢ ∃x:A P(x)`` is valid in the kit (carl is ONE constant, and its
+    sorted occurrence puts it in A) and the typed reading says the same: it is sent."""
+    premises = [_PARSE("P(carl)"), _PARSE_MS("Q(carl:A)")]
+    verdict = get_backend("hets").decide(_PARSE_MS("∃x:A P(x)"), premises)
+    assert verdict.status == "proved"
+    assert "carl : A" in stubbed_server.last_spec
+
+
 def test_unreachable_server_raises_backend_unavailable(monkeypatch):
     """No server, no container: BackendUnavailable propagates (loud
     availability contract) instead of a silent unknown."""
@@ -224,3 +268,23 @@ class TestHetsBackendLive:
         result = get_backend("hets").check_consistency(
             [_PARSE("P(alice)"), _PARSE("∀x (P(x) → Q(x))")])
         assert result["consistent"] is True
+
+    def test_a_sorted_constant_with_a_plain_occurrence_is_proved_by_two_reasoners(self):
+        """``P(carl), Q(carl:A) ⊢ ∃x:A P(x)``: carl is ONE constant and its sorted occurrence puts
+        it in A, so x=carl witnesses the conclusion. The typed reading agrees (carl : A), so it
+        reaches Hets, and both reasoners prove it."""
+        premises = [_PARSE("P(carl)"), _PARSE_MS("Q(carl:A)")]
+        goal = _PARSE_MS("∃x:A P(x)")
+        for reasoner in ("SPASS", "darwin"):
+            verdict = api.prove(goal, premises, backends=["hets"], reasoner=reasoner)
+            assert verdict.status == "proved", (reasoner, verdict.detail)
+
+    @pytest.mark.parametrize("premises, goal, names", _DIFFERENT_READING)
+    def test_a_differing_typed_reading_is_refused_with_a_server_running(
+            self, premises, goal, names):
+        """With a server up, the problems whose typed reading differs from the kit's are still
+        refused (the answers Hets gives for them are about another problem: it proves the
+        invalid ones and refutes the valid ones)."""
+        verdict = api.prove(goal, premises, backends=["hets"], reasoner="SPASS")
+        assert verdict.status == "unknown"
+        assert "unsupported" in verdict.detail and names in verdict.detail

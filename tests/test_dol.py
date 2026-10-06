@@ -53,11 +53,13 @@ itself (an offline wiring/shape test, near the bottom of the OFFLINE section)
 and the LIVE cross-check battery (``TestModalCaslHetsLive``, at the very end)
 that uploads a battery of known modal theorems/non-theorems — T/S4/S5 axioms
 per frame, Barcan/converse-Barcan under every domain regime, a quantified
-non-theorem, many-sorted input, the ``_w0``-vs-``w0`` identifier collision,
-and a world-relativized ``=``/``≠`` atom under a box (the adversarial-review
-equality edge case; the offline half of THAT coverage — the sanitiser's
-``equality_alias`` in isolation — lives in ``tests/test_qml_casl.py``, this
-file's own offline share is ``test_to_dol_library_from_modal_handles_equality_atom_without_crashing``)
+non-theorem, many-sorted input, an object variable named like a fresh world,
+and object identity (``=``/``≠`` under a box, and the rigidity facts of
+``fol.qml``'s "Equality is rigid": ``a = b → □(a = b)`` is a theorem even in
+K; the offline half of THAT coverage — identity arriving binary and CASL-native
+through the sanitiser, and its round trip — lives in ``tests/test_qml_casl.py``,
+this file's own offline share is
+``test_to_dol_library_from_modal_renders_identity_as_native_equality``)
 — and asserts the Hets verdict agrees with
 :func:`~unicode_fol_kit.fol.qml.qml_is_valid`'s own (Z3) verdict wherever Hets
 returns a definite ``Proved``/``Disproved`` (an ``Open`` result is SKIPPED —
@@ -72,7 +74,9 @@ import pytest
 from unicode_fol_kit import MSFLParser
 from unicode_fol_kit.fol.casl_export import to_casl_spec
 from unicode_fol_kit.fol.casl_import import parse_casl_spec
-from unicode_fol_kit.fol.nodes import Atom, Box, Constant, Implies, Quantifier, Variable
+from unicode_fol_kit.fol.nodes import (
+    Atom, Box, Constant, Diamond, Implies, Quantifier, Variable,
+)
 from unicode_fol_kit.fol._msfl_nodes import SortedQuantifier
 from unicode_fol_kit.fol.frames import modal_axiom
 from unicode_fol_kit.fol.qml import BARCAN, CONVERSE_BARCAN, qml_is_valid
@@ -391,47 +395,70 @@ def test_to_dol_library_from_modal_propagates_casl_export_refusal():
         to_dol_library_from_modal(Atom("P", ()), default_sort="sort")
 
 
-def test_to_dol_library_from_modal_handles_equality_atom_without_crashing():
-    """Adversarial-review finding (C6): fol.qml's _st world-relativizes an
-    object-language '=' atom (appends the current-world argument to EVERY
-    atom, no exception for '=' — see fol.qml's own docstring), so
-    'Box(a=b) -> a=b' comes out of qml_validity_formula with a TERNARY '='
-    atom. Before this fix, handing that straight to to_casl_spec under the
-    literal name '=' crashed with 'equality atom must have exactly 2
-    arguments, got 3' — an opaque error naming neither modal logic nor
-    world-relativization. Now hets.dol.sanitize_modal_identifiers aliases it
-    to the fixed, uninterpreted predicate 'weq' before it ever reaches
-    casl_export, so this must render cleanly."""
+def test_to_dol_library_from_modal_renders_identity_as_native_equality():
+    """□(a = b) → a = b under T, through the whole wrapper.
+
+    Hand-derivation. fol.qml translates the identity atom to the SAME binary
+    a = b with no world argument, so the library has to say nothing special
+    about it: the signature is the constants a, b (typed Object by qml's
+    typing facts) and qml's four guard predicates E, Object, R, World —
+    alphabetical, as to_casl_spec orders them — and NO declaration for '=',
+    which is CASL's built-in. The conjecture closes over the world w: Box
+    becomes forall w0 (World(w0) and R(w, w0) => a = b), the implication joins
+    it to the plain a = b at w, and both identity atoms are rendered infix.
+    The text then parses back (casl_import, a separate code path) to exactly
+    the sanitised qml query, so nothing was renamed or lost on the way."""
+    from unicode_fol_kit.fol.qml import qml_validity_formula
+    from unicode_fol_kit.hets.dol import sanitize_modal_identifiers
+
     a, b = Constant("a"), Constant("b")
     eq = Atom("=", [a, b])
     f = Implies(Box(eq), eq)
     text = to_dol_library_from_modal(f, frame="T", spec_name="EqT", library_name="L")
-    assert "weq : Thing * Thing * Thing" in text
-    assert "preds" in text and "= :" not in text   # '=' never separately declared
+    assert text.startswith(
+        "library L\n"
+        "logic CASL\n"
+        "\n"
+        "spec EqT =\n"
+        "  sorts Thing\n"
+        "  ops a : Thing;\n"
+        "      b : Thing\n"
+        "  preds E : Thing * Thing;\n"
+        "        Object : Thing;\n"
+        "        R : Thing * Thing;\n"
+        "        World : Thing\n"
+        "  . ")
+    assert text.endswith(
+        "(forall w : Thing . (World(w) => ((forall w0 : Thing . "
+        "((World(w0) /\\ R(w, w0)) => a = b)) => a = b))) %implied\n"
+        "end")
+    assert "weq" not in text and "= :" not in text
+
     spec = parse_casl_spec("\n".join(text.split("\n")[3:]))
-    assert len(spec.conjectures) == 1
-    # Faithful to Z3: T-schema on an atomic sentence, valid under a
-    # reflexive frame, invalid under K (hand-derived, matches
-    # tests/test_qml_casl.py's own identical hand-derivation).
+    expected = sanitize_modal_identifiers(qml_validity_formula(f, frame="T"))
+    assert spec.conjectures == (expected,)
+    # Z3's verdict on the modal formula: the T-schema on an atomic sentence is
+    # valid on a reflexive frame; in K a dead end makes the box vacuous.
     assert qml_is_valid(f, frame="T") is True
     assert qml_is_valid(f, frame="K") is False
 
 
-def test_modal_tableau_also_agrees_on_a_box_equality_formula():
-    """A third independent route (see the propositional-slice section
-    below) on the SAME equality edge case: modal_tableau has no rule for a
-    Quantifier, but 'Box(a=b) -> a=b' has none — it is squarely within its
-    propositional-modal fragment ('=' is just another Atom to it, read off
-    its own to_unicode_str() valuation, matching how satisfies_modal
-    already treats an object-language '=' too — see fol.qml's own
-    docstring for the same design choice on the Z3/CASL side)."""
+def test_modal_tableau_refuses_a_box_equality_formula_that_qml_decides():
+    """The propositional modal tableau (the third route on this formula) has
+    no term semantics, so it would read the identity as an uninterpreted
+    proposition; it refuses an equality atom by name instead. The quantified
+    route the CASL/DOL bridge shares decides the same formula, with identity as
+    rigid identity: □(a = b) → a = b is valid under T and not under K. (The two
+    routes used to be asserted to agree here; they agreed only because this one
+    formula is a T-schema instance, which holds whatever the atom means.)"""
     from unicode_fol_kit.atp.modal_tableau import is_modal_valid
 
     a, b = Constant("a"), Constant("b")
     f = Implies(Box(Atom("=", [a, b])), Atom("=", [a, b]))
     for frame, expected in (("T", True), ("K", False)):
         assert qml_is_valid(f, frame=frame) is expected
-        assert is_modal_valid(f, frame=frame) is expected
+        with pytest.raises(NotImplementedError, match="equality"):
+            is_modal_valid(f, frame=frame)
 
 
 # =============================================================================
@@ -530,11 +557,16 @@ def _spec_name_for(case_id: str) -> str:
 
 def _w0_collision_formula():
     """forall w0 (Box A(w0) -> A(w0)) — fol.qml's variable grammar allows an
-    OBJECT variable literally named 'w0' ([a-z][0-9]*), and _Fresh always
-    mints '_w0' as the very FIRST fresh world it needs, so this formula's
-    translation genuinely contains both 'w0' and '_w0' — see
-    tests/test_qml_casl.py's offline injectivity test for the same formula
-    checked without a live server."""
+    OBJECT variable literally named 'w0' ([a-z][0-9]*), which is the name
+    _Fresh would otherwise mint for the first fresh world it needs. _Fresh is
+    seeded with the formula's object-variable names, so it has to step over it
+    and take 'w1'; if it did not, the object quantifier would capture the box's
+    world and the translation would be wrong in a way only a frame-sensitive
+    verdict exposes, which is why this case is in the LIVE battery under two
+    frames. (Before 0.30.0 the fresh world was '_w0' and the two names collided
+    only after the CASL sanitiser stripped the underscore.) See
+    tests/test_qml_casl.py for the same formula checked without a live
+    server."""
     w0 = Variable("w0")
     return Quantifier("∀", w0,
                       Implies(Box(Atom("A", [w0])), Atom("A", [w0])))
@@ -551,15 +583,38 @@ def _quantified_non_theorem():
 
 
 def _equality_box_formula(predicate: str):
-    """Box(a <predicate> b) -> a <predicate> b — the adversarial-review
-    equality edge case (see tests/test_qml_casl.py's own identical
-    hand-derivation): _st world-relativizes '='/'≠' into a ternary atom
-    like any other, so this is the T-schema instantiated at an equality/
-    inequality atom, valid under any reflexive frame, independent of what
-    the atom itself 'means'."""
+    """Box(a <predicate> b) -> a <predicate> b — the T-schema instantiated at an
+    identity/distinctness atom. Hand-derived: valid on any frame with a
+    successor-or-self (T), not valid in K (a dead-end world makes the box
+    vacuously true while a and b may differ). Identity is rigid in fol.qml (no
+    world argument), so the verdicts do not depend on how the atom is read."""
     a, b = Constant("a"), Constant("b")
     atom = Atom(predicate, [a, b])
     return Implies(Box(atom), atom)
+
+
+def _identity_necessity_formula(predicate: str):
+    """a <predicate> b -> Box(a <predicate> b). Valid in K for both '=' and
+    '≠' because identity is rigid: it holds at every world or at none, so what
+    holds at this world holds at every successor (no frame condition needed)."""
+    a, b = Constant("a"), Constant("b")
+    atom = Atom(predicate, [a, b])
+    return Implies(atom, Box(atom))
+
+
+def _possible_identity_formula():
+    """Diamond(a = b) -> a = b. Valid in K: a successor where a = b holds means
+    a = b holds, since identity is rigid; it is the contrapositive of the '≠'
+    necessity above."""
+    a, b = Constant("a"), Constant("b")
+    return Implies(Diamond(Atom("=", [a, b])), Atom("=", [a, b]))
+
+
+def _identity_reflexivity_formula():
+    """forall x (x = x). Valid: identity is reflexive with no axiom needed, at
+    every world and under every domain regime."""
+    x = Variable("x")
+    return Quantifier("∀", x, Atom("=", [x, x]))
 
 
 def _sorted_nonempty_witness(op: str):
@@ -601,16 +656,42 @@ _MODAL_BATTERY = [
      dict(frame="K"), False),
     ("collide_k", _w0_collision_formula(), dict(mode="constant", frame="K"), False),
     ("collide_t", _w0_collision_formula(), dict(mode="constant", frame="T"), True),
-    # Adversarial-review finding (C6): a world-relativized '='/'≠' atom must
-    # not crash the bridge (arity mismatch against CASL's own rigid, always-
-    # 2-ary equality) or silently mistranslate — see hets/dol.py's own
-    # equality_alias and tests/test_qml_casl.py's offline coverage of the
-    # same cases.
+    # Object identity. qml hands CASL the binary '=' with no world argument
+    # (and '≠' as 'not (=)'), which is CASL's own rigid built-in, so Hets must
+    # agree with Z3 on the rigidity facts too — see tests/test_qml_casl.py for
+    # the offline coverage of the same cases.
     ("equality_box_t", _equality_box_formula("="), dict(frame="T"), True),
     ("equality_box_k", _equality_box_formula("="), dict(frame="K"), False),
     ("inequality_box_t", _equality_box_formula("≠"), dict(frame="T"), True),
     ("inequality_box_k", _equality_box_formula("≠"), dict(frame="K"), False),
+    ("identity_necessity_k", _identity_necessity_formula("="), dict(frame="K"), True),
+    ("distinctness_necessity_k", _identity_necessity_formula("≠"), dict(frame="K"), True),
+    ("possible_identity_k", _possible_identity_formula(), dict(frame="K"), True),
+    ("identity_reflexive", _identity_reflexivity_formula(), dict(mode="varying"), True),
 ]
+
+
+def _hets_left_it_open(result: str) -> bool:
+    """True iff a Hets goal result is the UNKNOWN answer, whatever follows it.
+
+    Hets reports ``Open`` for a goal the prover did not settle, and when the
+    prover also ran out of time it appends the reason on a second line, so the
+    result is the two words ``Open`` and ``Timeout`` separated by a line break.
+    The client strips only the surrounding whitespace, so
+    that string reaches the test as it is, and ``result == "Open"`` was False
+    for it -- the guard missed, and ``assert result in ("Proved", "Disproved")``
+    below then failed a case that was merely undecided. The first word is the
+    status; anything after it is commentary.
+    """
+    return result.split()[:1] == ["Open"]
+
+
+def test_an_open_hets_result_is_recognised_with_or_without_a_reason():
+    # Hand-derived: the status is the first whitespace-separated word.
+    for open_result in ("Open", "Open\nTimeout", "Open Timeout", "Open\n"):
+        assert _hets_left_it_open(open_result), repr(open_result)
+    for settled in ("Proved", "Disproved", "Proved\nOpen", "Opened", "", "Timeout"):
+        assert not _hets_left_it_open(settled), repr(settled)
 
 
 @pytest.mark.hets_live
@@ -655,11 +736,11 @@ class TestModalCaslHetsLive:
         goals = client.prove(iri, spec_name, reasoner="SPASS", time_limit=15)
         assert len(goals) == 1
         result = goals[0]["result"]
-        if result == "Open":
+        if _hets_left_it_open(result):
             pytest.skip(
-                f"{case_id}: Hets/SPASS returned Open (unknown) -- neither "
-                "agreement nor refutation (see this file's module docstring "
-                "point 9 / batch note (2)).")
+                f"{case_id}: Hets/SPASS returned {result!r} (Open: unknown) -- "
+                "neither agreement nor refutation (see this file's module "
+                "docstring point 9 / batch note (2)).")
         assert result in ("Proved", "Disproved")
         assert (result == "Proved") == expected, (
             f"{case_id}: Hets said {result!r} but qml_is_valid said {expected}")

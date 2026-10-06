@@ -35,10 +35,13 @@ fixes its head's arity; a λ-argument fixes its slot's arity by binder depth; a
 PredicateTerm links its own arity to its slot's) and closes them under
 propagation until nothing moves.
 
-Two ways that can fail, both raised rather than papered over: a predicate applied
+Three ways that can fail, all raised rather than papered over: a predicate applied
 at two different arities (``ConflictingArityError``, shared with the second-order
-inference), and a slot used once for an individual and once for a property
-(:class:`MixedSlotError`).
+inference), a slot used once for an individual and once for a property
+(:class:`MixedSlotError`), and a slot that would have to hold a property of
+PROPERTIES (:class:`NestedPropertySlotError`): ``Meta(Pos) ∧ Pos(G)`` makes ``Pos`` a
+predicate of properties and puts it in a slot of ``Meta``, a fourth-order typing that
+a slot type ``("p", k)`` (a relation on individuals) cannot state.
 
 One way it can be *underdetermined*: a slot no evidence ever reaches — e.g.
 ``∀Phi (Positive(Phi) → □Positive(Phi))`` read entirely on its own, where Phi is
@@ -60,6 +63,7 @@ from ._fol_nodes import (
 from ._so_nodes import (
     SecondOrderQuantifier, ConflictingArityError, _infer_so_arity,
 )
+from ._truth_constants import truth_value
 from .naming import ParsingError
 
 
@@ -140,6 +144,32 @@ class MixedSlotError(ParsingError):
         return self.args[0]
 
 
+class NestedPropertySlotError(ParsingError):
+    """Raised when a property slot would hold a predicate that itself takes a property.
+
+    A slot that holds a predicate is typed as a property of INDIVIDUALS, of the arity of that
+    predicate. ``Meta(Pos)`` together with ``Pos(G)`` breaks that: ``Pos`` takes a property,
+    so it is a predicate of properties, and what ``Meta`` takes is then a property of
+    properties (a fourth-order typing). The typing cannot state it, so it is refused instead of
+    being typed as if ``Pos`` were a property of individuals. Subclasses ParsingError, like
+    :class:`MixedSlotError`.
+    """
+
+    def __init__(self, host: str, host_position: int, occupant: str, occupant_position: int):
+        message = (
+            f"TYPE_ERROR: '{host}' takes the predicate '{occupant}' as a property in "
+            f"argument slot {host_position}, but '{occupant}' itself takes a property in its "
+            f"argument slot {occupant_position}: '{host}' would be a predicate of predicates "
+            f"of properties (fourth order or higher). A property slot holds a relation on "
+            f"individuals only, so this is refused rather than typed as if '{occupant}' were "
+            f"a property of individuals."
+        )
+        self.args = (message,)
+
+    def __str__(self):
+        return self.args[0]
+
+
 #: What one argument slot holds. ``"i"`` is an individual; ``("p", k)`` is a
 #: property/relation of arity ``k``.
 INDIVIDUAL = "i"
@@ -197,9 +227,11 @@ def analyse_signatures(formulas: Sequence[Node]) -> Signatures:
     answer is determined: ``Positive(Phi)`` in one axiom and ``Phi(x)`` in
     another jointly fix Phi's arity at 1, and neither does so alone.
 
-    Raises ConflictingArityError if a predicate is applied at two arities, and
+    Raises ConflictingArityError if a predicate is applied at two arities,
     :class:`MixedSlotError` if one slot holds an individual in one place and a
-    property in another. A property slot that no evidence reaches defaults to
+    property in another, and :class:`NestedPropertySlotError` if a predicate that
+    stands in a property slot itself takes a property (a property of properties,
+    which the typing cannot state). A property slot that no evidence reaches defaults to
     arity 1 and is listed in the result's ``defaulted`` — see this module's
     docstring for why 1 and not 0.
     """
@@ -222,7 +254,8 @@ def analyse_signatures(formulas: Sequence[Node]) -> Signatures:
             raise MixedSlotError(pred, pos)
 
     def visit(node: Node) -> None:
-        if isinstance(node, Atom):
+        if isinstance(node, Atom) and truth_value(node) is None:
+            # (`$true` / `$false` are constants, not predicates: nothing to type.)
             app_arity.setdefault(node.predicate, set()).add(len(node.args))
             for pos, arg in enumerate(node.args):
                 if isinstance(arg, PredicateTerm):
@@ -254,6 +287,19 @@ def analyse_signatures(formulas: Sequence[Node]) -> Signatures:
         if len(depths) > 1:
             raise ConflictingArityError(f"{slot[0]}[{slot[1]}]", sorted(depths))
         slot_arity[slot] = next(iter(depths))
+
+    # A predicate that sits in a property slot is typed as a property of INDIVIDUALS (a slot
+    # type is ("p", k), a relation on individuals). One that takes a property itself is a
+    # predicate of properties, and the slot would have to hold a property of properties.
+    property_position: Dict[str, int] = {}
+    for (name, position), kind in sorted(slot_kind.items()):
+        if kind != INDIVIDUAL:
+            property_position.setdefault(name, position)
+    for (host, host_position), occupants in sorted(slot_occupants.items()):
+        for occupant in sorted(occupants):
+            if occupant in property_position:
+                raise NestedPropertySlotError(host, host_position, occupant,
+                                              property_position[occupant])
 
     # Close under propagation: a known predicate arity fixes every slot it sits
     # in, and a known slot arity fixes every predicate sitting in it.

@@ -31,6 +31,9 @@ included — to a language model over MCP (**{doc}`guide/mcp`**).
 - New here? Read **{doc}`guide/installation`** then **{doc}`guide/quickstart`**.
 - Looking for a specific capability? The **{doc}`guide/choosing`** page maps a question
   (and a logic) to the entry point that answers it.
+- Moving a formula from one logic to another (modal or many-sorted to first-order, a
+  description-logic concept to FOL, …)? Read **{doc}`guide/logic-graph`** first: a translation
+  hands back side axioms that must reach the prover with it.
 - Want the exact signature of a function? See the **{doc}`api`** reference.
 
 ```{toctree}
@@ -42,6 +45,7 @@ guide/quickstart
 guide/choosing
 guide/parsing
 guide/transforms
+guide/logic-graph
 guide/interoperability
 guide/classical-reasoning
 guide/modal

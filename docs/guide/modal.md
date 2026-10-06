@@ -29,7 +29,7 @@ Every modal operator has its own AST node; parsing returns the node tree, and `t
 
 ```python
 mp.parse("□P → ◇P")
-# → Implies(Box(Atom('P', [])), Diamond(Atom('P', [])))
+# → Implies(left=Box(formula=Atom(predicate='P', args=())), right=Diamond(formula=Atom(predicate='P', args=())))
 
 mp.parse("Ⓞ P → Ⓟ P").to_unicode_str()  # → 'ⓄP → ⓅP'  (deontic prefixes print tight)
 mp.parse("P Ⓤ Q").to_unicode_str()       # → 'P Ⓤ Q'     (Until stays infix)
@@ -43,7 +43,7 @@ from unicode_fol_kit import Atom, Box, Diamond, Implies
 
 p = Atom("P", [])
 Implies(Box(p), Diamond(p))             # □P → ◇P, built by hand
-# → Implies(Box(Atom('P', [])), Diamond(Atom('P', [])))
+# → Implies(left=Box(formula=Atom(predicate='P', args=())), right=Diamond(formula=Atom(predicate='P', args=())))
 ```
 
 Modal nodes render to LaTeX (`to_latex`) and round-trip through `to_dict` / `Node.from_dict`, exactly like the classical nodes:
@@ -67,9 +67,9 @@ mp.parse("∀x (Student(x) → K_x Loves(x, logic))")
 # Quantifier('∀', x, Implies(Student(x), Knows(Variable('x'), Loves(x, logic))))
 # → x is bound, so K_x ranges over agents; a free K_a stays the named agent Constant('a').
 
-mp.parse("K_a P")    # → Knows(Constant('a'), Atom('P', []))   — free agent → named Constant
-mp.parse("Say_a P")  # → Says(Constant('a'), Atom('P', []))
-mp.parse("Want_a P") # → Wants(Constant('a'), Atom('P', []))
+mp.parse("K_a P")    # → Knows(agent=Constant(name='a'), formula=Atom(predicate='P', args=()))   — free agent → named Constant
+mp.parse("Say_a P")  # → Says(agent=Constant(name='a'), formula=Atom(predicate='P', args=()))
+mp.parse("Want_a P") # → Wants(agent=Constant(name='a'), formula=Atom(predicate='P', args=()))
 ```
 
 ### Nested modalities
@@ -77,8 +77,8 @@ mp.parse("Want_a P") # → Wants(Constant('a'), Atom('P', []))
 Modal operators nest freely. Combine epistemic and alethic operators, or stack the same operator multiple levels deep:
 
 ```python
-mp.parse("K_a □P")        # → Knows(Constant('a'), Box(Atom('P', [])))  — agent knows possibility
-mp.parse("□□P")           # → Box(Box(Atom('P', [])))  — nested necessity
+mp.parse("K_a □P")        # → Knows(agent=Constant(name='a'), formula=Box(formula=Atom(predicate='P', args=())))  — agent knows possibility
+mp.parse("□□P")           # → Box(formula=Box(formula=Atom(predicate='P', args=())))  — nested necessity
 mp.parse("K_a K_b P → K_a P")  # multi-agent reasoning
 ```
 
@@ -190,7 +190,7 @@ Each node's label carries the world plus (with the default `show_valuation=True`
 The same evaluator handles every modality by reading the relation under its own key — `"K:"+agent` for `Knows`, `"B:"+agent` for `Believes`, `"Say:"+agent` for `Says`, `"Want:"+agent` for `Wants`, `"deontic"` for `Obligatory`/`Permitted`. **Knowledge** is the universal modality over an agent's indistinguishability relation: agent `alice` *knows* `P` at a world iff `P` holds in every world she cannot tell apart from it.
 
 ```python
-from unicode_fol_kit import Knows
+from unicode_fol_kit import Knows, Not
 
 # alice cannot distinguish worlds 0 and 1; P is true at both → she knows P.
 em = KripkeModel(
@@ -296,10 +296,11 @@ f = mp.parse("K_alice ∀x:Human (Mortal(x))")
 f.to_unicode_str()   # → 'K_alice ∀x:Human Mortal(x)'
 ```
 
-This is implemented by **delegating** to `SortedQuantifier`'s own `_relativize` reduction (the same one `to_fol` uses): `∀x:S φ` becomes `∀x (S(x) → φ)`, `∃x:S φ` becomes `∃x (S(x) ∧ φ)`. Two consequences worth knowing before building a many-sorted modal model:
+This is implemented by **delegating** to `SortedQuantifier`'s own `_relativize` reduction (the same one `to_fol` uses): `∀x:S φ` becomes `∀x (S(x) → φ)`, `∃x:S φ` becomes `∃x (S(x) ∧ φ)`, and `c:S` becomes the plain constant `c`. Three consequences worth knowing before building a many-sorted modal model:
 
 - **A sort is world-relative, not rigid.** The sort guard `S(x)` becomes an ordinary atom, looked up in the model's `valuation` exactly like any other atom — an individual can be `Human` at one world and not at another, the same "actualist" reading this kit already gives the bare per-world domain (`domains=`).
-- **Non-emptiness of a sort is NOT assumed** by `satisfies_modal` — unlike the classical many-sorted routes (`api.prove`), which always add `nonempty_sort_axioms` as extra premises, so `∀x:S P(x) → ∃x:S P(x)` comes out classically valid. `satisfies_modal` evaluates the model you hand it, so it is the one route where assuming this would mean silently overriding your model; every route that answers a *validity* question does assume it (see below). Build the `KripkeModel` so a sort's guard is true of at least one individual, wherever that matters:
+- **A sorted constant is in its sort at every world, and the model must say so.** `c:S` denotes an element of `S`, and a constant is rigid, so the guard atom `S(c)` belongs in the valuation of every world, whether or not `c` exists there (the fact is not guarded by existence). `satisfies_modal` evaluates the model you hand it, so it cannot assume this; `semantics.kripke.sorted_constant_violations(formula, model)` lists the `(constant, sort, world)` triples where `S(c)` is missing from the model's valuation (pass the original sorted formula, not its relativisation). Every route that decides *validity* assumes the fact, among them `qml_is_valid` (the axiom `S(c, w)` at every world `w`), the Isabelle and THF exports (`sort_member` axioms), `modal_enum_search` (the membership atoms are true in every candidate model) and `modal_decide` (the atoms are facts of every branch).
+- **Non-emptiness of a sort is NOT assumed** by `satisfies_modal` — unlike the classical many-sorted routes (`api.prove`), which always add `fol.sort_axioms` (every sort non-empty, every sorted constant in its sort) as extra premises, so `∀x:S P(x) → ∃x:S P(x)` comes out classically valid. `satisfies_modal` evaluates the model you hand it, so it is the one route where assuming this would mean silently overriding your model; every route that answers a *validity* question does assume it (see below). Build the `KripkeModel` so a sort's guard is true of at least one individual, and of every sorted constant at every world, wherever that matters:
 
 ```python
 m = KripkeModel(
@@ -313,9 +314,22 @@ satisfies_modal(f, m, 0)   # → True
 # An empty sort is NOT vacuously assumed non-empty:
 empty = KripkeModel(worlds={0, 1}, relations={"K:alice": {(0, 1)}}, domain=[], valuation={1: set()})
 satisfies_modal(f, empty, 0)   # → True  (vacuously — the guard S(x) has no witness to falsify)
+
+# A sorted constant lies in its sort at EVERY world; the model has to say so:
+from unicode_fol_kit.semantics.kripke import sorted_constant_violations
+
+g = mp.parse("∀x:Human Mortal(x) → Mortal(socrates:Human)")
+whole = KripkeModel(worlds={0, 1}, relations={"alethic": {(0, 1)}}, domain=["socrates"],
+                    valuation={0: {"Human(socrates)"}, 1: {"Human(socrates)"}})
+gap = KripkeModel(worlds={0, 1}, relations={"alethic": {(0, 1)}}, domain=["socrates"],
+                  valuation={0: {"Human(socrates)"}})       # Human(socrates) is missing at world 1
+sorted_constant_violations(g, whole)   # → []
+sorted_constant_violations(g, gap)     # → [('socrates', 'Human', 1)]
+satisfies_modal(g, whole, 1)           # → True
+satisfies_modal(g, gap, 1)             # → False  (nothing is Human there, so the premise is vacuous and Mortal(socrates) is not forced)
 ```
 
-`fol.qml.qml_is_valid` and the HOL exporters (`hol.isabelle_modal.to_isabelle_modal`, `hol.thf_modal.to_thf_modal_full`) all support the combination too, via the same relativisation. Unlike the bare Kripke evaluator, all three DO thread the classical non-emptiness convention in automatically — one axiom per sort per world, mirroring the `nonempty_dom` axiom each already carries for the object domain (`nonempty_sort0`, `nonempty_sort1`, … in the emitted theory / problem, and in `modal_axiom_names` so a generated `using … by …` proof brings them into scope). The reason is the same for all three: they answer a **validity** question, where a route that let a sort be empty would call `∀x:S P(x) → ∃x:S P(x)` invalid while `api.prove` calls it valid. Under an actualist `mode` the witness is `existsAt`-guarded as well, since only the local domain can instantiate the existential.
+`fol.qml.qml_is_valid` and the HOL exporters (`hol.isabelle_modal.to_isabelle_modal`, `hol.thf_modal.to_thf_modal_full`) all support the combination too, via the same relativisation. Unlike the bare Kripke evaluator, all three DO thread the classical non-emptiness convention in automatically — one axiom per sort per world, mirroring the `nonempty_dom` axiom each already carries for the object domain (`nonempty_sort0`, `nonempty_sort1`, … in the emitted theory / problem, and in `modal_axiom_names` so a generated `using … by …` proof brings them into scope). The reason is the same for all three: they answer a **validity** question, where a route that let a sort be empty would call `∀x:S P(x) → ∃x:S P(x)` invalid while `api.prove` calls it valid. Under an actualist `mode` the witness is `existsAt`-guarded as well, since only the local domain can instantiate the existential. A sorted constant `c:S` adds one more axiom each, `sort_member0`, `sort_member1`, … (`S(c)` at every world, not guarded by existence), listed in `modal_axiom_names` the same way.
 
 ```python
 from unicode_fol_kit import qml_is_valid, api
@@ -323,7 +337,13 @@ from unicode_fol_kit import qml_is_valid, api
 schema = mp.parse("∀x:Human P(x) → ∃x:Human P(x)")
 qml_is_valid(schema)        # → True
 api.prove(schema).status    # → 'proved'
+
+mortal = mp.parse("∀x:Human Mortal(x) → Mortal(socrates:Human)")
+qml_is_valid(mortal)                    # → True
+qml_is_valid(mortal, mode="varying")    # → False
 ```
+
+`socrates` is `Human` at every world, so over a constant domain the premise covers him; over a varying domain `∀x:Human` ranges only over the Humans that exist at the world of evaluation, and `socrates` need not be one of them — the same two verdicts as the unsorted `∀x Mortal(x) → Mortal(socrates)`. With a plain `Constant("socrates")` in place of `socrates:Human` (only a hand-built tree can say so: the many-sorted parser asks every constant for its sort) the formula is invalid in both modes, since nothing puts him in `Human`.
 
 `MSFLParser(second_order=True, many_sorted=True)` combines the same sorted binders with second-order predicate quantification (`∀P`/`∃P`, which stays unsorted itself — only the individual binders take a sort): `mp2 = MSFLParser(second_order=True, many_sorted=True); mp2.parse("∀P (∀x:Human P(x) → ∃x:Human P(x))")`. Neither combination extends to `third_order=True` — how a sort interacts with third-order's individual-vs-property "slot" inference is a separate, open design question — so `MSFLParser(third_order=True, many_sorted=True)` stays refused, with the same message as before.
 
@@ -352,6 +372,17 @@ standard_translation(mp.parse("Ⓟ P")).to_unicode_str()   # → '∃w0 (D(w, w0
 standard_translation(mp.parse("Ⓖ P")).to_unicode_str()   # → '∀w0 (T(w, w0) → P(w0))'
 standard_translation(mp.parse("Ⓕ P")).to_unicode_str()   # → '∃w0 (T(w, w0) ∧ P(w0))'
 standard_translation(mp.parse("Ⓝ P")).to_unicode_str()   # → '∀w0 (N(w, w0) → P(w0))'
+```
+
+The relation of an agent's operator is named after the agent, so two different agent terms with one name (the numeral `1` and the constant `'1'`) would be one relation, and the image would speak of one agent where the formula speaks of two. The translation refuses such a formula by name, and so does every route that files the operators of an agent under that name: `hybrid_is_valid` and the tableau entry points (`is_modal_valid`, `modal_decide`, `modal_prove`, `modal_countermodel`, `modal_tableau_closed`) raise `NotImplementedError`, and `atp.kripke_enum.modal_enum_search` reports the formula, like a formula with two different atoms that print alike, as unsupported: `exhausted` is `False` and there is no model.
+
+```python
+from unicode_fol_kit import Number
+from unicode_fol_kit.atp.kripke_enum import modal_enum_search
+
+alike = Implies(Knows(Number(1), p), Knows(Constant("1"), p))   # both agents print as 1
+modal_enum_search(alike, max_worlds=2).exhausted   # → False  (unsupported, with no model)
+standard_translation(alike)   # raises NotImplementedError: two different agents are both named '1' …
 ```
 
 Fresh world variables `w0, w1, …` keep **nested** modalities from capturing each other, and a non-propositional atom keeps its own arguments with the world appended last:
@@ -395,6 +426,8 @@ standard_translation(mp.parse("P Ⓤ Q"))  # raises NotImplementedError (Until i
 Use the `world=` parameter to thread a world variable through nested formulas:
 
 ```python
+from unicode_fol_kit import Not
+
 q = Atom("Q", [])
 nested = Box(Not(Diamond(p)))
 st_default = standard_translation(nested)
@@ -405,7 +438,7 @@ print(st_custom.to_unicode_str())   # → '∀w0 (R(s, w0) → ¬∃w1 (R(w0, w1
 
 ## Deciding modal validity — the native tableau (0.9.0)
 
-`unicode_fol_kit.atp.modal_tableau` decides the propositional box/diamond family in-process with a **labelled** analytic tableau. The public entry points are `is_modal_valid`, `modal_decide`, `modal_countermodel`, `modal_prove`, and `modal_tableau_closed`; all take a `frame=` naming the alethic system. The tableau has rules for reflexivity, transitivity, symmetry, seriality and euclideanness, so it decides **K, T, D/KD, B/KB/KTB, K4, K5, K45, KD4, KD5, S4, S5, KD45** — every other system in the shared registry (see below) is refused by name rather than silently widened.
+`unicode_fol_kit.atp.modal_tableau` decides the propositional box/diamond family in-process with a **labelled** analytic tableau. The public entry points are `is_modal_valid`, `modal_decide`, `modal_countermodel`, `modal_prove`, and `modal_tableau_closed`; all take a `frame=` naming the alethic system. The tableau has rules for reflexivity, transitivity, symmetry, seriality and euclideanness, so it decides **K, T, D/KD, KB, B/KTB, K4, K5, K45, KD4, KD5, S4, S5, KD45** — every other system in the shared registry (see below) is refused by name rather than silently widened.
 
 `is_modal_valid(φ, frame=…)` returns `True` only when the tableau for `¬φ` closes (a sound proof). The reflexivity axiom `□P → P` (the **T** schema) is valid over a reflexive frame but not over the minimal **K**:
 
@@ -446,7 +479,7 @@ is_modal_valid(five, frame="K45")                          # → True   (transit
 is_modal_valid(five, frame="S4")                           # → False  (S4 is not euclidean)
 ```
 
-The accepted frames are **K, T, D/KD, B/KB, K4, K45, S4, S5, KD45** — each fixes a set of conditions on the alethic accessibility relation:
+The frames used in the examples are **K, T, D/KD, B/KB, K4, K45, S4, S5, KD45** — each fixes a set of conditions on the alethic accessibility relation:
 
 | frame | conditions | characteristic schema |
 | --- | --- | --- |
@@ -470,7 +503,7 @@ modal_decide(T, frame="K")     # → 'invalid'
 modal_decide(four, frame="S4") # → 'valid'
 ```
 
-The `"invalid"` verdict is backed by a **verified counter-model**: `modal_countermodel(φ, frame=…)` returns a `KripkeModel` falsifying `φ`, but only after `satisfies_modal` confirms the formula really is false at its root world (an unverifiable open branch downgrades to `"unknown"` rather than risk a wrong verdict). It returns `None` when the formula is valid.
+The `"invalid"` verdict is backed by a **verified counter-model**: `modal_countermodel(φ, frame=…)` returns a `KripkeModel` falsifying `φ`, but only after `satisfies_modal` confirms the formula really is false at its root world (an unverifiable open branch downgrades to `"unknown"` rather than risk a wrong verdict). It returns `None` when the formula is valid, and also when no verified model exists (the `"unknown"` case).
 
 ```python
 from unicode_fol_kit import modal_countermodel, satisfies_modal
@@ -488,6 +521,20 @@ print(cm.to_dot())
 #     node [shape=box];
 #     "0" [label="0\n"];
 #   }
+```
+
+Over a **serial** system (`D`/`KD`, `KD4`, `KD5`, `KD45`, and the default deontic system, which is `KD`) the counter-model is a model of that frame: a world with no successor sees itself. So `□Q(dora)` over `D` is falsified not by a dead end but by the worlds `{0, 1}` with `R = {(0, 1), (1, 1)}`, which is serial. A model is handed out only when `satisfies_modal` falsifies the formula **and** every relation the formula reads satisfies the frame conditions of its system; otherwise the answer is `"unknown"`. The same holds for a formula nested deeper than the tableau's recursive walks can follow within Python's recursion limit: `modal_decide` answers `"unknown"` and raises nothing. A relation the formula reads counts also when its operator sits in a disjunct the open branch does not use: it gets the loops its system asks for (`¬(A ∨ □Q)` over `T` has the one-world model with `alethic = {(0, 0)}`), while a relation the formula does not read is not part of the model. An open branch whose model is no countermodel (the branch holds a construct the tableau has no rule for, such as a negated `D_G`) does not end the search while another branch is left.
+
+```python
+from unicode_fol_kit import Constant
+
+dora = Box(Atom("Q", [Constant("dora")]))
+cm_d = modal_countermodel(dora, frame="D")
+sorted(cm_d.worlds)                 # → [0, 1]
+sorted(cm_d.relations["alethic"])   # → [(0, 1), (1, 1)]
+satisfies_modal(dora, cm_d, 0)      # → False
+disjunct = Not(Or(Atom("A", []), Box(Atom("Q", []))))   # ¬(A ∨ □Q): the open branch never uses the □Q
+sorted(modal_countermodel(disjunct, frame="T").relations["alethic"])   # → [(0, 0)]
 ```
 
 `modal_prove(premises, conclusion, frame=…)` decides local consequence (does `premises ∪ {¬conclusion}` close at one world):
@@ -543,7 +590,7 @@ for frame in frames:
     print(f"  {frame:5}: {valid}")
 ```
 
-When a formula is valid over S5, it is automatically valid over all frames that S5 entails. But a formula valid in T is not necessarily valid in B, because T and B are incomparable.
+A formula valid over a system stays valid over every system whose conditions include that system's: what is valid over `T` is valid over `B`, `S4` and `S5`. It need not be valid over `KB`, because `T` and `KB` are incomparable (`□P → P` is valid over `T` and not over `KB`; `P → □◇P` the other way round).
 
 ### Epistemic, doxastic, and deontic systems
 
@@ -686,12 +733,14 @@ tm2 = KripkeModel(
 satisfies_modal(Until(p, q), tm2, 0)   # → True   (P holds at 0,1,2 and Q at 3)
 ```
 
-The native tableau handles only the box/diamond family (including `Ⓝ`, a box over `"temporal"`); the **closure** operators `Always` / `Eventually` / `Until` need fixpoint machinery beyond a basic labelled tableau, so `is_modal_valid` and friends reject them. Decide those semantically with `satisfies_modal`, or export them via the standard translation (`Ⓖ`/`Ⓕ`/`Ⓝ`) and the qml embedding.
+The native tableau handles only the box/diamond family (including `Ⓝ`, a box over `"temporal"`); the **closure** operators `Always` / `Eventually` / `Until` (and their past mirrors) need fixpoint machinery beyond a basic labelled tableau, and `Previous` reads the converse relation, so it has no rule for them and leaves them **inert** instead of raising. A branch that closes on other grounds is still a proof, a model is handed out only after `satisfies_modal` — which evaluates these operators exactly — has confirmed it, and a branch that only an inert operator keeps open gives `"unknown"`. Decide those semantically with `satisfies_modal`, or export them via the standard translation (`Ⓖ`/`Ⓕ`/`Ⓝ`) and the qml embedding.
 
 ```python
-from unicode_fol_kit import is_modal_valid
+from unicode_fol_kit import is_modal_valid, modal_decide
 
-is_modal_valid(Implies(Always(p), p), frame="K")  # raises NotImplementedError (closure op)
+modal_decide(Always(p), frame="K")                 # → 'invalid'   (ⒼP includes the present world, so one world without P refutes it)
+modal_decide(Implies(Always(p), p), frame="K")     # → 'unknown'   (true in every model, but the tableau can neither close nor refute it)
+is_modal_valid(Implies(Always(p), p), frame="K")   # → False       (False means not proved here)
 ```
 
 ### Next operator
@@ -703,7 +752,7 @@ from unicode_fol_kit import Next
 
 satisfies_modal(Next(p), tm, 0)    # → True
 satisfies_modal(Next(p), tm, 1)    # → False
-satisfies_modal(Next(q), tm, 1)    # → True
+satisfies_modal(Next(q), tm, 2)    # → True
 ```
 
 ### Understanding Until: weak vs. strong
@@ -765,7 +814,7 @@ sm = KripkeModel(
 satisfies_modal(Since(p, q), sm, 2)  # → True   (Q held in the past, P ever since)
 ```
 
-Like `Until`, `Since` is not first-order definable, so the native tableau and `standard_translation` reject it; evaluate it with `satisfies_modal`.
+Like `Until`, `Since` is not first-order definable, so `standard_translation` rejects it and the native tableau has no rule for it (see above); evaluate it with `satisfies_modal`.
 
 ## More frames: B, S4.2, S4.3, GL
 
@@ -926,7 +975,7 @@ answer about a larger frame class than you asked for:
 from unicode_fol_kit.atp.modal_tableau import is_modal_valid
 
 is_modal_valid(modal_axiom("T"), frame="S4.2")
-# → UnsupportedFrameCondition: the frame condition 'directed' … is not
+# raises UnsupportedFrameCondition: the frame condition 'directed' … is not
 #   expressible here. … Use the first-order route fol.qml (Z3) …
 ```
 

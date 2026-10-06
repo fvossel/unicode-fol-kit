@@ -16,6 +16,8 @@ module factors out the two pieces that were duplicated across those exporters:
 from typing import Callable
 
 from .nodes import Atom, Constant, Number, Function, Node
+from ._numeral_symbols import prefixed_numeral_name
+from ._truth_constants import truth_value
 
 
 def dedupe(base: str, used: set) -> str:
@@ -48,11 +50,16 @@ class SymbolNames:
         preds, consts, funcs = set(), set(), set()
         for n in formula.walk():
             if isinstance(n, Atom):
+                if truth_value(n) is not None:
+                    continue    # `$true` / `$false` are written as the target's own constants
                 preds.add((n.predicate, len(n.args)))
             elif isinstance(n, Constant):
                 consts.add(n.name)
             elif isinstance(n, Number):
-                consts.add("n" + str(n.value))
+                # one constant per VALUE (``1`` and ``1.0`` are ``n1``); a writer that must also
+                # refuse a constant spelled ``n1`` rewrites its numerals first
+                # (:func:`~unicode_fol_kit.fol._numeral_symbols.numerals_as_constants`)
+                consts.add(prefixed_numeral_name(n.value))
             elif isinstance(n, Function):
                 funcs.add((n.name, len(n.args)))
         used: set = set(reserved)

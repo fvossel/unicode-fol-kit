@@ -66,6 +66,36 @@ Modules
   over the ALCHQ + I + O fragment; mirrors
   :mod:`~unicode_fol_kit.dl.owl_reasoner`'s function-per-namesake shape,
   opt-in and never in a default chain.
+* :mod:`~unicode_fol_kit.hets.haskell_json` —
+  :func:`~unicode_fol_kit.hets.haskell_json.repair_haskell_json`, which
+  recovers the Haskell ``show`` escapes HETS 0.108.0 leaks into its JSON
+  (``"Verdi\226\128\153s Requiem"`` for ``"Verdi’s Requiem"``). Without it
+  ``GET /dg`` is unreadable for any library with one non-ASCII annotation,
+  and with it the real 8.3 MB OEO graph loads. Applied by
+  :meth:`~unicode_fol_kit.hets.client.HetsClient.dg` only on the failure
+  path, so a body ``json`` already accepts is never touched.
+* :mod:`~unicode_fol_kit.hets.symbols` — the join between HETS' mangled TPTP
+  symbols and the OWL entities they came from
+  (:func:`~unicode_fol_kit.hets.symbols.hets_symbol_table`), plus the axioms
+  a translation silently dropped
+  (:func:`~unicode_fol_kit.hets.symbols.untranslated_axioms`). Pure
+  functions over a ``/dg`` dict and a TPTP string: no network, no Docker.
+* :mod:`~unicode_fol_kit.hets.owl_cli` —
+  :func:`~unicode_fol_kit.hets.owl_cli.owl_to_tptp`, the COMMAND-LINE route
+  (``docker exec`` into a running container). It exists for exactly one
+  reason: ``hets-server``'s lossy ``-Y`` switch, which translates an
+  ontology whose sublogic a comorphism does not cover and which has no REST
+  equivalent. It runs the non-lossy translation first so the loss is always
+  reported, never silent.
+
+The TPTP a HETS ``GET /theory`` returns is NOT a TPTP problem — HETS
+prefixes it with a DOL ``logic TPTP.FOF`` line and a CASL ``%{ ... }%``
+signature block. :func:`~unicode_fol_kit.hets.client.strip_hets_theory_header`
+splits the two (and
+:meth:`~unicode_fol_kit.hets.client.HetsClient.theory_tptp` does it for you);
+:func:`unicode_fol_kit.fol.tptp_input.parse_tptp` refuses the unstripped text
+BY NAME and points here, rather than learning a comment syntax that is not
+TPTP's.
 
 Kit formulas reach HETS through the Verdict layer:
 :class:`unicode_fol_kit.atp.hets_backend.HetsBackend` (registry name
@@ -75,8 +105,33 @@ back onto the kit's :class:`~unicode_fol_kit.atp.protocol.Verdict`.
 """
 
 from .bridge import HETS_EDGE_PREFIX, register_hets_comorphisms
-from .client import HetsClient
+from .client import (
+    HetsClient,
+    HetsNoTranslationsError,
+    HetsSublogicError,
+    strip_hets_theory_header,
+)
 from .docker import HETS_IMAGE, HetsContainer, discover_hets_url, hets_available
+from .haskell_json import (
+    HaskellJsonRepair,
+    HaskellJsonRepairError,
+    repair_haskell_json,
+)
+from .owl_cli import (
+    HetsOwlNormalizationError,
+    OwlTptpResult,
+    SublogicMismatch,
+    owl_to_tptp,
+)
+from .symbols import (
+    HetsSymbol,
+    HetsSymbolCollisionError,
+    HetsSymbolTable,
+    UntranslatedAxiom,
+    hets_prefixes,
+    hets_symbol_table,
+    untranslated_axioms,
+)
 from .dol import DolSpec, to_dol_library, to_dol_library_from_modal, sanitize_modal_identifiers
 from .owl_backend import (
     hets_owl_available,
@@ -89,6 +144,13 @@ from .owl_backend import (
 
 __all__ = [
     "HetsClient",
+    "HetsNoTranslationsError", "HetsSublogicError", "strip_hets_theory_header",
+    "HaskellJsonRepair", "HaskellJsonRepairError", "repair_haskell_json",
+    "owl_to_tptp", "OwlTptpResult", "SublogicMismatch",
+    "HetsOwlNormalizationError",
+    "hets_symbol_table", "HetsSymbolTable", "HetsSymbol",
+    "HetsSymbolCollisionError",
+    "untranslated_axioms", "UntranslatedAxiom", "hets_prefixes",
     "HETS_IMAGE", "HetsContainer", "discover_hets_url", "hets_available",
     "HETS_EDGE_PREFIX", "register_hets_comorphisms",
     "DolSpec", "to_dol_library", "to_dol_library_from_modal", "sanitize_modal_identifiers",

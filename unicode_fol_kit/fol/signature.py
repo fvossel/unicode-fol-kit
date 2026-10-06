@@ -212,9 +212,15 @@ Signature.validate — violation vocabulary
 :class:`~unicode_fol_kit.fol.nodes.SortedConstant`,
 :class:`~unicode_fol_kit.fol.nodes.Variable`,
 :class:`~unicode_fol_kit.fol.nodes.Quantifier`, and
-:class:`~unicode_fol_kit.fol.nodes.SortedQuantifier`; every OTHER node type —
-modal/temporal operators, second-order quantifiers, Lambda/Application,
-Count/Cardinality/Measure, the linear/Lambek/team-semantic connectives, …—
+:class:`~unicode_fol_kit.fol.nodes.SortedQuantifier`, plus the binders that
+introduce a variable the way a quantifier does
+(:class:`~unicode_fol_kit.fol.nodes.Count`,
+:class:`~unicode_fol_kit.fol.nodes.SortedCount`,
+:class:`~unicode_fol_kit.fol.nodes.Cardinality` and
+:class:`~unicode_fol_kit.fol.nodes.SortedCardinality`, whose bound variable
+carries the counting sort, or none for the unsorted forms); every OTHER node
+type — modal/temporal operators, second-order quantifiers,
+Lambda/Application, Measure, the linear/Lambek/team-semantic connectives, …—
 is transparently recursed into via the generic
 :meth:`~unicode_fol_kit.fol.nodes.Node._child_nodes` traversal rather than
 rejected, so an :class:`Atom` buried inside e.g. a modal box or a counting
@@ -239,7 +245,11 @@ Five violation shapes are produced, all following the pattern
   is meant to become something ``eval.validate`` itself could eventually
   depend on, and depending the other way around would be backwards) — they
   are never flagged as undeclared, though their OWN arguments are still
-  recursed into and checked.
+  recursed into and checked. The two truth constants are not user vocabulary
+  either: the nullary atoms ``$true`` and ``$false`` (and the atoms named
+  ``⊤`` and ``⊥``, which are the same constants) are never flagged as
+  undeclared predicates, and neither :meth:`Signature.from_formulas` nor
+  :func:`inventory_of` lists them.
 * ``predicate 'Human' expects arity 1, used with arity 2`` / the ``function``
   equivalent — the symbol IS declared, but this occurrence's argument count
   does not match :attr:`PredicateDecl.arity` / :attr:`FunctionDecl.arity`.
@@ -249,9 +259,9 @@ Five violation shapes are produced, all following the pattern
   ``FunctionDecl.arg_sorts[i]``) that is not ``None``, AND the term actually
   passed there resolves to a DIFFERENT concrete sort (also not ``None``). A
   term's own concrete sort comes from: a :class:`Variable` bound by an
-  enclosing :class:`SortedQuantifier` (that quantifier's sort; a plain
-  :class:`Quantifier` or a free variable gives ``None`` — unknown, not a
-  conflict); a :class:`SortedConstant`'s own inline sort annotation; a
+  enclosing :class:`SortedQuantifier` or sorted counting binder (that
+  binder's sort; a plain :class:`Quantifier`, an unsorted counting binder or
+  a free variable gives ``None`` — unknown, not a conflict); a :class:`SortedConstant`'s own inline sort annotation; a
   :class:`Constant`'s signature-declared :attr:`ConstantDecl.sort` (``None``
   if undeclared, or if declared unsorted); or a :class:`Function`
   application's declared :attr:`FunctionDecl.result_sort`. Per the task's
@@ -352,8 +362,10 @@ from typing import Dict, FrozenSet, Iterable, List, Mapping, Optional, Set, Tupl
 
 from .nodes import (
     Node, Atom, Function, Constant, SortedConstant, Variable,
-    Quantifier, SortedQuantifier,
+    Quantifier, SortedQuantifier, SortedCount, SortedCardinality,
+    Count, Cardinality,
 )
+from ._truth_constants import is_truth_constant
 
 __all__ = ["Signature", "PredicateDecl", "FunctionDecl", "ConstantDecl", "inventory_of"]
 
@@ -390,8 +402,9 @@ def inventory_of(node: Node):
 
     Returns ``(predicates, functions, constants)`` — ``predicates`` /
     ``functions`` are sets of ``(name, arity)`` pairs (the kit's built-in
-    operators, :data:`_BUILTIN_PREDS` / :data:`_BUILTIN_FUNCS`, excluded,
-    exactly like :meth:`from_formulas`'s classification); ``constants`` is
+    operators, :data:`_BUILTIN_PREDS` / :data:`_BUILTIN_FUNCS`, and the two truth
+    constants ``$true`` / ``$false`` excluded, exactly like
+    :meth:`from_formulas`'s classification); ``constants`` is
     a set of names (:class:`Constant` and :class:`SortedConstant`
     occurrences alike — a sorted constant's own inline sort annotation is
     not part of this vocabulary-shape inventory).
@@ -412,7 +425,7 @@ def inventory_of(node: Node):
     constants: Set[str] = set()
     for n in node.walk():
         if isinstance(n, Atom):
-            if n.predicate not in _BUILTIN_PREDS:
+            if n.predicate not in _BUILTIN_PREDS and not is_truth_constant(n):
                 predicates.add((n.predicate, len(n.args)))
         elif isinstance(n, Function):
             if n.name not in _BUILTIN_FUNCS:
@@ -755,6 +768,15 @@ class Signature:
         argument-position sort inference) attempt, and for the two refusals
         (a cross-formula arity or constant-sort conflict; a name used both
         as a constant and as a function) it raises :class:`ValueError` on.
+
+        A constant written with TWO sorts (``c:A`` here, ``c:B`` there) is
+        one of those refusals, on purpose: a :class:`Signature` is a typed
+        DECLARATION, and a declaration gives a constant ONE sort. A formula
+        is not a declaration. The routes that decide formulas read such a
+        constant as lying in BOTH sorts (the finite model finder draws it
+        from the intersection of their universes), so the same input is
+        refused here and answered there; declare the constant under one
+        sort, or leave it out of the signature and let the formulas speak.
         """
         pred_arities: Dict[str, set] = {}
         func_arities: Dict[str, set] = {}
@@ -765,7 +787,7 @@ class Signature:
 
         def walk_formula(node: Node) -> None:
             if isinstance(node, Atom):
-                if node.predicate not in _BUILTIN_PREDS:
+                if node.predicate not in _BUILTIN_PREDS and not is_truth_constant(node):
                     pred_arities.setdefault(node.predicate, set()).add(len(node.args))
                 for a in node.args:
                     walk_term(a)
@@ -774,6 +796,9 @@ class Signature:
                 literal_sorts.add(node.sort)
                 walk_formula(node.formula)
                 return
+            if isinstance(node, SortedCount):
+                # a sort that occurs only in a sorted counting quantifier is a sort of the signature too
+                literal_sorts.add(node.sort)
             for child in node._child_nodes():
                 walk_formula(child)
 
@@ -799,6 +824,8 @@ class Signature:
             # |{v : …}| body would be invisible (review-confirmed gap).
             formula_field = getattr(node, "formula", None)
             if formula_field is not None:
+                if isinstance(node, SortedCardinality):
+                    literal_sorts.add(node.sort)
                 walk_formula(formula_field)
                 for child in node._child_nodes():
                     if child is not formula_field:
@@ -1120,7 +1147,10 @@ def _walk_formula(node: Node, env: Dict[str, Optional[str]], sig: Signature,
     Recognises :class:`Atom` (checked via :func:`_check_atom`),
     :class:`SortedQuantifier` and :class:`Quantifier` (both extend ``env``
     for their body — sorted with a concrete sort, plain with ``None``,
-    correctly shadowing an outer binding of the same variable name); every
+    correctly shadowing an outer binding of the same variable name), and the
+    counting binders :class:`Count` and :class:`SortedCount`, which extend
+    ``env`` the same way (the set-builder terms are handled in
+    :func:`_term_sort`); every
     other node type is transparently recursed into via
     ``node._child_nodes()`` with the SAME ``env`` — this is what lets an
     ``Atom`` nested under a modal/temporal/counting/… node still get
@@ -1140,6 +1170,14 @@ def _walk_formula(node: Node, env: Dict[str, Optional[str]], sig: Signature,
         new_env[node.variable.name] = None
         _walk_formula(node.formula, new_env, sig, violations)
         return
+    if isinstance(node, (SortedCount, Count)):
+        # A counting quantifier binds its variable exactly as a quantifier
+        # does, so an atom in its matrix sees the variable at the counting
+        # sort (``None`` for the unsorted form).
+        new_env = dict(env)
+        new_env[node.variable.name] = getattr(node, "sort", None)
+        _walk_formula(node.formula, new_env, sig, violations)
+        return
     for child in node._child_nodes():
         _walk_formula(child, env, sig, violations)
 
@@ -1152,6 +1190,8 @@ def _check_atom(node: Atom, env: Dict[str, Optional[str]], sig: Signature,
         for arg in node.args:
             _term_sort(arg, env, sig, violations)
         return
+    if is_truth_constant(node):
+        return          # `$true` / `$false` (and ``⊤`` / ``⊥``): no argument, no vocabulary to declare
     decl = sig.predicates.get(node.predicate)
     if decl is None:
         violations.append(f"undeclared predicate '{node.predicate}' (arity {arity})")
@@ -1235,7 +1275,12 @@ def _term_sort(node: Node, env: Dict[str, Optional[str]], sig: Signature,
     # against a Signature declaring Votes at the wrong arity).
     formula_field = getattr(node, "formula", None)
     if formula_field is not None:
-        _walk_formula(formula_field, env, sig, violations)
+        inner_env = env
+        if isinstance(node, (SortedCardinality, Cardinality)):
+            # The set builder binds its variable over the matrix.
+            inner_env = dict(env)
+            inner_env[node.variable.name] = getattr(node, "sort", None)
+        _walk_formula(formula_field, inner_env, sig, violations)
         for child in node._child_nodes():
             if child is not formula_field:
                 _term_sort(child, env, sig, violations)

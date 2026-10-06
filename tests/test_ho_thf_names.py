@@ -18,6 +18,7 @@ from unicode_fol_kit import MSFLParser
 from unicode_fol_kit.atp.vampire_entailment import _spawn_vampire
 from unicode_fol_kit.hol import goedel
 from unicode_fol_kit.hol.ho_modal import HoAxiom, to_thf_ho_modal
+from unicode_fol_kit.hol.thf_modal import _THF_RIGID_EQ_DEF
 from unicode_fol_kit.hol.thirdorder import to_thf_to
 
 TO = MSFLParser(third_order=True)
@@ -105,9 +106,54 @@ def test_an_axiom_named_goal_does_not_clash_with_the_conjecture():
     assert "thf(goal_2, conjecture, " in problem
 
 
-def test_the_modal_export_declares_its_comparison_relations():
+def test_the_modal_export_declares_its_ordering_relations():
+    # `<` is an ordinary uninterpreted relation, world-relativised as in qml, so it IS
+    # declared (one extra mu argument) - and a problem with no identity atom carries no
+    # identity macro at all, so it reads exactly as it did before identity was rigid.
+    problem = to_thf_ho_modal(TOM.parse("∀x ∀y (x < y → □(x < y))"))
+    assert _declarations(problem)["flt"] == "$i > $i > mu > $o"
+    assert "meq" not in problem
+    _assert_lexically_valid(problem)
+
+
+def test_the_modal_export_reads_identity_through_the_rigid_meq_macro():
+    # `=` is NOT a declared uninterpreted relation: it is HOL's own `=` over `$i`, lifted
+    # to a proposition by a macro whose world binder W the body never mentions, so it
+    # takes no world argument. The macro's line is hol.thf_modal's, verbatim.
     problem = to_thf_ho_modal(TOM.parse("∀x ∀y (x = y → □(x = y))"))
-    assert _declarations(problem)["feq"] == "$i > $i > mu > $o"
+    assert _declarations(problem)["meq"] == "$i > $i > mu > $o"
+    assert _THF_RIGID_EQ_DEF in problem
+    assert "feq" not in problem and "fneq" not in problem
+    assert "( meq @ X_V @ Y_V )" in problem
+    _assert_lexically_valid(problem)
+
+
+def test_a_disequality_is_the_negation_of_the_identity_macro():
+    # `≠` is lowered to `¬(=)` before anything is rendered: no fneq, no `!=` of its own.
+    problem = to_thf_ho_modal(TOM.parse("a ≠ b"))
+    assert "( mnot @ ( meq @ a @ b ) )" in problem
+    assert "fneq" not in problem and "!=" not in problem
+
+
+def test_a_user_predicate_called_meq_is_pushed_aside_only_when_identity_occurs():
+    # With identity the macro owns `meq`, so a user predicate that sanitises onto it is
+    # pushed to meq_2; without identity nothing claims it and the predicate keeps `meq`.
+    with_identity = to_thf_ho_modal(TOM.parse("Meq(a) ∧ a = b"))
+    declared = _declarations(with_identity)
+    assert declared["meq"] == "$i > $i > mu > $o"        # the macro
+    assert declared["meq_2"] == "$i > mu > $o"           # the user's unary Meq
+    _assert_lexically_valid(with_identity)
+    without_identity = to_thf_ho_modal(TOM.parse("Meq(a)"))
+    assert _declarations(without_identity)["meq"] == "$i > mu > $o"
+    assert "meq_2" not in without_identity
+
+
+def test_an_axiom_called_meq_does_not_clash_with_the_identity_macro():
+    problem = to_thf_ho_modal(TOM.parse("G(a)"),
+                              axioms=[HoAxiom("meq", TOM.parse("a = b"))])
+    _assert_lexically_valid(problem)
+    assert "thf(meq, definition, " in problem        # the macro keeps its unit name
+    assert "thf(meq_2, axiom, " in problem           # the axiom is the one pushed aside
 
 
 # ---------------------------------------------------------------------------

@@ -140,9 +140,12 @@ class TestTranslationStructure:
         env = ArithEnv("real")
         to_z3_arith(FOL.parse("x > 0"), env=env)
         to_z3_arith(FOL.parse("x < 5"), env=env)
-        # Both translations resolved x to the one cached Z3 constant.
-        assert list(env.symbols.keys()) == ["x"]
-        assert env.symbols["x"].eq(z3.Const("x", z3.RealSort()))
+        # Both translations resolved the variable x to the one cached Z3 constant. The grammar reads a lone
+        # letter as a VARIABLE, and a variable is a symbol of its own, "x!v", apart from the constant x (the
+        # old expectation, a table of constants holding "x", made the two one symbol); no constant is met here.
+        assert list(env.variables.keys()) == ["x"]
+        assert env.symbols == {}
+        assert env.variables["x"].eq(z3.Const("x!v", z3.RealSort()))
 
 
 class TestConnectives:

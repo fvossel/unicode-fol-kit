@@ -34,6 +34,7 @@ from typing import Dict, List, Optional, Tuple
 from ..fol.nodes import (
     Node, Atom, Not, And, Or, Implies, Iff, Quantifier, Variable, Constant, Function,
 )
+from ..fol._truth_constants import is_true_constant
 from .fitch import (
     Proof, Subproof, Line, premise, assume, line, flag,
     FALSUM, is_falsum, verify_proof, _canon_q, _subst_var, _free_vars, _q_kind, _is_term,
@@ -159,6 +160,14 @@ def _saturate(derivs: Dict[Node, Deriv], terms: List[Node]) -> None:
                     derivs[FALSUM] = ("rule", "⊥I", FALSUM, [derivs[f], derivs[Not(f)]], ())
                     changed = True
                     break
+        if FALSUM not in derivs:
+            # A fact that IS a falsum (the truth constant `$false`) puts a contradiction
+            # in scope on its own: ⊥E turns it into the search's own ⊥.
+            for f in list(derivs):
+                if is_falsum(f):
+                    derivs[FALSUM] = ("rule", "⊥E", FALSUM, [derivs[f]], ())
+                    changed = True
+                    break
 
 
 def _extend(derivs: Dict[Node, Deriv], formula: Node) -> Dict[Node, Deriv]:
@@ -189,8 +198,12 @@ def _search(derivs: Dict[Node, Deriv], goal: Node, depth: int,
     _saturate(derivs, terms)
     if goal in derivs:
         return derivs[goal]
-    # Ex falso quodlibet: once a contradiction is in scope, any goal follows.
-    if FALSUM in derivs and not is_falsum(goal):
+    if is_true_constant(goal):
+        return ("rule", "⊤I", goal, [], ())     # the truth constant needs no premise
+    # Ex falso quodlibet: once a contradiction is in scope, any goal follows (the
+    # search's own ⊥ is the goal it is looking for; the truth constant `$false` is an
+    # ordinary goal that ⊥E reaches like any other).
+    if FALSUM in derivs and goal != FALSUM:
         return ("rule", "⊥E", goal, [derivs[FALSUM]], ())
     if depth <= 0:
         return None
@@ -227,7 +240,7 @@ def _search(derivs: Dict[Node, Deriv], goal: Node, depth: int,
                 return ("rule", "→E", goal, [derivs[f], d], ())
 
     # Reductio ad absurdum (classical completeness for the propositional fragment).
-    if not is_falsum(goal):
+    if goal != FALSUM:
         body = _search(_extend(derivs, Not(goal)), FALSUM, depth - 1, ctx, terms)
         if body is not None:
             return ("raa", goal, body)
@@ -293,7 +306,7 @@ def _try_intro(derivs: Dict[Node, Deriv], goal: Node, depth: int,
                 return ("rule", "∃I", goal, [d], (t,))
         return None
 
-    if is_falsum(goal):
+    if goal == FALSUM:
         # Prove ⊥ from a fact f by proving its negation, or from ¬g by proving g.
         for f in list(derivs):
             if isinstance(f, Not):

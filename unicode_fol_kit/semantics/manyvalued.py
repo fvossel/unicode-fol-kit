@@ -24,22 +24,47 @@ This module operates on **classical** AST nodes (Atom, Not, And, Or, Xor,
 Implies, Iff, Quantifier) parsed by ``MSFLParser()`` — no new grammar. Truth
 values are the floats ``0.0``, ``0.5`` and ``1.0``. A *valuation* maps a ground
 atom's canonical ``to_unicode_str()`` key (e.g. ``'P'`` or ``'P(a)'``) to one of
-those three values.
+those three values. The nullary atoms ``$true`` and ``$false`` (``⊤`` and ``⊥``) are
+not letters of the formula but the constants truth and falsity: they have the value
+``1.0`` and ``0.0`` under every valuation, and an enumeration does not vary them.
 
 Quantifiers are read substitutionally over a finite ``domain`` of constant
 names, exactly as in the fuzzy evaluator: ``∀`` is the minimum and ``∃`` the
 maximum of the body's value over the domain (∀ = "all", ∃ = "some"). A domain
 is required whenever a quantifier is present.
 
+A variable that is free in a formula that is decided together with a quantifier (the
+deciders :func:`is_valid`, :func:`is_satisfiable` and :func:`entails`, and their
+counterparts in :mod:`~unicode_fol_kit.semantics.matrix`) is a PARAMETER: one unknown
+element of the domain, the same in every formula of the problem. The decider tries each
+assignment of the domain's elements to the problem's free variables: a formula is valid
+(a consequence) when it is so under every assignment and satisfiable when it is so
+under some. ``∀y P(y) → P(x)`` is therefore LP-valid over ``{a, b}`` (the parameter ``x``
+is ``a`` or ``b``), ``P(x) ⊢ ∃y P(y)`` is a consequence (whichever element ``x`` is, ``P``
+of it is one of the disjuncts), and ``P(x), Q(y) ⊢ ∀z (P(z) ∧ Q(z))`` is not. Where no
+quantifier is present the domain says nothing about a variable, and the atom ``P(x)`` is a
+letter of its own, exactly as ``P(a)`` is. The evaluator (:func:`kleene_value`) takes the
+valuation as it stands: the atom ``P(x)`` of a free variable is one more key of it.
+
+An atom is a letter named by the text it prints as. Two different atoms that print alike
+(the numeral ``1`` and a constant named ``1``, a free variable ``x`` and a constant named
+``x``) would be read as one letter, so a problem that has such a pair is refused by name.
+
 Łukasiewicz (fuzzy), sorted, lambda, and modal nodes carry no classical
-three-valued reading here and raise ``NotImplementedError``.
+three-valued reading here and raise ``NotImplementedError``. A sorted constant
+(``alice:Human``) is refused the same way wherever it stands, inside an atom as well:
+that ``alice`` lies in ``Human`` is a fact about the sort which the three truth
+values have no statement of, and reading ``Human(alice)`` as unrelated to it would
+answer another question.
 
 Parse inputs with ``MSFLParser()`` (classical propositional / FOL).
 """
 
 from itertools import product
-from typing import Dict, List, Optional, Sequence, Set
+from typing import Collection, Dict, Iterator, List, Optional, Sequence, Set, Tuple
 
+from ..fol._atom_keys import AtomKeys, atom_key
+from ..fol._free_parameters import free_parameter_names
 from ..fol.nodes import (
     Node, Variable, Constant, Number, Function, Atom,
     Not, And, Or, Xor, Implies, Iff, Quantifier,
@@ -50,6 +75,7 @@ from ..fol.nodes import (
     Box, Diamond, Always, Eventually, Next, Until,
     Historically, Once, Previous, Since, Knows, Believes,
 )
+from ..fol._truth_constants import truth_value as _truth_value
 
 # The three truth values, smallest first: false < undefined/both < true.
 FALSE = 0.0
@@ -142,7 +168,8 @@ def _ground(node: Node, var_name: str, const_name: str) -> Node:
 
 
 def _eval_quantifier(qtype: str, var_name: str, body: Node,
-                     valuation: Dict[str, float], domain: Set[str]) -> float:
+                     valuation: Dict[str, float], domain: Set[str],
+                     keys: Optional[AtomKeys] = None) -> float:
     """Evaluate a quantifier substitutionally: ∀ = min, ∃ = max over the domain."""
     if not domain:
         raise ValueError(
@@ -150,7 +177,7 @@ def _eval_quantifier(qtype: str, var_name: str, body: Node,
             "least one constant name."
         )
     values = [
-        kleene_value(_ground(body, var_name, d), valuation, domain=domain)
+        _kleene_value(_ground(body, var_name, d), valuation, domain, keys)
         for d in domain
     ]
     if qtype in ("∀", "forall"):
@@ -170,7 +197,8 @@ def kleene_value(formula: Node,
             Iff, Quantifier). Build it with ``MSFLParser()``.
         valuation: maps a ground atom's canonical key — its
             ``to_unicode_str()`` rendering, e.g. ``'P'`` or ``'P(a)'`` — to a
-            value in ``{0.0, 0.5, 1.0}``. A missing key raises ``KeyError``.
+            value in ``{0.0, 0.5, 1.0}``. A missing key raises ``KeyError``. The atom of
+            a free variable (``'P(x)'``) is one more key.
         domain: a set of constant-name strings over which quantifiers range
             (∀ = min, ∃ = max). Required whenever a ``Quantifier`` is present.
 
@@ -182,13 +210,29 @@ def kleene_value(formula: Node,
         ValueError: a quantifier lacks a domain (or the domain is empty), or a
             valuation entry is not snappable to ``{0.0, 0.5, 1.0}``.
         NotImplementedError: the node is a Łukasiewicz, sorted, lambda or modal
-            construct, which has no strong-Kleene three-valued reading here.
+            construct, which has no strong-Kleene three-valued reading here; a
+            sorted constant inside an atom is refused the same way; so is a pair of
+            different atoms that print alike (the numeral ``1`` and a constant named
+            ``1``, a free variable ``x`` and a constant named ``x``), which one key of the
+            valuation could not tell apart.
         TypeError: the node is a bare term, not a formula, or otherwise
             unsupported.
     """
+    return _kleene_value(formula, valuation, domain, AtomKeys("manyvalued.kleene_value", "refuse"))
+
+
+def _kleene_value(formula: Node, valuation: Dict[str, float],
+                  domain: Optional[Set[str]], keys: Optional[AtomKeys]) -> float:
+    """The body of :func:`kleene_value`; ``keys`` records and checks the key of every atom
+    reached, and is ``None`` where the atoms were checked already."""
     # --- Atoms (the base case) --------------------------------------------
     if isinstance(formula, Atom):
-        key = formula.to_unicode_str()
+        # The truth constants ``$true`` / ``$false`` are the top and the bottom value
+        # (1.0 and 0.0) whatever the valuation says; they are not letters.
+        constant = _truth_value(formula)
+        if constant is not None:
+            return TRUE if constant else FALSE
+        key = atom_key(formula) if keys is None else keys.key(formula)
         if key not in valuation:
             raise KeyError(
                 f"No truth value for ground atom {key!r} in the valuation. "
@@ -198,13 +242,13 @@ def kleene_value(formula: Node,
 
     # --- Negation ----------------------------------------------------------
     if isinstance(formula, Not):
-        x = kleene_value(formula.formula, valuation, domain)
+        x = _kleene_value(formula.formula, valuation, domain, keys)
         return 1.0 - x
 
     # --- Binary classical connectives -------------------------------------
     if isinstance(formula, (And, Or, Xor, Implies, Iff)):
-        a = kleene_value(formula.left, valuation, domain)
-        b = kleene_value(formula.right, valuation, domain)
+        a = _kleene_value(formula.left, valuation, domain, keys)
+        b = _kleene_value(formula.right, valuation, domain, keys)
         if isinstance(formula, And):
             return min(a, b)
         if isinstance(formula, Or):
@@ -226,7 +270,7 @@ def kleene_value(formula: Node,
                 "constant-name strings)."
             )
         return _eval_quantifier(formula.type, formula.variable.name,
-                                formula.formula, valuation, set(domain))
+                                formula.formula, valuation, set(domain), keys)
 
     # --- Rejected node classes (informative errors) -----------------------
     _reject_if_unsupported(formula)
@@ -282,21 +326,15 @@ def _designated_set(logic: str) -> frozenset:
         )
 
 
-def _atom_keys(*formulas: Node) -> List[str]:
+def _atom_keys(*formulas: Node, route: str = "manyvalued") -> List[str]:
     """Distinct ground-atom keys across the formulas, in first-seen order.
 
     The key is each atom's canonical ``to_unicode_str()`` — these are the
-    independent variables enumerated over ``{0.0, 0.5, 1.0}``.
+    independent variables enumerated over ``{0.0, 0.5, 1.0}``. A sorted constant, and
+    two different atoms that print alike, are refused by name (``route`` names the
+    caller in the message).
     """
-    keys: List[str] = []
-    seen: Set[str] = set()
-    for formula in formulas:
-        for atom in formula.atoms():
-            key = atom.to_unicode_str()
-            if key not in seen:
-                seen.add(key)
-                keys.append(key)
-    return keys
+    return AtomKeys(route, "refuse").letters(formulas)
 
 
 def _instantiate(node: Node, domain: Set[str]) -> Node:
@@ -340,7 +378,11 @@ def _compile(node: Node, index: Dict[str, int]):
     Kleene truth functions and the SAME rejection (:func:`_reject_if_unsupported`).
     """
     if isinstance(node, Atom):
-        i = index[node.to_unicode_str()]
+        constant = _truth_value(node)
+        if constant is not None:
+            value = TRUE if constant else FALSE
+            return lambda values: value
+        i = index[atom_key(node)]
         return lambda values: values[i]
     if isinstance(node, Not):
         inner = _compile(node.formula, index)
@@ -365,7 +407,46 @@ def _compile(node: Node, index: Dict[str, int]):
     _reject_if_unsupported(node)
 
 
-def _prepare_enumeration(formulas: Sequence[Node], domain: Optional[Set[str]]):
+def _parameter_instances(formulas: Sequence[Node],
+                         domain: Optional[Collection[str]]) -> Iterator[List[Node]]:
+    """The formulas of a problem under each assignment of its free variables to the domain.
+
+    A variable that is free in some formula of a problem that also has a quantifier is a
+    parameter of the problem: ONE element of the ``domain`` the quantifiers range over, the
+    same in every formula. Each assignment of the domain's elements to the free variables
+    gives the formulas with those variables replaced by the constants of the elements
+    (a quantifier that binds the name keeps it: only free occurrences are replaced), and
+    the problem is decided under every assignment (valid, a consequence) or under some
+    (satisfiable). Where nothing makes the domain the range of a variable (no quantifier,
+    no domain, no free variable) the formulas come out once, unchanged.
+
+    Raises:
+        ValueError: there are more assignments than :data:`MAX_MODELS`.
+    """
+    formulas = list(formulas)
+    names: Tuple[str, ...] = ()
+    if domain and any(formula.count(Quantifier) for formula in formulas):
+        names = free_parameter_names(formulas)
+    if not names or not domain:
+        yield formulas
+        return
+    elements = sorted(set(domain), key=str)
+    total = len(elements) ** len(names)
+    if total > MAX_MODELS:
+        raise ValueError(
+            f"The {len(names)} free variable(s) {list(names)} are parameters over a domain of "
+            f"{len(elements)} elements: {len(elements)}**{len(names)} = {total} assignments, "
+            f"above MAX_MODELS = {MAX_MODELS}. Shrink the domain, bind the variables with "
+            "quantifiers, or replace them by constants.")
+    for chosen in product(elements, repeat=len(names)):
+        instance = formulas
+        for name, element in zip(names, chosen):
+            instance = [_ground(formula, name, element) for formula in instance]
+        yield instance
+
+
+def _prepare_enumeration(formulas: Sequence[Node], domain: Optional[Set[str]],
+                         route: str = "manyvalued"):
     """Ground quantifiers, collect ground-atom keys, and compile each formula.
 
     Returns ``(keys, compiled)`` with ``compiled[i](values) == kleene_value(
@@ -383,7 +464,7 @@ def _prepare_enumeration(formulas: Sequence[Node], domain: Optional[Set[str]]):
             grounded.append(_instantiate(formula, set(domain)))
         else:
             grounded.append(formula)
-    keys = _atom_keys(*grounded)
+    keys = _atom_keys(*grounded, route=route)
     total = 3 ** len(keys)
     if total > MAX_MODELS:
         raise ValueError(
@@ -409,17 +490,26 @@ def is_valid(formula: Node, logic: str = "K3",
     from the formula); above :data:`MAX_MODELS` assignments a ValueError is raised
     rather than hanging.
 
+    A variable that is free in a quantified formula is a parameter: one element of ``domain``,
+    and the formula is valid when it is designated under every assignment of the domain's
+    elements to its free variables as well (see the module docstring).
+
     Args:
         formula: a classical FOL formula node (built with ``MSFLParser()``).
         logic: ``"K3"`` (designate {1.0}) or ``"LP"`` (designate {0.5, 1.0}).
         domain: constant names for any quantifiers; required if quantified.
+
+    Raises:
+        NotImplementedError: a sorted construct, or two different atoms that print alike
+            (see the module docstring).
     """
     designated = _designated_set(logic)
-    keys, (evaluate,) = _prepare_enumeration([formula], domain)
-    return all(
-        evaluate(values) in designated
-        for values in product(TRUTH_VALUES, repeat=len(keys))
-    )
+    for instance in _parameter_instances([formula], domain):
+        keys, (evaluate,) = _prepare_enumeration(instance, domain, "manyvalued.is_valid")
+        if not all(evaluate(values) in designated
+                   for values in product(TRUTH_VALUES, repeat=len(keys))):
+            return False
+    return True
 
 
 def is_satisfiable(formula: Node, logic: str = "K3",
@@ -427,14 +517,18 @@ def is_satisfiable(formula: Node, logic: str = "K3",
     """True iff *some* three-valued assignment designates the formula.
 
     Enumerates the same ``3**n`` assignments as :func:`is_valid` and returns
-    True as soon as one yields a value designated for ``logic``.
+    True as soon as one yields a value designated for ``logic``. A variable that is free in a
+    quantified formula is a parameter over ``domain`` (see :func:`is_valid`): the formula is
+    satisfiable when it is under some assignment of the domain's elements to its free
+    variables.
     """
     designated = _designated_set(logic)
-    keys, (evaluate,) = _prepare_enumeration([formula], domain)
-    return any(
-        evaluate(values) in designated
-        for values in product(TRUTH_VALUES, repeat=len(keys))
-    )
+    for instance in _parameter_instances([formula], domain):
+        keys, (evaluate,) = _prepare_enumeration(instance, domain, "manyvalued.is_satisfiable")
+        if any(evaluate(values) in designated
+               for values in product(TRUTH_VALUES, repeat=len(keys))):
+            return True
+    return False
 
 
 def entails(premises: Sequence[Node], conclusion: Node, logic: str = "K3",
@@ -450,18 +544,29 @@ def entails(premises: Sequence[Node], conclusion: Node, logic: str = "K3",
     designated yet Q is not), so LP is paraconsistent; under K3 it holds
     vacuously because ``P`` and ``¬P`` are never both designated.
 
+    A variable that is free in some formula of a problem that has a quantifier is a parameter:
+    ONE element of ``domain``, the same in the premises and the conclusion, and the
+    conclusion must follow under every assignment of the domain's elements to the free
+    variables. ``∀y P(y) ⊢ P(x)`` holds in LP over ``{a, b}``, ``P(x) ⊢ ∃y P(y)`` holds, and
+    ``P(x), Q(y) ⊢ ∀z (P(z) ∧ Q(z))`` does not.
+
     Args:
         premises: a sequence of classical formula nodes.
         conclusion: a classical formula node.
         logic: ``"K3"`` or ``"LP"``.
         domain: constant names for any quantifiers; required if quantified.
+
+    Raises:
+        NotImplementedError: a sorted construct, or two different atoms that print alike
+            (see the module docstring).
     """
     designated = _designated_set(logic)
     premises = list(premises)
-    keys, compiled = _prepare_enumeration([*premises, conclusion], domain)
-    *premise_fns, conclusion_fn = compiled
-    for values in product(TRUTH_VALUES, repeat=len(keys)):
-        if all(f(values) in designated for f in premise_fns):
-            if conclusion_fn(values) not in designated:
-                return False
+    for instance in _parameter_instances([*premises, conclusion], domain):
+        keys, compiled = _prepare_enumeration(instance, domain, "manyvalued.entails")
+        *premise_fns, conclusion_fn = compiled
+        for values in product(TRUTH_VALUES, repeat=len(keys)):
+            if all(f(values) in designated for f in premise_fns):
+                if conclusion_fn(values) not in designated:
+                    return False
     return True

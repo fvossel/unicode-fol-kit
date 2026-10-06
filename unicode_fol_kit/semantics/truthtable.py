@@ -13,8 +13,14 @@ Restricted to ``{0, 1}`` the strong-Kleene tables coincide with the classical on
 so all three reuse :func:`unicode_fol_kit.semantics.manyvalued.kleene_value`.
 
 Each distinct atom (by surface form — ``P`` and ``P(a)`` are different columns) is a
-propositional variable. Quantified formulas have no finite truth table and are
-rejected.
+propositional variable, except the nullary atoms ``$true`` and ``$false`` (``⊤`` and
+``⊥``): those are the constants truth and falsity, they get no column, and their
+value is ``1`` and ``0`` in every row. Quantified formulas have no finite truth table
+and are rejected. A column is named by the text the atom prints as, so two different
+atoms that print alike (the numeral ``1`` and a constant named ``1``, a free variable
+``x`` and a constant named ``x``) would be one column: such a formula is refused by name,
+and so is a sorted constant (``alice:Human``), whose sort is a fact that a truth table
+has no way to state.
 
 Public API: :func:`truth_table`, :class:`TruthTable`, and the convenience predicates
 :func:`is_tautology`, :func:`is_contradiction`, :func:`is_satisfiable_tt`.
@@ -26,8 +32,10 @@ from itertools import product
 from typing import Dict, List, Tuple
 
 from ..fol.nodes import Node, Atom, Quantifier, SortedQuantifier
+from ..fol._atom_keys import AtomKeys, atom_key
 from ..fol._so_nodes import SecondOrderQuantifier
-from .manyvalued import kleene_value, DESIGNATED
+from ..fol._truth_constants import truth_value as _truth_value
+from .manyvalued import _kleene_value, DESIGNATED
 
 
 # Value sets and designated sets per logic (classical added to the K3/LP table).
@@ -62,7 +70,9 @@ def _collect_atoms(formula: Node) -> List[str]:
                 "truth_table: quantified formulas have no finite truth table."
             )
         if isinstance(node, Atom):
-            key = node.to_unicode_str()
+            if _truth_value(node) is not None:
+                return              # `$true` / `$false` are constants, not columns
+            key = atom_key(node)
             if key not in seen:
                 seen.add(key)
                 order.append(key)
@@ -159,17 +169,19 @@ def truth_table(formula: Node, logic: str = "classical") -> TruthTable:
 
     Raises:
         ValueError: on an unknown logic or a quantified formula.
+        NotImplementedError: a sorted constant, or two different atoms that print alike.
     """
     if logic not in _VALUES:
         raise ValueError(f"truth_table: unknown logic {logic!r} "
                          f"(use 'classical', 'K3', or 'LP').")
     atoms = _collect_atoms(formula)
+    AtomKeys("truth_table", "refuse").letters([formula])
     values = _VALUES[logic]
     designated = _DESIGNATED[logic]
     rows = []
     for assignment in product(values, repeat=len(atoms)):
         valuation: Dict[str, float] = dict(zip(atoms, assignment))
-        value = kleene_value(formula, valuation)
+        value = _kleene_value(formula, valuation, None, None)
         rows.append((assignment, value, value in designated))
     return TruthTable(formula, tuple(atoms), tuple(rows), logic)
 

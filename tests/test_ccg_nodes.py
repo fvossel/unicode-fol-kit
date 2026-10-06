@@ -516,11 +516,11 @@ def test_sorted_count_sort_guard_is_inside_the_count():
     # not the whole formula.
     from unicode_fol_kit import to_fol, formulas_are_equivalent
     reduced = to_fol(_MSFOL.parse("∃≥1 x:S P(x)"))
-    assert reduced.to_unicode_str() == "∃x_0 (S(x_0) ∧ P(x_0))"
+    assert reduced.to_unicode_str() == "∃x0 (S(x0) ∧ P(x0))"
     # And a two-witness count keeps the guard on EACH witness.
     reduced2 = to_fol(_MSFOL.parse("∃≥2 x:S P(x)"))
-    assert "S(x_0) ∧ P(x_0)" in reduced2.to_unicode_str()
-    assert "S(x_1) ∧ P(x_1)" in reduced2.to_unicode_str()
+    assert "S(x0) ∧ P(x0)" in reduced2.to_unicode_str()
+    assert "S(x1) ∧ P(x1)" in reduced2.to_unicode_str()
     assert "≠" in reduced2.to_unicode_str()
     # Semantics unchanged: the reduction is Z3-equivalent to the original
     # (SortedCount.to_z3 auto-reduces through the same guarded encoding).

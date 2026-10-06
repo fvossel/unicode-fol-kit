@@ -218,7 +218,7 @@ def test_faithful_reflexive_relation_exists():
 def test_faithful_comprehension_holds():
     # ∃P ∀x (P(x) ↔ Q(x)) is always true (comprehension on Q).
     f = _parse("∃P ∀x (P(x) ↔ Q(x))")
-    struct = Structure(domain=(0, 1), constants={}, predicates={"Q": {(0,)}})
+    struct = Structure(domain=(0, 1), constants={}, predicates={("Q", 1): {(0,)}})
     assert satisfies_so(f, struct) is True
 
 

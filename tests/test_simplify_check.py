@@ -467,15 +467,16 @@ def test_count_from_chain_rejects_a_universal_interrupting_the_prefix():
 
 def test_expand_count_matches_hand_derived_shape_n2():
     # Count._expand for n=Count("ge",2,x,c(x)):
-    #   avoid = free_vars(c(x)) | {"x"} = {"x"}
-    #   fresh(2) -> "x_0" (not in avoid), then "x_1" (not in {"x","x_0"})
-    #   at_least(2): conjuncts = [c(x_0), c(x_1), x_0≠x_1]
-    #   _balanced_and([c(x_0),c(x_1),x_0≠x_1]): pairs (0,1) merge, odd one
-    #     (x_0≠x_1) appended -> [And(c(x_0),c(x_1)), x_0≠x_1], then merges to
-    #     And(And(c(x_0),c(x_1)), x_0≠x_1)
-    #   wrapped in reversed(ws) order: ∃x_0(∃x_1(body))
+    #   avoid = every name in c(x) | {"x"} = {"x"}
+    #   fresh(2) -> "x0" (not in avoid), then "x1" (not in {"x","x0"}) -- one
+    #     letter and digits, the only shape the kit's parser reads back
+    #   at_least(2): conjuncts = [c(x0), c(x1), x0≠x1]
+    #   _balanced_and([c(x0),c(x1),x0≠x1]): pairs (0,1) merge, odd one
+    #     (x0≠x1) appended -> [And(c(x0),c(x1)), x0≠x1], then merges to
+    #     And(And(c(x0),c(x1)), x0≠x1)
+    #   wrapped in reversed(ws) order: ∃x0(∃x1(body))
     count = Count("ge", Number(2), Variable("x"), Atom("c", [Variable("x")]))
-    x0, x1 = Variable("x_0"), Variable("x_1")
+    x0, x1 = Variable("x0"), Variable("x1")
     expected = Quantifier("∃", x0, Quantifier("∃", x1,
         And(And(Atom("c", [x0]), Atom("c", [x1])), Atom("≠", [x0, x1]))))
     assert expand_count(count) == expected

@@ -67,6 +67,13 @@ Hets-side parse/static-analysis error), not something this module tries to
 pre-empt. Callers who want a shared vocabulary should keep every
 :class:`DolSpec` in the same library on the same ``default_sort``.
 
+A spec that extends another SEES the other's symbols without declaring them, and a bound
+variable that is spelled like a visible symbol would be read as that variable. So a
+bound variable of the extending spec is never given the spelling of a symbol of the
+specs it extends (found through ``specs``, transitively): the extending spec's
+``to_casl_spec`` call is given those names as ``visible_symbols`` and renames the
+clashing binders, as it does for the spec's own symbols.
+
 What is NOT re-checked here
 ------------------------------
 * Referential integrity of ``extends``: this module does not verify that a
@@ -130,14 +137,6 @@ _CASL_KEYWORDS = frozenset({
 
 _SIMPLE_ID_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
 
-# The two equality-like predicates fol.qml's _st touches (see the section
-# comment above, point (2)) and the fixed, informative stem each aliases to
-# when _st has made it non-binary — "w" for "world-relativized", mirroring
-# hol.isabelle_modal._PRED_ALIAS / hol.thf_modal's own "feq"/"fneq" aliasing
-# of the identical predicates for the identical reason.
-_EQUALITY_LIKE_PREDICATES = frozenset({"=", "≠"})
-_EQ_ALIAS_STEM = {"=": "weq", "≠": "wneq"}
-
 
 def _check_casl_word(name: str, kind: str) -> None:
     """Refuse ``name`` (a ``kind`` identifier) if it is not a simple CASL
@@ -186,13 +185,48 @@ class DolSpec:
     default_sort: str = "Thing"
 
 
-def _spec_block(spec_name: str, spec: DolSpec) -> str:
+def _names_of(spec: DolSpec) -> set:
+    """Every symbol name of ``spec``'s own formulas: constants, functions, predicates, the
+    sorts they write, and the spec's default sort (an over-approximation is harmless: the
+    names only keep a bound variable away)."""
+    names = {spec.default_sort}
+    for formula in (*spec.axioms, *spec.conjectures):
+        for node in formula.walk():
+            if isinstance(node, (Constant, SortedConstant, Function)):
+                names.add(node.name)
+            elif isinstance(node, Atom):
+                names.add(node.predicate)
+            sort = getattr(node, "sort", None)
+            if isinstance(sort, str):
+                names.add(sort)
+    return names
+
+
+def _inherited_names(spec: DolSpec, specs: "OrderedDict[str, DolSpec]") -> frozenset:
+    """The symbol names ``spec`` sees from the specs it extends (``then``), transitively.
+
+    An extended spec that is not a key of ``specs`` is defined elsewhere and cannot be
+    read here (see the module docstring's "What is NOT re-checked here")."""
+    names: set = set()
+    seen: set = set()
+    parent = spec.extends
+    while parent is not None and parent in specs and parent not in seen:
+        seen.add(parent)
+        names |= _names_of(specs[parent])
+        parent = specs[parent].extends
+    return frozenset(names)
+
+
+def _spec_block(spec_name: str, spec: DolSpec, inherited: frozenset = frozenset()) -> str:
     """Render one ``spec <spec_name> = [<extends> then] ... end`` block by
     slicing the body out of a fresh :func:`~unicode_fol_kit.fol.casl_export.to_casl_spec`
-    call — see the module docstring's "Reuse strategy" section."""
+    call — see the module docstring's "Reuse strategy" section. ``inherited`` are the
+    symbol names the spec sees from the specs it extends: a bound variable is never
+    given the spelling of one of them (``to_casl_spec``'s ``visible_symbols``)."""
     body_text = to_casl_spec(
         list(spec.axioms), conjectures=list(spec.conjectures),
         spec_name=spec_name, default_sort=spec.default_sort,
+        visible_symbols=inherited,
     )
     body_lines = body_text.split("\n")
     expected_header = f"spec {spec_name} ="
@@ -263,7 +297,7 @@ def to_dol_library(name: str, specs: "OrderedDict[str, DolSpec]") -> str:
     lines = [f"library {name}", "logic CASL", ""]
     items = list(specs.items())
     for idx, (spec_name, spec) in enumerate(items):
-        lines.append(_spec_block(spec_name, spec))
+        lines.append(_spec_block(spec_name, spec, _inherited_names(spec, specs)))
         if idx != len(items) - 1:
             lines.append("")
     return "\n".join(lines)
@@ -275,9 +309,10 @@ def to_dol_library(name: str, specs: "OrderedDict[str, DolSpec]") -> str:
 #
 # fol.qml.qml_validity_formula already lowers a modal formula to exactly the
 # classical FOL fragment fol.casl_export accepts (see that function's own
-# docstring) — this section's job is the TWO concrete gaps between
+# docstring) — this section's job is the ONE concrete gap between
 # "qml_validity_formula's output" and "a formula to_casl_spec will actually
-# accept":
+# accept", point (1); point (2) records the second place one might expect a
+# gap, object identity, and why there is none:
 #
 # (1) Illegal identifiers. qml's own auto-generated fresh variables (the
 # world variables _Fresh mints, e.g. "_w0", and the Geach axiom's own
@@ -293,42 +328,42 @@ def to_dol_library(name: str, specs: "OrderedDict[str, DolSpec]") -> str:
 # casl_export, rather than asking every caller of qml_validity_formula to
 # pre-empt a naming convention that is qml's own.
 #
-# (2) A world-relativized "=" / "≠" atom is not CASL's own binary identity.
-# fol.qml's ``_st`` (unconditionally, by design — see that module's
-# docstring) appends the current-world argument to EVERY atom it visits,
-# including an object-language "=" or "≠" — so a genuinely binary user atom
-# "a = b" comes out of qml_translate as a TERNARY atom ``=(a, b, w)``. That
-# is not a spelling problem: CASL's own "=" is a FIXED, always-exactly-2-ary,
-# RIGID built-in, while this atom denotes something else entirely — an
-# uninterpreted, WORLD-RELATIVE relation, exactly the same non-rigid reading
-# ``fol._fol_nodes.Atom.to_z3`` already gives it (only a genuinely 2-ary "="
-# lowers to Z3's native equality; any other arity becomes an ordinary
-# uninterpreted Z3 predicate named "=") and the same one
-# ``semantics.kripke.satisfies_modal`` gives it (an Atom is looked up in the
-# world's valuation like any other, with no special identity semantics) and
-# the same one ``hol.isabelle_modal`` / ``hol.thf_modal`` give it (their own
-# ``_PRED_ALIAS`` tables alias "="/"≠" to fresh, uninterpreted constant names
-# — "feq"/"fneq" — for exactly this reason, in their own docstrings' words:
-# "NOT primitive HOL `=`", "uninterpreted, world-relativized"). So THIS
-# module follows the SAME, already-established kit-wide convention: a "="/"≠"
-# atom that ``_st`` actually touched (arity != 2) is renamed to a fresh,
-# legal, uninterpreted CASL predicate ("weq"/"wneq") by
-# :meth:`_CaslIdentifierShim.equality_alias`, rather than being handed to
-# CASL under the literal name "=" (which would crash casl_export's own
-# arity-2 check). A genuinely 2-ary "=" atom (e.g. the WORLD identity
-# ``w = v`` inside qml's own ``first_step`` axiom, or a user-formula equality
-# that happened not to sit under any modal operator at all) is untouched by
-# ``_st`` and is left exactly as CASL's own rigid "=" — see
-# :func:`_rewrite_casl_names` for the arity-2 test that tells the two cases
-# apart. A genuinely 2-ary "≠" is a THIRD case of its own: "≠" is never
-# CASL-native at any arity (unlike "=", it has no fixed built-in meaning to
-# fall back to at arity 2) and ``_st`` never produces one at arity 2 (a
-# world-relativized "≠" is always 3-ary or more), so this case can only arise
-# from a malformed pre-translation atom or a direct, non-modal call to
-# :func:`sanitize_modal_identifiers` — it is refused loudly with
-# :class:`NotImplementedError` (adversarial-review follow-up finding) rather
-# than silently relabelled onto an arbitrary, unrelated legal identifier,
-# which is what this module did before that follow-up review.
+# (2) Object identity needs no help: it arrives binary and CASL-native.
+# fol.qml's ``_st`` translates an identity atom ``a = b`` to the SAME binary
+# ``a = b`` over the object terms, with NO world argument, and ``a ≠ b`` to
+# ``¬(a = b)`` (see that module's "Equality is rigid" section). Identity does
+# not vary by world, and the translation says so by not mentioning the world.
+# That binary ``=`` is exactly CASL's own built-in equality — always two
+# terms, rigid, never declared in ``preds`` — so fol.casl_export renders it
+# infix (``a = b``), fol.casl_import parses it back to the identical Atom, and
+# nothing in this module renames, aliases or special-cases it. The one other
+# ``=`` atom a qml query can contain, the world identity ``w = v`` in qml's
+# own temporal ``first_step`` axiom, is the same native symbol: it relates two
+# worlds where a user equality relates objects, and what keeps the two kinds
+# apart is the ``World``/``Object`` guards, not the symbol. ``≠`` never reaches
+# this module at all, because qml has already written it as a negation of
+# ``=``, which CASL renders like any other ``not``.
+#
+# So :func:`_rewrite_casl_names` leaves every ``=`` atom under its literal
+# name and refuses every ``≠`` atom. Both matter only for a Node that did NOT
+# come out of qml_validity_formula, i.e. one built by hand and handed to
+# :func:`sanitize_modal_identifiers` directly (no text front-end of the kit
+# parses to a non-binary ``=``/``≠``, and qml_validity_formula itself refuses
+# one with a ValueError):
+#
+# * a ``=`` atom that is not binary is not CASL's identity and is not
+#   renamed onto some uninterpreted predicate either: it is passed through
+#   unchanged, so fol.casl_export's own exactly-two-terms check refuses it by
+#   name (one refusal, one place);
+# * a ``≠`` atom of ANY arity is refused here with :class:`NotImplementedError`:
+#   CASL has no disequality, and the sanitiser renames identifiers, it does not
+#   rewrite connectives, so the caller writes ``Not(Atom("=", ...))``.
+#
+# History, because the symbols below used to exist: fol.qml once appended the
+# world to ``=`` like to any atom, which made it a ternary uninterpreted
+# predicate, and this module aliased it to ``weq``/``wneq``. Both are gone
+# together; an atom literally named ``weq`` is now an ordinary user predicate
+# like any other.
 #
 # No change to fol.qml's or fol.casl_export's own logic: qml_validity_formula
 # is called unmodified, casl_export's own exactly-2-ary "=" check is never
@@ -343,16 +378,20 @@ def _casl_sanitize_stem(name: str) -> str:
     already claimed in the same namespace, so injectivity is enforced exactly
     once, in one place).
 
-    Strips every LEADING underscore first — the one concrete shape this shim
-    exists to fix (see the section comment above): every fresh name
-    :mod:`unicode_fol_kit.fol.qml` itself ever generates is an ordinary,
-    already-legal identifier once that convention is peeled off (``_w0`` ->
-    ``w0``, ``_gz0`` -> ``gz0``, ``_a0`` -> ``a0``, …), so this one rule
-    already fixes the measured blocker. What is left over is then
-    defensively re-checked against CASL's own SIMPLE-ID grammar for any
-    OTHER name this shim might be fed: a candidate that still does not start
-    with an ASCII letter (all-underscore, or digit-leading) is prefixed with
-    ``v``, and any remaining illegal character is folded to ``_``.
+    Strips every LEADING underscore first — the shape this shim was written for
+    (see the section comment above): the fresh names
+    :mod:`unicode_fol_kit.fol.qml` used to generate were ``_w0`` / ``_gz0`` /
+    ``_a0``, each an ordinary, already-legal identifier once that convention is
+    peeled off. Since 0.30.0 that module mints ``w0`` / ``v0`` style names
+    instead (they have to be legal for the KIT's own parser too), so no CALLER
+    in this repository still hands this function such a name — the rule stays
+    for any other one that might. What is left over is then re-checked against
+    CASL's own SIMPLE-ID grammar, and this is the part that is still reached:
+    a candidate that does not start with an ASCII letter (all-underscore, or
+    digit-leading) is prefixed with ``v``, and any remaining illegal character
+    is folded to ``_`` — which is what happens to ``fol.qml``'s ``·`` mark on a
+    user predicate named like one of its own relations (``R`` -> ``R·`` ->
+    ``R_``), the one shape of illegal CASL identifier this route still emits.
     """
     candidate = name.lstrip("_") or "id"
     if not (candidate[0].isascii() and candidate[0].isalpha()):
@@ -367,22 +406,25 @@ class _CaslIdentifierShim:
     or-Function / Atom-predicate name onto a legal, unique CASL identifier,
     leaving every name that already qualifies untouched.
 
-    Three separate namespaces, mirroring how CASL itself keeps these
-    textually independent (a bound variable's occurrence is resolved by
-    binding scope, not by clashing with an op/pred of the same spelling):
-    ``variable`` (bound object/world variables), ``term`` (constants AND
-    functions share ONE namespace here, mirroring
+    Three separate TABLES, one per kind of symbol: ``variable`` (bound
+    object/world variables), ``term`` (constants AND functions share ONE
+    table here, mirroring
     :func:`~unicode_fol_kit.fol.casl_export.to_casl_spec`'s own merged
     ``ops`` declaration block and its ``_CONST_VS_FUNCTION`` dual-use
-    refusal), and ``predicate`` (Atom predicate names; a GENUINELY BINARY
-    ``=`` is never renamed — it is CASL's own native, rigid equality, not a
-    declared symbol — but a ``=``/``≠`` atom of any OTHER arity, which only
-    ever arises from ``fol.qml``'s ``_st`` world-relativizing an
-    object-language equality/inequality, is not CASL's identity at all and
-    IS renamed, through :meth:`equality_alias`, to a fresh uninterpreted
-    predicate name shared by this namespace — see the section comment above
-    point (2) for why, and :func:`_rewrite_casl_names` for where the arity
-    check lives).
+    refusal), and ``predicate`` (Atom predicate names). A name is mapped only
+    within its own table, so a variable and a constant that already are legal
+    keep their spelling even when it is the same one; the text then says the
+    two apart by renaming the binder (see
+    :func:`~unicode_fol_kit.fol.casl_export.to_casl_spec`). A name the shim
+    MINTS, on the other hand, is drawn from ONE pool of taken spellings shared
+    by the three tables and the sorts of the formula, because CASL writes all
+    of them as one identifier: a renamed variable is never given the spelling
+    of a constant, a function, a predicate or a sort. ``=`` is not in any
+    of them: it is CASL's own native, rigid equality and not a declared
+    symbol, so :func:`_rewrite_casl_names` keeps it under its literal name
+    and it is never a simple identifier for :meth:`_seed` to claim; ``≠`` is
+    refused there before it could be renamed. See the section comment above,
+    point (2).
 
     TWO PASSES per namespace, in that order, is what makes this injective
     regardless of tree-walk order: :meth:`__init__` first walks the WHOLE
@@ -414,17 +456,25 @@ class _CaslIdentifierShim:
     """
 
     def __init__(self, formula: Node):
-        self._var, self._var_used = {}, set()
-        self._term, self._term_used = {}, set()
-        self._pred, self._pred_used = {}, set()
-        self._eq_alias: dict = {}  # (predicate, arity) -> resolved name; see equality_alias
+        self._var, self._term, self._pred = {}, {}, {}
+        # The three tables map names of three kinds, but CASL writes all of them as one
+        # identifier, so the three kinds draw the names they mint from ONE set of taken
+        # spellings: a minted name is fresh against every symbol of the formula, not
+        # only against the other symbols of its own kind.
+        taken: set = set()
+        self._var_used = self._term_used = self._pred_used = taken
         for n in formula.walk():
             if isinstance(n, Variable):
                 self._seed(self._var, self._var_used, n.name)
             elif isinstance(n, (Constant, SortedConstant, Function)):
                 self._seed(self._term, self._term_used, n.name)
-            elif isinstance(n, Atom) and n.predicate not in _EQUALITY_LIKE_PREDICATES:
+            elif isinstance(n, Atom):
+                # '=' and '≠' are not simple identifiers, so _seed ignores them.
                 self._seed(self._pred, self._pred_used, n.predicate)
+            sort = getattr(n, "sort", None)
+            if isinstance(sort, str):
+                # a sort a node names is a spelling taken too (it has no table here)
+                taken.add(sort)
 
     @staticmethod
     def _seed(table: dict, used: set, name: str) -> None:
@@ -449,38 +499,6 @@ class _CaslIdentifierShim:
     def predicate(self, name: str) -> str:
         return self._resolve(self._pred, self._pred_used, name)
 
-    def equality_alias(self, predicate: str, arity: int) -> str:
-        """Resolve a WORLD-RELATIVIZED ``=``/``≠`` atom (``arity != 2`` — see
-        the section comment above point (2)) onto a legal, injective
-        predicate name.
-
-        Keyed by ``(predicate, arity)``, not by the plain predicate string
-        :meth:`predicate` uses: every occurrence of the SAME
-        ``(predicate, arity)`` pair within one formula denotes the SAME
-        single uninterpreted relation (mirroring
-        ``fol._fol_nodes.Z3Env.get_pred``'s own cache, keyed purely by name,
-        which is exactly why every 3-ary ``=`` atom ``_st`` produces from one
-        formula already collapses onto ONE Z3 predicate today — see
-        ``Atom.to_z3``), so repeated calls for the same pair return the
-        identical resolved name rather than minting a fresh one each time.
-
-        Shares ``_pred_used`` (the SAME namespace :meth:`predicate` draws
-        from — CASL has exactly one flat ``preds`` block, no separate
-        "aliased" namespace) so a genuine user predicate that already
-        happens to be spelled ``weq``/``wneq`` is never silently identified
-        with this alias: that name is seeded into ``_pred_used`` by
-        :meth:`__init__`'s ordinary whole-formula walk like any other
-        already-legal predicate, so THIS alias is the one :func:`dedupe`
-        bumps to ``weq_2`` on a collision, never the other way round.
-        """
-        key = (predicate, arity)
-        if key in self._eq_alias:
-            return self._eq_alias[key]
-        stem = _EQ_ALIAS_STEM.get(predicate, "eqrel")
-        result = dedupe(stem, self._pred_used)
-        self._eq_alias[key] = result
-        return result
-
 
 def _rewrite_casl_names(node: Node, shim: _CaslIdentifierShim) -> Node:
     """Rebuild ``node`` with every Variable / (Sorted)Constant / Function /
@@ -502,19 +520,16 @@ def _rewrite_casl_names(node: Node, shim: _CaslIdentifierShim) -> Node:
     no fragment check of its own; :func:`~unicode_fol_kit.fol.casl_export.to_casl_spec`
     still refuses it, by name, exactly as it always did.
 
-    An Atom whose predicate is ``=``/``≠`` gets one of THREE treatments, by
-    arity (see the section comment above point (2)): a genuinely 2-ary
-    ``=`` is CASL's own rigid identity and is left under its literal name
-    unconditionally; any OTHER arity of ``=``/``≠`` is what ``fol.qml``'s
-    ``_st`` produces by appending a world argument to an object-language
-    equality/inequality — not CASL's identity at all — and is renamed
-    through :meth:`_CaslIdentifierShim.equality_alias` to a fresh,
-    uninterpreted predicate exactly like any other symbol; a genuinely
-    2-ary ``≠``, which CASL has no native rendering for at any arity and
-    which ``_st`` never produces (a world-relativized ``≠`` is always 3-ary
-    or more), is refused loudly with :class:`NotImplementedError` rather
-    than silently relabelled onto an unrelated identifier — see that
-    branch's own comment for why.
+    An Atom whose predicate is ``=`` or ``≠`` is never renamed (see the section
+    comment above :func:`_casl_sanitize_stem`, point (2)): an ``=`` atom is
+    CASL's own rigid identity and is kept under its literal name, whatever its
+    arity (a non-binary one is refused downstream by
+    :func:`~unicode_fol_kit.fol.casl_export.to_casl_spec`, by name, not
+    relabelled here); a ``≠`` atom, which CASL has no rendering for at any
+    arity and which ``fol.qml`` has already written as ``¬(=)`` before this
+    function sees the formula, is refused with :class:`NotImplementedError`
+    rather than relabelled onto an unrelated identifier — see that branch's own
+    comment.
     """
     if isinstance(node, Variable):
         return Variable(shim.variable(node.name))
@@ -527,44 +542,37 @@ def _rewrite_casl_names(node: Node, shim: _CaslIdentifierShim) -> Node:
                         tuple(_rewrite_casl_names(a, shim) for a in node.args))
     if isinstance(node, Atom):
         args = tuple(_rewrite_casl_names(a, shim) for a in node.args)
-        if node.predicate in _EQUALITY_LIKE_PREDICATES and len(node.args) != 2:
-            return Atom(shim.equality_alias(node.predicate, len(node.args)), args)
         if node.predicate == "=":
+            # CASL's own built-in identity: not a declared symbol, nothing to
+            # rename. A non-binary '=' (only reachable by hand-building the
+            # Node; qml_validity_formula refuses one) is left as it is so that
+            # fol.casl_export's exactly-two-terms check refuses it by name.
             return Atom("=", args)
         if node.predicate == "≠":
-            # Adversarial-review finding (C6, follow-up): a genuinely 2-ary
-            # "≠" reaches here UNTOUCHED by _st's world-relativization (which
-            # always makes a "≠" it touches 3-ary or more — see the arity
-            # check above) only via a malformed pre-translation atom (e.g. a
-            # unary "≠") or a direct, non-modal call to this function on a
-            # hand-built formula that never went through
-            # fol.qml.qml_validity_formula at all — sanitize_modal_identifiers
-            # is documented as usable standalone for exactly that. Before this
-            # check, such an atom fell through to the ordinary
-            # predicate-renaming path below and was silently relabelled onto
-            # an arbitrary, unrelated legal identifier, losing every trace of
-            # "not equal" — this violates the project's own refuse-loudly
-            # rule just as much as approximating a fragment would, so it is
-            # refused instead. fol.casl_export has no rendering rule for "≠"
-            # at ANY arity (CASL has no native disequality connective) — a
-            # genuinely 2-ary "≠" handed to
-            # unicode_fol_kit.fol.casl_export.to_casl_spec directly, bypassing
-            # this bridge, already refuses loudly today ("not a simple CASL
-            # identifier"), so this mirrors that same refusal one layer
-            # earlier, before the sanitiser can paper over it.
+            # fol.casl_export has no rendering rule for "≠" at ANY arity (CASL
+            # has no disequality connective), and fol.qml.qml_validity_formula
+            # never leaves one in its output (it writes "≠" as "not (=)"), so a
+            # "≠" atom reaches here only in a Node built by hand or parsed from
+            # classical text and handed to sanitize_modal_identifiers directly,
+            # which is documented as usable standalone. Falling through to the
+            # ordinary predicate-renaming path below would silently relabel it
+            # onto an arbitrary, unrelated legal identifier ('v_'), losing every
+            # trace of "not equal" -- the silent approximation the project's own
+            # refuse-loudly rule forbids. Refuse it instead, mirroring how
+            # fol.casl_export.to_casl_spec already refuses the same atom when
+            # handed it directly ("not a simple CASL identifier"), one layer
+            # earlier and with a message that says what to write instead. This
+            # sanitiser renames identifiers; it does not rewrite connectives.
             raise NotImplementedError(
-                "hets.dol: sanitize_modal_identifiers cannot rename a "
-                "genuinely 2-ary '≠' atom -- CASL has no native disequality "
-                "connective, at any arity, so this would either be a "
-                "meaningless renamed predicate (masking the lost 'not "
-                "equal' meaning) or crash fol.casl_export's own identifier "
-                "check. This atom's arity was not changed by "
-                "fol.qml's world-relativization (which always makes a "
-                "world-relativized '≠' atom 3-ary or more), so it did not "
-                "arrive through unicode_fol_kit.fol.qml.qml_validity_formula "
-                "as intended -- write 'Not(Atom(\"=\", [a, b]))' instead of "
-                "'≠' in the source formula, which world-relativizes and "
-                "aliases (to 'weq') exactly like an ordinary '=' atom."
+                "hets.dol: sanitize_modal_identifiers cannot rename a '≠' atom "
+                f"({node.to_unicode_str()}) -- CASL has no native disequality "
+                "connective, so it would either become a meaningless renamed "
+                "predicate (masking the lost 'not equal' meaning) or crash "
+                "fol.casl_export's own identifier check. "
+                "unicode_fol_kit.fol.qml.qml_validity_formula never leaves one "
+                "in its output (it writes '≠' as 'not (=)' itself), so this "
+                "atom did not arrive through it -- write "
+                "'Not(Atom(\"=\", [a, b]))' instead of '≠' in the source formula."
             )
         return Atom(shim.predicate(node.predicate), args)
     return node.map_children(lambda c: _rewrite_casl_names(c, shim))
@@ -575,13 +583,12 @@ def sanitize_modal_identifiers(formula: Node) -> Node:
     practice, :mod:`unicode_fol_kit.fol.qml`'s own auto-generated fresh
     variables — renamed to a legal one, INJECTIVELY (two distinct source
     names never collapse onto one output name) and leaving every
-    already-legal name untouched; and every world-relativized ``=``/``≠``
-    atom (arity != 2 — not CASL's own rigid, always-binary identity; see the
-    section comment above :class:`_CaslIdentifierShim`, point (2)) renamed to
-    a fresh, uninterpreted predicate the same way. See
-    :class:`_CaslIdentifierShim` for the exact algorithm and
-    :func:`to_dol_library_from_modal`, which calls this automatically, for
-    the intended entry point.
+    already-legal name untouched. Identity needs no renaming: a ``=`` atom is
+    CASL's own native, rigid equality and is kept as it is (see the section
+    comment above :func:`_casl_sanitize_stem`, point (2), for why that is also
+    what ``fol.qml`` hands over). See :class:`_CaslIdentifierShim` for the exact
+    algorithm and :func:`to_dol_library_from_modal`, which calls this
+    automatically, for the intended entry point.
 
     Exposed publicly (rather than kept as a private helper of
     :func:`to_dol_library_from_modal`) so a caller can inspect the sanitised
@@ -593,19 +600,19 @@ def sanitize_modal_identifiers(formula: Node) -> Node:
 
     A caller who reaches this function directly, bypassing
     :func:`to_dol_library_from_modal` /
-    :func:`~unicode_fol_kit.fol.qml.qml_validity_formula` — e.g. to unit-test
-    the renaming in isolation, as above — should pass a formula that has
-    ALREADY been world-relativized by ``fol.qml``'s ``_st``, or else contains
-    no ``=``/``≠`` atom of its own at all: a genuinely 2-ary ``≠`` atom that
-    was never touched by world-relativization (only reachable this way, or
-    via a malformed pre-translation atom, e.g. a unary ``≠``) is refused with
-    :class:`NotImplementedError`, not silently renamed — see
-    :func:`_rewrite_casl_names`'s own docstring and that branch's comment.
+    :func:`~unicode_fol_kit.fol.qml.qml_validity_formula`, owns two details the
+    translation would otherwise have settled: a ``≠`` atom must already be
+    written ``Not(Atom("=", ...))``, because ``fol.qml`` does that rewrite and
+    this function does not (it refuses a ``≠`` atom with
+    :class:`NotImplementedError` instead of renaming it onto an unrelated
+    identifier), and a ``=`` atom must be binary, because a non-binary one is
+    passed through untouched for :func:`~unicode_fol_kit.fol.casl_export.to_casl_spec`
+    to refuse.
 
     Raises:
-        NotImplementedError: ``formula`` contains a genuinely 2-ary ``≠``
-            atom (CASL has no native rendering for ``≠`` at any arity, and
-            world-relativization never produces one at arity 2).
+        NotImplementedError: ``formula`` contains a ``≠`` atom, of any arity
+            (CASL has no native rendering for it; ``fol.qml`` writes ``≠`` as
+            the negation of ``=`` before a formula reaches this bridge).
     """
     return _rewrite_casl_names(formula, _CaslIdentifierShim(formula))
 
@@ -657,22 +664,32 @@ def to_dol_library_from_modal(
     a caller runs against the uploaded library — the same shape
     ``tests/test_dol.py``'s own live tests already use.
 
-    An object-language ``=``/``≠`` atom in ``formula`` is fully supported:
-    :func:`sanitize_modal_identifiers` renames the world-relativized atom
-    ``qml_translate`` produces for it to a fresh, uninterpreted CASL
-    predicate (never CASL's own rigid, always-2-ary ``=``), matching how
-    ``qml_is_valid``'s own Z3 check, ``satisfies_modal``, and
-    ``hol.isabelle_modal``/``hol.thf_modal`` all already treat an
-    object-language equality inside a modal context — see
-    :mod:`unicode_fol_kit.hets.dol`'s own module-level section comment above
-    :class:`_CaslIdentifierShim` for the full reasoning.
+    The translation binds world variables (``w``, ``v``, ``w0``, ...) and object variables
+    (``x``, ...) of its own, and a user constant, function or predicate of the same
+    spelling must not be read as one of them. :func:`~unicode_fol_kit.fol.casl_export.to_casl_spec`
+    renames every bound variable that is spelled like a symbol of the spec, so the text
+    reads back (through :func:`~unicode_fol_kit.fol.casl_import.parse_casl_spec`) as the
+    translation up to the names of those variables, and a constant called ``w`` or ``w0``
+    never changes the verdict.
+
+    An object-language ``=`` atom in ``formula`` arrives from
+    :func:`~unicode_fol_kit.fol.qml.qml_validity_formula` as the same binary
+    identity over the object terms with no world argument (``≠`` as its
+    negation), which is exactly CASL's own rigid, built-in ``=``: it is
+    rendered infix, declared nowhere, and read back by
+    :func:`~unicode_fol_kit.fol.casl_import.parse_casl_spec` as the identical
+    atom. So identity is rigid on this route exactly as it is for
+    :func:`~unicode_fol_kit.fol.qml.qml_is_valid` (``a = b → □(a = b)`` is a
+    theorem here, in every frame), and the two routes agree on it. See the
+    module-level section comment above :func:`_casl_sanitize_stem`, point (2).
 
     Raises:
         ValueError: any of :func:`~unicode_fol_kit.fol.qml.qml_axioms`'s /
             :func:`~unicode_fol_kit.fol.qml.qml_translate`'s own refusals
-            (an unknown ``mode``/``frame``/``systems``/``bridges`` value, or a
+            (an unknown ``mode``/``frame``/``systems``/``bridges`` value, a
             frame requesting a bridge whose partner family the formula never
-            mentions), or (propagated, unchanged) any
+            mentions, or a ``=``/``≠`` atom that does not have exactly two
+            terms), or (propagated, unchanged) any
             :func:`~unicode_fol_kit.fol.casl_export.to_casl_spec` /
             :func:`to_dol_library` refusal for ``spec_name`` / ``library_name``
             / ``default_sort``.

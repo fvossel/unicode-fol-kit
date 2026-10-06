@@ -29,7 +29,16 @@ Contract
   known-but-unavailable one raises
   :class:`~unicode_fol_kit.atp.protocol.BackendUnavailable`, checked for
   EVERY name before anything is spawned (never a partial run that discovers
-  a bad name three processes in).
+  a bad name three processes in). Availability is asked for the route the
+  call's own options select (``use_wsl=``, ``minizinc_path=``, ...), as
+  ``run_backend`` asks it.
+* The options are planned exactly as ``prove()`` plans them
+  (:func:`~unicode_fol_kit.atp.protocol.plan_options`): a member is handed only
+  the options it reads, an option no member reads is a ``ValueError``, and a
+  member that cannot read an option that changes the question (a ``subsorts=``
+  edge, a modal ``frame=``) is not run -- it is listed as
+  ``unknown/unsupported`` and casts no vote, so no member ever answers a
+  question other than the one that was asked.
 * ``require_agreement=1`` (the default): the first DEFINITIVE (proved /
   refuted) verdict wins immediately; every other backend is left running
   (see above) and the executor is shut down without waiting for them.
@@ -46,25 +55,44 @@ Contract
 * No backend reaches a definitive verdict within ``require_agreement``
   copies → an UNKNOWN verdict from the pseudo-backend ``"portfolio"``,
   ``detail`` summarising every backend's own answer (mirrors ``prove()``'s
-  ``"chain"`` pseudo-backend).
+  ``"chain"`` pseudo-backend, including its treatment of a member that
+  FAILED: quoted by its own message, and an ERROR verdict when every member
+  failed).
 * ``jobs=1`` (forced, or the natural result of a single-element
   ``backends``) never touches ``ProcessPoolExecutor`` — it runs the SAME
   backends sequentially in THIS process. This is not just an optimisation:
   it is also the only way to portfolio-race a backend that was registered
   ad hoc in the calling process (e.g. a test double) and would not be
   importable by name inside a spawned worker.
+* **A caller's error is raised, whatever ``jobs`` is.** A member that refuses the
+  CALL — a modal ``frame=`` it does not know, a ``premise_names=`` list that does not
+  match the premises — raises ``ValueError`` (or
+  :class:`~unicode_fol_kit.atp.protocol.BackendUnavailable`) out of
+  :func:`portfolio_prove`: :func:`~unicode_fol_kit.atp.protocol.run_backend` keeps a
+  caller's error loud, and so do the sequential path and ``api.prove``. In a race the
+  error that is raised is the first one a member reports, and a member that has
+  already won when another reports its error wins, as the first member of
+  ``api.prove``'s chain that answers does. Only a failure that is NOT the caller's — a
+  worker process that died, an answer that cannot be read back — is recorded as
+  ``error`` / ``infra`` and quoted in the collective verdict.
+* The premises are counted as ``api.prove`` counts them: the caller's own premises are
+  the ones ``premise_names=`` names and the ones an index (``relevant_premises``, a
+  Z3 core) refers to; the sentences of ``signature=`` and the side axioms of a
+  :class:`~unicode_fol_kit.logic.Sentence` are background, named for the writer and
+  never reported back.
 """
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import replace
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from ..fol.nodes import Node
 from ..fol.serialize import deserialize as _fol_deserialize
 from ..fol.serialize import serialize as _fol_serialize
 from .protocol import (
     ERROR, PROVED, REFUTED, UNKNOWN,
-    BackendUnavailable, Verdict, get_backend, run_backend,
+    BackendUnavailable, Verdict, get_backend, plan_options, run_backend,
+    _available_for, _no_definitive_verdict,
 )
 
 __all__ = ["portfolio_prove"]
@@ -125,33 +153,45 @@ def _contradiction_verdict(logic: str, proved: Verdict, refuted: Verdict) -> Ver
 
 
 def _unknown_verdict(logic: str, verdicts: List[Verdict]) -> Verdict:
-    """Build the collective UNKNOWN verdict when nobody reached agreement."""
-    summary = "; ".join(
-        f"{v.backend}:{v.status}" + (f"/{v.reason}" if v.reason else "")
-        for v in verdicts)
-    return Verdict(UNKNOWN, "portfolio", logic=logic,
-                   detail=f"no definitive verdict — {summary}" if summary
-                   else "empty backend list")
+    """Build the collective verdict when nobody reached agreement.
+
+    The same rule as ``api.prove``'s chain (they must not answer one question
+    two ways): UNKNOWN, with a member that failed quoted by its own message,
+    and ERROR when every member failed -- see
+    :func:`~unicode_fol_kit.atp.protocol._no_definitive_verdict`.
+    """
+    return _no_definitive_verdict("portfolio", logic, verdicts, "empty backend list")
 
 
 # ---------------------------------------------------------------------------
 # Sequential path (jobs == 1): same process, no pool
 # ---------------------------------------------------------------------------
 
+def _refused_verdict(name: str, logic: str, refusal: str) -> Verdict:
+    """The verdict of a member that was not run because it cannot read an option
+    that changes the question (the same verdict ``api.prove`` lists for it)."""
+    return Verdict(UNKNOWN, name, logic=logic, reason="unsupported", detail=refusal)
+
+
 def _run_sequential(formula: Node, premises: Sequence[Node], backends: Sequence[str],
                     logic: str, timeout: int, require_agreement: int,
-                    options: dict) -> Verdict:
+                    plan: Dict[str, Tuple[dict, Optional[str]]]) -> Verdict:
     """Run ``backends`` one at a time in THIS process.
 
     Used whenever ``jobs`` resolves to 1: either the caller forced it (e.g.
     to portfolio-race a locally-registered test backend that a spawned
     worker could not import) or a single-element ``backends`` made pooling
-    pointless.
+    pointless. ``plan`` is what :func:`~unicode_fol_kit.atp.protocol.plan_options`
+    decided: the options each member is handed, or the reason it is not run.
     """
     agreeing: Dict[str, List[Verdict]] = {}
     verdicts: List[Verdict] = []
     for name in backends:
-        extra = dict(options)
+        passed, refusal = plan[name]
+        if refusal is not None:
+            verdicts.append(_refused_verdict(name, logic, refusal))
+            continue
+        extra = dict(passed)
         if name == "isabelle":
             extra["logic"] = logic
         verdict = run_backend(name, formula, premises, timeout=timeout, **extra)
@@ -190,6 +230,13 @@ def _verdict_from_dict(d: dict) -> Verdict:
     )
 
 
+def _crash_verdict(name: str, logic: str, exc: BaseException) -> Verdict:
+    """The verdict recorded for a member whose worker failed for a reason that is not the
+    caller's: a broken pool, an answer that does not come back as a verdict."""
+    return Verdict(ERROR, name, logic=logic, reason="infra",
+                   detail=f"{type(exc).__name__}: {exc}")
+
+
 def _worker_decide(payload: dict) -> dict:
     """``ProcessPoolExecutor`` target — MUST stay module-level for Windows
     spawn (it pickles the target by qualified name, not by closure).
@@ -212,12 +259,27 @@ def _worker_decide(payload: dict) -> dict:
     return {"backend": name, "verdict": verdict.to_dict()}
 
 
+def _as_plain_data(value):
+    """``value`` with every read-only mapping inside it as a plain ``dict``.
+
+    An option travels to a worker process by pickling. A mapping that is not a ``dict``
+    need not pickle: :attr:`~unicode_fol_kit.fol.signature.Signature.subsorts` is a
+    read-only view (``mappingproxy``), and ``subsorts=sig.subsorts`` is how a caller
+    passes it. The copy has the same keys and values, which is all a backend reads.
+    """
+    if isinstance(value, Mapping) and type(value) is not dict:
+        return {key: _as_plain_data(item) for key, item in value.items()}
+    return value
+
+
 def _run_parallel(formula: Node, premises: Sequence[Node], backends: Sequence[str],
                   logic: str, timeout: int, require_agreement: int, n_jobs: int,
-                  options: dict) -> Verdict:
+                  plan: Dict[str, Tuple[dict, Optional[str]]]) -> Verdict:
     """Race ``backends`` across ``n_jobs`` worker processes.
 
-    Every backend is submitted up front; verdicts are folded into the
+    Every backend is submitted up front, each with the options ``plan`` hands it
+    (a member that ``plan`` refuses is not submitted; its refusal is listed with
+    the verdicts); verdicts are folded into the
     agreement tally in COMPLETION order (``as_completed``), so the winner is
     genuinely whichever finishes first, not submission order. On a win or a
     contradiction the executor is shut down with ``wait=False,
@@ -231,17 +293,23 @@ def _run_parallel(formula: Node, premises: Sequence[Node], backends: Sequence[st
 
     agreeing: Dict[str, List[Verdict]] = {}
     verdicts: List[Verdict] = []
+    for name in backends:
+        refusal = plan[name][1]
+        if refusal is not None:
+            verdicts.append(_refused_verdict(name, logic, refusal))
     executor = ProcessPoolExecutor(max_workers=n_jobs)
     try:
         future_to_name = {}
         for name in backends:
+            if plan[name][1] is not None:
+                continue
             payload = {
                 "backend": name,
                 "formula": formula_env,
                 "premises": premise_envs,
                 "logic": logic,
                 "timeout": timeout,
-                "options": options,
+                "options": {key: _as_plain_data(value) for key, value in plan[name][0].items()},
             }
             future_to_name[executor.submit(_worker_decide, payload)] = name
 
@@ -249,10 +317,19 @@ def _run_parallel(formula: Node, premises: Sequence[Node], backends: Sequence[st
             name = future_to_name[future]
             try:
                 result = future.result()
-                verdict = _verdict_from_dict(result["verdict"])
+            except (ValueError, BackendUnavailable):
+                # A member refused the CALL (an unknown frame, a premise_names list of the
+                # wrong length). run_backend keeps that loud, and so do the sequential path
+                # and api.prove: it is raised here too, not recorded as a failure of the
+                # infrastructure.
+                raise
             except Exception as exc:      # worker crash (e.g. broken pool) -> recorded
-                verdict = Verdict(ERROR, name, logic=logic, reason="infra",
-                                  detail=f"{type(exc).__name__}: {exc}")
+                verdict = _crash_verdict(name, logic, exc)
+            else:
+                try:
+                    verdict = _verdict_from_dict(result["verdict"])
+                except Exception as exc:
+                    verdict = _crash_verdict(name, logic, exc)
             verdicts.append(verdict)
             if verdict.is_definitive:
                 try:
@@ -273,7 +350,8 @@ def _run_parallel(formula: Node, premises: Sequence[Node], backends: Sequence[st
 def portfolio_prove(formula: Node, premises: Sequence[Node] = (), *,
                     backends: Sequence[str], logic: str = "fol",
                     timeout: int = 10000, require_agreement: int = 1,
-                    jobs: Optional[int] = None, **options) -> Verdict:
+                    jobs: Optional[int] = None, signature=None,
+                    **options) -> Verdict:
     """Decide ``premises ⊨ formula`` by racing ``backends`` concurrently.
 
     Unlike :func:`unicode_fol_kit.api.prove`, this is an explicit-opt-in
@@ -281,9 +359,12 @@ def portfolio_prove(formula: Node, premises: Sequence[Node] = (), *,
     which routes it wants raced against each other.
 
     Args:
-        formula: the goal to decide.
+        formula: the goal to decide. A :class:`~unicode_fol_kit.logic.Sentence` in
+            classical first-order logic is accepted as :func:`unicode_fol_kit.api.prove`
+            accepts it: its side axioms are added to the premises.
         premises: local premises; folded into ``(∧ premises) → formula``
-            exactly as every other backend entry point does.
+            exactly as every other backend entry point does. A Sentence among
+            them brings its side axioms, as for ``formula``.
         backends: REQUIRED, non-empty. Every name is validated (unknown name
             → ``ValueError``, known-but-unavailable → ``BackendUnavailable``)
             and checked against ``logic`` (mismatched → ``ValueError``)
@@ -305,9 +386,25 @@ def portfolio_prove(formula: Node, premises: Sequence[Node] = (), *,
             ``ProcessPoolExecutor`` — which is also the only way to race a
             backend registered ad hoc in the caller's own process (a spawned
             worker cannot import a name that only exists there).
-        **options: forwarded to every backend's ``decide()``, exactly as in
-            ``prove()`` — only sensible with backends that share an option
-            vocabulary, or a single-backend list.
+        signature: a :class:`~unicode_fol_kit.fol.signature.Signature`, read
+            exactly as :func:`unicode_fol_kit.api.prove` reads it: the sentences
+            :func:`~unicode_fol_kit.fol.signature_axioms` returns are added to the
+            premises of every member, and a premise index that comes back
+            (``relevant_premises``, a Z3 core) stays an index into ``premises``.
+            ``premise_names=`` names the caller's own premises only; the sentences the
+            signature adds are named for the writer. Classical first-order routes only.
+        **options: planned exactly as :func:`unicode_fol_kit.api.prove` plans
+            them (:func:`~unicode_fol_kit.atp.protocol.plan_options`). A member is
+            handed only the options it reads. An option that NO member reads is a
+            ``ValueError`` naming it, raised before anything runs: it would
+            otherwise be ignored and the answer given to a question the caller
+            did not ask. A member that does not read an option that changes the
+            question (a modal ``frame=``, a ``subsorts=`` edge, ``bridges=``)
+            while another member does is NOT run: it is listed in the collective
+            verdict's ``detail`` as ``unknown/unsupported`` with the option
+            named, and it never casts a vote. An option that only bounds a search
+            or says where a binary lives (``max_steps=``, ``use_wsl=``) is simply
+            not handed to a member that has no use for it.
 
     Returns:
         The winning ``Verdict`` on agreement; a ``Verdict(status="error",
@@ -319,10 +416,18 @@ def portfolio_prove(formula: Node, premises: Sequence[Node] = (), *,
 
     Raises:
         ValueError: ``backends`` is empty, ``require_agreement < 1``, a
-            backend name is unregistered, or a named backend does not
-            support ``logic``.
+            backend name is unregistered, a named backend does not
+            support ``logic``, an option is read by no member, a Sentence is
+            in a logic other than classical first-order logic, ``signature``
+            is given for a logic other than ``"fol"``, or a member refuses the
+            call itself (an unknown ``frame=``, a ``premise_names=`` list of the
+            wrong length) — the same ``ValueError`` for every ``jobs``.
+        TypeError: ``signature`` is not a
+            :class:`~unicode_fol_kit.fol.signature.Signature`.
         BackendUnavailable: a named backend is registered but its
-            prerequisites (binary, install) are missing.
+            prerequisites (binary, install) are missing, asked for the route
+            this call's own options select
+            (:meth:`~unicode_fol_kit.atp.protocol.ProverBackend.available_for`).
     """
     if not backends:
         raise ValueError(
@@ -333,19 +438,40 @@ def portfolio_prove(formula: Node, premises: Sequence[Node] = (), *,
         raise ValueError(
             f"portfolio_prove: require_agreement must be >= 1, got {require_agreement!r}")
 
+    from ..api import (                                   # lazy: api imports this package
+        _name_background, _signature_premises, _unwrap_sentences, _without_background,
+    )
+
     backends = list(backends)
     premises = list(premises)
+    given = len(premises)                                 # the caller's own premises
+    formula, premises = _unwrap_sentences(formula, premises, "portfolio_prove")
 
     for name in backends:
         backend = get_backend(name)                       # ValueError on unknown name
-        if not backend.available():
-            raise BackendUnavailable(
-                f"{name}: backend is not available on this machine "
-                f"(external={backend.external}) — install it or drop it from `backends`.")
         if logic not in backend.logics:
             raise ValueError(
                 f"portfolio_prove: backend {name!r} does not support logic {logic!r} "
                 f"(it handles {sorted(backend.logics)})")
+
+    if signature is not None:
+        premises = [*premises, *_signature_premises("portfolio_prove", signature, logic)]
+    # What was appended to the caller's premises (a signature's sentences, the side
+    # axioms of a Sentence) is background: the caller's premise_names cover the caller's
+    # premises, and the background is named for the writer, exactly as api.prove does.
+    options = _name_background(options, given, len(premises), "portfolio_prove")
+
+    # The options of the call are planned as api.prove plans them: a member is
+    # handed what it reads, an option nobody reads is a ValueError, and a member
+    # that cannot read an option that changes the question is not run at all.
+    plan = plan_options("portfolio_prove", backends, logic, options)
+
+    for name in backends:
+        backend = get_backend(name)
+        if not _available_for(backend, plan[name][0]):    # the route this call selects
+            raise BackendUnavailable(
+                f"{name}: backend is not available on this machine "
+                f"(external={backend.external}) — install it or drop it from `backends`.")
 
     if jobs is None:
         n_jobs = min(len(backends), _MAX_JOBS)
@@ -353,7 +479,11 @@ def portfolio_prove(formula: Node, premises: Sequence[Node] = (), *,
         n_jobs = max(1, min(int(jobs), _MAX_JOBS))
 
     if n_jobs == 1:
-        return _run_sequential(formula, premises, backends, logic, timeout,
-                               require_agreement, options)
-    return _run_parallel(formula, premises, backends, logic, timeout,
-                         require_agreement, n_jobs, options)
+        verdict = _run_sequential(formula, premises, backends, logic, timeout,
+                                  require_agreement, plan)
+    else:
+        verdict = _run_parallel(formula, premises, backends, logic, timeout,
+                                require_agreement, n_jobs, plan)
+    if len(premises) > given:
+        verdict = _without_background(verdict, given)
+    return verdict

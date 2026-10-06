@@ -74,7 +74,7 @@ class TestBetaReduceBasic:
 
 class TestBetaReduceLambdaVarCapture:
     def test_simple_capture_avoidance(self):
-        # (λx. λy. x)(y_free)  →  λy_0. y_free
+        # (λx. λy. x)(y_free)  →  λy0. y_free
         # The binder LambdaVar("y") would capture the free LambdaVar("y") in the arg.
         lx = LambdaVar("x")
         ly = LambdaVar("y")
@@ -84,18 +84,21 @@ class TestBetaReduceLambdaVarCapture:
         assert result.param.name != "y"           # alpha-converted away from "y"
         assert LambdaVar("y") in free_variables(result)
 
-    def test_multi_collision_skips_y_0(self):
-        # (λx. λy. λy_0. x)(y_free)
-        # Alpha-converting the λy binder: avoid = {"y", "y_0", "x"} so fresh skips y_0 → y_1.
+    def test_multi_collision_skips_y0(self):
+        # (λx. λy. λy0. x)(y_free)
+        # The λy binder would capture the free y of the argument, so it is renamed.
+        # avoid = fv(arg) ∪ names(λy0. x) = {y} ∪ {y0, x}: the first candidate in the
+        # kit's variable shape, y0, is taken by the inner binder, so the fresh name is y1.
         lx = LambdaVar("x")
         ly = LambdaVar("y")
-        ly0 = LambdaVar("y_0")
+        ly0 = LambdaVar("y0")
         y_free = LambdaVar("y")
         term = Application(Lambda(lx, Lambda(ly, Lambda(ly0, lx))), y_free)
         result = beta_reduce(term)
         assert isinstance(result, Lambda)
-        assert result.param.name not in {"y", "y_0"}  # skipped past both collisions
-        assert result.param.name == "y_1"              # landed on y_1
+        assert result.param.name not in {"y", "y0"}    # skipped past both collisions
+        assert result.param.name == "y1"               # landed on y1
+        assert result == Lambda(LambdaVar("y1"), Lambda(ly0, LambdaVar("y")))
         assert LambdaVar("y") in free_variables(result)
 
 

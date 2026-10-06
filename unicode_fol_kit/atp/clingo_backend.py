@@ -96,6 +96,15 @@ individual-denoting term on the other side of the same comparison has no
 coherent reading and is refused loudly (``_EncodingError``) rather than
 guessed at.
 
+**Numerals.** That arithmetic reading belongs to a COUNT: a ``Number`` is read as a number
+only as the bound a ``Cardinality`` is compared with (``|{x : P(x)}| ≥ 2``; a float with a
+whole value is that integer). Everywhere else a numeral is, as on every other route, a
+constant identified by its value (``1`` and ``1.0`` one constant, ``1 ≠ 2`` not valid), and
+this encoder has no symbol for such a constant, so a ``Number`` used as an individual, and a
+comparison of numerals with no cardinality in it, are refused by name (``UNKNOWN`` /
+``"unsupported"``) — never read as a domain index or as arithmetic, which would make
+``(∀x ∀y x = y) → 1 = 2`` (valid: one element) refutable.
+
 Counting AND function comparisons now verify: the closed gaps, and the one that remains
 -------------------------------------------------------------------------------------------
 This section used to list four node types this backend could ground and
@@ -171,51 +180,36 @@ this module does not make unilaterally) — not this module's bug to fix.
 Plain classical-FOL-plus-``Count``/``Cardinality`` sentences, including
 counting comparisons, now verify and report ``REFUTED`` normally.
 
-Refutation goal — matching ``semantics.modelfinder`` exactly
+A free variable is a parameter of the problem
 -------------------------------------------------------------------
-:meth:`ClingoBackend.decide` builds ``sentences = tuple(premises) +
-(Not(closed_formula),)`` where ``closed_formula`` is ``formula`` with its OWN
-free variables universally closed (:func:`_universal_closure`, a from-scratch
-reimplementation of
-:mod:`~unicode_fol_kit.semantics.modelfinder`'s module-private helper of the
-same idea — not an import, since that name is unexported). The CONCLUSION
-needs exactly this pre-closure-THEN-negate step, because ``¬∀x φ(x)`` (a
-genuine refutation goal — some assignment falsifies φ) is NOT the same
-formula as the auto-closed ``∀x ¬φ(x)`` that naively negating first and
-letting ``to_asp`` close afterward would produce. Matching ``modelfinder``'s
-exact convention here (rather than inventing a similar-looking one) is
-deliberate: it is what makes a differential test between ``clingo`` and
-``modelfinder`` over a shared corpus a comparison of the SAME question
-rather than two subtly different ones.
+:meth:`ClingoBackend.decide` reads a free variable as ONE unknown element, the same in
+every premise and in the goal (the assignment-wise consequence relation: ``Γ ⊨ φ`` iff every
+structure AND assignment that satisfies ``Γ`` satisfies ``φ``). Before anything else it replaces
+every free variable of ``premises`` and ``formula`` together by a constant of its own name
+(:func:`~unicode_fol_kit.fol._free_parameters.parameterize`), and only then forms
+``premises ∧ ¬formula``. A premise is never closed universally: ``P(x)`` does not entail
+``P(alpha)`` (universe ``{0, 1}``, ``x`` ↦ 1, ``alpha`` ↦ 0, ``P`` = ``{1}``), and the countermodel
+reports the element under the variable's name, ``constants['x']``. A free variable spelled like a
+constant of the problem is refused (``UNKNOWN``/``"unsupported"``): a structure holds one entry
+per name.
 
-Every PREMISE is ALSO run through :func:`_universal_closure` here, in
-:meth:`ClingoBackend.decide`, before either :func:`to_asp` or
-:func:`~unicode_fol_kit.atp.finite_domain.verify_model` ever sees it — this
-used to be skipped (premises were passed through as-is) and that omission
-was a real bug in THIS module, not an accepted gap belonging to a
-neighbour. The reason it went unnoticed for a while: :func:`to_asp`'s own
-per-sentence assertion (``:- dom(X)…, not satK(X)….``) already reads a free
-ASP variable ranging over ``dom`` inside a constraint body as an implicit
-∀-binding, so an unclosed premise was encoded and grounded CORRECTLY on its
-own — ``P(a)`` (single lowercase letters parse as VARIABLES, not constants,
-in this kit) became a legitimate ``:- dom(Va), not pred0(Va).`` constraint
-with no help from Python-level closure. But :func:`~unicode_fol_kit.atp.finite_domain.verify_model` — via
-``evaluate_in_structure`` — has no matching convention: it raises for a
-variable with no entry in its assignment, and an unclosed premise handed to
-it verbatim is exactly that. So a genuinely correct countermodel of ``P(a)
-∧ ¬φ`` was ASP-correct and then verification-incorrect for a reason that had
-nothing to do with the countermodel being wrong — turning a correct
-``REFUTED`` into a spurious ``ERROR``/``"infra"``. Closing premises here,
-once, with the same helper used for the goal, means :func:`to_asp` and
-:func:`~unicode_fol_kit.atp.finite_domain.verify_model` are always handed
-the identical, already-closed sentences — the two consumers cannot
-disagree about what a free variable in a premise means, because neither of
-them ever sees one.
+The parameters are replaced BEFORE the goal is negated: ``¬∀x φ(x)`` (some assignment falsifies
+φ) is NOT the same formula as ``∀x ¬φ(x)``, which a closure applied after the negation would
+produce. For a problem with no premise the reading coincides with the universal closure of the
+goal (``φ`` holds under every assignment iff ``∀x φ`` holds); with a premise it does not, since
+closing every premise universally would read ``P(x)`` as ``∀x P(x)`` and find no countermodel of
+``P(x) ⊢ P(alpha)``. Both the encoder and the independent checker
+(:func:`~unicode_fol_kit.atp.finite_domain.verify_model`) are handed the identical sentences, so
+they cannot disagree about what a free variable means: neither of them ever sees one.
+
+``all_different`` (every CONSTANT denotes a pairwise-distinct individual) concerns the constants
+of the problem, never a parameter: a variable may denote the same element as a constant, so the
+distinctness constraint, and its re-check on the reconstructed structure, leave the parameters out.
 
 Many-sorted input
 -------------------
-:meth:`ClingoBackend.decide` builds ``sentences`` (premises closed, goal
-closed-then-negated, per the section above) and then, before anything else,
+:meth:`ClingoBackend.decide` builds ``sentences`` (the premises, and the goal negated,
+every free variable already read as a parameter per the section above) and then, before anything else,
 calls :func:`~unicode_fol_kit.atp.finite_domain.lower_msfol` on the whole
 batch — a no-op for every plain-FOL caller, and for a many-sorted one a
 relativisation to classical FOL (plus one non-emptiness sentence per
@@ -255,8 +249,9 @@ finite-domain backends exist to protect — see
 
 import importlib.util
 import time
-from typing import Dict, List, Optional, Sequence, Set, Tuple
+from typing import Dict, FrozenSet, List, Optional, Sequence, Set, Tuple
 
+from ..fol._free_parameters import parameterize
 from ..fol.nodes import (
     Node, Variable, Constant, Number, Function,
     Atom, Not, And, Or, Xor, Implies, Iff, Contrast, Quantifier,
@@ -265,7 +260,8 @@ from ..fol.nodes import (
 )
 from ..fol.signature import Signature, PredicateDecl
 from .finite_domain import (
-    FiniteDomainProblem, fragment_check, lower_msfol, structure_from_solution, verify_model,
+    FiniteDomainProblem, fragment_check, free_variable_reason, lower_msfol,
+    structure_from_solution, verify_model,
 )
 from .protocol import ProverBackend, Verdict, REFUTED, UNKNOWN, ERROR
 
@@ -297,18 +293,39 @@ def clingo_available() -> bool:
 def _universal_closure(node: Node) -> Node:
     """Wrap ``node`` in a ∀ for each of its own free variables (deterministic order).
 
-    A from-scratch reimplementation of what
-    :mod:`~unicode_fol_kit.semantics.modelfinder`'s module-private closure
-    helper does — not an import of it, since that name is unexported and
-    this backend must not reach into a sibling module's internals. Matching
-    its exact convention (variable names sorted, innermost-first) is
-    deliberate: see this module's "Refutation goal" docstring section for
-    why byte-for-byte agreement with ``modelfinder`` matters here.
+    The universal closure of ONE formula: it says the formula holds under every
+    assignment, which is what a test of a countermodel needs when it re-evaluates a
+    single formula's refutation goal ``¬∀x φ(x)``. It is not how :meth:`ClingoBackend.decide`
+    reads a PROBLEM: a free variable there is a parameter shared by the premises and the
+    goal (see the module docstring's "A free variable is a parameter of the problem"),
+    because closing each premise on its own would read ``P(x)`` as ``∀x P(x)``.
+    Variable names sorted, innermost-first, as
+    :mod:`~unicode_fol_kit.semantics.modelfinder`'s module-private closure helper.
     """
     result = node
     for name in sorted({v.name for v in free_variables(node)}, reverse=True):
         result = Quantifier("∀", Variable(name), result)
     return result
+
+
+def _repeated_constant(constants, parameters: FrozenSet[str]) -> Optional[str]:
+    """A message naming two constants of ``constants`` that denote one individual, or ``None``.
+
+    The parameters that stand for free variables are left out: ``all_different`` is the
+    unique-names convention of the problem's constants, and a variable may denote the
+    element of a constant.
+    """
+    seen: Dict[object, str] = {}
+    for name in sorted(constants):
+        if name in parameters:
+            continue
+        value = constants[name]
+        if value in seen:
+            return (f"structure_from_solution: all_different=True requires every constant to "
+                    f"denote a distinct individual, but {name!r} and {seen[value]!r} both "
+                    f"denote {value}.")
+        seen[value] = name
+    return None
 
 
 class _EncodingError(ValueError):
@@ -359,7 +376,11 @@ def _atom_mode(atom: Atom) -> str:
 
     Raises:
         _EncodingError: the comparison mixes a counting-term operand
-            against a plain individual-denoting one — no coherent reading.
+            against a plain individual-denoting one — no coherent reading —
+            or compares numerals with each other and with no cardinality:
+            the arithmetic reading belongs to a count compared with a
+            number, and a numeral that is no bound of a count is a
+            constant of the kit (see :meth:`_AspEncoder._term`).
     """
     if atom.predicate in _COMPARISON_SYMBOLS and len(atom.args) == 2:
         left_numeric = _is_numeric_term(atom.args[0])
@@ -372,6 +393,16 @@ def _atom_mode(atom: Atom) -> str:
                     "term — both sides of a counting comparison must "
                     "themselves be counting terms."
                 )
+            if not any(isinstance(a, Cardinality) for a in atom.args):
+                raise _EncodingError(
+                    f"{atom.predicate!r} compares numerals without a cardinality. A numeral is a "
+                    "constant identified by its value, and nothing else is known about it, so "
+                    "such a comparison is a statement about constants ('1 ≠ 2' is not valid, "
+                    "'(∀x ∀y x = y) → 1 = 2' is), which this encoder does not state: it reads a "
+                    "number only as the bound a count |{v : φ}| is compared with, and a "
+                    "refutation found under the arithmetic reading would be wrong for the "
+                    "constants. Use a solver that reads numerals as constants (z3, the finite "
+                    "model finder), or compare a cardinality.")
             return "numeric"
         if atom.predicate in ("=", "≠"):
             return "identity"
@@ -408,13 +439,18 @@ class _AspEncoder:
     attempt, in favour of one obviously-correct code path.
     """
 
-    def __init__(self, problem: FiniteDomainProblem):
+    def __init__(self, problem: FiniteDomainProblem, parameters: FrozenSet[str] = frozenset()):
+        """``parameters`` names the constants that stand for a free variable: the
+        problem's ``all_different`` (every CONSTANT denotes a pairwise-distinct
+        individual) leaves them out, since a variable may denote the element of a
+        constant."""
         if not isinstance(problem, FiniteDomainProblem):
             raise TypeError(
                 f"_AspEncoder: problem must be a FiniteDomainProblem, got "
                 f"{type(problem).__name__}."
             )
         self.problem = problem
+        self._parameters = frozenset(parameters)
         self.sig: Signature = problem.signature
         self._lines: List[str] = []
         self._fresh_n = 0
@@ -566,13 +602,14 @@ class _AspEncoder:
             extra.append(self._format_atom(self._func_asp[node.name], arg_terms + [v]))
             return v, extra
         if isinstance(node, Number):
-            if isinstance(node.value, bool) or not isinstance(node.value, int):
-                raise _EncodingError(
-                    f"_AspEncoder: Number({node.value!r}) used as a plain "
-                    "individual-denoting term must be a non-negative integer "
-                    "domain index."
-                )
-            return str(node.value), []
+            raise _EncodingError(
+                f"_AspEncoder: the numeral {node.value!r} is used as an individual. A numeral "
+                "is a constant identified by its value (1 and 1.0 are one constant), and this "
+                "encoder has no symbol for it: it reads a number only as the bound a count "
+                "|{v : φ}| is compared with, never as a domain element, because the "
+                "index reading would make 1 and 2 two different elements that the kit's "
+                "numerals need not be. Use a solver that reads numerals as constants (z3, the "
+                "finite model finder), or name the individual with a constant.")
         raise _EncodingError(
             f"_AspEncoder: no individual-term translation for node type "
             f"{type(node).__name__} (fragment_check should have rejected this "
@@ -584,13 +621,16 @@ class _AspEncoder:
         ``(asp_expr, extra_body_literals)`` — a natural-number VALUE, not an
         individual. See :func:`_atom_mode`'s ``"numeric"`` case."""
         if isinstance(node, Number):
-            if isinstance(node.value, bool) or not isinstance(node.value, int):
+            value = node.value
+            if isinstance(value, float) and value.is_integer():
+                value = int(value)      # one numeral per value: 2.0 is the bound 2
+            if isinstance(value, bool) or not isinstance(value, int):
                 raise _EncodingError(
                     f"_AspEncoder: Number({node.value!r}) is not a plain "
                     "non-negative integer — the counting fragment only "
                     "supports integer bounds."
                 )
-            return str(node.value), []
+            return str(value), []
         if isinstance(node, Cardinality):
             inner_call = self._translate_formula(node.formula)
             v = self._asp_var(node.variable.name)
@@ -763,8 +803,9 @@ class _AspEncoder:
             for name in sorted(self._const_asp):
                 self._lines.append(self._const_rule(self._const_asp[name]))
 
-            if self.problem.all_different and len(self._const_asp) >= 2:
-                names = [self._const_asp[n2] for n2 in sorted(self._const_asp)]
+            distinct = [n2 for n2 in sorted(self._const_asp) if n2 not in self._parameters]
+            if self.problem.all_different and len(distinct) >= 2:
+                names = [self._const_asp[n2] for n2 in distinct]
                 for i in range(len(names)):
                     for j in range(i + 1, len(names)):
                         self._lines.append(f":- {names[i]}(Y), {names[j]}(Y).")
@@ -869,9 +910,19 @@ def to_asp(problem: FiniteDomainProblem) -> str:
         ValueError: a sentence, though accepted by
             :func:`~unicode_fol_kit.atp.finite_domain.fragment_check`, still
             cannot be lowered to ASP by this encoder (see
-            :class:`_EncodingError`'s docstring for the exact cases).
+            :class:`_EncodingError`'s docstring for the exact cases); or a
+            sentence has a free variable
+            (:func:`~unicode_fol_kit.atp.finite_domain.free_variable_reason`:
+            the program would read it as "every element", one sentence at a
+            time, which is not what a free variable means on any route of
+            this kit; :meth:`ClingoBackend.decide` replaces it by a parameter
+            before it writes).
     """
-    return _AspEncoder(problem).render()
+    encoder = _AspEncoder(problem)
+    reason = free_variable_reason(problem.sentences)
+    if reason is not None:
+        raise ValueError(f"to_asp: {reason}")
+    return encoder.render()
 
 
 # =============================================================================
@@ -947,7 +998,12 @@ class ClingoBackend(ProverBackend):
 
         Args:
             formula: the goal.
-            premises: entailment premises (``⊨ formula`` when empty).
+            premises: entailment premises (``⊨ formula`` when empty). A free
+                variable of the premises and the goal is a PARAMETER, one unknown
+                element shared by all of them (see the module docstring), reported
+                by a countermodel as the constant of the variable's own name; a free
+                variable spelled like a constant of the problem is ``UNKNOWN`` /
+                ``"unsupported"``.
             timeout: milliseconds for the WHOLE search (across every domain
                 size tried); ``0``/negative disables the limit, matching
                 :meth:`~unicode_fol_kit.atp.cvc5_backend.Cvc5Backend.decide`'s
@@ -989,17 +1045,20 @@ class ClingoBackend(ProverBackend):
         all_different = bool(options.pop("all_different", False))
         verify = bool(options.pop("verify", True))
 
-        # Premises are universally closed HERE, once, rather than only inside
-        # to_asp's per-sentence assertion. The ASP encoding reads a free
-        # variable in a constraint as implicitly ∀-bound, but
-        # `evaluate_in_structure` does not — it raises for a variable with no
-        # assignment. Closing in only one of the two places meant a premise
-        # like `P(a)` (single letters parse as VARIABLES in this kit) was
-        # encoded correctly and then failed verification, turning a correct
-        # REFUTED into ERROR/infra. Encoder and checker must see the same
-        # sentences; this is where that is guaranteed.
-        goal = Not(_universal_closure(formula))
-        sentences = tuple(_universal_closure(p) for p in premises) + (goal,)
+        # A free variable is a PARAMETER of the problem (see the module docstring): every
+        # one is replaced HERE, once, in the premises and the goal together, by a
+        # constant of its own name, and only then is the goal negated (¬∀x φ(x) is not
+        # ∀x ¬φ(x)). The ASP encoding reads a free variable in a constraint as
+        # implicitly ∀-bound but `evaluate_in_structure` raises for a variable with no
+        # assignment, so encoder and checker must see the same parameter-free sentences;
+        # this is where that is guaranteed. No premise is closed universally.
+        try:
+            read, parameters = parameterize(list(premises) + [formula], after_variables=True)
+        except NotImplementedError as exc:
+            return Verdict(UNKNOWN, self.name, reason="unsupported", detail=str(exc))
+        goal = Not(read[-1])
+        sentences = tuple(read[:-1]) + (goal,)
+        parameter_names = frozenset(parameters)
         # Many-sorted input (SortedQuantifier/SortedConstant/SortedCount/
         # SortedCardinality) is relativised to plain classical FOL HERE, once,
         # before fragment_check ever sees it -- see
@@ -1036,7 +1095,7 @@ class ClingoBackend(ProverBackend):
             try:
                 problem = FiniteDomainProblem(sentences, size, signature=signature,
                                               all_different=all_different)
-                encoder = _AspEncoder(problem)
+                encoder = _AspEncoder(problem, parameter_names)
                 program_text = encoder.render()
             except _EncodingError as exc:
                 return Verdict(UNKNOWN, self.name, reason="unsupported",
@@ -1060,9 +1119,15 @@ class ClingoBackend(ProverBackend):
             # outcome == "sat"
             try:
                 atoms = encoder.decode_model(symbols)
+                # the distinctness of the CONSTANTS is checked here when a parameter is
+                # among them: a variable may denote the element of a constant
                 structure = structure_from_solution(
                     encoder.reconstruction_signature, atoms, size,
-                    all_different=all_different)
+                    all_different=all_different and not parameter_names)
+                if all_different and parameter_names:
+                    clash = _repeated_constant(structure.constants, parameter_names)
+                    if clash is not None:
+                        raise ValueError(clash)
             except (TypeError, ValueError) as exc:
                 return Verdict(ERROR, self.name, reason="infra",
                                wall_time=time.perf_counter() - start,

@@ -55,9 +55,12 @@ auto-detection never guesses between a "classical", "intuitionistic" and
 "relevant" reading of the same formula.
 """
 
-from typing import Sequence
+import time
+from typing import Optional, Sequence
 
+from .._deadline import instant as _instant, run_until as _run_until
 from ..fol.nodes import Node
+from ._substructural_input import ILL, LAMBEK, Calculus, unreadable_reason
 from .protocol import (
     ProverBackend, Verdict, PROVED, REFUTED, UNKNOWN,
     _timed, _implication, _z3_track_and_check, _z3_model_assignment,
@@ -66,6 +69,22 @@ from .protocol import (
 __all__ = [
     "IntBackend", "LambekBackend", "IllBackend", "RelevantBackend", "HybridBackend",
 ]
+
+
+def _unreadable_refusal(logic: str, calculus: Calculus, formula: Node,
+                        premises: Sequence[Node]) -> Optional[str]:
+    """Why a propositional substructural calculus cannot read this input, or ``None``.
+
+    Intuitionistic linear logic and the Lambek calculus read the connectives they have rules
+    for (``calculus.glyphs``) and atoms: no individuals, no sorts, no quantifiers, no counting,
+    no identity, and no connective of another logic. An atom over terms is one category (a
+    sound reading, argued in ``atp/_substructural_input.py``); any other node read as one more
+    opaque category would make a derivability verdict about a DIFFERENT formula
+    (``∀x P(x)`` does not derive ``P(alpha)`` there, and it does in every first-order
+    reading; ``And(A, B)`` does not derive ``A``, and it does classically), so the node is
+    refused by name instead and the text says what to do.
+    """
+    return unreadable_reason([*premises, formula], logic, calculus)
 
 
 # ---------------------------------------------------------------------------
@@ -135,6 +154,14 @@ class IntBackend(ProverBackend):
     example needing 4 worlds). The ``Verdict`` contract permits
     ``countermodel=None`` for exactly this reason, so a bound miss never
     turns into a broken Verdict — only a REFUTED with no witness attached.
+
+    The call's ``timeout`` bounds both searches
+    (:func:`~unicode_fol_kit._deadline.run_until`): an ``int_prove`` that has not
+    finished is UNKNOWN(timeout), and a witness search that has not finished
+    leaves a REFUTED verdict without its witness. An ``int_prove`` that spends its
+    step budget (the calculus terminates, but the number of steps is exponential in
+    the nesting of implications) is UNKNOWN(bound_hit): a spent budget is a bound,
+    not a failure of the backend.
     """
 
     name = "intuitionistic"
@@ -146,23 +173,54 @@ class IntBackend(ProverBackend):
 
     def decide(self, formula: Node, premises: Sequence[Node] = (),
                timeout: int = 10000, **options) -> Verdict:
-        from .lj import int_prove
+        from .lj import int_prove, _MAX_STEPS
         from ..semantics.intuitionistic import int_countermodel
 
         premises = list(premises)
         cm_kwargs = {k: options.pop(k) for k in
                      ("max_worlds", "domain_elements", "max_steps") if k in options}
+        deadline = _instant(timeout)
+        started = time.perf_counter()
         try:
-            proved, elapsed = _timed(lambda: int_prove(premises, formula))
+            (finished, proved), elapsed = _timed(
+                lambda: _run_until(deadline, lambda: int_prove(premises, formula)))
         except NotImplementedError as exc:
             return Verdict(UNKNOWN, self.name, logic="intuitionistic",
                            reason="unsupported", detail=str(exc))
+        except RecursionError:
+            # The search recurses once per rule it applies along a branch of the derivation,
+            # so the interpreter's recursion limit is a bound of it, next to the step budget:
+            # a formula whose nesting is small but whose search is long (nested Peirce
+            # formulas) reaches it. Nothing was decided.
+            import sys
+            return Verdict(UNKNOWN, self.name, logic="intuitionistic", reason="bound_hit",
+                           wall_time=time.perf_counter() - started,
+                           detail="the proof search recursed deeper than the interpreter's "
+                                  f"recursion limit ({sys.getrecursionlimit()}) allows before "
+                                  "it decided the sequent: no verdict was reached")
+        except RuntimeError as exc:
+            # The prover's step counter ran out; any other RuntimeError is a failure.
+            if "step budget" not in str(exc):
+                raise
+            return Verdict(UNKNOWN, self.name, logic="intuitionistic", reason="bound_hit",
+                           wall_time=time.perf_counter() - started,
+                           detail=f"the prover used up its step budget ({_MAX_STEPS} steps) "
+                                  "before it decided the sequent: G4ip terminates, but the "
+                                  "number of steps is exponential in the nesting of "
+                                  "implications, so no verdict was reached")
+        if not finished:
+            # ``int_prove`` is a decision procedure, but its cost is exponential in the formula
+            return Verdict(UNKNOWN, self.name, logic="intuitionistic", reason="timeout",
+                           wall_time=elapsed,
+                           detail=f"no verdict within the {timeout} ms limit")
         if proved:
             return Verdict(PROVED, self.name, logic="intuitionistic", wall_time=elapsed)
 
+        # The verdict is settled; the witness is a second, best-effort search that gets what
+        # is left of the limit, and a REFUTED answer needs no witness (``countermodel=None``).
         goal = _implication(formula, premises)
-        cm = int_countermodel(goal, **cm_kwargs)
-        witness = _int_kripke_witness_to_dict(*cm) if cm is not None else None
+        found, cm = _run_until(deadline, lambda: int_countermodel(goal, **cm_kwargs))
+        witness = _int_kripke_witness_to_dict(*cm) if found and cm is not None else None
         return Verdict(REFUTED, self.name, logic="intuitionistic", wall_time=elapsed,
                        countermodel=witness)
 
@@ -191,6 +249,18 @@ class LambekBackend(ProverBackend):
     semantic model theory in this kit, only the syntactic decision procedure
     (which is itself exhaustive, so ``None`` from the search IS the
     refutation, not an admission of incompleteness).
+
+    The calculus reads the connectives ``• \\ /`` and atoms; an atom over terms is one
+    category. Every other node is refused by name, UNKNOWN(unsupported): a quantifier (sorted
+    or not), a counting or cardinality node, a sorted constant, an equality atom and a node of
+    another logic (``And``, ``Not``, ``Box``, ...) have no rule in L, and an opaque category
+    in their place would answer about another formula. So is an EMPTY premise list: L has no
+    sequent with an empty antecedent (Lambek's restriction), so there is nothing to decide,
+    and a backend states that as an answer instead of raising.
+
+    The call's ``timeout`` bounds the search (:func:`~unicode_fol_kit._deadline.run_until`):
+    the search is exhaustive and terminating, and its cost is exponential in the sequent, so a
+    search that has not finished at the limit is UNKNOWN(timeout), never a refutation.
     """
 
     name = "lambek"
@@ -205,14 +275,31 @@ class LambekBackend(ProverBackend):
         from .lambek import lambek_prove
 
         premises = list(premises)
+        deadline = _instant(timeout)
         if not premises:
-            raise ValueError(
-                "lambek: decide() needs a nonempty, ORDERED premises sequence — "
-                "the Lambek calculus has no sequent with an empty antecedent "
-                "(Lambek's own restriction; see atp.lambek's module docstring), "
-                "so there is no notion of unconditional validity to fall back to.")
+            return Verdict(UNKNOWN, self.name, logic="lambek", reason="unsupported",
+                           detail="lambek: decide() needs a nonempty, ORDERED premises "
+                                  "sequence — the Lambek calculus has no sequent with an "
+                                  "empty antecedent (Lambek's own restriction; see "
+                                  "atp.lambek's module docstring), so there is no notion "
+                                  "of unconditional validity to fall back to. Give the "
+                                  "premises the goal is read from, in order.")
+        refusal = _unreadable_refusal("lambek", LAMBEK, formula, premises)
+        if refusal is not None:
+            return Verdict(UNKNOWN, self.name, logic="lambek", reason="unsupported",
+                           detail=refusal)
 
-        derivation, elapsed = _timed(lambda: lambek_prove(premises, formula))
+        try:
+            (finished, derivation), elapsed = _timed(
+                lambda: _run_until(deadline, lambda: lambek_prove(premises, formula)))
+        except NotImplementedError as exc:
+            return Verdict(UNKNOWN, self.name, logic="lambek",
+                           reason="unsupported", detail=str(exc))
+        if not finished:
+            # The search is exhaustive and terminating, but its cost is exponential in the sequent.
+            return Verdict(UNKNOWN, self.name, logic="lambek", reason="timeout",
+                           wall_time=elapsed,
+                           detail=f"no verdict within the {timeout} ms limit")
         if derivation is not None:
             return Verdict(PROVED, self.name, logic="lambek", wall_time=elapsed)
         return Verdict(REFUTED, self.name, logic="lambek", wall_time=elapsed,
@@ -247,6 +334,16 @@ class IllBackend(ProverBackend):
     ``False`` means only "no derivation found within the bound" — reported
     as UNKNOWN(bound_hit), NEVER REFUTED, exactly matching
     :func:`~unicode_fol_kit.atp.linear.ill_prove`'s own honesty contract.
+
+    The calculus reads the connectives ``⊗ & ⊕ ⊸ ! 𝟙 ⊤ 𝟘`` and atoms; an atom over terms is
+    one category. Every other node is refused by name, UNKNOWN(unsupported): a quantifier
+    (sorted or not), a counting or cardinality node, a sorted constant, an equality atom and a
+    node of another logic (``And``, ``Not``, ``Box``, ...) have no rule in ILL, and an opaque
+    category in their place would answer about another formula.
+
+    The call's ``timeout`` bounds the search (:func:`~unicode_fol_kit._deadline.run_until`):
+    even the ``!``-free search, a complete decision procedure, is exponential in the sequent,
+    so a search that has not finished at the limit is UNKNOWN(timeout), never a refutation.
     """
 
     name = "ill"
@@ -261,6 +358,11 @@ class IllBackend(ProverBackend):
         from .linear import ill_derivable, _has_bang, _size
 
         premises = list(premises)
+        deadline = _instant(timeout)
+        refusal = _unreadable_refusal("ill", ILL, formula, premises)
+        if refusal is not None:
+            return Verdict(UNKNOWN, self.name, logic="ill", reason="unsupported",
+                           detail=refusal)
         max_depth = options.pop("max_depth", None)
         max_steps = options.pop("max_steps", 200000)
         bang = _has_bang(formula) or any(_has_bang(p) for p in premises)
@@ -271,9 +373,18 @@ class IllBackend(ProverBackend):
         safe_depth = 2 * total + 4 if bang else total
         bounded = max_depth is not None and max_depth < safe_depth
 
-        proved, elapsed = _timed(
-            lambda: ill_derivable(premises, formula, max_depth=max_depth,
-                                  max_steps=max_steps))
+        try:
+            (finished, proved), elapsed = _timed(
+                lambda: _run_until(deadline, lambda: ill_derivable(
+                    premises, formula, max_depth=max_depth, max_steps=max_steps)))
+        except NotImplementedError as exc:
+            return Verdict(UNKNOWN, self.name, logic="ill",
+                           reason="unsupported", detail=str(exc))
+        if not finished:
+            # Even the !-free search, a complete decision procedure, is exponential in the sequent.
+            return Verdict(UNKNOWN, self.name, logic="ill", reason="timeout",
+                           wall_time=elapsed,
+                           detail=f"no verdict within the {timeout} ms limit")
         if proved:
             return Verdict(PROVED, self.name, logic="ill", wall_time=elapsed)
         if bang or bounded:
@@ -318,6 +429,9 @@ class RelevantBackend(ProverBackend):
     :mod:`unicode_fol_kit.hol.isabelle_relevant`'s ``to_isabelle_relevant`` /
     ``battery_proof`` — and is an explicit out-of-scope follow-up, not part
     of this backend.
+
+    The call's ``timeout`` bounds the search (:func:`~unicode_fol_kit._deadline.run_until`);
+    a search it cut off is UNKNOWN(timeout), not bound_hit.
     """
 
     name = "relevant"
@@ -334,11 +448,16 @@ class RelevantBackend(ProverBackend):
         max_worlds = options.pop("max_worlds", 2)
         goal = _implication(formula, premises)
         try:
-            result, elapsed = _timed(
-                lambda: rel_countermodel(goal, max_worlds=max_worlds))
+            (finished, result), elapsed = _timed(
+                lambda: _run_until(_instant(timeout),
+                                   lambda: rel_countermodel(goal, max_worlds=max_worlds)))
         except TypeError as exc:
             return Verdict(UNKNOWN, self.name, logic="relevant",
                            reason="unsupported", detail=str(exc))
+        if not finished:
+            return Verdict(UNKNOWN, self.name, logic="relevant", reason="timeout",
+                           wall_time=elapsed,
+                           detail=f"no B-countermodel found within the {timeout} ms limit")
         if result is None:
             return Verdict(UNKNOWN, self.name, logic="relevant", reason="bound_hit",
                            wall_time=elapsed,
@@ -375,8 +494,9 @@ class HybridBackend(ProverBackend):
     the ambiguity this uniform layer exists to remove. This backend instead
     builds the SAME ST-closed goal ``hybrid_is_valid`` builds —
     :func:`~unicode_fol_kit.fol.modal_translation.standard_translation`
-    closed under :func:`~unicode_fol_kit.fol.modal_translation._frame_axioms`
-    — and decides it with the kit's own tracked per-call
+    closed under :func:`~unicode_fol_kit.fol.modal_translation.frame_axioms`
+    (the frame axioms of every relation the goal mentions, and the membership of
+    each sorted constant ``c:S`` in ``S`` at every world) — and decides it with the kit's own tracked per-call
     :func:`~unicode_fol_kit.atp.protocol._z3_track_and_check` (the identical
     routine :class:`~unicode_fol_kit.atp.protocol.Z3Backend` uses for plain
     FOL), so Z3's own ``unsat``/``sat``/``unknown`` map to real
@@ -389,7 +509,13 @@ class HybridBackend(ProverBackend):
     translation: hybrid logic keeps full classical structure over ``∧``/
     ``→``, so this fold is sound here (unlike the substructural Lambek/ILL
     backends, where it would not be). ``frame`` (default ``"K"``) selects the
-    alethic frame class, exactly as it does for ``hybrid_is_valid``.
+    alethic frame class, exactly as it does for ``hybrid_is_valid``; so do the two other
+    keywords of that function: ``systems`` (the frame system of the agent-indexed families,
+    e.g. ``{"epistemic": "S5"}``, which makes ``Knows(a, P) → P`` valid) and ``temporal_closure``
+    (default ``True``: the temporal relation is reflexive and transitive; ``False`` drops
+    both, so ``Ⓖφ → φ`` is no longer valid). All three reach
+    :func:`~unicode_fol_kit.fol.modal_translation.frame_axioms` and nothing else, and an
+    unknown frame system or modal family is UNKNOWN(unsupported), never an exception.
     """
 
     name = "hybrid"
@@ -401,16 +527,22 @@ class HybridBackend(ProverBackend):
 
     def decide(self, formula: Node, premises: Sequence[Node] = (),
                timeout: int = 10000, **options) -> Verdict:
-        from ..fol.modal_translation import standard_translation, _frame_axioms
+        from ..fol.modal_translation import standard_translation, frame_axioms
         from ..fol.nodes import Quantifier, Variable, And, Implies
 
         frame = options.pop("frame", "K")
+        systems = options.pop("systems", None)
+        temporal_closure = options.pop("temporal_closure", True)
         goal_modal = _implication(formula, list(premises))
         try:
             translated = standard_translation(goal_modal, world="w")
             closed = Quantifier("∀", Variable("w"), translated)
             hyp = None
-            for axiom in _frame_axioms(frame):
+            # The axioms of every relation the goal's translation emits (so ``Ⓖφ → φ``
+            # and ``Ⓞφ → Ⓟφ`` are decided as ``hybrid_is_valid`` decides them) and the
+            # membership of every sorted constant in its sort at every world.
+            for axiom in frame_axioms(goal_modal, frame, systems=systems,
+                                      temporal_closure=temporal_closure):
                 hyp = axiom if hyp is None else And(hyp, axiom)
             st_goal = closed if hyp is None else Implies(hyp, closed)
             z3_formula = st_goal.to_z3()

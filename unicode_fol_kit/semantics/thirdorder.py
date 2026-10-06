@@ -199,6 +199,26 @@ def satisfies_to(formula: Node,
     raise ValueError(f"satisfies_to: unsupported node type {type(formula).__name__}.")
 
 
+def _extension_in(structure: Structure, name: str, arity: int) -> Iterable[Tuple[Any, ...]]:
+    """The extension of the predicate ``name/arity`` in ``structure``.
+
+    The structure's table for it. A missing table is the empty relation, matching
+    the first-order convention -- unless the name is a SORT of the structure: a sort
+    and the unary predicate of that name are one symbol, so a unary ``name`` that
+    the structure knows only as a sort is that sort's universe, one 1-tuple per
+    member. This is the reading :func:`semantics.tarski._atom_value` gives an atom
+    ``S(t)``, and the laws a sort must satisfy are checked here as they are there
+    (an :class:`~unicode_fol_kit.semantics.tarski.IllegalStructureError` for an
+    empty sort, or one that disagrees with the predicate table of its name).
+    """
+    extension = structure.predicates.get((name, arity))
+    if arity == 1 and name in structure.sorts:
+        universe = structure.sort_universe(name)
+        if extension is None:
+            return {(d,) for d in universe}
+    return extension if extension is not None else ()
+
+
 def argument_value(node: Node, structure: Structure,
                    assignment: Mapping[str, Any],
                    pred_binding: PredBinding,
@@ -208,7 +228,9 @@ def argument_value(node: Node, structure: Structure,
     A :class:`~unicode_fol_kit.fol.nodes.PredicateTerm` denotes the relation its
     name stands for: the current binding if the name is bound, otherwise the
     structure's table for it (a missing table is the empty relation, matching
-    the first-order convention). A λ-abstraction denotes its EXTENSION, computed
+    the first-order convention, except that a unary name the structure knows as
+    a sort denotes that sort -- see :func:`_extension_in`). A λ-abstraction
+    denotes its EXTENSION, computed
     by evaluating the body at every tuple of individuals its binders range over.
     Anything else is an ordinary term.
     """
@@ -216,7 +238,7 @@ def argument_value(node: Node, structure: Structure,
         if node.name in pred_binding:
             return pred_binding[node.name]
         arity = signatures.arity.get(node.name, 1)
-        return frozenset(structure.predicates.get((node.name, arity), ()))
+        return frozenset(_extension_in(structure, node.name, arity))
     if isinstance(node, Lambda):
         names: List[str] = []
         body: Node = node
@@ -271,7 +293,7 @@ def _atom_truth(atom: Atom, structure: Structure,
         return _atom_value(atom, structure, assignment)
     values = tuple(argument_value(a, structure, assignment, pred_binding, signatures)
                    for a in atom.args)
-    extension = structure.predicates.get((atom.predicate, len(atom.args)), ())
+    extension = _extension_in(structure, atom.predicate, len(atom.args))
     return values in extension
 
 

@@ -94,9 +94,13 @@ class _FakeRun:
     def __init__(self, canned: dict):
         self.canned = canned
         self.calls = []
+        self.stdins = []
 
-    def __call__(self, cmd, capture_output=True, text=True, timeout=None):
+    def __call__(self, cmd, capture_output=True, text=True, timeout=None, stdin=None):
         self.calls.append(tuple(cmd))
+        # The probe never lets the tool read this process's standard input.
+        self.stdins.append(stdin)
+        assert stdin is subprocess.DEVNULL, "the version probe must pass stdin=subprocess.DEVNULL"
         key = tuple(cmd)
         if key not in self.canned:
             raise AssertionError(f"unexpected subprocess.run call: {cmd}")
@@ -216,11 +220,24 @@ def test_binary_version_decode_error_returns_none_instead_of_raising(
 # Prover9Backend / VampireBackend wiring (offline: no real binary needed)
 # ---------------------------------------------------------------------------
 
+#: What ``prover9 -h`` prints first (Prover9 2026-8A, shortened): a frame line, then the banner.
+_PROVER9_BANNER = "Prover9 (64) version 2026-8A, August 2026."
+_PROVER9_HELP = ("============================== Prover9 ===============================\n"
+                 + _PROVER9_BANNER + "\n"
+                 "Process 371 was started by someone on somewhere,\n"
+                 "============================== end of head ===========================\n"
+                 "\nUsage: prover9 [-h] [-x] [-p] [-t <n>] [-m] [-r <dir>] [-f <files>]\n")
+
+
 def test_prover9_solver_version_wired_to_binary_version(fresh_version_cache, monkeypatch):
     monkeypatch.setenv("UFK_PROVER9", "fake-prover9")
-    fake = _FakeRun({("fake-prover9", "--version"): ("Prover9 (64) 2009-11A\n", "")})
+    monkeypatch.delenv("UFK_PROVER9_WSL", raising=False)
+    # Prover9 has no --version (it takes the flag for a resume directory and ends with a fatal
+    # error, exit 1); -h prints the banner first and exits 0. The banner line is the one that
+    # starts with "Prover9" and holds the word "version".
+    fake = _FakeRun({("fake-prover9", "-h"): (_PROVER9_HELP, "")})
     monkeypatch.setattr(subprocess, "run", fake)
-    assert get_backend("prover9").solver_version() == "Prover9 (64) 2009-11A"
+    assert get_backend("prover9").solver_version() == _PROVER9_BANNER
 
 
 def test_prover9_solver_version_none_without_a_binary(fresh_version_cache, monkeypatch):
@@ -235,25 +252,26 @@ def test_prover9_decide_carries_solver_version_into_the_verdict(fresh_version_ca
     version string must land UNCHANGED in Verdict.solver_version and in
     Verdict.to_dict()['solver_version'] (test_oracle item 1)."""
     monkeypatch.setenv("UFK_PROVER9", "fake-prover9")
-    fake = _FakeRun({("fake-prover9", "--version"): ("Prover9 (64) 2009-11A\n", "")})
+    monkeypatch.delenv("UFK_PROVER9_WSL", raising=False)
+    fake = _FakeRun({("fake-prover9", "-h"): (_PROVER9_HELP, "")})
     monkeypatch.setattr(subprocess, "run", fake)
     import unicode_fol_kit.atp.prover9_entailment as p9
     monkeypatch.setattr(p9, "check_logical_entailment", lambda *a, **kw: True)
 
     v = get_backend("prover9").decide(_GOAL, _PREMISES)
     assert v.status == "proved"
-    assert v.solver_version == "Prover9 (64) 2009-11A"
-    assert v.to_dict()["solver_version"] == "Prover9 (64) 2009-11A"
+    assert v.solver_version == _PROVER9_BANNER
+    assert v.to_dict()["solver_version"] == _PROVER9_BANNER
     assert len(fake.calls) == 1
 
 
 def test_prover9_decide_survives_a_version_probe_decode_error(fresh_version_cache, monkeypatch):
     """Same review-confirmed regression as Vampire's/E's, for Prover9Backend's
-    own ``solver_version = _binary_version(path, False)`` call right before
-    its try/except: a ``UnicodeDecodeError`` out of the ``--version`` probe
-    must not propagate out of ``decide()``."""
+    own version probe right before its try/except: a ``UnicodeDecodeError``
+    out of the ``-h`` probe must not propagate out of ``decide()``."""
     monkeypatch.setenv("UFK_PROVER9", "fake-prover9-b")
-    fake = _FakeRun({("fake-prover9-b", "--version"):
+    monkeypatch.delenv("UFK_PROVER9_WSL", raising=False)
+    fake = _FakeRun({("fake-prover9-b", "-h"):
                      UnicodeDecodeError("utf-8", b"\xff\xfe", 0, 1,
                                         "invalid start byte")})
     monkeypatch.setattr(subprocess, "run", fake)

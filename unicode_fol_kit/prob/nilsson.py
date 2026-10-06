@@ -13,7 +13,12 @@ EXACTLY (rational arithmetic throughout, never a float) via :mod:`z3`'s
 :meth:`~unicode_fol_kit.fol.nodes.Node.to_unicode_str`, the kit-wide
 convention for "what counts as one propositional variable"; see
 :mod:`unicode_fol_kit.semantics.truthtable`) occurring in the constraints and
-the conclusion; a quantified formula is refused (see below). With ``n``
+the conclusion; a quantified formula is refused (see below). The two truth
+constants (``⊤`` / ``$true`` and ``⊥`` / ``$false``) are not atoms: every
+world gives ``⊤`` the value true and ``⊥`` the value false
+(:func:`~unicode_fol_kit.fol._truth_constants.truth_value`), so ``P(⊤) = 1``,
+``P(⊥) = 0``, a constraint ``P(⊥) = 1`` is probabilistically inconsistent, and
+a constant adds no world bit. With ``n``
 distinct atoms there are ``2^n`` possible worlds (truth-value assignments);
 one nonnegative real variable ``p_w`` per world, constrained to sum to 1, is a
 full parametrisation of every probability distribution over those worlds. An
@@ -77,6 +82,8 @@ from typing import Literal, Optional, Sequence
 import z3
 
 from ..fol.nodes import Node, Atom, Not, And, Or, Xor, Implies, Iff
+from ..fol._atom_keys import AtomKeys, atom_key
+from ..fol._truth_constants import truth_value
 
 __all__ = ["ProbConstraint", "ProbBounds", "entailment_bounds"]
 
@@ -183,21 +190,32 @@ _UNSUPPORTED = (
 )
 
 
-def _collect_atoms(formula: Node, atoms: set) -> None:
+def _collect_atoms(formula: Node, atoms: set, keys: Optional[AtomKeys] = None) -> None:
     """Add every distinct atom (by ``to_unicode_str()``) in ``formula`` to ``atoms``.
+
+    The two truth constants (``⊤`` / ``$true``, ``⊥`` / ``$false``) are not
+    atoms: a distribution gives the true constant probability 1 and the false
+    constant 0 in every world, so neither has a world bit of its own and
+    neither is added.
+
+    ``keys`` records the atom behind every key of one problem: two different atoms that print
+    alike (the numeral ``1`` and a constant named ``1``) would be one world bit and the
+    probabilities another problem, and a sorted constant has no probability of membership to
+    go with it, so both are refused with ``ValueError``.
 
     Raises ``ValueError`` on anything other than Atom/¬/∧/∨/→/↔/⊕ — in
     particular on any quantifier, loudly, per the module's scope contract.
     """
     if isinstance(formula, Atom):
-        atoms.add(formula.to_unicode_str())
+        if truth_value(formula) is None:
+            atoms.add(atom_key(formula) if keys is None else keys.key(formula))
         return
     if isinstance(formula, Not):
-        _collect_atoms(formula.formula, atoms)
+        _collect_atoms(formula.formula, atoms, keys)
         return
     if isinstance(formula, (And, Or, Xor, Implies, Iff)):
-        _collect_atoms(formula.left, atoms)
-        _collect_atoms(formula.right, atoms)
+        _collect_atoms(formula.left, atoms, keys)
+        _collect_atoms(formula.right, atoms, keys)
         return
     raise ValueError(_UNSUPPORTED.format(cls=type(formula).__name__))
 
@@ -205,12 +223,16 @@ def _collect_atoms(formula: Node, atoms: set) -> None:
 def _eval(formula: Node, valuation: dict) -> bool:
     """Evaluate ``formula`` (¬ ∧ ∨ → ↔ ⊕ over Atom leaves) under ``valuation``.
 
-    ``valuation`` maps each atom's ``to_unicode_str()`` to a bool. Raises
+    ``valuation`` maps each atom's ``to_unicode_str()`` to a bool; a truth
+    constant is read as the truth value it is and is never looked up. Raises
     ``ValueError`` on an unsupported node type (defensive: :func:`_collect_atoms`
     already rejects these upstream of every call site in this module).
     """
     if isinstance(formula, Atom):
-        return valuation[formula.to_unicode_str()]
+        constant = truth_value(formula)
+        if constant is not None:
+            return constant
+        return valuation[atom_key(formula)]
     if isinstance(formula, Not):
         return not _eval(formula.formula, valuation)
     if isinstance(formula, And):
@@ -240,10 +262,14 @@ def _to_z3_bool(formula: Node, atom_vars: dict):
     default ``strategy="direct"`` path never calls this (it evaluates
     formulas against concrete Python valuations via :func:`_eval` alone).
     Raises the same ``ValueError`` as :func:`_eval` on an unsupported node
-    (defensive: :func:`_collect_atoms` already rejects these upstream).
+    (defensive: :func:`_collect_atoms` already rejects these upstream). A
+    truth constant is the Boolean constant it is, not a variable of ``atom_vars``.
     """
     if isinstance(formula, Atom):
-        return atom_vars[formula.to_unicode_str()]
+        constant = truth_value(formula)
+        if constant is not None:
+            return z3.BoolVal(constant)
+        return atom_vars[atom_key(formula)]
     if isinstance(formula, Not):
         return z3.Not(_to_z3_bool(formula.formula, atom_vars))
     if isinstance(formula, And):
@@ -326,9 +352,9 @@ def entailment_bounds(constraints: Sequence[ProbConstraint], conclusion: Node,
 
     ``"column_generation"`` (:mod:`unicode_fol_kit.prob._column_gen`) never
     materialises a world: it grows a small ``columns`` subset of worlds on
-    demand, pricing a candidate world in via one small exact LP plus one Z3
-    Boolean-SAT search over the ``n`` atoms — polynomial per iteration
-    regardless of ``n`` — so it can answer problems with far more than
+    demand, pricing a candidate world in via one small exact LP plus one
+    satisfiability search over the ``n`` atoms per pricing step, which
+    enumerates no worlds, so it can answer problems with far more than
     ``max_atoms`` distinct atoms (``max_atoms`` is not enforced under this
     strategy; the only brake is ``max_columns``, 500 by default, raising
     ``ValueError`` rather than ever returning an unproven bound). See
@@ -343,10 +369,16 @@ def entailment_bounds(constraints: Sequence[ProbConstraint], conclusion: Node,
             ``max_atoms`` (the world count is ``2^n`` — an explicit,
             overridable brake on that exponential); under
             ``strategy="column_generation"``, if column generation does not
-            certify optimality within ``max_columns`` generated columns; an
+            certify optimality within ``max_columns`` generated columns, or
+            cannot certify its answer at all (a pricing step whose result is
+            neither an exact evaluation nor a refutation: no bound is returned
+            that was not certified); an
             unrecognised ``strategy``; or (either strategy, identical message)
             if the constraint set is probabilistically inconsistent (no
-            distribution satisfies every constraint at once).
+            distribution satisfies every constraint at once); or if two
+            different atoms of the problem print alike (the numeral ``1`` and a
+            constant named ``1``, which would be ONE world bit and so another
+            problem), or an atom holds a sorted constant.
     """
     if strategy not in ("direct", "column_generation"):
         raise ValueError(
@@ -355,11 +387,12 @@ def entailment_bounds(constraints: Sequence[ProbConstraint], conclusion: Node,
         )
 
     atoms: set = set()
+    atom_keys = AtomKeys("entailment_bounds", "refuse", ValueError)
     for c in constraints:
-        _collect_atoms(c.formula, atoms)
+        _collect_atoms(c.formula, atoms, atom_keys)
         if c.given is not None:
-            _collect_atoms(c.given, atoms)
-    _collect_atoms(conclusion, atoms)
+            _collect_atoms(c.given, atoms, atom_keys)
+    _collect_atoms(conclusion, atoms, atom_keys)
 
     atom_list = sorted(atoms)
     n = len(atom_list)

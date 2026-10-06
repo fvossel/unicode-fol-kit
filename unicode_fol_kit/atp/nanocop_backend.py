@@ -66,6 +66,7 @@ from ..fol.nodes import (
     And, Atom, Box, Constant, Diamond, Function, Iff, Implies, Node, Not,
     Or, Quantifier, Variable,
 )
+from ..fol._truth_constants import refuse_truth_constants
 from .protocol import ProverBackend, Verdict, PROVED, REFUTED, UNKNOWN, ERROR
 
 __all__ = ["NanocopBackend", "to_nanocop", "nanocop_available"]
@@ -119,6 +120,10 @@ def _term(node: Node, names: _NameMap, bound: Dict[str, str]) -> str:
 def _formula(node: Node, names: _NameMap, bound: Dict[str, str]) -> str:
     cls = type(node).__name__
     if cls == "Atom":
+        refuse_truth_constants(
+            [node], "nanocop",
+            "nanoCoP-M's f(...) input language has no truth-constant syntax, so "
+            "$true / $false would reach it as the name of an unrelated symbol")
         if node.predicate == "=":
             raise NotImplementedError(
                 "nanocop: equality is not in the supported fragment "

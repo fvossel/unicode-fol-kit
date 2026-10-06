@@ -42,6 +42,7 @@ from itertools import chain, combinations, permutations, product
 from typing import Dict, FrozenSet, Iterator, List, Mapping, Optional, Tuple
 
 from ..fol.nodes import Node, Atom, Not, And, Or, Implies, Iff
+from ..fol._truth_constants import refuse_truth_constants
 
 
 class _FrozenMap(MappingABC):
@@ -166,6 +167,11 @@ def _reject_non_propositional(formula: Node) -> None:
     if not isinstance(formula, Node):
         raise TypeError(
             f"relevant: expected a formula Node, got {type(formula).__name__}.")
+    refuse_truth_constants(
+        [formula], "relevant",
+        "relevant logic has two truths and two falsities, an additive pair and a "
+        "multiplicative pair, which differ in B, and TPTP's $true / $false names "
+        "neither pair", error=TypeError)
     for node in formula.walk():
         if isinstance(node, Atom):
             if node.args:

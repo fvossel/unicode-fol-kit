@@ -100,7 +100,8 @@ import re
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
-from ._fol_nodes import constant_name_to_ascii
+from ._fol_nodes import _number_text, constant_name_to_ascii
+from ._tptp_symbols import truth_constant_word
 from .naming import ParsingError
 from .nodes import (
     Node, Variable, Constant, Number, Function,
@@ -388,7 +389,7 @@ def _render(node: Node, known_names: dict = _NO_KNOWN_NAMES) -> str:
 
     Structurally identical to :meth:`Node.to_tptp` for every connective,
     quantifier, and already-valid name (same brackets, same operators, same
-    variable upper-casing) — the two behavioural differences are: (1) a name
+    variable upper-casing) — the behavioural differences are: (1) a name
     failing TPTP's unquoted ``lower_word`` rule is single-quoted instead of
     emitted bare (case 2), via :func:`_render_predicate_name` /
     :func:`_render_functor_name`; (2) an already-valid ``Atom`` predicate
@@ -399,12 +400,15 @@ def _render(node: Node, known_names: dict = _NO_KNOWN_NAMES) -> str:
     ``threeoxosteroid``, a DIFFERENT ``LOWER`` token, breaking this module's
     own case-1 meaning-preservation guarantee for exactly the camelCase
     names ChEBI definitions use); touching only the character ``_cap()``
-    actually touched reparses to the identical predicate string.
+    actually touched reparses to the identical predicate string. (3) The
+    truth constants ``$true`` and ``$false`` are TPTP's own propositions and are
+    written as they are, never quoted: a quoted ``'$false'`` is an ordinary atom to
+    Vampire, which then answers another question.
     """
     if isinstance(node, Variable):
         return node.name.upper()
     if isinstance(node, Number):
-        return str(node.value)
+        return _number_text(node.value)
     if isinstance(node, Constant):
         return _render_functor_name(constant_name_to_ascii(node.name))
     if isinstance(node, Function):
@@ -423,6 +427,9 @@ def _render(node: Node, known_names: dict = _NO_KNOWN_NAMES) -> str:
         if node.predicate in Atom.PREFIX_PREDS_TPTP and len(node.args) == 2:
             op = Atom.PREFIX_PREDS_TPTP[node.predicate]
             return f"{op}({_render(node.args[0], known_names)},{_render(node.args[1], known_names)})"
+        truth = truth_constant_word(node)
+        if truth is not None:
+            return truth      # TPTP's own propositions: a quoted '$true' is an ordinary atom
         name = _render_predicate_name(node.predicate, known_names)
         if not node.args:
             return name

@@ -44,11 +44,59 @@ the reduction axiom ``[φ!]K_aψ ↔ (φ → K_a[φ!]ψ)`` is K-valid, while the
 NON-theorem ``[φ!]K_aψ → K_a[φ!]ψ`` is not (see ``tests/test_pal.py``) — with no
 PAL-specific rule in this module at all.
 
+**Sorted constants.** ``c:S`` denotes an element of ``S`` at every world (a constant is a
+rigid designator; ``semantics.kripke``'s module docstring). The annotation does not make a
+second symbol, so ``Mortal(c:S)`` and ``Mortal(c)`` are one letter, and the guard atom
+``S(c)`` is a letter that is true at EVERY world: a world holding ``¬S(c)`` closes its
+branch, and a model read off an open branch makes ``S(c)`` true everywhere. Without that a
+valid formula such as ``S(c:S)`` had an open branch whose model left ``c`` out of ``S``, and
+:func:`modal_decide` called it invalid. A sorted QUANTIFIER stays an opaque literal.
+
 **Frame conditions** are realised as structural rules over the edge set: reflexivity
 adds ``w → w`` for every world, symmetry mirrors each edge, transitivity takes the
 closure, the euclidean rule closes ``w→v, w→u ⊢ v→u``, and seriality manufactures a
-successor for a world that lacks one. The named systems are K, T, D/KD, B/KB, K4, K45,
-S4, S5, KD45.
+successor for a world that has a box obligation and lacks one. The named systems are K, T,
+D/KD, B/KB, K4, K45, S4, S5, KD45.
+
+**The model is a model of the frame.** The branch the search leaves open is not yet a
+structure of the frame class that was asked for: a world that has no box obligation needs no
+successor for the formula, but a serial relation gives it one. The model that is read off
+therefore lets every such dead end of a serial relation see itself. A self-loop at a world
+without a successor adds no obligation (the world has no box of that relation to satisfy) and
+keeps a transitive, symmetric or euclidean relation closed. A relation the formula reads
+but the branch never used (its operator sits in a disjunct the branch does not take) has no
+edge on the branch, and a relation the model does not list is the empty relation, which is
+neither reflexive nor serial: it is given the loops its system asks for as well, so every
+relation the formula reads is a relation of the frame class. A relation the formula does not
+read is not made up: nothing the formula says could tell the difference. The loops can change
+the value of one construct: a distributed-knowledge box ``D_G`` reads the intersection of
+several relations, and a world that is a dead end in each of them then gains an edge in the
+intersection. A model is therefore handed out only when it falsifies the formula
+(:func:`satisfies_modal`, which evaluates the relations as they are and does not know the
+frame) AND every relation of it, and every relation the formula reads, satisfies the frame
+conditions of its system; if either check fails, no model is handed out and the answer is
+``"unknown"``. The first check is made at each open branch already, so a branch whose model
+does not falsify the formula (it holds a construct this tableau has no rule for, such as a
+negated ``D_G``) does not end the search while another branch is left.
+
+**Equality is NOT interpreted here.** ``a = b`` / ``a ≠ b`` need a semantics of TERMS —
+what ``a`` and ``b`` denote, so that the atom can be decided as identity of those
+denotations — and this tableau has none: an atom is a propositional letter, a branch
+closes on a syntactic complement, and an open branch is read off as a valuation of
+rendered atom keys. Run on ``a = a`` it would leave the branch for ``¬(a = a)`` open
+(``is_modal_valid`` False, ``modal_decide`` "unknown") although identity is reflexive,
+and on ``a = b → □(a = b)`` it would build a counter-model in which identity varies
+from world to world — both against :func:`unicode_fol_kit.fol.qml.qml_is_valid`, where
+``=`` is RIGID identity over the object domain. Reading identity as an uninterpreted
+relation is an approximation this kit refuses, so every public entry point raises
+``NotImplementedError`` naming the atom (the shared
+:func:`~unicode_fol_kit.semantics._modal_reject.reject_equality`, the same refusal
+:func:`~unicode_fol_kit.semantics.kripke.satisfies_modal` gives). The refusal is a
+whole-formula scan at entry (:func:`_run`), BEFORE any search, and never left to the
+search reaching an ``Atom``: a branch that closes on an unrelated contradiction, a
+vacuous ``□`` at a dead end, or a tautologous disjunct would
+otherwise return a verdict that never looked at the atom. Decide identity with
+``fol.qml.qml_is_valid`` or another first-order route.
 
 **Cross-family bridges are NOT supported here.** A frame condition relating two
 DIFFERENT relations — ``rb ⊆ rk`` (``K_a φ → B_a φ``), ``rb ⊆ rs``
@@ -67,7 +115,9 @@ introduced to remove.
 **Soundness vs. completeness.** Every rule preserves satisfiability over its frame
 class, so a *closed* tableau is a real proof — ``is_modal_valid`` only returns ``True``
 when the tableau closes. Termination on the transitive logics relies on subset
-*blocking*, and the whole search is bounded (``max_worlds`` / ``max_steps``); to keep
+*blocking*, and the whole search is bounded (``max_worlds`` / ``max_steps`` and an optional
+wall-clock ``timeout`` in milliseconds, which every public entry point takes and the search
+checks at every step; a bound hit is ``"unknown"``, never an exception); to keep
 the *invalid* verdict trustworthy regardless of any blocking/bound effect, an open
 branch's model is **verified** with :func:`satisfies_modal` before it is reported, and
 a model that fails to falsify the formula downgrades the answer to ``"unknown"`` rather
@@ -78,8 +128,10 @@ Public API: :func:`modal_tableau_closed`, :func:`is_modal_valid`, :func:`modal_p
 :func:`modal_decide`, :func:`modal_countermodel`.
 """
 
+import time
 from typing import List, Optional, Tuple
 
+from .._deadline import DeadlineReached
 from ..fol.nodes import (
     Node, Atom, Not, And, Or, Xor, Implies, Iff, Contrast,
     Box, Diamond, Knows, Believes, Says, Wants, Obligatory, Permitted,
@@ -99,11 +151,15 @@ from ..fol._modal_nodes import Announce, AnnounceDiamond
 from ..fol._hybrid_nodes import Down
 from ..fol.pal import reduce_announcements
 from ..semantics.kripke import KripkeModel, satisfies_modal
+from ..semantics._modal_reject import reject_equality_in
 from ..fol.frames import (
     FRAME_CONDITIONS, FRAMES as _SHARED_FRAMES,
     UnsupportedFrameCondition, resolve_frame, require_supported,
 )
+from ..fol._atom_keys import refuse_alike_agents
+from ..fol._truth_constants import is_true_constant, is_truth_constant
 from .fitch import is_falsum
+from .lj import _forget_constant_sorts
 
 
 # Relation names — the contract with semantics.kripke.KripkeModel.
@@ -316,6 +372,8 @@ def _decompose(f: Node):
     """
     if is_falsum(f):
         return ("lit",)
+    if is_true_constant(f):
+        return ("true",)        # `$true` holds at every world: discard
     if isinstance(f, Atom):
         return ("lit",)
     if isinstance(f, _QUANTIFIED):
@@ -447,44 +505,106 @@ def _decompose(f: Node):
         f"modal_tableau: no rule for {type(f).__name__} {f.to_unicode_str()}")
 
 
+class _OrderedSet(dict):
+    """A set that iterates in the order its members were first added.
+
+    The branch keeps each world's formulas and its box obligations in one. The search takes
+    "the first" unexpanded branching formula, diamond or box obligation it meets, and which
+    one it takes decides the numbering of the worlds it creates and therefore the model it
+    reads off an open branch. A ``set`` of formulas (which hash their names) or of tuples
+    holding a relation name iterates in an order that follows ``PYTHONHASHSEED``, so the
+    same input gave a different countermodel from one process to the next; here the order is
+    a function of the sequence of insertions alone, and every insertion is itself made by an
+    ordered traversal, so the model is a function of the input. The rules and the bounds are
+    those of a plain ``set``: only the order in which they are tried is fixed.
+
+    A ``dict`` subclass, so membership, iteration and ``len`` keep the speed of the built-in
+    container; only the set operations the search uses are spelled out.
+    """
+
+    __slots__ = ()
+
+    def add(self, member) -> None:
+        self[member] = None
+
+    def copy(self) -> "_OrderedSet":
+        duplicate = _OrderedSet()
+        dict.update(duplicate, self)
+        return duplicate
+
+    def __le__(self, other) -> bool:
+        """Subset test, as for a ``set`` (``other`` may be any set-like)."""
+        return self.keys() <= (other.keys() if isinstance(other, dict) else other)
+
+    def __repr__(self) -> str:
+        return f"_OrderedSet({list(self)!r})"
+
+
 class _Branch:
     """A single open tableau branch: labelled formulas, edges, box obligations."""
 
-    __slots__ = ("tv", "rels", "boxes", "wcount", "expanded")
+    __slots__ = ("tv", "rels", "boxes", "wcount", "expanded", "facts")
 
     def __init__(self):
-        self.tv = {0: set()}                 # world -> set of labelled formulas
+        self.tv = {0: _OrderedSet()}         # world -> the labelled formulas, in insertion order
         self.rels = {}                       # relname -> set of (w, v) edges
-        self.boxes = set()                   # (world, relname, body) obligations
+        self.boxes = _OrderedSet()           # (world, relname, body) obligations, in insertion order
         self.wcount = 1                      # next fresh world id
         self.expanded = set()                # (world, formula) already consumed
+        self.facts = frozenset()             # atoms true at EVERY world (sorted constants' membership)
 
     def copy(self) -> "_Branch":
         b = _Branch.__new__(_Branch)
-        b.tv = {w: set(s) for w, s in self.tv.items()}
+        b.tv = {w: s.copy() for w, s in self.tv.items()}
         b.rels = {r: set(e) for r, e in self.rels.items()}
-        b.boxes = set(self.boxes)
+        b.boxes = self.boxes.copy()
         b.wcount = self.wcount
         b.expanded = set(self.expanded)
+        b.facts = self.facts
         return b
 
 
 class _Ctx:
     """Search budget and frame configuration shared across the branch tree."""
 
-    def __init__(self, frame: str, systems, max_worlds: int, max_steps: int):
+    def __init__(self, frame: str, systems, max_worlds: int, max_steps: int,
+                 timeout: Optional[int] = None, mentioned: Tuple[str, ...] = (),
+                 roots: Tuple[Node, ...] = ()):
         self.frame = frame
         self.systems = systems or {}
+        # every relation name the formulas read, whether or not the search used it: the model
+        # that is read off has to give each one the shape its system asks for
+        self.mentioned = tuple(mentioned)
+        # the formulas asserted at the root world: a model read off an open branch has to make
+        # them true there, or the branch (which holds a construct it has no rule for) is no help
+        self.roots = tuple(roots)
         self.max_worlds = max_worlds
         self.steps = max_steps
         self.exhausted = False
+        # ``timeout`` is in milliseconds, counted from the moment the search starts.
+        self.deadline = None if timeout is None else time.perf_counter() + timeout / 1000.0
 
     def tick(self) -> bool:
+        """Charge one step; False once the step budget is gone or the deadline has passed."""
         self.steps -= 1
-        if self.steps <= 0:
+        if self.steps <= 0 or (self.deadline is not None and time.perf_counter() > self.deadline):
             self.exhausted = True
+            self.steps = 0
             return False
         return True
+
+    def poll(self) -> None:
+        """Raise :class:`~unicode_fol_kit._deadline.DeadlineReached` once the deadline has passed.
+
+        For the loops that run between two :meth:`tick` calls (the frame closure, the box
+        rule): they read the clock themselves, so one step of the search cannot outlast the
+        deadline however many worlds it has to close. No charge is made against the budget.
+        :func:`_run` catches the exception and gives up the whole search.
+        """
+        if self.deadline is not None and time.perf_counter() > self.deadline:
+            self.exhausted = True
+            self.steps = 0
+            raise DeadlineReached
 
     def conds(self, relname: str) -> Tuple[str, ...]:
         """Frame conditions for a relation name, per the configured systems."""
@@ -503,7 +623,7 @@ class _Ctx:
 
 def _assert(b: _Branch, w: int, f: Node) -> bool:
     """Assert ``w: f``; return True iff it was new."""
-    s = b.tv.setdefault(w, set())
+    s = b.tv.setdefault(w, _OrderedSet())
     if f in s:
         return False
     s.add(f)
@@ -511,26 +631,85 @@ def _assert(b: _Branch, w: int, f: Node) -> bool:
 
 
 def _closes(b: _Branch) -> bool:
-    """True iff some world holds a formula and its negation (or ⊥)."""
+    """True iff some world holds a formula and its negation (or ⊥).
+
+    An atom of ``b.facts`` is true at EVERY world, so a world that holds its
+    negation is contradictory too, whatever else it holds.
+    """
     for s in b.tv.values():
         for f in s:
             if is_falsum(f):
                 return True
+            if isinstance(f, Not) and is_true_constant(f.formula):
+                return True         # ¬$true is false at every world, like ⊥ and $false
             if _neg(f) in s:
+                return True
+            if b.facts and isinstance(f, Not) and f.formula in b.facts:
                 return True
     return False
 
 
+def _relations_read_by(node: Node) -> Tuple[str, ...]:
+    """The relation names a modal operator reads: ``node`` itself, never its operands.
+
+    The same names :func:`_decompose` files its box and diamond rules under (the group
+    operators read the relation of each agent of the group), and the ones
+    :func:`~unicode_fol_kit.semantics.kripke.satisfies_modal` reads in the model. Every other
+    node reads none.
+    """
+    if isinstance(node, (Box, Diamond)):
+        return (_ALETHIC,)
+    if isinstance(node, (Obligatory, Permitted)):
+        return (_DEONTIC,)
+    if isinstance(node, (Next,) + _TEMPORAL_CLOSURE):
+        return (_TEMPORAL,)
+    if isinstance(node, Knows):
+        return (_KNOWS + _agent_key(node.agent),)
+    if isinstance(node, Believes):
+        return (_BELIEVES + _agent_key(node.agent),)
+    if isinstance(node, Says):
+        return (_SAYS + _agent_key(node.agent),)
+    if isinstance(node, Wants):
+        return (_WANTS + _agent_key(node.agent),)
+    if isinstance(node, (EverybodyKnows, DistributedKnowledge, CommonKnowledge)):
+        return tuple(_KNOWS + _agent_key(a) for a in node.group)
+    return ()
+
+
+def _mentioned_relations(formulas) -> Tuple[str, ...]:
+    """Every relation name any of ``formulas`` reads, in the order they first occur.
+
+    A relation is mentioned when an operator that reads it occurs ANYWHERE in a formula,
+    also in a disjunct the open branch of the search does not take: the model that is read
+    off an open branch has to give that relation the shape its system asks for, though the
+    branch has no edge of it.
+    """
+    names = _OrderedSet()
+    for f in formulas:
+        for node in f.walk():
+            for rel in _relations_read_by(node):
+                names.add(rel)
+    return tuple(names)
+
+
 def _relnames(b: _Branch):
-    """Relation names that are 'live' on this branch (have edges or box obligations)."""
-    names = set(b.rels)
+    """Relation names that are 'live' on this branch (have edges or box obligations),
+    in the order they first appeared (a ``set`` of names would follow the hash seed)."""
+    names = _OrderedSet()
+    for rel in b.rels:
+        names.add(rel)
     for (_w, rel, _body) in b.boxes:
         names.add(rel)
     return names
 
 
 def _frame_close(b: _Branch, ctx: _Ctx) -> bool:
-    """Apply reflexive/symmetric/transitive/euclidean edge rules; return True if changed."""
+    """Apply reflexive/symmetric/transitive/euclidean edge rules; return True if changed.
+
+    The closure of a large edge set takes many times the work of one search step, so it
+    reads the clock itself (:meth:`_Ctx.poll`) once per edge it takes up and gives the
+    whole search up at the deadline.
+    """
     changed = False
     worlds = list(b.tv)
     for rel in list(_relnames(b)):
@@ -540,11 +719,13 @@ def _frame_close(b: _Branch, ctx: _Ctx) -> bool:
         edges = b.rels.setdefault(rel, set())
         if "refl" in conds:
             for w in worlds:
+                ctx.poll()
                 if (w, w) not in edges:
                     edges.add((w, w))
                     changed = True
         if "sym" in conds:
             for (w, v) in list(edges):
+                ctx.poll()
                 if (v, w) not in edges:
                     edges.add((v, w))
                     changed = True
@@ -554,6 +735,7 @@ def _frame_close(b: _Branch, ctx: _Ctx) -> bool:
                 out.setdefault(w, []).append(v)
             for w, succs in out.items():
                 for v in succs:
+                    ctx.poll()
                     for u in succs:
                         if (v, u) not in edges:
                             edges.add((v, u))
@@ -563,6 +745,7 @@ def _frame_close(b: _Branch, ctx: _Ctx) -> bool:
             while added:
                 added = False
                 for (w, v) in list(edges):
+                    ctx.poll()
                     for (v2, u) in list(edges):
                         if v == v2 and (w, u) not in edges:
                             edges.add((w, u))
@@ -571,10 +754,15 @@ def _frame_close(b: _Branch, ctx: _Ctx) -> bool:
     return changed
 
 
-def _apply_boxes(b: _Branch) -> bool:
-    """Push every box obligation to its successors; return True if anything was new."""
+def _apply_boxes(b: _Branch, ctx: Optional[_Ctx] = None) -> bool:
+    """Push every box obligation to its successors; return True if anything was new.
+
+    With a ``ctx`` the clock is read once per obligation (see :meth:`_Ctx.poll`).
+    """
     changed = False
     for (w, rel, body) in list(b.boxes):
+        if ctx is not None:
+            ctx.poll()
         for (a, v) in b.rels.get(rel, ()):
             if a == w and _assert(b, v, body):
                 changed = True
@@ -657,7 +845,7 @@ def _blocked(b: _Branch, w: int, relname: str, ctx: _Ctx) -> bool:
     """
     if "trans" not in ctx.conds(relname):
         return False
-    sw = b.tv.get(w, set())
+    sw = b.tv.get(w, _OrderedSet())
     for u in b.tv:
         if u < w and sw <= b.tv[u]:
             return True
@@ -674,13 +862,114 @@ def _find_seriality(b: _Branch, ctx: _Ctx):
     return None
 
 
-def _build_model(b: _Branch) -> KripkeModel:
-    """Read an open saturated branch off as a Kripke model."""
+def _build_model(b: _Branch, ctx: _Ctx) -> KripkeModel:
+    """Read an open saturated branch off as a Kripke model of the frame class of ``ctx``.
+
+    The valuation is the atoms of each world. A serial relation also needs a successor for a
+    world that has none, and the search only gave one to a world with a box obligation, so
+    every other dead end of such a relation sees itself here: the self-loop adds no obligation
+    (the world has no box of that relation to satisfy) and keeps a transitive, symmetric or
+    euclidean relation closed (a world with no successor has no path through it, and a
+    euclidean relation with an edge into the world has the loop already).
+
+    A relation the formulas read but the branch never used (its operator sits in a disjunct
+    the branch does not take) has no edge on the branch, and an absent relation is the empty
+    relation, which is neither reflexive nor serial. It is completed the same way: when its
+    system asks for reflexivity or seriality every world sees itself. Nothing the branch
+    asserts reads that relation (an assertion of one of its operators would have made it
+    live), so the loops cannot change what the branch makes true; a transitive, symmetric
+    or euclidean relation that has only loops is still all three. A relation whose system
+    asks for none of reflexivity and seriality stays empty, which is all of them vacuously.
+
+    The caller checks the result against the formula and the frame (see :func:`_fits_frame`
+    and :func:`modal_countermodel`), which is what keeps the one construct a loop can change
+    (a distributed-knowledge box over relations that are all dead ends at the world) honest.
+    """
     valuation = {}
+    always = {fact.to_unicode_str() for fact in b.facts}
     for w, s in b.tv.items():
-        valuation[w] = {f.to_unicode_str() for f in s if isinstance(f, Atom)}
+        valuation[w] = {f.to_unicode_str() for f in s
+                        if isinstance(f, Atom) and not is_truth_constant(f)} | always
     relations = {r: set(e) for r, e in b.rels.items()}
-    return KripkeModel(set(b.tv) | {0}, relations, valuation)
+    worlds = set(b.tv) | {0}
+    completed = _OrderedSet()
+    for rel in _relnames(b):
+        completed.add(rel)
+    for rel in ctx.mentioned:
+        completed.add(rel)
+    for rel in completed:
+        conds = ctx.conds(rel)
+        if "refl" in conds or "serial" in conds:
+            edges = relations.setdefault(rel, set())
+            if "refl" in conds:
+                edges.update((w, w) for w in worlds)
+            seeing = {a for (a, _v) in edges}
+            edges.update((w, w) for w in worlds if w not in seeing)
+    return KripkeModel(worlds, relations, valuation)
+
+
+def _frame_condition_holds(condition: str, edges, worlds) -> bool:
+    """Whether the finite frame ``(worlds, edges)`` satisfies one of the conditions this tableau has rules for.
+
+    The five conditions of :data:`_TABLEAU_CONDITIONS`, read straight off their definitions in
+    :data:`~unicode_fol_kit.fol.frames.FRAME_CONDITIONS` in time linear in the edges and their
+    out-degrees. (:func:`~unicode_fol_kit.fol.frames.holds_on_finite_frame` answers the same
+    question for every condition of the registry, but its cost grows with about the fourth power
+    of the number of worlds: 26 ms for a transitive chain of 40 worlds against under 1 ms here,
+    and a tableau may return a model of several hundred worlds. The tests hold this check to
+    the registry's on every frame of up to three worlds.)
+    """
+    successors: dict = {}
+    for (a, v) in edges:
+        successors.setdefault(a, set()).add(v)
+    if condition == "refl":
+        return all(w in successors.get(w, ()) for w in worlds)
+    if condition == "serial":
+        return all(w in successors for w in worlds)
+    if condition == "sym":
+        return all(a in successors.get(v, ()) for (a, v) in edges)
+    if condition == "trans":
+        return all(u in successors[a] for (a, v) in edges for u in successors.get(v, ()))
+    if condition == "eucl":
+        return all(u in successors.get(v, ()) for succs in successors.values()
+                   for v in succs for u in succs)
+    raise ValueError(f"modal_tableau: no check for the frame condition {condition!r}")
+
+
+def _fits_frame(model: KripkeModel, ctx: _Ctx) -> bool:
+    """True iff every relation of ``model`` and every relation the formulas read satisfies
+    the frame conditions of its system.
+
+    A relation the formulas read that the model does not list is the empty relation (the
+    model's own reading of a missing name), and it is checked as such: a check over the
+    listed relations alone passes a model with no entry for a reflexive or serial relation.
+    """
+    names = list(model.relations)
+    names.extend(rel for rel in ctx.mentioned if rel not in model.relations)
+    for rel in names:
+        edges = model.relations.get(rel, ())
+        for condition in ctx.conds(rel):
+            if not _frame_condition_holds(condition, edges, model.worlds):
+                return False
+    return True
+
+
+def _makes_roots_true(model: KripkeModel, ctx: _Ctx) -> bool:
+    """False iff ``model``, read as it is, makes one of the root formulas false at world 0.
+
+    A branch can be open with a formula on it that this tableau has no rule for (a negated
+    distributed-knowledge formula, a temporal closure operator): the formula stays on the
+    branch and the model read off it need not make it true. Whether it does is not something
+    the branch can tell, so the evaluator of the kit is asked. A formula the evaluator cannot
+    read in this model is left to the caller, which makes the same check and says so.
+    """
+    for f in ctx.roots:
+        try:
+            if not satisfies_modal(f, model, 0):
+                return False
+        except (NotImplementedError, ValueError, TypeError, KeyError, RecursionError):
+            return True
+    return True
 
 
 def _solve(b: _Branch, ctx: _Ctx):
@@ -706,7 +995,7 @@ def _solve(b: _Branch, ctx: _Ctx):
                 progressed = True
             if _close_distributed(b):
                 progressed = True
-            if _apply_boxes(b):
+            if _apply_boxes(b, ctx):
                 progressed = True
             if _closes(b):
                 return ("closed", None)
@@ -739,7 +1028,7 @@ def _solve(b: _Branch, ctx: _Ctx):
                 return ("unknown", None)
             v = b.wcount
             b.wcount += 1
-            b.tv.setdefault(v, set())
+            b.tv.setdefault(v, _OrderedSet())
             b.rels.setdefault(relname, set()).add((w, v))
             _assert(b, v, body)
             continue
@@ -752,12 +1041,40 @@ def _solve(b: _Branch, ctx: _Ctx):
                 return ("unknown", None)
             v = b.wcount
             b.wcount += 1
-            b.tv.setdefault(v, set())
+            b.tv.setdefault(v, _OrderedSet())
             b.rels.setdefault(relname, set()).add((w, v))
             continue
 
-        # 5) saturated and open
-        return ("open", _build_model(b))
+        # 5) saturated and open: the model that is read off must be one of the frame class and
+        # must make the root formulas true. A branch whose model is not is "unknown" and the
+        # search goes on with the branches that are left, as it does for any other bound.
+        model = _build_model(b, ctx)
+        if _fits_frame(model, ctx) and _makes_roots_true(model, ctx):
+            return ("open", model)
+        return ("unknown", None)
+
+
+#: How this route reads an atom — the clause :func:`_reject_equality` hands the shared
+#: refusal so the message says why identity cannot be read here.
+_EQUALITY_ROUTE = "the propositional modal tableau"
+_EQUALITY_ATOM_READING = ("an atom is a propositional letter: a branch closes on a "
+                          "syntactic complement and an open branch is read off as "
+                          "a valuation of rendered atom keys")
+
+
+def _reject_equality(formulas) -> None:
+    """Refuse an equality / disequality atom ANYWHERE in ``formulas``, by name.
+
+    A whole-tree scan of every formula, run by :func:`_run` before anything else
+    touches them (see the module docstring's "Equality is NOT interpreted here").
+    It walks the formulas exactly as the caller wrote them — announcement operators
+    and all, ahead of :func:`~unicode_fol_kit.fol.pal.reduce_announcements` — so an
+    atom inside an announcement or inside a quantifier this tableau would treat as an
+    opaque literal is refused too, not only one in the propositional skeleton.
+    """
+    for f in formulas:
+        reject_equality_in(f, "modal_tableau", _EQUALITY_ROUTE,
+                           atom_reading=_EQUALITY_ATOM_READING)
 
 
 #: The cross-family bridge names the HOL / qml routes accept. Listed here only so
@@ -823,32 +1140,8 @@ def _check_one_frame(frame: str, what: str = "") -> None:
              "their finite frame characterisation.")
 
 
-def _run(formulas, frame: str, systems, max_worlds: int, max_steps: int,
-         bridges=None):
-    """Build the root branch from ``formulas`` at world 0 and search it.
-
-    ``formulas`` is first run through :func:`~unicode_fol_kit.fol.pal.reduce_announcements`
-    (a no-op on a formula with no Announce/AnnounceDiamond node), so every public
-    entry point of this module DECIDES public-announcement formulas — no
-    modal-tableau rule for Announce/AnnounceDiamond exists or is needed, since the
-    reduction eliminates them into the ordinary modal fragment this tableau
-    already handles, BEFORE tableau search ever begins. A temporal operator (or
-    Would/Might/Nominal/At/a quantifier) found INSIDE an announcement's scope
-    still raises — that is pal.reduce_announcements's own clean, precise
-    NotImplementedError (unsound/undefined relativization, not this module's
-    concern), propagated unchanged; see that module's docstring for why each
-    case is rejected.
-
-    Hybrid constructs are rejected up front — a nominal names ONE world, a
-    constraint this labelled tableau has no rule for, and treating it as an
-    ordinary atom would produce wrong verdicts (e.g. it would refute ``@i i``).
-    A ``bridges=`` request is rejected here for the same reason (see
-    :func:`_check_bridges`). Every public entry point funnels through here, so both
-    guards cover them all.
-    """
-    formulas = [reduce_announcements(f) for f in formulas]
-    _check_frame(frame, systems)
-    _check_bridges(bridges)
+def _refuse_unsupported_constructs(formulas) -> None:
+    """Refuse, by name, a ↓ binder, a nominal / ``@`` or a counterfactual anywhere in ``formulas``."""
     for f in formulas:
         if _contains_down(f):
             # Checked BEFORE the general hybrid-constructs guard below so a
@@ -877,16 +1170,90 @@ def _run(formulas, frame: str, systems, max_worlds: int, max_steps: int,
                 "relation, so this tableau cannot decide them. Use cf_valid / "
                 "cf_countermodel (bounded sphere-model search), cf_satisfies "
                 "over a CounterfactualModel, or isabelle_decide_counterfactual.")
-    ctx = _Ctx(frame, systems, max_worlds, max_steps)
-    root = _Branch()
-    for f in formulas:
-        _assert(root, 0, f)
-    return _solve(root, ctx)
+
+
+def _run(formulas, frame: str, systems, max_worlds: int, max_steps: int,
+         bridges=None, timeout: Optional[int] = None, causes: Optional[List[str]] = None):
+    """Build the root branch from ``formulas`` at world 0 and search it.
+
+    ``timeout`` (milliseconds, default none) is one more bound next to ``max_worlds`` and
+    ``max_steps``, checked at every step of the search and inside the frame closure and the
+    box rule, which can outlast a step on a large edge set; so is Python's recursion limit
+    (the search recurses once per branching formula along a branch, and every walk over a
+    formula, before and during the search, once per level of its nesting). Past either bound
+    the answer is ``("unknown", None)``, never an exception: also for a formula nested too
+    deeply for those walks, whose guards below then cannot be run to their end.
+
+    ``formulas`` is first run through :func:`~unicode_fol_kit.fol.pal.reduce_announcements`
+    (a no-op on a formula with no Announce/AnnounceDiamond node), so every public
+    entry point of this module DECIDES public-announcement formulas — no
+    modal-tableau rule for Announce/AnnounceDiamond exists or is needed, since the
+    reduction eliminates them into the ordinary modal fragment this tableau
+    already handles, BEFORE tableau search ever begins. A temporal operator (or
+    Would/Might/Nominal/At/a quantifier) found INSIDE an announcement's scope
+    still raises — that is pal.reduce_announcements's own clean, precise
+    NotImplementedError (unsound/undefined relativization, not this module's
+    concern), propagated unchanged; see that module's docstring for why each
+    case is rejected.
+
+    Hybrid constructs are rejected up front — a nominal names ONE world, a
+    constraint this labelled tableau has no rule for, and treating it as an
+    ordinary atom would produce wrong verdicts (e.g. it would refute ``@i i``).
+    A ``bridges=`` request is rejected here for the same reason (see
+    :func:`_check_bridges`), and so is an equality / disequality atom anywhere in
+    ``formulas`` (see :func:`_reject_equality` — scanned FIRST, over the formulas as
+    given, so no later guard or search can answer before it has looked). Every
+    public entry point funnels through here, so all three guards cover them all.
+    """
+    formulas = list(formulas)
+    # Every walk below is recursive, so a formula nested deeper than the interpreter's stack
+    # allows ends one of them in a ``RecursionError``: the answer is then "unknown" (the
+    # formula was not read to its end, so nothing may be said about it). The arguments that
+    # do not depend on the formulas are still checked first, so a wrong ``frame`` is refused
+    # whatever the depth.
+    too_deep = False
+    try:
+        _reject_equality(formulas)
+        formulas = [reduce_announcements(f) for f in formulas]
+    except RecursionError:
+        too_deep = True
+    _check_frame(frame, systems)
+    _check_bridges(bridges)
+    if too_deep:
+        if causes is not None:
+            causes.append("nesting")
+        return ("unknown", None)
+    try:
+        _refuse_unsupported_constructs(formulas)
+        # The operators of an agent are filed under the relation named after the agent: two
+        # different agent terms of one name (the numeral 1 and the constant '1') would be one
+        # agent, and a branch could close for a formula about two.
+        refuse_alike_agents(formulas, "modal_tableau")
+        # A sorted constant ``c:S`` is the constant ``c`` and is an element of ``S`` at every
+        # world (``semantics.kripke``'s module docstring): ``Mortal(c:S)`` and ``Mortal(c)``
+        # are ONE letter, and ``S(c)`` is a letter true everywhere -- a branch with its
+        # negation at any world is closed, and a model read off an open branch makes it
+        # true at every world, so the countermodel is one the many-sorted reading allows.
+        membership: List[Node] = []
+        formulas = [_forget_constant_sorts(f, membership) for f in formulas]
+        ctx = _Ctx(frame, systems, max_worlds, max_steps, timeout,
+                   mentioned=_mentioned_relations(formulas), roots=formulas)
+        root = _Branch()
+        root.facts = frozenset(membership)
+        for f in formulas:
+            _assert(root, 0, f)
+        return _solve(root, ctx)
+    except RecursionError:
+        if causes is not None:
+            causes.append("nesting")
+        return ("unknown", None)
+    except DeadlineReached:
+        return ("unknown", None)
 
 
 def modal_tableau_closed(formulas, frame: str = "K", systems=None,
                          max_worlds: int = 400, max_steps: int = 200000,
-                         bridges=None) -> bool:
+                         bridges=None, timeout: Optional[int] = None) -> bool:
     """Return True iff ``formulas`` are jointly unsatisfiable at a world (the tableau closes).
 
     Interprets the list as a set of formulas true at the same (root) world under the
@@ -897,89 +1264,118 @@ def modal_tableau_closed(formulas, frame: str = "K", systems=None,
 
     ``bridges`` exists only to be REFUSED: any non-empty request raises
     ``NotImplementedError`` pointing at the routes that implement cross-family
-    bridges (see :func:`_check_bridges`).
+    bridges (see :func:`_check_bridges`). An ``=`` / ``≠`` atom anywhere in the formula raises ``NotImplementedError`` (see the
+    module docstring's "Equality is NOT interpreted here").
     """
-    res, _ = _run(formulas, frame, systems, max_worlds, max_steps, bridges)
+    res, _ = _run(formulas, frame, systems, max_worlds, max_steps, bridges, timeout)
     return res == "closed"
 
 
 def is_modal_valid(formula: Node, frame: str = "K", systems=None,
                    max_worlds: int = 400, max_steps: int = 200000,
-                   bridges=None) -> bool:
+                   bridges=None, timeout: Optional[int] = None) -> bool:
     """Return True iff ``formula`` is modally valid over ``frame`` — ``¬formula`` closes.
 
     Sound: only the closed tableau yields True. An open or bound-exhausted search
     yields False (the formula is then invalid-or-unknown; :func:`modal_decide`
     distinguishes the two with a verified counter-model). A non-empty ``bridges``
-    raises ``NotImplementedError`` (see :func:`_check_bridges`).
+    raises ``NotImplementedError`` (see :func:`_check_bridges`). An ``=`` / ``≠`` atom anywhere in the formula raises ``NotImplementedError`` (see the
+    module docstring's "Equality is NOT interpreted here").
     """
-    res, _ = _run([Not(formula)], frame, systems, max_worlds, max_steps, bridges)
+    res, _ = _run([Not(formula)], frame, systems, max_worlds, max_steps, bridges, timeout)
     return res == "closed"
 
 
 def modal_prove(premises, conclusion: Node, frame: str = "K", systems=None,
                 max_worlds: int = 400, max_steps: int = 200000,
-                bridges=None) -> bool:
+                bridges=None, timeout: Optional[int] = None) -> bool:
     """Return True iff ``premises`` locally entail ``conclusion`` over ``frame``.
 
     Local consequence: the tableau for ``premises ∪ {¬conclusion}`` at one world
     closes. Sound (a True is a closed tableau); incomplete only up to the bound.
     A non-empty ``bridges`` raises ``NotImplementedError``
-    (see :func:`_check_bridges`).
+    (see :func:`_check_bridges`). An ``=`` / ``≠`` atom anywhere in the formula raises ``NotImplementedError`` (see the
+    module docstring's "Equality is NOT interpreted here").
     """
     res, _ = _run(list(premises) + [Not(conclusion)], frame, systems,
-                  max_worlds, max_steps, bridges)
+                  max_worlds, max_steps, bridges, timeout)
     return res == "closed"
 
 
 def modal_countermodel(formula: Node, frame: str = "K", systems=None,
                        max_worlds: int = 400, max_steps: int = 200000,
-                       bridges=None):
+                       bridges=None, timeout: Optional[int] = None):
     """Return a Kripke model falsifying ``formula`` over ``frame``, or None.
 
     None means the formula is valid (the tableau closed) **or** the search was
-    inconclusive within the bound. The returned model is *verified*: it is only
+    inconclusive within the bound. The returned model is *verified* twice: it is only
     handed back when :func:`satisfies_modal` confirms the formula is false at its
-    root world, so a counter-model is never spurious. A non-empty ``bridges``
-    raises ``NotImplementedError`` (see :func:`_check_bridges`).
+    root world, and when every relation of it and every relation the formula reads satisfies
+    the frame conditions of its system (a serial relation gives each of its dead ends a
+    successor, itself, and a relation the formula reads that the search never used gets the
+    loops its system asks for; see the module docstring), so a counter-model is never
+    spurious and never a structure of another frame class. A relation the formula does not
+    read is not part of the model. A non-empty ``bridges``
+    raises ``NotImplementedError`` (see :func:`_check_bridges`). An ``=`` / ``≠`` atom anywhere in the formula raises ``NotImplementedError`` (see the
+    module docstring's "Equality is NOT interpreted here").
     """
-    res, model = _run([Not(formula)], frame, systems, max_worlds, max_steps, bridges)
+    res, model = _run([Not(formula)], frame, systems, max_worlds, max_steps, bridges, timeout)
     if res != "open" or model is None:
         return None
     try:
         refuted = not satisfies_modal(formula, model, 0)
-    except (NotImplementedError, ValueError, TypeError, KeyError):
+    except (NotImplementedError, ValueError, TypeError, KeyError, RecursionError):
         # The verifier cannot evaluate the formula in this model (e.g. an opaque
-        # quantified construct with no domain information) — the candidate is
-        # unverifiable, so it must not be handed back as a counter-model.
+        # quantified construct with no domain information, or a formula nested deeper
+        # than the evaluator can walk) — the candidate is unverifiable, so it must not
+        # be handed back as a counter-model.
         refuted = False
     return model if refuted else None
 
 
 def modal_decide(formula: Node, frame: str = "K", systems=None,
                  max_worlds: int = 400, max_steps: int = 200000,
-                 bridges=None) -> str:
+                 bridges=None, timeout: Optional[int] = None) -> str:
     """Decide ``formula`` over ``frame``: ``"valid"`` / ``"invalid"`` / ``"unknown"``.
 
     * ``"valid"``   — the tableau for ``¬formula`` closed (a sound proof).
     * ``"invalid"`` — an open branch yielded a counter-model **verified** by
-      :func:`satisfies_modal`.
-    * ``"unknown"`` — the search hit the world/step bound, or an open branch's
+      :func:`satisfies_modal` and a model of the frame (see :func:`modal_countermodel`).
+    * ``"unknown"`` — the search hit the world/step bound or the deadline, the formula
+      is nested too deeply for the recursive walks, or an open branch's
       model failed verification (so neither verdict is safe to assert).
 
     Mirrors the valid / invalid / unknown contract of the local-Isabelle runner
     (:func:`~unicode_fol_kit.hol.isabelle_runner.isabelle_decide_modal`), but runs
     fully in-process with no external prover. A non-empty ``bridges`` raises
     ``NotImplementedError`` rather than silently deciding the bridge-free logic
-    (see :func:`_check_bridges`).
+    (see :func:`_check_bridges`). An ``=`` / ``≠`` atom anywhere in the formula raises ``NotImplementedError`` (see the
+    module docstring's "Equality is NOT interpreted here").
     """
-    res, model = _run([Not(formula)], frame, systems, max_worlds, max_steps, bridges)
+    return _decide_explained(formula, frame, systems, max_worlds, max_steps, bridges, timeout)[0]
+
+
+def _decide_explained(formula: Node, frame: str = "K", systems=None,
+                      max_worlds: int = 400, max_steps: int = 200000,
+                      bridges=None, timeout: Optional[int] = None) -> Tuple[str, bool]:
+    """:func:`modal_decide`'s answer, and whether the recursion limit ended one of its walks.
+
+    The second component is true only next to ``"unknown"``: the formula was not read to its
+    end (or its candidate countermodel could not be checked to its end) because a walk over
+    it recursed deeper than the interpreter allows. A caller that reports the answer can then
+    name the bound that was hit instead of guessing between it and the search budget.
+    """
+    causes: List[str] = []
+    res, model = _run([Not(formula)], frame, systems, max_worlds, max_steps, bridges, timeout,
+                      causes=causes)
     if res == "closed":
-        return "valid"
+        return "valid", False
     if res == "open" and model is not None:
         try:
             if not satisfies_modal(formula, model, 0):
-                return "invalid"
+                return "invalid", False
+        except RecursionError:
+            causes.append("nesting")  # unverifiable candidate → honest "unknown"
         except (NotImplementedError, ValueError, TypeError, KeyError):
             pass                      # unverifiable candidate → honest "unknown"
-    return "unknown"
+    return "unknown", bool(causes)

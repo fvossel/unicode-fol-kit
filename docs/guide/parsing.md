@@ -23,13 +23,13 @@ MSFLParser(lambek=True)                      # Lambek calculus (• \ /)
 | `many_sorted` | `fuzzy` | Mode | Quantifiers | Constants | Connectives |
 |---|---|---|---|---|---|
 | `False` | `False` | **FOL** | unsorted `∀x` | unsorted | classical ∧ ∨ ⊕ ¬ → ↔ |
-| `True` | `False` | **MSFOL** | sorted `∀x:Sort` | sorted `alice:Sort` | classical ∧ ∨ ¬ → ↔ |
+| `True` | `False` | **MSFOL** | sorted `∀x:Sort` | sorted `alice:Sort` | classical ∧ ∨ ⊕ ¬ → ↔ |
 | `True` | `True` | **MSFL** | sorted `∀x:Sort` | sorted `alice:Sort` | weak ∧ ∨, strong ⊗ ⊕, Łuk ¬ → ↔ |
 | `False` | `True` | **FL** | unsorted `∀x` | unsorted | weak ∧ ∨, strong ⊗ ⊕, Łuk ¬ → ↔ |
 
 The modal and second-order extension modes are FOL plus their own operators, over unsorted quantifiers/constants by default or SORTED ones with `many_sorted=True`; the remaining three are standalone fragments with their own connective sets:
 
-- **modal** (`modal=True`, optionally `many_sorted=True`) — adds `□ ◇` (alethic), `K_a B_a Say_a Want_a` (epistemic/doxastic/assertive/bouletic), `Ⓖ Ⓕ Ⓝ Ⓤ ⒣ ⒫ ⒴ ⒮` (temporal, future and past), `Ⓞ Ⓟ` (deontic), nominals and `@i` (hybrid), the counterfactuals `□→ ◇→`, and the public announcements `[φ!]ψ / ⟨φ!⟩ψ`. The agent of `K_a`/`B_a` is a first-class term, so a bound `K_x` quantifies over agents (sorted or not). With `many_sorted=True`, every `∀x`/`∃x` — including one nested under a modal operator, e.g. `□∀x:Human (Mortal(x))` — needs a `:Sort` annotation, exactly as in plain MSFOL; see {doc}`modal`'s "Many-sorted modal logic" section for the semantics (sorts are world-relative, not rigid, and non-emptiness is a per-route choice — assumed by `qml_is_valid`/the HOL exporters, not by the bare Kripke evaluator).
+- **modal** (`modal=True`, optionally `many_sorted=True`) — adds `□ ◇` (alethic), `K_a B_a Say_a Want_a` (epistemic/doxastic/assertive/bouletic), `Ⓖ Ⓕ Ⓝ Ⓤ ⒣ ⒫ ⒴ ⒮` (temporal, future and past), `Ⓞ Ⓟ` (deontic), nominals and `@i` (hybrid), the counterfactuals `□→ ◇→`, and the public announcements `[φ!]ψ / ⟨φ!⟩ψ`. The agent of `K_a`/`B_a` is a first-class term, so a bound `K_x` quantifies over agents (sorted or not). With `many_sorted=True`, every `∀x`/`∃x` — including one nested under a modal operator, e.g. `□∀x:Human (Mortal(x))` — needs a `:Sort` annotation, exactly as in plain MSFOL; see {doc}`modal`'s "Many-sorted modal logic" section for the semantics (a sort's guard is world-relative, not rigid, while a sorted constant is a rigid designator whose membership in its sort holds at every world; non-emptiness and that membership are assumed by `qml_is_valid`/the HOL exporters, not by the bare Kripke evaluator, which reads the model it is given).
 - **second-order** (`second_order=True`, optionally `many_sorted=True`) — adds `∀P / ∃P` over predicate variables (arity inferred from use). The predicate quantifier itself stays unsorted; `many_sorted=True` sorts only the individual `∀x`/`∃x` binders and bare constants.
 - **dependence** (`dependence=True`) — the team-semantic fragment `¬ ∧ ∨ ∀ ∃` with dependence atoms `=(x, y)` and slashed existentials `∃x/{y}`.
 - **linear** (`linear=True`) — intuitionistic linear logic `⊗ ⊸ & ⊕ !` with the units `𝟙 ⊤ 𝟘`.
@@ -86,7 +86,7 @@ parser.parse("P(c_7)")        # → Atom(predicate='P', args=(Constant(name='c_7
 parser.parse("P(c_alice)")    # → Atom(predicate='P', args=(Constant(name='c_alice'),))
 ```
 
-Because a single term-valued letter is always a *variable*, a function symbol must be a multi-character `NAME`; `f(x)` is a parse error (`f` is a variable, which cannot be applied), whereas `father(x)` is a `Function`:
+A single term-valued letter standing alone is a *variable*, but followed by an argument list it is a function symbol, like a multi-character `NAME`: `father(x)` and `f(x)` are both a `Function`:
 
 ```python
 parser = MSFLParser()
@@ -94,6 +94,9 @@ parser.parse("father(x) = bob")
 # → Atom(predicate='=',
 #        args=(Function(name='father', args=(Variable(name='x'),)),
 #              Constant(name='bob')))
+
+parser.parse("P(f(x))")
+# → Atom(predicate='P', args=(Function(name='f', args=(Variable(name='x'),)),))
 ```
 
 ### Non-ASCII letters, underscores, and digit-leading names
@@ -125,7 +128,7 @@ atom by itself:
 
 ```python
 parser.parse("P(中文)")   # → Atom(predicate='P', args=(Constant(name='中文'),))
-parser.parse("中文(x)")   # → ParsingError — 中文(x) parses as a term (a Function), and a
+parser.parse("中文(x)")   # raises ParsingError — 中文(x) parses as a term (a Function), and a
                           #   bare term is not a complete formula; a caseless-script
                           #   identifier can never head an atom on its own
 ```
@@ -137,8 +140,9 @@ number and never a predicate: `NUMBER` itself is unchanged (`2008` and
 `2.5` still lex as plain numbers), and nothing lets an atom's head start
 with a digit. Underscore is a continuation character only — never legal as
 the first character of any identifier (`_foo` is a `NamingError`) — and it
-widens `NAME`/`CONSTANT`/`VARIABLE` but deliberately **not** `PREDICATE`:
-`Family_History(x)` is still rejected, exactly as `Foo_bar(x)` always was.
+is legal inside `NAME`, `PREDICATE` and the sort annotation, so
+`Family_History(x)` is an atom and `a_b:Has_bond` a sorted constant; a
+`VARIABLE` and the tail of a `c_` constant take no underscore.
 
 Greek letters are excluded from every one of these widened classes,
 because they are already spoken for: `λ` opens a lambda term (see "Lambda
@@ -193,6 +197,27 @@ parser.parse("x + y * 2 < z")
 #                       args=(Variable(name='x'),
 #                             Function(name='*', args=(Variable(name='y'), Number(value=2))))),
 #              Variable(name='z')))
+```
+
+A numeral has one spelling per value: a float with a whole value is stored as the integer it equals, so `1`, `1.0`, `01` and `1.00` all parse to `Number(value=1)` and `-0.0` to `Number(value=0)`, while `2.5` stays `Number(value=2.5)`. Two numerals are equal exactly when their values are, and they print alike in every syntax.
+
+A decimal text is read exactly or refused, in every reader of the kit (this one, LaTeX, TPTP, QMLTP, Prolog, Prover9, Twee, an SMT-LIB numeral, the `real(...)` of an ACE DRS and an OWL `xsd:decimal`). A text with no point is the integer. A text with a point and an all-zero fraction is the integer of its whole part: `100000000000000000000000.0` is `10**23`, where the nearest float would be `99999999999999991611392`. Any other decimal is the float it spells when it has at most 15 significant digits (the sign, the leading zeros and the trailing zeros of the fraction do not count, so `0.1` and `0.10` are one numeral), and is refused by name when it has more, because two different decimals of 16 or more digits can be one float (`0.30000000000000004` and `0.30000000000000005` are) and a numeral is identified by its value. A decimal nearer to zero than `2.2250738585072014e-308` is refused too. The text the kit prints for a float of 16 or 17 digits is therefore refused when read back, except as the name of a Z3 or SMT-LIB symbol, which is read by its exact text (see {doc}`transforms`). `1e3` is no numeral in any reader: this one and the LaTeX reader read it as a constant of that name, and the TPTP, QMLTP, Prolog, Prover9, Twee and OWL readers refuse it.
+
+```python
+parser.parse("P(1.0)") == parser.parse("P(01)") == parser.parse("P(1)")   # → True
+parser.parse("P(-0.0)")    # → Atom(predicate='P', args=(Number(value=0),))
+parser.parse("P(2.5)")     # → Atom(predicate='P', args=(Number(value=2.5),))
+parser.parse("P(1.00)").to_tptp()   # → 'p(1)'
+parser.parse("P(0.10)") == parser.parse("P(0.1)")   # → True
+parser.parse("P(100000000000000000000000.0)")   # → Atom(predicate='P', args=(Number(value=100000000000000000000000),))
+parser.parse("P(1e3)")     # → Atom(predicate='P', args=(Constant(name='1e3'),))
+
+from unicode_fol_kit import ParsingError
+try:
+    parser.parse("P(0.30000000000000004)")    # raises
+except ParsingError as e:
+    print(str(e)[:55])
+# → SYNTAX_ERROR: the numeral 0.30000000000000004 has 17 si
 ```
 
 ### Tight quantifier scope
@@ -265,6 +290,18 @@ to_fol(m.parse("Mortal(socrates:Human)"), include_sort_facts=True)
 # → And(left=Atom(predicate='Human', args=(Constant(name='socrates'),)),
 #       right=Atom(predicate='Mortal', args=(Constant(name='socrates'),)))
 ```
+
+The conjunct form is right for a formula that is asserted and wrong for a goal: `Human(socrates) ∧ φ` cannot be proved from nothing, even when φ is a tautology. For a goal the facts go in as premises. `sort_axioms(...)` returns the membership atoms together with one non-emptiness statement per sort (`to_fol` itself never states non-emptiness):
+
+```python
+from unicode_fol_kit import api, sort_axioms
+
+phi = m.parse("Mortal(socrates:Human) → Mortal(socrates:Human)")
+api.prove(to_fol(phi, include_sort_facts=True)).status   # → 'refuted'
+api.prove(to_fol(phi), list(sort_axioms(phi))).status    # → 'proved'
+```
+
+The higher-order exporters `to_thf_msfol`, `to_isabelle_msfol` and `to_lean_msfol` do the same for a conjecture: membership and non-emptiness are axioms, lemma premises or hypotheses outside the goal. The conjunct form remains only for an asserted formula (`conjecture=False` in the THF and Lean exporters).
 
 ### MSFL / FL — Łukasiewicz operators
 
@@ -371,7 +408,7 @@ issubclass(ConflictingArityError, ParsingError)   # → True
 
 ## Natural-language constructs
 
-Classical FOL mode (`many_sorted=False, fuzzy=False`) carries four extra surface forms used by natural-language → logic front-ends. They are FOL-mode only.
+Classical FOL mode (`many_sorted=False, fuzzy=False`) carries four extra surface forms used by natural-language → logic front-ends. The `modal` and `second_order` modes read them too (with `many_sorted=True` they read `Ⓒ` and the sort-annotated counting quantifier, but not `μ` or the cardinality term), and many-sorted FOL reads `Ⓒ` and `μ` as they are, with sort-annotated counting and cardinality forms (see {doc}`natural-language`); the fuzzy modes have none of them.
 
 ### Counting quantifier `∃≥n / ∃≤n / ∃=n`
 
@@ -388,12 +425,14 @@ parser.parse("∃≤3 x P(x)")    # → Count(op='le', n=Number(value=3), …)
 parser.parse("∃=1 x P(x)")    # → Count(op='eq', n=Number(value=1), …)
 ```
 
+The bound is a whole number written without a sign or a decimal point (`∃≥02` reads as 2). A sign or a fraction is a `CountBoundError`, which is a `ParsingError`: `∃=-0 x P(x)` and `∃≥2.5 x P(x)` raise it, and `∃≥+3 x P(x)` never gets that far, because the lexer refuses the `+` as a `NamingError`.
+
 It is first-order expressible; the first-order exporters lower it to the distinct-witnesses encoding on demand (the AST keeps `n` symbolic):
 
 ```python
 parser = MSFLParser()
 print(parser.parse("∃≥2 x P(x)").to_tptp())
-# → (?[X_0]: (?[X_1]: ((p(X_0) & p(X_1)) & (X_0 != X_1))))
+# → (?[X0]: (?[X1]: ((p(X0) & p(X1)) & (X0 != X1))))
 ```
 
 ### Measure term `μ(entity, dimension)`
@@ -544,6 +583,8 @@ print(MSFLParser().parse("P(x) ∧ Q(x)").to_dot())
 Every node exposes a small structural-inspection API. `walk()` yields the node and every descendant in pre-order; `subformulas()` is the same but excludes atomic terms; `atoms()` / `variables()` collect those leaf families; `count()` and `depth()` give size and height; a leaf has depth 1.
 
 ```python
+from unicode_fol_kit import Atom
+
 phi = MSFLParser().parse("∀x (Human(x) → Mortal(x))")
 
 phi.depth()                                    # → 4
@@ -567,7 +608,7 @@ phi.count(Variable)   # → 3   (one bound + two occurrences)
 
 ## Unicode round-trip
 
-`to_unicode_str()` is the inverse of parsing: it renders any node back to a Unicode formula string, and re-parsing that string in the same mode reproduces a structurally equal AST. The renderer is precedence-aware and inserts only the parentheses the grammar requires — including the no-mixing rule for same-level connectives and the tight-binding rule for quantifiers, so the reconstructed parenthesisation reflects the AST rather than the original spelling.
+`to_unicode_str()` is the inverse of parsing: it renders any node back to a Unicode formula string, and for every node that has a text form, re-parsing that string in the same mode reproduces a structurally equal AST (the exception is a float that the reader refuses, as described above, such as one of 16 or 17 significant digits: it prints, and is not read back). The renderer is precedence-aware and inserts only the parentheses the grammar requires — including the no-mixing rule for same-level connectives and the tight-binding rule for quantifiers, so the reconstructed parenthesisation reflects the AST rather than the original spelling.
 
 ```python
 parser = MSFLParser()
@@ -603,7 +644,24 @@ parser.parse("|{v : Votes(x, v)}| > |{v : Votes(y, v)}|").to_unicode_str()
 # → '|{v : Votes(x, v)}| > |{v : Votes(y, v)}|'
 ```
 
-`to_unicode_str()` is available on every node, so subformulas render too. The output targets parseable ASTs; alpha-renamed variables introduced by reduction (e.g. `x_0`) are not valid surface tokens and will not round-trip.
+A node that mixes sorted and unsorted occurrences has no text form: a sorted quantifier over an unsorted one, a constant written `carl:A` in one place and plain `carl` in another, or an unsorted quantifier around a sorted constant. A many-sorted grammar needs a sort on every binder and constant and a classical one allows none, so the printed text is refused with `NamingError` in every parser mode and is never read back as a different formula. State the sort on every occurrence, or on none, before printing.
+
+```python
+from unicode_fol_kit import And, Atom, Constant, SortedConstant, NamingError
+
+mixed = And(Atom("P", (SortedConstant("carl", "A"),)), Atom("Q", (Constant("carl"),)))
+mixed.to_unicode_str()                            # → 'P(carl:A) ∧ Q(carl)'
+for kwargs in [dict(), dict(many_sorted=True), dict(modal=True)]:
+    try:
+        MSFLParser(**kwargs).parse(mixed.to_unicode_str())    # raises
+    except NamingError:
+        print("refused")
+# → refused
+# → refused
+# → refused
+```
+
+`to_unicode_str()` is available on every node, so subformulas render too. The output targets parseable ASTs: the variables a reduction introduces (alpha-renamed binders, the witnesses of a counting expansion) are minted in the kit's own variable shape — one letter and digits, e.g. `x0` — so what `to_unicode_str()` prints for them reads back.
 
 ```python
 phi = MSFLParser().parse("∀x (Human(x) → Mortal(x))")
@@ -691,11 +749,11 @@ parser.parse("(P(x) ∧ Q(x)) ∨ R(x)")
 
 ### Which parser is behind each mode
 
-The eight non-modal modes are parsed with lark's **LALR** parser; `modal` keeps **Earley**. This is an implementation detail in the sense that it changes nothing you can observe — identical ASTs, identical accept/reject sets, identical source spans — but it is worth knowing, because it is why parsing is fast.
+The non-modal modes are parsed with lark's **LALR** parser alone; the modal modes (`modal`, also with `many_sorted=True`, and third-order modal logic) try LALR first and fall back to **Earley** when LALR refuses the input. This is an implementation detail in the sense that it changes nothing you can observe — identical ASTs, identical accept/reject sets, identical source spans — but it is worth knowing, because it is why parsing is fast.
 
 Earley exists to handle ambiguous grammars. This grammar is not ambiguous: asked for every derivation (`ambiguity="explicit"`), it produces exactly one for all 1260 parsable lines of the 1310-line FOLIO fixture. Since 0.23.2 the modes that do not need Earley no longer pay for it — measured 30× to 50× inside lark, and 200 → 6513 formulas/second end to end through `parse()` (4.99 ms → 0.154 ms per formula), median of seven runs with the garbage collector disabled.
 
-`modal` stays on Earley because eight shapes in the kit's own corpus are legal modal syntax the LALR table refuses — a bare lowercase propositional atom or a nominal standing as a whole formula, `p→(q→p)`, `@i (P ∧ ◇j)`. Narrowing the language is not a speedup.
+The modal modes keep Earley as the fallback because eight shapes in the kit's own corpus are legal modal syntax the LALR table refuses — a bare lowercase propositional atom or a nominal standing as a whole formula, `p→(q→p)`, `@i (P ∧ ◇j)`. Narrowing the language is not a speedup.
 
 The error model is unchanged by the swap. A table lexer tokenises first and refuses afterwards, where Earley's dynamic lexer refused the character, so the same bad input reaches the kit as a different lark exception; `MSFLParser` maps it back. The split turned out to be exact rather than approximate: every input Earley rejected with `UnexpectedEOF` becomes an unshiftable `$END`, and every input it rejected with `UnexpectedCharacters` becomes an unshiftable token that is not `$END`. So `NamingError` and `ParsingError` still mean what this section says they mean, and no error changed class. Of the 58 rejected inputs in the measured corpus, 26 messages are byte-identical; the 32 that changed all say `Expected:` more precisely, because LALR knows exactly which tokens could continue the formula.
 
@@ -703,7 +761,7 @@ The error model is unchanged by the swap. A table lexer tokenises first and refu
 
 A `NamingError` names the token in front of the offending character (`Invalid predicate 'Foo' — unexpected character …`), which means the failing text is tokenised a second time to find that token. Lark's own exception cannot supply it: the Earley scanner records the character and the position and nothing about what came before.
 
-That second tokenisation used to be routed through `Lark.lex()`, and on this grammar that was a trap. Formulas are parsed with `parser="earley"`, which lexes dynamically and keeps no standing lexer, so `Lark.lex()` built a fresh one on *every* call — and lark runs a terminal-collision check when it constructs one, whenever the package `interegular` merely happens to be importable. The kit's identifier terminals are generated at import from the running interpreter's Unicode tables, and comparing every pair of same-priority ones took **minutes** — not because the patterns are long (the largest, `NAME`, is 4856 characters) but because `interegular` compares them by intersecting one finite automaton per pattern, and these range over most of the Unicode letter repertoire: one failed parse measured at 185 s with `interegular` present against 13 ms without it, same kit, same lark, same Python.
+That second tokenisation used to be routed through `Lark.lex()`, and on this grammar that was a trap. Formulas were parsed with `parser="earley"`, which lexes dynamically and keeps no standing lexer, so `Lark.lex()` built a fresh one on *every* call — and lark runs a terminal-collision check when it constructs one, whenever the package `interegular` merely happens to be importable. The kit's identifier terminals are generated at import from the running interpreter's Unicode tables, and comparing every pair of same-priority ones took **minutes** — not because the patterns are long (the largest, `NAME`, is 4856 characters) but because `interegular` compares them by intersecting one finite automaton per pattern, and these range over most of the Unicode letter repertoire: one failed parse measured at 185 s with `interegular` present against 13 ms without it, same kit, same lark, same Python.
 
 Nobody installs `interegular` deliberately — it arrives as a transitive dependency of vLLM (via `outlines`), so any environment that evaluates model-generated formulas has it. And failed parses are the normal case for model output, not the exception.
 
@@ -764,6 +822,8 @@ combined `K_a`-style token in modal mode — the enclosing `Knows`/`Believes`/�
 node itself still has an exact EXTENT, only its bare agent sub-node does not:
 
 ```python
+from unicode_fol_kit import UNKNOWN
+
 modal = MSFLParser(modal=True)
 ms = modal.parse_with_spans("K_alice P(alice)")
 

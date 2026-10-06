@@ -96,6 +96,9 @@ from itertools import product
 from typing import Any, Dict, FrozenSet, Iterable, Iterator, List, Optional, Tuple
 
 from ..fol.nodes import Node, Atom, Not, And, Or, Xor, Implies, Iff, Would, Might
+from ..fol._atom_keys import AtomKeys, refuse_sorted_constant
+from ..fol._truth_constants import truth_value as _truth_value
+from ._modal_reject import reject_equality, reject_equality_in
 
 
 #: The three Lewis sphere systems :func:`cf_valid` / :func:`cf_countermodel` can
@@ -129,6 +132,45 @@ def check_centering(level: str) -> str:
             f"centering must be one of {CENTERING_LEVELS} "
             f"(Lewis V / VW / VC), got {level!r}.")
     return level
+
+
+#: The sphere semantics reads an atom as a PROPOSITION keyed by its rendered
+#: form and interprets no term, so it can give identity no meaning. Until
+#: 0.30.0 it read ``a = b`` as such a key, which made ``a = a`` come back not
+#: valid (measured) while ``a = b ∨ ¬(a = b)`` came back valid without the
+#: atom having been read as identity at all — a verdict about an unconstrained
+#: letter. The refusal is the shared one, so the evaluator and the exporters
+#: (:mod:`unicode_fol_kit.hol.isabelle_conditional`) refuse the same input with
+#: the same words.
+_EQUALITY_ROUTE = "the propositional sphere (counterfactual) semantics"
+_EQUALITY_ATOM_READING = ("an atom is a proposition keyed by its rendered "
+                          "form in a world's valuation, and no term is "
+                          "interpreted")
+_EQUALITY_INSTEAD = (
+    "Counterfactuals over identity are outside this semantics; decide identity "
+    "with unicode_fol_kit.fol.qml.qml_is_valid (rigid identity over the object "
+    "domain) on the modal fragment instead."
+)
+
+
+def _reject_equality_atom(node: Node, caller: str) -> None:
+    """:func:`._modal_reject.reject_equality` with this route's wording."""
+    reject_equality(node, caller, _EQUALITY_ROUTE,
+                    atom_reading=_EQUALITY_ATOM_READING,
+                    instead=_EQUALITY_INSTEAD)
+
+
+def _reject_equality_everywhere(formula: Node, caller: str) -> None:
+    """The whole-tree scan the search entry points run before searching.
+
+    Not left to :func:`cf_satisfies` reaching the atom: the search short-circuits
+    (``a = b ∨ ¬(a = b)`` is decided by the valuation of one key, whichever way it
+    goes), and a formula whose countermodel is found before the identity atom is
+    ever evaluated would come back with a verdict that never looked at it.
+    """
+    reject_equality_in(formula, caller, _EQUALITY_ROUTE,
+                       atom_reading=_EQUALITY_ATOM_READING,
+                       instead=_EQUALITY_INSTEAD)
 
 
 def _reject_free_variable_atom(atom: Atom) -> None:
@@ -208,7 +250,12 @@ def cf_satisfies(formula: Node, model: CounterfactualModel, world: Any) -> bool:
             ``hol.isabelle_conditional``).
     """
     if isinstance(formula, Atom):
+        constant = _truth_value(formula)
+        if constant is not None:
+            return constant         # `$true` / `$false`: the same at every world
+        _reject_equality_atom(formula, "cf_satisfies")
         _reject_free_variable_atom(formula)
+        refuse_sorted_constant(formula, "cf_satisfies")
         return formula.to_unicode_str() in model.valuation.get(world, frozenset())
     if isinstance(formula, Not):
         return not cf_satisfies(formula.formula, model, world)
@@ -279,14 +326,26 @@ def might(model: CounterfactualModel, world: Any,
 def _atom_keys(formula: Node) -> Tuple[str, ...]:
     """The distinct atom keys (``atom.to_unicode_str()``) of ``formula``, sorted.
 
-    Rejects free-variable atoms upfront (same contract as :func:`cf_satisfies`),
-    so ``cf_countermodel`` / ``cf_valid`` fail fast instead of mid-enumeration.
+    Rejects identity atoms and free-variable atoms upfront (same contract as
+    :func:`cf_satisfies`), so ``cf_countermodel`` / ``cf_valid`` fail fast instead
+    of mid-enumeration — and, for identity, instead of returning a verdict the
+    search reached without reading the atom as identity at all.
+
+    A letter is named by the text its atom prints as, so two different atoms that print
+    alike (the numeral ``1`` and a constant named ``1``) would be one letter and the
+    formula another problem: such a pair is refused by name (``NotImplementedError``),
+    and so is a sorted constant, whose sort is a fact the sphere models have no
+    statement of.
     """
+    atom_keys = AtomKeys("cf_countermodel", "refuse")
     keys = set()
     for n in formula.walk():
         if isinstance(n, Atom):
+            if _truth_value(n) is not None:
+                continue            # constants are not varied
+            _reject_equality_atom(n, "cf_countermodel")
             _reject_free_variable_atom(n)
-            keys.add(n.to_unicode_str())
+            keys.add(atom_keys.key(n))
     return tuple(sorted(keys))
 
 

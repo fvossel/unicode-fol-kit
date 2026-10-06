@@ -9,6 +9,13 @@ frame fixed to the unique discrete strict order on the natural numbers,
 "is this formula valid" — a strictly narrower, better-behaved question than
 every OTHER route in the kit that touches these same operator names.
 
+The procedure is complete without a limit, and two limits can be set. `max_atoms`
+(default 4096) caps the atoms of the closure; `timeout` (milliseconds, default none) ends
+the search at a deadline that is read while the atoms and the graph between them are built
+and in every later step. When either is reached `ltl_decide` answers `'unknown'` (`ltl_valid`
+and `ltl_tableau_closed` return `False`, `ltl_countermodel` returns `None`), never a verdict
+that was not reached.
+
 ## Why a fourth route, and how it differs from the other three
 
 `Ⓖ`/`Ⓕ`/`Ⓝ`/`Ⓤ` and their past mirrors are already familiar from {doc}`modal`
@@ -133,6 +140,30 @@ tableau's own closure/graph machinery — so it never comes back spurious:
 ltl_trace_satisfies(gf_fg, cm)   # → False, confirming the model above
 ```
 
+A sorted constant `c:S` (read by `MSFLParser(modal=True, many_sorted=True)`) is the constant
+`c` and lies in `S` at every position, a constant being a rigid designator: `Mortal(c:S)` and
+`Mortal(c)` are one letter, and `S(c)` is true at every position. The procedure adds `Always S(c)`
+to what it decides (and `Historically S(c)` in floating mode, where the position may have a
+past), and a countermodel word is released only if it is such a model. `ltl_trace_satisfies`
+reads a sorted constant the same way: `Mortal(carl:Human)` is read at the key `'Mortal(carl)'`, the
+key of every countermodel trace (it does not check that `Human(carl)` holds in the trace you give
+it). It refuses, by name, two
+different atoms that print alike (the numeral `1` and a constant named `1`, a free variable `x` and a
+constant named `x`), which one key of a trace could not tell apart:
+
+```python
+sp = MSFLParser(modal=True, many_sorted=True)
+
+ltl_valid(sp.parse("Ⓖ Human(carl:Human)"))                      # → True   carl is a Human from every position on
+ltl_valid(sp.parse("⒣ Human(carl:Human)"), mode="floating")     # → True   and at every position before
+ltl_countermodel(sp.parse("Ⓕ Mortal(carl:Human)")).to_dict()   # → {'kind': 'ltl_lasso', 'prefix': [['Human(carl)']], 'cycle': [['Human(carl)']], 'witness_position': 0}
+
+from unicode_fol_kit.atp.ltl_tableau import LTLTrace
+
+mortal_now = LTLTrace(prefix=(frozenset({"Mortal(carl)"}),), cycle=(frozenset(),))
+ltl_trace_satisfies(sp.parse("Mortal(carl:Human)"), mortal_now)   # → True   the key is 'Mortal(carl)'; 'Human(carl)' is not held, and not checked
+```
+
 ## As a ProverBackend
 
 `ltl_tableau.LtlTableauBackend` is registered under `"ltl-tableau"`, so it
@@ -147,11 +178,26 @@ backend.decide(ti).status      # → 'proved'
 backend.decide(gf_fg).status   # → 'refuted'
 ```
 
+`decide` takes the call's `timeout` (milliseconds, 10000 by default) and the options `mode` and
+`max_atoms`. A search the deadline ended answers `unknown` with reason `timeout`, including one
+that was still building the graph; one that reached `max_atoms` answers `unknown` with reason
+`bound_hit`:
+
+```python
+v = backend.decide(gf_fg, timeout=0)       # a limit that is already over
+(v.status, v.reason)                       # → ('unknown', 'timeout')
+v = backend.decide(gf_fg, max_atoms=1)     # a closure of more than one atom
+(v.status, v.reason)                       # → ('unknown', 'bound_hit')
+
+ltl_decide(ti, timeout=0)                  # → 'unknown'
+ltl_valid(ti, timeout=0)                   # → False   ti is valid, but False says only "not reached"
+```
+
 It is deliberately **not** part of `default_chain("modal")`: this backend
 answers a strictly narrower question (the standard linear frame) than the
 rest of that chain, so — like the external provers — it must be reached by
 name rather than silently joining a portfolio that assumes a shared frame
-class. `atp.modal_tableau`'s own "no tableau rule for G/F/U/…" message now
+class. `atp.modal_tableau`'s own "(G/F/U/…) have no tableau rule here" message now
 names it as the definitive route for the standard reading, alongside `qml`
 and `isabelle` for the general (possibly non-linear) frame.
 
@@ -167,10 +213,24 @@ from unicode_fol_kit import Box, Atom
 from unicode_fol_kit.atp.ltl_tableau import ltl_valid
 
 ltl_valid(Box(Atom("P", [])))
-# → NotImplementedError: ltl_tableau: no rule for Box (...) — this module
+# raises NotImplementedError: ltl_tableau: no rule for Box (...) — this module
 #   decides only the propositional temporal-closure fragment ... use
 #   atp.modal_tableau, fol.qml.qml_is_valid, or
 #   hol.isabelle_runner.isabelle_decide_modal for anything else.
+```
+
+An equality or disequality atom (`dora = dora`, `dora ≠ cleo`) is refused by name too, at every
+entry point and in `ltl_trace_satisfies`. The tableau reads an atom as a propositional letter,
+and a letter is not valid: it would call `dora = dora` refutable, with a countermodel in which
+the letter is false although identity is reflexive. The backend answers `unknown` with reason
+`unsupported`. Decide identity with `fol.qml.qml_is_valid` or another first-order route:
+
+```python
+v = backend.decide(mp.parse("dora = dora"))
+(v.status, v.reason)                          # → ('unknown', 'unsupported')
+
+ltl_valid(mp.parse("dora = dora"))
+# raises NotImplementedError: ltl_tableau: the equality atom 'dora = dora' ('=') is refused by name ...
 ```
 
 Use {doc}`modal` (`atp.modal_tableau`) for the alethic/epistemic/doxastic/

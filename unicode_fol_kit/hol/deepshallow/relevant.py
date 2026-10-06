@@ -15,7 +15,8 @@ worlds — sound and complete for **B**. ``\<leftrightarrow>`` desugars to ``(A 
 from typing import Optional
 
 from unicode_fol_kit.fol.nodes import Node, Atom, Not, And, Or, Implies, Iff, Variable
-from ._common import AtomConsts, wrap_theory, formula_section
+from unicode_fol_kit.fol._truth_constants import refuse_truth_constants
+from ._common import AtomConsts, wrap_theory, formula_section, NO_CONSTANT_WHY
 
 # --------------------------------------------------------------------------- #
 # Verified theory body (checked verbatim by the Isabelle-gated tests).
@@ -164,6 +165,7 @@ def rel_to_deep(formula: Node, atoms: AtomConsts) -> str:
     quantifiers, free variables).
     """
     if isinstance(formula, Atom):
+        refuse_truth_constants([formula], "rel_to_deep", NO_CONSTANT_WHY)
         if any(isinstance(n, Variable) for a in formula.args for n in a.walk()):
             raise NotImplementedError(
                 "rel_to_deep: atom with a free variable is first-order; the deep "

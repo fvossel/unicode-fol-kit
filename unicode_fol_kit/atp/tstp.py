@@ -59,17 +59,20 @@ either way the raw SZS string itself is never lost — it is whatever the
 caller already passed in, only the (status, reason) pair is decided here.
 """
 
+import functools
 import re
 from dataclasses import dataclass
 from typing import Dict, FrozenSet, Iterator, List, Optional, Tuple
 
 from ..fol._fol_nodes import constant_name_to_ascii, tptp_fold_first_letter
-from ..fol.nodes import Atom, Constant, Function, Node
+from ..fol._numeral_symbols import numeral_name, numerals_as_constants
+from ..fol._tptp_symbols import is_tptp_boolean_atom
+from ..fol.nodes import Atom, Constant, Function, Node, Number, Or
 from ..fol.naming import ParsingError
 from ..fol.tptp_input import parse_tptp_formula
 from ._tptp_problem import (
     TptpNameMap, apply_reverse_tptp,
-    _check_no_symbol_collisions, _is_tptp_safe,
+    _check_no_symbol_collisions, _is_fixed_atom, _is_tptp_safe, _separate_term_names,
     _Renamer, _predicate_base_case, _term_base_case,
 )
 from .protocol import ERROR, PROVED, REFUTED, UNKNOWN
@@ -307,6 +310,11 @@ class TstpDerivation:
 # case-sensitively since TPTP keywords are lowercase by the standard.
 _STMT_START_RE = re.compile(r"(?<![A-Za-z0-9_])(fof|cnf)\(")
 
+# The same, for the readers of a proof's axiom leaves, which must also see the typed
+# statements (``tff`` / ``tcf``) a prover prints for a TF0 or TFA problem. The
+# derivation reader keeps to ``fof`` / ``cnf``.
+_TYPED_STMT_START_RE = re.compile(r"(?<![A-Za-z0-9_])(fof|cnf|tff|tcf)\(")
+
 _OPEN = "(["
 _CLOSE = ")]"
 
@@ -341,9 +349,10 @@ def _skip_quoted(text: str, i: int, n: int) -> int:
     return min(j + 1, n)
 
 
-def _iter_tstp_statements(text: str):
+def _iter_tstp_statements(text: str, *, typed: bool = False):
     """Yield ``(language, statement_text)`` for every top-level ``fof(...)./
-    cnf(...).`` statement in ``text``, comments and quoted tokens skipped.
+    cnf(...).`` statement in ``text``, comments and quoted tokens skipped (with
+    ``typed=True`` also the ``tff`` and ``tcf`` ones).
 
     ``statement_text`` is the exact source span from the ``fof``/``cnf``
     keyword through the terminating ``.`` inclusive. Bracket depth is
@@ -356,6 +365,7 @@ def _iter_tstp_statements(text: str):
     """
     n = len(text)
     i = 0
+    start_re = _TYPED_STMT_START_RE if typed else _STMT_START_RE
     while i < n:
         c = text[i]
         if c in "%" or text.startswith("/*", i):
@@ -364,7 +374,7 @@ def _iter_tstp_statements(text: str):
         if c.isspace():
             i += 1
             continue
-        match = _STMT_START_RE.match(text, i)
+        match = start_re.match(text, i)
         if not match:
             i += 1
             continue
@@ -553,9 +563,11 @@ def _iter_statement_fields(output: str) -> Iterator[Tuple[str, str, str, Optiona
     :func:`parse_tstp_derivation` extracts per :class:`TstpStep`, except
     ``source_text`` is kept RAW (the unparsed 4th field, or ``None``)
     instead of being reduced to ``(rule, parents)`` — :func:`_deep_ancestor_names`
-    below needs the raw text to recurse into nested ``inference(...)`` terms.
+    below needs the raw text to recurse into nested ``inference(...)`` terms. The
+    statements of a typed problem's proof (``tff`` / ``tcf``) are read too: the
+    leaves of a TF0 or TFA proof are axioms like any other.
     """
-    for _language, stmt_text in _iter_tstp_statements(output):
+    for _language, stmt_text in _iter_tstp_statements(output, typed=True):
         inner = stmt_text[stmt_text.index("(") + 1:-2]   # strip 'LANG(' and ').'
         fields = _split_top_level(inner)
         if len(fields) < 3:
@@ -686,6 +698,15 @@ def _relevant_axiom_names(output: str) -> Optional[FrozenSet[str]]:
     A non-``None`` result is a genuine axiom-name set, even if empty (the
     negated conjecture alone was contradictory).
     """
+    found = _refutation_leaves(output)
+    return None if found is None else found[0]
+
+
+def _refutation_leaves(output: str
+                       ) -> Optional[Tuple[FrozenSet[str], Dict[str, Tuple[str, str, Optional[str]]]]]:
+    """:func:`_relevant_axiom_names`' walk, with the statements it walked: ``(names,
+    statements)`` where ``statements`` maps a statement's name to its ``(role,
+    formula text, raw source)``, or ``None`` for the cases that function refuses."""
     statements: Dict[str, Tuple[str, str, Optional[str]]] = {}
     for name, role, formula_text, source_text in _iter_statement_fields(output):
         statements[name] = (role, formula_text, source_text)
@@ -696,58 +717,135 @@ def _relevant_axiom_names(output: str) -> Optional[FrozenSet[str]]:
             if _is_false_formula(ftext)]
     if not sinks:
         return None
-    return _walk_axiom_leaves(sinks, statements)
+    names = _walk_axiom_leaves(sinks, statements)
+    return None if names is None else (names, statements)
 
 
-_PREMISE_NAME_RE = re.compile(r"^premise_(\d+)$")
+#: The names the fof writer gives the background axioms it adds on its own (the
+#: non-emptiness line of a sort and the membership line of a sorted constant), for a
+#: text whose problem has no name map to say so.
+_BACKGROUND_NAME_RE = re.compile(r"^(?:nonempty_sort|sort_member)_\d+$")
 
 
-def relevant_premises_from_tstp(output: str, n_premises: int) -> Optional[Tuple[int, ...]]:
-    """Which ``premise_<i>`` axioms (1-based, this module's own naming
-    convention — see :func:`atp._tptp_problem.generate_tptp_problem`) does a
-    TSTP derivation's refutation actually rest on?
+def _premise_use_from_tstp(output: str, n_premises: int, name_map: Optional[TptpNameMap] = None,
+                           *, eprover: bool = False
+                           ) -> Optional[Tuple[Tuple[int, ...], Tuple[Tuple[str, str], ...]]]:
+    """``(premises, background)`` of a refutation: the 0-based indices of the caller's
+    premises its axiom leaves are, and the ``(name, meaning)`` of the background axioms
+    the writer added on its own that it used — or ``None`` where
+    :func:`relevant_premises_from_tstp` says ``None``.
+
+    The names of the problem come from ``name_map.premises`` when the writer recorded
+    them (``premise_names=``, or the default ``premise_<i>``), and are ``premise_1`` ...
+    ``premise_<n_premises>`` otherwise. A leaf is one of the caller's premises when its
+    printed name (:func:`~unicode_fol_kit.atp._writer_support.axiom_leaf_label`) is one of
+    those names, and a background axiom when it is one the map records (without a record:
+    one written ``nonempty_sort_<i>`` or ``sort_member_<i>``). Any other leaf, and any leaf
+    that ``eprover=True`` cannot tell between two premises, makes the whole answer
+    ``None``: the proof is not the one this problem's writer produced."""
+    from ._writer_support import axiom_leaf_label, default_premise_names, match_premise_label
+
+    found = _refutation_leaves(output)
+    if found is None:
+        return None
+    leaf_names, statements = found
+    # A problem with no premises records none, but its background facts are recorded all the same.
+    recorded_map = name_map if name_map is not None and (
+        bool(name_map.premises) or (n_premises == 0 and bool(name_map.background))) else None
+    recorded = recorded_map is not None
+    if recorded_map is not None:
+        names = tuple(recorded_map.premises)
+        if len(names) != n_premises:
+            return None
+        background = dict(recorded_map.background)
+    else:
+        names = default_premise_names(n_premises)
+        background = {}
+    indices: set = set()
+    used_background: Dict[str, str] = {}
+    for leaf in sorted(leaf_names):
+        label = axiom_leaf_label(leaf, statements[leaf][2])
+        index = match_premise_label(label, names, eprover=eprover)
+        if index is not None:
+            indices.add(index)
+        elif label in background:
+            used_background[label] = background[label]
+        elif not recorded and _BACKGROUND_NAME_RE.match(label):
+            used_background[label] = ""
+        else:
+            return None
+    return tuple(sorted(indices)), tuple(sorted(used_background.items()))
+
+
+def relevant_premises_from_tstp(output: str, n_premises: int,
+                                name_map: Optional[TptpNameMap] = None,
+                                *, eprover: bool = False) -> Optional[Tuple[int, ...]]:
+    """Which of the caller's premises does a TSTP derivation's refutation actually
+    rest on?
 
     Walks backward from the derivation's sink step(s) through the (possibly
     nested) ``inference(...)`` chain via :func:`_relevant_axiom_names`, down
-    to every reachable ``axiom``-role leaf, then keeps only the leaves named
-    ``premise_<i>`` — E's own convention for a route that used
-    :func:`atp._tptp_problem.generate_tptp_problem`/
-    ``generate_tptp_problem_with_mapping`` (verified live: E's leaf names
-    equal ``premise_<i>`` VERBATIM, never renamed). This is genuinely NOT
+    to every reachable ``axiom``-role leaf. This is genuinely NOT
     the same walk as :func:`parse_tstp_derivation`'s ``TstpStep.parents``
     alone would give (see this section's module comment): a leaf hidden
     behind a prover's own nested, unnamed administrative inference would be
     silently lost by ``.parents`` alone, under-reporting the true premise set.
 
+    Each leaf is read by the name the PROBLEM gave the axiom, which a prover prints back:
+    E as the statement's name, Vampire (run with ``--output_axiom_names on``) in the
+    second argument of the ``file(path, name)`` source of its numbered ``f<N>``
+    statements. The problem's names are the premise names its writer recorded in
+    ``name_map`` (``premise_names=``; see
+    :func:`~unicode_fol_kit.atp._tptp_problem.generate_tptp_problem_with_mapping`), and
+    ``premise_1`` ... ``premise_<n_premises>`` when ``name_map`` is ``None`` or holds none
+    (a problem written with the defaults, or read from text alone). A leaf that is a
+    background axiom the writer added on its own (the non-emptiness line of a sort, the
+    membership line of a sorted constant: ``nonempty_sort_<i>``, ``sort_member_<i>``) is
+    not a premise and is left out of the result, not a reason to answer ``None``;
+    :func:`_premise_use_from_tstp` also says which of them were used.
+
     Args:
-        output: raw prover stdout containing the TSTP derivation.
-        n_premises: how many premises the original call had — used only to
-            validate every ``premise_<i>`` name found is in range; a name
-            outside ``1..n_premises`` makes the whole result untrustworthy
-            (this module's own naming convention was not the one actually
-            used, so nothing here can be trusted), reported as ``None``.
+        output: raw prover stdout containing the TSTP derivation. It is read as the
+            prover printed it: pass the text BEFORE any renaming of symbols back to the
+            caller's names (a premise name is not a symbol and must not be rewritten).
+        n_premises: how many premises the original call had.
+        name_map: the :class:`~unicode_fol_kit.atp._tptp_problem.TptpNameMap` of the
+            problem the prover was given, whose ``premises`` and ``background`` say what
+            its lines were called.
+        eprover: the output is E's, which reads a backslash and the character after it
+            as one backslash and so prints an apostrophe of a premise name as a backslash
+            (measured on E 3.5.1). A premise name is then matched as E prints it, and a
+            leaf that two premise names would be printed as is not matched.
 
     Returns:
         A sorted tuple of 0-based indices into the caller's premise list, or
         ``None`` when the walk cannot be trusted — see
         :func:`_relevant_axiom_names`'s ``Returns`` for when THAT happens,
-        plus: an axiom-role leaf whose name does not match
-        ``premise_<i>``/``1<=i<=n_premises`` (this module's own generator
-        was evidently not what produced ``output``). ``None`` is always the
-        honest "don't know", never a silently under-approximated subset —
-        the kit's refuse-loudly rule; a wrong "premises used" answer is
+        plus: an axiom-role leaf whose name is neither a premise name nor a background
+        name of the problem (this module's own generator was evidently not what produced
+        ``output``), and a leaf named by more premises than one (``eprover=True``).
+        ``None`` is always the honest "don't know", never a silently under-approximated
+        subset — the kit's refuse-loudly rule; a wrong "premises used" answer is
         worse for an eval pipeline than an honest absence of one.
     """
-    axiom_names = _relevant_axiom_names(output)
-    if axiom_names is None:
-        return None
-    indices: set = set()
-    for name in axiom_names:
-        match = _PREMISE_NAME_RE.match(name)
-        if not match or not (1 <= int(match.group(1)) <= n_premises):
-            return None
-        indices.add(int(match.group(1)) - 1)
-    return tuple(sorted(indices))
+    use = _premise_use_from_tstp(output, n_premises, name_map, eprover=eprover)
+    return None if use is None else use[0]
+
+
+def background_use_note(used: Tuple[Tuple[str, str], ...]) -> str:
+    """The sentence for a PROVED verdict's ``detail`` that names the background facts a
+    proof used, or ``""`` when it used none.
+
+    ``used`` is the ``(name, meaning)`` pairs :func:`_premise_use_from_tstp` returns as
+    its second item: the facts the problem writer added on its own for a sorted reading
+    (the non-emptiness of a sort, the membership of a sorted constant). They are not
+    premises of the caller's, which is why the sentence says so.
+    """
+    if not used:
+        return ""
+    facts = ", ".join(f"{name} ({meaning})" if meaning else name for name, meaning in used)
+    return (f"; the proof used the background facts of the sorted reading, which are "
+            f"not premises: {facts}")
 
 
 # ---------------------------------------------------------------------------
@@ -797,6 +895,14 @@ def relevant_premises_from_tstp(output: str, n_premises: int) -> Optional[Tuple[
 #   _check_tstp_equality_resolution generalizes
 #   resolution_check._check_reflexivity_step (search over every negative
 #   equality literal instead of trusting a stated eq_literal).
+# - "truth_constants" -> "true_and_false_elimination": Vampire's own name for
+#   dropping the literals that are false in every interpretation ($false and
+#   ~$true) from a clause (captured live, Vampire 5.0.1: ``p | $false`` gives
+#   ``p``, ``~p | q | ~$true`` gives ``~p | q``; see
+#   tests/fixtures/tstp_check/vampire_true_and_false_elimination.txt).
+#   _check_tstp_truth_constants re-derives it from ONE parent: the stated
+#   clause is the parent without some literals, each of which is $false or
+#   ~$true, and without any other literal.
 #
 # "input" has no entry here: an input step carries no inference(...) source
 # at all (see to_tstp), matching how parse_tstp_derivation reads a leaf
@@ -808,6 +914,7 @@ _KIT_RULE_TO_TSTP: Dict[str, str] = {
     "paramodulate": "superposition",
     "demodulate": "rw",
     "reflexivity": "equality_resolution",
+    "truth_constants": "true_and_false_elimination",
 }
 
 
@@ -854,17 +961,15 @@ def _collect_name_case_safe(renamer: _Renamer, name: str) -> None:
 
 def _collect_names_for_derivation(node: Node, predicates: _Renamer, terms: _Renamer) -> None:
     """The exact walk :func:`atp._tptp_problem._collect_names_for_tptp` does
-    (same infix/prefix/arithmetic exclusions), routed through
-    :func:`_collect_name_case_safe` instead of :meth:`_Renamer.collect`
+    for the problem writers (equality and ``$true`` / ``$false`` are never
+    renamed; the arithmetic operators and comparisons are ordinary symbols), routed
+    through :func:`_collect_name_case_safe` instead of :meth:`_Renamer.collect`
     directly — see that function's docstring for why."""
     for n in node.walk():
         if isinstance(n, Atom):
-            if n.predicate not in Atom.INFIX_PREDS_TPTP and n.predicate not in Atom.PREFIX_PREDS_TPTP:
+            if not _is_fixed_atom(n, True):
                 _collect_name_case_safe(predicates, n.predicate)
-        elif isinstance(n, Function):
-            if n.name not in Function.TPTP_ARITH_OPS:
-                _collect_name_case_safe(terms, n.name)
-        elif isinstance(n, Constant):
+        elif isinstance(n, (Function, Constant)):
             _collect_name_case_safe(terms, n.name)
 
 
@@ -923,12 +1028,19 @@ def _extend_name_map_for_derivation(
         terms.mapping = dict(name_map.term)
         predicates.used = {predicates.render(token) for token in predicates.mapping.values()}
         terms.used = {terms.render(token) for token in terms.mapping.values()}
-    for step in derivation.steps:
-        for literal in step.clause:
-            _collect_names_for_derivation(literal, predicates, terms)
+    literals = [literal for step in derivation.steps for literal in step.clause]
+    for literal in literals:
+        _collect_names_for_derivation(literal, predicates, terms)
+    # A numeral is a constant of its own (see :mod:`atp._tptp_problem`): it is collected under
+    # the name of its value, like the problem writers do, and recorded as a numeral.
+    _, numerals = numerals_as_constants(literals, where="to_tstp")
+    for name in sorted(numerals):
+        _collect_name_case_safe(terms, name)
     predicates.finalize()
     terms.finalize()
-    return TptpNameMap(predicate=predicates.mapping, term=terms.mapping)
+    return TptpNameMap(predicate=predicates.mapping, term=terms.mapping,
+                       numerals=numerals | (name_map.numerals if name_map is not None
+                                            else frozenset()))
 
 
 def _name_map_sentinel_nodes(name_map: TptpNameMap) -> List[Node]:
@@ -972,7 +1084,7 @@ def _name_map_sentinel_nodes(name_map: TptpNameMap) -> List[Node]:
     """
     nodes: List[Node] = []
     for token in name_map.predicate.values():
-        nodes.append(Atom(token, []))
+        nodes.append(Atom(token, ()))
     for token in name_map.term.values():
         nodes.append(Constant(token))
     return nodes
@@ -983,9 +1095,10 @@ def _apply_forward_tptp(node: Node, mapping: TptpNameMap) -> Node:
     to the sanitised TPTP-ASCII tokens ``mapping`` records — the forward
     companion to :func:`atp._tptp_problem.apply_reverse_tptp`, walking a
     :class:`Node` the exact same way
-    :func:`atp._tptp_problem._sanitize_node_for_tptp` does (the infix/prefix
-    TPTP predicates and the arithmetic function operators are never renamed,
-    matching both that function and :func:`apply_reverse_tptp`).
+    :func:`atp._tptp_problem._sanitize_node_for_tptp` does for the problem writers
+    (equality is never renamed; the arithmetic operators and comparisons are
+    ordinary symbols, and a numeral is the constant of the word ``mapping`` records
+    for its value).
 
     A name absent from ``mapping`` is left exactly as it is — safe ONLY
     because :func:`to_tstp` always calls this with a ``mapping`` already
@@ -1011,19 +1124,23 @@ def _apply_forward_tptp(node: Node, mapping: TptpNameMap) -> Node:
     mapping's own entries too).
     """
     if isinstance(node, Atom):
-        if node.predicate in Atom.INFIX_PREDS_TPTP or node.predicate in Atom.PREFIX_PREDS_TPTP:
+        if _is_fixed_atom(node, True):
             pred = node.predicate
         else:
             pred = mapping.predicate.get(node.predicate, node.predicate)
-        return Atom(pred, [_apply_forward_tptp(a, mapping) for a in node.args])
+        return Atom(pred, tuple(_apply_forward_tptp(a, mapping) for a in node.args))
     if isinstance(node, Function):
-        if node.name in Function.TPTP_ARITH_OPS:
-            name = node.name
-        else:
-            name = mapping.term.get(node.name, node.name)
-        return Function(name, [_apply_forward_tptp(a, mapping) for a in node.args])
+        return Function(mapping.term.get(node.name, node.name),
+                        tuple(_apply_forward_tptp(a, mapping) for a in node.args))
     if isinstance(node, Constant):
         return Constant(mapping.term.get(node.name, node.name))
+    if isinstance(node, Number):
+        # A numeral is a constant (the problem writers' reading): the word the map has for
+        # its value. (A clause has no counting bound, so every Number here is a term.)
+        name = numeral_name(node.value)
+        if name in mapping.numerals:
+            return Constant(mapping.term[name])
+        return node
     return node.map_children(lambda c: _apply_forward_tptp(c, mapping))
 
 
@@ -1068,7 +1185,27 @@ def to_tstp(derivation: ResolutionDerivation, *, name_map: Optional[TptpNameMap]
     .generate_tptp_problem_with_mapping` does its own premises/conclusion
     (:func:`atp._tptp_problem._sanitize_for_tptp`, then
     :func:`atp._tptp_problem._check_no_symbol_collisions` over the sanitised
-    result — see :func:`_apply_forward_tptp`'s docstring).
+    result — see :func:`_apply_forward_tptp`'s docstring). A literal that is the
+    nullary atom ``$true`` / ``$false`` (TPTP's own propositions, which this kit's
+    reader produces) is written verbatim and is no symbol of the derivation's.
+
+    **A predicate and a function/constant that render as the same word** (the
+    class ``Agent`` and the role function ``agent``: ``agent(agent(a))``) are
+    separated exactly as the ``fof`` writer separates them
+    (:func:`atp._tptp_problem._separate_term_names`): the term side becomes
+    ``agent_term``, over the literals of the WHOLE derivation, with or without
+    a ``name_map``. A ``name_map`` that already carries the separation (one
+    from :func:`atp._tptp_problem.generate_tptp_problem_with_mapping`) keeps
+    its spelling; without one the same recipe is applied here, so the text is
+    the same either way. The replacement depends only on WHICH symbols occur,
+    never on their order, and :func:`reverse_map_derivation` with the final map
+    (:func:`_to_tstp_with_mapping` returns it) restores the original names.
+
+    **A numeral and the arithmetic symbols.** As in the problem writers, a numeral is a
+    constant (written under the word the map has for its value, ``n1`` for ``1`` and
+    ``1.0``) and ``+ - * /`` and ``< > ≤ ≥`` are ordinary symbols, never TPTP's number
+    literals and dollar words, which a prover reads as arithmetic. The final map records
+    them, and :func:`reverse_map_derivation` hands ``n1`` back as ``Number(1)``.
 
     Args:
         derivation: the derivation to serialise. MUST already satisfy
@@ -1133,6 +1270,19 @@ def to_tstp(derivation: ResolutionDerivation, *, name_map: Optional[TptpNameMap]
             raises for a TPTP problem file, reused here verbatim rather than
             silently merging two distinct symbols into one.
     """
+    return _to_tstp_with_mapping(derivation, name_map)[0]
+
+
+def _to_tstp_with_mapping(derivation: ResolutionDerivation,
+                          name_map: Optional[TptpNameMap] = None
+                          ) -> Tuple[str, TptpNameMap]:
+    """:func:`to_tstp`, also returning the FINAL :class:`TptpNameMap`: the
+    caller's ``name_map`` (or a fresh one) extended with every symbol the
+    derivation introduces AND with the function/constant renames that separate
+    them from a predicate rendered as the same word
+    (:func:`atp._tptp_problem._separate_term_names`). It is what
+    :func:`reverse_map_derivation` needs to restore the original names from the
+    text this returns when no ``name_map`` was given."""
     check = verify_resolution_proof(derivation)
     if not check.ok:
         raise ValueError(
@@ -1147,10 +1297,25 @@ def to_tstp(derivation: ResolutionDerivation, *, name_map: Optional[TptpNameMap]
         step.index: _render_clause_tptp(step.clause, name_map)
         for step in derivation.steps
     }
+    # One node per CLAUSE, so that the variables of a clause are one scope: the
+    # writers check variables per formula (``x`` and ``X`` are one TPTP variable),
+    # and the literals of a clause are one formula, not several.
     _check_no_symbol_collisions(
         _name_map_sentinel_nodes(name_map) +
-        [lit for literals in sanitised_by_index.values() for lit in literals]
+        [functools.reduce(Or, literals) for literals in sanitised_by_index.values() if literals],
+        where="to_tstp", subject="derivation",
     )
+
+    # A function/constant that renders as a predicate's word is renamed on the
+    # term side, over every literal of the derivation at once (the fof writer's
+    # own pass), then the literals are handed back to their clauses in order.
+    flat = [lit for step in derivation.steps for lit in sanitised_by_index[step.index]]
+    flat, name_map = _separate_term_names(flat, name_map)
+    position = 0
+    for step in derivation.steps:
+        count = len(sanitised_by_index[step.index])
+        sanitised_by_index[step.index] = flat[position:position + count]
+        position += count
 
     lines: List[str] = []
     for step in derivation.steps:
@@ -1165,4 +1330,4 @@ def to_tstp(derivation: ResolutionDerivation, *, name_map: Optional[TptpNameMap]
                 f"cnf(c{step.index}, plain, {clause_text}, "
                 f"inference({rule_name}, [status(thm)], [{parents}]))."
             )
-    return "".join(line + "\n" for line in lines)
+    return "".join(line + "\n" for line in lines), name_map

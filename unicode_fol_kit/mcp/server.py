@@ -11,7 +11,10 @@ Design contract (see the package docstring for the why):
   tool and every argument position (review-hardened: a generic client
   checks ``result.get("ok") is False``, full stop);
 * results are the ``to_dict()`` payloads of the underlying API objects,
-  untouched — the MCP layer adds no vocabulary of its own;
+  untouched — the MCP layer adds no vocabulary of its own beyond TEXT
+  renderings of what is already there (``unicode``, ``axioms_unicode``,
+  ``box``), because every tool takes text and a result is only usable as the
+  next call's input if it comes back as text;
 * exceptions that ARE the API's documented contract surface as structured
   ``{"error": {"type": ..., "message": ...}}`` dicts (``BackendUnavailable``
   carries its actionable install/start instructions verbatim), so an agent
@@ -36,6 +39,7 @@ baseline (derived from a real ``list_tools()`` call) and fails with a
 readable diff on any surface drift.
 """
 
+import functools
 from typing import List, Optional
 
 from .. import api
@@ -70,7 +74,13 @@ like, normalize/render convert between normal forms and concrete syntaxes,
 truth_table decides propositional formulas by enumeration (classical/K3/LP),
 drs_to_fol turns discourse boxes (donkey sentences, cross-sentence
 anaphora) into provable FOL, and list_translations enumerates the
-logic-to-logic edges translate can follow. Probabilistic layer (exact,
+logic-to-logic edges translate can follow. A translation comes with side
+axioms (frame conditions; for a many-sorted formula the non-emptiness of
+every sort AND the membership of every sorted constant in its sort):
+translate returns them next to the translated formula, and they go into
+prove / find_countermodel as SEPARATE premises -- without them a valid
+formula comes back refuted.
+Probabilistic layer (exact,
 no sampling): probability_bounds computes Nilsson-style entailed bounds
 from probability-interval premises, probability_query answers
 ProbLog-style queries under distribution semantics. Formulas are passed
@@ -195,6 +205,131 @@ def _error(exc: Exception) -> dict:
     return {"error": {"type": type(exc).__name__, "message": str(exc)}}
 
 
+def _text_size(value) -> int:
+    """The length of the longest text inside ``value`` (a string, or lists and dicts of them)."""
+    longest, pending = 0, [value]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, str):
+            longest = max(longest, len(item))
+        elif isinstance(item, dict):
+            pending.extend(item.values())
+        elif isinstance(item, (list, tuple)):
+            pending.extend(item)
+    return longest
+
+
+def _nesting(value) -> int:
+    """How many containers (dicts, lists) lie on the longest path from ``value`` down."""
+    deepest, pending = 0, [(value, 1)]
+    while pending:
+        item, level = pending.pop()
+        if isinstance(item, dict):
+            deepest = max(deepest, level)
+            pending.extend((child, level + 1) for child in item.values())
+        elif isinstance(item, (list, tuple)):
+            deepest = max(deepest, level)
+            pending.extend((child, level + 1) for child in item)
+    return deepest
+
+
+def _answers_deep_input(tool):
+    """``tool``, which never lets a ``RecursionError`` leave it.
+
+    A formula nested a few hundred levels deep is read by the parser and then walked by
+    recursive code (a normal form, a renderer, a node comparison), which runs out of the
+    interpreter's recursion limit. The call is then made again where ``api`` reads a deep
+    formula (:func:`unicode_fol_kit.api._call_deep`: a worker thread whose stack and recursion
+    limit are sized for it), with the nesting bounded by the length of the longest text of the
+    arguments (a text cannot be nested deeper than it is long). A call that still runs out is
+    answered as the structured ``{"error": ...}`` that every other refusal of this module is,
+    never as an exception that leaves the tool.
+    """
+    @functools.wraps(tool)
+    def guarded(*args, **kwargs):
+        try:
+            return tool(*args, **kwargs)
+        except RecursionError:
+            pass
+        size = max((_text_size(value) for value in (*args, *kwargs.values())), default=0)
+        try:
+            return api._call_deep(min(size, api._DEEP_MAX_LEVELS), lambda: tool(*args, **kwargs))
+        except RecursionError:
+            return _error(RecursionError(
+                f"{tool.__name__}: the input is nested more deeply than this tool can process "
+                f"(the interpreter's recursion limit ran out, also on the worker that reads deep "
+                f"formulas); no result was produced"))
+
+    guarded.answers_deep_input = True
+    return guarded
+
+
+def _answers_serializable(tool):
+    """``tool``, whose answer is one the transport can write out, or else a refusal by name.
+
+    A tool answers with a dict, and the MCP SDK writes that dict as JSON with a limit of its own
+    on how deeply it may be nested. An answer nested deeper (the abstract syntax tree of a formula
+    a few hundred quantifiers deep) ends in the SDK's own ``ToolError`` whose text speaks of a
+    circular reference, which this answer is not. The answer is tried with the SDK's own JSON
+    writer; one it cannot write is replaced by the structured ``{"error": ...}`` that names the
+    nesting and says what to ask for instead. A call from Python, which needs no JSON, reaches
+    the tool itself and is not held to this limit (see :func:`_registered`).
+    """
+    @functools.wraps(tool)
+    def guarded(*args, **kwargs):
+        result = tool(*args, **kwargs)
+        try:
+            import pydantic_core
+        except ImportError:                       # no SDK, nothing is written out
+            return result
+        try:
+            pydantic_core.to_json(result, fallback=str)
+        except ValueError:
+            return _error(ValueError(
+                f"{tool.__name__}: the input was read, but its answer is nested {_nesting(result)} "
+                f"levels deep, more than the MCP transport can write as JSON. Ask for a text form "
+                f"of it instead (render, which answers a formula as text), or give a shallower "
+                f"input"))
+        return result
+
+    return guarded
+
+
+def _registered(tool):
+    """``tool`` as the server registers it: guarded against a deep input and a deep answer."""
+    return _answers_serializable(
+        tool if getattr(tool, "answers_deep_input", False) else _answers_deep_input(tool))
+
+
+def _signature_argument(signature):
+    """The ``signature`` a tool was handed, as ``api`` reads it.
+
+    What ``get_signature`` returns is ``{"ok": True, "signature": {...}}``; the tools that take a
+    signature accept that whole result, or just its ``signature`` value, or the loose form
+    ``{"predicates": ..., "functions": ..., "constants": ...}``. A dict that is exactly such a
+    result is replaced by its ``signature`` value; anything else is returned as it is, for
+    ``api`` to read or to refuse.
+    """
+    if (isinstance(signature, dict) and set(signature) == {"ok", "signature"}
+            and signature["ok"] is True and isinstance(signature["signature"], dict)):
+        return signature["signature"]
+    return signature
+
+
+def _unicode_texts(*concepts):
+    """``([text, ...], None)`` or ``(None, {"error": ...})`` for description-logic concepts.
+
+    ``Concept.to_unicode`` refuses (``ValueError``) a concept one of whose names makes the glyph
+    text read back as ANOTHER concept (a class named ``<A⊓B>`` prints as the intersection of
+    ``<A`` and ``B>``). A tool answers that refusal like every other refusal of the ``dl``
+    package: as the structured error, never as an exception that leaves the tool.
+    """
+    try:
+        return [concept.to_unicode() for concept in concepts], None
+    except ValueError as exc:
+        return None, _error(exc)
+
+
 def _normalize_converses(converses: List[dict]):
     """JSON-dict converse declarations -> the internal tuple form.
 
@@ -229,6 +364,7 @@ def _normalize_converses(converses: List[dict]):
 # Tool implementations (plain functions; registered in create_server)
 # --------------------------------------------------------------------------
 
+@_answers_deep_input
 def parse_formula(text: str, dialect: Optional[str] = None) -> dict:
     """Parse formula text (dialect auto-detected) to the kit's JSON AST."""
     parsed = api.parse_any(text, hint=dialect)
@@ -241,15 +377,28 @@ def parse_formula(text: str, dialect: Optional[str] = None) -> dict:
     return result
 
 
+@_answers_deep_input
 def check_formula(text: str, dialect: Optional[str] = None,
                   signature: Optional[dict] = None) -> dict:
-    """Well-formedness + optional signature conformance for formula text."""
+    """Well-formedness + optional signature conformance for formula text.
+
+    ``signature`` is what ``get_signature`` returns (its whole result, or just its
+    ``signature`` value), or
+    the loose form ``{"predicates": {"Human": 1}, "functions": {"father": 1},
+    "constants": ["socrates"]}``. The truth constants ``⊤`` / ``⊥`` are logical
+    constants, never an unknown predicate. A malformed ``signature`` comes back
+    as the structured ``{"error": ...}``.
+    """
     node, err = _parse(text, dialect)
     if err is not None:
         return err
-    return api.check(node, signature=signature).to_dict()
+    try:
+        return api.check(node, signature=_signature_argument(signature)).to_dict()
+    except (TypeError, ValueError) as exc:
+        return _error(exc)
 
 
+@_answers_deep_input
 def prove(conclusion: str, premises: Optional[List[str]] = None,
           logic: str = "auto", backends: Optional[List[str]] = None,
           timeout_ms: int = 10000, dialect: Optional[str] = None) -> dict:
@@ -271,6 +420,7 @@ def prove(conclusion: str, premises: Optional[List[str]] = None,
     return verdict.to_dict()
 
 
+@_answers_deep_input
 def find_countermodel(formula: str, premises: Optional[List[str]] = None,
                       logic: str = "auto",
                       dialect: Optional[str] = None) -> dict:
@@ -290,6 +440,7 @@ def find_countermodel(formula: str, premises: Optional[List[str]] = None,
         return _error(exc)
 
 
+@_answers_deep_input
 def check_equivalence(formula1: str, formula2: str, method: str = "auto",
                       timeout_ms: int = 10000,
                       dialect: Optional[str] = None) -> dict:
@@ -307,6 +458,7 @@ def check_equivalence(formula1: str, formula2: str, method: str = "auto",
         return _error(exc)
 
 
+@_answers_deep_input
 def diagnose(text: str, dialect: Optional[str] = None,
              signature: Optional[dict] = None) -> dict:
     """One diagnose round of the repair loop; YOU are the fixer.
@@ -314,9 +466,14 @@ def diagnose(text: str, dialect: Optional[str] = None,
     Returns ``{ok, diagnostics, suggestion, converged}`` for the given
     text, plus ``spec_topic`` when it did not parse. Apply the suggestion to
     the text yourself and call again; ``converged=True`` means the text
-    parses and checks clean.
+    parses and checks clean. ``signature`` is read as ``check_formula`` reads
+    it (``get_signature``'s whole result, or its ``signature`` value); a malformed one comes
+    back as the structured ``{"error": ...}``.
     """
-    step = next(api.repair(text, dialect=dialect, signature=signature))
+    try:
+        step = next(api.repair(text, dialect=dialect, signature=_signature_argument(signature)))
+    except (TypeError, ValueError) as exc:
+        return _error(exc)
     result = step.to_dict()
     # Same routing every other tool's failure carries: the diagnosis names
     # WHAT broke, spec_topic names the rule to look up before retrying. A
@@ -327,6 +484,7 @@ def diagnose(text: str, dialect: Optional[str] = None,
     return result
 
 
+@_answers_deep_input
 def repair_formula(text: str, dialect: Optional[str] = None,
                    close_free_variables: bool = False,
                    sanitize_invalid_names: bool = True) -> dict:
@@ -360,46 +518,279 @@ def repair_formula(text: str, dialect: Optional[str] = None,
     return result
 
 
+#: The per-edge options ``translate`` forwards, named EXACTLY as the
+#: comorphism edges declare them (``Comorphism.options``) — this layer invents
+#: no option of its own. ``tests/test_mcp_server.py`` pins that this tuple is
+#: the union of what the registry's edges declare, so an edge that grows an
+#: option cannot become silently unreachable over MCP.
+_TRANSLATE_OPTIONS = ("frame", "systems", "temporal_closure", "signature",
+                      "mode", "bridges")
+
+#: Source logics whose text must NOT go through ``parse_any``'s classical-first
+#: mode ladder, because an earlier mode reads the same string as a DIFFERENT
+#: formula: 'P ⊕ Q' is classical Xor in the ``fol`` mode and a strong
+#: Łukasiewicz disjunction in the fuzzy ones, so a fuzzy term parsed by the
+#: ladder would be translated as the classical formula it is not. The dialects
+#: are tried in order and used only when the caller gave no ``dialect`` of
+#: their own; the two fuzzy modes are disjoint (``msfl`` accepts only SORTED
+#: quantifiers, ``fl`` only unsorted ones), hence both.
+_SOURCE_DIALECTS = {"fuzzy": ("fl", "msfl")}
+
+
+def _translate_options(frame, systems, temporal_closure, signature, mode,
+                       bridges) -> dict:
+    """The per-edge options that were actually given, shaped for the registry.
+
+    ``None`` means "not given" and is dropped, so an edge's own default
+    (``frame="K"``, ``mode="constant"``, ``temporal_closure=True``) applies.
+    This checks only the SHAPE of each value — a ``temporal_closure="false"``
+    string would be truthy and silently mean ``True`` — and leaves membership
+    (is that a known frame / mode / bridge / modal family?) and "does any edge
+    on this path take that option?" to the edges and the registry, whose
+    refusals already name what is accepted and which the tool returns as
+    ``{"error": ...}``. ``ValueError`` on a malformed value.
+    """
+    options: dict = {}
+
+    def given(name, value, kind, what):
+        if value is None:
+            return False
+        # bool is an int subclass, but 'frame': true is not a frame name.
+        if not isinstance(value, kind) or (kind is not bool
+                                           and isinstance(value, bool)):
+            raise ValueError(
+                f"translate: {name} must be {what}, got {value!r}")
+        return True
+
+    if given("frame", frame, str,
+             "a string — a modal system name such as 'S4', or a "
+             "Scott–Lemmon spec like 'G(1,1,1,1)'"):
+        options["frame"] = frame
+    if given("mode", mode, str,
+             "a string — the quantified-modal domain regime, such as "
+             "'constant' or 'varying'"):
+        options["mode"] = mode
+    if given("temporal_closure", temporal_closure, bool, "true or false"):
+        options["temporal_closure"] = temporal_closure
+    if given("systems", systems, dict,
+             "an object mapping a modal family to a system name, e.g. "
+             '{"epistemic": "S5"}'):
+        if not all(isinstance(k, str) and isinstance(v, str)
+                   for k, v in systems.items()):
+            raise ValueError(
+                f"translate: systems must map a family name to a system "
+                f"name (both strings), got {systems!r}")
+        options["systems"] = dict(systems)
+    if given("bridges", bridges, (list, tuple), "a list of bridge names"):
+        if not all(isinstance(b, str) for b in bridges):
+            raise ValueError(
+                f"translate: bridges must be a list of strings, got "
+                f"{bridges!r}")
+        options["bridges"] = list(bridges)
+    if given("signature", signature, dict,
+             'a signature object, e.g. {"subsorts": {"Human": ["Animal"]}}'):
+        from ..fol.signature import Signature
+
+        # from_dict's own refusals (unknown key, wrong-typed section, a subsort
+        # cycle) name the offending entry; they surface through _error.
+        options["signature"] = Signature.from_dict(signature)
+    return options
+
+
+def _text_of(node) -> str:
+    """The unicode rendering of ``node``, in a form the OTHER tools can read.
+
+    Every tool here takes formula TEXT, so a translated formula and its side
+    axioms are only usable as premises if their text parses again. A
+    translation can render a name the text grammar does not accept: the bound
+    variables the translations mint are legal names since 0.30.0, but a name
+    the CALLER supplies is printed as it is, and the FOL grammar wants a
+    predicate to start upper-case, so an OWL-style role (``hasChild``) or a
+    description-logic individual spelled like a variable comes back out as text
+    ``prove`` rejects. Rendered as it is, the result looks right and ``prove``
+    rejects it. So the node is rendered as
+    the kit prints it and, failing that, with its bound variables alpha-renamed
+    to ``q0``, ``q1``, … — a renaming that changes no meaning — and the first
+    spelling that reads back as EXACTLY the same formula wins. Failing both,
+    the first that parses at all (a constant printed as ``a`` reads back as a
+    variable, which no rendering can fix), and failing that the plain
+    printing; the ``result`` / ``axioms`` ASTs next to it stay the authority.
+    A rendering that already reads back is left exactly as the kit prints it.
+    """
+    from ..eval.canonical import _alpha_normalize
+
+    spellings = (node, _alpha_normalize(node))
+    texts = [spelling.to_unicode_str() for spelling in spellings]
+    readings: dict = {}
+
+    def reads(i: int, exact: bool) -> bool:
+        if i not in readings:
+            readings[i] = api.parse_any(texts[i])
+        reading = readings[i]
+        return reading.ok and (not exact or reading.formula == spellings[i])
+
+    for exact in (True, False):
+        for i in range(len(spellings)):
+            if reads(i, exact):
+                return texts[i]
+    return texts[0]
+
+
+def _text_of_term(value) -> Optional[str]:
+    """``unicode`` text for a Node or a DL concept, else ``None``."""
+    if hasattr(value, "to_unicode_str"):
+        return _text_of(value)
+    if hasattr(value, "to_unicode"):               # dl.Concept spelling
+        return value.to_unicode()
+    return None
+
+
+def _parse_term(term: str, from_logic: str, dialect: Optional[str]):
+    """``(payload, None)`` or ``(None, error_dict)`` for the source logic's
+    own term type (see :func:`translate` for the list)."""
+    if from_logic == "casl":
+        return term, None
+    if from_logic == "alc":
+        from ..dl import ConceptSyntaxError, parse_concept
+
+        try:
+            return parse_concept(term), None
+        except ConceptSyntaxError as exc:
+            return None, {"ok": False, "argument": "term",
+                          "errors": [{"dialect": "alc", "message": str(exc)}]}
+    if from_logic == "drs":
+        from .. import drt
+
+        try:
+            return drt.parse_drs(term), None
+        except (drt.DRSSyntaxError, ValueError) as exc:
+            return None, {"ok": False, "argument": "term",
+                          "errors": [{"dialect": "drs_box",
+                                      "message": str(exc)}]}
+    hints = (dialect,) if dialect else _SOURCE_DIALECTS.get(from_logic, (None,))
+    failures: list = []
+    for hint in hints:
+        node, err = _parse(term, hint, argument="term")
+        if err is None:
+            return node, None
+        failures.append(err)
+    err = failures[0]
+    if len(failures) > 1:            # keep every attempted dialect's diagnosis
+        errors = [e for failure in failures for e in failure["errors"]]
+        err = {"ok": False, "argument": "term", "errors": errors,
+               "spec_topic": _spec_topic_for(errors)}
+    if from_logic == "qml" and dialect is None:
+        # Quantified modal logic over SORTED quantifiers ('□∀x:Human …') is
+        # something the qml edge translates, but no single parse_any mode
+        # reads modal operators and sorts together — so only after the whole
+        # ladder has failed, and only for this source logic, try that one
+        # combination. A failure keeps the ladder's diagnostics.
+        from ..fol.msflparser import MSFLParser
+
+        try:
+            return MSFLParser(many_sorted=True, modal=True).parse(term), None
+        except Exception:                         # noqa: BLE001 - parser errors
+            pass
+    return None, err
+
+
+@_answers_deep_input
 def translate(term: str, from_logic: str, to_logic: str,
-              dialect: Optional[str] = None) -> dict:
-    """Translate between logics over the comorphism registry.
+              dialect: Optional[str] = None,
+              frame: Optional[str] = None,
+              systems: Optional[dict] = None,
+              temporal_closure: Optional[bool] = None,
+              signature: Optional[dict] = None,
+              mode: Optional[str] = None,
+              bridges: Optional[List[str]] = None) -> dict:
+    """Translate between logics over the comorphism registry — and pass every entry of the returned ``axioms`` as a SEPARATE premise next to ``result`` (never conjoined onto it, never dropped), or the translated formula answers a different question and a valid formula comes back refuted.
+
+    The result is ``{result, unicode, axioms, axioms_unicode, guarantee,
+    source, target, path, lossy, note}``. ``result`` is the translated term
+    (JSON AST) and ``unicode`` its text; ``axioms`` are the side conditions of
+    the translation, already in the TARGET logic (``axioms_unicode`` is the
+    same list as text, entry for entry), e.g. the frame conditions of a modal
+    system, or for a many-sorted formula BOTH the non-emptiness of every sort
+    (an ``∃`` sentence about the sort ``Human``) AND the membership atom of
+    every sorted constant (``Human(socrates)``: a constant written
+    ``socrates:Human`` is an element of ``Human``) -- a caller who passes only
+    the first answers a weaker question. To
+    decide a question about the translated formula, call ``prove`` with the
+    ``unicode`` as the conclusion and ``axioms_unicode`` among the
+    ``premises``; ``find_countermodel`` and ``check_consistency`` take them
+    the same way. ``guarantee`` is what the translation preserves ONCE those
+    axioms are added — ``faithful`` (every question transfers),
+    ``validity`` (validity and entailment transfer), ``satisfiability`` (only
+    satisfiability: a validity answer through it means nothing), ``lossy``
+    (neither; ``note`` says what is dropped) — or ``null`` when an edge on the
+    path declares none, which is NOT the same as faithful. ``note`` carries
+    the conventions (e.g. the free world variable ``w`` a modal image is
+    anchored at). ``list_translations`` shows the logic labels, the edges and
+    the options each edge takes.
 
     The term's PARSER follows the source logic's own term type: ``"casl"``
     terms are CASL spec TEXT passed through verbatim (the dynamic
     ``hets:<Name>`` edges); ``"alc"`` terms are description-logic concept
     text (``Human ⊓ ∃hasChild.Doctor``) parsed by the DL grammar —
     review-confirmed: the registered alc→modal/alc→fol edges take
-    ``Concept`` objects that no FOL-family grammar can produce; every
-    other source logic parses the term as a formula via ``parse_any``.
-    Node/Concept results gain a ``"unicode"`` rendering.
-    """
-    if from_logic == "casl":
-        payload = term
-    elif from_logic == "alc":
-        from ..dl import ConceptSyntaxError, parse_concept
+    ``Concept`` objects that no FOL-family grammar can produce; ``"drs"``
+    terms are discourse-representation boxes in the compact box notation
+    (``[x | Farmer(x), Runs(x)]``, as ``drs_to_fol`` takes); ``"fuzzy"`` terms
+    are read in the Łukasiewicz dialect (so ``⊕`` is the strong disjunction,
+    not Xor); every other source logic parses the term as a formula via
+    ``parse_any`` (``"qml"`` additionally reads sorted quantifiers under
+    modal operators). Node/Concept results gain a ``"unicode"`` rendering; a
+    DRS result gains ``"box"``, its box notation. Bound variables the
+    translations name in a way the text grammar rejects are renamed ``q0``,
+    ``q1``, … in the text renderings only, so every text here can be passed
+    back to the other tools.
 
-        try:
-            payload = parse_concept(term)
-        except ConceptSyntaxError as exc:
-            return {"ok": False, "argument": "term",
-                    "errors": [{"dialect": "alc", "message": str(exc)}]}
-    else:
-        node, err = _parse(term, dialect, argument="term")
-        if err is not None:
-            return err
-        payload = node
+    Options are forwarded to the edges on the path that declare them and
+    omitted ones keep the edge's default: ``frame`` (modal system, default
+    ``K``), ``systems`` (``{"epistemic": "S5"}``-style, per agent family) and
+    ``temporal_closure`` for ``modal``/``qml`` sources; ``mode`` (domain
+    regime) and ``bridges`` (cross-family frame conditions) for ``qml``;
+    ``signature`` (``{"subsorts": {"Human": ["Animal"]}}``) for ``msfol``,
+    where it adds one axiom per declared subsort edge. An option no edge on the
+    path takes, or an unknown frame / mode / bridge / family, is a structured
+    error naming what is accepted.
+    """
     try:
-        result = api.translate(payload, from_logic, to_logic)
-    except ValueError as exc:
+        options = _translate_options(frame, systems, temporal_closure,
+                                     signature, mode, bridges)
+    except (ValueError, TypeError) as exc:
         return _error(exc)
-    rendered = result.to_dict()
-    if hasattr(result.result, "to_unicode_str"):
-        rendered["unicode"] = result.result.to_unicode_str()
-    elif hasattr(result.result, "to_unicode"):     # dl.Concept spelling
-        rendered["unicode"] = result.result.to_unicode()
+    payload, err = _parse_term(term, from_logic, dialect)
+    if err is not None:
+        return err
+    from ..comorphism import DEFAULT_REGISTRY
+
+    try:
+        # The registry, not api.translate: that facade takes no options, and
+        # a translation that silently ignores frame= is the wrong question.
+        result = DEFAULT_REGISTRY.translate(payload, from_logic, to_logic,
+                                            **options)
+    except (ValueError, TypeError, NotImplementedError) as exc:
+        return _error(exc)
+    try:
+        rendered = result.to_dict()
+        text = _text_of_term(result.result)
+        if text is not None:
+            rendered["unicode"] = text
+        elif hasattr(result.result, "to_box_notation"):           # drt.DRS
+            rendered["box"] = result.result.to_box_notation()
+        # Parallel to ``axioms`` (same length, same order); an axiom with no text
+        # form falls back to the repr that ``to_dict`` already gave it.
+        rendered["axioms_unicode"] = [_text_of_term(a) or repr(a)
+                                      for a in result.axioms]
+    except (ValueError, NotImplementedError) as exc:
+        # A result with no faithful text (a concept whose name reads back as another
+        # concept, see ``Concept.to_unicode``) is a refusal, not a crash.
+        return _error(exc)
     return rendered
 
 
+@_answers_deep_input
 def verbalize(text: str, dialect: Optional[str] = None) -> dict:
     """Render a formula as deterministic English (fol.to_english)."""
     from ..fol import to_english
@@ -413,6 +804,7 @@ def verbalize(text: str, dialect: Optional[str] = None) -> dict:
         return _error(exc)
 
 
+@_answers_deep_input
 def list_backends() -> dict:
     """Registry introspection: what can decide, and what runs by default."""
     return {
@@ -438,6 +830,7 @@ _NORMALIZE_SEMANTICS = {
 }
 
 
+@_answers_deep_input
 def normalize(text: str, form: str = "nnf",
               dialect: Optional[str] = None) -> dict:
     """Rewrite a formula into a normal form.
@@ -482,6 +875,7 @@ def normalize(text: str, form: str = "nnf",
             "is_horn": horn}
 
 
+@_answers_deep_input
 def render(text: str, to: str = "tptp",
            dialect: Optional[str] = None) -> dict:
     """Render a formula in another concrete syntax.
@@ -498,6 +892,15 @@ def render(text: str, to: str = "tptp",
     ``smtlib`` this is ``to_z3``'s own refusal (second/third-order,
     modal/hybrid/linear/Lambek/team constructs have no first-order SMT-LIB2
     encoding), named by construct, reused rather than reimplemented.
+
+    ``tptp`` also refuses a formula in which two DISTINCT names of one kind
+    would be written as the same TPTP word (the constants ``θ`` and ``theta``,
+    or ``gaseous`` and ``Gaseous`` read from TPTP text: both fold to one
+    identifier, which would turn ``P(a) <-> P(b)`` into a tautology). The error
+    names both symbols and the shared word; rename one of them and render
+    again. It checks the one formula it renders — to build a problem from
+    several formulas use ``unicode_fol_kit.atp.generate_tptp_problem_with_mapping``,
+    which checks them together.
     """
     node, err = _parse(text, dialect)
     if err is not None:
@@ -531,6 +934,7 @@ def render(text: str, to: str = "tptp",
     return {"ok": True, "to": to, "rendered": rendered}
 
 
+@_answers_deep_input
 def detect_dialect(text: str) -> dict:
     """What syntax does this text look like, and what does it parse as?
 
@@ -560,6 +964,7 @@ def _vocabulary_diff(report_a, report_b) -> dict:
     return diff
 
 
+@_answers_deep_input
 def compare_formulas(predicted: str, gold: str, timeout_ms: int = 10000,
                      dialect: Optional[str] = None,
                      converses: Optional[List[dict]] = None) -> dict:
@@ -647,6 +1052,7 @@ def compare_formulas(predicted: str, gold: str, timeout_ms: int = 10000,
     }
 
 
+@_answers_deep_input
 def score_batch(predictions: List[str], references: List[str],
                 method: str = "auto", timeout_ms: int = 10000,
                 converses: Optional[List[dict]] = None) -> dict:
@@ -681,6 +1087,7 @@ def score_batch(predictions: List[str], references: List[str],
         return _error(exc)
 
 
+@_answers_deep_input
 def check_consistency(formulas: List[str], logic: str = "auto",
                       timeout_ms: int = 10000,
                       dialect: Optional[str] = None) -> dict:
@@ -697,7 +1104,7 @@ def check_consistency(formulas: List[str], logic: str = "auto",
     budgets (``method="inconclusive"`` — never a claim either way).
     """
     from ..fol.nodes import Atom, Not, And as _And
-    from ..eval.validate import validate
+    from ..fol._identifiers import symbol_names
 
     parsed = []
     for i, f in enumerate(formulas or []):
@@ -706,10 +1113,9 @@ def check_consistency(formulas: List[str], logic: str = "auto",
             return err
         parsed.append(node)
 
-    used = set()
-    for node in parsed:
-        report = validate(node)
-        used.update(entry.rpartition("/")[0] for entry in report.predicates)
+    # Fresh against EVERY name of the problem, of every kind (a predicate, a
+    # constant, a sort, ...): a backend may keep them in one namespace.
+    used = symbol_names(*parsed)
     fresh = "ufk_absurd"
     while fresh in used:
         fresh += "_"
@@ -733,15 +1139,17 @@ def check_consistency(formulas: List[str], logic: str = "auto",
             "verdict": verdict.to_dict()}
 
 
+@_answers_deep_input
 def get_signature(formulas: List[str],
                   dialect: Optional[str] = None) -> dict:
     """Extract the inferred vocabulary (Signature) of a formula set.
 
     The result dict is ``fol.Signature.from_formulas(...)``'s rich form —
     predicates/functions with arities and inferred sorts, constants, sort
-    names — ready to pass back verbatim as ``check_formula``'s /
-    ``diagnose``'s ``signature`` argument to hold FURTHER generations to
-    this vocabulary.
+    names — ready to pass back as ``check_formula``'s / ``diagnose``'s
+    ``signature`` argument to hold FURTHER generations to this vocabulary:
+    the whole result, ``{"ok": True, "signature": {...}}``, or just its
+    ``signature`` value are both accepted.
     """
     from ..fol.signature import Signature
 
@@ -763,6 +1171,7 @@ def get_signature(formulas: List[str],
 _TRUTH_TABLE_MAX_ROWS = 4096
 
 
+@_answers_deep_input
 def truth_table(text: str, logic: str = "classical",
                 dialect: Optional[str] = None) -> dict:
     """Decide a propositional formula by full enumeration.
@@ -812,6 +1221,7 @@ def truth_table(text: str, logic: str = "classical",
             "markdown": tt.render()}
 
 
+@_answers_deep_input
 def drs_to_fol(text: str, format: str = "box",
                resolve_pronouns: bool = False) -> dict:
     """Translate a discourse representation structure into provable FOL.
@@ -885,6 +1295,7 @@ def _exact_fraction(value, where: str):
                      f"{type(value).__name__}")
 
 
+@_answers_deep_input
 def probability_bounds(conclusion: str, constraints: List[dict],
                        max_atoms: int = 12,
                        dialect: Optional[str] = None,
@@ -957,6 +1368,7 @@ def probability_bounds(conclusion: str, constraints: List[dict],
             "upper_float": float(bounds.upper)}
 
 
+@_answers_deep_input
 def probability_query(goal: str, facts: List[dict],
                       rules: Optional[List[str]] = None,
                       hard_facts: Optional[List[str]] = None,
@@ -1009,6 +1421,7 @@ def probability_query(goal: str, facts: List[dict],
     return {"ok": True, "probability": str(p), "probability_float": float(p)}
 
 
+@_answers_deep_input
 def get_syntax_spec(topic: str = "overview",
                     dialect: Optional[str] = None) -> dict:
     """Retrieve the kit's syntax specification — look up the rule you broke.
@@ -1037,19 +1450,33 @@ def get_syntax_spec(topic: str = "overview",
         return _error(exc)
 
 
+@_answers_deep_input
 def list_translations() -> dict:
     """Enumerate the logic-to-logic edges the translate tool can follow.
 
     The kit's own comorphism registry (BFS-composable); after a Hets bridge
-    refresh the dynamic ``hets:<Name>`` edges appear here too. ``lossy``
-    edges do not preserve the full source semantics; ``note`` carries the
-    conventions a consumer must know.
+    refresh the dynamic ``hets:<Name>`` edges appear here too. ``logics`` is
+    every label ``translate`` accepts as ``from_logic`` / ``to_logic``.
+    ``lossy`` edges do not preserve the full source semantics; ``note``
+    carries the conventions a consumer must know. ``guarantee`` is what the
+    edge preserves (``faithful`` / ``validity`` / ``satisfiability`` /
+    ``lossy``, or ``null`` when the edge declares none — not the same as
+    faithful). ``options`` are the ``translate`` parameters the edge reads
+    (``frame``, ``systems``, ``temporal_closure``, ``signature``, ``mode``,
+    ``bridges``), and ``side_axioms`` says whether the edge can return
+    ``axioms`` that must be passed as separate premises.
     """
     from ..comorphism import DEFAULT_REGISTRY
 
-    return {"edges": [{"name": e.name, "source": e.source,
-                       "target": e.target, "lossy": e.lossy, "note": e.note}
-                      for e in DEFAULT_REGISTRY.edges()]}
+    edges = DEFAULT_REGISTRY.edges()
+    return {"logics": sorted({label for e in edges
+                              for label in (e.source, e.target)}),
+            "edges": [{"name": e.name, "source": e.source,
+                       "target": e.target, "lossy": e.lossy, "note": e.note,
+                       "guarantee": e.guarantee,
+                       "options": sorted(e.options),
+                       "side_axioms": e.axioms is not None}
+                      for e in edges]}
 
 
 # --------------------------------------------------------------------------
@@ -1061,15 +1488,22 @@ def list_translations() -> dict:
 # "errors": [...], "spec_topic": "description-logic"}`` shape (whether the
 # grammar rejected it as :class:`~unicode_fol_kit.dl.ConceptSyntaxError` or
 # :class:`~unicode_fol_kit.dl.ManchesterSyntaxError` — including a
-# Manchester construct outside ALCHQ, e.g. ``value``/``Self``/``inverse``/a
+# Manchester construct outside ALCHQ, e.g. ``Self``/``inverse``/a
 # nominal, which that parser rejects by NAME rather than a bare syntax
-# error); a documented, non-text exception —
-# :class:`~unicode_fol_kit.dl.NonSimpleRoleError` (a qualified number
-# restriction on a non-simple role) or the tableau's step-budget
+# error; a ``value`` restriction (``hasChild value Doctor``) is READ, and is
+# then the tableau's refusal below, ``UnsupportedConceptError``, because it is
+# a nominal in disguise); a documented, non-text exception — every refusal class the ``dl``
+# package raises on purpose (:func:`_dl_errors`: a qualified number
+# restriction on a non-simple role, an axiom KIND / concept / datatype the
+# tableau does not decide, a malformed role) or the tableau's step-budget
 # ``RuntimeError`` — is ``{"error": {"type": ..., "message": ...}}``. A
 # :class:`Concept` has no ``to_dict()`` (see ``dl.concepts``), so results
 # carry it as ``*_unicode`` text (``Concept.to_unicode()``) rather than a
-# JSON AST, exactly like ``translate()``'s own ``alc`` branch above.
+# JSON AST, exactly like ``translate()``'s own ``alc`` branch above. A concept
+# one of whose names would make that text read back as ANOTHER concept (a class
+# named ``<A⊓B>``) has no faithful text: ``to_unicode()`` refuses it with a
+# ``ValueError``, and the tool answers with the same structured error
+# (:func:`_unicode_texts`) before it reasons, never with the exception.
 # --------------------------------------------------------------------------
 
 def _check_dl_syntax(syntax: str):
@@ -1088,17 +1522,65 @@ def _check_dl_syntax(syntax: str):
         f"dl: unknown syntax {syntax!r} (one of ['alc', 'manchester'])"))
 
 
-def _parse_dl(text: str, syntax: str, argument: str):
+def _dl_errors():
+    """The exceptions a description-logic tool turns into an ``{"error": ...}``
+    payload instead of letting them escape: the tableau's decidability refusal
+    (a number restriction on a non-simple role), the NAMED refusals of a
+    fragment it does not decide (an axiom kind, a concept, a datatype), the
+    refusal of a malformed role (:class:`~unicode_fol_kit.dl.RoleExpressionError`,
+    which the role builders raise and which a query-time check of a role name
+    raises too) and the ``RuntimeError`` of an exhausted resource budget.
+
+    ONE place, shared by every ``dl_*`` reasoning tool: a refusal class the
+    ``dl`` package gains is added HERE and is then reported by all of them.
+    ``tests/test_mcp_server.py`` classifies every exception class the package
+    defines against this tuple, so a class added there and forgotten here fails
+    that test instead of reaching a caller as a bare exception.
+
+    The syntax errors of the two readers (``ConceptSyntaxError``,
+    ``ManchesterSyntaxError``) are deliberately NOT here: they are text
+    mistakes, reported by :func:`_parse_dl` in the uniform ``ok=False`` shape.
+    ``dl`` is imported here, not at module level, like everywhere else in this
+    file."""
+    from .. import dl
+
+    return (dl.NonSimpleRoleError, dl.UnsupportedAxiomError,
+            dl.UnsupportedConceptError, dl.UnsupportedDatatypeError,
+            dl.RoleExpressionError, RuntimeError)
+
+
+def _dl_datatype_names(rows) -> List[str]:
+    """The names a ``tbox`` row list DEFINES as datatypes (its ``{"datatype":
+    name, "definition": ...}`` rows), in order.
+
+    A user-defined datatype is an ordinary name, so the Manchester reader can
+    tell ``d some Digit`` (data) from ``r some Dog`` (object) only if it is
+    told ``Digit`` is a datatype; every tool that reads concept text next to a
+    ``tbox`` passes these names on. A built-in datatype (``xsd:integer``) needs
+    no listing."""
+    return [row["datatype"] for row in rows or []
+            if isinstance(row, dict) and isinstance(row.get("datatype"), str)]
+
+
+def _parse_dl(text: str, syntax: str, argument: str, datatypes=()):
     """Parse concept TEXT into a :class:`~unicode_fol_kit.dl.Concept`.
 
     ``syntax="alc"`` (default) reads the glyph syntax via ``dl.parse_concept``;
     ``syntax="manchester"`` reads OWL 2 Manchester Syntax via
     ``dl.parse_manchester``. ``(concept, None)`` on success, ``(None,
     error_dict)`` on failure — see this section's own header comment for the
-    two error shapes.
+    two error shapes. ``datatypes``: the user-defined datatype names (see
+    :func:`_dl_datatype_names`), used by the Manchester reader only — the glyph
+    syntax has no data layer, so it cannot say a data restriction at all.
     """
     from .. import dl
 
+    if not isinstance(text, str):
+        # A malformed row shape, like every other non-str below: reported, not
+        # raised (a JSON number in a concept slot used to escape as a TypeError
+        # from inside the reader).
+        return None, _error(ValueError(
+            f"{argument}: expected concept text (str), got {type(text).__name__}"))
     if syntax == "alc":
         try:
             return dl.parse_concept(text), None
@@ -1108,7 +1590,7 @@ def _parse_dl(text: str, syntax: str, argument: str):
                           "spec_topic": "description-logic"}
     if syntax == "manchester":
         try:
-            return dl.parse_manchester(text), None
+            return dl.parse_manchester(text, datatypes=datatypes), None
         except dl.ManchesterSyntaxError as exc:
             return None, {"ok": False, "argument": argument,
                           "errors": [{"dialect": "manchester", "message": str(exc)}],
@@ -1116,34 +1598,227 @@ def _parse_dl(text: str, syntax: str, argument: str):
     return None, _check_dl_syntax(syntax)
 
 
+def _parse_dl_data_range(text, argument: str, datatypes=()):
+    """Parse DATA RANGE text (always Manchester: the glyph syntax has no data
+    layer) into a :class:`~unicode_fol_kit.dl.datatypes.DataRange`.
+    ``(range, None)`` / ``(None, error_dict)`` like :func:`_parse_dl`."""
+    from .. import dl
+
+    if not isinstance(text, str):
+        return None, _error(ValueError(
+            f"{argument}: expected data range text (str), got {type(text).__name__}"))
+    try:
+        return dl.parse_manchester_data_range(text, datatypes=datatypes), None
+    except dl.ManchesterSyntaxError as exc:
+        return None, {"ok": False, "argument": argument,
+                      "errors": [{"dialect": "manchester", "message": str(exc)}],
+                      "spec_topic": "description-logic"}
+
+
+def _parse_dl_literal(text, argument: str):
+    """Parse one LITERAL text (``"400"^^xsd:integer``, ``"abc"@en``, a bare
+    numeral) into a :class:`~unicode_fol_kit.dl.datatypes.Literal`.
+    ``(literal, None)`` / ``(None, error_dict)`` like :func:`_parse_dl`."""
+    from .. import dl
+
+    if not isinstance(text, str):
+        return None, _error(ValueError(
+            f"{argument}: expected literal text (str), got {type(text).__name__}"))
+    try:
+        return dl.parse_manchester_literal(text), None
+    except dl.ManchesterSyntaxError as exc:
+        return None, {"ok": False, "argument": argument,
+                      "errors": [{"dialect": "manchester", "message": str(exc)}],
+                      "spec_topic": "description-logic"}
+
+
+#: ``row key -> (TBox builder, how many roles the value holds)`` for the
+#: role-box row shapes that take ONE key. ``"one"`` is a single role name
+#: (every characteristic axiom), ``"many"`` a list of role names.
+_DL_ROLE_ROW_SHAPES = {
+    "transitive": ("add_transitive_role", "one"),
+    "symmetric": ("add_symmetric_role", "one"),
+    "asymmetric": ("add_asymmetric_role", "one"),
+    "reflexive": ("add_reflexive_role", "one"),
+    "irreflexive": ("add_irreflexive_role", "one"),
+    "functional": ("add_functional_role", "one"),
+    "inversefunctional": ("add_inverse_functional_role", "one"),
+    "inverseroles": ("add_inverse_roles", "many"),
+    "disjointroles": ("add_disjoint_roles", "many"),
+    "equivroles": ("add_equivalent_roles", "many"),
+}
+
+#: ``row key -> (TBox builder, OWL keyword)`` for the two role-box axioms
+#: whose value is a ROLE plus a CLASS EXPRESSION: ``{"domainrole": r,
+#: "domain": <concept text>}`` and its ``range`` twin. A table of their own
+#: because the concept text has to go through :func:`_parse_dl` under the
+#: caller's ``syntax``, which no role-name row needs.
+_DL_FILLER_ROLE_ROW_SHAPES = {
+    "domain": ("add_role_domain", "domainrole", "ObjectPropertyDomain"),
+    "range": ("add_role_range", "rangerole", "ObjectPropertyRange"),
+}
+
+
+#: ``row key -> (TBox builder, how many property names the value holds)`` for
+#: the data-box row shapes that take ONE key of property names, the data twin of
+#: :data:`_DL_ROLE_ROW_SHAPES`.
+_DL_DATA_NAME_ROW_SHAPES = {
+    "equivdata": ("add_equivalent_data_properties", "many"),
+    "disjointdata": ("add_disjoint_data_properties", "many"),
+    "functionaldata": ("add_functional_data_property", "one"),
+}
+
+#: Every key that marks a row as a DATA-box row. Checked BEFORE the role rows:
+#: ``{"domaindata": d, "domain": text}`` carries the key ``"domain"``, which the
+#: role-domain branch would otherwise claim and reject for lacking ``domainrole``.
+_DL_DATA_ROW_KEYS = ("subdata", "domaindata", "rangedata", "datatype",
+                     *_DL_DATA_NAME_ROW_SHAPES)
+
+
+def _add_dl_data_row(tbox, row, i: int, syntax: str, argument: str, datatypes):
+    """Add the data-box row ``row`` (the ``i``-th) to ``tbox``; ``None`` on
+    success, an error dict on the first failure (same two shapes as
+    :func:`_build_dl_tbox`)."""
+    from .. import dl
+
+    where = f"{argument}[{i}]"
+    names = [key for key in _DL_DATA_ROW_KEYS if key in row]
+    if len(names) != 1:
+        return _error(ValueError(
+            f"{where}: a data-box row carries exactly one of {sorted(_DL_DATA_ROW_KEYS)}, "
+            f"got {names}"))
+    key = names[0]
+    try:
+        if key == "subdata":
+            if "supdata" not in row:
+                return _error(ValueError(
+                    f"{where}: a 'subdata' row needs 'supdata', got {sorted(row)}"))
+            tbox.add_data_property_inclusion(row["subdata"], row["supdata"])
+        elif key == "domaindata":
+            if "domain" not in row:
+                return _error(ValueError(
+                    f"{where}: a 'domaindata' row needs 'domain' (the class text), "
+                    f"got {sorted(row)}"))
+            concept, err = _parse_dl(row["domain"], syntax, f"{where}.domain", datatypes)
+            if err is not None:
+                return err
+            tbox.add_data_property_domain(row["domaindata"], concept)
+        elif key == "rangedata":
+            if "range" not in row:
+                return _error(ValueError(
+                    f"{where}: a 'rangedata' row needs 'range' (the data range text), "
+                    f"got {sorted(row)}"))
+            datarange, err = _parse_dl_data_range(row["range"], f"{where}.range", datatypes)
+            if err is not None:
+                return err
+            tbox.add_data_property_range(row["rangedata"], datarange)
+        elif key == "datatype":
+            if "definition" not in row:
+                return _error(ValueError(
+                    f"{where}: a 'datatype' row needs 'definition' (the data range "
+                    f"text), got {sorted(row)}"))
+            if not isinstance(row["datatype"], str):
+                return _error(ValueError(
+                    f"{where}.datatype: expected a datatype name (str), got "
+                    f"{row['datatype']!r}"))
+            datarange, err = _parse_dl_data_range(
+                row["definition"], f"{where}.definition", datatypes)
+            if err is not None:
+                return err
+            tbox.add_datatype_definition(row["datatype"], datarange)
+        else:
+            builder, arity = _DL_DATA_NAME_ROW_SHAPES[key]
+            value = row[key]
+            if arity == "one":
+                if not isinstance(value, str):
+                    return _error(ValueError(
+                        f"{where}.{key}: expected a data property name (str), "
+                        f"got {value!r}"))
+                names_ = [value]
+            else:
+                if not (isinstance(value, list) and len(value) >= 2
+                        and all(isinstance(name, str) for name in value)):
+                    return _error(ValueError(
+                        f"{where}.{key}: expected a list of at least 2 data "
+                        f"property names, got {value!r}"))
+                names_ = value
+            getattr(tbox, builder)(*names_)
+    except (dl.RoleExpressionError, dl.UnsupportedDatatypeError) as exc:
+        return _error(exc)
+    return None
+
+
 def _build_dl_tbox(rows, syntax: str, argument: str = "tbox"):
     """Build a :class:`~unicode_fol_kit.dl.TBox` from JSON row dicts.
 
-    Each row is one of ``TBox``'s four axiom shapes: a general concept
-    inclusion ``{"sub": <text>, "sup": <text>}`` (``TBox.add``), an
-    equivalence ``{"equiv": [<text>, <text>]}`` (``TBox.add_equivalence``), a
-    role inclusion ``{"subrole": <role>, "suprole": <role>}``
-    (``TBox.add_role_inclusion`` — the RBox's role-hierarchy axiom, "H"), or
-    a transitivity declaration ``{"transitive": <role>}``
-    (``TBox.add_transitive_role`` — the RBox's "S"). ``rows`` ``None``/``[]``
-    is the empty TBox. ``(tbox, None)`` on success, ``(None, error_dict)`` on
-    the first failure: concept TEXT inside a row is parsed with
-    :func:`_parse_dl` under the same ``syntax`` (the uniform ``ok=False``
-    shape); a malformed row SHAPE (missing/unrecognised keys, a non-2-element
-    ``equiv``) is a caller/config mistake, reported as ``{"error": {...}}``.
+    Each row is one of ``TBox``'s axiom shapes. The concept-level two:
+
+    * ``{"sub": <text>, "sup": <text>}`` — a general concept inclusion
+      (``TBox.add``);
+    * ``{"equiv": [<text>, <text>]}`` — an equivalence (``TBox.add_equivalence``).
+
+    The role box (see "Role hierarchies and transitive roles (RBox)" and "The
+    rest of the OWL 2 role box" in :mod:`unicode_fol_kit.dl.tableau`'s module
+    docstring; the role values are NAMES, never concept text, so ``syntax``
+    does not apply to them):
+
+    * ``{"subrole": <role>, "suprole": <role>}`` — a role inclusion;
+    * ``{"chain": [<role>, …], "suprole": <role>}`` — a property chain
+      (``TBox.add_role_chain``), checked BEFORE ``subrole`` so the two
+      ``suprole`` shapes cannot be confused;
+    * ``{"inverseroles": [p, q]}``, ``{"disjointroles": [p, q, …]}``,
+      ``{"equivroles": [p, q, …]}`` — the n-ary role axioms;
+    * ``{"transitive": <role>}`` and its six siblings ``symmetric``,
+      ``asymmetric``, ``reflexive``, ``irreflexive``, ``functional``,
+      ``inversefunctional`` — the characteristic axioms;
+    * ``{"domainrole": <role>, "domain": <text>}`` and
+      ``{"rangerole": <role>, "range": <text>}`` — the two role-box axioms
+      whose right-hand side is a CLASS EXPRESSION (``TBox.add_role_domain`` /
+      ``add_role_range``), so that text IS parsed under ``syntax``.
+
+    The data box (see "The data layer" in :mod:`unicode_fol_kit.dl.translate`'s
+    module docstring; property and datatype values are NAMES, and the data range
+    text is ALWAYS OWL 2 Manchester syntax, since the glyph syntax has no data
+    layer):
+
+    * ``{"subdata": <prop>, "supdata": <prop>}`` — ``SubDataPropertyOf``;
+    * ``{"equivdata": [p, q, …]}`` and ``{"disjointdata": [p, q, …]}`` — the
+      n-ary data property axioms;
+    * ``{"functionaldata": <prop>}`` — ``FunctionalDataProperty``;
+    * ``{"domaindata": <prop>, "domain": <class text>}`` — ``DataPropertyDomain``
+      (the class text is parsed under ``syntax``);
+    * ``{"rangedata": <prop>, "range": <data range text>}`` —
+      ``DataPropertyRange``;
+    * ``{"datatype": <name>, "definition": <data range text>}`` —
+      ``DatatypeDefinition``. The name is then a datatype in every other row's
+      text, which is how ``d some Digit`` is told from ``r some Dog``.
+
+    A row is accepted even when the in-house tableau refuses to REASON over
+    that kind: which kinds it decides is recorded in ``dl.tableau._AXIOM_KINDS``
+    and enforced at query time, and the tool then reports that refusal rather
+    than silently answering about a weaker knowledge base.
+
+    ``rows`` ``None``/``[]`` is the empty TBox. ``(tbox, None)`` on success,
+    ``(None, error_dict)`` on the first failure: concept TEXT inside a row is
+    parsed with :func:`_parse_dl` under the same ``syntax`` (the uniform
+    ``ok=False`` shape); a malformed row SHAPE (missing/unrecognised keys, a
+    non-2-element ``equiv``, a role name that is not a string, an OWL 2
+    built-in role name) is a caller/config mistake, reported as
+    ``{"error": {...}}``.
     """
     from .. import dl
 
     tbox = dl.TBox()
+    datatypes = _dl_datatype_names(rows)
     for i, row in enumerate(rows or []):
         if not isinstance(row, dict):
             return None, _error(ValueError(
                 f"{argument}[{i}]: expected an object, got {type(row).__name__}"))
         if "sub" in row and "sup" in row:
-            sub, err = _parse_dl(row["sub"], syntax, f"{argument}[{i}].sub")
+            sub, err = _parse_dl(row["sub"], syntax, f"{argument}[{i}].sub", datatypes)
             if err is not None:
                 return None, err
-            sup, err = _parse_dl(row["sup"], syntax, f"{argument}[{i}].sup")
+            sup, err = _parse_dl(row["sup"], syntax, f"{argument}[{i}].sup", datatypes)
             if err is not None:
                 return None, err
             tbox.add(sub, sup)
@@ -1152,25 +1827,84 @@ def _build_dl_tbox(rows, syntax: str, argument: str = "tbox"):
             if not (isinstance(pair, list) and len(pair) == 2):
                 return None, _error(ValueError(
                     f"{argument}[{i}].equiv: expected a 2-element list, got {pair!r}"))
-            c, err = _parse_dl(pair[0], syntax, f"{argument}[{i}].equiv[0]")
+            c, err = _parse_dl(pair[0], syntax, f"{argument}[{i}].equiv[0]", datatypes)
             if err is not None:
                 return None, err
-            d, err = _parse_dl(pair[1], syntax, f"{argument}[{i}].equiv[1]")
+            d, err = _parse_dl(pair[1], syntax, f"{argument}[{i}].equiv[1]", datatypes)
             if err is not None:
                 return None, err
             tbox.add_equivalence(c, d)
+        elif any(key in row for key in _DL_DATA_ROW_KEYS):
+            err = _add_dl_data_row(tbox, row, i, syntax, argument, datatypes)
+            if err is not None:
+                return None, err
+        elif "chain" in row and "suprole" in row:
+            chain = row["chain"]
+            if not (isinstance(chain, list) and len(chain) >= 2
+                    and all(isinstance(role, str) for role in chain)):
+                return None, _error(ValueError(
+                    f"{argument}[{i}].chain: expected a list of at least 2 role "
+                    f"names, got {chain!r}"))
+            try:
+                tbox.add_role_chain(chain, row["suprole"])
+            except dl.RoleExpressionError as exc:
+                return None, _error(exc)
         elif "subrole" in row and "suprole" in row:
-            tbox.add_role_inclusion(row["subrole"], row["suprole"])
-        elif "transitive" in row:
-            tbox.add_transitive_role(row["transitive"])
+            try:
+                tbox.add_role_inclusion(row["subrole"], row["suprole"])
+            except dl.RoleExpressionError as exc:
+                return None, _error(exc)
+        elif any(key in row for key in _DL_FILLER_ROLE_ROW_SHAPES):
+            key = next(k for k in _DL_FILLER_ROLE_ROW_SHAPES if k in row)
+            builder, role_key, _keyword = _DL_FILLER_ROLE_ROW_SHAPES[key]
+            if role_key not in row:
+                return None, _error(ValueError(
+                    f"{argument}[{i}]: a {key!r} row needs {role_key!r} "
+                    f"(the role the axiom is about), got {sorted(row)}"))
+            filler, err = _parse_dl(row[key], syntax, f"{argument}[{i}].{key}",
+                                    datatypes)
+            if err is not None:
+                return None, err
+            try:
+                getattr(tbox, builder)(row[role_key], filler)
+            except dl.RoleExpressionError as exc:
+                return None, _error(exc)
         else:
-            return None, _error(ValueError(
-                f"{argument}[{i}]: expected keys 'sub'+'sup', 'equiv', "
-                f"'subrole'+'suprole', or 'transitive', got {sorted(row)}"))
+            key = next((k for k in _DL_ROLE_ROW_SHAPES if k in row), None)
+            if key is None:
+                return None, _error(ValueError(
+                    f"{argument}[{i}]: expected keys 'sub'+'sup', 'equiv', "
+                    f"'subrole'+'suprole', 'chain'+'suprole', "
+                    f"'domainrole'+'domain', 'rangerole'+'range', "
+                    f"'subdata'+'supdata', 'domaindata'+'domain', "
+                    f"'rangedata'+'range', 'datatype'+'definition', or one of "
+                    f"{sorted(_DL_ROLE_ROW_SHAPES)} / "
+                    f"{sorted(_DL_DATA_NAME_ROW_SHAPES)}, got {sorted(row)}"))
+            builder, arity = _DL_ROLE_ROW_SHAPES[key]
+            value = row[key]
+            if arity == "one":
+                if not isinstance(value, str):
+                    return None, _error(ValueError(
+                        f"{argument}[{i}].{key}: expected a role name (str), "
+                        f"got {value!r}"))
+                roles = [value]
+            else:
+                if not (isinstance(value, list) and len(value) >= 2
+                        and all(isinstance(role, str) for role in value)):
+                    return None, _error(ValueError(
+                        f"{argument}[{i}].{key}: expected a list of at least 2 "
+                        f"role names, got {value!r}"))
+                roles = value
+            try:
+                getattr(tbox, builder)(*roles)
+            except dl.RoleExpressionError as exc:
+                return None, _error(exc)
     return tbox, None
 
 
-def _build_dl_abox(concepts, roles, distinct, syntax: str):
+def _build_dl_abox(concepts, roles, distinct, syntax: str,
+                   same=None, negative_roles=None, data=None,
+                   negative_data=None, datatypes=()):
     """Build a :class:`~unicode_fol_kit.dl.ABox` from JSON rows.
 
     ``concepts``: ``[individual, concept_text]`` pairs (``ABox.assert_concept``).
@@ -1178,11 +1912,36 @@ def _build_dl_abox(concepts, roles, distinct, syntax: str):
     ``[a, b]`` pairs (``ABox.assert_distinct`` — the only thing that forces two
     individuals apart, since this reasoner has no unique name assumption; see
     :mod:`unicode_fol_kit.dl.tableau`'s "Qualified number restrictions"
-    section). ``(abox, None)`` on success, ``(None, error_dict)`` on the first
+    section). ``same``: ``[a, b]`` pairs (``ABox.assert_same`` — the mirror of
+    ``distinct``, decided by node merging). ``negative_roles``: ``[a, b, role]``
+    triples (``ABox.assert_negative_role`` — ``¬role(a, b)``). The last two are
+    optional; without them the MCP description-logic tools could express a
+    strictly smaller class of knowledge bases than the Python API. The same
+    holds for ``data`` and ``negative_data``: ``[individual, property, literal]``
+    triples (``ABox.assert_data`` / ``assert_negative_data``), the literal being
+    Manchester literal text (``"400"^^xsd:integer``, ``"abc"@en``, a bare
+    numeral). ``datatypes``: the user-defined datatype names the concept texts
+    may mention (see :func:`_dl_datatype_names`).
+    ``(abox, None)`` on success, ``(None, error_dict)`` on the first
     failure: a concept TEXT failure is the uniform ``ok=False`` shape
-    (argument ``"concepts[i][1]"``); a malformed row shape is
-    ``{"error": {...}}``.
+    (argument ``"concepts[i][1]"``); a malformed row shape (a row of the wrong
+    length, or an individual, role or property name that is not a string) is
+    ``{"error": {...}}``, and so is a role or data property name an ABox
+    builder refuses by name (:class:`~unicode_fol_kit.dl.RoleExpressionError`,
+    :class:`~unicode_fol_kit.dl.UnsupportedDatatypeError`).
     """
+    from .. import dl
+
+    try:
+        return _dl_abox_from_rows(concepts, roles, distinct, syntax, same,
+                                  negative_roles, data, negative_data, datatypes)
+    except (dl.RoleExpressionError, dl.UnsupportedDatatypeError) as exc:
+        return None, _error(exc)
+
+
+def _dl_abox_from_rows(concepts, roles, distinct, syntax, same, negative_roles,
+                       data, negative_data, datatypes):
+    """The body of :func:`_build_dl_abox`, which adds the one ``try`` around it."""
     from .. import dl
 
     abox = dl.ABox()
@@ -1195,25 +1954,57 @@ def _build_dl_abox(concepts, roles, distinct, syntax: str):
             return None, _error(ValueError(
                 f"concepts[{i}][0]: individual name must be a str, got "
                 f"{type(individual).__name__}"))
-        concept, err = _parse_dl(text, syntax, f"concepts[{i}][1]")
+        concept, err = _parse_dl(text, syntax, f"concepts[{i}][1]", datatypes)
         if err is not None:
             return None, err
         abox.assert_concept(individual, concept)
     for i, triple in enumerate(roles or []):
-        if not (isinstance(triple, list) and len(triple) == 3):
+        if not (isinstance(triple, list) and len(triple) == 3
+                and all(isinstance(name, str) for name in triple)):
             return None, _error(ValueError(
-                f"roles[{i}]: expected [a, b, role], got {triple!r}"))
+                f"roles[{i}]: expected [a, b, role] (three strings), got {triple!r}"))
         a, b, role = triple
         abox.assert_role(a, b, role)
     for i, pair in enumerate(distinct or []):
-        if not (isinstance(pair, list) and len(pair) == 2):
+        if not (isinstance(pair, list) and len(pair) == 2
+                and all(isinstance(name, str) for name in pair)):
             return None, _error(ValueError(
-                f"distinct[{i}]: expected [a, b], got {pair!r}"))
+                f"distinct[{i}]: expected [a, b] (two strings), got {pair!r}"))
         a, b = pair
         abox.assert_distinct(a, b)
+    for i, pair in enumerate(same or []):
+        if not (isinstance(pair, list) and len(pair) == 2
+                and all(isinstance(name, str) for name in pair)):
+            return None, _error(ValueError(
+                f"same[{i}]: expected [a, b] (two strings), got {pair!r}"))
+        a, b = pair
+        abox.assert_same(a, b)
+    for i, triple in enumerate(negative_roles or []):
+        if not (isinstance(triple, list) and len(triple) == 3
+                and all(isinstance(name, str) for name in triple)):
+            return None, _error(ValueError(
+                f"negative_roles[{i}]: expected [a, b, role] (three strings), "
+                f"got {triple!r}"))
+        a, b, role = triple
+        abox.assert_negative_role(a, b, role)
+    for field, rows, assert_ in (("data", data, abox.assert_data),
+                                 ("negative_data", negative_data,
+                                  abox.assert_negative_data)):
+        for i, triple in enumerate(rows or []):
+            if not (isinstance(triple, list) and len(triple) == 3
+                    and isinstance(triple[0], str) and isinstance(triple[1], str)):
+                return None, _error(ValueError(
+                    f"{field}[{i}]: expected [individual, property, literal], "
+                    f"got {triple!r}"))
+            individual, prop, text = triple
+            value, err = _parse_dl_literal(text, f"{field}[{i}][2]")
+            if err is not None:
+                return None, err
+            assert_(individual, prop, value)
     return abox, None
 
 
+@_answers_deep_input
 def dl_concept_satisfiable(concept: str, tbox: Optional[List[dict]] = None,
                            syntax: str = "alc") -> dict:
     """Is ``concept`` satisfiable with respect to ``tbox`` (the ALCHQ tableau)?
@@ -1225,19 +2016,23 @@ def dl_concept_satisfiable(concept: str, tbox: Optional[List[dict]] = None,
     """
     from .. import dl
 
-    c, err = _parse_dl(concept, syntax, "concept")
+    c, err = _parse_dl(concept, syntax, "concept", _dl_datatype_names(tbox))
     if err is not None:
         return err
     tb, err = _build_dl_tbox(tbox, syntax)
     if err is not None:
         return err
+    texts, err = _unicode_texts(c)
+    if err is not None:
+        return err
     try:
         satisfiable = dl.concept_satisfiable(c, tb)
-    except (dl.NonSimpleRoleError, RuntimeError) as exc:
+    except _dl_errors() as exc:
         return _error(exc)
-    return {"ok": True, "satisfiable": satisfiable, "concept_unicode": c.to_unicode()}
+    return {"ok": True, "satisfiable": satisfiable, "concept_unicode": texts[0]}
 
 
+@_answers_deep_input
 def dl_subsumes(sub: str, sup: str, tbox: Optional[List[dict]] = None,
                 syntax: str = "alc") -> dict:
     """Does ``tbox`` entail ``sub ⊑ sup`` (every model puts ``sub`` in ``sup``)?
@@ -1246,23 +2041,28 @@ def dl_subsumes(sub: str, sup: str, tbox: Optional[List[dict]] = None,
     """
     from .. import dl
 
-    sub_c, err = _parse_dl(sub, syntax, "sub")
+    datatypes = _dl_datatype_names(tbox)
+    sub_c, err = _parse_dl(sub, syntax, "sub", datatypes)
     if err is not None:
         return err
-    sup_c, err = _parse_dl(sup, syntax, "sup")
+    sup_c, err = _parse_dl(sup, syntax, "sup", datatypes)
     if err is not None:
         return err
     tb, err = _build_dl_tbox(tbox, syntax)
     if err is not None:
         return err
+    texts, err = _unicode_texts(sub_c, sup_c)
+    if err is not None:
+        return err
     try:
         holds = dl.subsumes(sub_c, sup_c, tb)
-    except (dl.NonSimpleRoleError, RuntimeError) as exc:
+    except _dl_errors() as exc:
         return _error(exc)
     return {"ok": True, "subsumes": holds,
-            "sub_unicode": sub_c.to_unicode(), "sup_unicode": sup_c.to_unicode()}
+            "sub_unicode": texts[0], "sup_unicode": texts[1]}
 
 
+@_answers_deep_input
 def dl_equivalent(c: str, d: str, tbox: Optional[List[dict]] = None,
                   syntax: str = "alc") -> dict:
     """Does ``tbox`` entail ``c ≡ d`` (mutual subsumption)?
@@ -1271,32 +2071,45 @@ def dl_equivalent(c: str, d: str, tbox: Optional[List[dict]] = None,
     """
     from .. import dl
 
-    c_concept, err = _parse_dl(c, syntax, "c")
+    datatypes = _dl_datatype_names(tbox)
+    c_concept, err = _parse_dl(c, syntax, "c", datatypes)
     if err is not None:
         return err
-    d_concept, err = _parse_dl(d, syntax, "d")
+    d_concept, err = _parse_dl(d, syntax, "d", datatypes)
     if err is not None:
         return err
     tb, err = _build_dl_tbox(tbox, syntax)
     if err is not None:
         return err
+    texts, err = _unicode_texts(c_concept, d_concept)
+    if err is not None:
+        return err
     try:
         holds = dl.equivalent(c_concept, d_concept, tb)
-    except (dl.NonSimpleRoleError, RuntimeError) as exc:
+    except _dl_errors() as exc:
         return _error(exc)
     return {"ok": True, "equivalent": holds,
-            "c_unicode": c_concept.to_unicode(), "d_unicode": d_concept.to_unicode()}
+            "c_unicode": texts[0], "d_unicode": texts[1]}
 
 
+@_answers_deep_input
 def dl_abox_consistent(concepts: List[List[str]],
                        roles: Optional[List[List[str]]] = None,
                        distinct: Optional[List[List[str]]] = None,
                        tbox: Optional[List[dict]] = None,
-                       syntax: str = "alc") -> dict:
+                       syntax: str = "alc",
+                       same: Optional[List[List[str]]] = None,
+                       negative_roles: Optional[List[List[str]]] = None,
+                       data: Optional[List[List[str]]] = None,
+                       negative_data: Optional[List[List[str]]] = None) -> dict:
     """Is the knowledge base ``(tbox, abox)`` consistent (does it have a model)?
 
-    ``concepts``/``roles``/``distinct`` build the ABox — see
-    :func:`_build_dl_abox`; ``tbox`` follows :func:`_build_dl_tbox`.
+    ``concepts``/``roles``/``distinct``/``same``/``negative_roles``/``data``/
+    ``negative_data`` build the ABox — see :func:`_build_dl_abox`; ``tbox``
+    follows :func:`_build_dl_tbox`. A knowledge base with DATA assertions or a
+    data box is expressible here, but the in-house tableau REFUSES it by name
+    (it has no data domain): the reply is then an ``{"error": ...}`` naming the
+    refused kinds, never an answer about a weaker knowledge base.
 
     Returns ``{"ok": True, "consistent": bool}``.
     """
@@ -1305,7 +2118,9 @@ def dl_abox_consistent(concepts: List[List[str]],
     err = _check_dl_syntax(syntax)
     if err is not None:
         return err
-    abox, err = _build_dl_abox(concepts, roles, distinct, syntax)
+    abox, err = _build_dl_abox(concepts, roles, distinct, syntax,
+                               same, negative_roles, data, negative_data,
+                               _dl_datatype_names(tbox))
     if err is not None:
         return err
     tb, err = _build_dl_tbox(tbox, syntax)
@@ -1313,17 +2128,22 @@ def dl_abox_consistent(concepts: List[List[str]],
         return err
     try:
         consistent = dl.abox_consistent(abox, tb)
-    except (dl.NonSimpleRoleError, RuntimeError) as exc:
+    except _dl_errors() as exc:
         return _error(exc)
     return {"ok": True, "consistent": consistent}
 
 
+@_answers_deep_input
 def dl_instance_check(individual: str, concept: str,
                       concepts: List[List[str]],
                       roles: Optional[List[List[str]]] = None,
                       distinct: Optional[List[List[str]]] = None,
                       tbox: Optional[List[dict]] = None,
-                      syntax: str = "alc") -> dict:
+                      syntax: str = "alc",
+                      same: Optional[List[List[str]]] = None,
+                      negative_roles: Optional[List[List[str]]] = None,
+                      data: Optional[List[List[str]]] = None,
+                      negative_data: Optional[List[List[str]]] = None) -> dict:
     """Does the knowledge base entail ``individual : concept``?
 
     Open-world (:func:`~unicode_fol_kit.dl.instance_check`'s own contract):
@@ -1336,28 +2156,39 @@ def dl_instance_check(individual: str, concept: str,
     """
     from .. import dl
 
-    query, err = _parse_dl(concept, syntax, "concept")
+    datatypes = _dl_datatype_names(tbox)
+    query, err = _parse_dl(concept, syntax, "concept", datatypes)
     if err is not None:
         return err
-    abox, err = _build_dl_abox(concepts, roles, distinct, syntax)
+    abox, err = _build_dl_abox(concepts, roles, distinct, syntax,
+                               same, negative_roles, data, negative_data,
+                               datatypes)
     if err is not None:
         return err
     tb, err = _build_dl_tbox(tbox, syntax)
     if err is not None:
         return err
+    texts, err = _unicode_texts(query)
+    if err is not None:
+        return err
     try:
         entailed = dl.instance_check(abox, individual, query, tb)
-    except (dl.NonSimpleRoleError, RuntimeError) as exc:
+    except _dl_errors() as exc:
         return _error(exc)
     return {"ok": True, "entailed": entailed, "individual": individual,
-            "concept_unicode": query.to_unicode()}
+            "concept_unicode": texts[0]}
 
 
+@_answers_deep_input
 def dl_instance_retrieval(concept: str, concepts: List[List[str]],
                           roles: Optional[List[List[str]]] = None,
                           distinct: Optional[List[List[str]]] = None,
                           tbox: Optional[List[dict]] = None,
-                          syntax: str = "alc") -> dict:
+                          syntax: str = "alc",
+                          same: Optional[List[List[str]]] = None,
+                          negative_roles: Optional[List[List[str]]] = None,
+                          data: Optional[List[List[str]]] = None,
+                          negative_data: Optional[List[List[str]]] = None) -> dict:
     """Every ABox individual the knowledge base entails is a ``concept``.
 
     Sweeps :func:`~unicode_fol_kit.dl.instance_check` over every individual
@@ -1369,23 +2200,30 @@ def dl_instance_retrieval(concept: str, concepts: List[List[str]],
     """
     from .. import dl
 
-    query, err = _parse_dl(concept, syntax, "concept")
+    datatypes = _dl_datatype_names(tbox)
+    query, err = _parse_dl(concept, syntax, "concept", datatypes)
     if err is not None:
         return err
-    abox, err = _build_dl_abox(concepts, roles, distinct, syntax)
+    abox, err = _build_dl_abox(concepts, roles, distinct, syntax,
+                               same, negative_roles, data, negative_data,
+                               datatypes)
     if err is not None:
         return err
     tb, err = _build_dl_tbox(tbox, syntax)
     if err is not None:
         return err
+    texts, err = _unicode_texts(query)
+    if err is not None:
+        return err
     try:
         individuals = dl.instance_retrieval(abox, query, tb)
-    except (dl.NonSimpleRoleError, RuntimeError) as exc:
+    except _dl_errors() as exc:
         return _error(exc)
     return {"ok": True, "individuals": sorted(individuals),
-            "concept_unicode": query.to_unicode()}
+            "concept_unicode": texts[0]}
 
 
+@_answers_deep_input
 def dl_classify(tbox: Optional[List[dict]] = None,
                 concepts: Optional[List[str]] = None,
                 syntax: str = "alc") -> dict:
@@ -1416,14 +2254,15 @@ def dl_classify(tbox: Optional[List[dict]] = None,
     if err is not None:
         return err
     extra = []
+    datatypes = _dl_datatype_names(tbox)
     for i, text in enumerate(concepts or []):
-        concept, err = _parse_dl(text, syntax, f"concepts[{i}]")
+        concept, err = _parse_dl(text, syntax, f"concepts[{i}]", datatypes)
         if err is not None:
             return err
         extra.append(concept)
     try:
         result = dl.classify(tb, extra or None)
-    except (dl.NonSimpleRoleError, RuntimeError) as exc:
+    except _dl_errors() as exc:
         return _error(exc)
     return {"ok": True,
             "equivalents": {k: sorted(v) for k, v in result.equivalents.items()},
@@ -1432,6 +2271,44 @@ def dl_classify(tbox: Optional[List[dict]] = None,
             "ancestors": {k: sorted(v) for k, v in result.ancestors.items()}}
 
 
+def _role_axiom_payload(axiom) -> dict:
+    """``dl.parse_manchester_role_axiom``'s tuple as a JSON payload.
+
+    One function over its THREE tuple shapes, keyed by the TAG and read off the
+    reader's own tables (``_BINARY_ROLE_FRAMES`` / ``_FILLER_ROLE_FRAMES`` /
+    ``_CHARACTERISTIC_TAGS``), so a shape the reader gains cannot be named
+    differently here.
+
+    Until 0.30.0 this branch ended in ``_, role = axiom``, so every shape other
+    than ``("subproperty", sub, sup)`` and a characteristic crashed the tool
+    with ``ValueError: too many values to unpack`` — an ``InverseOf``,
+    ``DisjointWith`` or ``EquivalentTo`` axiom the reader already read
+    perfectly well. Deriving the tags means a reader shape with no payload here
+    is reported as an error naming itself, not as a crash.
+    """
+    from ..dl import owl_manchester as _manchester
+
+    pairs = {tag for tag, _spelling in _manchester._BINARY_ROLE_FRAMES.values()}
+    fillers = {tag for tag, _spelling in _manchester._FILLER_ROLE_FRAMES.values()}
+    characteristics = set(_manchester._CHARACTERISTIC_TAGS.values())
+    tag = axiom[0]
+    if tag in pairs and len(axiom) == 3:
+        return {"ok": True, "kind": tag,
+                "sub_role": axiom[1], "super_role": axiom[2]}
+    if tag in fillers and len(axiom) == 3:
+        texts, err = _unicode_texts(axiom[2])
+        if err is not None:
+            return err
+        return {"ok": True, "kind": tag, "role": axiom[1],
+                "concept_unicode": texts[0]}
+    if tag in characteristics and len(axiom) == 2:
+        return {"ok": True, "kind": tag, "role": axiom[1]}
+    return _error(ValueError(
+        f"dl_parse_manchester: dl.parse_manchester_role_axiom returned the "
+        f"shape {axiom!r}, which this tool has no payload for — add one"))
+
+
+@_answers_deep_input
 def dl_parse_manchester(text: str, kind: str = "concept") -> dict:
     """Parse OWL 2 Manchester Syntax text, three ways.
 
@@ -1449,8 +2326,12 @@ def dl_parse_manchester(text: str, kind: str = "concept") -> dict:
     Returns, on success: ``{"ok": True, "concept_unicode": str, "manchester":
     str}`` (``kind="concept"``); ``{"ok": True, "kind": "subclass"|
     "equivalent", "sub_unicode": str, "sup_unicode": str}`` (``kind="axiom"``);
-    ``{"ok": True, "kind": "subproperty", "sub_role": str, "super_role": str}``
-    or ``{"ok": True, "kind": "transitive", "role": str}`` (``kind="role_axiom"``).
+    and for ``kind="role_axiom"`` one of three shapes, by the axiom read (see
+    :func:`_role_axiom_payload`): ``{"ok": True, "kind": "subproperty"|
+    "equivalentproperty"|"inverse"|"disjoint", "sub_role": str, "super_role":
+    str}``, ``{"ok": True, "kind": "domain"|"range", "role": str,
+    "concept_unicode": str}``, or ``{"ok": True, "kind": "transitive"|…,
+    "role": str}`` for a ``Characteristics:`` declaration.
     Malformed/unsupported ``text`` is the uniform ``ok=False`` shape (see this
     section's own header comment); an unknown ``kind`` is
     ``{"error": {"type": "ValueError", ...}}``.
@@ -1464,8 +2345,14 @@ def dl_parse_manchester(text: str, kind: str = "concept") -> dict:
             return {"ok": False, "argument": "text",
                     "errors": [{"dialect": "manchester", "message": str(exc)}],
                     "spec_topic": "description-logic"}
-        return {"ok": True, "concept_unicode": concept.to_unicode(),
-                "manchester": dl.to_manchester(concept)}
+        texts, err = _unicode_texts(concept)
+        if err is not None:
+            return err
+        try:
+            manchester = dl.to_manchester(concept)
+        except ValueError as exc:       # a name parse_manchester could not read back
+            return _error(exc)
+        return {"ok": True, "concept_unicode": texts[0], "manchester": manchester}
     if kind == "axiom":
         try:
             label, sub, sup = dl.parse_manchester_axiom(text)
@@ -1473,8 +2360,11 @@ def dl_parse_manchester(text: str, kind: str = "concept") -> dict:
             return {"ok": False, "argument": "text",
                     "errors": [{"dialect": "manchester", "message": str(exc)}],
                     "spec_topic": "description-logic"}
+        texts, err = _unicode_texts(sub, sup)
+        if err is not None:
+            return err
         return {"ok": True, "kind": label,
-                "sub_unicode": sub.to_unicode(), "sup_unicode": sup.to_unicode()}
+                "sub_unicode": texts[0], "sup_unicode": texts[1]}
     if kind == "role_axiom":
         try:
             axiom = dl.parse_manchester_role_axiom(text)
@@ -1482,12 +2372,7 @@ def dl_parse_manchester(text: str, kind: str = "concept") -> dict:
             return {"ok": False, "argument": "text",
                     "errors": [{"dialect": "manchester", "message": str(exc)}],
                     "spec_topic": "description-logic"}
-        if axiom[0] == "subproperty":
-            _, sub_role, super_role = axiom
-            return {"ok": True, "kind": "subproperty",
-                    "sub_role": sub_role, "super_role": super_role}
-        _, role = axiom
-        return {"ok": True, "kind": "transitive", "role": role}
+        return _role_axiom_payload(axiom)
     return _error(ValueError(
         f"dl_parse_manchester: unknown kind {kind!r} "
         "(one of ['concept', 'axiom', 'role_axiom'])"))
@@ -1538,7 +2423,7 @@ def create_server():
                dl_concept_satisfiable, dl_subsumes, dl_equivalent,
                dl_abox_consistent, dl_instance_check, dl_instance_retrieval,
                dl_classify, dl_parse_manchester):
-        server.tool()(fn)
+        server.tool()(_registered(fn))
     return server
 
 

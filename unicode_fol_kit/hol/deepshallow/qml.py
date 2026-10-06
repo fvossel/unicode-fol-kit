@@ -48,7 +48,8 @@ from unicode_fol_kit.fol.nodes import (
     Node, Atom, Not, And, Or, Implies, Iff, Box, Diamond, Quantifier,
     Variable, Constant,
 )
-from ._common import AtomConsts, wrap_theory
+from unicode_fol_kit.fol._truth_constants import refuse_truth_constants
+from ._common import AtomConsts, wrap_theory, NO_CONSTANT_WHY
 
 # --------------------------------------------------------------------------- #
 # The verified theory body (everything between ``begin`` and ``end``).
@@ -279,6 +280,7 @@ def _obj_to_deep(term: Node, bound: List[str], consts: AtomConsts) -> str:
 def _encode(node: Node, bound: List[str], atoms: AtomConsts, consts: AtomConsts) -> str:
     """Encode a **K + constant-domain + alethic** QML formula as a deep ``qml`` term."""
     if isinstance(node, Atom):
+        refuse_truth_constants([node], "qml_to_deep", NO_CONSTANT_WHY)
         if node.predicate in _EQUALITY_PREDS:
             raise NotImplementedError(
                 f"qml_to_deep: {node.predicate!r} (equality) is outside this "

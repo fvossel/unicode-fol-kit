@@ -26,6 +26,21 @@ comorphism Hets actually used (e.g. ``CASL2TPTP_FOF`` for SPASS,
 ``CASL2SoftFOL`` for darwin) — and native many-sorted CASL, so kit MSFOL
 problems go through WITHOUT the single-sort collapse every TPTP route needs.
 
+**A typed reading that differs from the kit's is refused.** The CASL export is a
+typed text: it infers the sort of every position (an unannotated constant, or the
+value of a function, is declared at the sort of the position it is used in) and its
+sorts are disjoint types, while the kit has ONE universe, sorts that are subsets of
+it, and constants and function values that are in a sort only when a formula says
+so. :class:`HetsBackend` decides, so for a problem on which the two readings differ
+it answers ``UNKNOWN`` / ``"unsupported"`` with the reason in ``detail`` (the
+checks are those of :func:`~unicode_fol_kit.atp.tptp_tff.check_typed_reading`, shared
+with the TF0 and NXF writers) instead of a verdict about another problem; the
+fof route (``backends=["vampire"], tff=False`` and the like) asks the kit's question
+for those. The export itself (``to_casl_spec``) keeps writing the typed reading.
+The sort the export gives every unsorted position is ``Thing``, or ``Thing1``, ``Thing2``, ...
+when the problem has a sort spelled like it: a user sort of the default sort's name would
+be one sort with it.
+
 Cost model and chain policy: a Docker container start is minutes-expensive
 (image pull even more so), exactly like the Isabelle route — so this backend
 is NEVER part of any default chain and ``decide()`` NEVER starts a container
@@ -41,13 +56,12 @@ prover identifier, default ``"SPASS"`` — the one verified reliable in the
 official image; ``"darwin-non-fd"`` is the dedicated finite model finder
 for disproof when other reasoners stay Open), ``translation`` (a comorphism
 name from ``HetsClient.translations``, default: let Hets choose), ``url``
-(skip discovery and use this server). CAVEAT on ``url``: the chain
-orchestration in :func:`~unicode_fol_kit.atp.protocol.run_backend` gates on
-``available()`` BEFORE ``decide()`` ever sees options, and ``available()``
-can only probe ``$UFK_HETS_URL``/localhost — so for a server on a
-non-default address, set ``$UFK_HETS_URL`` (visible to both) rather than
-passing ``url=`` through ``api.prove``; ``url=`` works for DIRECT
-``decide()`` calls.
+(skip discovery and use this server). The gate in
+:func:`~unicode_fol_kit.atp.protocol.run_backend` asks
+:meth:`HetsBackend.available_for` with the options of the call, so a call that
+names ``url=`` is answered for THAT server (``GET /version`` on it), not for
+``$UFK_HETS_URL`` / localhost, which are only probed when the call names no
+``url=``.
 
 :meth:`HetsBackend.check_consistency` is the extra non-protocol route over
 ``POST /consistency-check``: it asks whether the PREMISES have a model at
@@ -71,6 +85,19 @@ __all__ = ["HetsBackend"]
 _DEFAULT_REASONER = "SPASS"
 
 _SPEC_NAME = "KitProblem"
+
+
+def _default_sort_for(formulas: Sequence[Node]) -> str:
+    """The sort the CASL export gives every unsorted position: ``Thing``, or the first of
+    ``Thing1``, ``Thing2``, ... that no sort of ``formulas`` is spelled like. A user sort of
+    the default sort's name would be one sort with it (the export refuses that), and the
+    kit's reading of an unsorted position is the whole universe, not a sort of the user's."""
+    taken = {n.sort for f in formulas for n in f.walk() if isinstance(getattr(n, "sort", None), str)}
+    candidate, i = "Thing", 0
+    while candidate in taken:
+        i += 1
+        candidate = f"Thing{i}"
+    return candidate
 
 # ---------------------------------------------------------------------------
 # Solver-version provenance (K1). HETS is an HTTP server, not a spawned
@@ -134,6 +161,17 @@ class HetsBackend(ProverBackend):
 
         return hets_available()
 
+    def available_for(self, options: dict) -> bool:
+        """Whether the server :meth:`decide` will talk to answers: the one named by
+        ``url=`` when the call names one (``decide`` then skips discovery), else
+        :meth:`available`. Never starts a container."""
+        url = options.get("url")
+        if url is None:
+            return self.available()
+        from ..hets.docker import _probe_health
+
+        return _probe_health(url)
+
     def solver_version(self) -> Optional[str]:
         """The reachable server's ``GET /version`` banner, via
         :meth:`~unicode_fol_kit.hets.client.HetsClient.version` — memoized
@@ -157,6 +195,7 @@ class HetsBackend(ProverBackend):
                timeout: int = 10000, **options) -> Verdict:
         from ..fol.casl_export import to_casl_spec
         from ..hets import HetsClient, discover_hets_url
+        from .tptp_tff import check_typed_reading
 
         reasoner = options.pop("reasoner", _DEFAULT_REASONER)
         translation = options.pop("translation", None)
@@ -179,13 +218,21 @@ class HetsBackend(ProverBackend):
         # discover_hets_url() succeeds.
         solver_version = _hets_version(HetsClient(url), url) if url is not None else None
 
+        default_sort = _default_sort_for(list(premises) + [formula])
         try:
             spec = to_casl_spec(list(premises), conjectures=[formula],
-                                spec_name=_SPEC_NAME)
+                                spec_name=_SPEC_NAME, default_sort=default_sort)
+            # The export is a typed text: it gives an unannotated constant or a
+            # function value the sort of the position it is used at, and its sorts
+            # are disjoint types. A decision must answer the kit's question, so a
+            # problem for which that reading differs is refused (see
+            # check_typed_reading), not answered about something else.
+            check_typed_reading(list(premises) + [formula], writer="hets",
+                                unsorted_type=default_sort)
         except (ValueError, NotImplementedError) as exc:
             # Outside the CASL FOL/MSFOL fragment (modal node, sort
-            # conflict, free variable, …): honestly unsupported, never a
-            # silent mistranslation.
+            # conflict, free variable, …), or a typed reading that differs from
+            # the kit's: honestly unsupported, never a silent mistranslation.
             return Verdict(UNKNOWN, self.name, reason="unsupported",
                            solver_version=solver_version,
                            detail=f"{type(exc).__name__}: {exc}")
@@ -261,12 +308,17 @@ class HetsBackend(ProverBackend):
         """
         from ..fol.casl_export import to_casl_spec
         from ..hets import HetsClient, discover_hets_url
+        from .tptp_tff import check_typed_reading
 
         reasoner = options.pop("reasoner", "darwin-non-fd")
         translation = options.pop("translation", None)
         url = options.pop("url", None)
 
-        spec = to_casl_spec(list(premises), spec_name=_SPEC_NAME)
+        default_sort = _default_sort_for(list(premises))
+        spec = to_casl_spec(list(premises), spec_name=_SPEC_NAME, default_sort=default_sort)
+        # Same refusal as decide(): a consistency answer about a typed reading that
+        # differs from the kit's is an answer about another problem.
+        check_typed_reading(list(premises), writer="hets", unsorted_type=default_sort)
         if url is None:
             url, _ = discover_hets_url()
         time_limit = max(1, timeout // 1000)

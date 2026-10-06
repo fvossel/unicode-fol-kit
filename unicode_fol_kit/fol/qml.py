@@ -14,7 +14,9 @@ sort): ``World(t)`` / ``Object(t)`` carve the two kinds apart; accessibility ``R
 typed World×World; existence ``E(x, w)`` ("object ``x`` exists at world ``w``") is
 typed Object×World. The translation:
 
-- ``P(t̄)`` → ``P(t̄, w)`` (the world is appended as the last argument);
+- ``P(t̄)`` → ``P(t̄, w)`` (the world is appended as the last argument) — for every
+  predicate EXCEPT identity: ``t₁ = t₂`` → ``t₁ = t₂`` and ``t₁ ≠ t₂`` → ``¬(t₁ = t₂)``,
+  with no world argument (see "Equality is rigid" below);
 - ``□φ`` → ``∀v (World(v) ∧ R(w,v) → ST(φ,v))``; ``◇φ`` → ``∃v (World(v) ∧ R(w,v) ∧ ST(φ,v))``;
 - **actualist** ``∀x φ`` → ``∀x (Object(x) ∧ E(x,w) → ST(φ,w))`` and dually ``∃x``;
 - **constant / possibilist** ``∀x φ`` → ``∀x (Object(x) → ST(φ,w))`` (``E`` unused).
@@ -23,6 +25,79 @@ Domain regimes (the existence-axiom correspondence, verified against the Kripke
 evaluator): **decreasing** ``∀x∀w∀v(E(x,v)∧R(w,v)→E(x,w))`` validates BF; **increasing**
 (cumulative) ``∀x∀w∀v(E(x,w)∧R(w,v)→E(x,v))`` validates CBF; **constant** validates both;
 **varying** neither.
+
+**Equality is rigid.** An identity atom (``Atom("=", (t₁, t₂))``, what ``a = b`` parses
+to; ``≠`` is its negation) is translated to the SAME binary identity over the object
+terms, inside the relativised formula, with **no world argument**. So identity does not
+vary by world: the necessity of identity ``a = b → □(a = b)`` and of distinctness
+``a ≠ b → □(a ≠ b)`` are valid in every frame and under every domain regime, as is
+``◇(a = b) → a = b``; constants and function symbols were already rigid here (``ST``
+leaves terms alone), and now so is the relation between them. It is Z3's own binary
+identity, so reflexivity, symmetry, transitivity and congruence (hence Leibniz's law,
+``a = b → (P(a) ↔ P(b))`` and ``a = b → (□P(a) ↔ □P(b))``) come from the solver, not from
+an axiom: :func:`qml_axioms` has none for equality — checked, not assumed (see
+``tests/test_qml.py``). Two consequences worth stating, because they are easy to misread:
+
+- ``□(a = b) → a = b`` is **not** valid in K — a dead-end world makes the box vacuously
+  true while ``a`` and ``b`` differ — and is valid in every frame that guarantees a
+  successor-or-self (T, S4, S5, KD, KD45 …). Rigidity makes the converse direction
+  ``a = b → □(a = b)`` free; the direction back needs the frame.
+- ``a = b`` and ``¬(a = b)`` are not valid: two terms may denote the same object or two.
+
+*Varying domains — the choice made here.* Identity ranges over the whole **object
+domain** (everything typed ``Object``), not over the local domain ``D_w`` of the
+world ``ST`` is at; an equality is **not** existence-guarded. So ``a = a``,
+``a = b → b = a`` and ``a = b → □(a = b)`` are valid under every mode, *including* at a
+world where ``a`` does not exist (a constant outside ``D_w`` still denotes, and is
+still itself). That is the reading the rest of this embedding already has for atoms on
+a non-existent constant — ``P(c, w)`` is left open, neither forced true (positive free
+logic) nor forced false (negative free logic) — and the rigid-designator reading of
+constants (``_signature_typing_facts`` types a constant ``Object``, never ``E(c, w)``).
+Existence is therefore *expressed*, not presupposed, by ``∃x (x = c)``: valid under
+``constant`` / ``possibilist`` (every object exists everywhere), **not** valid under
+``varying`` (nor ``increasing`` / ``decreasing``), where the constant may lie outside
+``D_w`` — and ``∃x (x = c) → □∃x (x = c)`` is valid exactly under the cumulative regime
+(``increasing``) and ``constant``. (Here ``c`` is a CONSTANT, a multi-letter name such as
+``alice`` in the kit's syntax; a single letter is a variable, and a free variable is a
+parameter, which exists at the world of evaluation: see "A free variable is a
+parameter" below.) The quantifier clauses, the domain axioms and the
+modes themselves are unchanged. A free-logic variant in which ``c = c`` fails for a
+non-existent ``c`` would be a different (negative) logic and is deliberately not
+offered; guard explicitly with ``∃x (x = c) → …`` where that reading is wanted.
+The propositional evaluator :mod:`unicode_fol_kit.semantics.kripke` has no term
+semantics and refuses ``=`` / ``≠`` by name instead, as do the propositional modal
+tableau (:mod:`unicode_fol_kit.atp.modal_tableau`), the propositional standard
+translation (:mod:`unicode_fol_kit.fol.modal_translation`) and the intuitionistic
+GMT embedding (:mod:`unicode_fol_kit.hol.intuitionistic`) — one shared refusal, in
+:func:`unicode_fol_kit.semantics._modal_reject.reject_equality`. The modal HOL
+exports AGREE with this route: :func:`to_thf_modal`,
+:mod:`unicode_fol_kit.hol.thf_modal` and :mod:`unicode_fol_kit.hol.isabelle_modal`
+emit identity as the host logic's own ``=`` over the individual sort with no world
+argument. So on equality a formula has exactly two fates in this kit: rigid
+identity, or a refusal that names the atom.
+
+**A free variable is a parameter.** A variable that is free in a formula names ONE unknown
+individual of the object domain, the same everywhere in the formula (the assignment-wise
+consequence relation of the textbooks), and it is rigid, like a constant: the same
+individual at every world. Which individuals it may be depends on the domain regime. Under
+``constant`` / ``possibilist`` every individual exists at every world, so the parameter is
+typed ``Object(y)`` like a constant and ``∀x P(x) → P(y)`` and ``P(y) → ∃x P(x)`` are
+valid. Under ``varying`` / ``increasing`` / ``decreasing`` the parameter exists at the world
+of evaluation, which the validity query states as ``E(y, w)`` (the existence guard the
+free-logic route gives its parameters), and nowhere else is it required to exist. So
+``∀x P(x) → P(y)``, ``P(y) → ∃x P(x)`` and ``∃x (x = y)`` are valid in every regime, while
+``□∀x P(x) → □P(y)`` and ``□∃x (x = y)`` are valid under ``constant`` / ``possibilist`` and
+``increasing`` only: the individual may be missing from a later world of a ``varying`` or a
+``decreasing`` model, and then the later world's quantifier does not reach it. A CONSTANT
+is different (see "Equality is rigid"): it may lie outside the domain of the world it is
+read at, so ``∃x (x = alice)`` is valid only under ``constant`` / ``possibilist``. Use a
+constant for that reading, or state the existence of the individual in the formula. For a
+formula with no premise the parameter reading is the universal closure of the formula
+(under a varying regime: of the formula guarded by the existence of its parameters).
+``P(y) → P(alice)`` and ``(P(y) ∧ Q(z)) → ∀x (P(x) ∧ Q(x))`` are not valid in any regime.
+:func:`qml_translate` leaves a free variable alone; the typing and the guard are part of
+the validity query (:func:`qml_validity_formula`), which :func:`qml_is_valid` and
+:func:`qml_equivalent` decide.
 
 **One relation per modal family.** ``R`` is alethic (``□`` / ``◇``, configured by
 ``frame=``), ``T`` is the temporal *henceforth* relation (``Always`` / ``Eventually``
@@ -108,6 +183,16 @@ object domain. :func:`qml_axioms` additionally emits, per sort the formula uses,
 mirroring the existing ``nonempty_dom`` axiom's shape — so e.g. ``∀x:S P(x) → ∃x:S P(x)``
 agrees with the classical Z3 verdict at every world, not just incidentally at one.
 
+A SORTED CONSTANT ``c:S`` denotes an element of ``S``, so :func:`qml_axioms` also emits
+``∀w (World(w) → S(c, w))`` for it (read from the formula as given, where the
+annotation is still there; :func:`~unicode_fol_kit.fol._msfl_nodes.sort_membership_axioms`
+names the constants). A constant is a rigid designator, so the fact holds at EVERY
+world, and it is not guarded by ``E(c, w)``: ``c`` may lie outside the domain of a
+world, which is the reading of constants this module already has. With it
+``∀x:S P(x) → P(c:S)`` is valid exactly where ``∀x P(x) → P(c)`` is (every constant
+domain; no actualist mode, where ``c`` may be outside ``D_w`` and the instance is not
+available), and it stays invalid with a plain ``c``, which no formula places in ``S``.
+
 Public API: :func:`qml_translate`, :func:`qml_axioms`, :func:`qml_is_valid`,
 :func:`qml_equivalent`, :func:`qml_validity_formula` (the closed classical-FOL
 validity query itself, e.g. for :func:`unicode_fol_kit.hets.dol.to_dol_library_from_modal`
@@ -127,11 +212,15 @@ from .nodes import (
 )
 from ._hybrid_nodes import Down
 from ._fol_nodes import constant_name_to_ascii
-from ._msfl_nodes import nonempty_sort_axioms
+from ._free_parameters import free_parameter_names
+from ._identifiers import fresh_variables
+from ._msfl_nodes import nonempty_sort_axioms, sort_membership_axioms
+from ._truth_constants import truth_value
 from .frames import (
     FRAME_CONDITIONS, FRAMES as _SHARED_FRAMES, UnsupportedFrameCondition,
     resolve_frame, parse_geach,
 )
+from ._numeral_symbols import numerals_as_constants, prefixed_numeral_name
 from ._symbol_names import SymbolNames, dedupe
 
 # Guard / typing predicate names (the contract with the axiom set).
@@ -227,16 +316,22 @@ def _geach_axiom(spec, W, R):
     existentially bound intermediate worlds, each World-guarded like every
     other world variable here. The axiom is closed over its own variables,
     so it cannot capture anything in a translated formula.
+
+    Those variables are minted by
+    :func:`~unicode_fol_kit.fol._identifiers.fresh_variables` (``v0``, ``v1``,
+    …). Until 0.30.0 they were ``_gw`` / ``_gu`` / ``_gv`` / ``_gt`` /
+    ``_gz0``, which the kit's own VARIABLE terminal rejects — one letter plus
+    digits, no underscore — so an axiom this function built could be printed
+    but not read back by :func:`unicode_fol_kit.api.parse_any`.
     """
-    counter = [0]
+    mint = _world_minter()
 
     def path(a, b, k):
         if k == 0:
             return Atom("=", (a, b))
         previous, mids, conj = a, [], None
         for _ in range(k - 1):
-            z = Variable(f"_gz{counter[0]}")
-            counter[0] += 1
+            z = mint()
             mids.append(z)
             step = And(W(z), R(previous, z))
             conj = step if conj is None else And(conj, step)
@@ -248,8 +343,7 @@ def _geach_axiom(spec, W, R):
             body = Quantifier(_EXISTS, z, body)
         return body
 
-    w, u, v, s = (Variable("_gw"), Variable("_gu"), Variable("_gv"),
-                  Variable("_gt"))
+    w, u, v, s = mint(), mint(), mint(), mint()
     antecedent = And(And(W(w), And(W(u), W(v))),
                      And(path(w, u, spec.m), path(w, v, spec.r)))
     consequent = Quantifier(_EXISTS, s, And(
@@ -260,19 +354,48 @@ def _geach_axiom(spec, W, R):
     return body
 
 
+#: The letter every world variable this module mints is built from (plus
+#: digits: ``w0``, ``w1``, …). It matches the propositional standard
+#: translation's own world names, so the two routes' images read alike.
+_WORLD_LETTER = "w"
+
+#: The letter the Geach axiom's own bound worlds are built from. A separate
+#: letter only for readability — the axiom is closed, so it cannot capture.
+_GEACH_LETTER = "v"
+
+
+def _world_minter(reserved=(), letter: str = _GEACH_LETTER):
+    """Return a callable minting never-repeating world Variables.
+
+    The names are :func:`~unicode_fol_kit.fol._identifiers.fresh_variables`'
+    — ``letter`` plus digits — because the translation's output has to be text
+    this kit's own parser reads back. Until 0.30.0 the shapes were ``_w0`` and
+    ``_gz0``, both of which :func:`unicode_fol_kit.api.parse_any` rejects.
+    """
+    used = set(reserved)
+
+    def mint() -> Variable:
+        name = fresh_variables(1, letter=letter, avoid=used)[0]
+        used.add(name)
+        return Variable(name)
+
+    return mint
+
+
 class _Fresh:
-    """Fresh world-variable generator that avoids a reserved set of names."""
+    """Fresh world-variable generator that avoids a reserved set of names.
+
+    ``reserved`` is the object-variable names of the formula being translated
+    (plus the current-world name): a world variable that reused one of them
+    would be captured by the object quantifier that binds it. The names are
+    ``w0``, ``w1``, … — see :func:`_world_minter`.
+    """
 
     def __init__(self, reserved):
-        self._n = 0
-        self._reserved = set(reserved)
+        self._mint = _world_minter(reserved, _WORLD_LETTER)
 
     def next(self) -> Variable:
-        while True:
-            name = f"_w{self._n}"
-            self._n += 1
-            if name not in self._reserved:
-                return Variable(name)
+        return self._mint()
 
 
 def _object_var_names(node: Node) -> set:
@@ -296,35 +419,34 @@ def _pick_world_name(formula: Node, preferred: str) -> str:
     reserved = _object_var_names(formula)
     if preferred not in reserved:
         return preferred
-    n = 0
-    while f"_world{n}" in reserved:
-        n += 1
-    return f"_world{n}"
+    # The fallback is a minted name, not ``_world0``: an identifier starting
+    # with an underscore is not a VARIABLE the kit's own parser accepts.
+    return fresh_variables(1, letter=_WORLD_LETTER, avoid=reserved)[0]
 
 
 def _box(rel: str, w: Variable, body: Node, fresh: _Fresh, mode: str) -> Node:
     v = fresh.next()
-    guard = And(Atom(_WORLD, [v]), Atom(rel, [w, v]))
+    guard = And(Atom(_WORLD, (v,)), Atom(rel, (w, v)))
     return Quantifier(_FORALL, v, Implies(guard, _st(body, v, fresh, mode)))
 
 
 def _diamond(rel: str, w: Variable, body: Node, fresh: _Fresh, mode: str) -> Node:
     v = fresh.next()
-    guard = And(Atom(_WORLD, [v]), Atom(rel, [w, v]))
+    guard = And(Atom(_WORLD, (v,)), Atom(rel, (w, v)))
     return Quantifier(_EXISTS, v, And(guard, _st(body, v, fresh, mode)))
 
 
 def _box_conv(rel: str, w: Variable, body: Node, fresh: _Fresh, mode: str) -> Node:
     """``∀v (World(v) ∧ rel(v, w) → ST(body, v))`` — a box over the CONVERSE relation."""
     v = fresh.next()
-    guard = And(Atom(_WORLD, [v]), Atom(rel, [v, w]))
+    guard = And(Atom(_WORLD, (v,)), Atom(rel, (v, w)))
     return Quantifier(_FORALL, v, Implies(guard, _st(body, v, fresh, mode)))
 
 
 def _diamond_conv(rel: str, w: Variable, body: Node, fresh: _Fresh, mode: str) -> Node:
     """``∃v (World(v) ∧ rel(v, w) ∧ ST(body, v))`` — a diamond over the CONVERSE relation."""
     v = fresh.next()
-    guard = And(Atom(_WORLD, [v]), Atom(rel, [v, w]))
+    guard = And(Atom(_WORLD, (v,)), Atom(rel, (v, w)))
     return Quantifier(_EXISTS, v, And(guard, _st(body, v, fresh, mode)))
 
 
@@ -335,8 +457,49 @@ def _box_agent(rel: str, agent: Node, w: Variable, body: Node, fresh: _Fresh, mo
     variable in agent position quantifies over agents.
     """
     v = fresh.next()
-    guard = And(Atom(_WORLD, [v]), Atom(rel, [agent, w, v]))
+    guard = And(Atom(_WORLD, (v,)), Atom(rel, (agent, w, v)))
     return Quantifier(_FORALL, v, Implies(guard, _st(body, v, fresh, mode)))
+
+
+_EQUALITY = "="
+_DISEQUALITY = "≠"
+#: The two spellings the kit gives identity atoms (``a = b`` parses to
+#: ``Atom("=", (a, b))``, ``a ≠ b`` to ``Atom("≠", (a, b))``). Neither may ever
+#: reach the generic ``P(t̄) → P(t̄, w)`` rule: see :func:`_st_equality`.
+_EQUALITY_PREDICATES = frozenset({_EQUALITY, _DISEQUALITY})
+
+
+def _st_equality(atom: Atom) -> Node:
+    """ST of an identity atom: the SAME binary identity, with NO world argument.
+
+    ``t₁ = t₂`` stays ``t₁ = t₂`` and ``t₁ ≠ t₂`` becomes ``¬(t₁ = t₂)``, whatever
+    world ``ST`` is currently at. That is what makes identity **rigid** (the module
+    docstring's "Equality is rigid" section states the contract and the choice made
+    for varying domains): the translated atom does not mention the world, so it
+    cannot vary with it. It is Z3's own binary identity, so reflexivity, symmetry,
+    transitivity and congruence over function symbols and predicates (Leibniz's law)
+    come from the solver, not from any axiom of ours — :func:`qml_axioms` adds none.
+
+    ``≠`` is lowered to ``¬(=)`` rather than kept as a binary ``≠`` atom because the
+    two are the same relation by definition and ``¬(=)`` is the form the downstream
+    consumers already read (CASL has no disequality connective at all, see
+    :mod:`unicode_fol_kit.hets.dol`).
+
+    The previous behaviour appended the world like for any other atom, turning
+    ``a = b`` into a TERNARY uninterpreted predicate ``=(a, b, w)`` — so ``a = a`` was
+    not valid and ``□(a = b) → a = b`` was "valid" only by reflexivity of the frame,
+    never by equality. A silently re-interpreted connective is the approximation this
+    package refuses; the arity check below is the same rule for a malformed atom.
+    """
+    if len(atom.args) != 2:
+        raise ValueError(
+            f"qml: equality atom {atom.predicate!r} needs exactly two terms, got "
+            f"{len(atom.args)} ({atom.to_unicode_str()}). '=' / '≠' are reserved for "
+            "identity and are never read as a world-relative predicate here; rename "
+            "the predicate if a different relation was meant.")
+    if atom.predicate == _DISEQUALITY:
+        return Not(Atom(_EQUALITY, tuple(atom.args)))
+    return atom
 
 
 def _st(formula: Node, w: Variable, fresh: _Fresh, mode: str) -> Node:
@@ -359,7 +522,11 @@ def _st(formula: Node, w: Variable, fresh: _Fresh, mode: str) -> Node:
             "modal_enum_search (bounded search, REFUTED-only), or evaluate "
             "directly with unicode_fol_kit.semantics.kripke.satisfies_modal.")
     if isinstance(formula, Atom):
-        return Atom(_user_predicate(formula.predicate), list(formula.args) + [w])
+        if truth_value(formula) is not None:
+            return formula      # `$true` / `$false`: the same at every world, no world argument
+        if formula.predicate in _EQUALITY_PREDICATES:
+            return _st_equality(formula)
+        return Atom(_user_predicate(formula.predicate), (*formula.args, w))
     if isinstance(formula, Not):
         return Not(_st(formula.formula, w, fresh, mode))
     if isinstance(formula, And):
@@ -405,9 +572,10 @@ def _st(formula: Node, w: Variable, fresh: _Fresh, mode: str) -> Node:
     if isinstance(formula, Quantifier):
         x = formula.variable
         body = _st(formula.formula, w, fresh, mode)
-        obj = Atom(_OBJECT, [x])
+        obj = Atom(_OBJECT, (x,))
+        guard: Node
         if mode in _ACTUALIST_MODES:
-            guard = And(obj, Atom(_E, [x, w]))     # actualist: x exists at w
+            guard = And(obj, Atom(_E, (x, w)))     # actualist: x exists at w
         else:
             guard = obj                            # constant / possibilist
         if formula.type in (_FORALL, "forall"):
@@ -454,9 +622,24 @@ def qml_translate(formula: Node, mode: str = "constant", world: str = "w") -> No
     If ``world`` clashes with an object variable the formula binds, a fresh world name
     is substituted to prevent that quantifier from capturing the world parameter.
 
+    A variable that is free in ``formula`` stays free in the image, as the parameter it
+    is. What the translation does not state is its typing (an element of the object
+    domain) or, under a varying regime, its existence at ``world``: those are facts of the
+    validity query, :func:`qml_validity_formula`. See the module docstring's "A free
+    variable is a parameter".
+
+    An identity atom is the one atom that does NOT get the world appended: ``t₁ = t₂``
+    stays ``t₁ = t₂`` and ``t₁ ≠ t₂`` becomes ``¬(t₁ = t₂)``, so identity is rigid (see
+    the module docstring's "Equality is rigid", which also states the varying-domain
+    choice). A non-binary ``=`` / ``≠`` atom raises ``ValueError`` rather than being
+    read as a world-relative predicate.
+
     A many-sorted ``formula`` (``SortedQuantifier`` / ``SortedConstant``) is relativized
     ONCE, here, before anything else runs — see the module docstring's "Many-sorted
-    formulas" section for what that does and does not assume.
+    formulas" section for what that does and does not assume. The relativisation forgets
+    which constants were annotated, so the membership of a sorted constant in its sort is
+    NOT part of this translation: it is an axiom, which :func:`qml_axioms` emits from the
+    formula as given.
     """
     if mode not in _ACTUALIST_MODES and mode not in _CONSTANT_MODES:
         raise ValueError(
@@ -485,9 +668,9 @@ def _agent_frame_axioms(rel_name: str, conds) -> List[Node]:
     (T/S4/S5) epistemic system.
     """
     a, w, v, u = _v("a", "w", "v", "u")
-    W = lambda z: Atom(_WORLD, [z])
-    O = lambda z: Atom(_OBJECT, [z])
-    Rel = lambda *args: Atom(rel_name, list(args))
+    W = lambda z: Atom(_WORLD, (z,))
+    O = lambda z: Atom(_OBJECT, (z,))
+    Rel = lambda *args: Atom(rel_name, tuple(args))
     fa = lambda var, body: Quantifier(_FORALL, var, body)
     fa4 = lambda body: fa(a, fa(w, fa(v, fa(u, body))))
     out: List[Node] = [
@@ -574,7 +757,7 @@ def _relation_typing(rel: str) -> Node:
     """
     w, v = _v("w", "v")
     return Quantifier(_FORALL, w, Quantifier(_FORALL, v, Implies(
-        Atom(rel, [w, v]), And(Atom(_WORLD, [w]), Atom(_WORLD, [v])))))
+        Atom(rel, (w, v)), And(Atom(_WORLD, (w,)), Atom(_WORLD, (v,))))))
 
 
 def _temporal_frame_axioms() -> List[Node]:
@@ -593,8 +776,8 @@ def _temporal_frame_axioms() -> List[Node]:
     even so — see the module docstring and use ``isabelle_decide_modal`` for that one.
     """
     w, v, u = _v("w", "v", "u")
-    W = lambda a: Atom(_WORLD, [a])
-    T = lambda a, b: Atom(_R_TEMPORAL, [a, b])
+    W = lambda a: Atom(_WORLD, (a,))
+    T = lambda a, b: Atom(_R_TEMPORAL, (a, b))
     fa = lambda var, body: Quantifier(_FORALL, var, body)
     return [
         fa(w, Implies(W(w), T(w, w))),
@@ -614,8 +797,8 @@ def _next_in_temporal_axiom() -> Node:
     """
     w, v = _v("w", "v")
     return Quantifier(_FORALL, w, Quantifier(_FORALL, v, Implies(
-        And(And(Atom(_WORLD, [w]), Atom(_WORLD, [v])), Atom(_R_NEXT, [w, v])),
-        Atom(_R_TEMPORAL, [w, v]))))
+        And(And(Atom(_WORLD, (w,)), Atom(_WORLD, (v,))), Atom(_R_NEXT, (w, v))),
+        Atom(_R_TEMPORAL, (w, v)))))
 
 
 def _temporal_first_step_axiom() -> Node:
@@ -639,9 +822,12 @@ def _temporal_first_step_axiom() -> Node:
     first-order logic can reach" and not "everything the oracle validates".
 
     The ``w = v`` disjunct is genuine identity: at this level ``Atom("=", [w, v])``
-    lowers to Z3's own equality (``Node.to_z3`` maps binary ``=`` natively). That is a
-    different symbol from an object-language ``=`` inside a modal formula, which ``_st``
-    world-relativises into a ternary uninterpreted predicate — the two cannot collide.
+    lowers to Z3's own equality (``Node.to_z3`` maps binary ``=`` natively). An
+    object-language ``=`` inside a modal formula is translated to that SAME binary
+    identity (rigid, no world argument — see the module docstring), so the two share
+    a symbol and differ in what they relate: this axiom's operands are
+    ``World``-guarded worlds, a user equality's are objects, and ``World`` / ``Object``
+    are disjoint, so neither equates operands of the other kind.
 
     Emitted only when ``T`` and ``N`` BOTH occur and ``temporal_closure`` is on, mirroring
     ``isabelle_modal``'s ``t_in_nstar`` (which pins ``t = rtranclp n`` outright, HOL being
@@ -649,13 +835,13 @@ def _temporal_first_step_axiom() -> Node:
     the two relations, so it is vacuous — and misleading — unless both are in play.
     """
     w, v, u = _v("w", "v", "u")
-    W = lambda a: Atom(_WORLD, [a])
-    T = lambda a, b: Atom(_R_TEMPORAL, [a, b])
+    W = lambda a: Atom(_WORLD, (a,))
+    T = lambda a, b: Atom(_R_TEMPORAL, (a, b))
     fa = lambda var, body: Quantifier(_FORALL, var, body)
     return fa(w, fa(v, Implies(
         And(And(W(w), W(v)), T(w, v)),
-        Or(Atom("=", [w, v]),
-           Quantifier(_EXISTS, u, And(And(W(u), Atom(_R_NEXT, [w, u])), T(u, v)))))))
+        Or(Atom("=", (w, v)),
+           Quantifier(_EXISTS, u, And(And(W(u), Atom(_R_NEXT, (w, u))), T(u, v)))))))
 
 
 def _deontic_frame_axioms() -> List[Node]:
@@ -674,8 +860,8 @@ def _deontic_frame_axioms() -> List[Node]:
     """
     w, v = _v("w", "v")
     return [Quantifier(_FORALL, w, Implies(
-        Atom(_WORLD, [w]),
-        Quantifier(_EXISTS, v, And(Atom(_WORLD, [v]), Atom(_R_DEONTIC, [w, v])))))]
+        Atom(_WORLD, (w,)),
+        Quantifier(_EXISTS, v, And(Atom(_WORLD, (v,)), Atom(_R_DEONTIC, (w, v))))))]
 
 
 # Cross-family bridges. Each entry names the two relations the bridge relates (with the
@@ -769,14 +955,14 @@ def _bridge_axiom(name: str) -> Node:
     if name in _BRIDGE_INCLUSIONS:
         sub, sup = _BRIDGE_INCLUSIONS[name]
         a, w, v = _v("a", "w", "v")
-        return fa(a, fa(w, fa(v, Implies(Atom(sub, [a, w, v]), Atom(sup, [a, w, v])))))
+        return fa(a, fa(w, fa(v, Implies(Atom(sub, (a, w, v)), Atom(sup, (a, w, v))))))
     if name != "ought_implies_can":
         raise ValueError(f"qml: no axiom shape for bridge {name!r}.")
     w, v = _v("w", "v")
     return fa(w, Implies(
-        Atom(_WORLD, [w]),
-        Quantifier(_EXISTS, v, And(Atom(_WORLD, [v]),
-                                   And(Atom(_R_DEONTIC, [w, v]), Atom(_R_ALETHIC, [w, v]))))))
+        Atom(_WORLD, (w,)),
+        Quantifier(_EXISTS, v, And(Atom(_WORLD, (v,)),
+                                   And(Atom(_R_DEONTIC, (w, v)), Atom(_R_ALETHIC, (w, v)))))))
 
 
 def _validate_bridges(bridges) -> List[str]:
@@ -854,7 +1040,10 @@ def qml_axioms(mode: str = "constant", frame: str = "K", systems=None,
     constrained (see :func:`_relations_used` for why that matters — it is a real
     performance and *verdict* concern, not tidiness). Called **without** a formula this
     stays the "give me the whole background theory" call and emits axioms for every
-    relation in :data:`QML_RELATIONS`.
+    relation in :data:`QML_RELATIONS`. The same ``formula`` gates the many-sorted
+    facts: per sort it uses, that the sort is non-empty at every world, and per sorted
+    constant ``c:S``, that ``c`` is in ``S`` at every world (give the formula AS WRITTEN,
+    not :func:`qml_translate`'s relativised form, which has forgotten the annotations).
 
     ``bridges`` is an opt-in list of cross-family frame conditions from
     :data:`QML_BRIDGES`; an unknown name raises ``ValueError`` listing the known ones, and
@@ -882,10 +1071,10 @@ def qml_axioms(mode: str = "constant", frame: str = "K", systems=None,
     _check_bridge_families(bridge_names, used)
     x, w, v, u = _v("x", "w", "v", "u")
     t = Variable("t")
-    W = lambda a: Atom(_WORLD, [a])
-    O = lambda a: Atom(_OBJECT, [a])
-    R = lambda a, b: Atom(_R_ALETHIC, [a, b])
-    E = lambda a, b: Atom(_E, [a, b])
+    W = lambda a: Atom(_WORLD, (a,))
+    O = lambda a: Atom(_OBJECT, (a,))
+    R = lambda a, b: Atom(_R_ALETHIC, (a, b))
+    E = lambda a, b: Atom(_E, (a, b))
     fa = lambda var, body: Quantifier(_FORALL, var, body)
 
     axioms: List[Node] = [
@@ -980,11 +1169,26 @@ def qml_axioms(mode: str = "constant", frame: str = "K", systems=None,
     # _signature_typing_facts is: there is nothing to scan for sorts without one.
     if formula is not None:
         for name in _sort_names_used(formula):
-            s_guard = Atom(_user_predicate(name), [x, w])
+            s_guard = Atom(_user_predicate(name), (x, w))
             witness = And(O(x), s_guard)
             if mode in _ACTUALIST_MODES:
                 witness = And(And(O(x), E(x, w)), s_guard)
             axioms.append(fa(w, Implies(W(w), Quantifier(_EXISTS, x, witness))))
+        # membership of a SORTED CONSTANT: ``c:S`` denotes an element of ``S``. A
+        # constant is a rigid designator, so the fact is rigid too -- ``S(c, w)`` at
+        # EVERY world -- and it is NOT guarded by ``E(c, w)``: the guarded form makes
+        # no query's verdict differ, because in the constant-domain modes ``E`` is
+        # not forced and in the actualist modes a constant may lie outside ``D_w``
+        # (see the module docstring), so the guard would never fire. Read from the
+        # ORIGINAL formula: the relativised one has already forgotten which
+        # constants were annotated. The atoms ``sort_membership_axioms`` returns
+        # carry no world, so each is lifted here, through the same predicate naming
+        # the guard of a sorted quantifier gets.
+        for member in sort_membership_axioms(formula):
+            assert isinstance(member, Atom)     # sort_membership_axioms yields atoms ``S(c)`` only
+            axioms.append(fa(w, Implies(
+                W(w), Atom(_user_predicate(member.predicate),
+                           (member.args[0], w)))))
 
     # domain-regime existence axioms.
     typed = lambda body: And(And(O(x), W(w)), And(W(v), body))
@@ -1023,7 +1227,11 @@ def _sort_names_used(formula: Node) -> List[str]:
     many-sorted node types occur" here — so this route and the classical one
     can never disagree about which sorts a formula uses.
     """
-    return [axiom.formula.predicate for axiom in nonempty_sort_axioms(formula)]
+    sorts: List[str] = []
+    for axiom in nonempty_sort_axioms(formula):
+        assert isinstance(axiom, Quantifier) and isinstance(axiom.formula, Atom)   # ∃x S(x)
+        sorts.append(axiom.formula.predicate)
+    return sorts
 
 
 def _signature_typing_facts(formula: Node) -> List[Node]:
@@ -1044,12 +1252,13 @@ def _signature_typing_facts(formula: Node) -> List[Node]:
             consts[n.to_unicode_str()] = n
         elif isinstance(n, _F):
             funcs[(n.name, len(n.args))] = n
-    facts: List[Node] = [Atom(_OBJECT, [t])
+    facts: List[Node] = [Atom(_OBJECT, (t,))
                          for _, t in sorted(consts.items())]
     for (name, arity), fn in sorted(funcs.items()):
         xs = [Variable(f"_a{i}") for i in range(arity)]
-        guard = reduce(And, [Atom(_OBJECT, [x]) for x in xs])
-        body = Implies(guard, Atom(_OBJECT, [type(fn)(name, xs)]))
+        guards: List[Node] = [Atom(_OBJECT, (x,)) for x in xs]
+        guard = reduce(And, guards)
+        body: Node = Implies(guard, Atom(_OBJECT, (type(fn)(name, tuple(xs)),)))
         for x in reversed(xs):
             body = Quantifier(_FORALL, x, body)
         facts.append(body)
@@ -1064,6 +1273,14 @@ def _validity_formula(formula: Node, mode: str, frame: str, systems=None,
     conditions of the relations it actually mentions. New parameters are APPENDED, so the
     positional call in :mod:`unicode_fol_kit.atp.resolution` keeps working unchanged and
     inherits the gating.
+
+    A free variable of ``formula`` is a parameter (the module docstring's "A free variable
+    is a parameter"), and it stays free in the query: it is one unknown individual, so a
+    solver that reads it as an uninterpreted constant and one that closes the whole
+    query universally decide the same validity. Under ``constant`` / ``possibilist`` the
+    individual is typed ``Object(y)``, among the typing facts, as every constant is. Under
+    an actualist regime it is guarded where the formula is evaluated: the consequent is
+    ``∀w (World(w) ∧ E(y, w) → ST(formula, w))``.
     """
     # The sort-name / relation-usage scan in qml_axioms needs the ORIGINAL,
     # un-relativized ``formula`` (a SortedQuantifier/SortedConstant is what it
@@ -1077,8 +1294,15 @@ def _validity_formula(formula: Node, mode: str, frame: str, systems=None,
                         temporal_closure=temporal_closure)
     relativized = formula._relativize([])
     axioms += _signature_typing_facts(relativized)
+    parameters = [Variable(name) for name in free_parameter_names([relativized])]
+    if mode in _CONSTANT_MODES:
+        axioms += [Atom(_OBJECT, (parameter,)) for parameter in parameters]
     w = _pick_world_name(relativized, "w")
-    body = Implies(Atom(_WORLD, [Variable(w)]), qml_translate(relativized, mode, world=w))
+    where: Node = Atom(_WORLD, (Variable(w),))
+    if mode in _ACTUALIST_MODES:
+        for parameter in parameters:
+            where = And(where, Atom(_E, (parameter, Variable(w))))
+    body = Implies(where, qml_translate(relativized, mode, world=w))
     closed = Quantifier(_FORALL, Variable(w), body)
     hyp = reduce(And, axioms)
     return Implies(hyp, closed)
@@ -1106,6 +1330,18 @@ def qml_is_valid(formula: Node, mode: str = "constant", frame: str = "K",
       temporal induction ``(φ ∧ G(φ → Xφ)) → Gφ`` comes back ``False`` here despite
       holding in every intended model — decide that one with
       :func:`unicode_fol_kit.hol.isabelle_runner.isabelle_decide_modal`;
+    - an identity atom ``=`` / ``≠`` is rigid (no world argument) and existence-
+      independent under every ``mode``; see the module docstring's "Equality is rigid"
+      for the varying-domain choice and for why ``□(a = b) → a = b`` needs a frame
+      with a successor-or-self (T, S4, S5, KD …) while ``a = b → □(a = b)`` holds in K;
+    - a variable that is free in ``formula`` is a PARAMETER: one unknown individual, the
+      same everywhere in the formula. Under ``mode='constant'`` / ``'possibilist'`` it is an
+      element of the object domain, so ``∀x P(x) → P(y)`` and ``P(y) → ∃x P(x)`` are valid;
+      under a varying regime it exists at the world of evaluation (and need not exist at any
+      other), so those two are valid there too while ``□∀x P(x) → □P(y)`` is valid under
+      ``'constant'`` / ``'possibilist'`` / ``'increasing'`` only. A constant is not read
+      that way (it may lie outside the world's domain); see the module docstring's "A free
+      variable is a parameter";
     - a deontic ``False`` is typically Z3 returning *unknown* rather than a countermodel:
       the ∃-quantified seriality axiom defeats its model finder, measured identical at
       1 s / 2 s / 10 s budgets (the same behaviour ``frame="KD"`` has always had). A short
@@ -1119,8 +1355,10 @@ def qml_is_valid(formula: Node, mode: str = "constant", frame: str = "K",
 def qml_validity_formula(formula: Node, mode: str = "constant", frame: str = "K",
                          systems=None, bridges=None,
                          temporal_closure: bool = True) -> Node:
-    """Return the closed classical-FOL validity query :func:`qml_is_valid` decides,
-    as a :class:`Node` — the documented, public counterpart of the private
+    """Return the classical-FOL validity query :func:`qml_is_valid` decides,
+    as a :class:`Node` — closed unless ``formula`` has a free variable, which stays
+    free in it as the parameter it is (closing the query universally gives the same
+    validity) — the documented, public counterpart of the private
     :func:`_validity_formula` this function simply delegates to (kept private and
     unchanged, including its positional-argument shape, since
     :mod:`unicode_fol_kit.atp.resolution` already calls it positionally).
@@ -1133,22 +1371,22 @@ def qml_validity_formula(formula: Node, mode: str = "constant", frame: str = "K"
     :class:`Variable`/:class:`Constant`/:class:`Function` — i.e. exactly the
     classical FOL fragment :mod:`unicode_fol_kit.fol.casl_export` accepts — so it
     is ready to hand to :func:`~unicode_fol_kit.fol.casl_export.to_casl_spec`
-    directly, MODULO two details :mod:`unicode_fol_kit.hets.dol` handles for you:
-    this route's auto-generated fresh world/Geach variables (``_w0``, ``_gz0``, …)
-    start with an underscore, which is not a legal CASL identifier (cosmetic); and
-    an object-language ``=``/``≠`` inside a modal context comes out of ``_st``
-    world-relativized (its arity is no longer 2), so it is NOT CASL's own rigid,
-    always-binary identity and must not be handed to ``to_casl_spec`` under the
-    literal name ``=`` (semantic, not cosmetic — see ``hets.dol``'s own
-    module-level section comment for why this route already treats such an atom
-    as an uninterpreted, world-relative predicate, the same reading
-    ``Node.to_z3``/``satisfies_modal``/``hol.isabelle_modal``/``hol.thf_modal``
-    already give it). Use :func:`unicode_fol_kit.hets.dol.to_dol_library_from_modal`
-    — it calls this function, sanitises those names injectively (and aliases any
-    such ``=``/``≠`` atom), and renders the result as a complete DOL library over
-    :func:`~unicode_fol_kit.fol.casl_export.to_casl_spec` (see that module's own
-    docstring for the sanitisation contract) — rather than feeding this function's
-    raw output to ``to_casl_spec`` yourself.
+    directly. The fresh world / Geach variables this route mints are ``w0`` / ``v0``
+    style names (:func:`unicode_fol_kit.fol._identifiers.fresh_variables`), which are
+    legal CASL identifiers as well as legal names for this kit's own parser — before
+    0.30.0 they were ``_w0`` / ``_gz0``, and :mod:`unicode_fol_kit.hets.dol` had to
+    rename every one. An object-language ``=`` needs no handling either: it is
+    translated to the SAME binary, rigid identity (no world argument — see the module
+    docstring's "Equality is rigid"), which is exactly CASL's own fixed built-in
+    ``=``, and ``≠`` to ``¬(=)``, which ``casl_export`` renders as it renders any
+    negation. What ``hets.dol`` still has to rename is the ``·`` mark this module
+    appends to a user predicate named like one of its own relations (``R`` → ``R·``):
+    U+00B7 is punctuation no CASL identifier may contain. Use
+    :func:`unicode_fol_kit.hets.dol.to_dol_library_from_modal` — it calls this
+    function, sanitises the names injectively, and renders the result as a complete
+    DOL library over :func:`~unicode_fol_kit.fol.casl_export.to_casl_spec` (see that
+    module's own docstring for the sanitisation contract) — rather than feeding this
+    function's raw output to ``to_casl_spec`` yourself.
     """
     return _validity_formula(formula, mode, frame, systems, bridges=bridges,
                              temporal_closure=temporal_closure)
@@ -1157,7 +1395,12 @@ def qml_validity_formula(formula: Node, mode: str = "constant", frame: str = "K"
 def qml_equivalent(left: Node, right: Node, mode: str = "constant", frame: str = "K",
                    systems=None, timeout: int = 10000, bridges=None,
                    temporal_closure: bool = True) -> bool:
-    """Return True iff two modal formulas are QML-equivalent under ``mode`` / ``frame``."""
+    """Return True iff two modal formulas are QML-equivalent under ``mode`` / ``frame``.
+
+    A variable free in either formula is one parameter shared by both (see
+    :func:`qml_is_valid`): the formulas are equivalent when ``left ↔ right`` is valid for
+    every individual it may denote.
+    """
     return qml_is_valid(Iff(left, right), mode=mode, frame=frame, systems=systems,
                         timeout=timeout, bridges=bridges,
                         temporal_closure=temporal_closure)
@@ -1240,10 +1483,17 @@ _THF_DOMAIN["cumulative"] = _THF_DOMAIN["increasing"]
 _THF_DOMAIN["possibilist"] = _THF_DOMAIN["constant"]
 
 
-# Equality / inequality are NOT primitive HOL identity here: the toolkit's modal layer
-# (satisfies_modal and the first-order embedding) treats `=` / `≠` as ordinary
-# uninterpreted, world-relativized predicates. The THF export matches that, so all three
-# embeddings agree; these aliases give them valid, distinct THF functors.
+# `feq` / `fneq` are the functors equality USED to get in the THF / Isabelle exports of
+# the modal layer, where it was an ordinary uninterpreted, world-relativized predicate
+# and so answered a different question than qml_is_valid. It is now rigid identity on
+# every one of those routes (`_RigidNames` in hol.thf_modal overrides the two entries,
+# and `_lower_identity` rewrites `≠` to `¬(=)` before any name is looked up), so the two
+# equality entries below are unreachable from to_thf_modal / to_isabelle_modal /
+# hol.thf_modal / hol.isabelle_modal. They are kept because this table also names `⊥`
+# and `⊤` and is shared with routes that do not lower identity; a route that reads one
+# of the two gets a valid, distinct functor rather than a crash — never a SILENT
+# uninterpreted reading, because reaching them at all now takes a caller that opted out
+# of `_RigidNames`.
 _THF_PRED_ALIAS = {"=": "feq", "≠": "fneq", "⊥": "bottom", "⊤": "top"}
 
 # The THF export's own fixed functors. A user symbol that sanitises onto one of
@@ -1333,7 +1583,7 @@ def _thf_term(node: Node, names: "_ThfNames") -> str:
     if isinstance(node, Constant):
         return names.constant(node.name)
     if isinstance(node, Number):
-        return names.constant("n" + str(node.value))
+        return names.constant(prefixed_numeral_name(node.value))
     if isinstance(node, Function):
         head = names.function(node)
         return "( " + " @ ".join([head] + [_thf_term(a, names) for a in node.args]) + " )"
@@ -1353,8 +1603,14 @@ def _thf_lift(node: Node, names: "_ThfNames") -> str:
             "unicode_fol_kit.fol.modal_translation.down_is_valid or "
             "unicode_fol_kit.atp.kripke_enum.KripkeEnumBackend instead.")
     if isinstance(node, Atom):
-        # `=` / `≠` are uninterpreted world-relativized predicates (like any other),
-        # NOT primitive HOL identity — so the THF meaning matches satisfies_modal.
+        # An identity atom never reaches here with its own predicate name: the
+        # callers lower `≠` to `¬(=)` and hand `names` a `_RigidNames`, whose
+        # `atom` maps `=` onto the `meq` macro — THF's own `=` over `$i` with the
+        # world dropped, the reading qml_is_valid has ("Equality is rigid").
+        constant = truth_value(node)
+        if constant is not None:
+            # `$true` / `$false`: the proposition true (false) at every world.
+            return "( ^ [W: mu] : $true )" if constant else "( ^ [W: mu] : $false )"
         head = names.atom(node)
         if not node.args:
             return head
@@ -1385,7 +1641,7 @@ def _thf_lift(node: Node, names: "_ThfNames") -> str:
         "incl. Until/Since, and hybrid nominals/@).")
 
 
-def _thf_signature(formula: Node, names: "_ThfNames" = None) -> List[str]:
+def _thf_signature(formula: Node, names: Optional["_ThfNames"] = None) -> List[str]:
     """Type declarations for every predicate / constant / function in ``formula``.
 
     Uses the de-colliding :class:`_ThfNames` resolver (built from ``formula`` if not
@@ -1414,12 +1670,38 @@ def to_thf_modal(formula: Node, mode: str = "constant", frame: str = "K") -> str
     varying), and the conjecture ``mvalid @ ⟨formula⟩`` — ready for a higher-order
     ATP (Leo-III, Satallax). Covers the alethic □/◇ fragment.
 
-    Equality ``=`` / ``≠`` is emitted as an ordinary uninterpreted (world-relativized)
-    predicate, **not** primitive HOL identity, to stay faithful to ``satisfies_modal``
-    and the first-order embedding; for rigid identity, add your own axioms to the output.
+    Equality ``=`` / ``≠`` is **rigid identity**, the reading of :func:`qml_is_valid` /
+    :func:`qml_translate` (module docstring, "Equality is rigid"): THF's own ``=`` over
+    the individual sort ``$i`` with no world argument, through one extra macro
+    ``meq = ^ [A: $i, B: $i, W: mu] : ( A = B )`` that is emitted only when the formula
+    contains identity (so an equality-free problem is unchanged). ``t₁ ≠ t₂`` is lowered
+    to ``¬(t₁ = t₂)`` as ``qml_translate`` does, a non-binary ``=`` / ``≠`` atom raises
+    ``ValueError`` as there, and no ``feq`` / ``fneq`` functor is declared. So a prover
+    on this problem answers the question :func:`qml_is_valid` answers: ``∀x (x = x)``,
+    ``a = b → □(a = b)`` and ``◇(a = b) → a = b`` are theorems under ``frame='K'``,
+    ``□(a = b) → a = b`` only under a reflexive / serial frame. Identity is not
+    existence-guarded (the module docstring's varying-domain choice). The macro and the
+    lowering live in :mod:`unicode_fol_kit.hol.thf_modal`, which emits the same line.
+
+    THF has no free variable, so a variable that is free in ``formula`` (a parameter, see
+    the module docstring's "A free variable is a parameter") is bound in the conjecture:
+    ``! [Y: $i] : mvalid @ …``, and under a varying regime ``existsAt @ Y`` guards the
+    formula (``! [Y: $i] : mvalid @ (mimplies @ (existsAt @ Y) @ …)``), which is the
+    reading :func:`qml_is_valid` has. For a single formula with no premise this binding
+    is the parameter reading itself.
     """
+    # Lazy: hol.thf_modal imports this module, so the shared rigid-identity helpers
+    # are reached from inside the function (as to_isabelle_modal below reaches hol).
+    from ..hol.thf_modal import (
+        _RigidNames, _THF_RIGID_EQ_DEF, _has_identity, _lower_identity,
+    )
     if frame not in _FRAMES:
         raise ValueError(f"to_thf_modal: unknown frame {frame!r}.")
+    # A numeral is a constant identified by its value (1 and 1.0 are one), named ``n1``:
+    # a user constant spelled like it is refused, not merged with it.
+    [formula], _ = numerals_as_constants([formula], where="to_thf_modal",
+                                         spell=prefixed_numeral_name)
+    formula = _lower_identity(formula, "to_thf_modal")
     lines = [
         f"% Shallow embedding of a quantified modal formula (mode={mode}, frame={frame}).",
         "% Conjecture is 'Theorem' iff the formula is QML-valid under this regime.",
@@ -1427,9 +1709,11 @@ def to_thf_modal(formula: Node, mode: str = "constant", frame: str = "K") -> str
         "thf(r_decl, type, ( r : ( mu > mu > $o ) )).",
         "thf(existsAt_decl, type, ( existsAt : ( $i > mu > $o ) )).",
     ]
-    names = _ThfNames(formula)
+    names = _RigidNames(formula)
     lines += _thf_signature(formula, names)
     lines.append(_THF_DEFS)
+    if _has_identity(formula):
+        lines.append(_THF_RIGID_EQ_DEF)
     lines.append("thf(nonempty_dom, axiom, ( ! [W: mu] : ? [X: $i] : ( existsAt @ X @ W ) )).")
     for cond in _FRAMES[frame]:
         lines.append(_THF_FRAME[cond])
@@ -1437,7 +1721,15 @@ def to_thf_modal(formula: Node, mode: str = "constant", frame: str = "K") -> str
         lines.append(_THF_DOMAIN[mode])
     elif mode not in ("varying",) and mode not in _CONSTANT_MODES:
         raise ValueError(f"to_thf_modal: unknown mode {mode!r}.")
-    lines.append(f"thf(goal, conjecture, ( mvalid @ {_thf_lift(formula, names)} )).")
+    goal = _thf_lift(formula, names)
+    parameters = free_parameter_names([formula])
+    if mode in _ACTUALIST_MODES:
+        for name in reversed(parameters):
+            goal = f"( mimplies @ ( existsAt @ {names.variable(name)} ) @ {goal} )"
+    conjecture = f"mvalid @ {goal}"
+    for name in reversed(parameters):
+        conjecture = f"! [{names.variable(name)}: $i] : ( {conjecture} )"
+    lines.append(f"thf(goal, conjecture, ( {conjecture} )).")
     return "\n".join(lines) + "\n"
 
 
@@ -1450,6 +1742,15 @@ def to_isabelle_modal(formula: Node, mode: str = "constant", frame: str = "K") -
     alethic-only skeleton). Use that module directly for the additional options
     (epistemic/doxastic/deontic/temporal coverage, the proof ``tactic``,
     ``temporal_closure``).
+
+    A variable that is free in ``formula`` stays a free variable of the lemma, which then
+    holds for EVERY individual of the type ``i``. Under ``constant`` / ``possibilist`` that
+    is the parameter reading of :func:`qml_is_valid` (one formula, no premise). Under a
+    varying regime it is stronger than that reading, which asks the individual to exist
+    at the world of evaluation only: a proof of the lemma proves the parameter instance,
+    and a counterexample to the lemma in which the individual does not exist at the world
+    of evaluation does not refute it. Use :func:`qml_is_valid` for the verdict under such
+    a regime.
     """
     from ..hol.isabelle_modal import to_isabelle_modal as _real
     return _real(formula, mode=mode, frame=frame)

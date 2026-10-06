@@ -17,9 +17,10 @@ Correctness is established three independent ways:
 - a randomized differential over seeded random formulas against ``gmt_is_s4_valid``,
   plus the internal consistency check "``int_prove`` says valid ⟹ the bounded Kripke
   countermodel search agrees there is no countermodel";
-- the ⊥/FALSUM convention (⊥ is an ordinary atom, no ex falso) is pinned explicitly,
-  since it is exactly the kind of thing that is easy to get subtly wrong when encoding
-  ``¬A`` as ``A→⊥`` internally (see ``atp.lj``'s module docstring).
+- the ⊥/FALSUM convention (the atom ⊥ is the falsity constant, so ex falso is its rule
+  and no other atom's) is pinned explicitly, since it is exactly the kind of thing that
+  is easy to get subtly wrong when encoding ``¬A`` as ``A→⊥`` internally (see
+  ``atp.lj``'s module docstring).
 
 NOTE on atom names: the ``gmt_is_s4_valid`` oracle used throughout goes through
 :mod:`unicode_fol_kit.fol.qml`'s alethic Z3 embedding, whose accessibility relation is a
@@ -34,7 +35,7 @@ import random
 import pytest
 
 from unicode_fol_kit.fol.nodes import (
-    Atom, Not, And, Or, Xor, Implies, Iff, Quantifier, Variable,
+    Atom, Constant, Not, And, Or, Xor, Implies, Iff, Quantifier, Variable,
 )
 from unicode_fol_kit.atp.lj import (
     int_prove, int_decide, verify_lj_proof, check_lj_proof,
@@ -295,6 +296,27 @@ def test_curated_battery_has_at_least_25_entries():
     assert len(_VALID) + len(_INVALID) >= 25
 
 
+def test_the_s4_oracle_refuses_an_identity_atom_instead_of_disagreeing():
+    """The third cross-check is only meaningful on formulas all three procedures read
+    the same way. An identity atom is not one: int_decide / G4ip key ``a = a`` by its
+    rendered form (an opaque letter, not valid), while the S4/Z3 oracle goes through
+    fol.qml, where ``=`` is RIGID identity (``a = a`` valid). The oracle therefore
+    refuses it by name -- through the public function and through this file's mirror of
+    it (which calls the same ``gmt_translate``) -- rather than report a disagreement
+    that is about two different questions. Neither call reaches the solver, so there is
+    no clock in this test; tests/test_hol_intuitionistic.py holds the full table."""
+    from unicode_fol_kit.fol.nodes import Constant
+
+    a, b = Constant("a"), Constant("b")
+    for f in (Atom("=", (a, a)), Implies(p, Atom("≠", (a, b)))):
+        with pytest.raises(NotImplementedError, match="equality is not interpreted"):
+            gmt_is_s4_valid(f)
+        with pytest.raises(NotImplementedError, match="equality is not interpreted"):
+            _gmt_verdict(f, _GMT_TIMEOUT_INVALID)
+    # ... which is also why the random differential's alphabet must stay equality-free
+    assert not any(x.predicate in ("=", "≠") for x in _RAND_ATOMS)
+
+
 # ---------------------------------------------------------------------------
 # Randomized differential: int_prove vs the independent S4/Z3 oracle, plus the
 # internal cross-check "int_prove valid => the bounded Kripke search agrees".
@@ -390,21 +412,24 @@ def test_random_differential_against_gmt_s4_oracle():
 
 # ---------------------------------------------------------------------------
 # The ⊥ / FALSUM convention: int_prove must agree with int_valid EXACTLY --
-# no ex falso for the surface atom "⊥" (see the atp.lj module docstring).
+# the atom "⊥" is the falsity constant (see the atp.lj module docstring).
 # ---------------------------------------------------------------------------
 
-def test_bot_is_an_ordinary_atom_not_absurdity():
-    # ⊥->p would be ex falso quodlibet if ⊥ were genuine absurdity; it is NOT, since ⊥
-    # is an ordinary atom here (no ⊥L rule) -- p is simply an unrelated atom.
-    assert int_decide(Implies(BOT, p)) is False
-    # ¬⊥ would be a theorem if ⊥ were genuine absurdity ("not-false" always holds); it
-    # is NOT here, because ⊥ is just an atom like any other, and ¬(any atom) alone is
-    # never a tautology.
-    assert int_decide(Not(BOT)) is False
+def test_bot_is_absurdity_not_a_letter():
+    # ⊥->p is ex falso quodlibet: ⊥ is forced at no world, so at every world either
+    # the premise ⊥ of the implication is not forced, and the implication holds
+    # vacuously. Were ⊥ a letter, a world forcing ⊥ and not p would refute it.
+    assert int_decide(Implies(BOT, p)) is True
+    # ¬⊥ is a theorem: no world forces ⊥. For a letter, ¬(any atom) alone is never a
+    # tautology (the world forcing the letter refutes it).
+    assert int_decide(Not(BOT)) is True
+    # ⊥ alone is not a theorem: no world forces it.
+    assert int_decide(BOT) is False
     # Must agree with int_valid EXACTLY (this is the ground truth int_prove is built to
     # match -- see the module docstring's FALSUM paragraph).
     assert int_decide(Implies(BOT, p)) == int_valid(Implies(BOT, p))
     assert int_decide(Not(BOT)) == int_valid(Not(BOT))
+    assert int_decide(BOT) == int_valid(BOT)
 
 
 def test_bot_still_proves_itself_reflexively():
@@ -413,12 +438,12 @@ def test_bot_still_proves_itself_reflexively():
     assert int_decide(Implies(BOT, BOT)) is True
 
 
-def test_ex_falso_needs_an_explicit_contradiction():
-    # Ex falso IS available intuitionistically, but only from a genuine contradiction
-    # like p∧¬p, never "for free" from the atom ⊥ (see the module docstring's FALSUM
-    # note: "express ex falso via P ∧ ¬P").
+def test_ex_falso_from_bot_and_from_a_contradiction():
+    # Ex falso is available from a genuine contradiction like p∧¬p, and from the
+    # falsity constant ⊥ (see the module docstring's FALSUM note); never from a letter.
     assert int_prove([And(p, Not(p))], q) is True
-    assert int_prove([BOT], q) is False        # NOT ex falso: ⊥ is just an atom
+    assert int_prove([BOT], q) is True
+    assert int_prove([p], q) is False
 
 
 # ---------------------------------------------------------------------------
@@ -544,3 +569,101 @@ def test_public_api_present():
     import unicode_fol_kit.atp.lj as m
     for name in ("int_prove", "int_decide", "check_lj_proof", "verify_lj_proof"):
         assert hasattr(m, name), name
+
+
+# =============================================================================
+# Equality is not an opaque letter here either
+# =============================================================================
+
+_IA, _IB = Constant("a"), Constant("b")
+_IEQ = Atom("=", (_IA, _IB))
+_IP, _IQ = Atom("P", ()), Atom("Q", ())
+
+#: Every shape that must be refused by BOTH intuitionistic routes, with the
+#: propositional control of the same shape that must still be decided.
+_INT_EQUALITY_SHAPES = [
+    ("reflexivity", Atom("=", (_IA, _IA)), _IP),
+    ("disequality", Atom("≠", (_IA, _IB)), _IP),
+    ("identity implies itself", Implies(_IEQ, _IEQ), Implies(_IP, _IP)),
+    ("excluded middle", Or(_IEQ, Not(_IEQ)), Or(_IP, Not(_IP))),
+    ("double negation", Implies(Not(Not(_IEQ)), _IEQ),
+     Implies(Not(Not(_IP)), _IP)),
+    ("ex falso", Implies(And(_IP, Not(_IP)), _IEQ),
+     Implies(And(_IP, Not(_IP)), _IQ)),
+]
+_INT_EQUALITY_IDS = [row[0] for row in _INT_EQUALITY_SHAPES]
+
+
+@pytest.mark.parametrize("name, refused, control", _INT_EQUALITY_SHAPES,
+                         ids=_INT_EQUALITY_IDS)
+def test_both_intuitionistic_routes_refuse_an_identity_atom(name, refused, control):
+    """The Kripke search and G4ip decide the same fragment, so they refuse alike.
+
+    Hand-derived: a world's valuation is a monotone set of atom KEYS and a G4ip
+    sequent holds opaque letters, so neither interprets a term — ``a = b`` was the
+    letter ``'a = b'``. Measured on 0.28.1: ``int_valid(a = a)`` was False and
+    ``int_countermodel(a = a)`` handed back a model as if it refuted reflexivity.
+    The Gödel–McKinsey–Tarski embedding in ``hol.intuitionistic`` already refuses
+    the atom, and this module is the oracle it is checked against, so a route that
+    kept answering would make the kit disagree with itself about one logic.
+    """
+    with pytest.raises(NotImplementedError, match="refused by name"):
+        int_valid(refused)
+    with pytest.raises(NotImplementedError, match="refused by name"):
+        int_countermodel(refused)
+    with pytest.raises(NotImplementedError, match="refused by name"):
+        int_prove([], refused)
+    with pytest.raises(NotImplementedError, match="refused by name"):
+        int_decide(refused)
+    # the same shape over a letter is still decided, and the two routes agree
+    assert int_valid(control) == int_prove([], control)
+
+
+def test_an_identity_atom_among_the_premises_is_refused_too():
+    """``a = b ⊢ P`` must not be decided either: the premise is the same atom.
+
+    It is the sequent's left side that makes this worth its own case — G4ip closes
+    a branch on an axiom match, so a premise can decide a sequent without the
+    goal ever being decomposed.
+    """
+    with pytest.raises(NotImplementedError, match="refused by name"):
+        int_prove([_IEQ], _IP)
+    # and `a = b ⊢ a = b` would close on the axiom rule without reading either
+    with pytest.raises(NotImplementedError, match="refused by name"):
+        int_prove([_IEQ], _IEQ)
+    assert int_prove([_IP], _IP) is True           # the control closes, legally
+
+
+def test_the_refusal_is_not_a_verdict_reached_without_reading_the_atom():
+    """``(p ∧ ¬p) → (a = b)`` is intuitionistically valid whatever the atom is.
+
+    So the old code returned True for it — a right answer for a reason that has
+    nothing to do with identity, which is exactly why the check cannot sit inside
+    the search. The propositional instance stays valid, so the refusal is about
+    the atom and not about ex falso.
+    """
+    ex_falso_eq = Implies(And(_IP, Not(_IP)), _IEQ)
+    with pytest.raises(NotImplementedError, match="refused by name"):
+        int_valid(ex_falso_eq)
+    assert int_valid(Implies(And(_IP, Not(_IP)), _IQ)) is True
+    assert int_prove([], Implies(And(_IP, Not(_IP)), _IQ)) is True
+
+
+def test_the_refusal_points_at_the_routes_that_do_decide_identity():
+    with pytest.raises(NotImplementedError, match="api.prove"):
+        int_valid(Atom("=", (_IA, _IA)))
+    with pytest.raises(NotImplementedError, match="qml_is_valid"):
+        int_prove([], Atom("=", (_IA, _IA)))
+
+
+def test_an_ordinary_predicate_over_terms_is_still_an_opaque_letter():
+    """Only ``=`` / ``≠`` are refused.
+
+    ``P(a)`` has always been one propositional letter here (that IS the
+    propositional fragment), and it stays one: ``P(a) → P(a)`` is valid and
+    ``P(a) ∨ ¬P(a)`` is not, which is intuitionistic logic over one letter.
+    """
+    pa = Atom("P", (_IA,))
+    assert int_valid(Implies(pa, pa)) is True
+    assert int_valid(Or(pa, Not(pa))) is False
+    assert int_prove([], Implies(pa, pa)) is True

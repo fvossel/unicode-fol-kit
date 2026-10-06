@@ -40,9 +40,36 @@ Faithfulness to :func:`unicode_fol_kit.semantics.kripke.satisfies_modal`:
   serial axiom is always emitted for ``d``.
 - temporal ``G`` / ``F`` / ``X`` are box / diamond / box over ``t`` / ``tnext`` — but
   **note** the one-step-vs-closure caveat below.
-- equality ``=`` / ``≠`` is an **uninterpreted, world-relativized** predicate (rendered
-  via the ``feq`` / ``fneq`` aliases), NOT primitive HOL identity — identical to
-  ``to_thf_modal`` and to ``satisfies_modal``.
+- equality ``=`` / ``≠`` is **rigid identity**, THF's own ``=`` with no world argument —
+  the reading of :func:`unicode_fol_kit.fol.qml.qml_is_valid` (and of
+  :func:`unicode_fol_kit.fol.qml.to_thf_modal`, byte-compatible on the conjecture).
+  See "Equality" below. (``satisfies_modal`` has no term semantics and REFUSES an
+  equality atom by name; it is not the oracle for identity.)
+
+Equality
+--------
+An identity atom ``t₁ = t₂`` is lifted through one extra macro, ``meq``, emitted only
+when the formula contains identity:
+``meq = ^ [A: $i, B: $i, W: mu] : ( A = B )`` — THF's native ``=`` over the individual
+sort ``$i``, with a world binder ``W`` the body never mentions, so it takes **no
+world argument** and cannot vary by world. ``t₁ ≠ t₂`` is lowered to ``¬(t₁ = t₂)``
+first, exactly as :func:`unicode_fol_kit.fol.qml.qml_translate` does (the lowering is
+:func:`unicode_fol_kit.fol.qml._st_equality` itself, reached through
+:func:`unicode_fol_kit.hol.isabelle_modal._lower_identity`), and a non-binary ``=`` /
+``≠`` atom raises ``ValueError``, as in ``qml``. Nothing is declared for identity — no
+``feq`` / ``fneq`` functor exists in the emitted problem — so a prover gets
+reflexivity, symmetry, transitivity and congruence (hence Leibniz's law, for ``mbox``
+too) from its own equality, not from an axiom.
+
+Identity ranges over the whole individual sort ``$i`` and is **not** existence-guarded
+(``qml``'s documented varying-domain choice): ``a = a`` is a theorem at a world where
+``a`` does not exist, whereas ``∃x (x = c)`` — which goes through the
+``existsAt``-guarded ``mexists`` — is a theorem under ``constant`` / ``possibilist``
+and not under the actualist modes. ``a = b → □(a = b)``, ``a ≠ b → □(a ≠ b)`` and
+``◇(a = b) → a = b`` are theorems under ``frame='K'``; ``□(a = b) → a = b`` is NOT
+(a dead-end world) and is one exactly when the frame is reflexive or serial. The
+ordering atoms ``<`` ``>`` ``≤`` ``≥`` remain ordinary world-relativized predicates, as in
+``qml``.
 
 CAVEAT — temporal closure. ``satisfies_modal`` reads ``G``/``F`` over the
 *reflexive-transitive closure* of the temporal relation, and ``X`` over the immediate
@@ -101,7 +128,7 @@ Public API: :func:`to_thf_modal_full`, plus the introspection helpers
 :func:`thf_full_definitions` and :func:`thf_full_frame_axioms`.
 """
 
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from ..fol.nodes import (
     Node, Variable, Constant, Number, Function,
@@ -124,10 +151,13 @@ from ..fol.qml import (
     _FRAMES, _CONSTANT_MODES, _ACTUALIST_MODES,
     _THF_FRAME, _THF_DOMAIN, _THF_PRED_ALIAS, _THF_RESERVED,
     _thf_name, _thf_term, _thf_signature, _ThfNames,
-    _FORALL,
+    _FORALL, _EQUALITY_PREDICATES,
 )
+from ..fol._free_parameters import free_parameter_names
+from ..fol._numeral_symbols import numerals_as_constants, prefixed_numeral_name
 from ..fol._symbol_names import dedupe
-from ..fol._msfl_nodes import nonempty_sort_axioms
+from ..fol._truth_constants import truth_value
+from ..fol._msfl_nodes import nonempty_sort_axioms, sort_membership_axioms
 
 # The cross-family bridge REGISTRY is single-sourced from the Isabelle route: the
 # names, the families each bridge needs, and the fact names are shared, so the two
@@ -135,6 +165,7 @@ from ..fol._msfl_nodes import nonempty_sort_axioms
 # option exists to remove). Only the axiom TEXT is route-local (_THF_BRIDGE_LINES).
 from .isabelle_modal import (
     BRIDGES, _BRIDGES as _BRIDGE_SPEC, _validate_bridges,
+    _has_identity, _lower_identity,
 )
 
 __all__ = ["to_thf_modal_full", "thf_full_definitions", "thf_full_frame_axioms",
@@ -203,6 +234,47 @@ thf(mforall, definition, ( mforall = ( ^ [Phi: $i>(mu>$o), W: mu] : ! [X: $i] : 
 thf(mexists, definition, ( mexists = ( ^ [Phi: $i>(mu>$o), W: mu] : ? [X: $i] : ( ( existsAt @ X @ W ) & ( Phi @ X @ W ) ) ) )).
 thf(mvalid, definition, ( mvalid = ( ^ [Phi: mu>$o] : ! [W: mu] : ( Phi @ W ) ) )).\
 """
+
+
+# ---------------------------------------------------------------------------
+# Rigid identity.
+# ---------------------------------------------------------------------------
+#
+# Object identity is NOT a world-indexed predicate (fol.qml's "Equality is rigid"): it
+# is THF's own `=` over `$i`, lifted by a macro whose world binder is unused. The macro
+# is emitted only when the formula contains identity, so an equality-free problem is
+# byte-for-byte what it was before; `to_thf_modal` (fol.qml) emits the SAME line, so
+# the two exports stay byte-compatible on the alethic + equality fragment.
+_THF_RIGID_EQ = "meq"
+_THF_RIGID_EQ_DEF = ("thf(meq, definition, "
+                     "( meq = ( ^ [A: $i, B: $i, W: mu] : ( A = B ) ) )).")
+
+
+class _RigidNames(_ThfNames):
+    """:class:`~unicode_fol_kit.fol.qml._ThfNames` that reads ``=`` as the ``meq`` macro.
+
+    Identity is not a predicate: it gets no entry in ``pred`` (so ``_thf_signature``
+    declares no ``feq``) and ``atom`` names the macro. ``meq`` is reserved only when the
+    formula contains identity, so a user predicate / constant / function literally named
+    ``meq`` is pushed to ``meq_2`` exactly then and not otherwise. (As before, the
+    resolver still lets ``=`` / ``≠`` claim ``feq`` / ``fneq`` first, which only
+    matters to a user symbol spelled that way; it stays unique.)
+    """
+
+    #: Nominal name -> its world constant, filled by :func:`_resolve_names`.
+    nominal: Dict[str, str]
+
+    def __init__(self, formula: Node, reserved=_THF_RESERVED):
+        if _has_identity(formula):
+            reserved = frozenset(reserved) | {_THF_RIGID_EQ}
+        super().__init__(formula, reserved=reserved)
+        for key in [k for k in self.pred if k[0] in _EQUALITY_PREDICATES]:
+            del self.pred[key]
+
+    def atom(self, node: Atom) -> str:
+        if node.predicate == "=":
+            return _THF_RIGID_EQ
+        return super().atom(node)
 
 
 # Frame axioms for the *temporal* relation t. G/F are read over a reflexive-transitive
@@ -346,7 +418,7 @@ def _thf_bridge_axioms(used: Dict[str, bool], bridges) -> List[str]:
 # ---------------------------------------------------------------------------
 # Lifting the formula to a THF term of type mu > $o.
 # ---------------------------------------------------------------------------
-def _lift(node: Node, names: "_ThfNames") -> str:
+def _lift(node: Node, names: "_RigidNames") -> str:
     """Render a full-family modal formula as a THF term of type ``mu > $o``.
 
     Classical connectives, alethic □/◇, object quantifiers and atoms are handled
@@ -355,7 +427,12 @@ def _lift(node: Node, names: "_ThfNames") -> str:
     per-formula de-colliding functor resolver (so distinct symbols never collapse).
     """
     if isinstance(node, Atom):
-        # `=` / `≠` stay uninterpreted world-relativized predicates (feq / fneq).
+        # An identity atom reaches here as `=` (`≠` was lowered to `¬(=)` up front) and
+        # `names.atom` answers the `meq` macro, so it lifts as `( meq @ t1 @ t2 )`.
+        constant = truth_value(node)
+        if constant is not None:
+            # `$true` / `$false`: the proposition true (false) at every world.
+            return "( ^ [W: mu] : $true )" if constant else "( ^ [W: mu] : $false )"
         head = names.atom(node)
         if not node.args:
             return head
@@ -480,13 +557,32 @@ def _sort_functors(original: Node, names: "_ThfNames") -> List[str]:
     """
     out: List[str] = []
     for axiom in nonempty_sort_axioms(original):
+        assert isinstance(axiom, Quantifier) and isinstance(axiom.formula, Atom)   # ∃x S(x)
         functor = names.pred.get((axiom.formula.predicate, 1))
         if functor is not None and functor not in out:
             out.append(functor)
     return out
 
 
-def _resolve_names(formula: Node) -> "_ThfNames":
+def _sort_members(original: Node, names: "_ThfNames") -> List[Tuple[str, str]]:
+    """``(guard functor, individual functor)`` of every sorted constant of ``original``.
+
+    One pair per distinct ``c:S``, in first-occurrence order (the order of
+    :func:`~unicode_fol_kit.fol._msfl_nodes.sort_membership_axioms`), each name taken
+    from ``names`` — which must come from :func:`_resolve_names` called with the same
+    ``original``, so the guard of a sort that occurs only through a sorted constant is
+    declared and the pair names exactly the functors the conjecture uses.
+    """
+    out: List[Tuple[str, str]] = []
+    for atom in sort_membership_axioms(original):
+        assert isinstance(atom, Atom) and isinstance(atom.args[0], Constant)    # ``S(c)``
+        pair = (names.pred[(atom.predicate, 1)], names.constant(atom.args[0].name))
+        if pair not in out:
+            out.append(pair)
+    return out
+
+
+def _resolve_names(formula: Node, original: Optional[Node] = None) -> "_RigidNames":
     """Build the per-formula functor resolver, including a de-colliding nominal map.
 
     User symbols are resolved against the full export's reserved functor set;
@@ -496,8 +592,21 @@ def _resolve_names(formula: Node) -> "_ThfNames":
     collapse to the SAME world constant — the emitted problem would load but no
     longer mean what the source formula meant (and a user constant literally
     named ``nom_a`` would conflate with the nominal ``a``'s world).
+
+    ``original`` is the many-sorted formula ``formula`` was relativized from. In
+    ``formula`` a sorted constant ``c:S`` is the plain ``c`` and the guard ``S`` is
+    mentioned only if a sorted QUANTIFIER used it; resolving over ``formula``
+    together with the membership atom ``S(c)`` of every sorted constant of
+    ``original`` gives a sort that occurs only through a sorted constant its guard
+    functor and type declaration too. Without a sorted constant the resolver is
+    built over ``formula`` itself, so every name is what it was.
     """
-    names = _ThfNames(formula, reserved=_THF_RESERVED_FULL)
+    scope = formula
+    if original is not None:
+        for atom in sort_membership_axioms(original):
+            scope = And(scope, atom)
+    formula = scope
+    names = _RigidNames(formula, reserved=_THF_RESERVED_FULL)
     taken = (set(_THF_RESERVED_FULL)
              | set(names.pred.values()) | set(names.const.values())
              | set(names.func.values()))
@@ -611,6 +720,14 @@ def to_thf_modal_full(formula: Node, mode: str = "constant", frame: str = "K",
     ``mode``, and the conjecture ``mvalid @ ⟨formula⟩`` — ready for a higher-order ATP
     (Leo-III / Satallax). The toolkit only emits the problem; it does not run a prover.
 
+    A many-sorted formula also gets its sort facts, as ``axiom`` lines beside the
+    conjecture: ``nonempty_sort<i>`` (the sort is non-empty at every world) and, per
+    sorted constant ``c:S``, ``sort_member<i>`` (``! [W: mu] : ( S @ c @ W )``: ``c`` is
+    an element of ``S`` at EVERY world, unguarded by ``existsAt``, because a constant is
+    rigid and may lie outside the domain of a world). A sort that occurs only through
+    a sorted constant gets its guard declared too. A formula without a sorted constant
+    gets no ``sort_member`` line and its text is unchanged.
+
     Parameters:
         formula: the modal formula to embed.
         mode: object-quantifier domain regime — ``"constant"`` / ``"possibilist"``
@@ -649,8 +766,11 @@ def to_thf_modal_full(formula: Node, mode: str = "constant", frame: str = "K",
     ``tnext`` (TH0 quantifies over predicates, so the least fixpoint is directly
     expressible). Temporal ``G``/``F`` are read over a reflexive-transitive ``t`` and
     only approximate ``satisfies_modal``'s closure over the caller's raw temporal
-    edges (see the module docstring). Equality ``=`` / ``≠`` is an uninterpreted
-    world-relativized predicate (``feq`` / ``fneq``), not primitive HOL identity.
+    edges (see the module docstring). Equality ``=`` / ``≠`` is RIGID identity — THF's
+    own ``=`` with no world argument, through the ``meq`` macro (``≠`` lowered to
+    ``¬(=)``) — the reading of :func:`~unicode_fol_kit.fol.qml.qml_is_valid`, so
+    ``a = a`` and ``a = b → □(a = b)`` are theorems and ``□(a = b) → a = b`` is one
+    exactly under a reflexive / serial ``frame`` (module docstring, "Equality").
     First-order/higher-order modal logic is undecidable, so a ``Theorem`` verdict
     requires an external HOL ATP and is not guaranteed to terminate.
     """
@@ -670,8 +790,16 @@ def to_thf_modal_full(formula: Node, mode: str = "constant", frame: str = "K",
     # the existing signature scan / lift already handle, and doing it once,
     # up front, also catches a SortedConstant anywhere in the formula, not
     # only directly under a SortedQuantifier.
+    #
+    # A numeral is a constant identified by its value (1 and 1.0 are one), named ``n1``:
+    # a user constant spelled like it is refused, not merged with it.
+    [formula], _ = numerals_as_constants([formula], where="to_thf_modal_full",
+                                         spell=prefixed_numeral_name)
     original = formula
     formula = formula._relativize([])
+    # Rigid identity (qml's reading): `≠` -> `¬(=)`, a non-binary `=` refused. A formula
+    # without an identity atom is returned unchanged, so it emits byte-for-byte as before.
+    formula = _lower_identity(formula, "to_thf_modal_full")
 
     used = _families_used(formula)
     systems = systems or {}
@@ -709,7 +837,7 @@ def to_thf_modal_full(formula: Node, mode: str = "constant", frame: str = "K",
     # (e.g. Ab / ab) and never shadow a built-in (a predicate named "r"/"mbox" is pushed
     # to r_2/mbox_2), so a non-valid formula can neither collapse to a tautology nor
     # re-declare an export-internal relation at a conflicting type.
-    names = _resolve_names(formula)
+    names = _resolve_names(formula, original)
     # One mu constant per nominal (reserved nom_ prefix; true at exactly the
     # world it names — matching standard_translation / isabelle_modal). The map
     # is deduped, so nominals 'A'/'a' get distinct constants (nom_a / nom_a_2).
@@ -720,6 +848,8 @@ def to_thf_modal_full(formula: Node, mode: str = "constant", frame: str = "K",
 
     # --- the lifted-operator definitions (one self-contained block) ---
     lines.append(_THF_DEFS_FULL)
+    if _has_identity(formula):
+        lines.append(_THF_RIGID_EQ_DEF)
 
     # --- standing axiom: every world has an existing individual ---
     lines.append(
@@ -739,6 +869,19 @@ def to_thf_modal_full(formula: Node, mode: str = "constant", frame: str = "K",
                 if mode in _ACTUALIST_MODES else f"( {sort} @ X @ W )")
         lines.append(
             f"thf(nonempty_sort{i}, axiom, ( ! [W: mu] : ? [X: $i] : {body} )).")
+
+    # --- standing axiom per SORTED CONSTANT: it is an element of its sort ---
+    # ``c:S`` denotes an element of ``S`` (the reading every many-sorted route of the
+    # kit shares, fol._msfl_nodes.sort_membership_axioms). A constant is a rigid
+    # designator, so ``S @ c @ W`` holds at EVERY world -- and it is NOT guarded by
+    # ``existsAt``, in any mode: a constant may lie outside the local domain (the
+    # reading fol.qml documents), and a guarded fact would never fire in the modes
+    # where that matters. As an AXIOM it is part of the problem, not of the
+    # conjecture, so it can only be used, never proved. The names are distinct from
+    # the ``nonempty_sort`` family above.
+    for i, (sort, const) in enumerate(_sort_members(original, names)):
+        lines.append(
+            f"thf(sort_member{i}, axiom, ( ! [W: mu] : ( {sort} @ {const} @ W ) )).")
 
     # --- alethic frame axioms (frame) ---
     for cond in _FRAMES[frame]:
@@ -781,5 +924,18 @@ def to_thf_modal_full(formula: Node, mode: str = "constant", frame: str = "K",
         raise ValueError(f"to_thf_modal_full: unknown mode {mode!r}.")
 
     # --- the conjecture ---
-    lines.append(f"thf(goal, conjecture, ( mvalid @ {_lift(formula, names)} )).")
+    # A free variable is a parameter (one unknown individual), bound in front of the whole
+    # conjecture exactly as fol.qml.to_thf_modal binds it: THF has no free variables, and
+    # for a conjecture that stands alone "for the parameter" and "for every individual"
+    # are one validity. Under an actualist regime the individual exists at the world of
+    # evaluation.
+    goal = _lift(formula, names)
+    parameters = free_parameter_names([formula])
+    if mode in _ACTUALIST_MODES:
+        for name in reversed(parameters):
+            goal = f"( mimplies @ ( existsAt @ {names.variable(name)} ) @ {goal} )"
+    conjecture = f"mvalid @ {goal}"
+    for name in reversed(parameters):
+        conjecture = f"! [{names.variable(name)}: $i] : ( {conjecture} )"
+    lines.append(f"thf(goal, conjecture, ( {conjecture} )).")
     return "\n".join(lines) + "\n"

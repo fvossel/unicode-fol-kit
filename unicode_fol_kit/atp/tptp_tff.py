@@ -20,11 +20,26 @@ variable" or "higher-order" node class), so the writer's fragment gate below
 simply enumerates the classical many-sorted FOL node set it understands and
 refuses everything else BY NAME, mirroring
 :mod:`unicode_fol_kit.fol.casl_export`'s ``_check_fragment`` gate for the
-structurally identical problem (CASL's own typed spec syntax). The built-in
-arithmetic operators (``+``/``-``/``*``/``/``) and comparisons
-(``<``/``>``/``≤``/``≥``) are refused too, by name, for the same reason: TF0
-has no arithmetic sort for them to range over without ``$int``/``$rat``/
-``$real``, which is out of scope.
+structurally identical problem (CASL's own typed spec syntax).
+
+**Numerals and operators are ordinary symbols here.** A problem that was not asked
+for arithmetic reads a :class:`~unicode_fol_kit.fol.nodes.Number` as a CONSTANT
+identified by its value (``1`` and ``1.0`` are one constant) and ``+ - * /`` and ``<
+> ≤ ≥`` as uninterpreted function and predicate symbols (the same definition the
+``fof`` writer writes, see :mod:`unicode_fol_kit.atp._tptp_problem`). So this writer
+declares a numeral as a constant of ``$i`` (``tff(const_decl_1, type, n1: $i ).``),
+an operator as an uninterpreted function ``$i * $i > $i`` and a comparison as an
+uninterpreted predicate ``$i * $i > $o``, each under a word of the TF0 grammar that the
+ordinary renamer chose and the returned name map records; the numerals are the map's
+``numerals``, which is how a proof's ``n1`` reads back as ``Number(1)``. The numeral has
+no sort annotation to write, so a numeral that the inference would put into a user sort
+(``∀x:S P(x), P(1)``: the position of ``P``'s argument holds ``S``) is refused as an
+unannotated constant is (:class:`Tf0Refusal`), and the backends' automatic mode writes
+``fof`` for it. A ``Constant`` spelled like a numeral of the problem (``Number(1)`` next
+to ``Constant('1')``) is refused by name. TPTP's own arithmetic (``$int``, ``$sum``,
+``$less``, number literals) is the TFA writer's
+(:func:`~unicode_fol_kit.atp._tff_problem.generate_tff_arith_problem`, the ``sort=``
+option of the backends), and is out of scope here.
 
 The two builtin TPTP types this module DOES use, ``$i`` (the default
 individual type — never declared, exactly the TPTP standard's own
@@ -81,29 +96,150 @@ comes from an explicit :class:`~unicode_fol_kit.fol.nodes.Quantifier` /
 Name legality (ASCII, first-letter-fold, whole-problem-injective)
 -------------------------------------------------------------------
 Mirrors :mod:`atp._tptp_problem`'s sanitisation for predicates/functions/
-constants (ASCII transliteration, then fold only the first character for
-TPTP's lower_word rule, with a synthesised token when the original name is
-not already TPTP-legal) and extends the SAME treatment to SORT names, which
+constants (ASCII transliteration, every other character outside
+``[A-Za-z0-9_]`` written as a ``uXXXX`` code-point escape, then fold only the
+first character for TPTP's lower_word rule, with a synthesised token
+(:func:`_tptp_word_base`) when the original name is not already TPTP-legal)
+and extends the SAME treatment to SORT names, which
 share the kit's uppercase-initial :samp:`PREDICATE` lexical convention (see
 ``fol/_identifiers.py``'s ``sort_pattern()``) and therefore need exactly the
-same fold. Predicates, functions+constants (one shared namespace, matching
-how a TPTP-reading prover resolves a bare identifier by SYNTACTIC POSITION
-rather than a single shared table), and sorts (a third, independent
-namespace — TPTP types live in yet another syntactic position) are each
-de-collided separately; two DISTINCT kit-level names in the same namespace
-that would fold to the same TPTP identifier are refused with
-``NotImplementedError`` naming both, exactly like ``_tptp_problem``'s own
-collision guard. This module deliberately does not depend on
-``atp._tptp_problem`` (nor the reverse) to avoid a circular import between
-the two — the small renaming primitives are duplicated here at the size CASL
-export's own ``_check_reserved`` duplicates ``eval.validate``'s builtin sets
-(see that module's docstring for the same "importing would be backwards"
-reasoning).
+same fold. Predicates, functions+constants (one shared namespace) and sorts
+(a third, independent namespace — TPTP types live in yet another syntactic
+position) are each de-collided separately; two DISTINCT kit-level names in
+the same namespace that would fold to the same TPTP identifier are refused
+with ``NotImplementedError`` naming both, exactly like ``_tptp_problem``'s
+own collision guard. This module deliberately does not depend on
+``atp._tptp_problem`` at import time (that module imports this one) to avoid
+a circular import between the two — the small renaming primitives are
+duplicated here at the size CASL export's own ``_check_reserved`` duplicates
+``eval.validate``'s builtin sets (see that module's docstring for the same
+"importing would be backwards" reasoning).
+
+A predicate and a function/constant that fold to the SAME identifier
+--------------------------------------------------------------------
+Unlike untyped ``fof``, TF0 has ONE flat table of declared symbols, so a
+predicate ``Agent`` and a role function ``agent`` (both ``agent``) would get
+two ``tff(…, type, agent: …)`` declarations for one name — for the function
+case Vampire and E both refuse the problem (``agent(X0) … is not an instance
+of sort $i`` / ``type error``) before they answer anything, so no verdict
+comes back at all. The writer therefore renames the
+TERM-side symbol (the function or constant; the predicate keeps its natural
+name) to ``<name>_term`` — de-collided with a numeric suffix against every
+identifier the problem already uses — whenever its rendered name equals a
+predicate's, whatever the arities. The rename is exact (a symbol is only a
+name) and is recorded: :func:`generate_tff_problem_with_mapping` returns the
+:class:`~unicode_fol_kit.atp._tptp_problem.TptpNameMap`
+(:func:`~unicode_fol_kit.atp._tptp_problem.apply_reverse_tptp` restores the
+original names).
+
+A function/constant that folds to the name of a SORT is separated the same way,
+for a measured reason: Vampire 5.0.1 resolves the term's name to the type
+(``The sort $tType of the intended term argument human … is not an instance of
+sort human``) and refuses the problem, while E accepts it.
+
+A SORT and a PREDICATE that fold to the same name are REFUSED, by name. They are
+read correctly by Vampire and E (``human: $tType`` next to ``human: human > $o``),
+but they would not mean what the kit's other routes mean. The kit defines a sort
+as its guard predicate: ``∀x:S φ`` is ``∀x (S(x) → φ)``, with ``∃x S(x)`` for the
+sort's non-emptiness, which is what ``to_z3``, the ``fof`` writer and the Prover9
+writer do, so there ``∃y:Car Car(y)`` is valid (``Car`` is one symbol, and it is
+non-empty). TF0 declares the type ``car`` and an UNRELATED predicate ``car`` over
+it, and ``∃y:Car Car(y)`` is then not a theorem (let ``Car`` hold of nothing): a
+prover answering over TF0 would answer a different question than z3 does, and the
+default backend chain and ``backends=['vampire']`` would disagree on one input.
+TF0 cannot express the guard reading, so the pair is refused, naming both, in the
+same family as the same-kind refusal below; rename one of the two, or write the
+problem with the ``fof`` writer, which reads the sort as that predicate. (The TFA
+writer has no sorts: it refuses a sorted node by name.)
+
+A problem needs no conclusion: ``conclusion=None`` writes no ``conjecture`` line,
+for a prover asked whether the premises are satisfiable. Every check and rename
+works on the premises alone.
+
+A variable that has no TPTP spelling (``ä`` is written ``Ä``, ``x-1``, ``1x``) is
+renamed to a fresh legal one, per formula, without a record: a variable is bound
+(:func:`unicode_fol_kit.fol._tptp_symbols.legalise_variables`). The nullary atoms
+``$true`` and ``$false`` are TPTP's own propositions (this kit's TPTP reader
+produces them): they are written verbatim and are neither declared nor renamed.
+
+The typed text against the kit's own reading of a sort
+------------------------------------------------------------
+What a sort IS in this kit: there is ONE universe; a sort ``S`` is a non-empty
+subset of it (the extension of the unary predicate ``S``) and sorts may overlap; a
+constant written ``c:S`` is an element of ``S``, and ``c:S`` here and a plain ``c``
+there are one constant; an unannotated constant, an unsorted variable and the value
+of a function may be ANY element of the universe (there is no way to declare a
+function's result sort); a predicate is a relation over the whole universe. That is
+what ``to_z3``, the ``fof`` writer (with the non-emptiness and the sort membership
+axioms it adds), the Prover9 writer and the finite model finder answer.
+
+TF0's types are DISJOINT sets, and the union-find above decides the type of every
+position, so a typed text can ask another question. Two shapes of it are REFUSED
+(:class:`Tf0Refusal`, by name, with what to write instead; :func:`check_typed_reading`
+is the one implementation, which the NXF writer and the Hets backend share):
+
+* **An unannotated constant or a function value that the inference puts into a
+  sort.** A constant that is written ``c:S`` NOWHERE in the problem, or the value
+  of a function, whose position is in one class with a sort ``S`` (an argument
+  position that a ``∀x:S`` binds, an equation with a sorted term, ...) would be
+  declared ``c: s`` / ``f: ... > s``, which asserts what no formula says. (A
+  function ARGUMENT position may be a sort: nothing is asserted about the value of
+  the function there. A constant annotated ``c:S`` anywhere is in ``S`` at every
+  occurrence.) Measured, Vampire 5.0.1 and E 3.5.1: ``∀x:Human Mortal(x) ⊢
+  Mortal(socrates)`` and ``∀x:Foo R(x), Q(g(a)) ⊢ R(g(a))`` were theorems of the
+  typed text and are not entailed (take a universe of two elements, the sort and the
+  predicate on the first, the constant or ``g(a)`` the second).
+* **An equation over a variable bound by an unsorted quantifier, in a problem that
+  has a sort.** An unsorted quantifier ranges over the whole universe, the elements
+  of every sort included, so with an equation it bounds the size of the universe;
+  in the typed text it ranges over ``$i``, a separate type. ``∀x ∀y x = y ⊢ ∀x:A ∀z:A
+  x = z`` is valid (the universe has one element, ``A`` is a subset of it) and is
+  not a theorem of the typed text; ``∀x ∀y x = y, ∃x:A ∃z:A ¬(x = z)`` is
+  unsatisfiable and the typed text is satisfiable. (An equation between sorted
+  variables, or between constants and function values, is harmless. A ``SortedCount``
+  is expanded first: its witnesses are sorted variables.)
+
+Why these two conditions are enough. Say the typed text has neither. (1) A model of
+the kit's reading in which the premises hold and the conclusion fails gives a model
+of the typed text in which they do too: ``$i`` is the universe, each type a tagged
+copy of its sort, and every term at a position of type ``s`` is a variable bound by
+``∀x:S`` or a constant annotated ``c:S`` (the others were refused), so it denotes
+an element of ``S``, and the two evaluations agree: a theorem of the typed text is
+valid in the kit. (2) A model of the typed text in which the premises hold and the
+conclusion fails gives a model of the kit's reading: multiply ``$i`` by a set at
+least as large as every type, with constants and function values at the first
+coordinate and the predicates ignoring the second; that changes no formula without
+an equation over an unsorted variable, and every type then embeds into the result,
+which is the universe; a constant or function value that the inference had put into
+a sort is simply the embedded element, which the kit allows for an unannotated
+symbol. So a countermodel of the typed text is one of the kit's reading. Differentially
+(Vampire on the typed text and on the ``fof`` text, ``tests/test_tf0_typed_reading.py``)
+what the writer accepts is answered the same.
+
+The two conditions are SUFFICIENT, not necessary: ``∀x:S P(x), c = d:S ⊢ P(c)`` is
+refused (``c`` is written with no sort) although the typed text happens to answer it
+correctly, and such a problem goes to the ``fof`` route, which asks the kit's
+question for every problem. With
+``tff=None`` the backends fall back to it and say so in the verdict's detail;
+``tff=True`` reports the refusal (``unknown`` / ``unsupported``) and ``tff=False``
+writes ``fof``. :func:`infer_tff_signature` is signature inference, not a decision
+route, and keeps inferring.
+
+The asymmetry with the same-namespace rule above is deliberate for this
+release. Two LEGAL names of ONE kind that fold together (``Foo``/``foo``) are
+still refused by name rather than renamed: that refusal predates the name map
+and is kept so that no existing caller silently receives a renamed symbol it
+did not ask for. A name that is not TPTP-legal at all, or that clashes across
+kinds, has always needed a rewrite to be expressible, so it is renamed and
+recorded.
 """
 
 import re
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple, Union
+from typing import (
+    TYPE_CHECKING, Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Set, Tuple,
+    Union,
+)
 
 from ..fol.nodes import (
     Node, Variable, Constant, SortedConstant, Function,
@@ -111,32 +247,78 @@ from ..fol.nodes import (
     SortedCount, free_variables, substitute,
 )
 from ..fol._fol_nodes import constant_name_to_ascii, tptp_fold_first_letter
+from ..fol._numeral_symbols import numerals_as_constants
+from ..fol._tptp_symbols import check_variable_names, is_tptp_boolean_atom, legalise_variables
 from ..fol.signature import Signature, PredicateDecl, FunctionDecl, ConstantDecl
 from ._ascii_names import ascii_safe_base, reserve_rendered
+from ._writer_support import (
+    check_against_generated, normalise_premise_names, refusals_speak_as, tptp_name_token,
+)
+
+if TYPE_CHECKING:
+    from ._tptp_problem import TptpNameMap
 
 __all__ = [
-    "generate_tff_problem", "formula_to_tff", "infer_tff_signature",
+    "generate_tff_problem", "generate_tff_problem_with_mapping",
+    "formula_to_tff", "infer_tff_signature", "check_typed_reading",
+    "unsorted_equality_refusal", "Tf0Refusal",
     "problem_needs_tff", "TFF_INDIVIDUAL_SORT", "TFF_BOOLEAN_SORT",
 ]
 
 _SORTED_NODE_NAMES = frozenset({"SortedQuantifier", "SortedConstant", "SortedCount"})
 
 
-def problem_needs_tff(premises: Sequence[Node], conclusion: Node) -> bool:
+class Tf0Refusal(ValueError, NotImplementedError):
+    """The typed (TF0) writer will not write this problem.
+
+    Raised when the typed text would not ask the question the kit's other routes
+    ask (an unannotated constant or a function value that the inference would put
+    into a sort, an equation over an unsorted variable next to a sort, one position
+    holding two sorts, a sort that is also a predicate), or when it cannot be written
+    at all in one table of typed symbols (a free variable, a predicate or function at
+    two arities, a name that is both a constant and a function). The message names the
+    term, the sort and the reason, and says what to write instead. The fof writer
+    (:func:`~unicode_fol_kit.atp._tptp_problem.generate_tptp_problem_with_mapping`)
+    asks the kit's question for every one of these problems; the backends'
+    automatic mode (``tff=None``) falls back to it when this is raised.
+
+    It derives from both :class:`ValueError` and :class:`NotImplementedError`, so
+    that code which caught either of the two before this class existed (the sort
+    conflict was a ``ValueError``, the sort and predicate of one name a
+    ``NotImplementedError``) keeps working.
+
+    Fields:
+
+    * ``reason`` -- a short machine-readable word: ``"sort_conflict"``,
+      ``"sort_predicate_name"``, ``"unsorted_term_in_sort"``,
+      ``"unsorted_equality"``, ``"free_variable"``, ``"arity_conflict"``,
+      ``"constant_function_clash"`` or ``"premise_name"`` (a premise named like one of
+      the lines the writer writes itself).
+    """
+
+    def __init__(self, message: str, reason: str = "") -> None:
+        super().__init__(message)
+        self.reason = reason
+
+
+def problem_needs_tff(premises: Sequence[Node], conclusion: Optional[Node] = None) -> bool:
     """Whether any of ``premises`` + ``conclusion`` contains a
     :class:`~unicode_fol_kit.fol.nodes.SortedQuantifier` /
     :class:`~unicode_fol_kit.fol.nodes.SortedConstant` /
     :class:`~unicode_fol_kit.fol.nodes.SortedCount` node.
 
     The auto-select signal the TPTP-family backends
-    (:mod:`atp.vampire_entailment`, :mod:`atp.eprover_backend`) use to
-    route to this module's native typed export instead of the classical
-    guard-predicate ``fof`` route (:mod:`atp._tptp_problem`) — see each
-    backend's ``tff=`` option. A batch with no sorted node at all is
-    already fully served by the classical route (a plain ``Quantifier``
-    needs no typing to export soundly), so the default stays ``fof`` there.
+    (:mod:`atp.vampire_entailment`, :mod:`atp.eprover_backend`) use to try
+    this module's native typed export before the classical guard-predicate
+    ``fof`` route (:mod:`atp._tptp_problem`) — see each backend's ``tff=``
+    option. It says that the problem is worth TRYING as TF0, not that TF0 will
+    take it: the typed writer refuses (:class:`Tf0Refusal`) the problems whose
+    typed text would not ask the kit's question, and the automatic mode then
+    writes the ``fof`` problem. A batch with no sorted node at all is already
+    fully served by the classical route (a plain ``Quantifier`` needs no typing
+    to export soundly), so the default stays ``fof`` there.
     """
-    for f in list(premises) + [conclusion]:
+    for f in list(premises) + ([] if conclusion is None else [conclusion]):
         for n in f.walk():
             if type(n).__name__ in _SORTED_NODE_NAMES:
                 return True
@@ -155,10 +337,13 @@ _ARITHMETIC_PREDS = frozenset({"<", ">", "≤", "≥"})
 _ARITHMETIC_FUNCS = frozenset({"+", "-", "*", "/"})
 
 _ARITH_OUT_OF_SCOPE = (
-    "generate_tff_problem: {kind} {name!r} needs TPTP's arithmetic sorts "
-    "($int/$rat/$real), which are out of scope for this TF0-only exporter "
-    "(see module docstring 'Scope: TF0 only'); rename or remove it before "
-    "exporting, or use the classical fof route (Node.to_tptp) instead."
+    "generate_tff_problem: {kind} {name!r} is an arithmetic symbol, and this entry point "
+    "does not read it as an ordinary one: reading it as arithmetic needs TPTP's arithmetic "
+    "sorts ($int/$rat/$real), which are out of scope for a TF0-only exporter (see module "
+    "docstring 'Scope: TF0 only'). The problem writers generate_tff_problem and "
+    "generate_tptp_problem_with_mapping write it as an ordinary uninterpreted symbol, which "
+    "is what this kit means by it unless arithmetic is asked for by name "
+    "(generate_tff_arith_problem, sort='int')."
 )
 
 
@@ -194,13 +379,24 @@ def _check_fragment(formula: Node) -> None:
     """
     def visit(node: Node) -> None:
         cls = type(node).__name__
+        if getattr(node, "sort", None) == TFF_INDIVIDUAL_SORT:
+            raise NotImplementedError(
+                f"generate_tff_problem: a sort named {TFF_INDIVIDUAL_SORT!r} cannot be "
+                f"written in TF0: {TFF_INDIVIDUAL_SORT} is TPTP's built-in type of "
+                f"individuals, the type this writer gives every UNSORTED term, so a "
+                f"user sort of that name would be merged with everything that has no "
+                f"sort (∀x:$i R(x) would say ∀x R(x)). Rename the sort.")
         if cls not in _ALLOWED_TFF_NODES:
             if cls == "Number":
                 raise NotImplementedError(
-                    "generate_tff_problem: a numeric literal needs TPTP's "
-                    "arithmetic sorts ($int/$rat/$real), which are out of "
-                    "scope for this TF0-only exporter (see module "
-                    "docstring 'Scope: TF0 only')."
+                    "generate_tff_problem: this entry point does not read a numeric "
+                    "literal as an ordinary constant. Read as arithmetic it would need "
+                    "TPTP's arithmetic sorts ($int/$rat/$real), which are out of scope "
+                    "for this TF0-only exporter (see module docstring 'Scope: TF0 "
+                    "only'). The problem writers generate_tff_problem and "
+                    "generate_tptp_problem_with_mapping write a numeral as a constant "
+                    "of $i, which is what this kit means by it unless arithmetic is "
+                    "asked for by name (generate_tff_arith_problem, sort='int')."
                 )
             raise NotImplementedError(
                 f"generate_tff_problem: {cls!r} is outside the classical "
@@ -241,7 +437,7 @@ def _balanced_and(parts: List[Node]) -> Node:
     helper of a module this one does not otherwise depend on) so an
     O(n^2)-conjunct count expansion stays only O(log n) deep."""
     while len(parts) > 1:
-        merged = [And(parts[i], parts[i + 1]) for i in range(0, len(parts) - 1, 2)]
+        merged: List[Node] = [And(parts[i], parts[i + 1]) for i in range(0, len(parts) - 1, 2)]
         if len(parts) % 2:
             merged.append(parts[-1])
         parts = merged
@@ -285,7 +481,7 @@ def _expand_sorted_count(node: SortedCount) -> Node:
             return SortedQuantifier("∃", w, sort, Or(g, Not(g)))
         ws = fresh(m)
         conjuncts = [substitute(phi, var, w) for w in ws]
-        conjuncts += [Atom("≠", [ws[i], ws[j]])
+        conjuncts += [Atom("≠", (ws[i], ws[j]))
                       for i in range(m) for j in range(i + 1, m)]
         body = _balanced_and(conjuncts)
         for w in reversed(ws):
@@ -353,9 +549,17 @@ class _UnionFind:
             return
         a_concrete, b_concrete = isinstance(ra, str), isinstance(rb, str)
         if a_concrete and b_concrete:
-            raise ValueError(
+            raise Tf0Refusal(
                 f"generate_tff_problem: sort conflict while resolving "
-                f"{context} — inferred both {ra!r} and {rb!r}."
+                f"{context} — inferred both {ra!r} and {rb!r}. TF0's types are "
+                f"disjoint sets, so one position cannot hold two of them; in this "
+                f"kit a sort is a subset of ONE universe, sorts may overlap, and an "
+                f"unsorted variable or term ranges over the whole universe, sorted "
+                f"elements included. The other routes ask that question and this "
+                f"text cannot: write the problem with the fof writer "
+                f"(generate_tptp_problem_with_mapping; tff=False in the backends, "
+                f"which tff=None falls back to).",
+                reason="sort_conflict",
             )
         if a_concrete:
             self._parent[rb] = ra
@@ -381,7 +585,17 @@ class _UnionFind:
 @dataclass
 class _Signature:
     """Mutable accumulator built by one :func:`_analyze` pass — mirrors
-    ``casl_export._Signature`` minus ``default_sort`` (fixed to ``$i``)."""
+    ``casl_export._Signature`` minus ``default_sort`` (fixed to ``$i``).
+
+    ``sorted_constants`` are the constants written ``c:S`` somewhere in the
+    problem (``c`` is ONE symbol wherever it occurs, so a plain occurrence of
+    it is covered too); ``unsorted_equality`` is the first equality or
+    disequality atom that has a bare variable bound by an unsorted quantifier
+    as one of its sides. :func:`_check_reading` reads both.
+
+    ``uninterpreted_arithmetic`` says that ``+ - * /`` and ``< > ≤ ≥`` are ordinary
+    symbols of the problem (the problem writers) and not a refused construct (signature
+    inference and the typed-reading check)."""
 
     uf: _UnionFind = field(default_factory=_UnionFind)
     pred_arity: Dict[str, int] = field(default_factory=dict)
@@ -389,12 +603,17 @@ class _Signature:
     const_names: Set[str] = field(default_factory=set)
     func_names: Set[str] = field(default_factory=set)
     literal_sorts: Set[str] = field(default_factory=set)
+    sorted_constants: Set[str] = field(default_factory=set)
+    unsorted_equality: Optional[Node] = None
+    uninterpreted_arithmetic: bool = False
 
 
 _CONST_VS_FUNCTION = (
     "generate_tff_problem: {name!r} is used both as a constant and as a "
     "function — this exporter declares at most one 'tff(...,type,...)' "
-    "entry per name, so the two uses cannot be reconciled into one symbol."
+    "entry per name, so the two uses cannot be reconciled into one symbol. "
+    "Rename one of the two, or write the problem with the fof writer "
+    "(tff=False in the backends), which writes them as two symbols."
 )
 
 
@@ -406,38 +625,48 @@ def _infer_term(node: Node, env: Dict[str, str], sig: _Signature) -> _Slot:
 
     if cls == "Variable":
         if node.name not in env:
-            raise ValueError(
+            raise Tf0Refusal(
                 f"generate_tff_problem: free variable '{node.name}' — every "
                 "variable must be bound by an enclosing Quantifier or "
                 "SortedQuantifier; TPTP's implicit top-level closure would "
                 "silently default an unbound variable to $i, which this "
-                "exporter refuses to guess (see module docstring)."
+                "exporter refuses to guess (see module docstring). Bind the "
+                "variable with a quantifier; the fof writer refuses a free "
+                "variable too, so every route answers the same.",
+                reason="free_variable",
             )
         return env[node.name]
 
     if cls in ("Constant", "SortedConstant"):
         name = node.name
         if name in sig.func_names:
-            raise ValueError(_CONST_VS_FUNCTION.format(name=name))
+            raise Tf0Refusal(_CONST_VS_FUNCTION.format(name=name),
+                             reason="constant_function_clash")
         sig.const_names.add(name)
         slot: _Slot = ("const", name)
         if cls == "SortedConstant":
             sig.literal_sorts.add(node.sort)
+            sig.sorted_constants.add(name)
             sig.uf.union(slot, node.sort, f"constant '{name}' sort annotation")
         return slot
 
     if cls == "Function":
         name = node.name
-        if name in _ARITHMETIC_FUNCS:
+        if name in _ARITHMETIC_FUNCS and not sig.uninterpreted_arithmetic:
             raise NotImplementedError(_ARITH_OUT_OF_SCOPE.format(kind="function", name=name))
         if name in sig.const_names:
-            raise ValueError(_CONST_VS_FUNCTION.format(name=name))
+            raise Tf0Refusal(_CONST_VS_FUNCTION.format(name=name),
+                             reason="constant_function_clash")
         arity = len(node.args)
         prev = sig.func_arity.get(name)
         if prev is not None and prev != arity:
-            raise ValueError(
+            raise Tf0Refusal(
                 f"generate_tff_problem: function '{name}' used with "
-                f"conflicting arities {prev} and {arity}."
+                f"conflicting arities {prev} and {arity}. This exporter "
+                f"declares one type per name; write the problem with the fof "
+                f"writer (tff=False in the backends), which writes the two "
+                f"arities as two symbols, or rename one of them.",
+                reason="arity_conflict",
             )
         sig.func_arity[name] = arity
         sig.func_names.add(name)
@@ -460,7 +689,9 @@ def _infer_formula(node: Node, env: Dict[str, str], sig: _Signature) -> None:
     cls = type(node).__name__
 
     if cls == "Atom":
-        if node.predicate in _ARITHMETIC_PREDS:
+        if is_tptp_boolean_atom(node):      # $true / $false: TPTP's own, declared by no one
+            return
+        if node.predicate in _ARITHMETIC_PREDS and not sig.uninterpreted_arithmetic:
             raise NotImplementedError(
                 _ARITH_OUT_OF_SCOPE.format(kind="predicate", name=node.predicate))
         if node.predicate in ("=", "≠"):
@@ -472,13 +703,21 @@ def _infer_formula(node: Node, env: Dict[str, str], sig: _Signature) -> None:
             s0 = _infer_term(node.args[0], env, sig)
             s1 = _infer_term(node.args[1], env, sig)
             sig.uf.union(s0, s1, "an equality/disequality atom")
+            if sig.unsorted_equality is None and any(
+                    isinstance(a, Variable) and env[a.name] == TFF_INDIVIDUAL_SORT
+                    for a in node.args):
+                sig.unsorted_equality = node
             return
         arity = len(node.args)
         prev = sig.pred_arity.get(node.predicate)
         if prev is not None and prev != arity:
-            raise ValueError(
+            raise Tf0Refusal(
                 f"generate_tff_problem: predicate '{node.predicate}' used "
-                f"with conflicting arities {prev} and {arity}."
+                f"with conflicting arities {prev} and {arity}. This exporter "
+                f"declares one type per name; write the problem with the fof "
+                f"writer (tff=False in the backends), which writes the two "
+                f"arities as two symbols, or rename one of them.",
+                reason="arity_conflict",
             )
         sig.pred_arity[node.predicate] = arity
         for i, a in enumerate(node.args):
@@ -515,13 +754,196 @@ def _infer_formula(node: Node, env: Dict[str, str], sig: _Signature) -> None:
     )
 
 
-def _analyze(formulas: Sequence[Node]) -> _Signature:
+def _analyze(formulas: Sequence[Node], *, uninterpreted_arithmetic: bool = False) -> _Signature:
     """Run sort inference over a batch of already-fragment-checked,
-    already-SortedCount-expanded formulas that share one TFF signature."""
-    sig = _Signature()
+    already-SortedCount-expanded formulas that share one TFF signature.
+
+    With ``uninterpreted_arithmetic`` the operators and comparisons are symbols like
+    any other (the problem writers); without it they are refused by name."""
+    sig = _Signature(uninterpreted_arithmetic=uninterpreted_arithmetic)
     for f in formulas:
         _infer_formula(f, {}, sig)
     return sig
+
+
+# =============================================================================
+# The typed reading against the definition
+# =============================================================================
+#
+# The inference above is a decision about TYPES, not about the kit's model
+# theory. TF0's types are disjoint sets and the inference puts a symbol position
+# into a sort whenever it shares a class with one, while the kit has ONE universe,
+# sorts that are subsets of it, and terms that are in a sort only when a formula
+# says so. Two situations make the typed text ask another question, and
+# :func:`_check_reading` refuses both (the argument is in the module docstring):
+#
+# * a constant that is written ``c:S`` NOWHERE, or a function value, whose position
+#   is typed to a user sort: the typed text declares ``c: s`` / ``f: ... > s``, which
+#   asserts what no formula says (and a theorem of the typed text may then be no
+#   theorem);
+# * an equation with a bare variable bound by an UNSORTED quantifier, in a problem
+#   that has a sort: the unsorted variable ranges over ``$i``, a type of its own,
+#   instead of over the universe the sort is a subset of (and a countermodel of the
+#   typed text may then be no countermodel).
+
+def _first_atom_text(formulas: Sequence[Node], matches: Callable[[Node], bool]) -> str:
+    """The first atom, in problem order, that has a sub-term for which ``matches``
+    holds, as text -- where a message points the reader at; ``""`` if there is none."""
+    for formula in formulas:
+        for node in formula.walk():
+            if isinstance(node, Atom) and any(
+                    matches(term) for arg in node.args for term in arg.walk()):
+                return node.to_unicode_str()
+    return ""
+
+
+_FOF_ADVICE = ("write the problem with the fof writer (generate_tptp_problem_with_mapping; "
+               "tff=False in the backends, which tff=None falls back to), which does not "
+               "type it")
+
+
+def unsorted_equality_refusal(writer: str, equation: str, sorts: Iterable[str],
+                              unsorted_type: str = TFF_INDIVIDUAL_SORT) -> Tf0Refusal:
+    """The refusal for an equation over a variable bound by an unsorted quantifier
+    in a problem that has a sort, as an exception for the caller to raise: the typed
+    writers (TF0, NXF, and CASL through :func:`check_typed_reading`) share its text.
+
+    ``equation`` is the atom as text, ``sorts`` the sorts of the problem and
+    ``unsorted_type`` the type an unsorted variable has in the text being refused.
+    The condition itself is syntactic: a user sort occurs, and an equality or
+    disequality atom has a bare variable bound by an unsorted quantifier as one of
+    its sides (after a ``SortedCount`` is expanded: its witnesses are sorted).
+    """
+    names = sorted(sorts)
+    first = names[0]
+    return Tf0Refusal(
+        f"{writer}: the equation {equation} has a variable bound by an UNSORTED "
+        f"quantifier, and the problem also uses the sort "
+        f"{', '.join(repr(s) for s in names)}. In this kit an unsorted quantifier ranges "
+        f"over the whole universe, sorted elements included, so an equation over it "
+        f"bounds how many elements there are, and a sort is a subset of that universe; "
+        f"in the typed text the unsorted variable ranges over {unsorted_type}, a type "
+        f"of its own that is disjoint from {first}, so the same equation says nothing "
+        f"about the elements of {first}. For example ∀x ∀y x = y ⊢ ∀x:{first} "
+        f"∀z:{first} x = z is valid in this kit and is not a theorem of the typed text. "
+        f"To ask the kit's question, {_FOF_ADVICE}; or quantify the variable with a sort "
+        f"(∀x:{first} ...) if it is meant to range over one.",
+        reason="unsorted_equality")
+
+
+def _check_reading(sig: _Signature, formulas: Sequence[Node], *, writer: str,
+                   unsorted_type: str = TFF_INDIVIDUAL_SORT,
+                   numerals: FrozenSet[str] = frozenset()) -> None:
+    """Refuse (:class:`Tf0Refusal`, by name) a problem whose typed text would not
+    ask the kit's question. ``sig`` is :func:`_analyze`'s result over ``formulas``
+    (already expanded); ``writer`` names the caller in the message and
+    ``unsorted_type`` the type an unsorted variable gets in the text (``$i`` in
+    TF0). ``numerals`` are the names of the constants that stand for numerals: a
+    numeral that is typed into a sort is refused like an unannotated constant, in
+    words that fit a numeral (it cannot be written with a sort).
+
+    Checked in a fixed order (function values, then constants, each by name, then
+    the equation), so that the refusal does not depend on the order of the
+    formulas.
+    """
+    for name in sorted(sig.func_names):
+        sort = sig.uf.sort_of(("func_result", name))
+        if sort == TFF_INDIVIDUAL_SORT:
+            continue
+
+        def is_that_function(t: Node, name: str = name) -> bool:
+            return isinstance(t, Function) and t.name == name
+
+        use = _first_atom_text(formulas, is_that_function)
+        raise Tf0Refusal(
+            f"{writer}: the value of the function {name!r} would be typed as the sort "
+            f"{sort!r}, because it is used at a position that also holds terms of that "
+            f"sort ({use}). In this kit a function value may be any element of the "
+            f"universe: a function has no declared result sort, and nothing in the "
+            f"problem says that {name}(...) is a {sort}. The typed text would assume it, "
+            f"so a prover would answer a stronger question than the other routes ask. "
+            f"To ask the kit's question, {_FOF_ADVICE}; if the function is meant to "
+            f"return {sort}s, say so there as a premise with the sort written as a "
+            f"predicate ({sort}({name}(...))).",
+            reason="unsorted_term_in_sort")
+    for name in sorted(sig.const_names - sig.sorted_constants):
+        sort = sig.uf.sort_of(("const", name))
+        if sort == TFF_INDIVIDUAL_SORT:
+            continue
+
+        def is_that_constant(t: Node, name: str = name) -> bool:
+            return isinstance(t, Constant) and t.name == name
+
+        use = _first_atom_text(formulas, is_that_constant)
+        if name in numerals:
+            raise Tf0Refusal(
+                f"{writer}: the numeral {name} would be typed as the sort {sort!r}, because "
+                f"it is used at a position that also holds terms of that sort ({use}). In "
+                f"this kit a numeral is a constant that may be any element of the universe, "
+                f"and nothing says that it is a {sort}; a numeral cannot be written with a "
+                f"sort ({name}:{sort}), and the typed declaration would assume it, so a "
+                f"prover would answer a stronger question than the other routes ask. To ask "
+                f"the kit's question, {_FOF_ADVICE}.",
+                reason="unsorted_term_in_sort")
+        raise Tf0Refusal(
+            f"{writer}: the constant {name!r} is written with a sort nowhere in this "
+            f"problem (there is no {name}:{sort}), but the typed text would declare it "
+            f"in the sort {sort!r}, because it is used at a position that also holds "
+            f"terms of that sort ({use}). In this kit an unannotated constant may be "
+            f"any element of the universe, and nothing here says that it is a {sort}; "
+            f"the typed declaration would assume it, so a prover would answer a "
+            f"stronger question than the other routes ask. Write the constant with its "
+            f"sort ({name}:{sort}) if it is meant to be one; otherwise {_FOF_ADVICE}.",
+            reason="unsorted_term_in_sort")
+    if sig.unsorted_equality is not None and sig.literal_sorts:
+        raise unsorted_equality_refusal(
+            writer, sig.unsorted_equality.to_unicode_str(), sig.literal_sorts,
+            unsorted_type)
+
+
+def check_typed_reading(formulas: Sequence[Node], *, writer: str = "check_typed_reading",
+                        unsorted_type: str = TFF_INDIVIDUAL_SORT) -> None:
+    """Refuse a problem for which a TYPED reading would differ from the kit's.
+
+    The kit has one universe, a sort is a non-empty subset of it, a constant
+    written ``c:S`` is in ``S`` and an unannotated constant, an unsorted variable
+    and a function value are any element. A typed language (TF0, CASL) has disjoint
+    types and the writers infer the type of each symbol position, which gives a
+    problem a different meaning when (a) an unannotated constant or a function value
+    is put into a sort by the inference, (b) an equation over a variable bound by an
+    unsorted quantifier meets a sort, (c) one position would hold two sorts, or
+    (d) a sort and a predicate share a name. This function runs the same inference
+    as :func:`generate_tff_problem` over ``formulas`` (premises and conclusion
+    together) and raises :class:`Tf0Refusal` for each of them. It is the check the
+    TF0 writer, the NXF writer and :class:`~unicode_fol_kit.atp.hets_backend.HetsBackend`
+    share; the last uses it because CASL's inference is the same algorithm with
+    ``Thing`` as the type of an unsorted variable.
+
+    ``writer`` is the name that opens the message, ``unsorted_type`` the type an
+    unsorted variable has in the text being guarded.
+
+    Raises:
+        Tf0Refusal: for each case above, and for a free variable, a symbol at two
+            arities and a name that is both a constant and a function (which the
+            typed writers cannot write either).
+        NotImplementedError: a node outside the fragment the typed writers cover.
+    """
+    formulas = list(formulas)
+    for f in formulas:
+        _check_fragment(f)
+    expanded = [_expand_all_sorted_counts(f) for f in formulas]
+    sig = _analyze(expanded)
+    clash = sorted(sig.literal_sorts & set(sig.pred_arity))
+    if clash:
+        raise Tf0Refusal(
+            f"{writer}: {clash[0]!r} is both a sort and a predicate in this problem. "
+            "This kit reads a sort as the guard predicate of its name (∀x:S φ is "
+            "∀x (S(x) → φ), with ∃x S(x) for its non-emptiness), and a typed text "
+            "declares the type and the predicate separately, so a prover would answer "
+            "a different question than the other routes do. Rename one of the two, "
+            f"or {_FOF_ADVICE}.",
+            reason="sort_predicate_name")
+    _check_reading(sig, expanded, writer=writer, unsorted_type=unsorted_type)
 
 
 # =============================================================================
@@ -533,6 +955,32 @@ _TPTP_SAFE_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
 
 def _is_tptp_safe(name: str) -> bool:
     return bool(name) and name.isascii() and bool(_TPTP_SAFE_RE.fullmatch(name))
+
+
+_NON_WORD_CHARACTER = re.compile(r"[^A-Za-z0-9_]")
+
+
+def _tptp_word_base(name: str, prefix: str) -> str:
+    """The base of the replacement for a name that is not a TPTP word: only
+    ``[A-Za-z0-9_]``, letter-initial.
+
+    :func:`~unicode_fol_kit.atp._ascii_names.ascii_safe_base` transliterates a
+    non-ASCII character (``θ`` is ``theta``, anything else ``u03a9``) and puts
+    ``prefix`` in front of a digit-leading or empty name, but it leaves an ASCII
+    character that is no TPTP word character (``-``, ``.``, ``:``, ``$``) where it
+    is, and a name written like that is rejected by Vampire and by E
+    (``has-part``). Every such character is written as the code-point escape
+    ``uXXXX`` the transliteration already uses, so ``has-part`` is
+    ``hasu002dpart``; a name that starts with an underscore gets ``prefix`` too.
+    Injectivity is not this function's job but the renamer's: a token it
+    synthesises is de-collided against every name of the problem
+    (:func:`~unicode_fol_kit.atp._ascii_names.reserve_rendered`), so
+    ``has-part`` next to ``has_part`` stay two symbols, and so do ``has-part``
+    next to a name that is itself spelled ``hasu002dpart``.
+    """
+    base = _NON_WORD_CHARACTER.sub(lambda m: "u%04x" % ord(m.group()),
+                                   ascii_safe_base(name, prefix))
+    return base if base[:1].isalpha() else prefix + base
 
 
 def _upper_initial(base: str) -> str:
@@ -550,6 +998,33 @@ def _render_token(raw: str) -> str:
     non-ASCII) raw name — the single render function every namespace's
     renamer below de-collides against."""
     return tptp_fold_first_letter(constant_name_to_ascii(raw))
+
+
+#: Suffix of the replacement name a function/constant receives when its
+#: rendered TPTP name equals a predicate's (see the module docstring's "A
+#: predicate and a function/constant that fold to the SAME identifier").
+#: One shared definition: :mod:`atp._tptp_problem`'s ``fof`` writer imports
+#: :func:`_separated_term_token` from here so both dialects mint the same
+#: names.
+_TERM_SEPARATOR_SUFFIX = "_term"
+
+
+def _separated_term_token(token: str, taken: Set[str],
+                          render: Callable[[str], str] = _render_token) -> str:
+    """The replacement for the term-symbol ``token`` whose rendered name
+    equals a predicate's: its lower-initial form plus
+    :data:`_TERM_SEPARATOR_SUFFIX`, de-collided (numeric suffix) against
+    ``taken`` — the RENDERED form of every identifier the problem already
+    uses, in any namespace — which this call extends with the rendered
+    result (:func:`~unicode_fol_kit.atp._ascii_names.reserve_rendered`).
+
+    ``token`` is already ASCII and letter-initial (a legal name passes
+    through the sanitiser untouched, an illegal one was given such a token),
+    so the result matches ``[a-z][A-Za-z0-9_]*``: it renders as itself, which
+    is what lets a reverse map keyed on the token also match rendered text.
+    """
+    return reserve_rendered(token[:1].lower() + token[1:] + _TERM_SEPARATOR_SUFFIX,
+                            taken, render)
 
 
 @dataclass
@@ -582,13 +1057,40 @@ class _Renamer:
 
     def finalize(self) -> None:
         for name in self._pending:
-            base = self.case_fix(ascii_safe_base(name, self.prefix))
+            base = self.case_fix(_tptp_word_base(name, self.prefix))
             token = reserve_rendered(base, self.used, _render_token)
             self.mapping[name] = token
         self._pending = []
 
     def get(self, name: str) -> str:
         return _render_token(self.mapping[name])
+
+    def separate_from(self, predicates: "_Renamer", sorts: "_Renamer") -> None:
+        """Rename every name of THIS (function/constant) namespace whose
+        rendered token equals a PREDICATE's or a SORT's rendered token, so that
+        no term symbol shares a TF0 identifier with either (one flat symbol
+        table). A term named like a sort is not read: Vampire resolves the
+        term's name to the type (``The sort $tType of the intended term
+        argument human … is not an instance of sort human``), while E happens
+        to accept it. (A predicate and a sort that share a name never get this
+        far: :func:`_check_no_sort_predicate_clash` refuses the pair.)
+
+        Runs after :meth:`check_no_collisions`, so the refusal of two LEGAL
+        names of one kind (``Foo``/``foo``) is decided first and unchanged.
+        Names are visited in sorted order of their kit-level spelling and the
+        replacement is de-collided against every rendered identifier in the
+        problem (predicates, sorts, this namespace), so the result is the
+        same for the same symbols however the formulas were ordered. Only
+        ``mapping`` changes; a namespace with no clash is left byte-for-byte
+        as it was.
+        """
+        predicate_tokens = {_render_token(t) for t in predicates.mapping.values()}
+        sort_tokens = {_render_token(t) for t in sorts.mapping.values()}
+        taken = predicate_tokens | sort_tokens
+        taken |= {_render_token(t) for t in self.mapping.values()}
+        for name in sorted(self.mapping):
+            if _render_token(self.mapping[name]) in predicate_tokens | sort_tokens:
+                self.mapping[name] = _separated_term_token(self.mapping[name], taken)
 
     def check_no_collisions(self, kind: str) -> None:
         seen: Dict[str, str] = {}
@@ -612,6 +1114,35 @@ class _Names:
     sort: _Renamer
 
 
+def _check_no_sort_predicate_clash(predicates: _Renamer, sorts: _Renamer) -> None:
+    """Refuse a sort and a predicate that render as one TF0 identifier.
+
+    The kit reads a sort as the guard predicate of its name (see the module
+    docstring), which TF0, with a type and a predicate in two tables of its own,
+    cannot say. The first pair in the sorted order of the kit names is reported,
+    so the message does not depend on the order of the formulas."""
+    sort_of_word: Dict[str, str] = {}
+    for sort in sorted(sorts.mapping):
+        sort_of_word.setdefault(_render_token(sorts.mapping[sort]), sort)
+    for predicate in sorted(predicates.mapping):
+        word = _render_token(predicates.mapping[predicate])
+        if word in sort_of_word:
+            sort = sort_of_word[word]
+            raise Tf0Refusal(
+                f"generate_tff_problem: the sort {sort!r} and the predicate "
+                f"{predicate!r} would both render as the TF0 identifier {word!r}. "
+                "This kit reads a sort as the guard predicate of its name "
+                "(∀x:S φ is ∀x (S(x) → φ), with ∃x S(x) for its non-emptiness: "
+                "what to_z3, the fof writer and the Prover9 writer do), and TF0 "
+                f"cannot say that: it would declare {word!r} once as a type and "
+                "once as an unrelated predicate, so a prover would answer a "
+                "different question than the other routes do — refusing; rename "
+                "one of the two, or write the problem with the fof writer "
+                "(generate_tptp_problem_with_mapping), which reads the sort as "
+                "that predicate.",
+                reason="sort_predicate_name")
+
+
 def _build_names(sig: _Signature) -> _Names:
     predicates = _Renamer(prefix="p", case_fix=_upper_initial)
     terms = _Renamer(prefix="n", case_fix=_lower_initial)
@@ -628,6 +1159,8 @@ def _build_names(sig: _Signature) -> _Names:
     predicates.check_no_collisions("predicate")
     terms.check_no_collisions("function/constant")
     sorts.check_no_collisions("sort")
+    _check_no_sort_predicate_clash(predicates, sorts)
+    terms.separate_from(predicates, sorts)
     return _Names(predicates, terms, sorts)
 
 
@@ -657,6 +1190,8 @@ def _render_term(node: Node, names: _Names) -> str:
 
 
 def _render_atom(node: Atom, names: _Names) -> str:
+    if is_tptp_boolean_atom(node):
+        return node.to_tptp()        # the truth constant's own word, whichever spelling it has
     if node.predicate == "=":
         return f"{_render_term(node.args[0], names)} = {_render_term(node.args[1], names)}"
     if node.predicate == "≠":
@@ -758,20 +1293,43 @@ def formula_to_tff(formula: Node) -> str:
     not shared with any other formula the way :func:`generate_tff_problem`
     shares one signature across a whole premise/conclusion batch.
 
+    A function/constant whose TF0 name equals a predicate's is renamed
+    ``<name>_term`` here too, but this function returns bare text and so
+    cannot report it; use :func:`generate_tff_problem_with_mapping` when the
+    rename has to be undone.
+
     Raises:
         NotImplementedError: ``formula`` contains a node outside the TF0
-            fragment (see module docstring 'Scope'), or a name-folding
-            collision (two distinct symbols in one namespace).
-        ValueError: a free variable, or an unsatisfiable sort constraint.
+            fragment (see module docstring 'Scope'), a name-folding
+            collision (two distinct symbols in one namespace), a sort and a
+            predicate that render as one identifier, or two LEGAL variables that
+            render as one TPTP variable (``x`` and ``X``), or the typed text would
+            ask another question than the kit's (see :class:`Tf0Refusal`: an
+            unannotated constant, a numeral or a function value typed into a sort, an
+            equation over an unsorted variable next to a sort), or a constant, sorted
+            constant or function is spelled like a numeral of the formula
+            (``Number(1)`` next to ``Constant('1')``). A numeral and ``+ - * /
+            < > ≤ ≥`` are NOT refused: they are written as a constant of ``$i`` and
+            as uninterpreted symbols (see the module docstring).
+        ValueError: a free variable, or an unsatisfiable sort constraint. Every
+            refusal that is not a fragment or name-folding one is a
+            :class:`Tf0Refusal`, which is a ``ValueError`` and a
+            ``NotImplementedError`` at once.
     """
-    _check_fragment(formula)
-    expanded = _expand_all_sorted_counts(formula)
-    sig = _analyze([expanded])
-    names = _build_names(sig)
-    return _render(expanded, names)
+    with refusals_speak_as("formula_to_tff", "generate_tff_problem"):
+        [formula], numerals = numerals_as_constants([formula], where="generate_tff_problem")
+        _check_fragment(formula)
+        formula = legalise_variables(formula)
+        expanded = _expand_all_sorted_counts(formula)
+        check_variable_names(expanded, where="generate_tff_problem", subject="formula")
+        sig = _analyze([expanded], uninterpreted_arithmetic=True)
+        names = _build_names(sig)
+        _check_reading(sig, [expanded], writer="generate_tff_problem", numerals=numerals)
+        return _render(expanded, names)
 
 
-def generate_tff_problem(premises: List[Node], conclusion: Node) -> str:
+def generate_tff_problem(premises: List[Node], conclusion: Optional[Node] = None,
+                         *, premise_names: Optional[Sequence[str]] = None) -> str:
     """Build a native, genuinely-typed TPTP ``tff`` problem string.
 
     The TF0 sibling of :func:`atp._tptp_problem.generate_tptp_problem`: same
@@ -788,7 +1346,12 @@ def generate_tff_problem(premises: List[Node], conclusion: Node) -> str:
             :class:`~unicode_fol_kit.fol.nodes.SortedCount` freely alongside
             plain :class:`~unicode_fol_kit.fol.nodes.Quantifier` (which
             renders as an explicitly-``$i``-typed variable).
-        conclusion: the conjecture.
+        conclusion: the conjecture, or ``None`` for a problem without one
+            (no ``conjecture`` line is written; the prover is asked whether
+            the premises are satisfiable).
+        premise_names: one name per premise for the ``axiom`` lines instead of
+            ``premise_<i>`` — see :func:`generate_tff_problem_with_mapping`, which also
+            records them.
 
     Returns:
         The complete ``tff`` problem text, newline-terminated: type
@@ -796,28 +1359,111 @@ def generate_tff_problem(premises: List[Node], conclusion: Node) -> str:
         predicates — declaration-before-use, matching
         ``casl_export.to_casl_spec``'s ordering), then one
         ``tff(premise_<i>, axiom, ...).`` per premise (1-based), then
-        ``tff(goal, conjecture, ...).``.
+        ``tff(goal, conjecture, ...).`` unless ``conclusion`` is ``None``.
 
     Raises:
         NotImplementedError: a node outside the TF0 fragment (see module
-            docstring 'Scope'), or a name-folding collision — see
-            :func:`formula_to_tff`.
+            docstring 'Scope'), a name-folding collision, a sort and a predicate
+            that render as one identifier, two variables of one formula that
+            render as one TPTP variable, or a constant spelled like a numeral
+            of the problem — see :func:`formula_to_tff`.
         ValueError: a free variable, an arity conflict, a constant-vs-
             function name clash, or an unsatisfiable sort constraint — see
-            :func:`formula_to_tff`.
+            :func:`formula_to_tff`. These and the typed-reading refusals
+            (an unannotated constant or a function value that the inference
+            types into a sort, an equation over an unsorted variable next to a
+            sort; see the module docstring and :class:`Tf0Refusal`) are all
+            :class:`Tf0Refusal`, a ``ValueError`` and a ``NotImplementedError``
+            at once; the backends' automatic mode (``tff=None``) writes ``fof``
+            instead when it is raised.
+
+    A function or constant whose TF0 name equals a predicate's (the class
+    ``Agent`` and the role function ``agent``) is renamed ``<name>_term`` so
+    the problem never declares one identifier at two types; use
+    :func:`generate_tff_problem_with_mapping` to also receive the record of
+    that rename.
     """
-    formulas = list(premises) + [conclusion]
+    text, _mapping = _write_tff_problem(premises, conclusion, premise_names)
+    return text
+
+
+def generate_tff_problem_with_mapping(premises: List[Node],
+                                      conclusion: Optional[Node] = None,
+                                      *, premise_names: Optional[Sequence[str]] = None
+                                      ) -> Tuple[str, "TptpNameMap"]:
+    """Like :func:`generate_tff_problem`, but also returns the
+    :class:`~unicode_fol_kit.atp._tptp_problem.TptpNameMap` recording every
+    predicate/function/constant name the writer changed — a name that is not
+    TPTP-legal (non-ASCII, digit-leading) and a function/constant renamed
+    because its TF0 name equals a predicate's — and the premise names.
+
+    Returns ``(text, name_map)``. ``name_map`` is the same
+    :class:`~unicode_fol_kit.atp._tptp_problem.TptpNameMap` the ``fof`` writer
+    (:func:`~unicode_fol_kit.atp._tptp_problem.generate_tptp_problem_with_mapping`)
+    returns, so :func:`~unicode_fol_kit.atp._tptp_problem.apply_reverse_tptp`
+    translates a formula read back from this problem (or from a prover's
+    answer to it) to the original kit-level names. Sort names are not part of
+    the map: a sort that is not TPTP-legal is still rewritten (as before, with
+    no record of it), and two distinct sorts that fold together are refused.
+    ``name_map.premises`` holds the premise names in order, also the default ones.
+
+    ``premise_names`` names the premises' ``axiom`` lines instead of
+    ``premise_<i>``, exactly as in
+    :func:`~unicode_fol_kit.atp._tptp_problem.generate_tptp_problem_with_mapping`; the
+    names the writer gives its own lines are ``goal``, ``sort_decl_<n>``,
+    ``func_decl_<n>``, ``const_decl_<n>`` and ``pred_decl_<n>`` (a premise named like
+    one of them is a :class:`Tf0Refusal`, which is a ``ValueError``).
+
+    Raises what :func:`generate_tff_problem` raises, and, for ``premise_names``,
+    ``TypeError`` (a single string, a non-string entry) and ``ValueError`` (other than
+    one name per premise, a name no TPTP name can spell, two names that are the same
+    as written).
+    """
+    with refusals_speak_as("generate_tff_problem_with_mapping", "generate_tff_problem"):
+        return _write_tff_problem(premises, conclusion, premise_names)
+
+
+def _write_tff_problem(premises: Sequence[Node], conclusion: Optional[Node],
+                       premise_names: Optional[Sequence[str]]
+                       ) -> Tuple[str, "TptpNameMap"]:
+    """The TF0 writer; its refusals open with ``generate_tff_problem`` (the entry points
+    above word them as their own, :func:`~unicode_fol_kit.atp._writer_support
+    .refusals_speak_as`)."""
+    from ._tptp_problem import TptpNameMap   # deferred: that module imports this one
+
+    premises = list(premises)
+    premise_labels = normalise_premise_names(premise_names, len(premises),
+                                             where="generate_tff_problem")
+    formulas = premises + ([] if conclusion is None else [conclusion])
+    # A numeral is a constant of $i (see the module docstring): written under the name of
+    # its value, so that the renamer gives it a word and the map reads it back.
+    formulas, numerals = numerals_as_constants(formulas, where="generate_tff_problem")
     for f in formulas:
         _check_fragment(f)
+    formulas = [legalise_variables(f) for f in formulas]
     expanded = [_expand_all_sorted_counts(f) for f in formulas]
-    sig = _analyze(expanded)
+    for f in expanded:
+        check_variable_names(f, where="generate_tff_problem", subject="problem")
+    sig = _analyze(expanded, uninterpreted_arithmetic=True)
     names = _build_names(sig)
+    _check_reading(sig, expanded, writer="generate_tff_problem", numerals=numerals)
 
     lines = _render_type_decls(sig, names)
-    for i, premise in enumerate(expanded[:-1], start=1):
-        lines.append(f"tff(premise_{i}, axiom, {_render(premise, names)} ).")
-    lines.append(f"tff(goal, conjecture, {_render(expanded[-1], names)} ).")
-    return "\n".join(lines) + "\n"
+    generated = [("goal", "the conjecture")] if conclusion is not None else []
+    for line in lines:
+        # tff(sort_decl_1, type, ...): the name of each declaration the writer gave
+        generated.append((line[len("tff("):line.index(",")], "a type declaration"))
+    try:
+        check_against_generated(premise_labels, generated, where="generate_tff_problem")
+    except ValueError as clash:
+        raise Tf0Refusal(str(clash), reason="premise_name") from None
+    for label, premise in zip(premise_labels, expanded):
+        lines.append(f"tff({tptp_name_token(label)}, axiom, {_render(premise, names)} ).")
+    if conclusion is not None:
+        lines.append(f"tff(goal, conjecture, {_render(expanded[-1], names)} ).")
+    return "\n".join(lines) + "\n", TptpNameMap(
+        predicate=dict(names.predicate.mapping), term=dict(names.term.mapping),
+        premises=premise_labels, numerals=numerals)
 
 
 def infer_tff_signature(formulas: Sequence[Node]) -> Signature:
@@ -842,10 +1488,20 @@ def infer_tff_signature(formulas: Sequence[Node]) -> Signature:
     :class:`Signature` is meant for use back inside the kit, not for
     rendering TPTP text.
 
+    This is signature INFERENCE, not a decision route: it reports the sort the
+    writers' union-find assigns to every position, including the result of a
+    function and an unannotated constant at a sorted position, which the kit's
+    own reading of a sort does NOT say (a function has no declared result sort).
+    :func:`generate_tff_problem` therefore refuses a problem in which the
+    inference would do that (see :func:`check_typed_reading`), while this
+    function keeps inferring.
+
     Raises:
-        NotImplementedError: as :func:`formula_to_tff` (fragment/arithmetic
-            refusals) — never a name-folding collision (no renaming happens
-            here).
+        NotImplementedError: a node outside the fragment, and a numeral or an
+            arithmetic operator or comparison, which this function does not read as
+            an ordinary symbol (:func:`generate_tff_problem` does, and writes it
+            under a word of its own: no renaming happens here) — never a
+            name-folding collision.
         ValueError: as :func:`formula_to_tff` (free variable, arity/sort
             conflicts).
     """
@@ -875,15 +1531,16 @@ def infer_tff_signature(formulas: Sequence[Node]) -> Signature:
         constants[name] = ConstantDecl(name, sort_or_none(("const", name)))
 
     sorts: Set[str] = set(sig.literal_sorts)
-    for decl in predicates.values():
-        sorts.update(s for s in decl.arg_sorts if s is not None)
-    for decl in functions.values():
-        sorts.update(s for s in decl.arg_sorts if s is not None)
-        if decl.result_sort is not None:
-            sorts.add(decl.result_sort)
-    for decl in constants.values():
-        if decl.sort is not None:
-            sorts.add(decl.sort)
+    # Every declaration above is built with a tuple of argument sorts, never None.
+    for pred_decl in predicates.values():
+        sorts.update(s for s in pred_decl.arg_sorts or () if s is not None)
+    for func_decl in functions.values():
+        sorts.update(s for s in func_decl.arg_sorts or () if s is not None)
+        if func_decl.result_sort is not None:
+            sorts.add(func_decl.result_sort)
+    for const_decl in constants.values():
+        if const_decl.sort is not None:
+            sorts.add(const_decl.sort)
 
     return Signature(predicates=predicates, functions=functions,
                      constants=constants, sorts=frozenset(sorts))

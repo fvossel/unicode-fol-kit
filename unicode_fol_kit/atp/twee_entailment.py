@@ -124,11 +124,16 @@ Observed output shapes (every one below was produced by a real ``twee
      so the checker can still recover which original premise a citation
      means, regardless of Twee's renumbering/omission.
    * A premise that is a top-level conjunction of equations gets clausified
-     by Twee into one clause per conjunct; the first conjunct keeps the bare
-     ``premise_<i>`` name and each SUBSEQUENT conjunct is suffixed
-     ``premise_<i>_<k>`` (``k`` = 1, 2, ... in left-to-right conjunct order)
-     — verified with 2- and 3-conjunct premises. :mod:`atp.twee_check`
-     replicates this exact naming when cross-checking axiom provenance.
+     by Twee into one clause per conjunct (a ground conjunct that repeats an
+     earlier one is dropped); the clauses are named ``premise_<i>``,
+     ``premise_<i>_1``, ``premise_<i>_2``, ... but NOT in the order of the
+     source: Twee numbers them in an order of its own (measured, Twee 2.6.1:
+     for ``aa = bb ∧ ∀x ff(x) = x`` the clause ``ff(X) = X`` is
+     ``premise_1`` and ``aa = bb`` is ``premise_1_1``; for ``aa = bb ∧ aa = bb
+     ∧ cc = dd`` the clause ``cc = dd`` is ``premise_1_1``). A name therefore
+     tells which PREMISE a clause comes from and nothing more, and
+     :mod:`atp.twee_check` decides which conjunct of that premise a restated
+     axiom is by what it says.
    * A conjunctive CONCLUSION is encoded by Twee as a single equation
      between ``tuple(...)`` applications: ``![X]: (P(X)) & (Q(X))`` proves
      as ``Goal 1 (goal): tuple(P(sk1), Q(sk2)) = tuple(true, true)``-shaped
@@ -166,6 +171,16 @@ Observed output shapes (every one below was produced by a real ``twee
    :func:`check_entailment_twee_detailed`; ``result["timed_out"]``
    distinguishes the two.
 
+**One name at two arities.** The kit reads a name used at two arities (the constant
+``ff`` and the unary function ``ff(x)``, or ``ff(x)`` and ``ff(x, y)``) as two symbols,
+and so does every prover the TPTP writer feeds but Twee, which types a symbol by its name
+alone and stops with ``Type mismatch in term 'ff': Constant ff has arity 1 but was applied
+to 0 arguments`` (measured, Twee 2.6.1). So :func:`check_entailment_twee_detailed` writes
+each arity but the first of such a name under a name of its own, one that no symbol of the
+problem has (:func:`_separate_arities`), and hands everything Twee prints back under the
+name the caller used: the parsed proof and the text of ``raw_output`` speak of the problem
+as it was asked, and the proof checker compares it with the caller's own premises.
+
 Public API: :func:`twee_available`, :func:`check_entailment_twee_detailed`,
 the proof data classes (:class:`TweeEquation`, :class:`TweeCitation`,
 :class:`TweeChain`, :class:`TweeAxiom`, :class:`TweeLemma`, :class:`TweeGoal`,
@@ -177,12 +192,15 @@ import re
 import subprocess
 import tempfile
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
-from ..fol.nodes import Atom, And, Constant, Function, Node, Number, Quantifier, Variable
+from ..fol._fol_nodes import _numeral_from_text
+from ..fol._identifiers import symbol_names
+from ..fol.nodes import (
+    Atom, And, Constant, Function, Measure, Node, Number, Quantifier, SortedConstant, Variable,
+)
 from ._ascii_names import reverse_map_text
-from ._tptp_problem import (TptpNameMap, apply_reverse_tptp, generate_tptp_problem,
-                            generate_tptp_problem_with_mapping)
+from ._tptp_problem import TptpNameMap, apply_reverse_tptp, generate_tptp_problem_with_mapping
 
 __all__ = [
     "twee_available", "check_entailment_twee_detailed",
@@ -241,7 +259,9 @@ def _generate_twee_input(premises: List[Node], conclusion: Node) -> str:
 
     A thin wrapper over the shared :func:`atp._tptp_problem.generate_tptp_problem`
     (also used by :mod:`atp.vampire_entailment` and :mod:`atp.eprover_backend`,
-    which build the identical problem shape): each premise becomes
+    which build the identical problem shape; this module calls its sibling
+    :func:`atp._tptp_problem.generate_tptp_problem_with_mapping`, which writes the
+    same text and also returns the name map): each premise becomes
     ``fof(premise_<i>, axiom, <tptp>).`` (1-based) and the conclusion becomes
     ``fof(goal, conjecture, <tptp>).``. The ``premise_<i>`` naming is not
     cosmetic here — it is the anchor :mod:`atp.twee_check` uses to recover
@@ -249,9 +269,103 @@ def _generate_twee_input(premises: List[Node], conclusion: Node) -> str:
     the module docstring's naming-scheme notes). ``generate_tptp_problem``'s
     cross-formula symbol-collision guard can raise ``NotImplementedError``
     before any TPTP text is produced — see ``_tptp_problem``'s module
-    docstring.
+    docstring. A name used at two arities is written as one name per arity
+    first (:func:`_separate_arities`), so that Twee reads each as the symbol it is.
     """
-    return generate_tptp_problem(premises, conclusion)
+    problem, _name_map, _restore = _twee_problem(premises, conclusion)
+    return problem
+
+
+def _symbol_arities(formulas: List[Node]) -> Dict[str, List[int]]:
+    """Every arity each function/constant name of ``formulas`` is used at, in the order the
+    arities first occur (a constant, a sorted constant and a function of no arguments are
+    the symbol of their name at arity 0; a :class:`~unicode_fol_kit.fol.nodes.Measure` is
+    the binary function ``measure``)."""
+    arities: Dict[str, List[int]] = {}
+    for formula in formulas:
+        for node in formula.walk():
+            if isinstance(node, Function):
+                name, arity = node.name, len(node.args)
+            elif isinstance(node, (Constant, SortedConstant)):
+                name, arity = node.name, 0
+            elif isinstance(node, Measure):
+                name, arity = "measure", 2
+            else:
+                continue
+            seen = arities.setdefault(name, [])
+            if arity not in seen:
+                seen.append(arity)
+    return arities
+
+
+def _rename_by_arity(node: Node, table: Dict[Tuple[str, int], str]) -> Node:
+    """``node`` with every function/constant ``(name, arity)`` found in ``table`` written as
+    the name ``table`` gives it. Everything else is rebuilt equal; a function of no arguments
+    that is renamed is the constant of its new name."""
+    if isinstance(node, (Variable, Number)):
+        return node
+    if isinstance(node, Function):
+        args = tuple(_rename_by_arity(a, table) for a in node.args)
+        new = table.get((node.name, len(args)))
+        if not args:
+            return node if new is None else Constant(new)
+        return Function(node.name if new is None else new, args)
+    if isinstance(node, Constant):
+        new = table.get((node.name, 0))
+        return node if new is None else Constant(new)
+    if isinstance(node, SortedConstant):
+        new = table.get((node.name, 0))
+        return node if new is None else SortedConstant(new, node.sort)
+    if isinstance(node, Measure) and ("measure", 2) in table:
+        return Function(table[("measure", 2)], (_rename_by_arity(node.entity, table),
+                                                _rename_by_arity(node.dimension, table)))
+    return node.map_children(lambda child: _rename_by_arity(child, table))
+
+
+def _separate_arities(formulas: List[Node]) -> Tuple[List[Node], Dict[str, str]]:
+    """``formulas`` with each name that is used at more than one arity written as one name per
+    arity, and the table that undoes it.
+
+    The kit reads the constant ``ff`` and the unary function ``ff(x)`` as two symbols
+    (the problem writer writes them so, and so do Vampire, E, Z3 and Prover9), and Twee
+    reads one: it types a symbol by its name and stops on ``ff`` and ``ff(X)`` in one
+    problem. The first arity in which a name occurs (premises in order, then the
+    conclusion) keeps it; every other arity is written under a name minted for it, which
+    is fresh against EVERY name of the problem, of every kind and in every spelling that
+    differs from another only in case (TPTP reads ``Ff`` and ``ff`` as one word). That is
+    a renaming of one symbol to another that is not in the problem, which changes no
+    question asked of it. A minted name is ``sym_arity<n>`` (``sym_arity<n>_<i>`` when
+    that is taken): an ASCII word that starts with a lower-case letter whatever the name
+    it stands for, so the problem writer leaves it as it is and Twee prints it as
+    written. Returns ``(formulas, restore)`` where ``restore`` maps each
+    minted name to the name it stands for, to apply to whatever Twee prints; a problem
+    without such a name comes back as the very same list and an empty table.
+    """
+    clashing = {name: seen for name, seen in _symbol_arities(formulas).items() if len(seen) > 1}
+    if not clashing:
+        return formulas, {}
+    taken = set(symbol_names(*formulas, fold=str.casefold))
+    table: Dict[Tuple[str, int], str] = {}
+    restore: Dict[str, str] = {}
+    for name in sorted(clashing):
+        for arity in clashing[name][1:]:
+            candidate = f"sym_arity{arity}"
+            index = 1
+            while candidate.casefold() in taken:
+                candidate = f"sym_arity{arity}_{index}"
+                index += 1
+            taken.add(candidate.casefold())
+            table[(name, arity)] = candidate
+            restore[candidate] = name
+    return [_rename_by_arity(f, table) for f in formulas], restore
+
+
+def _twee_problem(premises: List[Node], conclusion: Node) -> Tuple[str, TptpNameMap, Dict[str, str]]:
+    """The problem text handed to Twee, the writer's name map and the table of the names
+    :func:`_separate_arities` minted (empty for nearly every problem)."""
+    formulas, restore = _separate_arities(list(premises) + [conclusion])
+    problem, name_map = generate_tptp_problem_with_mapping(formulas[:-1], formulas[-1])
+    return problem, name_map, restore
 
 
 # ---------------------------------------------------------------------------
@@ -392,7 +506,7 @@ def _parse_term(text: str) -> Node:
             raise ValueError(f"twee term parser: unexpected end of term in {text!r}")
         if _numeric(tok):
             pos[0] += 1
-            return Number(float(tok) if "." in tok else int(tok))
+            return Number(_numeral_from_text(tok))
         if tok in "(),":
             raise ValueError(f"twee term parser: unexpected {tok!r} in {text!r}")
         name = tok
@@ -692,12 +806,31 @@ def parse_twee_proof(stdout: str) -> Optional[TweeProof]:
 # Rückweg: translate a parsed TweeProof's terms back to kit-level names.
 # ---------------------------------------------------------------------------
 
-def _reverse_map_equation(eq: TweeEquation, mapping: TptpNameMap) -> TweeEquation:
-    return TweeEquation(apply_reverse_tptp(eq.lhs, mapping), apply_reverse_tptp(eq.rhs, mapping))
+def _map_proof_terms(proof: TweeProof, fn: Callable[[Node], Node]) -> TweeProof:
+    """``proof`` with ``fn`` applied to every term of it (the two sides of each axiom, lemma
+    and goal equation and every term of every chain); numbers, names and citations stay."""
+    def equation(eq: TweeEquation) -> TweeEquation:
+        return TweeEquation(fn(eq.lhs), fn(eq.rhs))
+
+    def chain(c: TweeChain) -> TweeChain:
+        return TweeChain(tuple(fn(t) for t in c.terms), c.citations)
+
+    return TweeProof(
+        tuple(TweeAxiom(a.number, a.name, equation(a.equation)) for a in proof.axioms),
+        tuple(TweeLemma(l.number, equation(l.equation), chain(l.chain)) for l in proof.lemmas),
+        TweeGoal(proof.goal.number, proof.goal.name, equation(proof.goal.equation),
+                 chain(proof.goal.chain)))
 
 
-def _reverse_map_chain(chain: TweeChain, mapping: TptpNameMap) -> TweeChain:
-    return TweeChain(tuple(apply_reverse_tptp(t, mapping) for t in chain.terms), chain.citations)
+def _restore_term_names(term: Node, restore: Dict[str, str]) -> Node:
+    """``term`` with every function/constant name that ``restore`` maps written as the name it
+    maps to (see :func:`_separate_arities`)."""
+    if isinstance(term, Function):
+        args = tuple(_restore_term_names(a, restore) for a in term.args)
+        return Function(restore.get(term.name, term.name), args)
+    if isinstance(term, Constant):
+        return Constant(restore.get(term.name, term.name))
+    return term
 
 
 def reverse_map_twee_proof(proof: TweeProof, mapping: TptpNameMap) -> TweeProof:
@@ -715,19 +848,7 @@ def reverse_map_twee_proof(proof: TweeProof, mapping: TptpNameMap) -> TweeProof:
     ``premise_<i>`` names this module itself assigned — see
     :func:`_generate_twee_input`) are not symbol names and are left alone.
     """
-    axioms = tuple(
-        TweeAxiom(a.number, a.name, _reverse_map_equation(a.equation, mapping))
-        for a in proof.axioms
-    )
-    lemmas = tuple(
-        TweeLemma(l.number, _reverse_map_equation(l.equation, mapping),
-                 _reverse_map_chain(l.chain, mapping))
-        for l in proof.lemmas
-    )
-    goal = TweeGoal(proof.goal.number, proof.goal.name,
-                    _reverse_map_equation(proof.goal.equation, mapping),
-                    _reverse_map_chain(proof.goal.chain, mapping))
-    return TweeProof(axioms, lemmas, goal)
+    return _map_proof_terms(proof, lambda term: apply_reverse_tptp(term, mapping))
 
 
 # ---------------------------------------------------------------------------
@@ -788,13 +909,16 @@ def check_entailment_twee_detailed(premises: List[Node], conclusion: Node,
         to the ORIGINAL kit-level name (see
         :func:`reverse_map_twee_proof`); Twee's own axiom/lemma/goal
         numbering and the ``premise_<i>`` axiom names are untouched (they
-        were never symbol names to begin with).
+        were never symbol names to begin with). A name the problem uses at
+        two arities is a problem for Twee alone (it types a symbol by its name):
+        it is written as one name per arity (see the module docstring) and
+        handed back under the caller's name in both.
     """
     for i, premise in enumerate(premises, start=1):
         _require_equational(premise, f"premise {i}")
     _require_equational(conclusion, "conclusion")
 
-    problem, name_map = generate_tptp_problem_with_mapping(list(premises), conclusion)
+    problem, name_map, restore = _twee_problem(list(premises), conclusion)
     stdout, stderr, timed_out = _spawn_twee(problem, timeout=timeout, use_wsl=use_wsl,
                                             twee_cmd=twee_cmd)
 
@@ -807,13 +931,16 @@ def check_entailment_twee_detailed(premises: List[Node], conclusion: Node,
     if status == "Unknown" and stderr:
         raw_output = f"{stdout}\n{stderr}" if stdout else stderr
     pred_rev, term_rev = name_map.reverse_rendered()
-    raw_output = reverse_map_text(raw_output, pred_rev, term_rev)
+    # The names minted for a name used at two arities come first: the writer's own table
+    # maps each of them to itself, and the first table to know a token decides.
+    raw_output = reverse_map_text(raw_output, restore, pred_rev, term_rev)
 
     proof = None
     proof_parse_error = None
     if status == "Theorem":
         try:
             proof = reverse_map_twee_proof(parse_twee_proof(stdout), name_map)
+            proof = _map_proof_terms(proof, lambda term: _restore_term_names(term, restore))
         except ValueError as exc:
             # A Theorem status with proof text outside this module's
             # distilled grammar (another Twee version, a reformat) must not

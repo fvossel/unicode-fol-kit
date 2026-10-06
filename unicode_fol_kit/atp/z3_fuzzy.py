@@ -18,6 +18,11 @@ Atom semantics over [0, 1]:
 This v1 is propositional: a quantifier anywhere in the formula raises a clear
 ``NotImplementedError`` suggesting that the formula be grounded first.
 
+An atom is a letter named by the text it prints as (a sorted constant ``c:S`` is the
+constant ``c``). A comparison atom (``a = a``, ``1 < 2``) has no Łukasiewicz degree and is
+refused by name, exactly as :func:`~unicode_fol_kit.semantics.fuzzy.evaluate` refuses it,
+and so are two different atoms that print alike.
+
 Public API:
     fuzzy_is_satisfiable(formula, threshold=1.0, strict=False, timeout=10000)
     fuzzy_is_valid(formula, timeout=10000)
@@ -26,8 +31,12 @@ Public API:
 
 from fractions import Fraction
 
+from typing import Optional
+
 from z3 import Solver, Real, RealVal, If, And as Z3And, sat, unsat
 
+from ..fol._atom_keys import AtomKeys, atom_key
+from ..fol._free_parameters import free_parameter_names
 from ..fol.nodes import (
     Node, Atom,
     Quantifier, SortedQuantifier,
@@ -35,6 +44,7 @@ from ..fol.nodes import (
     StrongConjunction, StrongDisjunction,
     LukImplication, LukEquivalence,
 )
+from ..fol._truth_constants import truth_value as _truth_value
 
 
 # =========================
@@ -86,12 +96,15 @@ def _z3_tnorm_ops(tnorm: str) -> dict:
 # Atom collection & degree encoding
 # =========================
 
-def _collect_atoms(formula: Node, atom_vars: dict) -> None:
+def _collect_atoms(formula: Node, atom_vars: dict, keys: Optional[AtomKeys] = None) -> None:
     """Populate atom_vars: {atom-key -> z3 Real} for every ground atom in formula.
 
-    The key is the atom's ``to_unicode_str()`` so two structurally identical
-    ground atoms share a single Z3 variable. Mutates atom_vars in place (it is
-    private working state owned by the caller, never a user input).
+    The key is the atom's ``to_unicode_str()`` (a sorted constant ``c:S`` read as the
+    constant ``c``) so two structurally identical ground atoms share a single Z3
+    variable. Mutates atom_vars in place (it is private working state owned by the
+    caller, never a user input). ``keys`` records the atom behind every key of one problem
+    and refuses two different atoms that print alike. A comparison atom is refused, as
+    the evaluator refuses it.
     """
     if isinstance(formula, (Quantifier, SortedQuantifier)):
         raise NotImplementedError(
@@ -101,18 +114,22 @@ def _collect_atoms(formula: Node, atom_vars: dict) -> None:
             "resulting propositional formula."
         )
     if isinstance(formula, Atom):
-        key = formula.to_unicode_str()
+        if _truth_value(formula) is not None:
+            return          # `$true` / `$false` are the degrees 1 and 0, not variables
+        from ..semantics.fuzzy import _reject_comparison_atom
+        _reject_comparison_atom(formula, "the fuzzy decider")
+        key = atom_key(formula) if keys is None else keys.key(formula)
         if key not in atom_vars:
             atom_vars[key] = Real(f"fuzzy!{key}")
         return
     if isinstance(formula, LukNegation):
-        _collect_atoms(formula.formula, atom_vars)
+        _collect_atoms(formula.formula, atom_vars, keys)
         return
     if isinstance(formula, (WeakConjunction, WeakDisjunction,
                             StrongConjunction, StrongDisjunction,
                             LukImplication, LukEquivalence)):
-        _collect_atoms(formula.left, atom_vars)
-        _collect_atoms(formula.right, atom_vars)
+        _collect_atoms(formula.left, atom_vars, keys)
+        _collect_atoms(formula.right, atom_vars, keys)
         return
     raise TypeError(
         f"z3_fuzzy: unsupported node type {type(formula).__name__}. "
@@ -130,7 +147,10 @@ def _degree(formula: Node, atom_vars: dict, ops: dict):
     the AST: never mutates its inputs.
     """
     if isinstance(formula, Atom):
-        return atom_vars[formula.to_unicode_str()]
+        constant = _truth_value(formula)
+        if constant is not None:
+            return RealVal(1 if constant else 0)
+        return atom_vars[atom_key(formula)]
 
     if isinstance(formula, LukNegation):
         return ops["neg"](_degree(formula.formula, atom_vars, ops))
@@ -194,13 +214,32 @@ def degree_expr(formula: Node, tnorm: str = "lukasiewicz",
     ``sort_universes`` (sorted quantifiers) into a finite weak ∧/∨, so quantified
     fuzzy validity / satisfiability becomes decidable. Without the matching universe
     a quantifier raises ``ValueError``.
+
+    A variable that is free in a quantified formula is a parameter (one element of the
+    domain), and a degree expression for a parameter would have to range over its
+    assignments; this decider has no such reading, so it refuses the formula by name
+    (``NotImplementedError``): bind the variable with a quantifier or write a constant of
+    the domain. A comparison atom (``a = a``, ``1 < 2``) is refused with ``TypeError``, as
+    :func:`~unicode_fol_kit.semantics.fuzzy.evaluate` refuses it, and so are two different
+    atoms that print alike (the numeral ``1`` and a constant named ``1``) with
+    ``NotImplementedError``. A sorted constant ``c:S`` is the constant ``c``: one key.
     """
     ops = _z3_tnorm_ops(tnorm)
     if formula.count(Quantifier) or formula.count(SortedQuantifier):
-        from ..semantics.fuzzy import ground_quantifiers
+        parameters = free_parameter_names([formula])
+        if parameters:
+            raise NotImplementedError(
+                f"z3_fuzzy: the variable(s) {list(parameters)} are free in a quantified "
+                "formula. A free variable is a parameter, one unknown element of the domain, "
+                "and deciding it would take the formula under every assignment of the "
+                "domain's elements to it; this decider has no such reading and would "
+                "answer about another formula. Bind the variable with a quantifier, or "
+                "write a constant of the domain in its place.")
+        from ..semantics.fuzzy import check_sorted_constants, ground_quantifiers
+        check_sorted_constants(formula, sort_universes, "z3_fuzzy")
         formula = ground_quantifiers(formula, domain=domain, sort_universes=sort_universes)
     atom_vars: dict = {}
-    _collect_atoms(formula, atom_vars)
+    _collect_atoms(formula, atom_vars, AtomKeys("z3_fuzzy"))
     expr = _degree(formula, atom_vars, ops)
     constraints = []
     for v in atom_vars.values():
@@ -293,8 +332,18 @@ def fuzzy_get_model(formula: Node, threshold: float = 1.0,
 
     ``tnorm`` selects the strong-connective semantics (``"lukasiewicz"`` / ``"godel"``);
     a quantified formula is grounded over ``domain`` / ``sort_universes`` first.
+
+    Raises:
+        NotImplementedError: the formula has an atom whose key is ``'degree'``, the key the
+            model reports the formula's own degree under (the entry would be one key for two
+            meanings); and every refusal of :func:`degree_expr`.
     """
     expr, constraints, atom_vars = degree_expr(formula, tnorm, domain, sort_universes)
+    if "degree" in atom_vars:
+        raise NotImplementedError(
+            "z3_fuzzy: the formula has the atom 'degree', which is also the key under which "
+            "fuzzy_get_model reports the formula's own degree, so the model would hold one "
+            "entry for two meanings. Rename the atom.")
     thr = RealVal(_to_fraction(threshold))
 
     solver = Solver()

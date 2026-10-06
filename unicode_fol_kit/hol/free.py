@@ -103,11 +103,14 @@ Public API: :func:`to_thf_free`, :func:`to_isabelle_free`, :func:`free_theory`.
 from typing import Dict, List, Optional, Tuple
 
 from ..fol._fol_nodes import constant_name_to_ascii
+from ..fol._numeral_symbols import numerals_as_constants, prefixed_numeral_name
 from ..fol._symbol_names import dedupe
+from ..fol._truth_constants import truth_value
 from ..fol.nodes import (
     Node, Variable, Constant, Number, Function,
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
 )
+from .classical import _refuse_open_assertion
 
 #: The object-language existence predicate — the SAME name
 #: :mod:`~unicode_fol_kit.semantics.free_logic` reserves for it
@@ -350,7 +353,7 @@ def _signature(formula: Node):
     preds, funcs, consts = set(), set(), set()
     for n in formula.walk():
         if isinstance(n, Atom):
-            if not _is_identity(n):
+            if not _is_identity(n) and truth_value(n) is None:
                 preds.add((n.predicate, len(n.args)))
         elif isinstance(n, Function):
             funcs.add((n.name, len(n.args)))
@@ -421,12 +424,15 @@ class _VarResolver:
 
     Identical to :class:`unicode_fol_kit.hol.classical._VarResolver`: THF
     upper-cases variable tokens, so two source names differing only by case
-    would otherwise collide on one token.
+    would otherwise collide on one token. ``used`` is the set of tokens a variable
+    must not take (shared, not copied): the Isabelle export passes the tokens of the
+    theory's constants, functions and predicates, because a binder shadows a
+    constant of its own name inside its scope.
     """
 
-    def __init__(self, render):
+    def __init__(self, render, used=None):
         self._render = render
-        self._used = set()
+        self._used = set() if used is None else used
         self._map: Dict[str, str] = {}
 
     def token(self, raw: str) -> str:
@@ -463,6 +469,8 @@ def _thf_formula(node: Node, syms: "_SymbolResolver", vars_: "_VarResolver") -> 
     def f(n):
         return _thf_formula(n, syms, vars_)
     if isinstance(node, Atom):
+        if truth_value(node) is not None:
+            return "$true" if truth_value(node) else "$false"
         if _is_identity(node):
             # Native THF identity (see the module docstring's Equality section).
             left = _thf_term(node.args[0], syms, vars_)
@@ -528,15 +536,26 @@ def to_thf_free(formula: Node, *, policy: str = "negative", conjecture: bool = T
         policy: ``"negative"`` (default) or ``"positive"`` — see
             :mod:`~unicode_fol_kit.semantics.free_logic`.
             ``"supervaluation"`` raises ``NotImplementedError``.
-        conjecture: emit the goal as ``conjecture`` (default) or ``axiom``.
+        conjecture: emit the goal as ``conjecture`` (default) or ``axiom``. A free
+            variable is a parameter: one unknown individual that exists. For a
+            conjecture that is the formula closed universally under the ``E!``
+            guard, which is what is written. For an axiom it is not (``∀x P(x)``
+            says more than ``P(x)``), so an asserted formula with a free variable
+            is refused by name.
 
     Raises:
-        NotImplementedError: for ``policy="supervaluation"``, or for a node
+        NotImplementedError: for ``policy="supervaluation"``, for a node
             outside the free-logic fragment (modal / second-order /
-            Łukasiewicz / substructural / lambda).
+            Łukasiewicz / substructural / lambda), or for ``conjecture=False``
+            with a formula that has a free variable.
         ValueError: for any other unknown ``policy``.
     """
     _check_policy(policy, "to_thf_free")
+    # A numeral is a constant identified by its value (1 and 1.0 are one), named ``n1``:
+    # a user constant spelled like it is refused, not merged with it.
+    [formula], _ = numerals_as_constants([formula], where="to_thf_free",
+                                         spell=prefixed_numeral_name)
+    _refuse_open_assertion(formula, conjecture, "to_thf_free")
     guarded = _guard(_close(formula), policy)
     role = "conjecture" if conjecture else "axiom"
     syms = _SymbolResolver(guarded)
@@ -584,6 +603,8 @@ def _isa_formula(node: Node, syms: "_SymbolResolver", vars_: "_VarResolver") -> 
     def g(n):
         return _isa_formula(n, syms, vars_)
     if isinstance(node, Atom):
+        if truth_value(node) is not None:
+            return "True" if truth_value(node) else "False"
         if _is_identity(node):
             # Native Isabelle identity (see the module docstring's Equality section).
             left = _isa_term(node.args[0], syms, vars_)
@@ -661,14 +682,22 @@ def to_isabelle_free(formula: Node, *, policy: str = "negative",
             reach them.
 
     Raises:
-        NotImplementedError: for ``policy="supervaluation"``, or for a node
-            outside the free-logic fragment.
-        ValueError: for any other unknown ``policy``.
+        NotImplementedError: for ``policy="supervaluation"``, for a node
+            outside the free-logic fragment, or for a constant or function that is spelled
+            like a numeral of the formula (``Number(1)`` next to ``Constant('n1')``): a
+            numeral is a constant of its own, named ``n1`` here, and the two would be one
+            symbol of the theory, so the writer refuses to merge them.
+        ValueError: for any other unknown ``policy``, or for a numeral that is ``inf``,
+            ``-inf`` or ``nan``.
     """
     _check_policy(policy, "to_isabelle_free")
+    # A numeral is a constant identified by its value (1 and 1.0 are one), named ``n1``:
+    # a user constant spelled like it is refused, not merged with it.
+    [formula], _ = numerals_as_constants([formula], where="to_isabelle_free",
+                                         spell=prefixed_numeral_name)
     guarded = _guard(_close(formula), policy)
     syms = _SymbolResolver(guarded)
-    vars_ = _VarResolver(_sanitize)
+    vars_ = _VarResolver(_sanitize, used=syms._used)
     d_name = syms.name(_CAT_PRED, _DENOTES_PRED, 1)
     e_name = syms.name(_CAT_PRED, _EXISTS_PRED, 1)
     tie = f"(\\<forall>x. {e_name} x \\<longrightarrow> {d_name} x)"
@@ -713,9 +742,11 @@ def free_theory(formula: Node, *, policy: str = "negative",
     script without a duplicate-theory-name collision.
 
     Raises:
-        NotImplementedError: for ``policy="supervaluation"``, or for a node
-            outside the free-logic fragment.
-        ValueError: for any other unknown ``policy``.
+        NotImplementedError: for ``policy="supervaluation"``, for a node
+            outside the free-logic fragment, or for a numeral next to a constant or
+            function spelled like it (see :func:`to_isabelle_free`).
+        ValueError: for any other unknown ``policy``, or for a numeral that is
+            ``inf``, ``-inf`` or ``nan``.
     """
     return to_isabelle_free(formula, policy=policy, theory_name=theory_name,
                             lemma_name=lemma_name,

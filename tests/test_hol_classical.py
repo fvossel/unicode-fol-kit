@@ -195,10 +195,14 @@ def test_thf_msfol_sort_facts_for_constant():
     f = Atom("Mortal", [SortedConstant("socrates", "Human")])
     out = to_thf_msfol(f, include_sort_facts=True)
     body = out.split("conjecture,")[1]
-    # the sort-membership fact Human(socrates) is conjoined.
-    assert "( human @ socrates )" in body
+    # The membership fact Human(socrates) is an AXIOM of the problem and the goal is the bare atom.
+    # (It used to be conjoined to the goal: ``Human(socrates) & Mortal(socrates)`` is a goal no prover
+    # can prove -- the guard is an uninterpreted predicate -- not even for the tautology
+    # ``Mortal(socrates) | ~Mortal(socrates)``, so the export could never answer VALID.)
+    assert "thf(sort_member_0, axiom, ( human @ socrates ))." in out
+    assert "( human @ socrates )" not in body
     assert "( mortal @ socrates )" in body
-    assert "&" in body
+    assert "&" not in body
 
 
 # ---------------------------------------------------------------------------
@@ -351,12 +355,21 @@ def test_thf_quantifier_count_matches_source():
 
 
 def test_msfol_matches_to_fol_then_to_thf():
-    # to_thf_msfol(f) must equal to_thf_fol(to_fol(f)) — the documented contract.
+    # The bare relativisation (include_sort_facts=False) is exactly to_thf_fol(to_fol(f)).
+    # With the sort facts (the default) the problem is that one PLUS the facts the reduction
+    # forgets, stated as axioms. The old expectation equated the default output with the bare
+    # relativisation, i.e. a problem in which the sort ``Animal`` may be empty, which is not the
+    # many-sorted question: there ``∀x:Animal φ → ∃x:Animal φ`` is valid.
     from unicode_fol_kit.fol.nodes import to_fol
     f = SortedQuantifier("∀", X, "Animal",
                          Implies(Atom("Dog", [X]), Atom("Mammal", [X])))
-    assert to_thf_msfol(f, include_sort_facts=True) == \
-        to_thf_fol(to_fol(f, include_sort_facts=True))
+    bare = to_thf_fol(to_fol(f))
+    assert to_thf_msfol(f, include_sort_facts=False) == bare
+    default = to_thf_msfol(f)
+    assert default != bare
+    assert "thf(nonempty_sort_0, axiom, ( ? [X0: $i] : ( animal @ X0 ) ))." in default
+    assert default.splitlines()[-1] == bare.splitlines()[-1]       # the goal itself is the same
+    assert "sort_member" not in default                             # no sorted constant, no membership
 
 
 # ---------------------------------------------------------------------------

@@ -6,11 +6,12 @@ scope here: there is no Prover9 "detailed" route reading a proof or
 countermodel back out of Prover9's own output today, so unlike TPTP/E/Twee
 there is no Rückweg to test here — only the Hinweg (export) side).
 
-No Prover9 binary is available in this environment (not even through WSL),
-so every syntactic-legality claim below is verified EXECUTED against the
-kit's OWN Prover9 reader (fol.prover9_input.parse_prover9) — the R5 fallback
-the task specifies for exactly this situation ("wo ein externes Werkzeug
-fehlt, ist der kit-eigene Leser der Prüfstein").
+A Prover9 binary is not there on every machine, so every syntactic-legality
+claim below is verified EXECUTED against the kit's OWN Prover9 reader
+(fol.prover9_input.parse_prover9) — the fallback for exactly this situation
+("wo ein externes Werkzeug fehlt, ist der kit-eigene Leser der Prüfstein").
+tests/test_prover9_sorts.py and tests/test_prover9_quoting.py run the real
+binary (natively, or inside WSL with $UFK_PROVER9_WSL=1) where there is one.
 """
 
 import pytest
@@ -54,12 +55,25 @@ def test_shape_unchanged_for_clean_ascii_formulas():
     assert "  Mortal(socrates)." in text
 
 
-def test_uppercase_initial_predicate_is_not_touched():
-    # Pinned by tests/test_export_fixes.py's Atom("Rain", []).to_prover9()
-    # == "Rain" -- deliberate, pre-existing, untouched behaviour (see this
-    # module's docstring); must not change here.
-    text = _generate_prover9_input([], Atom("Rain", []))
-    assert "  Rain." in text
+def test_uppercase_initial_predicate_with_arguments_is_not_touched():
+    # A predicate WITH arguments is not an arity-0 term: Prover9 reads it as a
+    # predicate even under prolog_style_variables, so the kit's own Capitalised
+    # convention is written exactly as it always was.
+    text = _generate_prover9_input([], Atom("Human", [Constant("socrates")]))
+    assert "  Human(socrates)." in text
+
+
+def test_uppercase_initial_nullary_predicate_is_renamed():
+    # Under set(prolog_style_variables) LADR reads an arity-0 term that starts
+    # A..Z as a VARIABLE, and a bare atom is an arity-0 term (set_vars_recurse runs
+    # on the atom itself): `Rain.` would not say "Rain holds". The writer spells it
+    # lower-case-initial (the way it already spells an upper-case constant) and
+    # records the rename.
+    text, mapping = generate_prover9_input_with_mapping([], Atom("Rain", []))
+    assert "  rain." in text
+    assert "  Rain." not in text
+    assert mapping.nullary_predicates == {"Rain": "rain"}
+    assert mapping.reverse()["rain"] == "Rain"
 
 
 # ---------------------------------------------------------------------------
@@ -118,8 +132,18 @@ class TestR1NoChangeForAlreadyLegalNames:
 
     @pytest.mark.parametrize("name", ["Rain", "Human", "hasBond"])
     def test_predicate_names_are_identity_mapped_case_included(self, name):
-        _, mapping = generate_prover9_input_with_mapping([], Atom(name, []))
+        # WITH an argument: the name is the predicate symbol Prover9 reads as one.
+        _, mapping = generate_prover9_input_with_mapping([], Atom(name, [_A]))
         assert mapping.mapping[name] == name
+        assert mapping.nullary_predicates == {}
+
+    @pytest.mark.parametrize("name", ["rain", "hasBond", "p_1"])
+    def test_a_lower_case_nullary_predicate_is_identity_mapped(self, name):
+        # Prover9 reads a lower-case arity-0 symbol as a constant/atom: no rename.
+        text, mapping = generate_prover9_input_with_mapping([], Atom(name, []))
+        assert mapping.mapping[name] == name
+        assert mapping.nullary_predicates == {}
+        assert f"  {name}." in text
 
     def test_single_letter_constant_is_not_touched(self):
         # "a" is a legal Prover9 NAME token even though it is not a legal

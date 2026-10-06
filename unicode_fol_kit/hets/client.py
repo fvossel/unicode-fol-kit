@@ -68,16 +68,61 @@ from the server and has changed shape across releases before)
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
 import http.client
 import urllib.parse
 import urllib.request
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
-__all__ = ["HetsClient"]
+from ..fol.tptp_input import _HETS_LOGIC_REFERENCE
+from .haskell_json import repair_haskell_json
+
+__all__ = [
+    "HetsClient",
+    "HetsNoTranslationsError",
+    "HetsSublogicError",
+    "strip_hets_theory_header",
+]
 
 _ERROR_PREFIX = "*** Error"
 _EXCERPT_CHARS = 2000
+
+#: HETS' own 422 body for a theory whose sublogic the requested comorphism
+#: does not cover. Verified verbatim against the live server::
+#:
+#:     *** Error:
+#:     for 'OWL22CASL;CASL2TPTP_FOF' expected sublogic 'NP-sROIQux-D|-|'
+#:      but found sublogic 'NP-sROIQ-D|Literal|dateTime|decimal|integer|string|' with signature sublogic 'ELQLRL-ALC'
+#:
+#: A stable, machine-readable signature — which is what makes
+#: :class:`HetsSublogicError` branchable rather than prose a caller has to
+#: grep. Note HETS writes the composition with ``;`` here while the URL (and
+#: the command line) take ``:``; the exception carries HETS' spelling
+#: verbatim rather than normalising it, because that is the string HETS'
+#: other messages use.
+_SUBLOGIC_RE = re.compile(
+    r"for '([^']+)' expected sublogic '([^']*)'\s*\n?\s*"
+    r"but found sublogic '([^']*)'")
+
+#: A TPTP problem must contain at least one of these. Used by
+#: :meth:`HetsClient.theory_tptp` to refuse a CASL (or error) body rather
+#: than hand back something that would parse to an empty formula list.
+_TPTP_STATEMENT_RE = re.compile(r"(?:^|[\s)(.])(fof|cnf|tff|thf)\s*\(")
+
+#: The DOL ``logic <Name>.<Sublogic>`` line HETS puts in front of every
+#: ``/theory`` rendering, and CASL's ``%{ ... }%`` block comment (which
+#: carries HETS' own ``constants:``/``predicates:``/``sorts:`` signature
+#: listing). Neither is TPTP syntax — see :func:`strip_hets_theory_header`.
+#:
+#: The WHOLE line is ``logic`` plus one DOL logic reference — the SAME notion of
+#: "a Hets header" as :mod:`unicode_fol_kit.fol.tptp_input`'s refusal pointer
+#: (it is imported from there, so the two cannot disagree): a logic NAME, an
+#: identifier, optionally ``.`` and a free-form sublogic. The previous ``logic``
+#: plus any whitespace-free word also matched the first line of a bare formula
+#: such as ``logic &p``, and the splitter then ate it as a "header".
+_LOGIC_LINE_RE = re.compile(
+    r"logic[ \t]+" + _HETS_LOGIC_REFERENCE + r"[ \t\r]*$", re.MULTILINE)
 
 # The stable field set every normalized goal-result dict carries, whatever
 # extra keys this HETS version's raw JSON happens to include.
@@ -85,6 +130,147 @@ _GOAL_FIELDS = (
     "name", "result", "used_prover", "used_translation",
     "prover_output", "used_time", "tactic_script",
 )
+
+
+class HetsNoTranslationsError(RuntimeError):
+    """``GET /translations`` answered a well-formed list with no comorphism.
+
+    A ``RuntimeError`` subclass, like :class:`HetsOwlError`
+    (:mod:`~unicode_fol_kit.hets.owl_backend`) and for the same reason: the
+    server is up and the request was understood, the ANSWER is the problem.
+    Every existing ``except RuntimeError`` caller therefore keeps working.
+
+    Why this is raised rather than returned as ``[]``: an empty list reads as
+    "this logic has no comorphisms", and what HETS actually means is "I am not
+    telling you why". Measured on the real server — for an ontology whose
+    sublogic ``OWL22CASL`` does not cover, ``/translations`` answers
+    ``<Translations><translations></translations></Translations>`` with HTTP
+    200, no exception and no reason, while ``/theory`` for the very same
+    library answers HTTP 422 with the sublogic mismatch spelled out. So the
+    reason exists; it just lives at a different endpoint, and this exception's
+    message is where that is written down.
+
+    ``translations(..., allow_empty=True)`` restores the old return-``[]``
+    behaviour for a caller that genuinely wants it.
+    """
+
+
+class HetsSublogicError(RuntimeError):
+    """HETS refused a translation because the theory's sublogic is too rich.
+
+    Carries HETS' own three strings, parsed from the 422 body by
+    :data:`_SUBLOGIC_RE`, so a caller can BRANCH on the refusal instead of
+    grepping prose:
+
+    Attributes:
+        comorphism: the comorphism HETS was asked for, as HETS spells it
+            (``"OWL22CASL;CASL2TPTP_FOF"`` — with a semicolon, even though
+            the URL and the command line both take ``:``).
+        expected: the sublogic the comorphism covers
+            (``"NP-sROIQux-D|-|"``).
+        found: the sublogic the theory actually is
+            (``"NP-sROIQ-D|Literal|dateTime|decimal|integer|string|"``).
+        body: the 422 body, verbatim.
+
+    A ``RuntimeError`` subclass for the same reason as
+    :class:`HetsNoTranslationsError`.
+    """
+
+    def __init__(self, message: str, *, comorphism: str, expected: str,
+                 found: str, body: str):
+        super().__init__(message)
+        self.comorphism = comorphism
+        self.expected = expected
+        self.found = found
+        self.body = body
+
+
+def strip_hets_theory_header(text: str) -> Tuple[str, str]:
+    r"""Split HETS' theory rendering into ``(header, body)``. Never raises.
+
+    ``GET /theory?...&format=dol`` prefixes its output with DOL/CASL syntax
+    that is NOT part of the target logic::
+
+        logic TPTP.FOF
+
+        %{
+
+        constants:  op_a,
+                    op_b
+
+        predicates:  pred_p: $i > $o
+
+        }%
+
+        fof(ax_ax1, axiom, ...).
+
+    TPTP has exactly two comment forms, ``%`` to end of line and
+    ``/* ... */``. ``%{ ... }%`` is CASL's BLOCK comment and ``logic
+    <Name>.<Sublogic>`` is DOL library syntax, so a TPTP reader must not
+    learn either: ``%`` already swallows ``%{`` as an ordinary line comment
+    and the reader then chokes on the block's first content line, and
+    teaching it the block form would make it accept a CASL theory header,
+    treat the whole CASL body as a comment and return an EMPTY formula list
+    — a silent empty answer to a wrong-translation request. So the split
+    happens here, in the adapter that knows its input is a HETS rendering,
+    exactly as :func:`unicode_fol_kit.ace.runner._repair_ape_tptp` repairs
+    APE's pretty-printer inside the ACE adapter and
+    :mod:`unicode_fol_kit.fol.tptp_repair` sits OVER the reader rather than
+    inside its grammar.
+
+    The split is structural, never ``text[text.index("fof("):]``: a blind cut
+    would also swallow a HETS ``*** Error`` body whole, and a symbol whose
+    name happens to end in ``_fof`` inside the 2267-line signature block
+    would move the cut point. The rule, verified against both the real TPTP
+    and the real CASL rendering:
+
+    1. skip leading whitespace; if what follows is a WHOLE line of the form
+       ``logic <Name>`` or ``logic <Name>.<Sublogic>`` (a logic name is an
+       identifier, so ``logic &p`` — a formula — is not a header), consume
+       through the end of that line;
+    2. repeatedly skip whitespace and, while what follows starts with
+       ``%{``, consume through the first following ``}%`` (CASL block
+       comments do not nest);
+    3. what remains is the body.
+
+    An unterminated ``%{`` is left in the body rather than truncating the
+    text to nothing — the caller then gets a named refusal from
+    :meth:`HetsClient.theory_tptp` instead of a silently empty result.
+
+    Args:
+        text: a ``/theory`` rendering, or any text at all.
+
+    Returns:
+        ``(header, body)``. ``("", text)`` when there is no header, so the
+        call is safe to make unconditionally.
+
+    Example:
+        >>> strip_hets_theory_header("fof(a, axiom, p).")
+        ('', 'fof(a, axiom, p).')
+    """
+    index = 0
+    length = len(text)
+    while index < length and text[index].isspace():
+        index += 1
+    match = _LOGIC_LINE_RE.match(text, index)
+    if match:
+        end = text.find("\n", match.end())
+        index = length if end == -1 else end + 1
+    else:
+        index = 0
+    while True:
+        cursor = index
+        while cursor < length and text[cursor].isspace():
+            cursor += 1
+        if not text.startswith("%{", cursor):
+            break
+        close = text.find("}%", cursor + 2)
+        if close == -1:
+            # Unterminated: consume nothing, so the text survives for the
+            # caller's own refusal rather than vanishing into the header.
+            break
+        index = close + 2
+    return text[:index], text[index:]
 
 
 def _encode_iri(iri: str) -> str:
@@ -173,10 +359,36 @@ class HetsClient:
                 body = resp.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", "replace") if exc.fp else ""
-            raise RuntimeError(
+            generic = RuntimeError(
                 f"hets: {method} {path} -> HTTP {exc.code}: "
                 f"{body[:_EXCERPT_CHARS]!r}"
-            ) from exc
+            )
+            # HTTP 422 with HETS' sublogic signature is the one HTTP error
+            # worth a TYPED exception: it is the server saying "this theory
+            # is richer than the comorphism you asked for", which a caller
+            # can act on (fall back to the lossy command-line route, or
+            # reduce the theory). Any OTHER 422 keeps the generic wording
+            # above, so the typed exception never swallows an unrelated
+            # failure.
+            if exc.code == 422:
+                signature = _SUBLOGIC_RE.search(body)
+                if signature:
+                    comorphism, expected, found = signature.groups()
+                    raise HetsSublogicError(
+                        f"hets: {method} {path} -> HTTP 422: HETS refuses the "
+                        f"comorphism {comorphism!r} for this theory — it "
+                        f"covers sublogic {expected!r} but the theory is "
+                        f"{found!r}. Either reduce the theory to that "
+                        "sublogic, or take the LOSSY command-line route, "
+                        "which translates anyway and reports what it omitted: "
+                        "unicode_fol_kit.hets.owl_to_tptp(path, lossy=True) "
+                        "(hets-server's -Y switch; the REST API has no "
+                        f"equivalent). HETS' body was: "
+                        f"{body[:_EXCERPT_CHARS]!r}",
+                        comorphism=comorphism, expected=expected, found=found,
+                        body=body,
+                    ) from exc
+            raise generic from exc
         except urllib.error.URLError as exc:
             raise RuntimeError(f"hets: {method} {path} failed: {exc.reason}") from exc
         except http.client.HTTPException as exc:
@@ -240,10 +452,49 @@ class HetsClient:
         ).strip()
         return stored_path
 
+    def dg_raw(self, iri: str) -> str:
+        """``GET /dg/<iri>?format=json`` -> the body exactly as HETS sent it.
+
+        No JSON parsing and NO escape repair. This is the method to reach for
+        when :meth:`dg` raises and the body itself needs inspecting — see
+        :mod:`~unicode_fol_kit.hets.haskell_json` for the one known reason a
+        HETS development-graph body is not valid JSON.
+        """
+        return self._get(f"/dg/{_encode_iri(iri)}?format=json")
+
     def dg(self, iri: str) -> dict:
-        """``GET /dg/<iri>?format=json`` -> the parsed development-graph dict."""
-        body = self._get(f"/dg/{_encode_iri(iri)}?format=json")
-        return self._parse_json("dg", body)
+        """``GET /dg/<iri>?format=json`` -> the parsed development-graph dict.
+
+        ``json.loads`` is tried FIRST and the repair runs only when it
+        raises. That ordering is the whole design: a body the standard
+        library already accepts is never touched at all, so no legitimate
+        escape can be mangled by the repair, and the identity invariant is
+        structural rather than argued.
+
+        When the body IS invalid, :func:`~unicode_fol_kit.hets.haskell_json.repair_haskell_json`
+        gets one attempt at HETS' Haskell-``show`` escapes (``\\226\\128\\153``
+        for ``’`` and friends — see that module for why this is lossless
+        recovery of a known emitter). If it finds nothing to repair, the
+        original error is re-raised with its original wording; if it repairs
+        something and the result STILL does not parse, the error names the
+        repair, so a failure is attributable rather than mysterious.
+
+        Raises:
+            RuntimeError: the body is not valid JSON, with or without the
+                repair.
+            ~unicode_fol_kit.hets.haskell_json.HaskellJsonRepairError: a
+                Haskell escape in the body is not a Unicode scalar value.
+        """
+        body = self.dg_raw(iri)
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError:
+            pass
+        repair = repair_haskell_json(body)
+        if not repair:
+            return self._parse_json("dg", body)
+        return self._parse_json(f"dg (after repairing {repair.summary()})",
+                                repair.text)
 
     def provers(self, iri: str) -> List[str]:
         """``GET /provers/<iri>?format=json`` -> prover identifiers HETS can invoke."""
@@ -251,17 +502,56 @@ class HetsClient:
         data = self._parse_json("provers", body)
         return [p["identifier"] for p in data.get("provers", [])]
 
-    def translations(self, iri: str) -> List[str]:
+    def translations(self, iri: str, *, node: Optional[str] = None,
+                     allow_empty: bool = False) -> List[str]:
         """``GET /translations/<iri>`` -> comorphism names, from the ``<li>`` XML list.
 
         The one endpoint that answers XML rather than JSON (point 6 of the
         module docstring). Parsed with :mod:`xml.etree.ElementTree`, not a
         regex, since comorphism names are free text HETS controls, not this
         client.
+
+        HETS' own IDENTITY entry — an ``<li/>`` with no text — is DROPPED,
+        and so is a whitespace-only one. It is not a comorphism name and not
+        a legal ``translation=`` value: a caller looping
+        ``for t in translations(iri): theory(iri, node=n, translation=t)``
+        would send ``translation=`` for it, and
+        :func:`~unicode_fol_kit.hets.bridge.register_hets_comorphisms` would
+        register an edge literally named ``hets:``. "No translation" is
+        already expressible as ``translation=None``, so dropping it loses no
+        capability. Order and duplicates among the real names are preserved,
+        and each name is returned STRIPPED of surrounding whitespace (a name
+        with a stray space or newline round-trips into ``translation=`` as a
+        different, unknown comorphism).
+
+        The root element must be ``<Translations>``: any other well-formed
+        document is the server refusing the request, which is raised, never
+        read as an empty list.
+
+        Args:
+            iri: a stored-path IRI as returned by :meth:`upload`.
+            node: a development-graph node name, sent as ``?node=<name>``.
+                Purely additive and worth passing: measured on the real
+                server, 3.21 s without it against 0.12 s with it for the same
+                library. For a single-ontology library the node name is the
+                ontology IRI (which :meth:`dg` reports).
+            allow_empty: return ``[]`` instead of raising when HETS offers
+                nothing.
+
+        Raises:
+            HetsNoTranslationsError: the list came back with no comorphism in
+                it and ``allow_empty`` is false. See that class for why an
+                empty list is not an answer.
+            RuntimeError: the body was not valid XML, or was a well-formed
+                document whose root is not ``<Translations>`` (raised even
+                with ``allow_empty=True``).
         """
         import xml.etree.ElementTree as ET
 
-        body = self._get(f"/translations/{_encode_iri(iri)}")
+        path = f"/translations/{_encode_iri(iri)}"
+        if node is not None:
+            path += f"?node={urllib.parse.quote(node, safe='')}"
+        body = self._get(path)
         try:
             root = ET.fromstring(body)
         except ET.ParseError as exc:
@@ -269,7 +559,36 @@ class HetsClient:
                 f"hets: /translations response was not valid XML ({exc}); "
                 f"body excerpt: {body[:_EXCERPT_CHARS]!r}"
             ) from exc
-        return [li.text or "" for li in root.iter("li")]
+        if root.tag != "Translations":
+            # A well-formed document of another shape is the server REFUSING
+            # (or answering something else), not "this library has no
+            # comorphism": with allow_empty=True it used to come back as [],
+            # and without it as HetsNoTranslationsError, whose wording
+            # ("offers no comorphism") blames the library for it.
+            raise RuntimeError(
+                f"hets: GET {path} answered an XML document whose root is "
+                f"<{root.tag}>, not the <Translations> list this endpoint "
+                "returns — the server refused the request or answered "
+                "something else, so there is no list to read (and an empty "
+                "list is not substituted for it, allow_empty or not); "
+                f"body excerpt: {body[:_EXCERPT_CHARS]!r}")
+        names = [(li.text or "").strip() for li in root.iter("li")]
+        kept = [name for name in names if name]
+        if not kept and not allow_empty:
+            raise HetsNoTranslationsError(
+                f"hets: GET {path} offers no comorphism for this library "
+                f"({len(names)} <li> entr{'y' if len(names) == 1 else 'ies'}, "
+                "none of them a name). That is not the same as 'there are "
+                "none': this endpoint reports no reason at all, and the "
+                "reason lives on /theory, which answers HTTP 422 with the "
+                "sublogic mismatch spelled out — call "
+                "theory(iri, node=..., translation=...) and catch "
+                "HetsSublogicError to read it, or take the lossy "
+                "command-line route, unicode_fol_kit.hets.owl_to_tptp("
+                "path, lossy=True), which translates anyway and reports the "
+                "axioms it omitted. Pass allow_empty=True to get [] back "
+                "instead of this exception.")
+        return kept
 
     def theory(self, iri: str, *, node: Optional[str] = None,
                translation: Optional[str] = None) -> str:
@@ -295,6 +614,55 @@ class HetsClient:
             params.append(
                 f"translation={urllib.parse.quote(translation, safe='')}")
         return self._get(f"/theory/{_encode_iri(iri)}?{'&'.join(params)}")
+
+    def theory_tptp(self, iri: str, *, node: str,
+                    translation: str = "OWL22CASL:CASL2TPTP_FOF") -> str:
+        """``GET /theory`` with a TPTP-target comorphism, header stripped.
+
+        The text :meth:`theory` returns for a TPTP comorphism is NOT a TPTP
+        problem: HETS puts a DOL ``logic TPTP.FOF`` line and a CASL
+        ``%{ ... }%`` signature block in front of it, and
+        :func:`unicode_fol_kit.fol.tptp_input.parse_tptp` refuses both by
+        name. This method returns what the reader actually accepts, so the
+        usual call is ``parse_tptp(client.theory_tptp(iri, node=n))``.
+
+        Measured against the command-line route: for the real 1,554,903-char
+        rendering the stripped remainder is byte-identical (after leading
+        newlines) to the 1,367,212-byte file ``hets-server -o tptp`` writes,
+        so the REST route and the CLI route deliver the same text.
+
+        Args:
+            iri: a stored-path IRI as returned by :meth:`upload`.
+            node: the development-graph node name. Mandatory here (unlike
+                :meth:`theory`, where it stays optional for a future server):
+                this HETS version answers HTTP 500 without it.
+            translation: a comorphism whose TARGET is TPTP. The default is
+                the one the OWL route needs; ``"OWL22CASL"`` alone returns
+                CASL and is refused below rather than silently parsed to an
+                empty formula list.
+
+        Returns:
+            The TPTP problem text, header removed.
+
+        Raises:
+            HetsSublogicError: the server answered HTTP 422 because the
+                theory is richer than the comorphism covers.
+            RuntimeError: the stripped text holds no ``fof``/``cnf``/``tff``
+                statement — the comorphism's target was not TPTP, or HETS
+                answered something else entirely.
+        """
+        text = self.theory(iri, node=node, translation=translation)
+        _header, body = strip_hets_theory_header(text)
+        if not _TPTP_STATEMENT_RE.search(body):
+            first_line = body.strip().split("\n", 1)[0] if body.strip() else ""
+            raise RuntimeError(
+                f"hets: /theory for node {node!r} with "
+                f"translation={translation!r} did not return a TPTP problem "
+                "— after stripping HETS' theory header the text has no "
+                f"fof/cnf/tff statement; its first line is {first_line!r}. "
+                "Pass a translation whose target is TPTP (e.g. "
+                "'OWL22CASL:CASL2TPTP_FOF'); 'OWL22CASL' alone returns CASL.")
+        return body
 
     @staticmethod
     def _prove_body(node: str, *, reasoner: Optional[str], translation: Optional[str],

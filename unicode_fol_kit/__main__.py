@@ -9,7 +9,13 @@ it in one output format::
 
 The ``--mode`` flag selects the parser dialect (which maps onto the
 constructor flags of :class:`MSFLParser`, table-driven via ``_MODE_KWARGS``);
-``--to`` selects the rendering applied to the parsed AST.
+``--to`` selects the rendering applied to the parsed AST. A formula that does
+not parse prints its message to stderr and exits 1; a formula that parses but
+that the chosen rendering REFUSES (``NotImplementedError`` / ``ValueError`` from
+the renderer: a modal operator has no TPTP form, two distinct names would be
+written as one TPTP word, a constant Prover9 would read as a variable, a
+non-finite number) is reported exactly like the same failure of a subcommand:
+one message on stderr, exit 3, no traceback.
 
 **Subcommand mode** — a 1:1 mirror of :mod:`unicode_fol_kit.api`'s verbs onto
 the command line, for every ``argv[0]`` in
@@ -44,7 +50,8 @@ cannot parse, an unknown/unavailable backend
 (:class:`~unicode_fol_kit.atp.protocol.BackendUnavailable`), an unsupported
 translation fragment (``NotImplementedError``), or a bad ``--signature``
 JSON file all print one clean message to stderr and exit 3 — never a Python
-traceback.
+traceback. The legacy path treats a rendering that refuses its formula the same
+way (see above).
 """
 
 import argparse
@@ -148,7 +155,14 @@ def _run_legacy(argv) -> int:
         print(str(exc), file=sys.stderr)
         return 1
 
-    print(_render(ast, args.to))
+    try:
+        text = _render(ast, args.to)
+    except (NotImplementedError, ValueError) as exc:
+        # A renderer that refuses the formula is an unsupported fragment, the
+        # same failure the subcommand path reports (message on stderr, exit 3).
+        print(f"--to {args.to}: {exc}", file=sys.stderr)
+        return 3
+    print(text)
     return 0
 
 

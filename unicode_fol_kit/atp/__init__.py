@@ -89,8 +89,12 @@ from .finite_domain import (
 )
 from .clingo_backend import ClingoBackend, clingo_available, to_asp
 from .minizinc_backend import MinizincBackend, minizinc_available, to_minizinc
-from .tptp_tff import generate_tff_problem
+from .tptp_tff import generate_tff_problem, generate_tff_problem_with_mapping
 from ._tff_problem import generate_tff_arith_problem
+from ._tptp_problem import (
+    generate_tptp_problem, generate_tptp_problem_with_mapping,
+    TptpNameMap, apply_reverse_tptp,
+)
 from .ltl_tableau import (
     LTLTrace, ltl_tableau_closed, ltl_valid, ltl_decide, ltl_countermodel,
     ltl_trace_satisfies, LtlTableauBackend,
@@ -162,8 +166,10 @@ __all__ = [
     "FiniteDomainProblem", "fragment_check", "structure_from_solution", "verify_model",
     "ClingoBackend", "clingo_available", "to_asp",
     "MinizincBackend", "minizinc_available", "to_minizinc",
-    "generate_tff_problem",
+    "generate_tff_problem", "generate_tff_problem_with_mapping",
     "generate_tff_arith_problem",
+    "generate_tptp_problem", "generate_tptp_problem_with_mapping",
+    "TptpNameMap", "apply_reverse_tptp",
     "LTLTrace", "ltl_tableau_closed", "ltl_valid", "ltl_decide",
     "ltl_countermodel", "ltl_trace_satisfies", "LtlTableauBackend",
     "IntBackend", "LambekBackend", "IllBackend", "RelevantBackend",

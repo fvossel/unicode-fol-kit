@@ -70,6 +70,7 @@ from ..drt.nodes import DRS, Card, Condition, Eq, Impl, Neg, Or, Part, Pred
 from .mapping import _kit_predicate, _named_constant, ace_to_drs
 from .reverse_modal import ModalBox, ModalImpl
 from .runner import AceError
+from ..fol._truth_constants import truth_constants_in
 
 if TYPE_CHECKING:                                  # pragma: no cover - typing only
     from .translate import AceFormula
@@ -82,6 +83,32 @@ __all__ = ["drs_to_ace", "formula_to_ace", "ace_round_trip", "AceText",
 
 class AceVerbalizationError(AceError):
     """The DRS contains something no probed ACE surface maps back to."""
+
+
+def _refuse_truth_constants(formula, route: str) -> None:
+    """Refuse, by name, a formula that holds a truth constant (``$true`` / ``⊤``,
+    ``$false`` / ``⊥``).
+
+    ACE has no sentence that is true or false of itself: every ACE sentence says
+    something about the individuals a noun phrase introduces, and a DRS has no
+    condition that is a constant. The refusal is the one the formula routes already
+    give for anything outside the standard translation's image
+    (:class:`~unicode_fol_kit.drt.reverse.FolToDrsError`), with the reason that is
+    the constant's own rather than a predicate-naming rule.
+    """
+    found = truth_constants_in([formula])
+    if not found:
+        return
+    from ..drt.reverse import FolToDrsError
+
+    names = " and ".join(atom.predicate for atom in found)
+    raise FolToDrsError(
+        f"{route}: the truth constant {names} has no ACE sentence: Attempto Controlled "
+        "English has no sentence that is true or false by itself (every ACE sentence "
+        "says something about the individuals a noun phrase introduces), so no DRS "
+        "condition stands for a constant. Write the formula without the constant, or "
+        "verbalise it with unicode_fol_kit.fol.to_english, which reads it as "
+        "'truth' / 'falsity'.")
 
 
 @dataclass(frozen=True)
@@ -867,6 +894,7 @@ def formula_to_ace(formula) -> AceText:
     """
     from ..drt.reverse import fol_to_drs
 
+    _refuse_truth_constants(formula, "formula_to_ace")
     return drs_to_ace(fol_to_drs(formula))
 
 
@@ -996,6 +1024,7 @@ def modal_formula_to_ace(formula) -> AceText:
     """
     from .reverse_modal import fol_to_modal_drs
 
+    _refuse_truth_constants(formula, "modal_formula_to_ace")
     return modal_drs_to_ace(fol_to_modal_drs(formula))
 
 

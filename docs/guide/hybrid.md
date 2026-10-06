@@ -94,13 +94,26 @@ standard_translation(mp.parse("@i □P")).to_unicode_str()  # → '∀w0 (R(nom_
 standard_translation(mp.parse("◇i")).to_unicode_str()     # → '∃w0 (R(w, w0) ∧ w0 = nom_i)'
 ```
 
-The `nom_` prefix keeps the generated world constants **disjoint from user constants**: a formula whose atoms mention a ground constant `i` can never collide with the nominal `i` — the translation of `@i P(i)` is `P(i, nom_i)`, with both symbols intact.
+The `nom_` prefix keeps the generated world constants **disjoint from user constants**: a formula whose atoms mention a user symbol `i` can never collide with the nominal `i` — the translation of `@i P(i)` is `P(i, nom_i)`, with both symbols intact. Only a user symbol spelled `nom_i` itself, in a formula that also uses the nominal `i`, can collide with it, and it is refused by name, never merged with the nominal: `standard_translation`, `hybrid_is_valid` and the resolution prover raise a `ValueError`, the `hybrid` backend answers `unknown` with the reason `unsupported`, and the Fitch modal checker refuses a proof whose line and open assumptions together hold both:
+
+```python
+standard_translation(mp.parse("@i P(nom_i)"))
+# raises ValueError: standard_translation: user symbol(s) ['nom_i'] collide with the reserved world constant(s) for nominal(s) ['i'] …
+```
 
 Because a first-order constant denotes exactly one domain element, `nom_i` captures the "true at exactly one world" semantics of a nominal *for free* once the worlds are the FO domain — no extra axiom needed.
 
+The world variables the translation binds (`w0`, `w1`, …) never take the spelling of a name of the formula (a variable, a constant, a predicate, a nominal), of the current-world variable or of a name in `avoid=`, compared with the case folded, so a user symbol named `w0` is not captured. A user variable spelled like the current-world variable is renamed in the image (`x0`, … clear of the same names). `avoid=` takes the names of the other formulas of a problem that are translated separately, so that the renamed variable does not meet one of their symbols:
+
+```python
+standard_translation(mp.parse("□P(w0)")).to_unicode_str()                # → '∀w1 (R(w, w1) → P(w0, w1))'
+standard_translation(mp.parse("□P(w)")).to_unicode_str()                 # → '∀w0 (R(w, w0) → P(x0, w0))'
+standard_translation(mp.parse("□P(w)"), avoid=["x0"]).to_unicode_str()   # → '∀w0 (R(w, w0) → P(x1, w0))'
+```
+
 ## Deciding validity: `hybrid_is_valid`
 
-`hybrid_is_valid(formula, frame=…)` decides hybrid-modal validity over the frame classes **K / T / S4 / S5** by closing the standard translation over the current world under the frame axioms — `frame_axioms → ∀w ST(φ)(w)` — and asking the Z3 validity oracle. The nominal constants stay free, and first-order validity quantifies free constants universally: that is exactly "for every nominal assignment". First-order validity is only semi-decidable in general, but H(@) over K is **decidable** and these translation images are small enough that Z3 settles them instantly; `True` is always a real proof.
+`hybrid_is_valid(formula, frame=…)` decides hybrid-modal validity by closing the standard translation over the current world under the frame axioms — `frame_axioms → ∀w ST(φ)(w)` — and asking the Z3 validity oracle. `frame` constrains the **alethic** relation and takes any system of the shared registry (`fol.frames`), including a Scott–Lemmon spec; a system with no first-order condition (GL, S4.1, Grz) is refused by name. The other relations a formula may mention get {func}`~unicode_fol_kit.fol.modal_translation.frame_axioms`' conventions: temporal `T` reflexive-transitive with `N ⊆ T` and deontic `D` serial, both on by default, and the agent-indexed relations at K unless `systems={"epistemic": "S5"}` asks for more — see [Translating between logics](logic-graph.md). The nominal constants stay free, and first-order validity quantifies free constants universally: that is exactly "for every nominal assignment". First-order validity is only semi-decidable in general, but H(@) over K is **decidable** and these translation images are small enough that Z3 settles them instantly; `True` is always a real proof.
 
 The standard H(@) validities all come out true over **K**:
 
@@ -140,6 +153,31 @@ hybrid_is_valid(g, frame="S4")           # → True   (transitivity validates 4 
 ```
 
 On pure modal input (no nominals) `hybrid_is_valid` agrees with the native tableau `is_modal_valid` ({doc}`modal`) — the tests cross-check the two oracles on the standard schemas.
+
+The `hybrid` backend (`api.prove(formula, logic="hybrid")`, `HybridBackend`) builds the same goal from the same `frame_axioms` and takes the same three keywords, `frame=`, `systems=` and `temporal_closure=`, so it gives the same answers; its verdict tells a countermodel from a timeout, which the bare bool of `hybrid_is_valid` does not. The axioms are those of every relation the goal mentions, so `Ⓖφ → φ` and `Ⓞφ → Ⓟφ` are proved by the backend just as `hybrid_is_valid` proves them:
+
+```python
+from unicode_fol_kit import api
+
+knows = mp.parse("K_a P → P")      # the T schema for knowledge: the agent relation is K unless asked otherwise
+api.prove(knows, logic="hybrid").status                                  # → 'refuted'
+api.prove(knows, logic="hybrid", systems={"epistemic": "S5"}).status     # → 'proved'
+always = mp.parse("Ⓖ P → P")       # the temporal relation is reflexive and transitive unless temporal_closure=False
+api.prove(always, logic="hybrid").status                                 # → 'proved'
+api.prove(always, logic="hybrid", temporal_closure=False).status         # → 'refuted'
+api.prove(mp.parse("Ⓞ P → Ⓟ P"), logic="hybrid").status                  # → 'proved'   the deontic relation is serial
+```
+
+A sorted constant `c:S` (parsed by `MSFLParser(modal=True, many_sorted=True)`) is an element of `S` at every world, a constant being a rigid designator. `frame_axioms` adds `∀v0 S(c, v0)` for it, and `hybrid_is_valid`, `down_is_valid`, `down_decide` and the `hybrid` backend all decide under it:
+
+```python
+from unicode_fol_kit.fol.modal_translation import frame_axioms
+
+sp = MSFLParser(modal=True, many_sorted=True)
+[a.to_unicode_str() for a in frame_axioms(sp.parse("Human(carl:Human)"))]   # → ['∀v0 Human(carl, v0)']
+hybrid_is_valid(sp.parse("□ Human(carl:Human)"))   # → True    carl is a Human at every world, so at every successor too
+hybrid_is_valid(sp.parse("Mortal(carl:Human)"))    # → False   nothing makes carl Mortal
+```
 
 ## The honest boundary
 
@@ -185,7 +223,7 @@ Adding `↓` to H(@) gives full **H(@,↓)**, whose validity is **UNDECIDABLE** 
 | --- | --- | --- |
 | `satisfies_modal` (route A) | truth of `↓`, at a GIVEN finite model | everything — the ground truth; always terminates |
 | `down_is_valid(formula, frame=…)` (Z3) | validity — **PROVED only** | a `PROVED` verdict (sound: depends only on Z3's soundness, never on completeness for this undecidable fragment) |
-| `atp.kripke_enum.KripkeEnumBackend` / `modal_enum_search` (bounded search) | validity — **REFUTED only** | a `REFUTED` verdict (every countermodel is independently re-checked with `satisfies_modal`); exhausting the search is *never* a validity proof |
+| `atp.kripke_enum.KripkeEnumBackend` / `modal_enum_search` (bounded search) | validity — **REFUTED only** | a `REFUTED` verdict (every countermodel is independently re-checked with `satisfies_modal`); exhausting the search, or running out of `timeout`, is *never* a validity proof |
 
 ```python
 from unicode_fol_kit.fol.modal_translation import down_is_valid
@@ -206,8 +244,16 @@ result.model                                        # → KripkeModel(worlds={0}
 satisfies_modal(reflexive, result.model, 0)         # → False   (independently re-verified — a genuine countermodel)
 
 # down_decide runs down_is_valid first, then KripkeEnumBackend if needed, and
-# returns whichever route actually settled the question:
+# returns whichever route actually settled the question. Its timeout (ms) is the
+# limit of the whole call: the Kripke half gets what is left after the Z3 half.
 down_decide(reflexive, frame="K", max_worlds=2).status   # → 'refuted'
+
+# modal_enum_search takes timeout (ms) too. A search the deadline ended says so with
+# timed_out=True; exhausted stays False, and neither is a validity proof:
+tautology = mp.parse("↓x.(@x P ↔ P)")
+modal_enum_search(tautology, frame="K", max_worlds=2).exhausted                         # → True
+cut_off = modal_enum_search(tautology, frame="K", max_worlds=2, timeout=0)   # a limit that is already over
+(cut_off.timed_out, cut_off.exhausted)                                       # → (True, False)
 ```
 
 `↓x.(@x p ↔ p)` is a tautology over **every** frame/valuation (worked out by hand: `@x` re-anchors at `x`, and `↓x` just bound `x` to the *current* world — so "`p` at `x`" and bare "`p`" ask the identical question); `↓x.↓x.φ` makes the outer binding entirely inert (the inner `↓x` rebinds first); `↓x.(P ∧ ↓y.@x Q)` (`y ≠ x`) shows the inner binder canNOT capture the outer `@x`. `tests/test_hybrid_down.py` checks all of these — including a brute-force sweep over every relation/valuation on 1–3 worlds, cross-checked against an independent, from-scratch reference evaluator, not just `satisfies_modal` agreeing with itself.

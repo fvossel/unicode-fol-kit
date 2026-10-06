@@ -35,6 +35,17 @@ ranges over ``1 .. max_worlds``. Each candidate model is checked with
 ``satisfies_modal(formula, model, 0)``; the first candidate where it comes back
 ``False`` is returned as the countermodel.
 
+**Many-sorted ground formulas.** ``satisfies_modal`` relativizes a formula with a
+sorted constant (``Mortal(socrates:Human)``) before it reads an atom, so the atom
+it looks up is ``Mortal(socrates)``; the enumerator relativizes first too, and
+varies THAT key. A sorted constant ``c:S`` is an element of ``S`` at every world
+(``semantics.kripke``'s module docstring), so the guard atom ``S(c)`` is not
+varied: it is true at every world of every candidate, and a countermodel this
+search returns is therefore a model the many-sorted routes (``qml_is_valid``,
+``api.prove``) would consider. A sorted QUANTIFIER still makes ``satisfies_modal``
+ask for object domains, which these propositional models do not carry, and is
+reported ``unsupported``.
+
 **Three-way honesty, not two.** A search that finds no countermodel does NOT
 mean the formula is valid — it means one of two different things, and
 :class:`EnumSearchResult` keeps them apart instead of collapsing them into a
@@ -50,12 +61,23 @@ single ``None``:
   budget ran out before the ``max_worlds`` search space was fully covered, or
   ``max_atoms`` rejected the formula up front. Weaker than "exhausted": the
   small worlds were not even fully explored.
+- ``timed_out=True`` (with ``model=None``) — the wall-clock ``timeout`` ran out
+  first. The clock is read before every candidate model, while the relations
+  and valuations of a world count are built, and while the next world count's
+  relations are enumerated, so a search ends within the cost of one candidate
+  (or of 256 edge sets of the relation enumeration) of its deadline however
+  large the space is; a single evaluation of the formula in one model is not
+  interrupted.
 
 A formula outside the propositional/ground modal fragment ``satisfies_modal``
 itself understands (a first-order quantifier with no per-world domain, an
 unassigned hybrid nominal, a Lewis counterfactual, …) makes the evaluator raise
 — caught here and reported as ``unsupported`` rather than silently skipped or
-misreported as a bound.
+misreported as a bound. So is a formula in which two different atoms print alike (the
+numeral ``1`` and a constant named ``1``, a free variable ``x`` and a constant named ``x``)
+or two different agents are named alike: a valuation and a relation family are keyed by the
+written form, so the pair would be ONE key of every candidate and "no countermodel" would be
+said of a formula that has one.
 
 **Determinism.** Every enumeration order (relations by bitmask over a
 fixed, sorted pair list; valuations by bitmask over a fixed, sorted atom list;
@@ -68,7 +90,9 @@ same model.
 — it grows fast in both the number of distinct relation families the formula
 mixes and its atom count. ``max_atoms`` and ``max_models`` are the two knobs
 that keep a pathological formula from hanging; both give an honest
-``exhausted=False`` rather than either blocking forever or answering wrong.
+``exhausted=False`` rather than either blocking forever or answering wrong. The
+third, ``timeout`` (milliseconds), is the only one that bounds the TIME rather
+than the size of the search; it gives ``timed_out=True``.
 
 Public API: :class:`EnumSearchResult`, :func:`modal_enum_search`,
 :func:`modal_enum_countermodel`, :class:`KripkeEnumBackend`, plus the witness
@@ -81,12 +105,16 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Dict, FrozenSet, Optional, Sequence, Tuple
 
+from .._deadline import instant as _instant, passed as _passed
 from ..fol.nodes import (
     Node, Atom,
     Box, Diamond, Knows, Believes, Says, Wants, Obligatory, Permitted,
     Next, Always, Eventually, Until, Historically, Once, Previous, Since,
     EverybodyKnows, DistributedKnowledge, CommonKnowledge,
+    sort_axioms, sort_membership_axioms,
 )
+from ..fol._atom_keys import AtomKeys, refuse_alike_agents
+from ..fol._truth_constants import truth_value as _truth_value
 from ..semantics.kripke import KripkeModel, satisfies_modal
 from ..fol.frames import (
     FRAMES as _FRAMES, resolve_frame, holds_on_finite_frame,
@@ -140,7 +168,8 @@ def _collect(formula: Node) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
     families: set = set()
     for node in formula.walk():
         if isinstance(node, Atom):
-            atoms.add(node.to_unicode_str())
+            if _truth_value(node) is None:      # `$true` / `$false` are not varied
+                atoms.add(node.to_unicode_str())
         elif isinstance(node, (Box, Diamond)):
             families.add(_ALETHIC)
         elif isinstance(node, Knows):
@@ -250,18 +279,99 @@ def _valid_relations(n: int, conditions: Tuple[str, ...]) -> Tuple[FrozenSet[Tup
     return tuple(out)
 
 
-def _valuations(atoms: Tuple[str, ...], n: int):
+#: The world counts up to which :func:`_valid_relations_until` uses :func:`_valid_relations`
+#: even under a deadline: ``2 ** (n * n)`` masks are a few hundred, so it cannot overrun.
+_UNTIMED_RELATION_WORLDS = 3
+
+#: The relation sets that :func:`_valid_relations_until` completed under a deadline.
+_TIMED_RELATIONS: Dict[Tuple[int, Tuple[str, ...]], Tuple[FrozenSet[Tuple[int, int]], ...]] = {}
+
+
+def _valid_relations_until(n: int, conditions: Tuple[str, ...],
+                           deadline: Optional[float]) -> Optional[Tuple[FrozenSet[Tuple[int, int]], ...]]:
+    """:func:`_valid_relations`, or ``None`` if ``deadline`` (a ``perf_counter`` instant) passes first.
+
+    Without a deadline, and for a world count too small to matter, this is
+    :func:`_valid_relations` itself. Past that the ``2 ** (n * n)`` masks are enumerated here,
+    reading the clock every 256 of them; a completed enumeration is kept, so a later call with
+    the same ``n`` and ``conditions`` does not repeat it, and an interrupted one leaves nothing
+    behind.
+    """
+    if deadline is None or n <= _UNTIMED_RELATION_WORLDS:
+        return _valid_relations(n, conditions)
+    key = (n, conditions)
+    if key in _TIMED_RELATIONS:
+        return _TIMED_RELATIONS[key]
+    pairs = [(a, b) for a in range(n) for b in range(n)]
+    out = []
+    for mask in range(1 << len(pairs)):
+        if not mask & 0xFF and _passed(deadline):
+            return None
+        edges = frozenset(p for i, p in enumerate(pairs) if (mask >> i) & 1)
+        if _holds_conditions(edges, n, conditions):
+            out.append(edges)
+    _TIMED_RELATIONS[key] = tuple(out)
+    return _TIMED_RELATIONS[key]
+
+
+def _scan_sorted(formula: Node) -> Tuple[Node, Tuple[str, ...]]:
+    """The formula the evaluator will read, and the atom keys a legal model fixes true.
+
+    ``satisfies_modal`` relativizes a many-sorted formula before it reads an atom,
+    so ``Mortal(socrates:Human)`` is looked up under the key ``Mortal(socrates)``
+    — NOT under the key the unrelativized formula prints. The atoms the
+    enumerator varies must be the atoms the evaluator reads, so a sorted formula
+    is relativized HERE, once, before :func:`_collect` scans it.
+
+    A sorted constant ``c:S`` also denotes an element of ``S`` at every world
+    (it is a rigid designator; see the ``semantics.kripke`` module docstring), so
+    the guard atom ``S(c)`` is not a free atom to enumerate: it is true in every
+    world of every candidate. The second result lists those keys, sorted.
+
+    A formula without any many-sorted node is returned UNCHANGED, with no fixed
+    keys, so every unsorted caller sees exactly the search it always did.
+    """
+    if not sort_axioms(formula):
+        return formula, ()
+    fixed = tuple(sorted({atom.to_unicode_str()
+                          for atom in sort_membership_axioms(formula)}))
+    return formula._relativize([]), fixed
+
+
+#: The number of valuations up to which one world count's valuations are held in a list
+#: and reused for every relation choice (see :func:`modal_enum_search`).
+_CACHED_VALUATIONS = 1 << 14
+
+
+def _bitmask_tuples(count: int, n: int):
+    """Yield every tuple of ``n`` integers of ``range(count)``, the first slowest.
+
+    The order of ``itertools.product(range(count), repeat=n)``, produced one tuple at a time:
+    ``product`` first copies its input into a tuple, which for the ``2 ** m`` bitmasks of ``m``
+    atoms is more memory than a machine has long before ``m`` is large enough to matter.
+    """
+    if n == 0:
+        yield ()
+        return
+    for head in range(count):
+        for tail in _bitmask_tuples(count, n - 1):
+            yield (head,) + tail
+
+
+def _valuations(atoms: Tuple[str, ...], n: int, fixed: Tuple[str, ...] = ()):
     """Yield every valuation ``{world: frozenset(atoms true there)}`` over ``range(n)``.
 
     Deterministic bitmask order: for ``n`` worlds and ``m`` atoms, each of the
     ``(2**m)**n`` combinations is produced by ``itertools.product`` over a
     per-world bitmask in ``range(2**m)``, world 0 varying slowest — the same
     fixed order every call, so re-running a search reproduces the same model.
+    The atom keys in ``fixed`` are true at every world of every valuation and are
+    not enumerated.
     """
     m = len(atoms)
-    for combo in itertools.product(range(1 << m), repeat=n):
+    for combo in _bitmask_tuples(1 << m, n):
         yield {
-            w: frozenset(atoms[i] for i in range(m) if (bits >> i) & 1)
+            w: frozenset(atoms[i] for i in range(m) if (bits >> i) & 1) | frozenset(fixed)
             for w, bits in enumerate(combo)
         }
 
@@ -293,6 +403,11 @@ class EnumSearchResult:
         naming exactly why it is out of scope.
     ``detail``
         a short free-text explanation of which of the above happened.
+    ``timed_out``
+        ``True`` iff ``model is None`` because the ``timeout`` of the call
+        passed before the search was complete. Always ``False`` for a search
+        without a ``timeout``, for a model that was found and for
+        ``exhausted=True``.
     """
 
     model: Optional[KripkeModel]
@@ -300,6 +415,7 @@ class EnumSearchResult:
     checked: int
     unsupported: Optional[str] = None
     detail: str = ""
+    timed_out: bool = False
 
     def to_dict(self) -> dict:
         """Serialise to a JSON-compatible dict (the model, if any, as worlds/relations/valuation)."""
@@ -309,6 +425,7 @@ class EnumSearchResult:
             "checked": self.checked,
             "unsupported": self.unsupported,
             "detail": self.detail,
+            "timed_out": self.timed_out,
             "model": kripke_model_to_dict(self.model) if self.model is not None else None,
         }
 
@@ -380,7 +497,8 @@ def kripke_model_from_dict(data: dict) -> KripkeModel:
 def modal_enum_search(formula: Node, *, frame: str = "K",
                       systems: Optional[Dict[str, str]] = None,
                       max_worlds: int = 3, max_atoms: Optional[int] = None,
-                      max_models: int = 200000) -> EnumSearchResult:
+                      max_models: int = 200000,
+                      timeout: Optional[float] = None) -> EnumSearchResult:
     """Exhaustively search finite Kripke models of increasing size for a countermodel.
 
     Enumerates every relation (per family, per the ``frame``/``systems`` frame
@@ -413,6 +531,13 @@ def modal_enum_search(formula: Node, *, frame: str = "K",
             (across every ``n``) before giving up. Bounds the worst case
             combinatorially, at the cost of an honest ``exhausted=False``
             instead of a complete search.
+        timeout: a wall-clock limit in milliseconds, counted from the start of
+            the call (default ``None``: no limit, the search is exactly the one
+            it was without the argument). The clock is read before every
+            candidate model and while the relations and valuations of a world
+            count are built, so the search returns within the cost of one
+            candidate of its deadline; the result has ``timed_out=True``,
+            ``exhausted=False`` and no model.
 
     Returns:
         An :class:`EnumSearchResult` — see its docstring for how to read
@@ -429,7 +554,36 @@ def modal_enum_search(formula: Node, *, frame: str = "K",
             the labelled tableau), which still refuse them.
     """
     _check_frame(frame, systems)
-    atoms, families = _collect(formula)
+    try:
+        scanned, fixed = _scan_sorted(formula)
+    except _UNSUPPORTED_EXC + (RuntimeError,) as exc:
+        # relativizing walks the whole tree and meets a node it has no rule for
+        # (a Łukasiewicz operator under a sorted binder): the evaluator refuses
+        # that formula too, so report it the way an evaluator refusal is reported.
+        return EnumSearchResult(
+            model=None, exhausted=False, checked=0,
+            unsupported=f"{type(exc).__name__}: {exc}",
+            detail=("a many-sorted formula could not be relativized — it is "
+                    "outside the propositional/ground modal fragment this "
+                    "enumerator supports"),
+        )
+    try:
+        AtomKeys("modal_enum_search").letters([scanned])
+        refuse_alike_agents([scanned], "modal_enum_search")
+    except NotImplementedError as exc:
+        # A valuation and a relation family are named by text: two different atoms (or two
+        # different agents) that print alike would be ONE key of every candidate model, and a
+        # search that read them as one would report "no countermodel" for a formula that has one.
+        return EnumSearchResult(
+            model=None, exhausted=False, checked=0,
+            unsupported=f"{type(exc).__name__}: {exc}",
+            detail=("two different atoms (or agents) of the formula are written alike, so a "
+                    "model keyed by the written form could not tell them apart — the formula "
+                    "is outside the fragment this enumerator supports"),
+        )
+    atoms, families = _collect(scanned)
+    # the membership keys are fixed true, not varied: they cost no search space
+    atoms = tuple(a for a in atoms if a not in fixed)
 
     if max_atoms is not None and len(atoms) > max_atoms:
         return EnumSearchResult(
@@ -441,14 +595,33 @@ def modal_enum_search(formula: Node, *, frame: str = "K",
 
     conditions = {fam: _conditions_for(fam, frame, systems) for fam in families}
     checked = 0
+    deadline = _instant(timeout)
+
+    def out_of_time() -> EnumSearchResult:
+        return EnumSearchResult(
+            model=None, exhausted=False, checked=checked, unsupported=None,
+            detail=(f"the {timeout} ms limit passed after {checked} models; the search "
+                    f"up to max_worlds={max_worlds} did not complete"),
+            timed_out=True)
 
     for n in range(1, max_worlds + 1):
-        rel_lists = [_valid_relations(n, conditions[fam]) for fam in families]
-        valuations = list(_valuations(atoms, n))
+        rel_lists = []
+        for fam in families:
+            family_relations = _valid_relations_until(n, conditions[fam], deadline)
+            if family_relations is None:
+                return out_of_time()
+            rel_lists.append(family_relations)
+        # A valuation list that is small is built once and reused for every relation
+        # choice; a large one is generated again for each, instead of held in memory.
+        valuations = (list(_valuations(atoms, n, fixed))
+                      if (1 << len(atoms)) ** n <= _CACHED_VALUATIONS else None)
         rel_choices = itertools.product(*rel_lists) if rel_lists else [()]
         for rel_choice in rel_choices:
             relations = dict(zip(families, rel_choice))
-            for valuation in valuations:
+            for valuation in (valuations if valuations is not None
+                              else _valuations(atoms, n, fixed)):
+                if _passed(deadline):
+                    return out_of_time()
                 if checked >= max_models:
                     return EnumSearchResult(
                         model=None, exhausted=False, checked=checked, unsupported=None,
@@ -487,20 +660,21 @@ def modal_enum_search(formula: Node, *, frame: str = "K",
 def modal_enum_countermodel(formula: Node, *, frame: str = "K",
                             systems: Optional[Dict[str, str]] = None,
                             max_worlds: int = 3, max_atoms: Optional[int] = None,
-                            max_models: int = 200000) -> Optional[KripkeModel]:
+                            max_models: int = 200000,
+                            timeout: Optional[float] = None) -> Optional[KripkeModel]:
     """Return a verified Kripke countermodel for ``formula``, or ``None``.
 
     Thin convenience wrapper over :func:`modal_enum_search` for callers who
     only want the model (or its absence) and not the exhausted/unsupported/
     checked detail — e.g. a differential test against
     :func:`unicode_fol_kit.atp.modal_tableau.modal_countermodel`. ``None`` here
-    conflates "exhausted" and "budget hit" and "unsupported"; use
-    :func:`modal_enum_search` directly to tell them apart (this is exactly what
-    :class:`KripkeEnumBackend` does for its ``reason``/``detail`` fields).
+    conflates "exhausted" and "budget hit" and "timed out" and "unsupported";
+    use :func:`modal_enum_search` directly to tell them apart (this is exactly
+    what :class:`KripkeEnumBackend` does for its ``reason``/``detail`` fields).
     """
     return modal_enum_search(formula, frame=frame, systems=systems,
                              max_worlds=max_worlds, max_atoms=max_atoms,
-                             max_models=max_models).model
+                             max_models=max_models, timeout=timeout).model
 
 
 class KripkeEnumBackend(ProverBackend):
@@ -525,7 +699,8 @@ class KripkeEnumBackend(ProverBackend):
     ``max_worlds`` as a ``bound_hit`` example). The ``detail`` field still says
     whether the bound was hit by a COMPLETE search (``exhausted``) or by the
     ``max_models``/``max_atoms`` budget cutting a search short — see
-    :class:`EnumSearchResult`.
+    :class:`EnumSearchResult`. The call's ``timeout`` is one more bound: a search
+    it ended is ``UNKNOWN`` with ``reason="timeout"``.
 
     ``premises`` are folded into the LOCAL consequence goal
     ``(∧ premises) → formula``, exactly like ``ModalTableauBackend`` and
@@ -546,7 +721,7 @@ class KripkeEnumBackend(ProverBackend):
 
         goal = _implication(formula, premises)
         start = time.perf_counter()
-        result = modal_enum_search(goal, **options)
+        result = modal_enum_search(goal, timeout=timeout, **options)
         elapsed = time.perf_counter() - start
 
         if result.unsupported is not None:
@@ -557,5 +732,8 @@ class KripkeEnumBackend(ProverBackend):
             return Verdict(REFUTED, self.name, logic="modal", wall_time=elapsed,
                            countermodel={"kind": "kripke", "repr": repr(result.model),
                                         "data": kripke_model_to_dict(result.model)})
+        if result.timed_out:
+            return Verdict(UNKNOWN, self.name, logic="modal", reason="timeout",
+                           wall_time=elapsed, detail=result.detail)
         return Verdict(UNKNOWN, self.name, logic="modal", reason="bound_hit",
                        wall_time=elapsed, detail=result.detail)

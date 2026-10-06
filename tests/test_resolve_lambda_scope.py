@@ -231,7 +231,7 @@ class TestResolveIntegration:
         #   arg  = Atom("Q", [Variable("x")])          ← x is FREE in the argument
         #
         # Naive substitution of P→Atom("Q",[Variable("x")]) inside Quantifier(∀x,...)
-        # would capture x.  Capture-avoiding substitution alpha-renames ∀x to ∀x_0,
+        # would capture x.  Capture-avoiding substitution alpha-renames ∀x to ∀x0,
         # so the original x from Q(x) remains free in the result.
         #
         # Without alpha-conversion the result would be Quantifier(∀x, App(Atom("Q",[x]),x))

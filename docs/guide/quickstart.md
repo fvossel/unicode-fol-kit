@@ -65,7 +65,8 @@ is_valid(parse(
 
 Note that a single lowercase letter like `x` is a *variable*; an individual constant needs
 a multi-character name such as `socrates`. (This matters for the model finder below: a
-formula like `P(a)` with the variable `a` is read with an implicit universal closure.)
+formula like `P(a)` with the variable `a` is read as a parameter, one unknown element
+shared by every formula that mentions `a`.)
 
 ### More validity examples
 
@@ -106,7 +107,7 @@ is_valid(parse("∀y ∃x P(x, y) → ∃x ∀y P(x, y)"))   # → False
 Invalid formulas (no logical consequence):
 
 ```python
-is_valid(parse("P → Q → P"))                  # → False
+is_valid(parse("(P → Q) → P"))                # → False
 is_valid(parse("(P ∨ Q) ∧ R"))                # → False
 is_valid(parse("∀x P(x)"))                    # → False (depends on interpretation)
 ```
@@ -279,8 +280,8 @@ two.constants    # → {'alice': 0, 'bob': 1}
 two.predicates   # → {('P', 1): {(0,)}}
 ```
 
-An unsatisfiable theory yields `None` (note `a` here is a *variable*, so the two formulas
-are jointly contradictory under universal closure):
+An unsatisfiable theory yields `None` (note `a` here is a *variable*, a parameter: both
+formulas speak about the same element `a`, so they contradict each other):
 
 ```python
 find_model([parse("P(a)"), parse("¬P(a)")])   # → None
@@ -293,8 +294,8 @@ Building increasingly complex models:
 ```python
 # Single predicate with two individuals
 struct = find_model([parse("P(alice)"), parse("P(bob)"), parse("Q(alice)"), parse("¬Q(bob)")])
-print(f"Domain: {struct.domain}")           # → (0, 1)
-print(f"Constants: {struct.constants}")     # → {'alice': 0, 'bob': 1}
+print(f"Domain: {struct.domain}")           # → Domain: (0, 1)
+print(f"Constants: {struct.constants}")     # → Constants: {'alice': 0, 'bob': 1}
 ```
 
 Symmetric and reflexive relations:
@@ -302,11 +303,11 @@ Symmetric and reflexive relations:
 ```python
 # Find a model where a relation is symmetric: ∀x ∀y (R(x,y) → R(y,x))
 struct = find_model([parse("∀x ∀y (R(x, y) → R(y, x))")])
-print(f"Relation model found: {struct is not None}")   # → True
+print(f"Relation model found: {struct is not None}")   # → Relation model found: True
 
 # Transitive relation
 struct = find_model([parse("∀x ∀y ∀z (T(x, y) ∧ T(y, z) → T(x, z))")])
-print(f"Transitive model found: {struct is not None}")   # → True
+print(f"Transitive model found: {struct is not None}")   # → Transitive model found: True
 ```
 
 Unsatisfiable constraints:
@@ -329,9 +330,10 @@ struct = find_model([
     parse("Parent(bob, ann)"),
     parse("∀x ∀y ∀z (Parent(x, y) ∧ Parent(y, z) → GrandParent(x, z))"),
 ])
-print(f"Constants: {struct.constants}")     # → {'tom': 0, 'bob': 1, 'ann': 2}
+print(f"Constants: {struct.constants}")     # → Constants: {'ann': 0, 'bob': 0, 'tom': 0}
 print(f"GrandParent tuples: {struct.predicates[('GrandParent', 2)]}")
-# → {(0, 2)}  (tom is grandparent of ann)
+# → {(0, 0)}  (names need not be distinct: the smallest model has one element, 0,
+#    and tom is grandparent of ann in it)
 ```
 
 ## Finding counterexamples
@@ -364,14 +366,14 @@ counter = find_countermodel(
     [parse("P → Q")],
     parse("Q → P")
 )
-print(f"Counterexample exists: {counter is not None}")  # → True
+print(f"Counterexample exists: {counter is not None}")  # → Counterexample exists: True
 
 # Quantifier swap: not all orders are equivalent
 counter = find_countermodel(
     [parse("∀x ∃y R(x, y)")],
     parse("∃y ∀x R(x, y)")
 )
-print(f"Counterexample exists: {counter is not None}")   # → True
+print(f"Counterexample exists: {counter is not None}")   # → Counterexample exists: True
 ```
 
 ## Read a formula back as English
@@ -393,8 +395,9 @@ to_english(parse("P ∧ Q → R"))
 # → 'if (P and Q), then R'
 ```
 
-That last line also reveals the precedence: `∧` binds tighter than `→`, so the verbalizer
-parenthesizes the antecedent.
+That last line also reveals the precedence: `∧` binds tighter than `→`, so the antecedent is
+`P ∧ Q`. The verbalizer parenthesizes every binary connective that is an operand of another
+connective, whatever the precedence.
 
 ### More verbalization examples
 
@@ -402,8 +405,8 @@ Propositional formulas:
 
 ```python
 to_english(parse("P ∨ Q"))           # → 'P or Q'
-to_english(parse("¬P"))              # → 'not P'
-to_english(parse("P ∧ Q ∧ R"))       # → 'P and Q and R'
+to_english(parse("¬P"))              # → 'it is not the case that P'
+to_english(parse("P ∧ Q ∧ R"))       # → '(P and Q) and R'
 to_english(parse("P ⊕ Q"))           # → 'either P or Q, but not both'
 to_english(parse("P ↔ Q"))           # → 'P if and only if Q'
 ```
@@ -418,7 +421,7 @@ to_english(parse("∃x (Teacher(x) ∧ Retired(x))"))
 # → 'for some x, x is teacher and x is retired'
 
 to_english(parse("∀x ∃y (Parent(x, y) → Older(x, y))"))
-# → 'for every x, for some y, Parent(x, y) if then x is older'
+# → 'for every x, for some y, if Parent(x, y), then Older(x, y)'
 ```
 
 Nested quantifiers:
@@ -496,13 +499,13 @@ Converting propositional operators:
 
 ```python
 ast = parse("((P ∧ Q) ∨ ¬R)")
-print(ast.to_unicode_str())     # → '((P ∧ Q) ∨ ¬R)'
-print(ast.to_latex())           # → '(P \\land Q \\lor \\neg R)'
+print(ast.to_unicode_str())     # → '(P ∧ Q) ∨ ¬R'
+print(ast.to_latex())           # → '(P \\land Q) \\lor \\lnot R'
 
 # All quantifier and connective symbols
 ast = parse("∀x ∃y (P(x) ↔ ¬Q(y))")
 print(ast.to_unicode_str())     # → '∀x ∃y (P(x) ↔ ¬Q(y))'
-print(ast.to_latex())           # → '\\forall x \\exists y (P(x) \\leftrightarrow \\neg Q(y))'
+print(ast.to_latex())           # → '\\forall x\\, \\exists y\\, (P(x) \\leftrightarrow \\lnot Q(y))'
 ```
 
 LaTeX input variants:
@@ -527,14 +530,15 @@ parse_latex(r"\exists x P(x)").to_unicode_str()   # → '∃x P(x)'
 ## Working with propositional operators and precedence
 
 The kit supports classical propositional logic operators with precedence (tightest to loosest):
-`¬`, `∧`, `∨`, `⊕`, `→`, `↔`
+`¬`; `∧`, `∨` and `⊕` on one level (a chain of one of them needs no parentheses, two
+different ones in a row do: `P ∧ Q ∨ R` is a syntax error); `→`; `↔`
 
 ```python
 # Precedence is respected in parsing and rendering
-parse("((P ∨ Q) ∧ R)").to_unicode_str()       # → '((P ∨ Q) ∧ R)'
+parse("((P ∨ Q) ∧ R)").to_unicode_str()       # → '(P ∨ Q) ∧ R'
 
 # Implication is right-associative
-parse("(P → (Q → R))").to_unicode_str()       # → '(P → (Q → R))'
+parse("(P → (Q → R))").to_unicode_str()       # → 'P → Q → R'
 
 # Exclusive OR (XOR)
 to_english(parse("P ⊕ Q"))                  # → 'either P or Q, but not both'
@@ -554,15 +558,15 @@ print(ast.to_unicode_str())   # → '¬P'
 
 # Conjunction and disjunction
 ast = parse("((P ∧ Q) ∨ R)")
-print(ast.to_unicode_str())   # → '((P ∧ Q) ∨ R)'
+print(ast.to_unicode_str())   # → '(P ∧ Q) ∨ R'
 
 # Implication chain
 ast = parse("(P → (Q → (R → S)))")
-print(ast.to_unicode_str())   # → '(P → (Q → (R → S)))'
+print(ast.to_unicode_str())   # → 'P → Q → R → S'
 
 # XOR (useful for distinguishing alternatives)
 ast = parse("(A ⊕ (B ⊕ C))")
-print(ast.to_unicode_str())   # → '(A ⊕ (B ⊕ C))'
+print(ast.to_unicode_str())   # → 'A ⊕ (B ⊕ C)'
 ```
 
 Truth tables for operators:
@@ -677,11 +681,11 @@ is_modal_valid(mp("□P → ◇P"), frame="K")   # → False
 is_modal_valid(mp("P → □◇P"), frame="B")   # → True
 is_modal_valid(mp("P → □◇P"), frame="K")   # → False
 
-# Axiom 4 (transitivity): □□P → □P
-is_modal_valid(mp("□□P → □P"), frame="K4")   # → True
-is_modal_valid(mp("□□P → □P"), frame="K")    # → False
+# Axiom 4 (transitivity): □P → □□P
+is_modal_valid(mp("□P → □□P"), frame="K4")   # → True
+is_modal_valid(mp("□P → □□P"), frame="K")    # → False
 
-# S5 (Euclidean): the strongest normal modal logic
+# S5 (equivalence relation, in particular Euclidean)
 is_modal_valid(mp("◇□P → □P"), frame="S5")   # → True
 is_modal_valid(mp("◇□P → □P"), frame="T")    # → False
 ```
@@ -696,7 +700,7 @@ is_modal_valid(mp("◇(P ∨ Q) → (◇P ∨ ◇Q)"), frame="K")   # → True
 is_modal_valid(mp("(□P ∨ □Q) → □(P ∨ Q)"), frame="K")   # → True
 
 # Nested modalities
-is_modal_valid(mp("□(□P → P) → □P"), frame="T")   # → True (Löb's axiom in T)
+is_modal_valid(mp("□(□P → P) → □P"), frame="T")   # → False (a reflexive world with P false refutes Löb's axiom)
 ```
 
 ## Another taster: a three-valued truth table
@@ -793,7 +797,7 @@ print(tt.render())
 # Implication: P → Q = ¬P ∨ Q
 tt = truth_table(parse("P → Q"), logic="K3")
 # Tautologies and contradictions in K3
-truth_table(parse("P → P"), logic="K3").is_tautology   # → True
+truth_table(parse("P → P"), logic="K3").is_tautology   # → False (½ → ½ is ½)
 truth_table(parse("P ∧ ¬P"), logic="K3").is_contradiction   # → True
 truth_table(parse("P ∨ ¬P"), logic="K3").is_tautology   # → False (only in classical!)
 ```
@@ -806,16 +810,17 @@ parse = MSFLParser().parse
 # In LP, excluded middle is a tautology (unlike K3)
 truth_table(parse("P ∨ ¬P"), logic="LP").is_tautology   # → True
 
-# But non-contradiction is not (something can be both T and F)
-truth_table(parse("¬(P ∧ ¬P)"), logic="LP").is_tautology   # → False
+# Non-contradiction is one too: at ½, P ∧ ¬P and its negation are both ½, which LP designates
+truth_table(parse("¬(P ∧ ¬P)"), logic="LP").is_tautology   # → True
 
 tt_lp = truth_table(parse("P ∧ ¬P"), logic="LP")
 print(tt_lp.render())
 # | P | P ∧ ¬P |
 # |---|---|
-# | 1 | 1 |
-# | ½ | 0 |
+# | 1 | 0 |
+# | ½ | ½ |
 # | 0 | 0 |
+# (the ½ row is designated, so P ∧ ¬P is satisfiable in LP: something can be both T and F)
 ```
 
 Truth table properties:
@@ -825,15 +830,15 @@ parse = MSFLParser().parse
 
 # Check tautology
 tt = truth_table(parse("(P → Q) ∨ (Q → P)"))
-print(f"Is tautology: {tt.is_tautology}")        # → True
+print(f"Is tautology: {tt.is_tautology}")        # → Is tautology: True
 
 # Check contradiction
 tt = truth_table(parse("P ∧ ¬P"))
-print(f"Is contradiction: {tt.is_contradiction}")   # → True
+print(f"Is contradiction: {tt.is_contradiction}")   # → Is contradiction: True
 
 # Check satisfiability
 tt = truth_table(parse("P ∨ Q"))
-print(f"Is satisfiable: {tt.is_satisfiable}")    # → True
+print(f"Is satisfiable: {tt.is_satisfiable}")    # → Is satisfiable: True
 ```
 
 ## Formula normalization and transformation

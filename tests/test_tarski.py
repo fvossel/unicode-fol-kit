@@ -14,7 +14,7 @@ from unicode_fol_kit.fol.nodes import (
     WeakConjunction,
 )
 from unicode_fol_kit.semantics.tarski import (
-    Structure, term_value, satisfies, models,
+    IllegalStructureError, Structure, term_value, satisfies, models,
 )
 
 FOL = MSFLParser()
@@ -526,9 +526,14 @@ class TestNoMutation:
 # ---------------------------------------------------------------------------
 
 class TestReviewerEdgeCases:
-    def test_empty_declared_sort_is_vacuous(self):
+    def test_empty_declared_sort_is_an_error_not_a_vacuous_truth(self):
         # A *declared but empty* sort (distinct from an undeclared one, which
-        # raises): ∀ ranges over nothing → vacuously True; ∃ → False.
+        # raises KeyError). This test used to pin ∀ → True and ∃ → False, the
+        # vacuous readings. That answered a question about a structure the
+        # many-sorted definition does not have: a sort is the extension of a
+        # unary predicate and is never empty, so a structure with an empty
+        # sort is not a structure of the definition, and evaluating in it is an
+        # error that names the sort.
         world = Structure(domain={0, 1}, sorts={"Nothing": set()})
         forall = SortedQuantifier(
             "∀", Variable("x"), "Nothing", Atom("P", [Variable("x")])
@@ -536,8 +541,10 @@ class TestReviewerEdgeCases:
         exists = SortedQuantifier(
             "∃", Variable("x"), "Nothing", Atom("P", [Variable("x")])
         )
-        assert models(forall, world) is True
-        assert models(exists, world) is False
+        with pytest.raises(IllegalStructureError, match="'Nothing' is empty"):
+            models(forall, world)
+        with pytest.raises(IllegalStructureError, match="'Nothing' is empty"):
+            models(exists, world)
 
     def test_inner_quantifier_shadows_outer(self):
         # ∀x (∃x P(x)): the inner ∃ rebinds x, so the body's value is the same

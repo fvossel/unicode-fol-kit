@@ -94,6 +94,8 @@ ill_derivable([p("A"), p("𝟘")], p("B"))      # → True    0L: 𝟘 in the an
 `ill_prove` names the rules `⊤R` / `0L`:
 
 ```python
+from unicode_fol_kit import ill_prove
+
 print(ill_prove([p("A")], p("⊤")).render())
 # → A ⊢ ⊤   [⊤R]
 print(ill_prove([p("𝟘")], p("A ⊗ B")).render())
@@ -187,8 +189,10 @@ Antecedents must be **nonempty** (Lambek's restriction, the variant relevant to
 grammar — a category must be assigned to at least one word):
 
 ```python
-lambek_prove([], q("S"))   # raises ValueError: nonempty antecedent required
+lambek_prove([], q("S"))   # raises ValueError: the Lambek calculus requires a nonempty antecedent sequence ...
 ```
+
+The `lambek` backend answers instead of raising: for an empty premise list it returns `unknown` with reason `unsupported`, because L has no sequent with an empty antecedent and there is nothing to decide.
 
 ## Decidability status — what a `None` means
 
@@ -234,6 +238,55 @@ theory == to_isabelle_ill([p("A"), p("A ⊸ B")], p("B"))   # → True   same re
 ```
 
 Building the theory needs a local Isabelle install (see {doc}`higher-order` for `check_theory` / `isabelle_available`); the exporter itself has no such dependency.
+
+## What each calculus reads
+
+Intuitionistic linear logic reads the connectives `⊗ & ⊕ ⊸ !` and the units `𝟙 ⊤ 𝟘`; the Lambek calculus reads `• \ /`. Both read them over atoms, and an atom over terms is one category (see below). Every other node is refused by name: `NotImplementedError` from `ill_prove` / `lambek_prove` and the `_derivable` functions, `unknown` with reason `unsupported` from the `ill` and `lambek` backends. The refused nodes are quantifiers, counting and cardinality nodes, sorted constants and equality atoms; the nodes of other logics (`And`, `Or`, `Not`, `Implies`, the modal, temporal, epistemic and hybrid operators, the connectives of the other calculus); the lambda layer (`Lambda`, `Application`); the truth constants of the other routes (the nullary atoms `⊤` and `⊥`, `$true` and `$false`), which neither calculus reads as a truth, ILL having the units `⊤`, `𝟙`, `𝟘` of its own and L no constants; and a term where a formula stands. `And(A, B) ⊢ A` is refused rather than answered "no derivation": it holds classically, and between the categories `And(A, B)` and `A` it has none, so any verdict would be about another formula.
+
+```python
+from unicode_fol_kit import And, Atom
+from unicode_fol_kit.atp.linear import ILLDerivation, ILLSequent, verify_ill_proof
+from unicode_fol_kit.atp.protocol import get_backend
+
+conj = And(Atom("A", []), Atom("B", []))                        # a classical conjunction, not a ⊗ or a &
+verdict = get_backend("ill").decide(p("A"), [conj])
+(verdict.status, verdict.reason)                                # → ('unknown', 'unsupported')
+
+bogus = ILLDerivation(ILLSequent((conj,), p("A")), "Ax", ())    # a hand-built "derivation" of  A ∧ B ⊢ A
+result = verify_ill_proof(bogus)
+(result.ok, result.error_rule)                                  # → (False, 'formula')
+```
+
+A derivation that holds such a node does not check: `verify_ill_proof` / `verify_lambek_proof` return `ok` False with `error_rule` `'formula'`, and `ill_derivation_theory` / `lambek_derivation_theory` raise `ValueError` for it. `to_isabelle_ill` / `to_isabelle_lambek` run the prover first and raise `NotImplementedError` for such input, as the call itself does:
+
+```python
+ill_derivable([conj], p("A"))   # raises NotImplementedError: ill_prove: the node of another logic 'A ∧ B' (And) is refused by name ...
+```
+
+The `ill` and `lambek` backends take the call's `timeout` (milliseconds) and answer `unknown` with reason `timeout` when it runs out: the search terminates, but its cost is exponential in the sequent.
+
+```python
+verdict = get_backend("lambek").decide(q("A"), [q("A")], timeout=0)   # a limit that is already over
+(verdict.status, verdict.reason)                                       # → ('unknown', 'timeout')
+```
+
+### First-order input
+
+An atom over terms (`P(alpha)`, `Loves(john, mary)`, a free variable included) is one category, identified by its predicate and its terms as written:
+
+```python
+ill_derivable([p("P(alpha)")], p("P(alpha)"))   # → True
+ill_derivable([p("P(alpha)")], p("P(beta)"))    # → False   two categories: no rule replaces one term by another
+```
+
+That reading is sound in both directions: a sequent without quantifiers, counts, sorts or equality has no rule that substitutes a term for another, so its first-order derivations and its derivations over categories are the same derivations. With any of those the reading would be unsound, because one more category answers about another formula: `∀x P(x) ⊢ P(alpha)` holds in first-order linear logic (instantiation) and has no derivation between the categories `∀x P(x)` and `P(alpha)`. A sorted constant `c:S` also asserts `S(c)`, which a category drops, and `⊢ alpha = alpha` holds with identity and has no derivation between categories. So each of them is refused, not read as a category:
+
+```python
+forall_x = MSFLParser().parse("∀x P(x)")
+ill_derivable([forall_x], p("P(alpha)"))   # raises NotImplementedError: ill_prove: the quantifier '∀x P(x)' (Quantifier) is refused by name ...
+```
+
+Decide such input with a first-order route (`z3`, `vampire`, `eprover`, `tableau`, `resolution`; see {doc}`classical-reasoning`).
 
 ## The honest boundary: no classical export
 

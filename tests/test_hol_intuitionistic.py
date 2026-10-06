@@ -20,6 +20,7 @@ from unicode_fol_kit.fol.nodes import (
     Atom, Not, And, Or, Xor, Implies, Iff, Box, Quantifier, Variable,
 )
 from unicode_fol_kit.semantics.intuitionistic import int_valid
+from unicode_fol_kit.atp.lj import int_prove
 from unicode_fol_kit.hol.intuitionistic import (
     gmt_translate, gmt_is_s4_valid, gmt_validity_matches_int_valid,
     to_thf_intuitionistic, to_isabelle_intuitionistic,
@@ -68,13 +69,15 @@ def test_gmt_xor_expands_to_int_clause():
     assert gmt_translate(Xor(p, q)) == expected
 
 
-def test_gmt_falsum_is_ordinary_atom():
-    # The toolkit has no primitive propositional falsum: int_valid treats "⊥" as an
-    # ordinary atom, so to stay faithful the GMT boxes it like any atom (T(⊥)=□⊥),
-    # NOT as a logical constant. (See the module's FALSUM note.)
-    assert gmt_translate(BOT) == Box(BOT)
-    assert int_valid(Not(BOT)) is False          # ⊥ behaves as an atom, not false
-    assert int_valid(Implies(BOT, p)) is False   # so ex-falso is NOT valid here
+def test_gmt_falsum_is_the_constant():
+    # "⊥" is the falsity constant: int_valid forces it at no world, so ¬⊥ and ex falso
+    # are valid, and the GMT keeps it as it is (T(⊥)=⊥, the textbook rule), with no box
+    # round it. (See the module's FALSUM note.)
+    assert gmt_translate(BOT) == BOT
+    assert int_valid(Not(BOT)) is True           # no world forces ⊥
+    assert int_valid(Implies(BOT, p)) is True    # so ex falso is valid here
+    assert int_valid(BOT) is False               # and ⊥ alone is not
+    assert gmt_validity_matches_int_valid(Implies(BOT, p))
 
 
 def test_gmt_idempotent_on_modal_free_only():
@@ -352,26 +355,197 @@ def test_isabelle_falsum_no_bare_consts_underscore():
     out = to_isabelle_intuitionistic(Implies(BOT, p))
     assert "consts _ ::" not in out
     assert "consts _::" not in out
-    # ⊥ is rendered via its alias, not the bare wildcard.
-    assert "consts bottom ::" in out
-    # In the lemma body the boxed ⊥ renders as the alias under the box, never as a
-    # bare reserved wildcard. (Note: '\<box>_' DOES legitimately occur once in the
-    # mbox mixfix notation declaration as an argument placeholder, so we look at the
+    # ⊥ is the falsity constant: Isabelle's own False, lifted to a world-independent
+    # proposition, and no symbol is declared for it (no `consts bottom`).
+    assert "consts bottom ::" not in out
+    # In the lemma body the constant renders as the lifted False, never as a bare
+    # reserved wildcard under a box. (Note: '\<box>_' DOES legitimately occur once in
+    # the mbox mixfix notation declaration as an argument placeholder, so we look at the
     # rendered lemma line specifically.)
     lemma_line = next(ln for ln in out.splitlines() if "lemma gmt_goal:" in ln)
-    assert "\\<box>bottom" in lemma_line
+    assert "(\\<lambda>_. False)" in lemma_line
     assert "\\<box>_" not in lemma_line
 
 
-def test_isabelle_distinct_atoms_distinct_consts():
-    # Two distinct symbolic atoms must produce two distinct consts declarations.
+def test_isabelle_truth_constants_declare_no_consts():
+    # ⊥ and ⊤ are the two truth constants, the one False and the other True; neither is
+    # a symbol of the theory, so the only constant declared is the accessibility
+    # relation, and neither is the reserved wildcard. (The distinct, legal NAMES that a
+    # symbolic predicate gets are pinned on the name function itself, above.)
     out = to_isabelle_intuitionistic(And(Atom("⊥", ()), Atom("⊤", ())))
-    assert "consts bottom ::" in out
-    assert "consts top ::" in out
-    # And neither is the reserved wildcard.
+    assert "consts bottom ::" not in out
+    assert "consts top ::" not in out
+    lemma_line = next(ln for ln in out.splitlines() if "lemma gmt_goal:" in ln)
+    assert "(\\<lambda>_. False)" in lemma_line
+    assert "(\\<lambda>_. True)" in lemma_line
     consts_lines = [ln for ln in out.splitlines() if ln.startswith("consts ")
                     and "::" in ln]
     decl_names = [ln.split()[1] for ln in consts_lines]
-    # No duplicate consts names, and none is '_'.
-    assert "_" not in decl_names
-    assert len(decl_names) == len(set(decl_names)), decl_names
+    assert decl_names == ["r"], decl_names
+
+
+# ---------------------------------------------------------------------------
+# Equality is REFUSED, not approximated.
+#
+# This module is the PROPOSITIONAL one: int_valid keys an atom by its rendered form
+# (``a = a`` is just another variable, so it is not valid there), while the S4 side
+# of the GMT embedding runs through fol.qml, which reads ``=`` as RIGID identity
+# (``a = a`` valid). Fed an identity atom the module's own differential
+# (gmt_validity_matches_int_valid and friends) would therefore compare answers to two
+# different questions, and to_isabelle_intuitionistic would emit a real proof about an
+# uninterpreted constant. gmt_translate refuses an ``=`` / ``≠`` atom by name, scanning
+# the whole formula; every other function goes through it.
+#
+# None of these tests compares two independently timed solver runs (see the note at
+# the top of tests/test_lj_search.py): the refusals never reach Z3, and the one place
+# that does asks it a single question whose answer is a PROOF, against int_valid, which
+# has no solver in it.
+# ---------------------------------------------------------------------------
+
+from unicode_fol_kit.fol.nodes import Constant
+from unicode_fol_kit.hol.intuitionistic import _gmt
+
+_ca, _cb = Constant("a"), Constant("b")
+EQ = Atom("=", (_ca, _cb))
+EQ_AA = Atom("=", (_ca, _ca))
+NEQ = Atom("≠", (_ca, _cb))
+_EQ_REFUSAL = (r"equality is not interpreted by the propositional "
+               r"Gödel–McKinsey–Tarski embedding.*qml_is_valid")
+
+_ENTRY_POINTS = {
+    "gmt_translate": gmt_translate,
+    "gmt_is_s4_valid": gmt_is_s4_valid,
+    "gmt_validity_matches_int_valid": gmt_validity_matches_int_valid,
+    "to_thf_intuitionistic": to_thf_intuitionistic,
+    "to_isabelle_intuitionistic": to_isabelle_intuitionistic,
+}
+
+
+def test_the_s4_side_reads_identity_and_the_ipl_side_has_no_reading_to_give():
+    """The REASON for the refusal, measured on the raw translation (``_gmt``,
+    which skips the guard).
+
+    The S4 target DOES interpret an identity atom — ``fol.qml`` reads ``=`` as rigid
+    identity — so the box-translation of ``a = a`` and of ``¬(a = a) → p`` is valid
+    there. The IPL source has no reading to compare it with: a world's valuation is
+    a monotone set of atom KEYS, so ``a = a`` could only be an unconstrained letter.
+    Until 0.30.0 ``int_valid`` answered anyway and said False for both formulas,
+    which is the opposite verdict — so a differential between the two sides on an
+    identity atom measured nothing, "green" or "red". Since 0.30.0 the IPL side
+    refuses too (``semantics.intuitionistic`` and ``atp.lj``, same shared helper as
+    here), so the two sides agree on what they will not answer, which is the only
+    agreement available without a term semantics for intuitionistic equality.
+    """
+    from unicode_fol_kit.fol.qml import qml_is_valid
+    for f in (EQ_AA, Implies(Not(EQ_AA), p)):
+        # the S4 side: a single solver question whose answer is a PROOF (a generous
+        # budget, because True is the only answer a timeout could turn into False)
+        assert qml_is_valid(_gmt(f), mode="constant", frame="S4",
+                            timeout=60000) is True, f.to_unicode_str()
+        # the IPL side refuses rather than answering False
+        with pytest.raises(NotImplementedError, match="refused by name"):
+            int_valid(f)
+        with pytest.raises(NotImplementedError, match="refused by name"):
+            int_prove([], f)
+    # and a formula WITHOUT identity still gets a real differential, both ways
+    assert int_valid(Implies(p, p)) is True
+    assert qml_is_valid(_gmt(Implies(p, p)), mode="constant", frame="S4") is True
+    assert int_valid(Or(p, Not(p))) is False
+    assert qml_is_valid(_gmt(Or(p, Not(p))), mode="constant", frame="S4") is False
+
+
+@pytest.mark.parametrize("entry", sorted(_ENTRY_POINTS))
+@pytest.mark.parametrize("name,f", [
+    ("bare a=a", EQ_AA),
+    ("a=b", EQ),
+    ("a≠b", NEQ),
+    ("¬(a=b)", Not(EQ)),
+    ("p→(a=b)", Implies(p, EQ)),
+    ("(a=b)→p", Implies(EQ, p)),
+    ("p↔(a=b)", Iff(p, EQ)),
+    ("p⊕(a≠b)", Xor(p, NEQ)),
+    ("(a=b)∨¬(a=b)", Or(EQ, Not(EQ))),
+    ("deep", Implies(Implies(p, And(q, Or(r, Not(Implies(q, EQ))))), p)),
+], ids=lambda v: v if isinstance(v, str) else None)
+def test_every_entry_point_refuses_an_equality_atom(entry, name, f):
+    with pytest.raises(NotImplementedError, match=_EQ_REFUSAL):
+        _ENTRY_POINTS[entry](f)
+
+
+def test_the_scan_is_the_whole_formula_not_the_part_an_oracle_would_look_at():
+    # (p ∧ ¬p) → (a = b) is intuitionistically valid whatever the right-hand atom is
+    # (ex falso from a genuine contradiction), so int_valid, G4ip and the S4 oracle
+    # all used to "agree" on it without ever interpreting the identity atom — the
+    # case a lazy check would wave through. It is refused on every entry point, and
+    # the propositional instance of the same schema is still decided, so the refusal
+    # is about the atom and not about ex falso.
+    f = Implies(And(p, Not(p)), EQ)
+    for fn in _ENTRY_POINTS.values():
+        with pytest.raises(NotImplementedError, match=_EQ_REFUSAL):
+            fn(f)
+    assert int_valid(Implies(And(p, Not(p)), q)) is True
+    assert gmt_is_s4_valid(Implies(And(p, Not(p)), q)) is True
+
+
+def test_equality_refusal_names_the_atom_the_route_and_where_to_go():
+    with pytest.raises(NotImplementedError) as info:
+        gmt_translate(Implies(p, EQ))
+    msg = str(info.value)
+    assert msg.startswith("intuitionistic GMT:")        # the module's own refusal style
+    assert "'a = b'" in msg and "'='" in msg             # the atom, by name
+    assert "Gödel–McKinsey–Tarski" in msg and "int_valid" in msg
+    assert "fol.qml.qml_is_valid" in msg and "rigid identity" in msg
+    with pytest.raises(NotImplementedError) as info:
+        gmt_translate(NEQ)
+    assert "disequality" in str(info.value) and "'≠'" in str(info.value)
+
+
+def test_a_quantifier_is_still_a_value_error_even_around_an_equality_atom():
+    x = Variable("x")
+    with pytest.raises(ValueError, match="only propositional"):
+        gmt_translate(Quantifier("∀", x, Atom("=", (x, x))))
+
+
+def test_differential_over_an_alphabet_that_contains_an_equality_atom():
+    """The exhaustive small-formula differential, with ``a = b`` added to the alphabet:
+    every formula that mentions it is refused by every entry point, and every formula
+    that does not still agrees with ``int_valid`` — nothing in between."""
+    letters = [p, EQ]
+    pool = list(letters) + [Not(x) for x in letters]
+    for x in letters:
+        for y in letters:
+            pool += [And(x, y), Or(x, y), Implies(x, y)]
+    uniq = {}
+    for f in pool:
+        uniq.setdefault(f.to_unicode_str(), f)
+    with_eq = [f for f in uniq.values() if "=" in f.to_unicode_str()]
+    without = [f for f in uniq.values() if "=" not in f.to_unicode_str()]
+    assert len(with_eq) >= 10 and len(without) >= 4
+    for f in with_eq:
+        for fn in (gmt_translate, gmt_is_s4_valid, gmt_validity_matches_int_valid):
+            with pytest.raises(NotImplementedError, match=_EQ_REFUSAL):
+                fn(f)
+    for f in without:
+        assert gmt_validity_matches_int_valid(f) is True, f.to_unicode_str()
+
+
+@pytest.mark.parametrize("name,f,valid", [
+    # atoms WITH arguments, and infix atoms other than '=' / '≠', are ordinary
+    # propositional letters on both sides exactly as before
+    ("P(a)→P(a)", Implies(Atom("P", (_ca,)), Atom("P", (_ca,))), True),
+    ("P(a)→(Q(a,b)→P(a))", Implies(Atom("P", (_ca,)),
+                                   Implies(Atom("Q", (_ca, _cb)), Atom("P", (_ca,)))), True),
+    ("a<b→¬¬(a<b)", Implies(Atom("<", (_ca, _cb)), Not(Not(Atom("<", (_ca, _cb))))), True),
+    ("a≤b→(a≤b)", Implies(Atom("≤", (_ca, _cb)), Atom("≤", (_ca, _cb))), True),
+    ("eq(a,b)→eq(a,b)", Implies(Atom("eq", (_ca, _cb)), Atom("eq", (_ca, _cb))), True),
+    ("P(a)∨¬P(a)", Or(Atom("P", (_ca,)), Not(Atom("P", (_ca,)))), False),
+    ("¬¬(a<b)→(a<b)", Implies(Not(Not(Atom("<", (_ca, _cb)))), Atom("<", (_ca, _cb))), False),
+    # P(a) and P(b) are DIFFERENT letters, however the constants relate
+    ("P(a)→P(b)", Implies(Atom("P", (_ca,)), Atom("P", (_cb,))), False),
+], ids=lambda v: v if isinstance(v, str) else None)
+def test_non_equality_atoms_with_arguments_stay_ordinary_letters(name, f, valid):
+    assert int_valid(f) is valid
+    # a valid formula gets a generous budget (a timeout can only turn a proof into a
+    # False); an invalid one needs none, where a timeout IS the expected answer
+    assert gmt_is_s4_valid(f, timeout=60000 if valid else 10000) is valid
+    assert gmt_validity_matches_int_valid(f, timeout=60000 if valid else 10000) is True

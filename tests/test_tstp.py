@@ -642,7 +642,12 @@ class TestCheckEntailmentVampireDetailed:
         """A build/mode that never prints an SZS line at all still yields a
         defensible verdict via the same 'Refutation found' substring test
         check_logical_entailment_vampire uses -- this function is never
-        STRICTLY less informative than the old bool-returning one."""
+        STRICTLY less informative than the old bool-returning one. Output that
+        says NEITHER (no SZS line, no refutation) while nothing cut Vampire off
+        is not 'incomplete': Vampire refused the problem or died, so it is an
+        ERROR/infra carrying Vampire's own text (see tests/test_prover_rejection.py,
+        which pins that decision for every prover)."""
+        # (1) the substring fallback: 'Refutation found' is a proof.
         self._patch(monkeypatch, "Refutation found. Thanks to Tanya!\n")
         result = check_entailment_vampire_detailed(
             _MODUS_PONENS_PREMISES, _MORTAL, vampire_path="vampire")
@@ -650,12 +655,37 @@ class TestCheckEntailmentVampireDetailed:
         assert result["status"] == P.PROVED
         assert result["reason"] is None
 
+        # (2) the equivalent signal check_logical_entailment_vampire also
+        # accepts: the words 'SZS status Theorem' without the comment marker the
+        # SZS line reader requires, so there is no SZS line but still a verdict.
+        self._patch(monkeypatch, "SZS status Theorem for problem\n")
+        result = check_entailment_vampire_detailed(
+            _MODUS_PONENS_PREMISES, _MORTAL, vampire_path="vampire")
+        assert result["szs_status"] is None
+        assert result["status"] == P.PROVED
+        assert result["reason"] is None
+
+        # (3) output that says nothing: no SZS line, no refutation, not timed
+        # out -> the prover refused or died. ERROR/infra, and the prover's own
+        # words stay in the excerpt so the refusal is never filed with the
+        # problems that merely ran out of time.
         self._patch(monkeypatch, "Nothing found.\n")
         result = check_entailment_vampire_detailed(
             _MODUS_PONENS_PREMISES, _MORTAL, vampire_path="vampire")
         assert result["szs_status"] is None
-        assert result["status"] == P.UNKNOWN
-        assert result["reason"] == "incomplete"
+        assert result["status"] == P.ERROR
+        assert result["reason"] == "infra"
+        assert "Nothing found." in result["output_excerpt"]
+
+        # (4) and the empty output of a process that was NOT timed out is the
+        # same refusal, not a timeout (a timeout is the separate, tested
+        # UNKNOWN/timeout path of test_subprocess_timeout_before_any_output).
+        self._patch(monkeypatch, "")
+        result = check_entailment_vampire_detailed(
+            _MODUS_PONENS_PREMISES, _MORTAL, vampire_path="vampire")
+        assert result["szs_status"] is None
+        assert result["status"] == P.ERROR
+        assert result["reason"] == "infra"
 
     def test_output_excerpt_is_bounded_to_the_tail(self, monkeypatch):
         long_output = ("x" * 5000) + "\n% SZS status Theorem for x\n"

@@ -67,20 +67,21 @@ def test_round_trip_deep_nesting(concept):
 
 
 def test_parser_associates_chained_same_precedence_operators_to_the_left():
-    # concepts.py's renderer gives both operands of ⊓/⊔ the SAME precedence
-    # threshold (_paren(c.left, prec) and _paren(c.right, prec), both using
-    # "<" not "<="), so a left-nested chain (Or(Or(A,B),C)) and a right-nested
-    # chain (Or(A,Or(B,C))) render to the IDENTICAL string "A ⊔ B ⊔ C" -- the
-    # rendering genuinely cannot tell them apart. parse_concept must therefore
-    # pick ONE convention; it picks left-associative (the standard choice for
-    # a straightforward recursive-descent "while op: left = Op(left, right)"
-    # loop), so a chain always reparses to the left-nested shape regardless of
-    # which shape produced the string.
+    # parse_concept folds a flat chain LEFT (the standard choice for a
+    # straightforward recursive-descent "while op: left = Op(left, right)"
+    # loop), so "A ⊔ B ⊔ C" is Or(Or(A,B),C). The renderer used to give both
+    # operands of ⊓/⊔ the SAME precedence threshold, so the right-nested chain
+    # Or(A,Or(B,C)) was written "A ⊔ B ⊔ C" as well -- the TEXT could not tell
+    # the two trees apart, and reading it back gave the left-nested one, another
+    # tree. A right operand of the same connective is now parenthesised, so each
+    # tree has its own text (tests/test_dl_glyph_round_trip.py has every shape).
     left_nested = dl.Or(dl.Or(A, B), C)
     right_nested = dl.Or(A, dl.Or(B, C))
-    assert left_nested.to_unicode() == right_nested.to_unicode() == "A ⊔ B ⊔ C"
+    assert left_nested.to_unicode() == "A ⊔ B ⊔ C"
+    assert right_nested.to_unicode() == "A ⊔ (B ⊔ C)"
     assert parse_concept("A ⊔ B ⊔ C") == left_nested
     assert parse_concept("A ⊔ B ⊔ C") != right_nested
+    assert parse_concept("A ⊔ (B ⊔ C)") == right_nested
 
 
 # --------------------------------------------------------------------------- #
@@ -105,19 +106,13 @@ def test_round_trip_random_deeply_nested_concepts():
     # Same shape of generator as test_dl_alc.py's _rand_concept / the
     # translate differential tests, but purely exercising the parser here.
     #
-    # Property checked: RENDER-IDEMPOTENCE, i.e. parse_concept(rendered).to_unicode()
-    # == rendered, rather than exact structural equality against the
-    # generator's own (possibly right-nested) tree. As
-    # test_parser_associates_chained_same_precedence_operators_to_the_left
-    # demonstrates, a randomly right-nested chain of the same operator (e.g.
-    # Or(A, Or(B, C))) renders identically to its left-nested counterpart, so
-    # a fuzz generator that builds arbitrary (not necessarily left-associative)
-    # trees cannot be checked against exact structural equality without
-    # spuriously failing on that (harmless, renderer-inherent) ambiguity.
-    # Render-idempotence is the property that must ALWAYS hold regardless of
-    # which shape parse_concept recovers: it proves the parser reconstructed a
-    # concept that is a faithful reading of the string (round-trips the TEXT
-    # exactly), which is what parse_concept is actually for.
+    # Properties checked: RENDER-IDEMPOTENCE, parse_concept(rendered).to_unicode()
+    # == rendered, and, since a right operand of the same connective is
+    # parenthesised (so a randomly right-nested chain such as Or(A, Or(B, C)) no
+    # longer renders like its left-nested counterpart), EXACT structural
+    # equality against the generator's own tree. The first alone used to be all
+    # that could hold: the two trees shared one text, and a check for equality
+    # failed on that ambiguity of the renderer.
     atoms = [dl.Atomic("A"), dl.Atomic("B"), dl.Atomic("C")]
     roles = ["r", "hasChild", "s2"]
 
@@ -147,6 +142,7 @@ def test_round_trip_random_deeply_nested_concepts():
         rendered = concept.to_unicode()
         reparsed = parse_concept(rendered)
         assert reparsed.to_unicode() == rendered, rendered
+        assert reparsed == concept, rendered
         checked += 1
     assert checked == 60
 
@@ -299,3 +295,85 @@ def test_parse_gci_matches_tbox_add_semantics():
     sub, sup = parse_gci("A ⊑ ∃r.B")
     t = dl.TBox().add(sub, sup)
     assert t.inclusions == [(dl.Atomic("A"), dl.Exists("r", dl.Atomic("B")))]
+
+
+# --------------------------------------------------------------------------- #
+# F1: braces are RESERVED, and a nominal-shaped text is refused BY NAME.
+#
+# Until 0.30.0 `{` and `}` were ordinary NAME characters, so `{a}` was a legal
+# concept NAME and `parse_concept("{a}")` returned `Atomic("{a}")` -- a concept
+# with a bogus class name, silently, for text this module's own siblings PRINT
+# (`dl.Nominal("a").to_unicode()` is `{a}`). `dl.parse_manchester` already
+# refused the same text by name; now so does this.
+#
+# Teaching it to BUILD a nominal was the alternative and was rejected: `∃r.{a}`
+# is AMBIGUOUS between dl.HasValue("r", "a") and dl.Exists("r", dl.Nominal("a"))
+# -- the glyph syntax has no individual-name layer to tell them apart, and both
+# print identically -- so always picking one would be a silent normalisation of
+# the other, which is what house rule 1 forbids.
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("text", [
+    "{a}",                  # the bare nominal, as dl.Nominal prints it
+    "∃r.{a}",               # as dl.HasValue AND dl.Exists(r, Nominal(a)) print
+    "¬{a}",
+    "A ⊓ {a}",
+    "{a} ⊔ B",
+    "∀r.{a}",
+    "≥2 r.{a}",
+    "{a, b}",               # Manchester's multi-individual spelling
+    "{",                    # an unbalanced brace is refused the same way
+    "}",
+])
+def test_a_nominal_shaped_text_is_refused_by_name(text):
+    with pytest.raises(ConceptSyntaxError) as info:
+        parse_concept(text)
+    message = str(info.value)
+    assert "nominal" in message, message
+    # the refusal must point at what to do instead -- the two readers that DO
+    # tell the pair apart, and the constructors
+    for pointer in ("dl.Nominal", "dl.HasValue", "parse_manchester",
+                    "ObjectHasValue"):
+        assert pointer in message, f"the refusal must name {pointer}: {message}"
+
+
+def test_the_old_silent_reading_is_gone():
+    # The control: the pre-0.30.0 behaviour was `Atomic("{a}")`, so a test that
+    # only checked "it does not crash" would have passed. This asserts the
+    # concept is not BUILT at all.
+    with pytest.raises(ConceptSyntaxError):
+        parse_concept("{a}")
+    assert dl.Atomic("{a}") != dl.Nominal("a")      # it never was the same thing
+
+
+def test_a_gci_mentioning_a_nominal_is_refused_too():
+    with pytest.raises(ConceptSyntaxError, match="nominal"):
+        parse_gci("A ⊑ ∃r.{a}")
+
+
+def test_the_two_render_only_constructors_are_the_documented_exceptions():
+    # The round-trip claim in this module's docstring holds for every
+    # constructor EXCEPT the two that name an individual: both render, neither
+    # re-parses, and the refusal is loud. The same render-only asymmetry
+    # dl.to_manchester already has for a nominal.
+    for concept in (dl.Nominal("a"), dl.HasValue("r", "a")):
+        text = concept.to_unicode()
+        assert "{" in text and "}" in text
+        with pytest.raises(ConceptSyntaxError, match="nominal"):
+            parse_concept(text)
+    # ... and they really do print the same text, which is why neither can be
+    # read back: there is nothing in the glyph syntax to distinguish them.
+    assert dl.HasValue("r", "a").to_unicode() == \
+        dl.Exists("r", dl.Nominal("a")).to_unicode()
+
+
+def test_a_brace_inside_a_name_is_the_accepted_cost():
+    # The narrowing this is, stated: a concept NAME containing a literal brace
+    # stops parsing. There is no such name in the kit, its tests or the Open
+    # Energy Ontology this was measured against, but it is a real change to a
+    # documented "any characters outside the reserved set" grammar rule.
+    with pytest.raises(ConceptSyntaxError):
+        parse_concept("Has{Value}")
+    # every OTHER non-reserved character still works, unchanged
+    for name in ("Doctor42", "θ", "has_child", "A-B", "名前"):
+        assert parse_concept(name) == dl.Atomic(name)

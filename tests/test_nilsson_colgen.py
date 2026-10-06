@@ -26,12 +26,18 @@ itself; this file never touches or re-derives that contract, only builds on
 top of it.
 """
 
+import json
+import os
 import random
+import subprocess
+import sys
+import textwrap
 import time
 from fractions import Fraction as F
 
 import pytest
 
+import unicode_fol_kit
 from unicode_fol_kit import api
 from unicode_fol_kit.fol.nodes import (
     And, Atom, Iff, Implies, Not, Or, Quantifier, Variable, Xor,
@@ -396,16 +402,23 @@ class TestDualConstructionUnit:
         assert y == [F(1), F(0)]
         assert lam == F(0)
 
-    def test_pricing_agrees_dual_already_optimal(self):
-        # At the hand-computed optimal dual, pricing must find NO world with
-        # positive reduced cost -- the two columns already present already
-        # span the LP's optimum (this restricted master IS the full 2-world
-        # problem, n=1 atom, so there is nothing else to price in anyway).
+    @pytest.mark.parametrize("exhaustive_up_to", [6, 0], ids=["exact-enumeration", "z3-solver-query"])
+    def test_pricing_agrees_dual_already_optimal(self, monkeypatch, exhaustive_up_to):
+        # At the hand-computed optimal dual (y, lam) = ([1, 0], 0), pricing must
+        # find NO world with positive reduced cost -- the two columns already
+        # present already span the LP's optimum (this restricted master IS the
+        # full 2-world problem, n=1 atom, so there is nothing else to price in
+        # anyway). By hand: the reduced cost of w is 1*1{A}(w) + 0 - cost(w)
+        # = 1{A}(w) - 1{A}(w) = 0 at both worlds. The answer is "no world
+        # improves", not "some world with value <= 0": both ways of pricing (all
+        # worlds evaluated exactly; an unsatisfiable solver query) say found=False.
+        monkeypatch.setattr(_column_gen, "_EXHAUSTIVE_PRICING_MAX_ATOMS", exhaustive_up_to)
         rows, columns, cost_of, cost_z3 = self._setup()
         y, lam = _column_gen._solve_dual(rows, columns, cost_of)
-        found, _valuation, value = _column_gen._price(["A"], rows, y, lam, cost_z3)
-        assert found is True
-        assert value <= 0
+        found, world, value = _column_gen._price(["A"], rows, y, lam, cost_of, cost_z3)
+        assert found is False
+        assert world is None
+        assert value == 0
 
     def test_primal_matches_dual_objective_exactly(self):
         # Strong duality: the restricted primal's own optimum must equal the
@@ -534,23 +547,48 @@ class TestMeasuredSpeedup:
     across machines; the measured numbers are printed for the record.
     """
 
+    # The two strategies are timed in an interpreter of their own. Z3 keeps every formula of a
+    # process in one context, and a context that has carried a large search answers each later
+    # call more slowly; column generation makes dozens of small calls where the direct route
+    # makes two large ones, so inside a test process the comparison would measure which tests
+    # ran before this one (measured after a quantifier search that ran into its limit: direct
+    # 8.5 s, column generation 30 s; in a fresh interpreter 3.5 s and 1 s).
+    _MEASUREMENT = textwrap.dedent("""
+        import json, time
+        from fractions import Fraction as F
+        from unicode_fol_kit.fol.nodes import And, Atom
+        from unicode_fol_kit.prob.nilsson import ProbConstraint, entailment_bounds
+
+        n = 11
+        atoms = [Atom(f"V{i}", ()) for i in range(n)]
+        cs = [ProbConstraint.exact(atom, F(49, 50)) for atom in atoms]
+        concl = atoms[0]
+        for atom in atoms[1:]:
+            concl = And(concl, atom)
+
+        t0 = time.perf_counter()
+        direct = entailment_bounds(cs, concl, strategy="direct", max_atoms=n)
+        t1 = time.perf_counter()
+        cg = entailment_bounds(cs, concl, strategy="column_generation")
+        t2 = time.perf_counter()
+        print(json.dumps({"direct_time": t1 - t0, "cg_time": t2 - t1,
+                          "direct": [str(direct.lower), str(direct.upper)],
+                          "cg": [str(cg.lower), str(cg.upper)]}))
+    """)
+
     def test_column_generation_faster_than_direct_at_n_eleven(self, capsys):
         n = 11
-        p = F(49, 50)
-        atoms = [Atom(f"V{i}", ()) for i in range(n)]
-        cs = [ProbConstraint.exact(atoms[i], p) for i in range(n)]
-        concl = atoms[0]
-        for a in atoms[1:]:
-            concl = And(concl, a)
+        package_root = os.path.dirname(os.path.dirname(os.path.abspath(unicode_fol_kit.__file__)))
+        env = dict(os.environ)
+        env["PYTHONPATH"] = os.pathsep.join(filter(None, [package_root, env.get("PYTHONPATH")]))
+        run = subprocess.run([sys.executable, "-c", self._MEASUREMENT], env=env,
+                             capture_output=True, text=True, timeout=600)
+        assert run.returncode == 0, run.stderr
+        measured = json.loads(run.stdout.strip().splitlines()[-1])
+        direct_time, cg_time = measured["direct_time"], measured["cg_time"]
 
-        t0 = time.time()
-        direct = entailment_bounds(cs, concl, strategy="direct", max_atoms=n)
-        t1 = time.time()
-        cg = entailment_bounds(cs, concl, strategy="column_generation")
-        t2 = time.time()
-        direct_time, cg_time = t1 - t0, t2 - t1
-
-        assert direct.lower == cg.lower and direct.upper == cg.upper
+        # P(V1 ∧ … ∧ V11) with every P(Vi) = 49/50: at least 1 - 11/50 (Bonferroni), at most 49/50.
+        assert measured["direct"] == measured["cg"] == ["39/50", "49/50"]
         ratio = (direct_time / cg_time) if cg_time > 0 else float("inf")
         with capsys.disabled():
             print(f"\n[measured speed-up] n={n} AND-of-{n}-exact-marginals: "

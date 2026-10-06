@@ -71,11 +71,14 @@ from ..fol.nodes import (
     Product, Under, Over,
 )
 from ..fol._linear_nodes import Top, Zero
+from ..fol._truth_constants import refuse_truth_constants
 from ..atp.linear import (
     ILLDerivation, ILLSequent, ill_prove, check_ill_proof,
+    _NO_TRUTH_CONSTANT_WHY as _ILL_NO_CONSTANT_WHY,
 )
 from ..atp.lambek import (
     LambekDerivation, LambekSequent, lambek_prove, check_lambek_proof,
+    _NO_TRUTH_CONSTANT_WHY as _LAMBEK_NO_CONSTANT_WHY,
 )
 
 __all__ = [
@@ -232,6 +235,7 @@ _ILL_RULE_TO_ISA = {
 def _lift_ill(node: Node) -> str:
     """Lift an ILL formula to its ``ill``-datatype Isabelle term."""
     if isinstance(node, Atom):
+        refuse_truth_constants([node], "to_isabelle_ill", _ILL_NO_CONSTANT_WHY)
         return f"(IAtom {_isa_str(node.to_unicode_str())})"
     if isinstance(node, Tensor):
         return f"(ITensor {_lift_ill(node.left)} {_lift_ill(node.right)})"
@@ -608,6 +612,7 @@ _LAMBEK_RULE_TO_ISA = {
 def _lift_lambek(node: Node) -> str:
     """Lift a Lambek type/formula to its ``lam``-datatype Isabelle term."""
     if isinstance(node, Atom):
+        refuse_truth_constants([node], "to_isabelle_lambek", _LAMBEK_NO_CONSTANT_WHY)
         return f"(LAtom {_isa_str(node.to_unicode_str())})"
     if isinstance(node, Product):
         return f"(LProduct {_lift_lambek(node.left)} {_lift_lambek(node.right)})"

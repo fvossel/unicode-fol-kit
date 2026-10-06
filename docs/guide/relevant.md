@@ -1,6 +1,6 @@
 # Relevant logic
 
-The toolkit implements the basic affixing relevant logic **B** through the Priest–Sylvan **simplified Routley–Meyer semantics** (Priest & Sylvan 1992; Priest, *Introduction to Non-Classical Logic*, 2nd ed., ch. 10): `rel_valid` and `rel_countermodel` perform an exhaustive bounded model search, `rel_satisfies` replays the truth clauses on a `RelevantModel` you can also build by hand. The syntax is the ordinary classical propositional fragment of `MSFLParser` — `∧ ∨ ¬ → ↔` over nullary atoms — reused with relevant semantics, exactly as the [intuitionistic guide](intuitionistic.md) reuses it over Kripke models.
+The toolkit implements the basic affixing relevant logic **B** through the Priest–Sylvan **simplified Routley–Meyer semantics** (Priest & Sylvan 1992; Priest, *Introduction to Non-Classical Logic*, 2nd ed., ch. 10): `rel_valid` and `rel_countermodel` perform an exhaustive bounded model search, `rel_satisfies` replays the truth clauses on a `RelevantModel` you can also build by hand. The syntax is the ordinary classical propositional fragment of `MSFLParser` — `∧ ∨ ¬ → ↔` over nullary atoms — reused with relevant semantics, exactly as the [intuitionistic guide](intuitionistic.md) reuses it over Kripke models. The truth constants `⊤` and `⊥` are refused by name (`TypeError`): relevant logic has two truths and two falsities, an additive pair and a multiplicative pair, which differ in B, and the classical constants `⊤` / `⊥` name neither pair.
 
 ## Why relevance?
 
@@ -167,7 +167,7 @@ print(isabelle_decide_relevant(p("(P → (P → Q)) → (P → Q)")))
 # → FolVerdict[invalid]     (contraction — a theorem of R, genuinely not of B)
 ```
 
-Same restriction as `rel_satisfies`: only the propositional connectives `¬ ∧ ∨ → ↔` over nullary atoms — no quantifiers, modalities, or `Xor` (there is no B reading for it). `rel_valid`'s bounded `True` finally has a certified positive counterpart, checked live end-to-end against the headline B-facts above during development.
+Same restriction as `rel_satisfies`: only the propositional connectives `¬ ∧ ∨ → ↔` over nullary atoms — no quantifiers, modalities, truth constants, or `Xor` (there is no B reading for them). `rel_valid`'s bounded `True` finally has a certified positive counterpart.
 
 ## Beyond B: why the toolkit ships B
 

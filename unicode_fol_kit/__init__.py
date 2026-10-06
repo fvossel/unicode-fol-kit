@@ -37,14 +37,17 @@ from .fol import (
     Would, Might,
     Announce, AnnounceDiamond,
     SecondOrderQuantifier,
-    PredicateTerm, Signatures, analyse_signatures, MixedSlotError,
+    PredicateTerm, Signatures, analyse_signatures, MixedSlotError, NestedPropertySlotError,
     free_variables,
     substitute, beta_reduce, ReductionLimitError,
     eta_reduce, beta_eta_normalize,
     resolve_lambda_scope,
     to_fol,
     nonempty_sort_axioms,
+    sort_membership_axioms,
+    sort_axioms,
     subsort_axioms,
+    signature_axioms,
     to_nnf, to_pnf, to_cnf, to_dnf, to_tseitin_cnf, skolemize, is_horn,
     has_lambdas, eliminate_lambdas, beta_reduce_step, reduce_trace,
     unify, apply_subst,
@@ -125,7 +128,7 @@ from .semantics import (
     kleene_value, DESIGNATED,
     satisfies_so, holds,
     satisfies_to, holds_to,
-    so_find_model, so_find_countermodel, so_is_satisfiable_finite, so_is_valid_finite,
+    so_find_model, so_find_countermodel, so_is_satisfiable_finite, so_is_valid_finite, CandidateBoundExceeded,
     truth_table, TruthTable, is_tautology, is_contradiction, is_satisfiable_tt,
     find_model, find_countermodel, is_satisfiable_finite, is_valid_finite,
     is_size_exhaustive,
@@ -176,6 +179,8 @@ from .hol import (
 )
 from . import dl   # the ALC description-logic subpackage (dl.concept_satisfiable, …)
 from . import comorphism   # logic-to-logic translation registry (Comorphism, …)
+from . import logic  # logics as callable values over that registry (logic.FOL(x), …)
+from .logic import Sentence  # a term WITH the side axioms its translation needs
 from . import hets  # REST binding to a Dockerized HETS server (HetsClient, …)
 from . import drt  # Discourse Representation Theory (DRS, parse_drs, drs_to_fol, …)
 from . import ace  # Attempto Controlled English via the external APE parser (ace_to_fol, …)
@@ -186,10 +191,11 @@ from . import api  # the seven-verb facade (api.parse_any / check / prove / …)
                    # namespaced on purpose: api.prove must not shadow the
                    # resolution prover's top-level `prove`
 
-__version__ = "0.28.1"
+__version__ = "0.30.0"
 
 __all__ = [
     "MSFLParser",
+    "Sentence",
     "Node", "Variable", "Constant", "Number", "Function",
     "Atom", "Not", "And", "Or", "Xor", "Implies", "Iff", "Quantifier",
     "Count", "Measure", "Cardinality", "Contrast",
@@ -229,14 +235,17 @@ __all__ = [
     "Would", "Might",
     "Announce", "AnnounceDiamond",
     "SecondOrderQuantifier",
-    "PredicateTerm", "Signatures", "analyse_signatures", "MixedSlotError",
+    "PredicateTerm", "Signatures", "analyse_signatures", "MixedSlotError", "NestedPropertySlotError",
     "free_variables",
     "substitute", "beta_reduce", "ReductionLimitError",
     "eta_reduce", "beta_eta_normalize",
     "resolve_lambda_scope",
     "to_fol",
     "nonempty_sort_axioms",
+    "sort_membership_axioms",
+    "sort_axioms",
     "subsort_axioms",
+    "signature_axioms",
     "to_nnf", "to_pnf", "to_cnf", "to_dnf", "to_tseitin_cnf", "skolemize", "is_horn",
     "has_lambdas", "eliminate_lambdas", "beta_reduce_step", "reduce_trace",
     "unify", "apply_subst",
@@ -365,7 +374,7 @@ __all__ = [
     "satisfies_so", "holds",
     "satisfies_to", "holds_to",
     "so_find_model", "so_find_countermodel",
-    "so_is_satisfiable_finite", "so_is_valid_finite",
+    "so_is_satisfiable_finite", "so_is_valid_finite", "CandidateBoundExceeded",
     "canonicalize", "exact_match",
     "validate", "is_wellformed", "validate_text", "ValidationReport",
     "formulas_are_identical", "match_predicates", "formulas_are_matched_identical",

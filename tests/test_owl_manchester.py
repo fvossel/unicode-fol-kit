@@ -168,10 +168,16 @@ def test_cardinality_restrictions_parse_to_number_restrictions(text, expected):
     assert parse_manchester(to_manchester(expected)) == expected
 
 
-def test_value_restriction_is_rejected():
-    with pytest.raises(ManchesterSyntaxError) as exc:
-        parse_manchester("hasFriend value John")
-    assert "value" in str(exc.value)
+def test_value_restriction_parses_to_has_value():
+    # `r value a` is read since 0.30.0: ObjectHasValue(r a) is an axiom KIND the
+    # kit carries (the in-house tableau refuses it by name, as a nominal in
+    # disguise; the FOL image and the external reasoner decide it), and a
+    # parser never refuses a kind a later route can answer. The round trip and
+    # the still-refused `r some {a}` sibling are in
+    # tests/test_dl_has_value.py; this is the former refusal's place-holder, so
+    # the change of behaviour is visible where the old assertion stood.
+    assert parse_manchester("hasFriend value John") == dl.HasValue("hasFriend", "John")
+    assert to_manchester(dl.HasValue("hasFriend", "John")) == "hasFriend value John"
 
 
 def test_self_restriction_is_rejected():
@@ -194,11 +200,28 @@ def test_inverse_role_is_rejected():
     assert "inverse" in str(exc.value)
 
 
-def test_datatype_facet_restriction_is_rejected():
+def test_datatype_facet_restriction_is_read_when_it_has_an_image():
+    # Until the data layer this was refused. An ordering facet on an exact-number
+    # base has a first-order image (a comparison atom), so it is READ: the
+    # restriction keeps its facets as written, `>=` being xsd:minInclusive.
+    assert parse_manchester("hasAge some xsd:integer[>= 18]") == dl.DataExists(
+        "hasAge", dl.DatatypeRestriction(
+            dl.Datatype("xsd:integer"),
+            (("xsd:minInclusive", dl.Literal("18", "xsd:integer")),)))
+
+
+@pytest.mark.parametrize("text, facet", [
+    ('hasName some xsd:string[length 3]', "xsd:length"),
+    ('hasName some xsd:string[pattern "a+"]', "xsd:pattern"),
+    ('hasName some xsd:string[>= "a"]', "xsd:minInclusive"),
+])
+def test_a_facet_without_a_first_order_image_is_refused_by_name(text, facet):
+    # String length and regular expressions are not first-order, and an
+    # ordering facet on a non-numeric base has no order to compare by: the
+    # reader names the facet instead of keeping an axiom that constrains nothing.
     with pytest.raises(ManchesterSyntaxError) as exc:
-        parse_manchester("hasAge some xsd:integer[>= 18]")
-    msg = str(exc.value)
-    assert "facet" in msg or "datatype" in msg
+        parse_manchester(text)
+    assert facet in str(exc.value)
 
 
 # --------------------------------------------------------------------------- #
@@ -294,3 +317,212 @@ def test_parsed_concept_matches_hand_checked_tableau_clash():
     concept = parse_manchester("r some A and r only not A")
     assert concept == dl.And(dl.Exists("r", A), dl.ForAll("r", dl.Not(A)))
     assert dl.concept_satisfiable(concept) is False
+
+
+# --------------------------------------------------------------------------- #
+# role_axiom_to_manchester never writes text the reader would not take back.
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("axiom", [
+    ("subproperty", "r", dl.InverseRole("s")),
+    ("subproperty", dl.InverseRole("r"), "s"),
+    ("domain", dl.InverseRole("r"), A),
+    ("functional", dl.InverseRole("r")),
+])
+def test_an_inverse_role_has_no_one_line_spelling_and_is_refused_by_name(axiom):
+    # The reader (parse_manchester_role_axiom) takes a role NAME in every slot
+    # and has no `inverse` spelling for a role axiom, so the only text the writer
+    # could produce for an InverseRole is its dataclass repr,
+    # "r SubPropertyOf InverseRole(role='s')" -- which reads back as a role
+    # literally named "InverseRole(role='s')". A ValueError naming the role and
+    # the remedy (dl.to_owl_functional writes ObjectInverseOf) is the honest
+    # answer; the old behaviour printed the repr.
+    with pytest.raises(ValueError, match="role NAME") as caught:
+        dl.role_axiom_to_manchester(*axiom)
+    assert "ObjectInverseOf" in str(caught.value)
+
+
+@pytest.mark.parametrize("axiom", [
+    ("subproperty", "r", "owl:topObjectProperty"),
+    ("subproperty", "owl:bottomObjectProperty", "s"),
+    ("functional", "owl:topObjectProperty"),
+    ("range", "owl:bottomObjectProperty", A),
+])
+def test_a_built_in_property_name_is_not_written_where_the_reader_refuses_it(axiom):
+    # parse_manchester_role_axiom refuses every built-in name in every position,
+    # so a writer that printed one would produce text the reader rejects. The
+    # pre-fix writer did print it: "r SubPropertyOf owl:topObjectProperty".
+    with pytest.raises(ManchesterSyntaxError, match="BUILT-IN"):
+        dl.parse_manchester_role_axiom({
+            "subproperty": f"{axiom[1]} SubPropertyOf {axiom[2] if len(axiom) > 2 else ''}",
+            "functional": f"{axiom[1]} Characteristics: Functional",
+            "range": f"{axiom[1]} Range: A",
+        }[axiom[0]])
+    with pytest.raises(ValueError, match="BUILT-IN"):
+        dl.role_axiom_to_manchester(*axiom)
+
+
+def test_a_plain_role_axiom_still_writes_and_reads_back():
+    # Control: the guard is on the operand, not the shape.
+    for axiom in [("subproperty", "r", "s"), ("domain", "r", A),
+                  ("functional", "r"), ("inverse", "p", "q")]:
+        text = dl.role_axiom_to_manchester(*axiom)
+        assert dl.parse_manchester_role_axiom(text) == axiom
+
+
+# --------------------------------------------------------------------------- #
+# A floating-point literal after `value` is a LITERAL, never an individual.
+#
+# The W3C Manchester grammar (§2.1) has three unquoted literal forms:
+#   integerLiteral       ::= ['+'|'-'] digits                          xsd:integer
+#   decimalLiteral       ::= ['+'|'-'] digits '.' digits               xsd:decimal
+#   floatingPointLiteral ::= ['+'|'-'] (digits ['.' digits] [exponent]
+#                                       | '.' digits [exponent]) ('f'|'F')
+#                                                                     xsd:float
+#   exponent             ::= ('e'|'E') ['+'|'-'] digits
+# and the lexical form of the float is the text WITHOUT the f/F suffix. This
+# kit's data layer has no first-order image of xsd:float (its value space has
+# NaN and a signed zero, which the exact-number order does not), so a float is
+# REFUSED BY NAME wherever it is translated -- the quoted spelling
+# "1.5"^^xsd:float and the Functional-Style reader already do exactly that.
+# Reading `d value 1.5f` as ObjectHasValue(d, the individual "1.5f") instead
+# silently turned d into an object role: two routes, two answers, one of them
+# silent.
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("text, lexical", [
+    ("d value 1.5f", "1.5"),        # digits '.' digits, f
+    ("d value 2f", "2"),            # digits, f (no point, no exponent)
+    ("d value 2F", "2"),            # F as well as f
+    ("d value 1.0e+2f", "1.0e+2"),  # digits '.' digits exponent, f
+    ("d value -1.5F", "-1.5"),      # a sign
+    ("d value +3e2f", "+3e2"),      # digits exponent (no point), a plus sign
+    ("d value .5f", ".5"),          # '.' digits
+])
+def test_a_floating_point_literal_after_value_is_an_xsd_float(text, lexical):
+    expected = dl.DataHasValue("d", dl.Literal(lexical, "xsd:float"))
+    assert parse_manchester(text) == expected
+    # ... and it is the SAME restriction as the quoted spelling.
+    assert parse_manchester(f'd value "{lexical}"^^xsd:float') == expected
+
+
+def test_a_floating_point_literal_is_refused_by_name_at_translation_like_the_quoted_one():
+    # Two spellings, one refusal: each names the literal and says it has no
+    # first-order image. The Functional-Style route refuses the same literal
+    # with the same text (it does so while reading).
+    spelled = parse_manchester("d value 1.5f")
+    with pytest.raises(dl.UnsupportedDatatypeError) as bare:
+        dl.concept_to_fol(spelled)
+    with pytest.raises(dl.UnsupportedDatatypeError) as quoted:
+        dl.concept_to_fol(parse_manchester('d value "1.5"^^xsd:float'))
+    assert str(bare.value) == str(quoted.value)
+    assert '"1.5"^^xsd:float' in str(bare.value)
+    assert "no first-order image" in str(bare.value)
+    with pytest.raises(ValueError) as functional:
+        dl.parse_owl_functional_class_expression('DataHasValue(d "1.5"^^xsd:float)')
+    assert '"1.5"^^xsd:float has no first-order image' in str(functional.value)
+
+
+@pytest.mark.parametrize("text, expected", [
+    # The other two bare forms keep their meaning (the control).
+    ("d value 1", dl.DataHasValue("d", dl.Literal("1", "xsd:integer"))),
+    ("d value -3", dl.DataHasValue("d", dl.Literal("-3", "xsd:integer"))),
+    ("d value 1.5", dl.DataHasValue("d", dl.Literal("1.5", "xsd:decimal"))),
+    # A name is an individual. None of these is a floatingPointLiteral: the
+    # grammar requires the f/F, and nothing may follow it.
+    ("d value a", dl.HasValue("d", "a")),
+    ("d value f", dl.HasValue("d", "f")),
+    ("d value 1e5", dl.HasValue("d", "1e5")),      # exponent without f
+    ("d value 1.5d", dl.HasValue("d", "1.5d")),    # d is not a float suffix
+    ("d value 1.5fx", dl.HasValue("d", "1.5fx")),  # something follows the f
+])
+def test_the_other_value_slots_are_unchanged(text, expected):
+    assert parse_manchester(text) == expected
+
+
+def test_a_floating_point_literal_is_a_literal_in_the_other_literal_slots_too():
+    # A literal read after `value` is a literal everywhere the grammar has a
+    # `literal` slot: the literal reader, a data one-of and a facet bound.
+    assert dl.parse_manchester_literal("1.5f") == dl.Literal("1.5", "xsd:float")
+    assert parse_manchester("d some {1.5f, 2}") == dl.DataExists(
+        "d", dl.DataOneOf((dl.Literal("1.5", "xsd:float"), dl.Literal("2", "xsd:integer"))))
+    # A float bound on an exact-number base is not an exact number: refused by
+    # name (it was refused before, as an "expected a literal"; now the reader
+    # says what is wrong), identically to the quoted spelling.
+    for bound in ("1.5f", '"1.5"^^xsd:float'):
+        with pytest.raises(ManchesterSyntaxError) as exc:
+            parse_manchester(f"d some xsd:integer[>= {bound}]")
+        assert "xsd:minInclusive" in str(exc.value)
+        assert '"1.5"^^xsd:float' in str(exc.value)
+
+
+# --------------------------------------------------------------------------- #
+# The writer refuses where the reader does.
+#
+# An OWL 2 built-in property name (owl:topObjectProperty and the other three) or
+# the name of an equality atom (``=`` / ``≠``) as the role of a restriction is
+# refused by name by the Manchester READER, by the Functional-Style writer and by
+# every other route; ``to_manchester`` used to print ``owl:topObjectProperty some
+# A`` for it, text its own reader refuses (and a different restriction if some
+# other tool read it: the universal property is not an ordinary role). All of them
+# refuse through ONE function, dl.tableau._reject_concept_role, so the words differ
+# only in the ``where:`` prefix.
+# --------------------------------------------------------------------------- #
+
+_BUILT_IN_ROLE_NAMES = ["owl:topObjectProperty", "owl:bottomObjectProperty",
+                        "owl:topDataProperty", "owl:bottomDataProperty", "=", "≠"]
+
+
+@pytest.mark.parametrize("name", _BUILT_IN_ROLE_NAMES)
+def test_the_writer_refuses_the_concept_its_reader_refuses_the_text_of(name):
+    concept = dl.Exists(name, A)
+    # the text the old writer produced, and what the reader says of it
+    with pytest.raises(ManchesterSyntaxError):
+        parse_manchester(f"{name} some A")
+    # the writer no longer prints it ...
+    with pytest.raises(dl.RoleExpressionError) as written:
+        to_manchester(concept)
+    # ... and is the same refusal the Functional-Style writer gives
+    with pytest.raises(dl.RoleExpressionError) as functional:
+        dl.to_owl_functional_class_expression(concept)
+    assert str(written.value).replace("to_manchester", "X") == \
+        str(functional.value).replace("to_owl_functional_class_expression", "X")
+    assert name in str(written.value)
+
+
+@pytest.mark.parametrize("make", [
+    lambda n: dl.ForAll(n, A),
+    lambda n: dl.AtLeast(2, n, A),
+    lambda n: dl.AtMost(1, n, A),
+    lambda n: dl.HasValue(n, "b"),
+    lambda n: dl.DataExists(n, dl.Datatype("xsd:integer")),
+    lambda n: dl.DataAtLeast(1, n, dl.Datatype("xsd:integer")),
+    # at depth: under not, and, or and a filler
+    lambda n: dl.And(A, dl.Not(dl.Or(B, dl.Exists("r", dl.Exists(n, A))))),
+])
+def test_the_writer_refuses_every_restriction_and_every_depth(make):
+    for name in _BUILT_IN_ROLE_NAMES:
+        with pytest.raises(dl.RoleExpressionError, match="to_manchester"):
+            to_manchester(make(name))
+
+
+@pytest.mark.parametrize("tag", ["domain", "range"])
+def test_the_role_axiom_writer_refuses_a_filler_with_a_built_in_role(tag):
+    for name in _BUILT_IN_ROLE_NAMES:
+        with pytest.raises(dl.RoleExpressionError, match=r"role_axiom_to_manchester"):
+            dl.role_axiom_to_manchester(tag, "r", dl.Not(dl.Exists(name, A)))
+
+
+def test_the_writer_still_writes_what_the_reader_reads():
+    # The control: only a built-in or equality name is refused. An ordinary role,
+    # an inverse role (render-only, as always) and a nominal are written as before.
+    for concept, text in [
+        (dl.Exists("hasChild", A), "hasChild some A"),
+        (dl.AtLeast(2, "r", A), "r min 2 A"),
+        (dl.Exists(dl.InverseRole("r"), A), "inverse r some A"),
+        (dl.Nominal("a"), "{a}"),
+    ]:
+        assert to_manchester(concept) == text
+    assert dl.role_axiom_to_manchester("domain", "r", dl.Exists("s", A)) == "r Domain: s some A"
+    # a role merely NAMED like a built-in is not one
+    assert to_manchester(dl.Exists("topObjectProperty", A)) == "topObjectProperty some A"

@@ -487,20 +487,22 @@ def test_so_comprehension_avoids_capture_under_count_binder():
 
 
 def test_so_comprehension_avoids_capture_under_slashed_existential():
-    # Regression, two guards at once. ∃v/{v_0} binds v, so instantiating X with a
+    # Regression, two guards at once. ∃v/{v0} binds v, so instantiating X with a
     # comprehension whose body has a free v must α-rename it (pre-fix: captured).
     # And the fresh name must avoid the SLASH names too — they are plain strings that
-    # _free_vars cannot see, so minting "v_0" here would silently rewire the
-    # independence set instead of capturing anything visible.
+    # _free_vars cannot see, so minting "v0" here (the first name of the kit's
+    # variable shape) would silently rewire the independence set instead of
+    # capturing anything visible. Hand-derived: avoid = {v} ∪ {v0} ∪ {v} -> "v1".
     from unicode_fol_kit.atp.sequent import _subst_pred, _free_vars
     from unicode_fol_kit.fol.nodes import SlashedExists
     v, z = Variable("v"), Variable("z")
-    body = SlashedExists(v, ("v_0",), Atom("X", [v]))
+    body = SlashedExists(v, ("v0",), Atom("X", [v]))
     inst = _subst_pred(body, "X", (z,), Atom("R", [v, z]))
     assert v in _free_vars(inst)              # the comprehension's free v stayed free
     assert inst.variable.name != "v"          # the slashed binder was renamed
-    assert inst.variable.name != "v_0"        # ... and did not collide with the slash
-    assert inst.slashed == ("v_0",)           # the independence set is untouched
+    assert inst.variable.name != "v0"         # ... and did not collide with the slash
+    assert inst.variable.name == "v1"         # the first free name of that shape
+    assert inst.slashed == ("v0",)            # the independence set is untouched
 
 
 def test_reject_so_comprehension_arity_mismatch():

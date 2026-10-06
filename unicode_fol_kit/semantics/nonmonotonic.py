@@ -18,6 +18,15 @@ The search reuses the finite model finder, so it is **bounded** (domains up to
 proof over all (possibly infinite) models. The relation is genuinely non-monotonic —
 adding premises can flip a ``True`` to ``False``.
 
+**A free variable is a parameter.** It names ONE unknown element, the same in every premise
+and in the conclusion; it is replaced, in all the formulas of a call together, by a constant
+of its own name (:func:`~unicode_fol_kit.fol._free_parameters.parameterize`), and a constant
+is part of the fixed part two models must share to be compared. A premise is never closed
+universally: ``P(x) ⊨_circ P(alpha)`` fails (the minimal models make ``P`` true of ``x``
+alone, and ``alpha`` may be another element), while ``∀x P(x) ⊨_circ P(alpha)`` holds. A
+free variable that has the spelling of a constant of the problem is refused
+(``NotImplementedError``): a structure holds one entry per name.
+
 **Second-order circumscription axiom.** :func:`circumscription_formula` builds McCarthy's
 textbook SO sentence for the same ``Γ ⊨_circ φ`` relation — ``T(P) ∧ ∀P'((T(P') ∧ P'⊆P) →
 P⊆P')`` — so it can be checked (or exported to Isabelle/THF via
@@ -31,12 +40,13 @@ Public API: :func:`minimal_models`, :func:`minimal_entails`, :func:`circumscript
 
 from typing import Dict, Iterable, List, Optional, Tuple, Union
 
+from ..fol._free_parameters import parameterize
 from ..fol.nodes import (
     Node, Atom, And, Implies, Quantifier, Variable, SecondOrderQuantifier,
 )
-from .tarski import Structure, models
+from .tarski import Structure, models, _refuse_cardinality_as_individual
 from .modelfinder import (
-    _Signature, _interpretations, _candidate_count, _universal_closure, MAX_CANDIDATES,
+    _Signature, _interpretations, _candidate_count, MAX_CANDIDATES,
 )
 
 #: A circumscribed-predicate spec: either a bare name (arity inferred from the
@@ -83,13 +93,23 @@ def minimal_models(premises, circumscribed: Optional[set] = None,
     the union of the minimal models found at each domain size. ``extra_signature`` adds
     formulas whose symbols the models must interpret without being constrained by them
     (so a goal's constants/predicates are total in every enumerated model).
+
+    A free variable of ``premises`` and ``extra_signature`` is a parameter shared by all of
+    them (see the module docstring): a constant of its own name that every model
+    interprets, and that two models must interpret alike to be compared.
+
+    Raises:
+        NotImplementedError: a free variable has the spelling of a constant of the
+            formulas, or a cardinality term ``|{v : φ}|`` is not an operand of a comparison
+            with a number (see :func:`~unicode_fol_kit.semantics.tarski.satisfies`).
     """
-    sentences = [_universal_closure(p) for p in premises]
+    premises = list(premises)
+    closed, _ = parameterize(premises + list(extra_signature), after_variables=True)
+    _refuse_cardinality_as_individual(closed, "semantics.nonmonotonic")
+    sentences = closed[:len(premises)]
     sig = _Signature()
-    for s in sentences:
+    for s in closed:
         sig.scan(s)
-    for f in extra_signature:
-        sig.scan(_universal_closure(f))
     pred_sig = sorted(sig.predicates)
     circ = set(circumscribed) if circumscribed is not None else {n for n, _ in pred_sig}
 
@@ -123,13 +143,21 @@ def minimal_entails(premises, conclusion: Node, circumscribed: Optional[set] = N
                     max_size: int = 4, max_candidates: int = MAX_CANDIDATES) -> bool:
     """Return whether ``premises`` circumscriptively entail ``conclusion`` (bounded).
 
-    ``True`` iff the (universally closed) ``conclusion`` holds in *every* minimal model
-    of ``premises`` found up to ``max_size`` (see :func:`minimal_models`). Non-monotonic:
-    strengthening ``premises`` can turn a ``True`` into a ``False``.
+    ``True`` iff ``conclusion`` holds in *every* minimal model of ``premises`` found up to
+    ``max_size`` (see :func:`minimal_models`). Non-monotonic: strengthening ``premises`` can
+    turn a ``True`` into a ``False``. A free variable is a parameter shared by the premises
+    and the conclusion (see the module docstring): the conclusion is evaluated with each
+    model's own element for it, so ``P(x)`` circumscribing ``P`` does not entail ``P(alpha)``.
+
+    Raises:
+        NotImplementedError: a free variable has the spelling of a constant of the
+            formulas.
     """
-    goal = _universal_closure(conclusion)
-    for structure in minimal_models(premises, circumscribed, max_size, max_candidates,
-                                    extra_signature=[conclusion]):
+    premises = list(premises)
+    closed, _ = parameterize(premises + [conclusion], after_variables=True)
+    goal = closed[-1]
+    for structure in minimal_models(closed[:-1], circumscribed, max_size, max_candidates,
+                                    extra_signature=[goal]):
         if not models(goal, structure):
             return False
     return True
@@ -201,7 +229,9 @@ def circumscription_formula(premises, circumscribed: Iterable[CircSpec], varied:
     """Build the second-order circumscription axiom for ``premises`` w.r.t. ``circumscribed``.
 
     ``T(P̄) ∧ ∀P̄'((T(P̄') ∧ P̄'⊆P̄) → P̄⊆P̄')`` — ``T`` is the conjunction of the
-    (universally closed) ``premises``; ``P̄`` are the ``circumscribed`` predicates
+    ``premises``, in which a free variable is a PARAMETER (a constant of its own name,
+    the same in every premise; the premises are never closed universally);
+    ``P̄`` are the ``circumscribed`` predicates
     (one or more), each replaced by a FRESH predicate ``P'`` inside a second copy
     of ``T``, with that ``P'`` bound by a second-order quantifier — **universal**
     (``∀P'``), since the axiom says NO strictly-smaller ``P'`` also satisfies
@@ -228,6 +258,8 @@ def circumscription_formula(premises, circumscribed: Iterable[CircSpec], varied:
         ValueError: if ``circumscribed`` is empty, or a bare name's arity cannot
             be inferred (never applied in ``premises``), or a predicate is
             applied at conflicting arities in ``premises``.
+        NotImplementedError: also when a free variable has the spelling of a constant
+            of ``premises`` (a structure holds one entry per name).
     """
     if tuple(varied):
         raise NotImplementedError(
@@ -240,7 +272,7 @@ def circumscription_formula(premises, circumscribed: Iterable[CircSpec], varied:
         )
     from ..atp.sequent import _rename_pred, _all_pred_names, _fresh_pred_name
 
-    sentences = [_universal_closure(p) for p in premises]
+    sentences, _ = parameterize(list(premises), after_variables=True)
 
     circ_list = sorted(circumscribed, key=lambda e: e[0] if isinstance(e, tuple) else e)
     if not circ_list:
@@ -294,7 +326,7 @@ def circumscription_formula(premises, circumscribed: Iterable[CircSpec], varied:
 
 
 def circumscription_entails_so(premises, circumscribed: Iterable[CircSpec], conclusion: Node) -> Node:
-    """Build ``circumscription_formula(premises, circumscribed) → conclusion`` (universally closed).
+    """Build ``circumscription_formula(premises, circumscribed) → conclusion`` (a closed sentence).
 
     The caller decides validity — e.g. with
     :func:`unicode_fol_kit.semantics.secondorder.so_is_valid_finite` (bounded, but
@@ -306,9 +338,21 @@ def circumscription_entails_so(premises, circumscribed: Iterable[CircSpec], conc
     ``circumscribed`` has its arity inferred from BOTH ``premises`` and
     ``conclusion`` — so e.g. ``circumscription_entails_so([], {"P"}, ¬P(b))``
     (empty premises, ``P``'s arity known only from the conclusion) works.
+
+    A free variable is a PARAMETER shared by the premises and the conclusion: it is
+    replaced, in all of them together, by a constant of its own name before the axiom
+    is built, so the sentence is closed and says what ``minimal_entails`` decides
+    (``P(x)`` circumscribing ``P`` does not entail ``P(alpha)``).
+
+    Raises:
+        ValueError: a bare predicate name is never applied in the premises or the
+            conclusion.
+        NotImplementedError: a free variable has the spelling of a constant of the
+            formulas.
     """
-    sentences = [_universal_closure(p) for p in premises]
-    closed_conclusion = _universal_closure(conclusion)
+    premises = list(premises)
+    parameterized, _ = parameterize(premises + [conclusion], after_variables=True)
+    sentences, closed_conclusion = parameterized[:-1], parameterized[-1]
 
     resolved_circumscribed: List[Tuple[str, int]] = []
     for entry in circumscribed:
@@ -324,5 +368,5 @@ def circumscription_entails_so(premises, circumscribed: Iterable[CircSpec], conc
             )
         resolved_circumscribed.append((entry, arity))
 
-    axiom = circumscription_formula(premises, resolved_circumscribed)
+    axiom = circumscription_formula(sentences, resolved_circumscribed)
     return Implies(axiom, closed_conclusion)

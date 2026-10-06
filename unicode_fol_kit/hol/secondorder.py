@@ -53,17 +53,31 @@ export: an ordinary uninterpreted predicate over ``$i`` (rendered ``feq`` /
 read ``=`` as identity via the structure; if you need that in the prover, add the
 reflexivity / Leibniz axioms, or post-edit to primitive ``=``.)
 
+**Numerals.** A numeral is an individual constant identified by its VALUE, written
+``n1``, ``n2.5`` (``n2_5`` once sanitised): ``1`` and ``1.0`` are one constant, and
+nothing else is known about it. ``+ - * /`` are free function symbols and ``< > ≤ ≥`` free
+predicates. A numeral spelled like another symbol of the formula (the constant ``n1`` next
+to the number ``1``, or a free object variable ``n1``, which this export reads as an
+individual constant) is refused by name, never merged with it. The one numeral that stays
+a number is the operand of a comparison with a cardinality, which :func:`to_isabelle_so`
+reads over the naturals (see above).
+
 Public API: :func:`to_thf_so`, :func:`to_isabelle_so`.
 """
 
-from typing import Dict, FrozenSet, List
+from typing import Dict, FrozenSet, List, Tuple
 
 from ..fol.nodes import (
     Node, Variable, Constant, Number, Function,
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
     SecondOrderQuantifier, Cardinality, SortedCardinality,
 )
+from ..fol._numeral_symbols import numeral_name, numerals_as_constants, prefixed_numeral_name
 from ..fol._symbol_names import dedupe as _dedupe  # shared de-collision helper
+from ..fol._truth_constants import truth_value
+from ._isabelle_binders import (
+    PREDICATE, VARIABLE, binder_tokens, collect_binders, declared_names,
+)
 
 _FORALL = "∀"
 _EXISTS = "∃"
@@ -131,6 +145,9 @@ class _FreeNames:
         self.pred: Dict[str, str] = {}
         self.ind: Dict[str, str] = {}
         self.func: Dict[str, str] = {}
+        # The names the Isabelle text gives its binders, ``{(kind, name): token}``: filled by
+        # :func:`to_isabelle_so` once the declarations are known (THF names its binders itself).
+        self.binder: Dict[Tuple[str, str], str] = {}
         # Predicates first (they tend to keep the more meaningful name), then
         # individuals, then functions — each de-colliding against the shared pool.
         for name in sorted(pred_arity):
@@ -216,6 +233,33 @@ def _free_object_vars(formula: Node, bound=frozenset()) -> FrozenSet[str]:
     return frozenset(free)
 
 
+def _numerals_as_constants(formula: Node, where: str) -> Node:
+    """``formula`` with every numeral written as the constant ``n1``, ``n2.5``, ... of its VALUE.
+
+    A numeral is a constant identified by its value (``1`` and ``1.0`` are one constant), and
+    ``+ - * /`` and ``< > ≤ ≥`` are ordinary function and predicate symbols here. The one
+    numeral left as a ``Number`` is the operand of a comparison with a cardinality
+    (``|{x : P(x)}| ≥ 2``): that comparison is arithmetic over the naturals (HOL's ``card``),
+    and the operand is the number it compares the count with, not an individual.
+
+    Raises:
+        NotImplementedError: a constant, a function or a free object variable (which this
+            export reads as an individual constant) is spelled like the constant of a
+            numeral of the formula (``n1`` next to the number ``1``): they would be ONE
+            symbol, and a numeral is not the constant of the same spelling.
+    """
+    [rewritten], names = numerals_as_constants([formula], where=where, spell=prefixed_numeral_name,
+                                               counting_comparisons=True)
+    clash = sorted(names & _free_object_vars(rewritten))
+    if clash:
+        raise NotImplementedError(
+            f"{where}: the free object variable {clash[0]!r} is exported as an individual "
+            "constant of that name, and so is the numeral whose constant is spelled alike, so "
+            "they would be ONE symbol. A numeral is a constant of its own, identified by its "
+            f"value; rename the variable {clash[0]!r}.")
+    return rewritten
+
+
 def _signature(formula: Node):
     """Collect free predicates, free constants/free-vars-as-constants, functions.
 
@@ -223,8 +267,9 @@ def _signature(formula: Node):
 
     - ``pred_arity``: free predicate name -> arity (atoms whose predicate is not a
       bound second-order variable);
-    - ``const_names``: explicit constants, number constants, AND free object
-      variables (treated as individual constants in the closed export);
+    - ``const_names``: explicit constants (a numeral is the constant of its value, see
+      :func:`_numerals_as_constants`), AND free object variables (treated as individual
+      constants in the closed export);
     - ``func_arity``: function name -> arity.
     """
     so_names = _bound_preds(formula)
@@ -234,7 +279,7 @@ def _signature(formula: Node):
     func_arity: Dict[str, int] = {}
     for n in formula.walk():
         if isinstance(n, Atom):
-            if n.predicate in so_names:
+            if n.predicate in so_names or truth_value(n) is not None:
                 continue
             pred_arity[n.predicate] = len(n.args)
         elif isinstance(n, SortedCardinality):
@@ -242,8 +287,6 @@ def _signature(formula: Node):
             pred_arity.setdefault(n.sort, 1)
         elif isinstance(n, Constant):
             const_names.add(n.name)
-        elif isinstance(n, Number):
-            const_names.add("n" + str(n.value))
         elif isinstance(n, Function):
             func_arity[n.name] = len(n.args)
     return pred_arity, const_names, func_arity
@@ -278,7 +321,10 @@ def _thf_term(node: Node, scope: "_Scope", free: "_FreeNames") -> str:
     if isinstance(node, Constant):
         return free.ind[node.name]
     if isinstance(node, Number):
-        return free.ind["n" + str(node.value)]
+        raise NotImplementedError(
+            f"to_thf_so: the number {numeral_name(node.value)} is compared with a cardinality, "
+            "and TH0 has no built-in finite-set theory to state that — use to_isabelle_so, "
+            "which embeds |{v : φ}| as HOL's ``card {v. φ}`` over the naturals.")
     if isinstance(node, Function):
         head = free.func[node.name]
         return "( " + " @ ".join([head] + [_thf_term(a, scope, free) for a in node.args]) + " )"
@@ -299,6 +345,8 @@ def _thf(node: Node, scope: "_Scope", free: "_FreeNames") -> str:
     free symbols to their unique functors.
     """
     if isinstance(node, Atom):
+        if truth_value(node) is not None:
+            return "$true" if truth_value(node) else "$false"
         try:
             head = scope.token("pred", node.predicate)   # bound predicate VARIABLE
         except KeyError:
@@ -385,6 +433,7 @@ def to_thf_so(formula: Node, conjecture: bool = True) -> str:
     Equality ``=`` / ``≠`` is emitted as an ordinary uninterpreted relation over
     ``$i`` (``feq`` / ``fneq``), not primitive HOL identity.
     """
+    formula = _numerals_as_constants(formula, "to_thf_so")
     role = "conjecture" if conjecture else "axiom"
     lines = [
         "% Direct second-order -> HOL embedding (predicate quantifiers are native).",
@@ -428,17 +477,21 @@ def _isa_fun_type(arity: int) -> str:
 def _isa_term(node: Node, bvars: FrozenSet[str], free: "_FreeNames") -> str:
     """Render an individual term in Isabelle (curried application, no commas).
 
-    A bound object variable keeps its (lowercase) name; a free object variable is a
-    declared individual constant whose functor is drawn from ``free`` — the SAME
+    A bound object variable keeps its name unless a symbol of the theory is spelled like it
+    (``free.binder``, see :mod:`unicode_fol_kit.hol._isabelle_binders`); a free object
+    variable is a declared individual constant whose functor is drawn from ``free`` — the SAME
     de-colliding resolver the declarations use, so a free individual never collides
     with a free predicate (which would emit two ``consts`` of the same name).
     """
     if isinstance(node, Variable):
-        return node.name if node.name in bvars else free.ind[node.name]
+        return free.binder.get((VARIABLE, node.name), node.name) if node.name in bvars else free.ind[node.name]
     if isinstance(node, Constant):
         return free.ind[node.name]
     if isinstance(node, Number):
-        return free.ind["n" + str(node.value)]
+        raise NotImplementedError(
+            f"to_isabelle_so: the number {numeral_name(node.value)} is an operand of a comparison "
+            "with a cardinality (a natural number), not an individual: it cannot be the argument "
+            "of a predicate or a function.")
     if isinstance(node, Function):
         head = free.func[node.name]
         return "(" + " ".join([head] + [_isa_term(a, bvars, free) for a in node.args]) + ")"
@@ -469,14 +522,14 @@ def _isa_card_operand(node: Node, bpreds: FrozenSet[str], bvars: FrozenSet[str],
     evaluator enforces).
     """
     if isinstance(node, (Cardinality, SortedCardinality)):
-        v = node.variable.name
-        matrix = _isa(node.formula, bpreds, bvars | {v}, free)
+        v = free.binder.get((VARIABLE, node.variable.name), node.variable.name)
+        matrix = _isa(node.formula, bpreds, bvars | {node.variable.name}, free)
         if isinstance(node, SortedCardinality):
             guard = free.pred[node.sort]
             matrix = f"(({guard} {v}) \\<and> {matrix})"
         return f"(card {{{v}. {matrix}}})"
     if isinstance(node, Number):
-        return str(node.value)
+        return numeral_name(node.value)     # a whole-number float is the natural it equals: 2.0 is 2
     raise NotImplementedError(
         "to_isabelle_so: a comparison with a cardinality operand is NUMERIC — "
         "the other operand must be a Number or another cardinality term, not an "
@@ -486,6 +539,8 @@ def _isa_card_operand(node: Node, bpreds: FrozenSet[str], bvars: FrozenSet[str],
 def _isa(node: Node, bpreds: FrozenSet[str], bvars: FrozenSet[str], free: "_FreeNames") -> str:
     """Render a second-order formula as an Isabelle/HOL boolean term."""
     if isinstance(node, Atom):
+        if truth_value(node) is not None:
+            return "True" if truth_value(node) else "False"
         if (node.predicate in ("=", "≠") or node.predicate in _CARD_COMPARE) \
                 and len(node.args) == 2 \
                 and any(isinstance(a, (Cardinality, SortedCardinality))
@@ -498,7 +553,8 @@ def _isa(node: Node, bpreds: FrozenSet[str], bvars: FrozenSet[str], free: "_Free
             if node.predicate == "≠":
                 return f"(\\<not> ({left} = {right}))"
             return f"({left} {_CARD_COMPARE[node.predicate]} {right})"
-        head = node.predicate if node.predicate in bpreds else free.pred[node.predicate]
+        head = (free.binder.get((PREDICATE, node.predicate), node.predicate) if node.predicate in bpreds
+                else free.pred[node.predicate])
         if not node.args:
             return head
         return "(" + " ".join([head] + [_isa_term(a, bvars, free) for a in node.args]) + ")"
@@ -519,13 +575,13 @@ def _isa(node: Node, bpreds: FrozenSet[str], bvars: FrozenSet[str], free: "_Free
         x = node.variable.name
         q = _ISA["forall"] if node.type in (_FORALL, "forall") else _ISA["exists"]
         inner = _isa(node.formula, bpreds, bvars | {x}, free)
-        return f"({q}{x}::i. {inner})"
+        return f"({q}{free.binder.get((VARIABLE, x), x)}::i. {inner})"
     if isinstance(node, SecondOrderQuantifier):
         p = node.predicate
         q = _ISA["forall"] if node.type in (_FORALL, "forall") else _ISA["exists"]
         typ = _isa_pred_type(node.arity)
         inner = _isa(node.formula, bpreds | {p}, bvars, free)
-        return f"({q}{p}::{typ}. {inner})"
+        return f"({q}{free.binder.get((PREDICATE, p), p)}::{typ}. {inner})"
     raise NotImplementedError(
         f"to_isabelle_so: {type(node).__name__} is outside the second-order "
         "fragment supported by the Isabelle export.")
@@ -569,7 +625,12 @@ def to_isabelle_so(formula: Node, name: str = "SO_Goal") -> str:
     ``name`` becomes the theory name; it must be a legal Isabelle identifier (it is
     also conventionally the ``.thy`` file's base name).
     """
+    formula = _numerals_as_constants(formula, "to_isabelle_so")
     free = _FreeNames(formula)
+    declarations = _isa_signature(formula, free)
+    # a binder shadows a constant of its own spelling inside its scope: it is printed under a
+    # name that no declared symbol has
+    free.binder = binder_tokens(collect_binders([formula]), declared_names(declarations))
     body = _isa(formula, frozenset(), frozenset(), free)
     lines = [
         "(* Direct second-order -> HOL embedding (predicate quantifiers native). *)",
@@ -581,7 +642,7 @@ def to_isabelle_so(formula: Node, name: str = "SO_Goal") -> str:
         "",
         "typedecl i  \\<comment> \\<open>individuals\\<close>",
     ]
-    lines += _isa_signature(formula, free)
+    lines += declarations
     lines.append("")
     lines.append(f"lemma \"{body}\"")
     lines.append("  oops  \\<comment> \\<open>try: by auto / by blast / sledgehammer\\<close>")

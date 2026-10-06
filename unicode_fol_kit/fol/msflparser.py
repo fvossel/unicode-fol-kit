@@ -497,6 +497,13 @@ class _SpanCapturingTransform:
                 self.id_head[id(result)] = span_from_token(tok, text)
             return
 
+        if alias in ("true_", "false_"):
+            # The glyph ``⊤`` / ``⊥`` is the whole atom, so its head is its extent.
+            extent = self.id_extent.get(id(result))
+            if extent is not None:
+                self.id_head[id(result)] = extent
+            return
+
         if alias in ("const_", "number_"):
             # CONSTANT / NUMBER also have no per-token handler, so the raw
             # token — the leaf's ENTIRE span — is still sitting in children[0].

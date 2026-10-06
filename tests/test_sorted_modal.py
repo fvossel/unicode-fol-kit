@@ -16,9 +16,9 @@ SEMANTIC DECISIONS the delegation itself does not make, made and pinned here:
   same as every atom in that module) in the intuitionistic search. An individual can be
   ``S`` at one world/stage and not at another. This mirrors the SAME "actualist" choice
   this kit already makes for the bare (unsorted) per-world domain ``D_w``.
-- **Non-emptiness is NOT assumed by the modal/intuitionistic routes unless the caller
-  asks for it.** The classical many-sorted routes (``api.prove`` et al.) ALWAYS assume
-  every sort is non-empty (``fol.nonempty_sort_axioms``, added as extra premises) -- a
+- **Non-emptiness is NOT assumed by the evaluator of ONE model; every route that decides
+  validity assumes it.** The classical many-sorted routes (``api.prove`` et al.) ALWAYS
+  assume every sort is non-empty (``fol.nonempty_sort_axioms``, added as extra premises) -- a
   bare relativisation alone would make ``∀x:S P(x) → ∃x:S P(x)`` classically valid but
   NOT modally/intuitionistically valid, an inconsistency across routes. So:
     * ``satisfies_modal`` never assumes it -- the caller builds a model where each
@@ -28,7 +28,15 @@ SEMANTIC DECISIONS the delegation itself does not make, made and pinned here:
       world (``qml_axioms``), because it already does the analogous thing for the bare
       object domain (``nonempty_dom``).
     * ``semantics.intuitionistic`` DOES thread it in too, as an extra premise
-      (``⋀nonempty-axioms → relativised-formula``), for the same reason.
+      (``⋀sort-axioms → relativised-formula``), for the same reason.
+- **A sorted constant is an element of its sort at EVERY world.** ``c:S`` denotes an element
+  of ``S`` and a constant is a rigid designator, so the guard atom ``S(c)`` is true at every
+  world of a legal model. ``fol.qml`` (``∀w (World(w) → S(c, w))``), the Isabelle and THF
+  exports (an axiom with a free / bound world), ``semantics.intuitionistic`` (an antecedent)
+  and ``atp.kripke_enum`` (a fixed atom) assert it; ``satisfies_modal`` evaluates ONE model
+  and cannot, so a model that leaves ``S(c)`` out of a world's valuation is illegal --
+  ``sorted_constant_violations`` names the worlds. The differential tests below build their
+  models that way; ``tests/test_sorted_membership_modal.py`` pins the membership itself.
   This file's differential batteries are built to make this design pinned and visible,
   not just "does it crash".
 
@@ -58,7 +66,7 @@ from unicode_fol_kit.fol.nodes import (
 )
 from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
 from unicode_fol_kit.semantics.intuitionistic import int_valid, int_countermodel
-from unicode_fol_kit.semantics.tarski import Structure
+from unicode_fol_kit.semantics.tarski import IllegalStructureError, Structure
 from unicode_fol_kit.semantics.secondorder import satisfies_so
 from unicode_fol_kit.fol.qml import qml_is_valid, qml_translate
 from unicode_fol_kit.hol.isabelle_modal import to_isabelle_modal, modal_axiom_names
@@ -254,7 +262,8 @@ class TestKripkeSorted:
         # whole tree also reaches a sorted constant that is NOT the top node.
         m2 = KripkeModel(worlds={0, 1}, relations={"alethic": {(0, 1)}},
                          domain=["alice"],
-                         valuation={0: set(), 1: {"Human(alice)", "Mortal(alice)"}})
+                         valuation={0: {"Human(alice)"},
+                                    1: {"Human(alice)", "Mortal(alice)"}})
         assert satisfies_modal(Box(f_true), m2, 0) is True
         assert satisfies_modal(Box(f_false), m2, 0) is False
 
@@ -417,14 +426,18 @@ class TestSecondOrderSorted:
                      sorts={"Human": ["h1", "h2"], "Dog": ["d1"]})
         assert satisfies_so(f, s) is True
 
-    def test_agrees_with_brute_force_evaluator_empty_sort(self):
-        """Same schema, but Robot is empty -- FALSE (no assumed
-        non-emptiness at the raw evaluator level either), a 2-3 element hand-
-        enumerated structure as the test_oracle asks for."""
+    def test_an_empty_sort_is_refused_by_the_brute_force_evaluator(self):
+        """Same schema, but Robot is empty. This test used to pin FALSE ("no assumed non-emptiness at
+        the raw evaluator level either"), but that answered a question about a structure the
+        definition does not have: a sort is the extension of a unary predicate and is never empty, so
+        a structure with an empty sort is not a structure of it, and evaluating a formula in it is an
+        error naming the sort, not a truth value. (Over the legal structure above the schema is
+        TRUE; its falsity needs the empty sort, which no structure of the definition has.)"""
         p = MSFLParser(second_order=True, many_sorted=True)
         f = p.parse("∀P (∀x:Robot P(x) → ∃x:Robot P(x))")
         s = Structure(domain=["h1", "h2"], sorts={"Human": ["h1", "h2"], "Robot": []})
-        assert satisfies_so(f, s) is False
+        with pytest.raises(IllegalStructureError, match="'Robot' is empty"):
+            satisfies_so(f, s)
 
     def test_typed_predicate_quantifier_over_two_sorts(self):
         """∃P (∀x:Human P(x) ∧ ∀y:Dog ¬P(y)) -- P separates the two sorts;
@@ -462,18 +475,24 @@ class TestHolExportsSorted:
         correctly (relativized once at the top -- see isabelle_modal_theory's
         comment): it becomes a plain Isabelle constant of type e (SAME
         treatment an ordinary Constant gets) rather than crashing. Its sort
-        MEMBERSHIP fact is -- correctly, matching fol.to_fol's own documented
-        contract for a bare SortedConstant with no enclosing SortedQuantifier
-        -- not asserted here (`_relativize([])` collects it into a discarded
-        fact list, same as every other route in this kit that calls it bare;
-        `to_fol(..., include_sort_facts=True)` is the opt-in for that, a
-        pre-existing, unrelated convention this change does not touch)."""
+        MEMBERSHIP fact IS asserted: ``alice:Human`` denotes an element of
+        ``Human``, so the theory states ``human alice w`` as an axiom (the
+        guard declared even though no quantifier ranges over ``Human``).
+        The earlier reading of this test -- that a bare sorted constant's
+        membership is a fact ``_relativize([])`` collects into a discarded
+        list and no route asserts -- made ``∀x:Human Mortal(x) →
+        Mortal(alice:Human)`` unprovable here while the classical routes and
+        the finite model finder call it valid; a sorted constant that is in
+        no sort is just an unsorted one (``tests/test_sorted_membership_modal.py``
+        pins the membership on every route)."""
         p = MSFLParser(modal=True, many_sorted=True)
         f = p.parse("□Mortal(alice:Human)")
         theory = to_isabelle_modal(f, mode="constant")
         assert 'consts alice :: "e"' in theory
         assert 'consts mortal :: "e' in theory
         assert "mortal alice" in theory
+        assert 'consts human :: "e' in theory
+        assert 'axiomatization where sort_member0: "human alice w"' in theory
 
     def test_hol_exports_state_the_sort_is_non_empty(self):
         """Both HOL exports carry the SAME non-emptiness convention as the rest.
@@ -527,6 +546,27 @@ class TestHolExportsSorted:
         plain = MSFLParser(modal=True).parse("□∀x (P(x))")
         assert "nonempty_sort" not in to_isabelle_modal(plain)
         assert "nonempty_sort" not in to_thf_modal_full(plain)
+
+    def test_identity_under_sorted_quantifiers_stays_rigid_identity(self):
+        """Relativization turns the sort into a WORLD-RELATIVE guard atom and leaves the
+        identity atom alone: ``x = y`` stays rigid (HOL's own ``=``, no world argument,
+        nothing declared for it) next to the world-relative ``human`` guards, in both
+        exports -- the reading ``qml_is_valid`` has, which judges this schema valid
+        (the sort is non-empty at every world, and ``y := x`` witnesses it)."""
+        p = MSFLParser(modal=True, many_sorted=True)
+        f = p.parse("∀x:Human ∃y:Human (x = y)")
+        assert qml_is_valid(f, mode="constant") is True
+
+        theory = to_isabelle_modal(f, mode="constant")
+        assert (r"(mforall (\<lambda>x. (mimp (human x) (mexists (\<lambda>y. "
+                r"(mand (human y) (\<lambda>_. x = y)))))))") in theory
+        assert "feq" not in theory
+
+        thf = to_thf_modal_full(f, mode="constant")
+        assert ("( mforall @ ( ^ [X: $i] : ( mimplies @ ( human @ X ) @ "
+                "( mexists @ ( ^ [Y: $i] : ( mand @ ( human @ Y ) @ "
+                "( meq @ X @ Y ) ) ) ) ) )") in thf
+        assert "feq" not in thf and "thf(feq_decl" not in thf
 
 
 # =============================================================================

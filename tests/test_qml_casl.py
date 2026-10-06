@@ -5,10 +5,19 @@ This file owns the OFFLINE half of the bridge: :func:`~unicode_fol_kit.fol.qml.q
 :func:`~unicode_fol_kit.fol.qml.qml_is_valid` already feeds to Z3), and
 :mod:`unicode_fol_kit.hets.dol`'s identifier-sanitisation shim
 (:func:`~unicode_fol_kit.hets.dol.sanitize_modal_identifiers`,
-:class:`~unicode_fol_kit.hets.dol._CaslIdentifierShim`) that fixes the ONE concrete
-gap the roadmap review measured: ``fol.qml``'s own auto-generated fresh variables
-(``_w0``, the Geach axiom's ``_gz0``/``_gw``/``_gu``/``_gv``/``_gt``, …) are not
-legal CASL identifiers ([A-Za-z][A-Za-z0-9_]*).
+:class:`~unicode_fol_kit.hets.dol._CaslIdentifierShim`).
+
+The gap the shim was written for was ``fol.qml``'s own auto-generated fresh
+variables (``_w0``, the Geach axiom's ``_gz0``/``_gw``/``_gu``/``_gv``/``_gt``, …),
+which are not legal CASL identifiers ([A-Za-z][A-Za-z0-9_]*). Since 0.30.0 those
+names are minted by :func:`~unicode_fol_kit.fol._identifiers.fresh_variables` and
+are plain ``w0`` / ``v0`` / ``x0``, because an underscore-prefixed name is not a
+legal identifier for the KIT's own parser either — so on that source the shim is
+now a no-op, which the tests below assert instead of the old renaming. It stays
+load-bearing for the OTHER source of illegal identifiers, which no renaming of
+variables can remove: ``fol.qml``'s ``·`` user-predicate mark (a user atom named
+like one of the embedding's own relations becomes ``R·``), U+00B7 being
+punctuation CASL has no place for.
 
 ``tests/test_dol.py`` owns the other half: :func:`~unicode_fol_kit.hets.dol.to_dol_library_from_modal`
 (the thin wrapper that composes ``qml_validity_formula`` + the sanitiser + the
@@ -31,14 +40,17 @@ import re
 
 import pytest
 
+from _bound_names import same_up_to_bound_names
 from unicode_fol_kit.fol.nodes import (
-    Atom, Box, Constant, Implies, Knows, Not, Quantifier, Until, Variable,
+    Always, And, Atom, Box, Constant, Diamond, Implies, Knows, Next, Not,
+    Quantifier, Until, Variable,
 )
 from unicode_fol_kit.fol._msfl_nodes import SortedQuantifier
 from unicode_fol_kit.fol.frames import modal_axiom
 from unicode_fol_kit.fol.qml import (
     BARCAN, CONVERSE_BARCAN, _validity_formula, qml_is_valid, qml_validity_formula,
 )
+from unicode_fol_kit.fol.msflparser import MSFLParser
 from unicode_fol_kit.fol.casl_export import to_casl_spec
 from unicode_fol_kit.fol.casl_import import parse_casl_spec
 from unicode_fol_kit.hets.dol import (
@@ -51,6 +63,10 @@ _SIMPLE_ID_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
 
 def _var_names(node):
     return {n.name for n in node.walk() if type(n).__name__ == "Variable"}
+
+
+def _predicate_names(node):
+    return {n.predicate for n in node.walk() if type(n).__name__ == "Atom"}
 
 
 def _all_identifiers(node):
@@ -127,10 +143,12 @@ def test_qml_validity_formula_output_is_pure_classical_fragment():
 # The identifier-sanitisation shim: stems, injectivity, legality
 # =============================================================================
 
-def test_casl_sanitize_stem_strips_qmls_own_leading_underscore_convention():
+def test_casl_sanitize_stem_strips_a_leading_underscore_convention():
     """Hand-worked: every shape fol.qml's own _Fresh / Geach helper /
-    _signature_typing_facts actually mint. Stripping the leading underscore(s)
-    alone already makes each one a legal, human-readable CASL identifier."""
+    _signature_typing_facts used to mint (they are plain 'w0'/'v0'/'x0' since
+    0.30.0). Stripping the leading underscore(s) alone already makes each one a
+    legal, human-readable CASL identifier, and the stem function has to keep
+    doing that for any OTHER caller that hands it such a name."""
     assert _casl_sanitize_stem("_w0") == "w0"
     assert _casl_sanitize_stem("_w12") == "w12"
     assert _casl_sanitize_stem("_gz0") == "gz0"
@@ -157,53 +175,70 @@ def test_casl_sanitize_stem_defensive_edge_cases():
         assert _SIMPLE_ID_RE.fullmatch(candidate)
 
 
-def test_sanitize_modal_identifiers_leaves_already_legal_names_untouched():
-    """qml_validity_formula(T axiom, frame='K') mints exactly ONE fresh
-    variable (the box's '_w0' — 'K' has no reflexivity axiom to add a second
-    quantifier). Every OTHER identifier (P, World, Object, R, E, and the
-    hand-picked object/world variables t, w, v, x qml_axioms/_st themselves
-    use) is already legal and must come out of sanitize_modal_identifiers
-    byte-for-byte unchanged — only '_w0' is renamed, to 'w0'."""
+def test_sanitize_modal_identifiers_is_a_noop_on_a_plain_qml_translation():
+    """qml_validity_formula(T axiom, frame='K') mints exactly ONE fresh variable
+    (the box's world — 'K' has no reflexivity axiom to add a second quantifier),
+    and it is named 'w0'. Together with every other identifier it emits (P,
+    World, Object, R, E, and the hand-picked t, w, v, x) that is already a legal
+    CASL identifier, so the whole formula must come back IDENTICAL — the same
+    node, not merely the same name set. Before 0.30.0 the fresh world was '_w0',
+    and this is where the shim earned its keep."""
     from unicode_fol_kit.fol.nodes import Box
     P = Atom("P", ())
     node = qml_validity_formula(Implies(Box(P), P), frame="K")
     before = _var_names(node)
-    assert "_w0" in before
+    assert before == {"t", "w", "v", "x", "w0"}
+    assert not any(n.startswith("_") for n in _all_identifiers(node))
     san = sanitize_modal_identifiers(node)
-    after = _var_names(san)
-    assert after == {"t", "w", "v", "x", "w0"}
-    assert _all_identifiers(node) - {"_w0"} == _all_identifiers(san) - {"w0"}
+    assert san == node
+    assert _all_identifiers(san) == _all_identifiers(node)
 
 
-def test_sanitizer_is_injective_on_a_real_w0_underscore_w0_collision():
-    """The load-bearing collision batch note (3) names explicitly: fol.qml's
-    own variable grammar allows an OBJECT variable literally named 'w0'
-    ([a-z][0-9]*), and _Fresh's counter ALWAYS tries '_w0' first for the very
-    first fresh world it mints — so 'forall w0 (Box A(w0) -> A(w0))' is a
-    REAL, not contrived, formula whose translation contains both 'w0' (the
-    user's own variable) and the fresh '_w0' the Box mints. Two distinct
-    source names must map to two distinct output names."""
+def test_an_object_variable_named_like_a_fresh_world_no_longer_collides():
+    """fol.qml's own variable grammar allows an OBJECT variable literally named
+    'w0' ([a-z][0-9]*), which is the name _Fresh would otherwise mint for the
+    first fresh world. _Fresh is seeded with the formula's object-variable
+    names, so it skips it and takes 'w1' — there is nothing for the shim to
+    rename, and no two names to keep apart. (Before 0.30.0 the fresh world was
+    '_w0', which collided with 'w0' only AFTER the shim stripped the underscore;
+    that is the case this test used to drive.)"""
     from unicode_fol_kit.fol.nodes import Box
     w0 = Variable("w0")
     f = Quantifier("∀", w0, Implies(Box(Atom("A", [w0])), Atom("A", [w0])))
     node = qml_validity_formula(f, mode="constant", frame="K")
     before = _var_names(node)
-    assert {"_w0", "w0"} <= before  # the collision is genuinely present
+    assert {"w0", "w1"} <= before            # the user's own, and the minted one
+    assert not any(n.startswith("_") for n in before)
+    assert sanitize_modal_identifiers(node) == node
 
-    san = sanitize_modal_identifiers(node)
-    after = _var_names(san)
-    assert len(after) == len(before), "two distinct names collapsed onto one"
-    assert "w0" in after                    # the already-legal name is untouched
-    assert all(_SIMPLE_ID_RE.fullmatch(n) for n in after)
-
-    # And the renaming preserves MEANING, not just syntax: qml_is_valid (Z3,
-    # never touched by this shim) disagrees between frame K and frame T for
-    # this exact formula, so a corrupting rename that merged the two 'w'
-    # variables would be a semantic bug this comparison would expose — see
-    # tests/test_dol.py's live TestModalCaslHetsLive for the SAME two cases
-    # ('collide_k' / 'collide_t') cross-checked against a real Hets server.
+    # The world variable really is a DIFFERENT variable from the object one:
+    # qml_is_valid (Z3, never touched by this shim) disagrees between frame K
+    # and frame T for this exact formula, which it could not do if the box's
+    # world had been captured by the object quantifier — see tests/test_dol.py's
+    # live TestModalCaslHetsLive for the SAME two cases ('collide_k' /
+    # 'collide_t') cross-checked against a real Hets server.
     assert qml_is_valid(f, mode="constant", frame="K") is False
     assert qml_is_valid(f, mode="constant", frame="T") is True
+
+
+def test_sanitizer_is_injective_on_the_user_mark_collision_qml_still_emits():
+    """The collision the shim is still needed for. A user atom named like one of
+    the embedding's own relations is renamed by fol.qml itself, by appending
+    U+00B7 ('R' -> 'R·'), and U+00B7 is no CASL identifier character: the stem
+    function folds it to '_', landing on 'R_'. A formula that ALSO contains a
+    user predicate literally named 'R_' therefore hands the shim two distinct
+    source names with one candidate, and they must stay two."""
+    parse = MSFLParser(modal=True).parse
+    f = parse("(R(alice) ∧ R_(alice)) → ◇(R(alice) ∧ R_(alice))")
+    node = qml_validity_formula(f, mode="constant", frame="K")
+    before = _predicate_names(node)
+    assert {"R·", "R_"} <= before             # qml emitted both
+    san = sanitize_modal_identifiers(node)
+    after = _predicate_names(san)
+    assert len(after) == len(before), "two distinct names collapsed onto one"
+    assert "R_" in after                      # the already-legal name is untouched
+    assert "R·" not in after
+    assert all(_SIMPLE_ID_RE.fullmatch(n) for n in after)
 
 
 def test_sanitizer_injective_regardless_of_which_name_the_walk_meets_first():
@@ -221,19 +256,18 @@ def test_sanitizer_injective_regardless_of_which_name_the_walk_meets_first():
     assert "w0" in names
 
 
-def test_sanitizer_of_geach_axiom_fresh_names_is_injective_and_legal():
+def test_geach_axiom_fresh_names_are_already_legal_and_distinct():
     """A Geach frame (G(1,1,1,1), the '.2' axiom's own frame) exercises the
-    OTHER fresh-name source: _geach_axiom's '_gz{n}'/'_gw'/'_gu'/'_gv'/'_gt',
-    alongside _Fresh's own '_w0'.._w3' (one per Box/Diamond nesting level in
-    the '.2' schema). All eight must come out distinct and legal."""
+    OTHER fresh-name source: _geach_axiom's own bound worlds, alongside
+    _Fresh's (one per Box/Diamond nesting level in the '.2' schema). All of
+    them are minted, all must be distinct, and all must already be legal CASL
+    identifiers — they used to be '_gz0'/'_gw'/'_gu'/'_gv'/'_gt' and
+    '_w0'..'_w3', and the shim had to rename every one."""
     node = qml_validity_formula(modal_axiom(".2"), frame="G(1,1,1,1)")
     before = _var_names(node)
-    assert len(before) >= 8 and all(n.startswith("_") for n in
-                                    (before - {"t", "v", "w", "x"}))
-    san = sanitize_modal_identifiers(node)
-    after = _var_names(san)
-    assert len(after) == len(before)
-    assert all(_SIMPLE_ID_RE.fullmatch(n) for n in after)
+    assert len(before) >= 8
+    assert all(_SIMPLE_ID_RE.fullmatch(n) for n in before)
+    assert sanitize_modal_identifiers(node) == node
 
 
 def test_sanitize_modal_identifiers_is_a_noop_on_an_already_legal_formula():
@@ -244,214 +278,320 @@ def test_sanitize_modal_identifiers_is_a_noop_on_an_already_legal_formula():
     assert sanitize_modal_identifiers(f) == f
 
 
-def test_shim_predicate_and_term_namespaces_are_independent_of_variables():
-    """A predicate and a variable sharing a spelling are DIFFERENT CASL
-    namespaces (see _CaslIdentifierShim's own docstring) — sanitising a
-    formula whose predicate happens to be named the same as a variable must
-    not force either off its own name."""
+def test_shim_names_it_mints_are_fresh_across_the_kinds_of_symbol():
+    """A predicate and a variable that both start illegal (leading underscore) and
+    sanitise to the same stem 'a0' are given two spellings. CASL writes a bound
+    variable, a constant and a predicate as one identifier, so a name the shim
+    mints is fresh against every symbol of the formula and not only against the
+    symbols of its own kind (the old expectation, both 'a0', let a minted
+    variable meet a minted predicate of that spelling).
+
+    Hand-derived: the first name resolved takes the stem, the second is pushed to
+    the next free suffix 'a0_2'; both are legal and they differ."""
     shim = _CaslIdentifierShim(Atom("_a0", [Variable("_a0")]))
-    # both start illegal (leading underscore); each namespace resolves
-    # independently, so both may perfectly well land on the SAME text 'a0'
-    # (no cross-namespace collision check — see the class docstring).
     assert shim.predicate("_a0") == "a0"
-    assert shim.variable("_a0") == "a0"
+    assert shim.variable("_a0") == "a0_2"
 
 
 # =============================================================================
-# World-relativized '=' / '≠' atoms (adversarial-review finding, C6):
-# fol.qml's _st appends the current-world argument to EVERY atom it visits,
-# including an object-language '=' or '≠' — so a genuinely binary user atom
-# comes out of qml_translate as a TERNARY atom named '=' (or '≠'). CASL's own
-# '=' is a fixed, always-exactly-2-ary, rigid built-in, so that ternary atom
-# is not CASL identity at all (see fol.qml.qml_validity_formula's own
-# docstring and hets.dol's module-level section comment for the full
-# reasoning) — it must be aliased to a fresh, uninterpreted predicate, the
-# same non-rigid reading Node.to_z3 / satisfies_modal / hol.isabelle_modal /
-# hol.thf_modal already give it, never crash casl_export's arity-2 check and
-# never silently collapse onto an arbitrary, meaningless name either.
+# Object identity through the bridge. fol.qml translates ``a = b`` to the same
+# binary ``a = b`` over the object terms with NO world argument, and ``a ≠ b``
+# to ``¬(a = b)`` (its "Equality is rigid" section). That binary '=' is CASL's
+# own built-in, rigid identity, so the bridge has nothing to rename: it arrives
+# native, casl_export renders it infix without declaring it, and casl_import
+# reads the same Atom back. (Earlier, '=' was world-relativised into a ternary
+# uninterpreted atom and hets.dol aliased it to 'weq'/'wneq'; the tests below
+# replaced the ones that pinned that alias, and the alias is gone.)
 # =============================================================================
 
-def test_sanitize_modal_identifiers_aliases_world_relativized_equality_atom():
-    """The reviewer's exact reproduction: Box(a=b) -> a=b under frame='T'.
-    Before this fix, sanitize_modal_identifiers preserved the ternary '='
-    atom under the literal name '=', which crashed casl_export's own
-    exactly-2-ary check with a message that never mentioned modal logic.
-    Now it must be renamed to the fixed alias 'weq' (mirroring
-    hol.isabelle_modal._PRED_ALIAS's own '=' -> 'feq') and round-trip
-    cleanly through to_casl_spec / casl_import."""
+# The predicate vocabulary of any qml query over constants a, b: the four
+# symbols qml's axioms and typing facts use, plus CASL's built-in '=' (arity 2).
+_QML_GUARDS = {("World", 1), ("Object", 1), ("R", 2), ("E", 2)}
+_PREDS_BLOCK = (
+    "preds E : Thing * Thing;\n"
+    "        Object : Thing;\n"
+    "        R : Thing * Thing;\n"
+    "        World : Thing\n"
+)
+
+
+def _atoms(node):
+    return [n for n in node.walk() if type(n).__name__ == "Atom"]
+
+
+def _vocabulary(node):
+    """{(predicate, arity)} over every Atom of ``node``, '=' included."""
+    return {(n.predicate, len(n.args)) for n in _atoms(node)}
+
+
+def test_modal_equality_arrives_binary_and_is_left_as_casl_native():
+    """The reviewer's reproduction, □(a = b) → a = b under T.
+
+    Hand-derived: frame T adds R-reflexivity and no temporal operator occurs,
+    so there is no first_step axiom; the only '=' atoms in the query are the
+    two occurrences in the formula, each translated to the SAME binary a = b
+    (no world argument). Nothing is renamed: the vocabulary is qml's four
+    guards plus the built-in '=', '=' is never declared, and the text reads
+    back as the identical AST."""
     a, b = Constant("a"), Constant("b")
     eq = Atom("=", [a, b])
     f = Implies(Box(eq), eq)
     node = qml_validity_formula(f, frame="T")
-    # Pre-condition: the translation really did produce a ternary '=' atom
-    # (arity 2 + the appended world argument) — otherwise this test would
-    # not be exercising the bug at all.
-    eq_atoms = [n for n in node.walk() if type(n).__name__ == "Atom" and n.predicate == "="]
-    assert eq_atoms and all(len(n.args) == 3 for n in eq_atoms)
+    assert [n for n in _atoms(node) if n.predicate == "="] == [eq, eq]
 
     san = sanitize_modal_identifiers(node)
-    san_preds = {(n.predicate, len(n.args)) for n in san.walk()
-                if type(n).__name__ == "Atom"}
-    assert ("=", 3) not in san_preds          # never the literal name at arity != 2
-    assert ("weq", 3) in san_preds
-    assert all(_SIMPLE_ID_RE.fullmatch(p) for p, _ in san_preds)
+    assert _vocabulary(san) == _QML_GUARDS | {("=", 2)}
 
-    # Faithful to what Z3 already computes for this exact atom (Atom.to_z3
-    # only special-cases an EXACTLY-2-ary '=' — a ternary one already becomes
-    # an ordinary uninterpreted Z3 predicate, so aliasing it to an ordinary
-    # CASL predicate changes nothing Z3-observable): hand-derived, this is
-    # the T-schema (Box phi -> phi) instantiated at an ATOMIC sentence, valid
-    # under any reflexive frame regardless of what that sentence "means".
-    assert qml_is_valid(f, frame="T") is True
-    assert qml_is_valid(f, frame="K") is False   # K has no reflexivity axiom
-
-    # No longer crashes casl_export's own exactly-2-ary check — round-trips.
     text = to_casl_spec([], conjectures=[san], spec_name="EqT")
-    assert "weq" in text
+    assert _PREDS_BLOCK in text            # '=' is CASL-built-in: not declared
+    assert text.count("a = b") == 2        # rendered infix, once per occurrence
     assert parse_casl_spec(text).conjectures == (san,)
 
-
-def test_sanitize_modal_identifiers_aliases_world_relativized_inequality_atom():
-    """The evidence case the review also flagged: '≠' is never CASL-native
-    (casl_export has no special handling for it at all — see
-    fol/casl_export.py, which never mentions '≠'), so BEFORE this fix a
-    world-relativized '≠' atom silently fell through to the ordinary
-    predicate-renaming path and landed on an arbitrary, meaningless legal id
-    ('v_'), carrying no trace that it ever denoted inequality. Now it gets
-    the SAME fixed-alias treatment as '=', under its own distinct stem
-    ('wneq' -> mirrors hol.isabelle_modal._PRED_ALIAS's '≠' -> 'fneq'), so
-    the rename is at least principled and, being fixed rather than
-    input-order-dependent, predictable."""
-    a, b = Constant("a"), Constant("b")
-    neq = Atom("≠", [a, b])
-    f = Implies(Box(neq), neq)
-    node = qml_validity_formula(f, frame="T")
-    san = sanitize_modal_identifiers(node)
-    san_preds = {(n.predicate, len(n.args)) for n in san.walk()
-                if type(n).__name__ == "Atom"}
-    assert ("wneq", 3) in san_preds
-    assert ("weq", 3) not in san_preds        # '=' and '≠' never share a stem
-    assert all(_SIMPLE_ID_RE.fullmatch(p) for p, _ in san_preds)
+    # Reason for the verdicts: the T-schema on an atomic sentence is valid on a
+    # reflexive frame; in K a dead-end world makes the box vacuously true while
+    # a and b may differ (fol.qml's "Equality is rigid", second bullet).
     assert qml_is_valid(f, frame="T") is True
     assert qml_is_valid(f, frame="K") is False
 
 
-def test_equality_alias_leaves_a_genuinely_binary_equality_as_casl_native():
-    """A genuinely 2-ary '=' atom untouched by _st — qml_axioms's own
-    first_step axiom (emitted when T and N both occur) compares two WORLD
-    variables directly, 'w = v', never world-relativized itself — must stay
-    CASL's own literal, rigid '=', coexisting with an aliased ternary '='
-    from the user's OWN formula in the SAME query without either being
-    renamed onto the other."""
-    from unicode_fol_kit.fol.nodes import Always, Next, And
+def test_modal_inequality_arrives_as_negated_native_equality():
+    """□(a ≠ b) → a ≠ b under T.
+
+    Hand-derived: ST writes '≠' as ¬(a = b) at every world, so the query
+    contains two Not(a = b), no '≠' atom, and the same vocabulary as the
+    equality case. CASL has no disequality, and needs none: casl_export
+    renders the negation as 'not a = b' (two occurrences) and the text reads
+    back as the identical AST."""
+    a, b = Constant("a"), Constant("b")
+    eq, neq = Atom("=", [a, b]), Atom("≠", [a, b])
+    f = Implies(Box(neq), neq)
+    node = qml_validity_formula(f, frame="T")
+    assert not [n for n in _atoms(node) if n.predicate == "≠"]
+    assert len([n for n in node.walk() if isinstance(n, Not) and n.formula == eq]) == 2
+
+    san = sanitize_modal_identifiers(node)
+    assert _vocabulary(san) == _QML_GUARDS | {("=", 2)}
+
+    text = to_casl_spec([], conjectures=[san], spec_name="NeqT")
+    assert _PREDS_BLOCK in text
+    assert text.count("not a = b") == 2
+    assert parse_casl_spec(text).conjectures == (san,)
+
+    assert qml_is_valid(f, frame="T") is True    # T-schema, as above
+    assert qml_is_valid(f, frame="K") is False   # dead end, as above
+
+
+def test_user_identity_and_world_identity_share_the_one_native_equality():
+    """A query with both Always and Next gets qml's first_step axiom, which
+    contains the WORLD identity w = v (two world variables); the user's own
+    a = b sits in the same query. Hand-derived: Always(eq) and Next(eq)
+    contribute one a = b each, the axiom contributes one w = v, so there are
+    exactly three '=' atoms, all binary and all CASL's one built-in '=' — the
+    two kinds of identity are told apart by their operands (and the World /
+    Object guards), not by the symbol."""
     a, b = Constant("a"), Constant("b")
     eq = Atom("=", [a, b])
-    f = And(Always(eq), Next(eq))   # both T and N occur -> first_step axiom fires
-    node = qml_validity_formula(f, frame="K")
+    world_identity = Atom("=", [Variable("w"), Variable("v")])
+    node = qml_validity_formula(And(Always(eq), Next(eq)), frame="K")
     san = sanitize_modal_identifiers(node)
-    san_preds = {(n.predicate, len(n.args)) for n in san.walk()
-                if type(n).__name__ == "Atom"}
-    assert ("=", 2) in san_preds     # the first_step axiom's genuine world identity
-    assert ("weq", 3) in san_preds   # the user's own, world-relativized equality
-    # Round-trips: casl_export declares 'weq' but never '=' (CASL built-in).
+    eq_atoms = [n for n in _atoms(san) if n.predicate == "="]
+    assert len(eq_atoms) == 3
+    assert eq_atoms.count(world_identity) == 1
+    assert eq_atoms.count(eq) == 2
+
     text = to_casl_spec([], conjectures=[san], spec_name="Combo")
-    assert "weq :" in text
-    assert "= :" not in text
+    assert "= :" not in text and "weq" not in text   # never declared, never renamed
     assert parse_casl_spec(text).conjectures == (san,)
 
 
-def test_equality_alias_is_shared_across_repeated_occurrences_in_one_formula():
-    """Every world-relativized '=' atom in ONE formula denotes the SAME
-    single uninterpreted relation (mirroring Z3Env.get_pred's own cache,
-    keyed by name alone — every ternary '=' atom qml_translate ever produces
-    from one call already collapses onto ONE Z3 predicate today), so two
-    occurrences of Box(a=b) in the same query must alias to the SAME CASL
-    predicate name, not two different ones."""
-    from unicode_fol_kit.fol.nodes import And
+def test_repeated_identity_occurrences_stay_one_unrenamed_equality():
+    """Two □(a = b) in one query. Hand-derived: each box contributes one
+    a = b, no temporal operator means no first_step axiom, so the '=' atoms are
+    exactly [a = b, a = b], identical to the source atom — no occurrence gets a
+    name of its own — and the whole predicate vocabulary is qml's guards plus
+    '='."""
     a, b = Constant("a"), Constant("b")
     eq = Atom("=", [a, b])
-    f = And(Box(eq), Box(eq))
-    node = qml_validity_formula(f, frame="K")
+    node = qml_validity_formula(And(Box(eq), Box(eq)), frame="K")
     san = sanitize_modal_identifiers(node)
-    eq_names = {n.predicate for n in san.walk()
-               if type(n).__name__ == "Atom" and len(n.args) == 3
-               and n.args[0] == Constant("a") and n.args[1] == Constant("b")}
-    assert eq_names == {"weq"}
+    assert [n for n in _atoms(san) if n.predicate == "="] == [eq, eq]
+    assert _vocabulary(san) == _QML_GUARDS | {("=", 2)}
 
 
-def test_equality_alias_is_injective_against_a_colliding_user_predicate():
-    """If the formula ALSO happens to define a genuine predicate spelled
-    'weq' (the SAME stem this shim would otherwise pick for a translated
-    '='), the two must never collapse onto one name: the already-legal user
-    predicate is seeded FIRST (see _CaslIdentifierShim's own two-pass
-    docstring), so it keeps 'weq' and the ALIAS is the one bumped to
-    'weq_2' — the same seed-before-resolve invariant the '_w0'-vs-'w0'
-    variable collision test already pins, now checked for the equality
-    alias's OWN, separate namespace collision."""
-    from unicode_fol_kit.fol.nodes import And
+def test_a_user_predicate_named_weq_is_an_ordinary_predicate():
+    """'weq' was once the name this bridge gave a translated identity, so a
+    user predicate spelled 'weq' had to be bumped to 'weq_2'. Identity is no
+    longer renamed, so nothing can collide with it. Hand-derived: the user's
+    binary weq(a, b) is an ordinary atom, so ST appends the world and it
+    becomes the ternary weq(a, b, w) and keeps its name; the identity in the
+    same query stays the binary built-in '='; the predicate vocabulary is qml's
+    guards, weq/3 and '=' — no 'weq_2' anywhere."""
     a, b = Constant("a"), Constant("b")
     eq = Atom("=", [a, b])
-    user_weq = Atom("weq", [a, b])   # becomes ternary too, after _st's world append
-    f = And(user_weq, Implies(Box(eq), eq))
+    f = And(Atom("weq", [a, b]), Implies(Box(eq), eq))
     node = qml_validity_formula(f, frame="T")
     san = sanitize_modal_identifiers(node)
-    san_preds = {(n.predicate, len(n.args)) for n in san.walk()
-                if type(n).__name__ == "Atom"}
-    assert ("weq", 3) in san_preds
-    assert ("weq_2", 3) in san_preds
-    assert len(san_preds) == len({p for p, _ in san_preds})  # no accidental merge
+    assert _vocabulary(san) == _QML_GUARDS | {("weq", 3), ("=", 2)}
+    text = to_casl_spec([], conjectures=[san], spec_name="UserWeq")
+    assert "weq : Thing * Thing * Thing" in text
+    assert "weq_2" not in text
+    assert parse_casl_spec(text).conjectures == (san,)
 
 
-def test_equality_alias_refuses_a_genuinely_binary_inequality_atom_loudly():
-    """Adversarial-review follow-up finding (C6): unlike '=', '≠' is never
-    CASL-native at ANY arity (fol/casl_export.py never mentions it — grepped,
-    confirmed) and fol.qml's '_st' never produces a '≠' atom at arity 2 (a
-    world-relativized one is always 3-ary or more, since '_st' unconditionally
-    appends the current-world argument). So a genuinely 2-ary '≠' can only
-    reach sanitize_modal_identifiers via a call that bypasses
-    qml_validity_formula/to_dol_library_from_modal entirely (the case this
-    test exercises, matching the review's own reproduction) or a malformed
-    pre-translation atom.
+def test_sanitizer_refuses_a_disequality_atom_of_any_arity_loudly():
+    """'≠' is never CASL-native at any arity (fol/casl_export.py has no rule for
+    it) and the bridge's qml_validity_formula never leaves one in its output,
+    so a '≠' atom reaches sanitize_modal_identifiers only in a Node built by
+    hand (or parsed from classical text) and handed to it directly. The old
+    behaviour, relabelling it onto an arbitrary legal identifier ('v_') that
+    carries no trace of 'not equal', is the silent approximation this package
+    refuses; so it must refuse loudly, by name, and say what to write instead:
+    'Not(Atom("=", ...))', which is what fol.qml itself writes. Arity does not
+    matter: a unary or ternary '≠' is no more renderable than a binary one."""
+    a, b, c = Constant("a"), Constant("b"), Constant("c")
+    for args in ([a], [a, b], [a, b, c]):
+        ne = Atom("≠", args)
+        with pytest.raises(NotImplementedError, match="≠") as excinfo:
+            sanitize_modal_identifiers(ne)
+        assert 'Not(Atom("=", [a, b]))' in str(excinfo.value)
 
-    BEFORE this fix, such an atom silently fell through to the ordinary
-    predicate-renaming path and came out as the arbitrary, meaningless legal
-    identifier 'v_' (reproduced by the review) -- indistinguishable from an
-    unrelated predicate fact and carrying no trace that it ever denoted
-    inequality, which is exactly the silent-approximation the project's own
-    refuse-loudly rule forbids. It must now refuse loudly instead, naming
-    '≠', mirroring how fol.casl_export.to_casl_spec already refuses the SAME
-    atom when it is handed directly, bypassing this bridge entirely (that
-    existing, unrelated refusal is the second assertion below)."""
-    a, b = Constant("a"), Constant("b")
-    ne = Atom("≠", [a, b])
-    assert len(ne.args) == 2  # genuinely binary -- not yet world-relativized
-
-    with pytest.raises(NotImplementedError, match="≠"):
-        sanitize_modal_identifiers(ne)
-
-    # The pre-existing, unrelated refusal this mirrors: casl_export itself
-    # has never accepted '≠' at any arity, with or without this bridge.
+    # The pre-existing, unrelated refusal this mirrors: casl_export itself has
+    # never accepted '≠', with or without this bridge.
     with pytest.raises(ValueError, match="not a simple CASL identifier"):
-        to_casl_spec([], conjectures=[ne], spec_name="X")
+        to_casl_spec([], conjectures=[Atom("≠", [a, b])], spec_name="X")
 
 
-def test_equality_alias_never_refuses_inequality_reached_through_qml_translation():
-    """The documented, tested pipeline (qml_validity_formula ->
-    sanitize_modal_identifiers) never triggers the refusal above: '_st'
-    world-relativizes EVERY '≠' atom it visits to arity 3 (or more, under a
-    many-sorted signature with extra typing arguments), so the genuinely
-    2-ary case the previous test exercises is only reachable by bypassing
-    qml_validity_formula, not through the ordinary route this pipeline is
-    built for -- this is the same 'inequality_box_t'/'inequality_box_k'
-    battery the roadmap item's own live Hets tests exercise, checked here
-    offline for the refusal's absence specifically."""
-    a, b = Constant("a"), Constant("b")
-    ne = Atom("≠", [a, b])
-    f = Implies(Box(ne), ne)
-    node = qml_validity_formula(f, frame="T")
-    san = sanitize_modal_identifiers(node)  # must not raise
-    assert any(n.predicate == "wneq" for n in san.walk()
-               if type(n).__name__ == "Atom")
+@pytest.mark.parametrize("case_id,formula,kwargs", [
+    ("box", lambda: Box(Atom("≠", [Constant("a"), Constant("b")])), {}),
+    ("diamond", lambda: Diamond(Atom("≠", [Constant("a"), Constant("b")])), {}),
+    ("always", lambda: Always(Atom("≠", [Constant("a"), Constant("b")])), {}),
+    ("knows", lambda: Knows(Constant("alice"), Atom("≠", [Constant("a"), Constant("b")])),
+     dict(systems={"epistemic": "S5"})),
+    ("under_forall", lambda: Quantifier("∀", Variable("x"), Atom("≠", [Variable("x"), Constant("a")])), {}),
+], ids=["box", "diamond", "always", "knows", "under_forall"])
+def test_inequality_reached_through_qml_translation_is_lowered_never_refused(
+        case_id, formula, kwargs):
+    """The documented pipeline never reaches the refusal above: whatever
+    construct the '≠' sits under (a box, a diamond, a temporal operator, an
+    agent's knowledge, a quantifier), ST writes it as ¬(=) at that world, so no
+    '≠' atom survives qml_validity_formula, the sanitiser has nothing to
+    refuse, and casl_export accepts the result and reads it back."""
+    node = qml_validity_formula(formula(), **kwargs)
+    assert not [n for n in _atoms(node) if n.predicate == "≠"], case_id
+    assert any(n.predicate == "=" for n in _atoms(node)), case_id
+    san = sanitize_modal_identifiers(node)           # must not raise
+    text = to_casl_spec([], conjectures=[san], spec_name="Neq")
+    read = parse_casl_spec(text).conjectures
+    # The text means the query up to the names of its bound variables. The epistemic
+    # axioms bind a variable 'a' (the agent) and this query names a constant 'a'; CASL
+    # reads a bound variable spelled like a declared operation of the spec as
+    # ambiguous, so the writer renames those binders (a0, a1, ...) and the formula
+    # reads back as an alpha-variant of the query. Where no binder clashes the text
+    # reads back as the very same formula.
+    assert len(read) == 1 and same_up_to_bound_names(read[0], san)
+    if case_id != "knows":
+        assert read == (san,)
+
+
+@pytest.mark.parametrize("args", [
+    [Constant("a")], [Constant("a"), Constant("b"), Constant("c")]],
+    ids=["unary", "ternary"])
+def test_a_non_binary_equals_atom_is_not_aliased_and_is_refused_by_name(args):
+    """What an atom literally named '=' with an arity other than 2 — the case
+    the old 'weq' alias existed for — can still do. It can only be BUILT by
+    hand: Atom does not check arity, but no text front-end parses to one (the
+    next test) and fol.qml refuses it. Hand-derived consequences: the sanitiser
+    keeps it under the literal name '=' (nothing to alias to), CASL's exactly-
+    two-terms check then refuses it by name, and the modal route refuses it
+    earlier, in qml, with a message that says '=' is reserved for identity and
+    to rename the predicate if a different relation was meant."""
+    from unicode_fol_kit.hets.dol import to_dol_library_from_modal
+    t = Atom("=", args)
+    assert sanitize_modal_identifiers(t) == t
+    with pytest.raises(ValueError, match="exactly 2 arguments"):
+        to_casl_spec([], conjectures=[t], spec_name="X")
+    with pytest.raises(ValueError, match="exactly two terms"):
+        qml_validity_formula(Box(t))
+    with pytest.raises(ValueError, match="exactly two terms"):
+        to_dol_library_from_modal(Box(t))
+
+
+def _identity_arities(parse, text):
+    """Arities of every '='/'≠' atom ``parse(text)`` yields (empty if it
+    refuses the text outright)."""
+    try:
+        result = parse(text)
+    except Exception:
+        return set()
+    return {len(n.args) for r in (result if isinstance(result, list) else [result])
+            for n in r.walk()
+            if isinstance(n, Atom) and n.predicate in ("=", "≠")}
+
+
+def test_no_text_front_end_builds_a_non_binary_identity_atom():
+    """The reachability claim behind deleting the alias: a '='/'≠' atom whose
+    arity is not 2 cannot come out of any text front-end. Each parser either
+    refuses the prefix spelling =(a, b, c) outright or yields only binary atoms;
+    SMT-LIB's chainable (= a b c) / (distinct a b c) are expanded pairwise by
+    the importer into binary atoms (hand-derived: a=b, b=c and a≠b, a≠c, b≠c)."""
+    from unicode_fol_kit import MSFLParser
+    from unicode_fol_kit.atp.z3_input import parse_smtlib
+    from unicode_fol_kit.fol.latex_input import parse_latex
+    from unicode_fol_kit.fol.prolog_input import parse_prolog_clause
+    from unicode_fol_kit.fol.prover9_input import parse_prover9
+    from unicode_fol_kit.fol.tptp_input import parse_tptp_formula
+
+    prefix = "=(a, b, c)"
+    for parse in (MSFLParser().parse, parse_latex, parse_prolog_clause,
+                  parse_prover9, parse_tptp_formula):
+        assert _identity_arities(parse, prefix) <= {2}, parse
+    for parse, text in ((MSFLParser().parse, "a = b"), (MSFLParser().parse, "a ≠ b"),
+                        (parse_tptp_formula, "a != b"), (parse_prover9, "a = b")):
+        assert _identity_arities(parse, text) == {2}, (parse, text)
+
+    decls = "(declare-const a Int)(declare-const b Int)(declare-const c Int)"
+    assert _identity_arities(parse_smtlib, decls + "(assert (= a b c))") == {2}
+    assert _identity_arities(parse_smtlib, decls + "(assert (distinct a b c))") == {2}
+
+
+@pytest.mark.parametrize("case_id,build,kwargs,expected", [
+    # Rigidity: identity does not vary by world, so necessity of identity and of
+    # distinctness hold in K, the weakest frame.
+    ("identity_necessity_k",
+     lambda a, b: Implies(Atom("=", [a, b]), Box(Atom("=", [a, b]))), dict(frame="K"), True),
+    ("distinctness_necessity_k",
+     lambda a, b: Implies(Atom("≠", [a, b]), Box(Atom("≠", [a, b]))), dict(frame="K"), True),
+    # ◇(a = b) → a = b is the contrapositive of distinctness necessity.
+    ("possible_identity_k",
+     lambda a, b: Implies(Diamond(Atom("=", [a, b])), Atom("=", [a, b])), dict(frame="K"), True),
+    # The converse direction needs a successor-or-self: dead end in K, reflexive in T.
+    ("box_identity_k",
+     lambda a, b: Implies(Box(Atom("=", [a, b])), Atom("=", [a, b])), dict(frame="K"), False),
+    ("box_identity_t",
+     lambda a, b: Implies(Box(Atom("=", [a, b])), Atom("=", [a, b])), dict(frame="T"), True),
+    # Identity is reflexive, with no axiom for it: a = a, even where a may not exist.
+    ("reflexive_varying",
+     lambda a, b: Atom("=", [a, a]), dict(mode="varying"), True),
+    # a = b alone is contingent: two constants may denote two objects.
+    ("identity_not_valid",
+     lambda a, b: Atom("=", [a, b]), dict(), False),
+], ids=["identity_necessity_k", "distinctness_necessity_k", "possible_identity_k",
+        "box_identity_k", "box_identity_t", "reflexive_varying", "identity_not_valid"])
+def test_identity_query_round_trips_and_carries_qmls_rigid_verdict(
+        case_id, build, kwargs, expected):
+    """End to end, one row per hand-derived fact of fol.qml's "Equality is
+    rigid": (1) the expectation equals Z3's verdict on the modal formula
+    (qml_is_valid); (2) the CASL query for it round-trips — sanitize ->
+    to_casl_spec -> parse_casl_spec returns an AST equal to the sanitised
+    query — and contains only binary '=' atoms and no '≠' or renamed
+    equality."""
+    f = build(Constant("a"), Constant("b"))
+    assert qml_is_valid(f, **kwargs) is expected, case_id
+    san = sanitize_modal_identifiers(qml_validity_formula(f, **kwargs))
+    assert {len(n.args) for n in _atoms(san) if n.predicate == "="} == {2}
+    assert not any(n.predicate in ("≠", "weq", "wneq") for n in _atoms(san))
+    text = to_casl_spec([], conjectures=[san], spec_name="Rigid")
+    assert parse_casl_spec(text).conjectures == (san,)
 
 
 # =============================================================================

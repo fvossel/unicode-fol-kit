@@ -4,7 +4,7 @@ The `unicode_fol_kit.hol` subpackage emits Benzmüller-style **shallow semantica
 
 ## What the exporters emit (and what they cannot decide)
 
-The exporters **emit**; they do not themselves run a prover. They also cannot decide everything: first-order modal logic, FOL, and SOL are all **undecidable**, so a successful emission means *"here is a sound problem a prover may discharge"*, never *"decided"*. (FOL and the standard first-order modal logics are still *semi-decidable* — validity is recursively enumerable — whereas full second-order validity is *not even semi-decidable*; the propositional fragments K3/LP and modal K/T/S4/S5 are outright decidable, but these exporters target the general case.) Equality `=` / `≠` is an **uninterpreted, world-relativized** predicate throughout by default (not primitive HOL identity), consistently across every exporter; the classical `to_thf_fol` / `to_isabelle_fol` family (and their MSFOL variants) additionally accept `native_equality=True` to opt into the target format's own built-in identity instead (see [Opting into native HOL identity](#opting-into-native-hol-identity) below) — every other exporter is unaffected and keeps the uninterpreted reading unconditionally.
+The exporters **emit**; they do not themselves run a prover. They also cannot decide everything: first-order modal logic, FOL, and SOL are all **undecidable**, so a successful emission means *"here is a sound problem a prover may discharge"*, never *"decided"*. (FOL and the standard first-order modal logics are still *semi-decidable* — validity is recursively enumerable — whereas full second-order validity is *not even semi-decidable*; the propositional fragments K3/LP and modal K/T/S4/S5 are outright decidable, but these exporters target the general case.) How `=` / `≠` is read depends on the route, and each route says which. The **classical** exporters — `to_thf_fol` / `to_isabelle_fol` (and their MSFOL variants), `to_thf_so` / `to_isabelle_so` and the classical third-order `to_thf_to` / `to_isabelle_to` — read it as the **uninterpreted** predicates `feq` / `fneq` (not primitive HOL identity); the first family additionally accepts `native_equality=True` to opt into the target format's own built-in identity instead (see [Opting into native HOL identity](#opting-into-native-hol-identity) below). Free logic reads it as native identity under its denotation guard. The **modal** exporters named here — `to_thf_modal_full` / `to_isabelle_modal`, `fol.qml.to_thf_modal` and the third-order `to_thf_ho_modal` / `to_isabelle_ho_modal` — read it as **rigid identity**: HOL's own `=` over the individual type with no world argument, the reading of `qml_is_valid`, so `a = a` and `a = b → □(a = b)` are theorems there and nothing is declared for `=` (see [Equality is rigid in the modal embeddings](#equality-is-rigid-in-the-modal-embeddings) below). A route with no term semantics at all — the propositional Kripke evaluator, the propositional modal tableau, the intuitionistic GMT embedding — refuses an equality atom by name rather than reading it as an uninterpreted proposition. The ordering atoms `<` `>` `≤` `≥` have no counterpart in either target format and are uninterpreted on every route (world-relativised in the modal embeddings).
 
 Each exporter has a THF variant (`to_thf_*`) and an Isabelle variant (`to_isabelle_*`). **None of these names are top-level** — `from unicode_fol_kit import *` does *not* bring them in. Import them from `unicode_fol_kit.hol`:
 
@@ -36,7 +36,7 @@ The **runner** entry points (`find_isabelle`, `isabelle_available`, `isabelle_de
 - **Second-order.** `to_thf_so` / `to_isabelle_so` map `∀P` / `∃P` to native higher-order predicate quantifiers (standard semantics). Cross-checked against `satisfies_so` on finite structures.
 - **Intuitionistic.** `to_thf_intuitionistic` / `to_isabelle_intuitionistic` apply the **Gödel–McKinsey–Tarski** box-translation into S4 then the alethic SSE, so emitted theorem-hood matches intuitionistic validity — `p ∨ ¬p`, `¬¬p → p`, and Peirce's law come out as **non-theorems**. For a valid formula the Isabelle theory carries a real, Isabelle-checked proof (gated on the decidable `gmt_is_s4_valid` oracle); a non-theorem is left `oops`. Cross-checked against `int_valid`.
 
-Each embedding is faithful to its in-toolkit ground-truth oracle (`satisfies_modal`, `kleene_value`, `satisfies_so`, `int_valid`), verified by an adversarial differential audit.
+Each embedding is faithful to its in-toolkit ground-truth oracle (`satisfies_modal`, `kleene_value`, `satisfies_so`, `int_valid`).
 
 ## Classical FOL: `to_thf_fol` / `to_isabelle_fol`
 
@@ -84,9 +84,17 @@ print("axiom" in axiom_form)         # → True
 print("conjecture" in axiom_form)    # → False
 ```
 
+An asserted formula must be closed. A free variable is a parameter of the problem, one unknown individual shared by every formula, so closing it universally would assert more than the formula says (`∀x P(x)` entails `P(a)`; the premise `P(x)` does not). `to_thf_fol(…, conjecture=False)`, and likewise `to_thf_msfol` and, in {doc}`lean`, `to_lean_fol` and `to_lean_msfol`, therefore raise `NotImplementedError` naming the free variable: state the parameter with a constant, or bind it with a quantifier. As a conjecture a free variable is still closed universally, which for one formula with no premise is the parameter reading itself:
+
+```python
+print("! [X: $i] : ( p @ X )" in to_thf_fol(p("P(x)")))    # → True   (the conjecture is closed)
+to_thf_fol(p("P(x)"), conjecture=False)
+# raises NotImplementedError: to_thf_fol: the asserted formula (conjecture=False) has the free variable 'x', and an axiom cannot say what a free variable stands for ...
+```
+
 ### Equality is uninterpreted
 
-`feq` / `fneq` carry no built-in reflexivity, symmetry, or transitivity. This is deliberate and consistent across every exporter — the embedding does not silently assume HOL identity:
+`feq` / `fneq` carry no built-in reflexivity, symmetry, or transitivity. This is deliberate and consistent across the classical exporters — the embedding does not silently assume HOL identity (the modal exporters make the opposite, equally deliberate choice: see [below](#equality-is-rigid-in-the-modal-embeddings)):
 
 ```python
 refl = p("∀x (x = x)")
@@ -137,12 +145,20 @@ print("fneq" in thf_cmp)    # → True  (≠ becomes fneq)
 
 # Arithmetic functions: the operator symbols are sanitised. '+' / '*' are
 # not TPTP-legal atoms, so they are emitted as underscore-based function
-# symbols ('_' for the first op encountered, '__2' for the next, ...).
+# symbols, numbered in the sorted order of the operators ('_' for '*', '__2' for '+', ...).
 f_arith = p("result = step + 1 ∧ step * 2 ≥ result")
 thf_arith = to_thf_fol(f_arith)
 print("feq" in thf_arith)            # → True   (= → feq)
 print("fge" in thf_arith)            # → True   (≥ → fge)
 print(": ( $i > $i > $i )" in thf_arith)  # → True  (the two binary fn symbols)
+```
+
+A numeral is an uninterpreted constant identified by its value. The first-order, second-order, free-logic and modal exporters (THF and Isabelle) declare it as `n<value>` with the point sanitised, one constant per value: `1` and `1.0` are one constant `n1`, `2.5` is `n2_5`. Nothing makes two numerals distinct, so `1 ≠ 2` is not a theorem (in the classical embeddings it is the goal `fneq @ n1 @ n2` about the uninterpreted `fneq`). A user constant spelled like a numeral's name (`n1` next to `1`) is refused by name, because the two would be one symbol, and a `Number` of a non-finite value (`inf`, `-inf`, `nan`) is a `ValueError`; the third-order routes refuse a numeral by name (`UnsupportedHigherOrderNode`).
+
+```python
+thf_num = to_thf_fol(p("P(1) ∧ P(1.0) ∧ Q(2.5)"))
+print(thf_num.count("n1_decl"), "n2_5_decl" in thf_num)   # → 1 True
+print("fneq @ n1 @ n2" in to_thf_fol(p("1 ≠ 2")))         # → True   (a goal about the uninterpreted fneq)
 ```
 
 ### Custom Isabelle names and proofs
@@ -193,6 +209,8 @@ print(to_thf_msfol(f))
 #   thf(document_decl, type, ( document : ( $i > $o ) )).
 #   thf(person_decl, type, ( person : ( $i > $o ) )).
 #   thf(wrote_decl, type, ( wrote : ( $i > $i > $o ) )).
+#   thf(nonempty_sort_0, axiom, ( ? [X0: $i] : ( person @ X0 ) )).
+#   thf(nonempty_sort_1, axiom, ( ? [X1: $i] : ( document @ X1 ) )).
 #   thf(goal, conjecture, ( ! [X: $i] : ( ( person @ X ) => ( ? [Y: $i] : ( ( document @ Y ) & ( wrote @ X @ Y ) ) ) ) )).
 ```
 
@@ -206,12 +224,27 @@ print('consts document ::' in isa)        # → True
 print("(\<forall> x. ((person x)" in isa)  # → True  (universal relativised to the guard)
 ```
 
-`include_sort_facts=` (default `True`) controls whether sort-inhabitation facts are added when a free constant of a sort occurs; for purely quantified formulas like the one above it makes no difference, but it is available for problems with sorted constants:
+The relativisation alone forgets two facts of the many-sorted reading: a sort is the **non-empty** extension of the unary predicate of its name, and a sorted constant `c:S` is an element of `S`. `include_sort_facts=` (default `True`) states them as separate axioms beside the conjecture, `nonempty_sort_<i>` (`∃x S(x)`) for each sort and `sort_member_<i>` (`S(c)`) for each sorted constant and each sort it is written with, and never as conjuncts of the goal (`Human(socrates) ∧ φ` cannot be proved even for a tautology `φ`). In Isabelle they are premises of the lemma, `⟦ … ⟧ ⟹ φ`. `include_sort_facts=False` is the bare relativisation. For the formula above the default adds the two non-emptiness axioms and the goal line is the same:
 
 ```python
 with_facts = to_thf_msfol(f, include_sort_facts=True)
 without     = to_thf_msfol(f, include_sort_facts=False)
-print(with_facts == without)    # → True  (no free sorted constants here)
+print(with_facts == without)    # → False  (the default adds nonempty_sort_0 and nonempty_sort_1)
+print(with_facts.splitlines()[-1] == without.splitlines()[-1])    # → True  (the goal line is the same)
+```
+
+A sorted constant adds its membership axiom. With `conjecture=False` the formula is itself asserted, so the membership atom stays a conjunct of what is asserted and only the non-emptiness facts are separate axioms:
+
+```python
+g = ms("Mortal(socrates:Human)")
+print("\n".join(to_thf_msfol(g).splitlines()[-3:]))
+# → thf(nonempty_sort_0, axiom, ( ? [X0: $i] : ( human @ X0 ) )).
+#   thf(sort_member_0, axiom, ( human @ socrates )).
+#   thf(goal, conjecture, ( mortal @ socrates )).
+print([l for l in to_isabelle_msfol(g).splitlines() if l.startswith("lemma")][0])
+# → lemma goal: "\<lbrakk>(\<exists> x0. (human x0)); (human socrates)\<rbrakk> \<Longrightarrow> (mortal socrates)"
+print(to_thf_msfol(g, conjecture=False).splitlines()[-1])
+# → thf(goal, axiom, ( ( human @ socrates ) & ( mortal @ socrates ) )).
 ```
 
 ### Many-sorted hierarchies
@@ -254,7 +287,7 @@ print(to_thf_free(every_unicorn_is_magical))
 #   thf(goal, conjecture, ( ! [X: $i] : ( ( existsBang @ X ) => ( ( ( denotes @ X ) & ( unicorn @ X ) ) => ( ( denotes @ X ) & ( magical @ X ) ) ) ) )).
 ```
 
-`D`/`E!` sanitise to `denotes`/`existsBang`. A written `E!(t)` atom (arity 1) IS the guard, because `E!` is the free-logic existence predicate inside `semantics.free_logic.free_holds` itself; a predicate named literally `D!` has no such meaning to `free_holds`, so it is refused with `ValueError` (it is unreachable from the parser anyway — `!` cannot occur in parseable predicate names). An ordinary predicate that merely sanitises to `denotes`/`existsBang`, or a bare `D`, is de-collided away from the guard names, same discipline as `feq`/`fneq` in [classical FOL](#equality-is-uninterpreted). The `E! → D` tie is the only background fact, emitted as an extra `axiom` / lemma **premise** — never `axiomatization` — so nitpick can construct `D`/`E!` itself and certify a counter-model as genuine (see [Deciding free-logic validity](#deciding-free-logic-validity-isabelle_decide_free) below). There is deliberately no `∃x. E!(x)`: an empty inner domain is a free-logic model (`free_is_valid` searches it by default), so `(∀x P(x)) → ∃x P(x)` is not a theorem here either.
+`D`/`E!` sanitise to `denotes`/`existsBang`. A written `E!(t)` atom (arity 1) IS the guard, because `E!` is the free-logic existence predicate inside `semantics.free_logic.free_holds` itself; a predicate named literally `D!` has no such meaning to `free_holds`, so it is refused with `ValueError` (it is unreachable from the parser anyway — `!` cannot occur in parseable predicate names). An ordinary predicate that merely sanitises to `denotes`/`existsBang`, or a bare `D`, is de-collided away from the guard names, same discipline as `feq`/`fneq` in [classical FOL](#equality-is-uninterpreted). The `E! → D` tie is the only background fact, emitted as an extra `axiom` / lemma **premise** — never `axiomatization` — so nitpick can construct `D`/`E!` itself and certify a counter-model as genuine (see [Deciding free-logic validity](#deciding-free-logic-validity-isabelle_decide_free) below). There is deliberately no `∃x. E!(x)`: an empty inner domain is a free-logic model (`free_is_valid` searches it by default), so `(∀x P(x)) → ∃x P(x)` is not a theorem here either. An asserted formula must be closed here as well: `to_thf_free(…, conjecture=False)` refuses a formula with a free variable by name (`NotImplementedError`: an axiom cannot say what a free variable stands for), while as the conjecture a free variable is closed universally under the existence guard, which for one formula with no premise is the parameter reading.
 
 The textbook free-logic point: does "every unicorn is magical" plus "Pegasus is a unicorn" let you conclude "Pegasus is magical"? Only with the extra premise that Pegasus **exists** — the object-language `E!` atom, built directly since it has no surface syntax:
 
@@ -353,6 +386,17 @@ print("i \<Rightarrow> bool" in isa_so)        # → True   (predicate type)
 print("oops" in isa_so)                       # → True   (left for an external prover)
 ```
 
+Binders are renamed away from every user symbol and every declared or built-in Isabelle name, so a quantifier never shadows a constant of the same spelling: `x` becomes `x_2` when a constant `x` is declared. The same holds for `to_isabelle_to` and `to_isabelle_ho_modal`:
+
+```python
+from unicode_fol_kit.fol.nodes import Quantifier, Variable, Constant, Atom
+
+x = Variable("x")
+shadow = Quantifier("∀", x, Atom("P", [x, Constant("x")]))    # ∀x P(x, x), the second x a constant
+print(next(l for l in to_isabelle_so(shadow).splitlines() if l.startswith("lemma")))
+# → lemma "(\<forall>x_2::i. (p x_2 x))"
+```
+
 ## The full modal family: `to_thf_modal_full` / `to_isabelle_modal`
 
 These cover the whole modal surface in one shallow embedding over a world type, with a *separate accessibility family per modality*:
@@ -365,7 +409,7 @@ These cover the whole modal surface in one shallow embedding over a world type, 
 | deontic | `Ⓞ` `Ⓟ` | `d : mu > mu > $o` (serial) | `mobl` / `mperm` |
 | temporal | `Ⓖ` `Ⓕ` `Ⓝ` | `t` / `tnext : mu > mu > $o` | `malways` / `meventually` |
 
-Parse modal formulas with `MSFLParser(modal=True)`. The deontic / temporal operators are the circled letters `Ⓞ Ⓟ` and `Ⓖ Ⓕ Ⓝ`.
+Parse modal formulas with `MSFLParser(modal=True)`. The deontic / temporal operators are the circled letters `Ⓞ Ⓟ` and `Ⓖ Ⓕ Ⓝ`. A free variable is a parameter, one unknown individual for the whole formula: `to_thf_modal_full` binds it in front of the conjecture, outside the world quantifier, and under a varying-domain `mode=` assumes it exists at the world of evaluation (see {doc}`quantified-modal`).
 
 ### Alethic □/◇ and the frame argument
 
@@ -388,7 +432,7 @@ The Isabelle counterpart is a complete, loadable theory. For the T-axiom over a 
 
 ```python
 print(to_isabelle_modal(t_axiom, frame="T"))
-# → a 42-line Isabelle theory; the load-bearing lines are:
+# → a 43-line Isabelle theory; the load-bearing lines are:
 #   consts r :: "i \<Rightarrow> i \<Rightarrow> bool"            -- alethic accessibility
 #   abbreviation mbox … "mbox \<phi> \<equiv> \<lambda>w. \<forall>v. r w v \<longrightarrow> \<phi> v"
 #   abbreviation mvalid … ("\<lfloor>_\<rfloor>") "\<lfloor>\<phi>\<rfloor> \<equiv> \<forall>w. \<phi> w"
@@ -403,7 +447,7 @@ The default tactic is the `sledgehammer` / `oops` hook, so the theory always loa
 
 ```python
 isa = to_isabelle_modal(t_axiom, frame="T")
-print(len(isa.splitlines()))                  # → 42
+print(len(isa.splitlines()))                  # → 43
 print('axiomatization where r_refl: "r w w"' in isa)   # → True
 
 isa_blast = to_isabelle_modal(t_axiom, frame="T", tactic="blast")
@@ -490,7 +534,7 @@ A system whose frame condition has **no per-agent schema** — GL's Löb axiom, 
 
 ```python
 to_isabelle_modal(pm("K_alice P"), systems={"epistemic": "GL"})
-# raises ValueError: to_isabelle_modal: system 'GL' for epistemic needs the frame
+# raises NotImplementedError: to_isabelle_modal: system 'GL' for epistemic needs the frame
 # condition(s) ['loeb'], which have no per-agent axiom schema here; use frame= on
 # the alethic relation for those systems.
 ```
@@ -531,6 +575,26 @@ to_isabelle_modal(pm("□P → ◇P"), bridges=["ought_implies_can"])
 ```
 
 The native tableau (`modal_decide` and friends) refuses `bridges=` outright with a `NotImplementedError` naming the routes above: every one of its structural rules acts inside a single relation, so it has no rule to apply and no sound way to approximate one.
+
+### Equality is rigid in the modal embeddings
+
+In the alethic-family embeddings of this section (`to_thf_modal_full` / `to_isabelle_modal`, likewise `fol.qml.to_thf_modal`) and in the third-order route below, the identity atoms `t₁ = t₂` / `t₁ ≠ t₂` are **not** uninterpreted, world-relativised predicates. `=` is HOL's own identity over the individual type, with no world argument, so it cannot vary from world to world — the reading of `qml_is_valid` and of `fol.qml.to_thf_modal`. Reflexivity, symmetry, transitivity and congruence (Leibniz's law, under `□` too) therefore come from the prover's own equality, not from an axiom, and nothing named `feq` / `fneq` is declared. `≠` is lowered to `¬(t₁ = t₂)` before anything is rendered, and a `=` / `≠` atom that does not have exactly two terms is a `ValueError`.
+
+```python
+nec = pm("alice = bob → □(alice = bob)")
+thf = to_thf_modal_full(nec)
+print("feq" in thf)                                                  # → False  (no uninterpreted relation)
+print("( meq = ( ^ [A: $i, B: $i, W: mu] : ( A = B ) ) )" in thf)    # → True    (THF's own '=', world binder W unused)
+print(r"(\<lambda>_. alice = bob)" in to_isabelle_modal(nec))         # → True    (Isabelle's own '=')
+```
+
+In THF identity is lifted by one macro, `meq`, emitted only when the formula contains identity; in Isabelle it is `(\<lambda>_. a = b)`, whose anonymous binder the body never mentions. Both are what makes it rigid. The consequences, derived from that reading and cross-checked against `qml_is_valid`:
+
+- `a = b → □(a = b)`, `a ≠ b → □(a ≠ b)` and `◇(a = b) → a = b` are theorems under every frame, `K` included: the atom has the same truth value at every world.
+- `□(a = b) → a = b` is **not** a theorem over `K` (a dead-end world makes `□(a = b)` vacuously true while `a` and `b` are two individuals) and **is** one over any serial frame, i.e. one where every world has a successor (`T`, `S4`, `S5`, `KD`, … — a reflexive frame is serial).
+- Identity ranges over the whole individual type and is not existence-guarded, so `a = a` is a theorem under every `mode=`, whereas `∃x (x = alice)` ("`alice` exists") is a theorem under the constant and possibilist regimes and not under the actualist ones. A name of several letters such as `alice` is a constant but a single letter such as `c` is a variable, and a free variable is a parameter that exists at the world of evaluation, so `∃x (x = c)` is a theorem under every regime.
+
+The **third-order** modal route (`to_thf_ho_modal`, `to_isabelle_ho_modal`, `isabelle_ho_modal_theory`) reads identity between *individuals* the same way, and so `a = b → (Pos(λx. x = a) → Pos(λx. x = b))` is a theorem there. Its Isabelle binders are renamed as for `to_isabelle_so` above, and the world binder of `@` is anonymous: `@w1 P(alice)` is written `(\<lambda>_. (P alice) nom_w1)`. Identity between *properties* — a predicate name or a λ-abstraction on either side of `=`, which the grammar cannot write but a hand-built AST can carry — is refused with `NotImplementedError` instead: HOL's `=` at a property type would silently pick one meaning of "the same property" (necessary coextension) for you, and the kit has no oracle that says it is the one you meant. State the relation you want, e.g. `∀x □(P(x) ↔ Q(x))`.
 
 ## A sample emitted Isabelle theory
 
@@ -607,8 +671,8 @@ from unicode_fol_kit.hol import to_thf_k3lp
 lem = p("P ∨ ¬P")
 thf_k3 = to_thf_k3lp(lem, system="K3")
 thf_lp = to_thf_k3lp(lem, system="LP")
-print("system=K3" in thf_k3)         # → True
-print("system=LP" in thf_lp)         # → True
+print("% K3 many-valued" in thf_k3)  # → True   (the header names the matrix)
+print("% LP many-valued" in thf_lp)  # → True
 print("kor" in thf_k3)               # → True   (the strong-Kleene disjunction fn)
 print("des" in thf_k3)               # → True   (the designated-set predicate)
 print(thf_k3 != thf_lp)              # → True   (different designated sets)
@@ -790,7 +854,7 @@ Cross-checked by hand against a real Vampire 5.0.1 (inside WSL), for every schem
 
 ### Deciding relevant-logic-B validity: `isabelle_decide_relevant`
 
-`isabelle_decide_relevant(φ)` decides validity in the simplified Routley–Meyer semantics for relevant logic B — the propositional connectives `¬ ∧ ∨ → ↔` over nullary atoms, matching `semantics.relevant.rel_satisfies`'s own restriction. `hol.isabelle_relevant.to_isabelle_relevant` emits the embedding: worlds `N`/`star`/`R` as uninterpreted `consts`, and — following `isabelle_conditional`'s design — the three well-formedness conditions (`N` nonempty, `star` a total involution, `R` sourced only at non-normal worlds) bundled as a `wellformed` **premise** of the goal rather than an `axiomatization`, so nitpick can construct a frame itself and certify a countermodel as *genuine*. Same scheme as `isabelle_decide_fol`: prove-battery ⇒ `VALID`, else `nitpick[expect = genuine]` over the world type ⇒ `INVALID`, else `UNKNOWN`; returns a `FolVerdict`.
+`isabelle_decide_relevant(φ)` decides validity in the simplified Routley–Meyer semantics for relevant logic B — the propositional connectives `¬ ∧ ∨ → ↔` over nullary atoms, matching `semantics.relevant.rel_satisfies`'s own restriction. `hol.isabelle_relevant.to_isabelle_relevant` emits the embedding: worlds `N`/`star`/`R` as uninterpreted `consts`, and — following `isabelle_conditional`'s design — the three well-formedness conditions (`N` nonempty, `star` a total involution, `R` sourced only at non-normal worlds) bundled as a `wellformed` **premise** of the goal rather than an `axiomatization`, so nitpick can construct a frame itself and certify a countermodel as *genuine*. Same scheme as `isabelle_decide_fol`: prove-battery ⇒ `VALID`, else `nitpick[expect = genuine]` over the world type ⇒ `INVALID`, else `UNKNOWN`; returns a `FolVerdict`. A truth constant `⊤` / `⊥` is refused by name with `TypeError` (by `to_isabelle_relevant`, `to_thf_relevant` and `rel_valid`): relevant logic has an additive and a multiplicative pair of truths and falsities, which differ in B, and `$true` / `$false` name neither pair.
 
 ```python
 # doctest: +SKIP

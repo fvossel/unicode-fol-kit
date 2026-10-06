@@ -89,9 +89,20 @@ def _make_edge(name: str, url: str, timeout: float) -> Comorphism:
         target=f"{HETS_EDGE_PREFIX}{name}",
         apply=apply,
         lossy=False,
+        # UNDECLARED on purpose, which is what ``None`` means (see
+        # comorphism.GUARANTEES): what a Hets comorphism preserves is a
+        # property of THAT server's translation, and this kit has not
+        # verified it. Claiming "faithful" because Hets' own
+        # documentation says so would put a promise in the registry that
+        # nothing here checks, and weakest_guarantee would then hand it on
+        # to every composed path. A path through one of these edges reports
+        # guarantee=None, i.e. "ask the server's documentation".
+        guarantee=None,
         note=(f"Hets comorphism {name} on a running hets-server ({url}); "
               "input: CASL spec text (to_casl_spec), output: translated "
-              "theory text as Hets renders it (format=dol)."),
+              "theory text as Hets renders it (format=dol). What it "
+              "preserves is undeclared: this kit does not verify the "
+              "server's comorphisms."),
     )
 
 
@@ -112,6 +123,13 @@ def register_hets_comorphisms(*, url: Optional[str] = None,
         url, _ = discover_hets_url()
     client = HetsClient(url, timeout=timeout)
     iri = client.upload(_PROBE_SPEC, "kit_translations_probe.casl")
+    # translations() drops Hets' identity (empty-<li>) entry, so no edge
+    # named bare "hets:" is registered any more and no apply ever sends
+    # "translation=" to /theory. A refresh against a server that still
+    # reports that entry therefore UNREGISTERS the stale "hets:" edge via
+    # the _CURRENTLY_REGISTERED diff below. It also raises
+    # HetsNoTranslationsError rather than registering nothing at all, which
+    # matches this function's "never a silent no-op" contract.
     names = client.translations(iri)
 
     registered = []

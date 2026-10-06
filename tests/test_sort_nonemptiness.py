@@ -291,7 +291,7 @@ def test_nonempty_sort_axioms_empty_for_plain_fol():
 def test_z3_relevant_premises_agrees_with_z3_backend_on_sorted_entailment():
     """z3_relevant_premises must reach the SAME verdict as Z3Backend.decide
     on many-sorted input — both must add the identical non-emptiness axioms
-    (see _z3_track_and_check's z3_nonempty_sort_axioms parameter), or the
+    (see _z3_track_and_check's z3_sort_axioms parameter), or the
     two could silently disagree about whether the entailment even holds.
     """
     premise = MSFOL("∀x:Human Mortal(x)")
@@ -389,20 +389,24 @@ def test_z3_equivalence_assumes_non_empty_sorts():
     assert formulas_are_equivalent(MSFOL("∀x:Human Mortal(x)"), f2) is False
 
 
-def test_resolution_reference_is_incomplete_not_unsound_not_fixed_here():
-    """atp.resolution.prove (via fol.normalforms.skolemize's own to_fol
-    call) lacks the same non-emptiness fact, but — unlike the Z3/cvc5/TPTP
-    routes — this is a COMPLETENESS gap, not a soundness one: resolution is
-    refutation-only and never reports a false PROVED (dropping the
-    non-emptiness axiom only makes premises ∧ ¬conclusion's classical
-    clause set HARDER to refute, i.e. this many-sorted entailment is
-    provable under nonempty-sort MSFOL semantics but resolution — sound but
-    incomplete BY DESIGN, per its own docstring — currently fails to find
-    that proof. Neither atp/resolution.py nor fol/normalforms.py is in this
-    item's file ownership.
+def test_resolution_gets_the_non_emptiness_of_a_sort_as_a_premise():
+    """atp.resolution.prove clausifies each formula through
+    fol.normalforms.skolemize's own to_fol call, which drops the fact that a
+    sort is non-empty, exactly like the Z3/cvc5/TPTP routes' reductions do.
+    ``∀x:Ghost P(x) ⊢ ∃x:Ghost P(x)`` is valid in the many-sorted semantics
+    (Ghost has an element, and it is a P) and was NOT proved here: resolution
+    is refutation-only, so dropping the non-emptiness axiom never made it
+    prove something false, but it made this valid entailment unprovable.
+    The old expectation (``False``, "INCOMPLETE, not wrong") pinned that gap
+    as if it were intended. ``prove`` now adds ``sort_axioms`` (non-emptiness
+    of every sort, membership of every sorted constant) as premise clauses,
+    so the proof is found; the soundness side is pinned next to it.
     """
     from unicode_fol_kit.atp.resolution import prove
 
     premise = MSFOL("∀x:Ghost P(x)")
     conclusion = MSFOL("∃x:Ghost P(x)")
-    assert prove([premise], conclusion, max_steps=2000) is False  # INCOMPLETE, not wrong
+    assert prove([premise], conclusion, max_steps=2000) is True
+    # and the fact is a PREMISE, not part of the negated conclusion: a sort that
+    # is merely non-empty proves nothing about P
+    assert prove([], MSFOL("∃x:Ghost P(x)"), max_steps=2000) is False

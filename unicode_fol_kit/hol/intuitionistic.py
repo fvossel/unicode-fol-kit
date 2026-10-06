@@ -16,17 +16,15 @@ where the intuitionistic clauses quantify over future worlds:
 (``A ↔ B`` and ``A ⊕ B`` are first expanded to their ∧/∨/→/¬ definitions —
 matching the very clauses :meth:`IntKripkeModel.forces` uses — and then translated.)
 
-FALSUM. The textbook GMT rule is ``T(⊥)=⊥`` with ``⊥`` a *genuine* logical constant.
-This toolkit, however, has **no primitive propositional falsum**: the reserved atom
-``"⊥"`` (``unicode_fol_kit.atp.fitch.FALSUM``) is, for the intuitionistic Kripke
-evaluator :func:`unicode_fol_kit.semantics.intuitionistic.int_valid`, an *ordinary
-propositional variable* (its forcing clause is the plain atom clause — ``int_valid``
-has no ⊥-is-false rule; e.g. ``⊥→p`` and ``¬⊥`` both come out invalid). To stay
-**faithful to** ``int_valid`` — the ground truth this module cross-checks against —
-the box-translation here treats ``⊥`` like any other atom: ``T(⊥)=□⊥``. If you want
-the textbook *genuine-falsum* reading instead, rewrite ⊥ to a contradiction
-(``p ∧ ¬p``) before translating, exactly as the Fitch checker's ``_desugar_falsum``
-does for its classical oracle. See :func:`gmt_translate` and the ``caveats``.
+FALSUM. The textbook GMT rule is ``T(⊥)=⊥`` with ``⊥`` a *genuine* logical constant,
+and that is the rule here. The nullary atoms ``⊥`` and ``⊤`` (the reserved atom
+``"⊥"`` of :data:`unicode_fol_kit.atp.fitch.FALSUM` among them) are the falsity and
+truth constants, the same as ``$false`` and ``$true``: the intuitionistic Kripke
+evaluator :func:`unicode_fol_kit.semantics.intuitionistic.int_valid` forces ``⊤`` at
+every world and ``⊥`` at none, so ``⊥→p`` and ``¬⊥`` are valid and ``⊥`` alone and
+``⊤→p`` are not. The box-translation keeps a constant as it is, ``T(⊥)=⊥`` and
+``T(⊤)=⊤`` (a constant needs no box: it is the same at every world), and never
+declares a symbol for one. See :func:`gmt_translate`.
 
 The resulting S4 modal formula is handed to the existing alethic SSE
 (:mod:`unicode_fol_kit.fol.qml`) with an **S4 frame** (reflexive + transitive),
@@ -36,6 +34,28 @@ S4 is precisely the intuitionistic "≥" pre-order, and the GMT box mirrors the
 "for every later world" quantifier of the ``→``/``¬`` forcing clauses; this is why
 ``p ∨ ¬p``, ``¬¬p → p`` and Peirce's law come out **non-theorems**, while
 ``p → ¬¬p`` and the constructive tautologies are theorems.
+
+EQUALITY IS REFUSED. ``a = b`` / ``a ≠ b`` are not propositional letters, and this
+module is the PROPOSITIONAL one: its ground truth :func:`int_valid` keys an atom by
+its rendered form (``"a = a"`` is just another variable, so ``a = a`` is not valid
+there), while the S4 side of the GMT embedding goes through
+:func:`unicode_fol_kit.fol.qml.qml_is_valid`, which reads ``=`` as RIGID identity
+over the object domain (``a = a`` valid, ``a = b → □(a = b)`` valid). Fed an identity
+atom the two sides of the module's own cross-check therefore answer different
+questions and :func:`gmt_validity_matches_int_valid` reports a "mismatch" that is no
+bug in either — and :func:`to_isabelle_intuitionistic` would emit a real proof
+for ``a = a`` about an uninterpreted constant ``feq``, which Isabelle cannot check.
+The two could be made to agree only by giving intuitionistic logic a term semantics
+of its own (intuitionistic logic WITH equality — not what ``int_valid`` or the
+G4ip prover decide, and not part of the GMT theorem, which is about propositional
+formulas) or by reading identity as an uninterpreted relation on the S4 side (the
+silent approximation the kit refuses, and against ``fol.qml``). So :func:`gmt_translate`
+— every other public function goes through it — raises ``NotImplementedError``
+naming the atom, with the shared
+:func:`~unicode_fol_kit.semantics._modal_reject.reject_equality` the propositional
+modal tableau and the Kripke evaluator use, scanning the WHOLE formula up front.
+Other atoms with arguments (``P(a)``, ``a < b``) stay ordinary propositional letters
+on both sides, exactly as before.
 
 HONESTY. This module only *emits* a HOL problem/theory; it does not run Isabelle,
 Leo-III, Satallax or Sledgehammer. IPL is decidable (finite model property —
@@ -60,10 +80,30 @@ from unicode_fol_kit.fol.nodes import (
 )
 from unicode_fol_kit.fol._so_nodes import SecondOrderQuantifier
 from unicode_fol_kit.fol.qml import to_thf_modal
+from unicode_fol_kit.fol._truth_constants import truth_value
+from unicode_fol_kit.semantics._modal_reject import reject_equality
+
+
+#: How the GMT embedding reads an atom, and so why it cannot read identity: the
+#: clause the shared equality refusal quotes, and the sentence that points elsewhere.
+_EQUALITY_ROUTE = "the propositional Gödel–McKinsey–Tarski embedding"
+_EQUALITY_ATOM_READING = ("an atom is a propositional letter keyed by its rendered "
+                          "form, exactly as int_valid reads it")
+_EQUALITY_INSTEAD = (
+    "The kit has no intuitionistic logic with equality, and the two sides of this "
+    "module's cross-check would answer different questions: int_valid reads the "
+    "atom as an uninterpreted proposition while the S4 side (fol.qml) reads '=' as "
+    "rigid identity. For identity under modal (classical) reasoning use "
+    "unicode_fol_kit.fol.qml.qml_is_valid or another first-order route, not here.")
 
 
 def _check_propositional(formula: Node) -> None:
-    """Raise ValueError if ``formula`` is not propositional (quantifiers are out of scope).
+    """Refuse ``formula`` if it is not propositional IPL.
+
+    Raises ``ValueError`` on a quantifier (out of scope) and ``NotImplementedError``
+    on an equality / disequality atom (``=`` / ``≠``, refused by name — see the
+    module docstring's "EQUALITY IS REFUSED"), scanning the WHOLE tree before any
+    translation or oracle call so no verdict is produced that never looked at it.
 
     Mirrors :func:`unicode_fol_kit.semantics.intuitionistic._check_propositional`:
     the GMT embedding here is for *propositional* IPL, whose decidability the
@@ -75,6 +115,9 @@ def _check_propositional(formula: Node) -> None:
                 "intuitionistic GMT: only propositional formulas are supported "
                 "(quantified intuitionistic logic needs varying domains, out of scope)."
             )
+        reject_equality(node, "intuitionistic GMT", _EQUALITY_ROUTE,
+                        atom_reading=_EQUALITY_ATOM_READING,
+                        instead=_EQUALITY_INSTEAD)
 
 
 def gmt_translate(formula: Node) -> Node:
@@ -84,8 +127,14 @@ def gmt_translate(formula: Node) -> Node:
     connectives and the original atoms; it is S4-valid iff ``formula`` is
     intuitionistically valid. ``↔`` and ``⊕`` are expanded to their ∧/∨/→/¬
     definitions before translation, matching the intuitionistic forcing clauses.
-    The reserved atom ``⊥`` is treated as an ordinary atom (``T(⊥)=□⊥``) to stay
-    faithful to :func:`int_valid`; see the module docstring's FALSUM note.
+    The truth constants ``⊤`` / ``$true`` and ``⊥`` / ``$false`` are kept as they are
+    (``T(⊥)=⊥``), the reading :func:`int_valid` gives them; see the module docstring's
+    FALSUM note.
+
+    Raises ``ValueError`` on a quantifier and ``NotImplementedError`` on an equality
+    atom (``=`` / ``≠``) anywhere in ``formula`` — see the module docstring's
+    "EQUALITY IS REFUSED". Every other function of this module goes through here,
+    so they all refuse alike.
     """
     _check_propositional(formula)
     return _gmt(formula)
@@ -94,7 +143,9 @@ def gmt_translate(formula: Node) -> Node:
 def _gmt(f: Node) -> Node:
     """Core box-translation recursion (no validation; see :func:`gmt_translate`)."""
     if isinstance(f, Atom):
-        return Box(f)                      # T(p) = □p  (⊥ is an ordinary atom here)
+        if truth_value(f) is not None:
+            return f                       # T($true) = $true, T($false) = $false
+        return Box(f)                      # T(p) = □p
     if isinstance(f, Not):
         return Box(Not(_gmt(f.formula)))   # T(¬A) = □¬T(A)
     if isinstance(f, And):
@@ -151,6 +202,9 @@ _ISA_BOX = "\\<^bold>\\<box>"
 # collapse to the bare reserved token '_' (Isabelle's wildcard — a theory using it as a
 # consts name will NOT load) and merge distinct atoms (⊥/⊤/=/≠ all → '_'). Each alias is
 # a distinct, valid lowercase identifier. (The THF path aliases these separately.)
+# ``=`` / ``≠`` are aliased only so this sanitiser stays total and injective for any
+# atom NAME it is asked about: no public function reaches it with an identity atom,
+# because gmt_translate refuses one by name (module docstring, "EQUALITY IS REFUSED").
 _ISA_ATOM_ALIASES = {"⊥": "bottom", "⊤": "top", "=": "feq", "≠": "fneq"}
 
 # Identifiers the emitted theory already uses structurally: the world type ``i``, the
@@ -194,7 +248,8 @@ def _isa_atoms(formula: Node):
     """Distinct atom predicate names in ``formula`` (each a propositional letter)."""
     out, seen = [], set()
     for n in formula.walk():
-        if isinstance(n, Atom) and n.predicate not in seen:
+        if (isinstance(n, Atom) and n.predicate not in seen
+                and truth_value(n) is None):
             seen.add(n.predicate)
             out.append(n.predicate)
     return out
@@ -203,6 +258,8 @@ def _isa_atoms(formula: Node):
 def _isa_render(node: Node) -> str:
     """Render a GMT-translated S4 modal Node in Isabelle bold-operator syntax."""
     if isinstance(node, Atom):
+        if truth_value(node) is not None:
+            return "(\\<lambda>_. True)" if truth_value(node) else "(\\<lambda>_. False)"
         return _isa_atom_name(node.predicate)
     if isinstance(node, Not):
         return f"({_ISA_NOT}{_isa_render(node.formula)})"

@@ -1,0 +1,45 @@
+% Captured verbatim from `vampire --proof tptp --avatar off` (Vampire 5.0.1,
+% local WSL install) proving {p | $false, ~p | q | ~$true} |- q; the file(...)
+% path was shortened to 'tf.p' for readability. Exercises two genuine
+% 'true_and_false_elimination' steps (f5 and f6, 1 parent each): f1's clause
+% {p, $false} loses the literal $false and f2's clause {~p, q, ~$true} loses the
+% literal ~$true, because neither holds in any interpretation.
+% SZS status Theorem for tf
+% SZS output start Proof for tf
+fof(f1,axiom,(
+  p | $false),
+  file('tf.p',unknown)).
+fof(f2,axiom,(
+  ~p | q | ~$true),
+  file('tf.p',unknown)).
+fof(f3,conjecture,(
+  q),
+  file('tf.p',unknown)).
+fof(f4,negated_conjecture,(
+  ~q),
+  inference(negated_conjecture,[status(cth)],[f3])).
+fof(f5,plain,(
+  p),
+  inference(true_and_false_elimination,[],[f1])).
+fof(f6,plain,(
+  ~p | q),
+  inference(true_and_false_elimination,[],[f2])).
+fof(f7,plain,(
+  ~q),
+  inference(flattening,[],[f4])).
+fof(f8,plain,(
+  p),
+  inference(cnf_transformation,[],[f5])).
+fof(f9,plain,(
+  ~p | q),
+  inference(cnf_transformation,[],[f6])).
+fof(f10,plain,(
+  ~q),
+  inference(cnf_transformation,[],[f7])).
+fof(f11,plain,(
+  ~p),
+  inference(forward_subsumption_resolution,[],[f9,f10])).
+fof(f12,plain,(
+  $false),
+  inference(forward_subsumption_resolution,[],[f11,f8])).
+% SZS output end Proof for tf

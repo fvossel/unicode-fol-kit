@@ -16,17 +16,17 @@ Three things hold across the whole kit:
 | Same, with an SMT solver | `is_valid`, `is_satisfiable`, `get_model` (Z3) | bool / model | sound & complete on Z3's decidable fragment |
 | Same, via an external FO prover | `check_logical_entailment` (Prover9), `check_logical_entailment_vampire` | bool | sound; complete for FOL; needs the binary |
 | Propositional / modal tautology? (decidably) | `is_valid_tableau`, `prove_tableau`, `tableau_closed` | bool | sound & complete; decidable propositionally; routes modal inputs to the native modal tableau |
-| Modal validity in-process (no external solver) | `is_modal_valid`, `modal_decide`, `modal_countermodel` (`atp.modal_tableau`) | bool / verdict / Kripke counter-model | sound & complete for propositional **K, T, D, B, K4, K45, S4, S5, KD45** |
+| Modal validity in-process (no external solver) | `is_modal_valid`, `modal_decide`, `modal_countermodel` (`atp.modal_tableau`) | bool / verdict / Kripke counter-model | sound & complete for propositional **K, T, D, B, K4, K45, S4, S5, KD45**; the counter-model is the same under every `PYTHONHASHSEED` (the worlds are numbered in the order the search meets the formulas) |
 | Check a Fitch proof I wrote | `check_proof`, `verify_proof` | bool / `ProofResult` | sound; FOL/MSFOL by rule table, K3/LP + modal propositionally |
 | Find a Fitch proof | `find_fitch_proof`, `fitch_prove`, `is_valid_fitch` | `Proof` / bool | sound; complete propositionally, depth-bounded FO |
 | Check a sequent (LK) derivation | `check_sequent_proof`, `verify_sequent_proof` | bool / `SequentResult` | sound; reaches the second-order fragment |
 | Check an intuitionistic (LJ) derivation | `check_lj_proof`, `verify_lj_proof` | bool | sound for intuitionistic consequence |
-| Find a model / countermodel | `find_model`, `find_countermodel`, `is_satisfiable_finite`, `is_valid_finite` | `Structure` / None / bool | finite search up to size N; enumerates sort universes for MSFOL |
+| Find a model / countermodel | `find_model`, `find_countermodel`, `is_satisfiable_finite`, `is_valid_finite` | `Structure` / None / bool | finite search up to size N; enumerates sort universes for MSFOL; `find_model` / `find_countermodel` take `timeout=` (ms), and `None` means "found nothing in the time or the bounds" (`semantics.modelfinder.search_model` tells which) |
 | Find a second-order model / decide finite SO validity | `so_find_model`, `so_find_countermodel`, `so_is_valid_finite` | `Structure` / None / bool | bounded finite-model search |
 | Truth table (classical / K3 / LP) | `truth_table`, `is_tautology`, `is_contradiction`, `is_satisfiable_tt` | `TruthTable` / bool | decidable; propositional only |
 | Finite-valued matrix / Belnap–Dunn FDE consequence | `TruthMatrix` (`semantics.matrix`); `K3_MATRIX`, `LP_MATRIX`, `FDE_MATRIX` | matrix verdicts | decidable; propositional, any finite matrix |
 | Intuitionistic validity (prop. or first-order) | `int_valid`, `int_countermodel` | bool / `IntKripkeModel` | decidable propositionally; bounded Kripke search for quantifiers |
-| Decide intuitionistic / Lambek / ILL / relevant / hybrid logic through the same uniform `Verdict` every other route uses | `api.prove(f, logic="intuitionistic"\|"lambek"\|"ill"\|"relevant"\|"hybrid")` (lambek/ill/hybrid also auto-detected from syntax) | `Verdict` | per-logic: G4ip decision procedure (intuitionistic) · Lambek's own complete decision procedure (order-sensitive) · ILL's !-free-complete / bounded search · B's bounded countermodel search (never PROVED) · H(@)'s standard-translation-to-Z3 decision |
+| Decide intuitionistic / Lambek / ILL / relevant / hybrid logic through the same uniform `Verdict` every other route uses | `api.prove(f, logic="intuitionistic"\|"lambek"\|"ill"\|"relevant"\|"hybrid")` (lambek/ill/hybrid also auto-detected from syntax) | `Verdict` | per-logic: G4ip decision procedure (intuitionistic) · Lambek's own complete decision procedure (order-sensitive) · ILL's !-free-complete / bounded search · B's bounded countermodel search (never PROVED) · H(@)'s standard-translation-to-Z3 decision; Lambek and ILL answer UNKNOWN (`unsupported`) for a node their calculus has no rule for, naming the connectives the calculus has, never a refutation, and UNKNOWN (`timeout`) when `timeout=` runs out |
 | Evaluate truth in a structure | `satisfies` (FOL/MSFOL), `satisfies_so`/`holds` (SO), `satisfies_modal` (modal) | bool | direct Tarskian / Kripke / finite SO semantics |
 | Same, on a LARGE structure from real data | `evaluate_in_structure`, `evaluate_detailed` over `FiniteStructure` ({doc}`model-checking`) | bool / `EvalResult` | index-driven, no normal form; computed predicates; budget exhausts to UNKNOWN, never False |
 | Turn a molecule into a structure | `chem.mol_to_structure`, `chem.parse_chemlog_tptp` | `FiniteStructure` / Node | needs the `[chem]` extra (RDKit); atoms are individuals |
@@ -54,7 +54,7 @@ parse = MSFLParser().parse        # classical FOL
 
 ### I want to … decide validity / entailment (general FOL, no external solver)
 
-`is_valid_resolution` decides a single formula by refutation; `prove` decides `premises ⊨ conclusion`. Both are sound and refutation-complete, but only *semidecidable* — bound the work with `max_steps` if you suspect a non-theorem.
+`is_valid_resolution` decides a single formula by refutation; `prove` decides `premises ⊨ conclusion`. Both are sound and refutation-complete, but only *semidecidable* — bound the work with `max_steps` or `timeout=` (milliseconds) if you suspect a non-theorem; a call that runs out of either returns `False`, "not proved".
 
 ```python
 is_valid_resolution(parse("(∀x P(x)) → P(a)"))   # → True
@@ -79,7 +79,7 @@ get_model(parse("P ∧ ¬Q")) is not None    # → True   (a concrete model exis
 
 ### I want to … decide FOL with an external prover
 
-`check_logical_entailment` (Prover9) and `check_logical_entailment_vampire` (Vampire) are complete for FOL but need the binary installed, so they are not run here.
+`check_logical_entailment` (Prover9) and `check_logical_entailment_vampire` (Vampire) are complete for FOL but need the binary installed, so they are not run here. A free variable (`a` below) is one unknown element, shared by the premises and the conclusion: Prover9 reads it so, and the Vampire route refuses a free variable by name (`NotImplementedError`), so give that route constants (names of more than one letter).
 
 ```python
 # needs an installed Prover9 binary
@@ -102,7 +102,7 @@ tableau_closed([parse("P"), parse("¬P")])               # → True   (P, ¬P cl
 
 ### I want to … decide modal validity in-process
 
-`is_modal_valid` returns a bool over a named frame; `modal_decide` returns the verdict string `"valid"` / `"invalid"`; `modal_countermodel` returns a refuting `KripkeModel`. Frames: **K, T, D, B, K4, K45, S4, S5, KD45**.
+`is_modal_valid` returns a bool over a named frame; `modal_decide` returns the verdict string `"valid"` / `"invalid"` / `"unknown"` (a bound or the `timeout=` deadline was reached); `modal_countermodel` returns a refuting `KripkeModel`. Frames: **K, T, D, B, K4, K45, S4, S5, KD45**.
 
 ```python
 mp = MSFLParser(modal=True).parse
@@ -150,7 +150,7 @@ check_lj_proof(lj)        # → True   (P → ¬¬P is intuitionistically valid)
 
 ### I want to … find a (counter)model by finite search
 
-`find_model` returns a `Structure` satisfying a theory; `find_countermodel` satisfies the premises but refutes the conclusion; `is_valid_finite` / `is_satisfiable_finite` are the booleans. The search is bounded by `max_size`.
+`find_model` returns a `Structure` satisfying a theory; `find_countermodel` satisfies the premises but refutes the conclusion; `is_valid_finite` / `is_satisfiable_finite` are the booleans. The search is bounded by `max_size` and, when `find_model` / `find_countermodel` are given `timeout=` (milliseconds), by the clock; `None` means "found nothing in the time or the bounds". `search_model` / `search_countermodel` (in `unicode_fol_kit.semantics.modelfinder`) return a `ModelSearch` whose `timed_out` field tells a deadline from an exhausted bound. The booleans take no `timeout`.
 
 ```python
 find_model([parse("∃x (P(x) ∧ ¬Q(x))")]) is not None        # → True
@@ -159,6 +159,10 @@ cm = find_countermodel([parse("P(tom)")], parse("∀x P(x)"), max_size=3)
 cm is not None                                              # → True
 
 is_valid_finite(parse("∀x P(x) → P(tom)"))                  # → True   (no finite countermodel)
+
+from unicode_fol_kit.semantics.modelfinder import search_model
+search_model([parse("P(tom) ∧ ¬P(tom)")], max_size=3).timed_out   # → False  (no model exists: the bounds ran out, not the clock)
+search_model([parse("P(tom)")], timeout=0).timed_out              # → True   (no time at all: stopped before the first candidate)
 ```
 
 ### I want to … find a second-order model / decide finite SO validity
@@ -210,7 +214,7 @@ int_countermodel(parse("¬¬P → P")) is not None   # → True  (DNE fails — 
 
 ### I want to … decide a substructural or non-classical logic through the same `Verdict` as everything else
 
-`api.prove(..., logic=...)` routes to one of five per-logic backends (`atp.logic_backends`), each honoring its own logic's soundness/completeness boundary rather than sharing one shape: intuitionistic and relevant reuse the plain classical AST and need `logic=` given explicitly (nothing marks them syntactically); Lambek, ILL, and hybrid have their own unambiguous node types, so `logic="auto"` (the default) finds them on its own.
+`api.prove(..., logic=...)` routes to one of five per-logic backends (`atp.logic_backends`), each honoring its own logic's soundness/completeness boundary rather than sharing one shape: intuitionistic and relevant reuse the plain classical AST and need `logic=` given explicitly (nothing marks them syntactically); Lambek, ILL, and hybrid have their own unambiguous node types, so `logic="auto"` (the default) finds them on its own. The Lambek and ILL backends read only the connectives of their own calculus, over atoms: a quantifier, a count, a cardinality, a sorted constant, an equality atom or a node of another logic is refused by name, and the answer is `unknown`, never a refutation (the verdict's `detail` says `unsupported` and names the node and the connectives the calculus has). The Lambek backend answers the same for an empty premise list, because its calculus has no sequent with an empty antecedent. Both give `unknown` when `timeout=` runs out, and the detail says `timeout`. The hybrid backend takes `frame=`, `systems=` and `temporal_closure=` as `hybrid_is_valid` does.
 
 ```python
 from unicode_fol_kit import api, MSFLParser, Under
@@ -226,6 +230,9 @@ print(v2.status, v2.backend)                       # proved hybrid
 
 v3 = api.prove(api.parse_any("P → P").formula, logic="intuitionistic")  # must be explicit
 print(v3.status, v3.backend)                        # proved intuitionistic
+
+v4 = api.prove(B, logic="lambek")                  # no premises: L has no empty antecedent
+print(v4.status, "lambek:unknown/unsupported" in v4.detail)   # unknown True
 ```
 
 ### I want to … evaluate truth in a structure I built
@@ -298,7 +305,7 @@ is_valid_resolution(Implies(psi, parse("P(a) → Q(a)")))   # → True
 | Fuzzy (FL) | `fuzzy=True` | weak ∧ ∨, strong ⊗ ⊕, Łuk ¬ → ↔ | `fuzzy_evaluate()` | `fuzzy_is_valid` / `fuzzy_is_satisfiable` (Z3 reals); Łukasiewicz / Gödel / product t-norms |
 | Many-sorted fuzzy (MSFL) | `many_sorted=True, fuzzy=True` | sorts + Łukasiewicz | `fuzzy_evaluate()` | `fuzzy_*` (Z3 reals); `to_msfol()` lowers to classical |
 | Modal / temporal / epistemic / deontic | `modal=True` | □ ◇, K_a B_a, Ⓖ Ⓕ Ⓝ Ⓤ, Ⓞ Ⓟ (+ past-tense ⒣ ⒫ ⒴ ⒮) | `satisfies_modal()` | native modal tableau (`is_modal_valid` / `modal_decide`); `standard_translation()` → Z3/resolution; `qml_is_valid`; Fitch (K/T/S4/S5, prop.) |
-| Many-sorted modal | `modal=True, many_sorted=True` | the modal family above, over sorted `∀x:S`/`c:S` | `satisfies_modal()` (sorts world-relative, not rigid — see {doc}`modal`) | `qml_is_valid`, `to_isabelle_modal`, `to_thf_modal_full` (all three assume per-world non-emptiness of every sort, so they agree with `api.prove` on a modal-free sorted schema) |
+| Many-sorted modal | `modal=True, many_sorted=True` | the modal family above, over sorted `∀x:S`/`c:S` | `satisfies_modal()` (sorts world-relative, not rigid — see {doc}`modal`) | `qml_is_valid`, `to_isabelle_modal`, `to_thf_modal_full` (all three assume per-world non-emptiness of every sort and the membership of every sorted constant in its sort at every world, so they agree with `api.prove` on a modal-free sorted schema) |
 | Many-valued K3 / LP / FDE | `MSFLParser()` + `logic=` / `semantics.matrix` | classical syntax over {0, ½, 1} / four-valued | `kleene_value()`; `TruthMatrix` | `truth_table`, three-valued `is_valid`; `K3_MATRIX` / `LP_MATRIX` / `FDE_MATRIX`; Fitch under `logic="K3"`/`"LP"` |
 | Second-order | `second_order=True` | ∀P ∃P over predicate vars | `satisfies_so()` / `holds()` | `satisfies_so` on finite models; `so_is_valid_finite` / `so_find_model` (bounded search); LK (`∀²`/`∃²`). Rejects `to_z3`/`to_prover9`/`to_tptp` |
 | Many-sorted second-order | `second_order=True, many_sorted=True` | ∀P ∃P (unsorted) over sorted `∀x:S`/`c:S` individuals | `satisfies_so()` | `satisfies_so` on finite (sorted) models |

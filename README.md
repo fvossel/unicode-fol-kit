@@ -32,6 +32,17 @@ print(is_valid(phi))   # True
   callback is *your* LLM), `api.translate` (logic-to-logic via a comorphism
   registry). Every result has a JSON-compatible `to_dict()`, and the API carries an
   explicit stability policy.
+- **Logics as values, and a translation that carries its side conditions.**
+  `FOL(MSFOL(f))` converts a sorted formula and keeps its side axioms (each
+  sort is non-empty, each sorted constant lies in its sort) *with* the term, as
+  a `Sentence`; `api.prove` adds them as premises itself, which is the
+  difference between a proof and a spurious countermodel. Each of
+  the nine registry edges declares what it preserves (`comorphism.GUARANTEES`),
+  which side axioms its image needs and which options it reads; a composed path
+  reports the weakest guarantee on it. There is no implicit coercion between
+  logics on purpose — see
+  [Translating between logics](https://unicode-fol-kit.readthedocs.io/en/latest/guide/logic-graph.html)
+  for why a translation is not an upcast.
 - **An MCP server out of the box.** `pip install unicode-fol-kit[mcp]`, then
   `python -m unicode_fol_kit.mcp` exposes the toolkit as thirty-seven Model
   Context Protocol tools (23 general-purpose, 6 for chemistry, 8 for
@@ -183,14 +194,14 @@ as unavailable rather than silently disappearing.
 | Logic | Enable / entry point | Decide / reason with |
 |---|---|---|
 | Classical FOL / MSFOL | `MSFLParser()` / `many_sorted=True` | resolution, Z3, Prover9/Vampire, tableaux, Fitch, LK, finite model finder |
-| Fuzzy Łukasiewicz / Gödel / product | `MSFLParser(fuzzy=True)` | `fuzzy_evaluate`, `fuzzy_is_valid(…, tnorm=…)` (Z3 reals, quantifier grounding); classical routes (`is_valid`, normal forms, resolution) refuse fuzzy input rather than silently collapsing it — opt in explicitly with `to_fol(node)` |
+| Fuzzy Łukasiewicz / Gödel / product | `MSFLParser(fuzzy=True)` | `fuzzy_evaluate`, `fuzzy_is_valid(…, tnorm=…)` (Z3 reals, quantifier grounding; Łukasiewicz and Gödel only — the product t-norm is evaluator-only and `fuzzy_is_valid` refuses it by name); classical routes (`is_valid`, normal forms, resolution) refuse fuzzy input rather than silently collapsing it — opt in explicitly with `to_fol(node)` |
 | Modal / temporal / epistemic / deontic | `MSFLParser(modal=True)` | `satisfies_modal`, `standard_translation`, native `is_modal_valid` / `modal_decide` (K…S5, B, KD45) |
 | Quantified modal | `KripkeModel(domains=…)` | `qml_is_valid` per domain regime + frame; THF / Isabelle export |
 | Many-valued K3 / LP / Belnap FDE | `truth_table`, `semantics.matrix` | `matrix_is_valid` / `matrix_entails` over any finite `TruthMatrix`, incl. THF/Isabelle export |
 | Intuitionistic | `int_valid` / `int_countermodel` | propositional **decision procedure** (`int_prove`/`int_decide`, G4ip) + bounded first-order Kripke search; LJ checker |
 | Second-order | `MSFLParser(second_order=True)` | `satisfies_so`, bounded `so_is_valid_finite` / `so_find_countermodel` |
 | Third-order (incl. modal) | `MSFLParser(third_order=True[, modal=True])` | a predicate whose ARGUMENT is a property (`Pos(G)`, `Pos(λx. ¬G(x))`); slot types inferred across a theory; `to_thf_to` / `to_isabelle_to` and the shallow modal embedding `hol.ho_modal`; `hol.goedel` checks Gödel's ontological argument both ways |
-| Description logic **ALCHQ** | `unicode_fol_kit.dl` | `concept_satisfiable` / `subsumes` / `abox_consistent` (tableau, TBox + ABox, role hierarchies + transitive roles, qualified number restrictions `AtLeast`/`AtMost` on simple roles); `parse_concept`/`parse_gci`/`parse_manchester` plus `concept_to_fol`/`tbox_to_fol`/`rbox_to_fol`/`abox_to_fol` reuse the FOL provers (Z3's `Count` expansion for the number restrictions) and Isabelle/THF exports |
+| Description logic **ALCHQ** | `unicode_fol_kit.dl` | `concept_satisfiable` / `subsumes` / `abox_consistent` (tableau, TBox + ABox, role hierarchies + transitive roles, qualified number restrictions `AtLeast`/`AtMost` on simple roles); `parse_concept`/`parse_gci`/`parse_manchester` plus `concept_to_fol`/`kb_to_fol`/`tbox_to_fol`/`rbox_to_fol`/`abox_to_fol` reuse the FOL provers (Z3's `Count` expansion for the number restrictions) and Isabelle/THF exports |
 | Free · public-announcement · counterfactual · circumscription | `semantics.free_logic` / `dynamic_epistemic` / `conditional` / `nonmonotonic` | `free_is_valid`/`free_entails` (bounded search); `[φ!]ψ`/`⟨φ!⟩ψ` parse in modal mode and decide via `reduce_announcements`; `cf_valid` over Lewis V / VW / VC (`centering=`, default weakly centered); `minimal_entails` and the unbounded `circumscription_entails_so` |
 | Hybrid **H(@)** (nominals, `@i φ`) | `MSFLParser(modal=True)` | `KripkeModel(nominals=…)`, `hybrid_is_valid` per frame (standard translation + Z3) |
 | Relevant logic **B** | classical syntax + `semantics.relevant` | `rel_valid` / `rel_countermodel` (Routley–Meyer, bounded exhaustive search); `isabelle_decide_relevant` certifies both directions |

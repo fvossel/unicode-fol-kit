@@ -59,7 +59,7 @@ fuzzy_evaluate(classical.parse("P ∧ Q"), {"P": 0.5, "Q": 0.5})
 
 ## `fuzzy_evaluate` — truth degree under a valuation
 
-`fuzzy_evaluate(node, valuation, domain=None, sort_universes=None, tnorm="lukasiewicz")` returns the degree in `[0, 1]`. The `valuation` maps each ground atom's canonical key — its `to_unicode_str()` rendering, e.g. `"P(alice)"` or just `"P"` — to a degree. A missing key raises `KeyError`.
+`fuzzy_evaluate(node, valuation, domain=None, sort_universes=None, tnorm="lukasiewicz")` returns the degree in `[0, 1]`. The `valuation` maps each ground atom's canonical key — its `to_unicode_str()` rendering, with a sorted constant `c:S` written as `c`, e.g. `"P(alice)"` or just `"P"` — to a degree. A missing key raises `KeyError`. Two different atoms that print alike (the numeral `1` and a constant named `1`, a free variable `x` and a constant named `x`) would have one key and are refused with `NotImplementedError`, by the Z3 deciders below as by `fuzzy_evaluate`.
 
 ```python
 from unicode_fol_kit import MSFLParser, fuzzy_evaluate
@@ -85,7 +85,7 @@ fuzzy_evaluate(fl.parse("P ∨ Q"), v)             # → 0.7   weak disjunction 
 fuzzy_evaluate(fl.parse("P ⊕ Q"), v)             # → 1.0   strong  = min(1, 0.6+0.7)
 ```
 
-> Many Łukasiewicz degrees are not exactly representable in binary floating point: `0.6 + 0.7 − 1` evaluates to `0.2999999999999998`, so the examples above wrap a noisy result in `round(..., 10)`. The underlying arithmetic is exact; only the display is rounded.
+> Many Łukasiewicz degrees are not exactly representable in binary floating point: `0.6 + 0.7 − 1` evaluates to `0.2999999999999998`, so the examples above wrap a noisy result in `round(..., 10)`. The evaluator computes in ordinary floating point, so the noise is in the returned value itself, and the rounding removes it.
 
 ### Negation and implication
 
@@ -108,6 +108,14 @@ fuzzy_evaluate(fl.parse("P ⊗ Q"), {"P": 0.6})
 # raises KeyError: "No degree for ground atom 'Q' in the valuation. …"
 ```
 
+The truth constants `⊤` and `⊥` are the exception: they are the degrees `1` and `0` under every valuation and need no entry. The Z3 deciders and `satisfies_fuzzy_modal` (below) read them the same way:
+
+```python
+fuzzy_evaluate(fl.parse("⊤ → P"), {"P": 0.4})  # → 0.4   (⊤ is the degree 1: min(1, 1−1+0.4))
+fuzzy_evaluate(fl.parse("¬⊥"), {})             # → 1.0   (⊥ is the degree 0)
+fuzzy_is_valid(fl.parse("⊥ → P"))              # → True  (degree min(1, 1−0+x) = 1 for every x)
+```
+
 ### Quantifiers (inf / sup over a finite domain)
 
 Quantifiers are the infimum (`∀` = min) and supremum (`∃` = max) over a finite `domain` of constant names; a `SortedQuantifier` ranges over `sort_universes[sort]`:
@@ -117,7 +125,7 @@ fuzzy_evaluate(fl.parse("∀x P(x)"), {"P(a)": 0.3, "P(b)": 0.8}, domain={"a", "
 fuzzy_evaluate(fl.parse("∃x P(x)"), {"P(a)": 0.3, "P(b)": 0.8}, domain={"a", "b"})  # → 0.8 (max)
 ```
 
-For sorted quantifiers, pass `sort_universes`. The bound variable is grounded to a **bare** constant, so the valuation keys drop the sort annotation (`Tall(alice)`, not `Tall(alice:Person)`):
+For sorted quantifiers, pass `sort_universes`. The bound variable is grounded to a bare constant, and a sorted constant `alice:Person` **is** the constant `alice`, so the valuation keys carry no sort annotation: `Tall(alice:Person)` has the key `'Tall(alice)'`, the key of the instance of `∀x:Person Tall(x)` at `alice`:
 
 ```python
 ms = MSFLParser(many_sorted=True, fuzzy=True)
@@ -126,6 +134,22 @@ uni = {"Person": {"alice", "carol"}}
 
 fuzzy_evaluate(ms.parse("∀x:Person Tall(x)"), val, sort_universes=uni)  # → 0.4 (inf)
 fuzzy_evaluate(ms.parse("∃x:Person Tall(x)"), val, sort_universes=uni)  # → 0.7 (sup)
+fuzzy_evaluate(ms.parse("Tall(alice:Person)"), val)                     # → 0.7 (the key 'Tall(alice)')
+```
+
+`fuzzy_is_valid`, `fuzzy_is_satisfiable`, `fuzzy_get_model` and `satisfies_fuzzy_modal` read a sorted constant the same way. So `(∀x:Person Tall(x)) → Tall(alice:Person)` is valid over a universe of `Person` that holds `alice`: the infimum over the universe is at most the degree at `alice`, so the implication has degree `1`:
+
+```python
+q = ms.parse("(∀x:Person Tall(x)) → Tall(alice:Person)")
+fuzzy_evaluate(q, val, sort_universes=uni)  # → 1.0   (min(0.7, 0.4) ≤ 0.7)
+fuzzy_is_valid(q, sort_universes=uni)       # → True
+```
+
+A universe of `Person` that does not hold `alice` contradicts the constant's own sort (a sorted constant is an element of its sort), so `fuzzy_evaluate` and the three Z3 deciders refuse it by name instead of deciding the formula as if `alice` were outside `Person`:
+
+```python
+fuzzy_is_valid(q, sort_universes={"Person": {"carol"}})
+# raises ValueError: z3_fuzzy: the sorted constant alice:Person names an element that sort_universes['Person'] = ['carol'] does not hold. ...
 ```
 
 Omitting the universe for a quantifier raises `ValueError`:
@@ -195,7 +219,7 @@ get_tnorm("godel").name              # → 'godel'
 get_tnorm("godel") is TNORMS["godel"]  # → True   (the registry instance)
 
 luk = get_tnorm("lukasiewicz")
-luk.conj(0.6, 0.7)                   # → 0.3000000000000... (max(0, x+y−1))
+luk.conj(0.6, 0.7)                   # → 0.2999999999999998 (max(0, x+y−1))
 luk.disj(0.6, 0.7)                   # → 1.0                (min(1, x+y))
 luk.impl(0.8, 0.5)                   # → 0.7                (min(1, 1−x+y))
 luk.neg(0.3)                         # → 0.7
@@ -220,7 +244,7 @@ Rather than fixing a valuation, you can ask the solver whether *some* (or *every
 
 - `fuzzy_is_valid(formula)` — `True` iff the degree is `1` under every valuation (it asserts `degree < 1` and checks unsatisfiability).
 - `fuzzy_is_satisfiable(formula, threshold=1.0, strict=False)` — `True` iff some valuation reaches `degree >= threshold` (`> threshold` when `strict=True`).
-- `fuzzy_get_model(formula, threshold=1.0)` — an atom→degree dict reaching the threshold (plus a `'degree'` entry), or `None`.
+- `fuzzy_get_model(formula, threshold=1.0)` — an atom→degree dict reaching the threshold (plus a `'degree'` entry), or `None`. An atom named `degree` (only a hand-built node can have one) is refused with `NotImplementedError`: the model reports the formula's own degree under that key.
 
 ```python
 from unicode_fol_kit import (
@@ -367,6 +391,18 @@ Without the matching universe a quantifier raises `ValueError` (in the deciders)
 ```python
 fuzzy_is_valid(fl.parse("∀x P(x)"), tnorm="lukasiewicz")
 # raises ValueError: Grounding an unsorted Quantifier requires a non-empty 'domain'.
+```
+
+A variable that is free in a quantified formula is a parameter, one unknown element of the domain, and the deciders have no reading of it: they refuse it by name with `NotImplementedError` (bind the variable, or write a constant of the domain). `fuzzy_evaluate` takes the atom `P(x)` as one more key of the valuation. A comparison atom (`a = a`, `1 < 2`) has no degree and is refused with `TypeError` by the deciders and by `atp.z3_fuzzy.degree_expr`, exactly as by `fuzzy_evaluate`:
+
+```python
+fuzzy_is_valid(fl.parse("∀y P(y) → P(x)"), domain={"a", "b"})
+# raises NotImplementedError: z3_fuzzy: the variable(s) ['x'] are free in a quantified formula. …
+```
+
+```python
+fuzzy_is_valid(fl.parse("1 < 2"))
+# raises TypeError: Comparison atom '1 < 2' has no Łukasiewicz truth degree; the fuzzy decider only handles propositional predicate atoms.
 ```
 
 ## Building fuzzy nodes directly

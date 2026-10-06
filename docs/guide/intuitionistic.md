@@ -8,7 +8,7 @@ The toolkit gives you four independent, cross-checking views of the same logic:
 
 | View | Function(s) | Module |
 | --- | --- | --- |
-| Kripke-model search (decides propositional; bounded FO) | `int_valid`, `int_countermodel`, `IntKripkeModel` | `unicode_fol_kit.semantics.intuitionistic` |
+| Kripke-model search (`int_valid` decides propositional, with G4ip behind it; bounded FO) | `int_valid`, `int_countermodel`, `IntKripkeModel` | `unicode_fol_kit.semantics.intuitionistic` |
 | G4ip proof search — terminating decision procedure (propositional) | `int_prove`, `int_decide` | `unicode_fol_kit.atp.lj` |
 | LJ sequent-calculus proof checker | `check_lj_proof`, `verify_lj_proof` | `unicode_fol_kit.atp.lj` |
 | Gödel–McKinsey–Tarski embedding into S4 | `gmt_translate` | `unicode_fol_kit.hol` |
@@ -17,7 +17,7 @@ All four are exercised below against the same battery of formulas.
 
 ## Propositional validity and counter-models
 
-`int_valid(formula)` returns a bool; `int_countermodel(formula)` returns either `None` (when the formula is valid) or a pair `(model, world)` — an `IntKripkeModel` and the index of a world that fails to force the formula. For a propositional formula `int_valid` is a genuine **decision procedure**, full stop, regardless of `max_worlds`: the bounded Kripke search is tried first as a fast path (a countermodel it finds is a real witness, so a quick `False` short-circuits), but propositional IPL's finite-model-property bound *grows with the formula* — `(p→q)∨(q→r)∨(r→p)` needs 4 worlds, more than the `max_worlds=3` default — so "no countermodel within the bound" is not by itself proof of validity. When the bounded search comes up empty, `int_valid` hands the formula to `int_prove` (G4ip, no bound to exhaust) for the definitive verdict. Net effect: both `True` and `False` are exact for propositional input, at every `max_worlds`.
+`int_valid(formula)` returns a bool; `int_countermodel(formula)` returns either `None` (no countermodel with at most `max_worlds` worlds was found, which is not by itself a proof of validity) or a pair `(model, world)` — an `IntKripkeModel` and the index of a world that fails to force the formula, so a witness that the formula is not valid. For a propositional formula `int_valid` is a genuine **decision procedure**, full stop, regardless of `max_worlds`: the bounded Kripke search is tried first as a fast path (a countermodel it finds is a real witness, so a quick `False` short-circuits), but propositional IPL's finite-model-property bound *grows with the formula* — `(p→q)∨(q→r)∨(r→p)` needs 4 worlds, more than the `max_worlds=3` default — so "no countermodel within the bound" is not by itself proof of validity. When the bounded search comes up empty, `int_valid` hands the formula to `int_prove` (G4ip, no bound to exhaust) for the definitive verdict. Net effect: both `True` and `False` are exact for propositional input, at every `max_worlds`.
 
 ```python
 from unicode_fol_kit import MSFLParser, int_valid, int_countermodel, IntKripkeModel
@@ -163,11 +163,35 @@ the `max_worlds=3` default, but G4ip decides it directly with no bound at all:
 tricky = p("(P → Q) ∨ (Q → R) ∨ (R → P)")
 int_decide(tricky)              # → False   (a genuine G4ip refutation, not a guess)
 int_valid(tricky)               # → False   (int_valid delegates here and agrees)
+
+int_countermodel(tricky) is None                 # → True    (no countermodel within the default three worlds: None is not validity)
+int_countermodel(tricky, max_worlds=4) is None   # → False   (a four-world model refutes it)
 ```
 
 Quantified input is out of scope here — `int_prove` raises `NotImplementedError`
 pointing at the bounded first-order Kripke search (`int_valid` / `int_countermodel`)
 or the propositional GMT/S4 route below.
+
+A propositional letter is named by the text its atom prints as, so two different atoms that print alike — the numeral `1` and a constant `'1'` in `P(1)`, or a free variable `x` and a constant `x` in `P(x)` — are refused by name with `NotImplementedError` by `int_valid`, `int_countermodel`, `int_prove` and `int_decide`, and `api.prove(f, logic="intuitionistic")` answers `unknown` with that sentence in its detail:
+
+```python
+from unicode_fol_kit.fol.nodes import Atom, Implies, Variable, Constant
+
+# the free variable x and the constant x are two atoms that both print as P(x)
+alike = Implies(Atom("P", [Variable("x")]), Atom("P", [Constant("x")]))
+int_decide(alike)   # raises NotImplementedError: two different atoms are both written 'P(x)'
+```
+
+The calculus terminates, but its number of steps grows exponentially with the nesting of implications, and `int_prove` counts its steps against an internal budget of 200000. Peirce's law `((A → B) → A) → A` with `A` replaced by the formula built so far and a fresh `B` at each of five levels spends the budget, and `int_prove` raises `RuntimeError`:
+
+```python
+nested = Atom("P", ())
+for k in range(1, 6):
+    nested = Implies(Implies(Implies(nested, Atom(f"Q{k}", ())), nested), nested)
+int_decide(nested)   # raises RuntimeError: int_prove: internal step budget exceeded
+```
+
+The intuitionistic backend behind `api.prove` answers a spent budget, like a search that recurses deeper than the interpreter's recursion limit, as `unknown` with reason `bound_hit` (the detail of the `unknown` that `api.prove` returns names `intuitionistic:unknown/bound_hit`), not as an error.
 
 ### Unpacking a counter-model: why a formula fails
 
@@ -226,8 +250,10 @@ model.forces(world, p("¬P"))       # → False   a later world forces P, so ¬P
 model.forces(world, p("P ∨ ¬P"))   # → False   neither disjunct holds at the root
 ```
 
-A valid formula has no counter-model, so `int_countermodel` returns `None` and `int_valid`
-is its `is None` test:
+A valid formula has no counter-model, so `int_countermodel` returns `None`. The converse
+does not hold: a returned model is always a witness of invalidity, but `None` means only
+"none within `max_worlds`" — which is why `int_valid` adds the G4ip check for propositional
+input:
 
 ```python
 int_countermodel(p("P → P"))       # → None
@@ -295,6 +321,18 @@ Read it the same way: the root (`world 1`) has the individual `_e0` but has not 
 `P(_e0)` (which becomes forced at `world 0`), so `P(_e0) ∨ ¬P(_e0)` is unforced and the
 universal fails.
 
+A variable that is free in a first-order formula is a **parameter**: one unknown individual, the same everywhere in the formula, that exists in every world of the model (it exists where the formula is evaluated, and domains only grow). The search reads it as a constant of its own name, so the returned model has it in every domain:
+
+```python
+int_valid(p("∀x P(x) → P(y)"))      # → True    y is an individual of every world, so ∀x P(x) reaches it
+int_valid(p("P(y) → ∃x Q(x)"))      # → False   P holds of y and Q of nothing
+
+model, world = int_countermodel(p("P(y) → ∃x Q(x)"))
+all("y" in d for d in model.domains.values())   # → True
+```
+
+A free variable spelled like a constant of the formula, or a numeral spelled like a constant, is refused by name (`NotImplementedError`). A numeral is the constant of its value (`1` and `1.0` are one), and a predicate used at two arities is two predicates. Every parameter and every constant is one individual of each model, so more of them means larger models to search within `max_steps`, and a countermodel that needs more individuals or valuations than the bounds allow is not found.
+
 ### The double-negation shift — a bounded-search caveat
 
 The **double-negation shift** `(∀x ¬¬P(x)) → ¬¬(∀x P(x))` is *not* an intuitionistic
@@ -311,7 +349,8 @@ int_valid(p("(∀x ¬¬P(x)) → ¬¬(∀x P(x))"))   # → True   (bounded sear
 This is the one place where a `True` from `int_valid` must be read carefully: for
 **propositional** formulas `True` is a decision (validity), but for **first-order** formulas
 it means "no counter-model within `max_worlds` / `max_steps`". A `False`, by contrast, is
-*always* backed by a concrete counter-model and is reliable in both fragments.
+*always* backed by a concrete counter-model and is reliable in both fragments; for a
+first-order formula that model's domains contain every free variable of the formula.
 
 ## LJ sequent-calculus proofs
 
@@ -407,8 +446,7 @@ outright:
 bad_lem = derive(sequent([], [P, NP]), "¬R", axiom(sequent([P], [P])))
 res = verify_lj_proof(bad_lem)
 res.ok                             # → False
-res.error                          # → 'intuitionistic (LJ) sequents have at most one
-                                   #    succedent formula; found 2 in '⊢ P, ¬P''
+res.error                          # → "intuitionistic (LJ) sequents have at most one succedent formula; found 2 in '⊢ P, ¬P'"
 ```
 
 And a derivation that *looks* single-conclusion but rests on an unjustified leaf is caught at

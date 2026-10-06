@@ -23,8 +23,8 @@ condition types contributing their own quantificational structure:
   it (accessible to B per the donkey accessibility rule, but not bound by A's ∀ unless
   they ARE A's own referents).
 
-A box with zero conditions translates to a reflexive-equality tautology (``c = c`` for a
-fixed reserved constant) — the same "no constraint" idiom
+A box with zero conditions translates to a reflexive-equality tautology (``c_tautology =
+c_tautology`` — a constant the kit's own parser reads back) — the same "no constraint" idiom
 :mod:`unicode_fol_kit.dl.translate` uses for an empty TBox/ABox — so an empty box never
 silently vanishes into an ill-typed conjunction of zero formulas.
 
@@ -102,11 +102,22 @@ def _term(name: str) -> Node:
     return Variable(name) if is_referent(name) else Constant(name)
 
 
+# The constant the empty-box tautology is built from. ``c_`` plus a word is the
+# kit's CONSTANT terminal (fol._identifiers.constant_pattern), so the text this
+# prints reads back through api.parse_any as the SAME formula. Until 0.30.0 it
+# was Constant("_"), which printed `_ = _` -- text the kit's own parser rejects
+# ("Unexpected character '_'"): drs_to_fol(DRS(referents=(), conditions=()))
+# was a formula that could be computed but not handed back as text. The same
+# fix, and the same name, as unicode_fol_kit.dl.translate's. `c = c` is valid
+# whatever `c` denotes, so a DRS that happens to use a constant `c_tautology`
+# is still rendered correctly.
+_TAUTOLOGY_CONSTANT = Constant("c_tautology")
+
+
 def _tautology() -> Node:
     """The FOL image of "no constraint" — an empty box's condition list. Mirrors
     unicode_fol_kit.dl.translate's empty-TBox/ABox idiom."""
-    c = Constant("_")
-    return Atom("=", (c, c))
+    return Atom("=", (_TAUTOLOGY_CONSTANT, _TAUTOLOGY_CONSTANT))
 
 
 def _conjoin(parts: List[Node]) -> Node:

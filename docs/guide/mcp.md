@@ -36,6 +36,19 @@ carries a `spec_topic` and why the grammar itself is served as a tool.
 Every tool takes formulas as plain text with the dialect auto-detected, and
 returns structured JSON.
 
+`get_signature` answers `{"ok": True, "signature": {...}}`; `check_formula` and
+`diagnose` take that whole result, or just its `signature` value, as their
+`signature`, to hold further generations to the same vocabulary (the loose form
+`{"predicates": {"Human": 1}, "constants": ["socrates"]}` is read too). The truth
+constants `⊤` / `⊥` are never reported as predicates or as unknown symbols, and a
+malformed `signature` comes back as `{"error": ...}`.
+
+A formula nested a few hundred levels deep is processed on a worker thread with a
+larger stack. An answer nested more deeply than the MCP transport can write as JSON
+(about 100 levels, as `parse_formula` gives for 100 quantifiers) is refused as
+`{"error": {"type": "ValueError", ...}}` that names the depth; ask `render` for the
+text form instead. A direct Python call of a tool function is not held to that limit.
+
 ```python
 from unicode_fol_kit.mcp.server import prove
 
@@ -141,7 +154,7 @@ from unicode_fol_kit.mcp.server import prove
 
 print(prove("A ∧ B ∨ C")["spec_topic"])    # → operators
 print(prove("∀ P(x)")["spec_topic"])       # → quantifiers
-print(prove("P(1x)")["spec_topic"])        # → naming
+print(prove("P(1@)")["spec_topic"])        # → naming
 ```
 
 `A ∧ B ∨ C` is the case worth understanding, because the kit's unicode grammar
@@ -318,6 +331,9 @@ print(direct["lower"], direct["upper"], colgen["lower"], colgen["upper"])
 # → 1/2 4/5 1/2 4/5
 ```
 
+The truth constants are not atoms here: `⊤` has probability 1 and `⊥` probability 0 in
+`probability_bounds` and `probability_query`, and neither counts toward `max_atoms`.
+
 ## Chemistry tools
 
 The chemistry group evaluates a definition against a real molecule; see
@@ -414,9 +430,9 @@ print(r["concept_unicode"])
 
 Errors follow the same two-shape convention as every other tool: a malformed
 concept/Manchester TEXT (`ConceptSyntaxError`/`ManchesterSyntaxError` —
-including a real Manchester construct outside ALCHQ, like `value`/`Self`/
-`inverse`/a nominal, rejected by name) is the uniform `ok=False`/`argument`/
-`errors`/`spec_topic="description-logic"` shape; a REASONING-level refusal —
+including a real Manchester construct outside ALCHQ, like `Self`/`inverse`/a
+nominal, rejected by name) is the uniform `ok=False`/`argument`/`errors`/
+`spec_topic="description-logic"` shape; a REASONING-level refusal —
 a qualified number restriction on a non-simple (transitive, or
 transitively-subsumed) role — is `NonSimpleRoleError`, a structured
 `{"error": {...}}`, since the concept text itself parsed fine:
@@ -427,6 +443,23 @@ from unicode_fol_kit.mcp.server import dl_concept_satisfiable
 r = dl_concept_satisfiable("≥2 hasChild.Person", tbox=[{"transitive": "hasChild"}])
 print(r["error"]["type"])
 # → NonSimpleRoleError
+```
+
+A value restriction is a reasoning-level refusal too: `r value a` (Manchester) is read as
+`∃r.{a}`, and every `dl_*` tool that reasons about it answers
+`{"error": {"type": "UnsupportedConceptError", ...}}`, since the in-house tableau has no
+rule for it.
+
+The refusal of a printer or writer has the same shape, and is never an exception. The
+tools that report a concept's text (`dl_concept_satisfiable`, `dl_subsumes`,
+`dl_equivalent`, `dl_instance_check`, `dl_instance_retrieval`, `dl_parse_manchester`)
+answer a concept whose glyph text would read back as another concept, such as a class
+named `<A⊓B>`, with `{"error": {"type", "message"}}` before they reason:
+
+```python
+r = dl_concept_satisfiable("<A⊓B>", syntax="manchester")
+print(list(r), r["error"]["type"], "reads back as" in r["error"]["message"])
+# → ['error'] ValueError True
 ```
 
 `get_syntax_spec("description-logic")` serves the concept-constructor table

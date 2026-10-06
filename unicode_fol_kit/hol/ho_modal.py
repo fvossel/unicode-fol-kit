@@ -48,6 +48,35 @@ worlds, not an accessibility relation — see
 operators ``EverybodyKnows`` / ``DistributedKnowledge`` / ``CommonKnowledge``
 (``C_G`` needs a transitive closure this embedding does not attempt).
 
+**Equality is rigid, or refused.** ``t₁ = t₂`` / ``t₁ ≠ t₂`` between INDIVIDUALS is
+read exactly as :func:`unicode_fol_kit.fol.qml.qml_is_valid`,
+:mod:`unicode_fol_kit.hol.thf_modal` and :mod:`unicode_fol_kit.hol.isabelle_modal`
+read it: HOL's own ``=`` over the individual type ``i`` with NO world argument
+(Isabelle ``(\<lambda>_. a = b)``, THF the ``meq`` macro of ``thf_modal``), so it
+cannot vary with the world. ``a = a`` and ``a = b → □(a = b)`` are theorems,
+``□(a = b) → a = b`` holds exactly on a SERIAL frame (every world has a successor,
+which every reflexive frame does), and ``a = a`` holds under every ``mode=``
+(identity is not existence-guarded). ``≠`` is lowered to
+``¬(=)`` first, by :func:`unicode_fol_kit.hol.isabelle_modal._lower_identity` — which is
+:func:`unicode_fol_kit.fol.qml._st_equality` — and nothing is declared for either: no
+``feq`` / ``fneq`` exists in the emitted theory or problem. Two cases are refused, both
+loudly, both before anything is rendered:
+
+* a ``=`` / ``≠`` atom that does not have exactly two terms raises ``ValueError``
+  (``qml``'s rule: the glyphs are reserved for identity and are never a world-relative
+  predicate);
+* identity at a PROPERTY type — a predicate name or a λ-abstraction as a term of ``=`` —
+  raises ``NotImplementedError`` through
+  :func:`unicode_fol_kit.semantics._modal_reject.reject_equality`. That is not rigid
+  OBJECT identity but a different question. The grammar cannot even write it, the
+  signature analysis types the two slots of ``=`` independently (so ``G = H`` with ``G``
+  unary and ``H`` binary would pass and be ill-typed), and HOL's ``=`` at ``i ⇒ σ`` is
+  one particular answer — necessary coextension — to a question the kit has no oracle
+  for. State the relation you mean (``∀x □(P(x) ↔ Q(x))``) instead.
+
+The ordering atoms ``<`` ``>`` ``≤`` ``≥`` stay ordinary uninterpreted relations,
+world-relativised, as in ``qml``.
+
 **Domains — two independent axes.** ``mode=`` (default ``"constant"``, i.e.
 possibilist) accepts the same domain-regime vocabulary as
 :mod:`unicode_fol_kit.hol.isabelle_modal`'s ``_ACTUALIST_MODES``: ``"varying"``,
@@ -92,11 +121,18 @@ from ..fol.nodes import (
 # same class object either import path would give.
 from ..fol._hybrid_nodes import Down
 from ..fol._ho_nodes import INDIVIDUAL
+from ..fol._truth_constants import truth_value
 from ..fol.frames import FRAMES, resolve_frame, UnsupportedFrameCondition
 from ._ho_common import (
-    UnsupportedHigherOrderNode, EQUALITY,
+    UnsupportedHigherOrderNode, ORDERING,
     peel_lambdas, rename_apart, bound_pred_names, atom_predicates,
     function_symbols, free_individuals, ThfNames, bound_token,
+)
+from ._isabelle_binders import (
+    PREDICATE, VARIABLE, BinderScope, binder_tokens, collect_binders, declared_names,
+)
+from ..semantics._modal_reject import (
+    EQUALITY_PREDICATES, is_equality_atom, reject_equality,
 )
 # Single-sourced domain-regime vocabulary: importing the frozensets (not the
 # axiom TEXT, which stays local -- see the module docstring) keeps this
@@ -104,6 +140,13 @@ from ._ho_common import (
 # it ports the actualist guard from, so the two can never drift apart about
 # what "varying" or "constant" means.
 from .isabelle_modal import _ACTUALIST_MODES, _CONSTANT_MODES
+# Rigid identity is single-sourced the same way: the lowering (``≠`` -> ``¬(=)``,
+# a non-binary atom refused) is fol.qml._st_equality reached through
+# isabelle_modal._lower_identity, and the THF macro that lifts HOL's own ``=``
+# is thf_modal's -- so the first-order, second-order and third-order modal routes
+# cannot disagree about what an identity atom is.
+from .isabelle_modal import _has_identity, _lower_identity
+from .thf_modal import _THF_RIGID_EQ, _THF_RIGID_EQ_DEF
 
 
 # Isabelle's ASCII escapes, spelled once.
@@ -566,6 +609,98 @@ def _frame_axiom_lines(frame: str) -> List[str]:
 
 
 # --------------------------------------------------------------------------
+# Rigid identity
+# --------------------------------------------------------------------------
+#
+# Object identity is NOT a world-relativised predicate (fol.qml's "Equality is
+# rigid"). It is HOL's own ``=`` over the individual type ``i``, lifted to the
+# type of a proposition by a world binder it never uses, so it cannot vary with the
+# world. Both exporters read an identity atom through the two helpers below and
+# nowhere else, so a formula is lowered and checked ONCE, up front -- never lazily
+# at the atom, where a route that short-circuits could skip it.
+
+#: How the refusal of a PROPERTY-typed identity speaks (see :func:`_rigid_identity`).
+_PROPERTY_IDENTITY_ROUTE = "the third-order modal embedding at a property type"
+_PROPERTY_IDENTITY_ATOM_READING = (
+    "'=' is read between INDIVIDUALS only, as HOL's own identity over the type i; "
+    "a property is a world-indexed function i => ... => sigma, and whether two of "
+    "them are 'identical' (necessarily coextensive? coextensive at one world?) is a "
+    "choice this embedding does not make for you"
+)
+#: Not the propositional routes' failure. They key an atom by its rendered form
+#: and so get 'a = a' FALSE — a wrong answer. Here there is no single right
+#: answer to give: HOL's own ``=`` at a property type IS one reading (necessary
+#: coextension), and picking it silently would answer a question the caller did
+#: not ask rather than the one they did.
+_PROPERTY_IDENTITY_CONSEQUENCE = (
+    "so reading it as HOL's own identity at that type would silently pick "
+    "necessary coextension as what 'the same property' means"
+)
+
+_PROPERTY_IDENTITY_INSTEAD = (
+    "State the relation you mean between the properties instead: necessary "
+    "coextension is ∀x □(P(x) ↔ Q(x)), coextension at the current world is "
+    "∀x (P(x) ↔ Q(x)). Identity of INDIVIDUALS (a = b) is supported, and rigid."
+)
+
+
+def _rigid_identity(formulas: Sequence[Node], caller: str) -> List[Node]:
+    """Read every identity atom of ``formulas`` as rigid identity, or refuse it by name.
+
+    Two steps, both BEFORE any signature analysis or rendering:
+
+    1. An identity atom with a PROPERTY-typed term (a predicate name or a
+       λ-abstraction, i.e. identity at type ``i ⇒ … ⇒ σ`` rather than ``i``) is
+       refused by name through
+       :func:`~unicode_fol_kit.semantics._modal_reject.reject_equality`. This is not
+       rigid identity gone missing but a different question: the grammar cannot even
+       write it (``G = H`` does not parse), :func:`~unicode_fol_kit.fol.nodes.analyse_signatures`
+       types the two slots of ``=`` independently (so ``G = H`` with ``G`` unary and
+       ``H`` binary would be accepted and ill-typed in HOL), and HOL's ``=`` at a
+       function type is one particular answer -- necessary coextension -- to a question
+       the kit has no oracle for. Rather than guess, the case is refused. It is checked
+       BEFORE the lowering so the message names the atom as the caller wrote it
+       (``≠``, not the ``¬(=)`` it would have become).
+    2. :func:`~unicode_fol_kit.hol.isabelle_modal._lower_identity` -- the very rule
+       :func:`unicode_fol_kit.fol.qml.qml_translate` applies (``t₁ ≠ t₂`` becomes
+       ``¬(t₁ = t₂)``) -- and a non-binary ``=`` / ``≠`` raises ``ValueError``, as in
+       ``qml``. A formula without an identity atom is returned unchanged.
+
+    The returned list is parallel to ``formulas``.
+    """
+    for formula in formulas:
+        for node in formula.walk():
+            # A non-binary atom is step 2's ValueError, whatever its terms are.
+            if is_equality_atom(node) and len(node.args) == 2 and any(
+                    isinstance(arg, (PredicateTerm, Lambda)) for arg in node.args):
+                reject_equality(node, caller, _PROPERTY_IDENTITY_ROUTE,
+                                atom_reading=_PROPERTY_IDENTITY_ATOM_READING,
+                                consequence=_PROPERTY_IDENTITY_CONSEQUENCE,
+                                instead=_PROPERTY_IDENTITY_INSTEAD)
+    return [_lower_identity(f, caller) for f in formulas]
+
+
+def _identity_sides(node: Atom):
+    """The two individual terms of an identity atom that :func:`_rigid_identity` accepted.
+
+    The renderers call this on every ``=`` atom. An atom that is not a binary ``=``
+    has bypassed the lowering (``≠`` becomes ``¬(=)`` there, a non-binary atom is
+    refused there); rendering it anyway would route it through the generic predicate
+    path, where THF's name resolver turns ``≠`` into ``fneq`` -- an uninterpreted
+    reading of identity, which is exactly what this embedding refuses. So it raises.
+    """
+    if node.predicate != "=" or len(node.args) != 2:
+        raise UnsupportedHigherOrderNode(
+            f"ho_modal: the identity atom {node.to_unicode_str()!r} reached the renderer "
+            f"without being lowered (≠ becomes ¬(=), and a non-binary =/≠ is refused, "
+            f"before any rendering). Render through isabelle_ho_modal_theory / "
+            f"to_thf_ho_modal, which do that; identity is never rendered as a "
+            f"world-relative predicate."
+        )
+    return node.args
+
+
+# --------------------------------------------------------------------------
 # Isabelle rendering
 # --------------------------------------------------------------------------
 
@@ -631,18 +766,31 @@ def _domain_axiom_lines(mode: str) -> List[str]:
 
 
 def _isa_arg(node: Node, bound_arity: Dict[str, int],
-             display: Dict[str, str], mode: str) -> str:
-    """Render a node standing in ARGUMENT position — an individual or a property."""
-    if isinstance(node, (Variable, LambdaVar, Constant)):
+             display: Dict[str, str], mode: str,
+             scope: Optional[BinderScope] = None) -> str:
+    """Render a node standing in ARGUMENT position — an individual or a property.
+
+    ``scope`` holds the binders that enclose the node and the names they are printed under: a
+    variable or a lambda variable is printed under its binder's name, a constant under its own.
+    Without a ``scope`` every binder is printed under its own name.
+    """
+    if scope is None:
+        scope = BinderScope({})
+    if isinstance(node, (Variable, LambdaVar)):
+        return scope.token(VARIABLE, node.name)
+    if isinstance(node, Constant):
         return node.name
     if isinstance(node, PredicateTerm):
         return display.get(node.name, node.name)
     if isinstance(node, Lambda):
         names, body = peel_lambdas(node)
-        binders = " ".join(f"{_LAM}{n}::i." for n in names)
-        return f"({binders} {_isa_sigma(body, bound_arity, display, mode)})"
+        binders = []
+        for name in names:
+            token, scope = scope.enter(VARIABLE, name)
+            binders.append(f"{_LAM}{token}::i.")
+        return f"({' '.join(binders)} {_isa_sigma(body, bound_arity, display, mode, scope)})"
     if isinstance(node, Function):
-        args = " ".join(_isa_arg(a, bound_arity, display, mode) for a in node.args)
+        args = " ".join(_isa_arg(a, bound_arity, display, mode, scope) for a in node.args)
         return f"({node.name} {args})" if args else node.name
     raise UnsupportedHigherOrderNode(
         f"ho_modal: {type(node).__name__} cannot stand in argument position; an "
@@ -676,19 +824,26 @@ _NO_DOWN = (
 
 
 def _isa_sigma(node: Node, bound_arity: Dict[str, int],
-               display: Dict[str, str], mode: str) -> str:
-    """Render ``node`` as an Isabelle term of type ``sigma`` (a world-indexed proposition)."""
+               display: Dict[str, str], mode: str,
+               scope: Optional[BinderScope] = None) -> str:
+    """Render ``node`` as an Isabelle term of type ``sigma`` (a world-indexed proposition).
+
+    ``display`` gives each bound predicate variable the name it is printed under, ``scope`` each
+    enclosing object binder (see :mod:`unicode_fol_kit.hol._isabelle_binders`); without a
+    ``scope`` every binder is printed under its own name."""
+    if scope is None:
+        scope = BinderScope({})
     if isinstance(node, Not):
-        return f"(mnot {_isa_sigma(node.formula, bound_arity, display, mode)})"
+        return f"(mnot {_isa_sigma(node.formula, bound_arity, display, mode, scope)})"
     op = _BINARY_ISA.get(type(node))
     if op is not None:
-        left = _isa_sigma(node.left, bound_arity, display, mode)
-        right = _isa_sigma(node.right, bound_arity, display, mode)
+        left = _isa_sigma(node.left, bound_arity, display, mode, scope)
+        right = _isa_sigma(node.right, bound_arity, display, mode, scope)
         return f"({op} {left} {right})"
     if isinstance(node, Box):
-        return f"(mbox {_isa_sigma(node.formula, bound_arity, display, mode)})"
+        return f"(mbox {_isa_sigma(node.formula, bound_arity, display, mode, scope)})"
     if isinstance(node, Diamond):
-        return f"(mdia {_isa_sigma(node.formula, bound_arity, display, mode)})"
+        return f"(mdia {_isa_sigma(node.formula, bound_arity, display, mode, scope)})"
     if isinstance(node, Quantifier):
         # The one judgment call this port makes (see the module docstring):
         # ONLY the individual-typed binder is existsAt-guarded under an
@@ -698,57 +853,72 @@ def _isa_sigma(node: Node, bound_arity: Dict[str, int],
             binder = "mforall" if node.type == "∀" else "mexists"
         else:
             binder = "mall" if node.type == "∀" else "mex"
-        body = _isa_sigma(node.formula, bound_arity, display, mode)
-        return f"({binder} ({_LAM}{node.variable.name}::i. {body}))"
+        token, inner = scope.enter(VARIABLE, node.variable.name)
+        body = _isa_sigma(node.formula, bound_arity, display, mode, inner)
+        return f"({binder} ({_LAM}{token}::i. {body}))"
     if isinstance(node, SecondOrderQuantifier):
         binder = "mall" if node.type == "∀" else "mex"
         arity = bound_arity.get(node.predicate, node.arity)
         name = display.get(node.predicate, node.predicate)
-        body = _isa_sigma(node.formula, bound_arity, display, mode)
+        body = _isa_sigma(node.formula, bound_arity, display, mode, scope)
         return (f"({binder} ({_LAM}{name}::{_prop_type(arity)}. {body}))")
     if isinstance(node, (Knows, Believes, Says, Wants)):
         macro = {Knows: "mknows", Believes: "mbelieves",
                 Says: "msays", Wants: "mwants"}[type(node)]
-        agent = _isa_arg(node.agent, bound_arity, display, mode)
-        body = _isa_sigma(node.formula, bound_arity, display, mode)
+        agent = _isa_arg(node.agent, bound_arity, display, mode, scope)
+        body = _isa_sigma(node.formula, bound_arity, display, mode, scope)
         return f"({macro} {agent} {body})"
     if isinstance(node, Obligatory):
-        return f"(mobl {_isa_sigma(node.formula, bound_arity, display, mode)})"
+        return f"(mobl {_isa_sigma(node.formula, bound_arity, display, mode, scope)})"
     if isinstance(node, Permitted):
-        return f"(mperm {_isa_sigma(node.formula, bound_arity, display, mode)})"
+        return f"(mperm {_isa_sigma(node.formula, bound_arity, display, mode, scope)})"
     if isinstance(node, Always):
-        return f"(malways {_isa_sigma(node.formula, bound_arity, display, mode)})"
+        return f"(malways {_isa_sigma(node.formula, bound_arity, display, mode, scope)})"
     if isinstance(node, Eventually):
-        return f"(meventually {_isa_sigma(node.formula, bound_arity, display, mode)})"
+        return f"(meventually {_isa_sigma(node.formula, bound_arity, display, mode, scope)})"
     if isinstance(node, Next):
-        return f"(mnext {_isa_sigma(node.formula, bound_arity, display, mode)})"
+        return f"(mnext {_isa_sigma(node.formula, bound_arity, display, mode, scope)})"
     if isinstance(node, Historically):
-        return f"(mhistorically {_isa_sigma(node.formula, bound_arity, display, mode)})"
+        return f"(mhistorically {_isa_sigma(node.formula, bound_arity, display, mode, scope)})"
     if isinstance(node, Once):
-        return f"(monce {_isa_sigma(node.formula, bound_arity, display, mode)})"
+        return f"(monce {_isa_sigma(node.formula, bound_arity, display, mode, scope)})"
     if isinstance(node, Previous):
-        return f"(mprevious {_isa_sigma(node.formula, bound_arity, display, mode)})"
+        return f"(mprevious {_isa_sigma(node.formula, bound_arity, display, mode, scope)})"
     if isinstance(node, Until):
-        left = _isa_sigma(node.left, bound_arity, display, mode)
-        right = _isa_sigma(node.right, bound_arity, display, mode)
+        left = _isa_sigma(node.left, bound_arity, display, mode, scope)
+        right = _isa_sigma(node.right, bound_arity, display, mode, scope)
         return f"(muntil {left} {right})"
     if isinstance(node, Since):
-        left = _isa_sigma(node.left, bound_arity, display, mode)
-        right = _isa_sigma(node.right, bound_arity, display, mode)
+        left = _isa_sigma(node.left, bound_arity, display, mode, scope)
+        right = _isa_sigma(node.right, bound_arity, display, mode, scope)
         return f"(msince {left} {right})"
     if isinstance(node, Nominal):
         return f"({_LAM}v::world. v = {_nominal_const(node.name)})"
     if isinstance(node, At):
-        body = _isa_sigma(node.formula, bound_arity, display, mode)
-        return f"({_LAM}v::world. {body} {_nominal_const(node.nominal.name)})"
+        # The world binder is anonymous: ``body`` holds the caller's own symbols, and a binder
+        # named ``v`` would capture a constant, a function or a predicate called ``v`` there.
+        body = _isa_sigma(node.formula, bound_arity, display, mode, scope)
+        return f"({_LAM}_. {body} {_nominal_const(node.nominal.name)})"
     if isinstance(node, Down):
         raise UnsupportedHigherOrderNode(_NO_DOWN)
     if isinstance(node, Atom):
-        name = EQUALITY.get(node.predicate, node.predicate)
+        constant = truth_value(node)
+        if constant is not None:
+            # `$true` / `$false`: HOL's True / False under the anonymous world binder.
+            return f"({_LAM}_. True)" if constant else f"({_LAM}_. False)"
+        if is_equality_atom(node):
+            # Rigid identity: HOL's own ``=`` under a world binder it never uses, so
+            # it cannot vary by world. The binder is the anonymous ``_`` rather than a
+            # name so a user variable called ``w`` can never be captured by it. The
+            # same text isabelle_modal emits for the same atom.
+            left, right = _identity_sides(node)
+            return (f"({_LAM}_. {_isa_arg(left, bound_arity, display, mode, scope)} = "
+                    f"{_isa_arg(right, bound_arity, display, mode, scope)})")
+        name = ORDERING.get(node.predicate, node.predicate)
         name = display.get(name, name)
         if not node.args:
             return name
-        args = " ".join(_isa_arg(a, bound_arity, display, mode) for a in node.args)
+        args = " ".join(_isa_arg(a, bound_arity, display, mode, scope) for a in node.args)
         return f"({name} {args})"
     if type(node).__name__ in ("Would", "Might"):
         raise UnsupportedHigherOrderNode(_NO_COUNTERFACTUAL)
@@ -779,7 +949,8 @@ def _signature_lines(formulas: Sequence[Node]):
 
     lines: List[str] = []
     for pred in sorted(signatures.slots):
-        if pred in bound or pred in EQUALITY.values() or pred in EQUALITY:
+        if (pred in bound or pred in EQUALITY_PREDICATES or pred in ORDERING
+                or pred in ORDERING.values()):
             continue
         parts = []
         for kind in signatures.slots[pred]:
@@ -794,10 +965,12 @@ def _signature_lines(formulas: Sequence[Node]):
     for name in individuals:
         lines.append(f'consts {name} :: "i"')
 
-    # Comparison predicates actually used, as world-relativised relations.
-    used_eq = sorted({EQUALITY[p] for f in apart for p in atom_predicates(f)
-                      if p in EQUALITY})
-    for name in used_eq:
+    # Ordering predicates actually used, as world-relativised relations. Identity is
+    # NOT among them: it is HOL's own ``=`` (see _rigid_identity) and is declared
+    # nowhere.
+    used_ordering = sorted({ORDERING[p] for f in apart for p in atom_predicates(f)
+                            if p in ORDERING})
+    for name in used_ordering:
         lines.append(f'consts {name} :: "i {_FUN} i {_FUN} sigma"')
 
     # Function symbols in term position.
@@ -895,6 +1068,11 @@ def isabelle_ho_modal_theory(name: str,
     a goal but not in any axiom is still declared. Property-argument slots whose
     arity nothing in the theory determines are reported as a comment rather than
     silently defaulted — see :mod:`unicode_fol_kit.fol._ho_nodes`.
+
+    Identity ``=`` / ``≠`` between individuals is RIGID HOL equality (``≠`` is ``¬(=)``),
+    declared nowhere; a ``=`` / ``≠`` atom without exactly two terms raises
+    ``ValueError`` and identity between PROPERTIES raises ``NotImplementedError`` — the
+    module docstring's "Equality is rigid, or refused" has the reasons.
     """
     if frame not in FRAMES:
         raise ValueError(
@@ -908,7 +1086,12 @@ def isabelle_ho_modal_theory(name: str,
         )
     # A goal stated raw (statement=) contributes no formula to type-check.
     typed_goals = [g for g in goals if g.formula is not None]
-    formulas = [a.formula for a in axioms] + [g.formula for g in typed_goals]
+    # Identity is read ONCE, up front, as rigid HOL ``=`` (``≠`` -> ``¬(=)``, a
+    # non-binary atom or a property-typed one refused by name) -- before the signature
+    # analysis, so nothing downstream ever sees a ``≠``.
+    formulas = _rigid_identity(
+        [a.formula for a in axioms] + [g.formula for g in typed_goals],
+        "isabelle_ho_modal_theory")
     signature, signatures, apart, display = _signature_lines(formulas)
     # Arities come from the theory-wide analysis, not from each node's own
     # parse-time field: a binder whose arity only the OTHER axioms determine is
@@ -958,10 +1141,18 @@ def isabelle_ho_modal_theory(name: str,
     if preamble:
         lines.append("")
 
+    # A binder shadows a constant of its own spelling inside its scope, and the lifted
+    # operators (mand, mall, ...) are constants too: every binder (object quantifier, lambda
+    # parameter, bound predicate variable) is printed under a name that nothing declared above
+    # has. ``display`` gives each renamed-apart predicate variable that name.
+    tokens = binder_tokens(collect_binders(formulas), declared_names(lines))
+    display = {fresh: tokens[(PREDICATE, original)] for fresh, original in display.items()}
+    scope = BinderScope(tokens)
+
     for axiom, renamed in zip(axioms, axiom_bodies):
         if axiom.comment:
             lines.append(f"\\<comment> \\<open>{axiom.comment}\\<close>")
-        body = _isa_sigma(renamed, bound_arity, display, mode)
+        body = _isa_sigma(renamed, bound_arity, display, mode, scope)
         lines.append(f'axiomatization where {axiom.name}: "mvalid {body}"')
     if axioms:
         lines.append("")
@@ -972,7 +1163,7 @@ def isabelle_ho_modal_theory(name: str,
         if goal.statement is not None:
             proposition = goal.statement
         else:
-            body = _isa_sigma(typed_bodies[goal.name], bound_arity, display, mode)
+            body = _isa_sigma(typed_bodies[goal.name], bound_arity, display, mode, scope)
             proposition = f"mvalid {body}"
         lines.append(f'{goal.kind} {goal.name}: "{proposition}"')
         lines.append(f"  {goal.proof}")
@@ -1269,7 +1460,22 @@ _THF_RESERVED = ("mu", "r", "mnot", "mand", "mor", "mimp", "miff", "mbox", "mdia
                  "mknows", "mbelieves", "msays", "mwants", "mobl", "mperm",
                  "malways", "meventually", "mnext", "mhistorically", "monce",
                  "mprevious", "muntil", "msince",
-                 "existsat", "mforall", "mexists") + tuple(EQUALITY.values())
+                 "existsat", "mforall", "mexists", "feq", "fneq") + tuple(ORDERING.values())
+# ``feq`` / ``fneq`` name nothing in this embedding any more (identity is rigid: the
+# ``meq`` macro below, not an uninterpreted functor), but they stay claimed so a user
+# predicate that sanitises onto one of them is still pushed to ``feq_2`` -- the same
+# choice hol.thf_modal makes -- rather than reading as the old identity alias. ``meq``
+# is claimed only when the problem contains identity (see to_thf_ho_modal), so an
+# identity-free problem names its symbols exactly as before.
+
+#: The identity macro (emitted only when a formula contains identity): the name and the
+#: DEFINITION are hol.thf_modal's, verbatim -- ``meq = ^ [A: $i, B: $i, W: mu] : ( A = B )``,
+#: THF's own ``=`` over the individual sort with a world binder the body never mentions
+#: -- plus the type line every other macro of this prelude carries.
+_THF_RIGID_EQ_LINES = [
+    f"thf({_THF_RIGID_EQ}_type, type, ( {_THF_RIGID_EQ} : $i > $i > mu > $o )).",
+    _THF_RIGID_EQ_DEF,
+]
 
 #: Refusal text for the counterfactuals, THF side (see the module docstring).
 _NO_THF_COUNTERFACTUAL = (
@@ -1372,8 +1578,15 @@ def _thf(node: Node, upper: Dict[str, str], display: Dict[str, str],
     if isinstance(node, Down):
         raise UnsupportedHigherOrderNode(_NO_THF_DOWN)
     if isinstance(node, Atom):
-        if node.predicate in EQUALITY:
-            name = EQUALITY[node.predicate]
+        constant = truth_value(node)
+        if constant is not None:
+            # `$true` / `$false`: the proposition true (false) at every world.
+            return "( ^ [W: mu] : $true )" if constant else "( ^ [W: mu] : $false )"
+        if is_equality_atom(node):
+            _identity_sides(node)
+            name = _THF_RIGID_EQ
+        elif node.predicate in ORDERING:
+            name = ORDERING[node.predicate]
         else:
             name = upper.get(node.predicate) or names.functor("predicate", node.predicate)
         if not node.args:
@@ -1400,6 +1613,11 @@ def to_thf_ho_modal(formula: Node, frame: str = "K",
     ATP (Leo-III, Satallax) rather than Isabelle. Same embedding, same fragment,
     same refusals, same ``mode=``/``systems=``/``temporal_closure=`` meaning;
     the toolkit emits the problem and does not run a prover.
+
+    Identity ``=`` / ``≠`` between individuals is the rigid ``meq`` macro (HOL's own ``=``,
+    no world argument; ``≠`` is ``¬(=)``), emitted only when a formula contains identity;
+    a non-binary atom raises ``ValueError`` and identity between PROPERTIES raises
+    ``NotImplementedError`` — see the module docstring's "Equality is rigid, or refused".
     """
     if frame not in FRAMES:
         raise ValueError(f"to_thf_ho_modal: unknown frame {frame!r}.")
@@ -1408,7 +1626,8 @@ def to_thf_ho_modal(formula: Node, frame: str = "K",
             f"to_thf_ho_modal: unknown mode {mode!r} "
             f"(use one of {sorted(_ACTUALIST_MODES | _CONSTANT_MODES)})."
         )
-    formulas = [a.formula for a in axioms] + [formula]
+    # Identity is read ONCE, up front, as rigid ``=`` (see _rigid_identity).
+    formulas = _rigid_identity([a.formula for a in axioms] + [formula], "to_thf_ho_modal")
     apart, display = rename_apart(formulas)
     signatures = analyse_signatures(apart)
     bound = set()
@@ -1417,12 +1636,15 @@ def to_thf_ho_modal(formula: Node, frame: str = "K",
     usage = _scan_family_usage(apart)
     resolved_systems = _validate_systems(usage, systems, caller="to_thf_ho_modal")
 
-    names = ThfNames(reserved=_THF_RESERVED)
+    identity = any(_has_identity(f) for f in apart)
+    names = ThfNames(reserved=_THF_RESERVED + ((_THF_RIGID_EQ,) if identity else ()))
     lines = list(_THF_PRELUDE) + list(_THF_FAMILY_PRELUDE)
+    if identity:
+        lines += _THF_RIGID_EQ_LINES
     if mode in _ACTUALIST_MODES and usage.has_quant:
         lines += _thf_domain_lines()
     for pred in sorted(signatures.slots):
-        if pred in bound or pred in EQUALITY:
+        if pred in bound or pred in EQUALITY_PREDICATES or pred in ORDERING:
             continue
         parts = [_thf_type(k) for k in signatures.slots[pred]]
         thf_type = " > ".join(parts + ["mu", "$o"]) if parts else "mu > $o"
@@ -1431,9 +1653,10 @@ def to_thf_ho_modal(formula: Node, frame: str = "K",
     for name in sorted(free_individuals(apart)):
         functor = names.functor("individual", name)
         lines.append(f"thf({functor}_type, type, ( {functor} : $i )).")
-    # A comparison is a world-dependent uninterpreted relation here (see EQUALITY).
-    for symbol in sorted({EQUALITY[p] for f in apart for p in atom_predicates(f)
-                          if p in EQUALITY}):
+    # An ordering atom is a world-dependent uninterpreted relation here, as in qml.
+    # Identity is not: it is the ``meq`` macro above, declared nowhere else.
+    for symbol in sorted({ORDERING[p] for f in apart for p in atom_predicates(f)
+                          if p in ORDERING}):
         lines.append(f"thf({symbol}_type, type, ( {symbol} : $i > $i > mu > $o )).")
     for name, arity in sorted(function_symbols(apart).items()):
         functor = names.functor("function", name)

@@ -13,11 +13,20 @@ import pytest
 
 from unicode_fol_kit import MSFLParser
 from unicode_fol_kit.fol.frames import UnsupportedFrameCondition
+from unicode_fol_kit.fol.nodes import (
+    Atom, Box, Constant, Diamond, Implies, Lambda, LambdaVar, Not, PredicateTerm,
+)
 from unicode_fol_kit.hol.ho_modal import (
     HoAxiom, HoGoal, ho_modal_definitions, isabelle_ho_modal_theory,
-    to_isabelle_ho_modal, to_thf_ho_modal,
+    to_isabelle_ho_modal, to_thf_ho_modal, _isa_sigma, _rigid_identity, _thf,
 )
-from unicode_fol_kit.hol._ho_common import UnsupportedHigherOrderNode, rename_apart
+from unicode_fol_kit.hol._ho_common import (
+    ThfNames, UnsupportedHigherOrderNode, rename_apart,
+)
+from unicode_fol_kit.hol import isabelle_runner as _runner
+from unicode_fol_kit.hol.isabelle_modal import isabelle_modal_theory
+from unicode_fol_kit.hol.isabelle_runner import INVALID, VALID, IsabelleInstall
+from unicode_fol_kit.hol.thf_modal import to_thf_modal_full
 from unicode_fol_kit.hol.thirdorder import to_isabelle_to, to_thf_to
 
 TO = MSFLParser(third_order=True)
@@ -443,3 +452,264 @@ def test_the_euclidean_per_agent_axiom_keeps_the_agent_in_its_conclusion():
     assert ("thf(rk_eucl, axiom, ( ! [A: $i, W: mu, V: mu, U: mu] : "
            "( ( ( rk @ A @ W @ V ) & ( rk @ A @ W @ U ) ) "
            "=> ( rk @ A @ V @ U ) ) )).") in problem
+
+
+# --- identity: rigid HOL equality, or refused by name -------------------------
+#
+# Object identity is one construct and every modal route of this kit must answer
+# the same way: RIGID (HOL's own `=` over the individual type, no world argument,
+# as in `fol.qml.qml_is_valid`) or refused by name - never an uninterpreted,
+# world-relativised `feq`. Verdicts for these formulas are derived by hand in
+# test_ho_modal_frames.py and run against a real Isabelle there; what is pinned
+# HERE is the emitted text and the refusals, which need no prover.
+
+_A, _B, _C = Constant("a"), Constant("b"), Constant("c")
+_G = PredicateTerm("G")
+_H = PredicateTerm("H")
+_IS_G = Lambda(LambdaVar("x"), Atom("G", [LambdaVar("x")]))
+
+
+def test_isabelle_reads_identity_as_hol_equality_under_an_unused_world_binder():
+    theory = to_isabelle_ho_modal(TOM.parse("a = b"))
+    # `=` is HOL's own, under the anonymous binder `_` that the body never mentions
+    # (a named binder could capture a user variable called w) ...
+    assert 'theorem goal: "mvalid (\\<lambda>_. a = b)"' in theory
+    # ... and nothing is declared for it: the two individuals are, the relation is not.
+    assert 'consts a :: "i"' in theory and 'consts b :: "i"' in theory
+    assert "feq" not in theory and "fneq" not in theory
+    # the SAME text the first-order modal exporter writes for the same atom
+    first_order = isabelle_modal_theory(MSFLParser(modal=True).parse("a = b"))
+    assert "(\\<lambda>_. a = b)" in first_order
+
+
+def test_the_anonymous_world_binder_cannot_capture_a_user_variable_called_w():
+    r"""The identity lifts under ``\<lambda>_.``, not ``\<lambda>w.``: a user variable
+    named ``w`` (the usual name of a world) is the one a named binder would capture."""
+    theory = to_isabelle_ho_modal(TOM.parse("∀w (w = w)"))
+    assert r'mvalid (mall (\<lambda>w::i. (\<lambda>_. w = w)))' in theory
+
+
+def test_thf_reads_identity_through_the_meq_macro_and_declares_no_relation():
+    problem = to_thf_ho_modal(TOM.parse("a = b"))
+    assert "thf(goal, conjecture, ( mvalid @ ( meq @ a @ b ) ))." in problem
+    assert "feq" not in problem and "fneq" not in problem
+    # the macro is hol.thf_modal's, character for character: HOL's `=` over $i, with a
+    # world binder W the body does not use
+    macro = ("thf(meq, definition, "
+             "( meq = ( ^ [A: $i, B: $i, W: mu] : ( A = B ) ) )).")
+    assert macro in problem
+    assert macro in to_thf_modal_full(MSFLParser(modal=True).parse("a = b"))
+
+
+def test_a_disequality_is_lowered_to_not_identity_inside_a_lambda_too():
+    """``Pos(λx. x ≠ a)``: the ≠ is in a λ-body in ARGUMENT position, which only a
+    tree-wide lowering reaches. It must come out as ``¬(x = a)`` on both routes."""
+    formula = TOM.parse("Pos(λx. x ≠ a)")
+    theory = isabelle_ho_modal_theory("T", (), [HoGoal("g", formula)])
+    assert ('theorem g: "mvalid (Pos (\\<lambda>x::i. (mnot (\\<lambda>_. x = a))))"'
+            in theory)
+    assert "fneq" not in theory
+    problem = to_thf_ho_modal(formula)
+    assert "( mnot @ ( meq @ X_V @ a ) )" in problem
+    assert "fneq" not in problem and "!=" not in problem
+
+
+def test_function_terms_are_compared_by_identity_too():
+    formula = TOM.parse("f(a) = f(b)")
+    assert 'mvalid (\\<lambda>_. (f a) = (f b))' in to_isabelle_ho_modal(formula)
+    assert "( meq @ ( f @ a ) @ ( f @ b ) )" in to_thf_ho_modal(formula)
+
+
+def test_an_ordering_atom_stays_an_uninterpreted_world_relative_relation():
+    """Only ``=`` / ``≠`` became rigid. ``<`` has no counterpart in either target
+    format, so it is declared with the world argument, as in ``fol.qml``."""
+    formula = TOM.parse("a < b")
+    theory = to_isabelle_ho_modal(formula)
+    assert 'consts flt :: "i \\<Rightarrow> i \\<Rightarrow> sigma"' in theory
+    assert "mvalid (flt a b)" in theory
+    problem = to_thf_ho_modal(formula)
+    assert "thf(flt_type, type, ( flt : $i > $i > mu > $o ))." in problem
+    assert "( flt @ a @ b )" in problem
+    assert "meq" not in problem                 # no identity, no macro
+
+
+_NON_BINARY = [
+    pytest.param(Atom("=", [_A]), id="unary-eq"),
+    pytest.param(Atom("=", []), id="nullary-eq"),
+    pytest.param(Atom("≠", [_A, _B, _C]), id="ternary-neq"),
+    pytest.param(Box(Not(Atom("=", [_A, _B, _C]))), id="ternary-eq-under-box-and-not"),
+    pytest.param(Atom("Pos", [Lambda(LambdaVar("x"), Atom("≠", [LambdaVar("x")]))]),
+                 id="unary-neq-in-a-lambda-argument"),
+]
+
+
+@pytest.mark.parametrize("formula", _NON_BINARY)
+def test_a_non_binary_identity_atom_is_a_loud_value_error_on_both_exporters(formula):
+    with pytest.raises(ValueError, match=r"^isabelle_ho_modal_theory: .*exactly two terms"):
+        isabelle_ho_modal_theory("T", (), [HoGoal("g", formula)])
+    with pytest.raises(ValueError, match=r"^to_thf_ho_modal: .*exactly two terms"):
+        to_thf_ho_modal(formula)
+
+
+def test_a_non_binary_identity_atom_in_an_axiom_is_refused_though_the_goal_is_fine():
+    bad_axiom = HoAxiom("A1", Atom("=", [_A]))
+    good_goal = TOM.parse("G(a)")
+    with pytest.raises(ValueError, match="exactly two terms"):
+        isabelle_ho_modal_theory("T", [bad_axiom], [HoGoal("g", good_goal)])
+    with pytest.raises(ValueError, match="exactly two terms"):
+        to_thf_ho_modal(good_goal, axioms=[bad_axiom])
+
+
+_PROPERTY_IDENTITY = [
+    pytest.param(Atom("=", [_G, _H]), "equality", "G = H", id="two-predicate-names"),
+    pytest.param(Atom("=", [_A, _G]), "equality", "a = G", id="individual-and-predicate"),
+    pytest.param(Atom("=", [_IS_G, _IS_G]), "equality", "λx. G(x)", id="two-lambdas"),
+    pytest.param(Atom("≠", [_A, _IS_G]), "disequality", "a ≠ λx. G(x)",
+                 id="disequality-names-the-atom-as-written"),
+    pytest.param(Box(Atom("=", [_G, _H])), "equality", "G = H", id="under-a-box"),
+    pytest.param(Atom("Pos", [Lambda(LambdaVar("x"), Atom("=", [_G, _H]))]),
+                 "equality", "G = H", id="inside-a-lambda-argument"),
+]
+
+
+@pytest.mark.parametrize("formula,kind,shown", _PROPERTY_IDENTITY)
+def test_identity_between_properties_is_refused_by_name_on_both_exporters(
+        formula, kind, shown):
+    """Identity at a PROPERTY type is not rigid object identity and is not guessed at:
+    the grammar cannot write it, ``analyse_signatures`` types the two slots of ``=``
+    independently (so ``G = H`` with ``G`` unary and ``H`` binary would be accepted and
+    ill-typed), and HOL's ``=`` at a function type is one answer - necessary
+    coextension - to a question with no oracle here. It raises NotImplementedError
+    (through ``reject_equality``), never a silent ``feq`` and never HOL's ``=``."""
+    for call, caller in (
+            (lambda: isabelle_ho_modal_theory("T", (), [HoGoal("g", formula)]),
+             "isabelle_ho_modal_theory"),
+            (lambda: to_thf_ho_modal(formula), "to_thf_ho_modal")):
+        with pytest.raises(NotImplementedError) as info:
+            call()
+        message = str(info.value)
+        assert message.startswith(f"{caller}: the {kind} atom ")
+        assert "is refused by name" in message
+        assert "property type" in message
+        assert shown in message
+        assert "∀x □(P(x) ↔ Q(x))" in message        # says what to state instead
+
+
+def test_a_property_typed_identity_is_not_confused_with_an_identity_inside_a_lambda():
+    """Control for the refusal above: ``λx. x = a`` is an ordinary individual identity
+    inside a property-denoting λ, and is accepted (and rigid)."""
+    theory = isabelle_ho_modal_theory(
+        "T", (), [HoGoal("g", TOM.parse("Pos(λx. x = a)"))])
+    assert "(Pos (\\<lambda>x::i. (\\<lambda>_. x = a)))" in theory
+
+
+def test_the_renderers_refuse_an_identity_atom_that_bypassed_the_lowering():
+    """Defence in depth: the public exporters lower ``≠`` and refuse a non-binary
+    atom before any rendering, but THF's name resolver would turn a ``≠`` that reached
+    the generic predicate path into ``fneq`` - an uninterpreted reading of identity.
+    So the renderers refuse it themselves instead of rendering it."""
+    unlowered = Atom("≠", [_A, _B])
+    with pytest.raises(UnsupportedHigherOrderNode, match="without being lowered"):
+        _isa_sigma(unlowered, {}, {}, "constant")
+    with pytest.raises(UnsupportedHigherOrderNode, match="without being lowered"):
+        _thf(unlowered, {}, {}, 0, ThfNames(), "constant")
+    with pytest.raises(UnsupportedHigherOrderNode, match="without being lowered"):
+        _isa_sigma(Atom("=", [_A]), {}, {}, "constant")
+
+
+@pytest.mark.parametrize("text", ["x = 0", "a ≠ 0", "Pos(λx. x = 0)"])
+def test_a_numeral_in_an_identity_is_refused_not_read_as_an_individual(text):
+    """A numeral is not an individual of the type ``i`` this embedding declares (an
+    Isabelle ``0`` would be a ``nat``): the identity is refused by name on both
+    exporters instead of being compared at a type the theory never declares."""
+    formula = TOM.parse(text)
+    with pytest.raises(UnsupportedHigherOrderNode, match="Number"):
+        isabelle_ho_modal_theory("T", (), [HoGoal("g", formula)])
+    with pytest.raises(UnsupportedHigherOrderNode, match="Number"):
+        to_thf_ho_modal(formula)
+
+
+def test_an_identity_free_formula_goes_through_the_lowering_untouched():
+    """The lowering hands back the very same object when there is no identity atom, so
+    every identity-free formula (the Gödel / docs examples) is emitted exactly as before."""
+    formula = TOM.parse("Pos(G) → □∃x G(x)")
+    assert _rigid_identity([formula], "t")[0] is formula
+
+
+# --- the runner keeps the verdict it already holds ----------------------------
+#
+# `isabelle_decide_modal` asks the propositional Kripke evaluator for a witness AFTER
+# nitpick has certified INVALID. That evaluator has no term semantics and refuses an
+# identity atom by name, so routing an identity formula to it made the runner raise
+# past a verdict it already had. These tests drive the runner with a fake `check_theory`
+# (no Isabelle needed): the statuses come from the fake, which is the point - the thing
+# under test is that nothing between the build result and the return value raises.
+
+_FAKE_INSTALL = IsabelleInstall(home="X", is_windows=False, isabelle_exe="X/bin/isabelle")
+_IDENTITY_ATOM = Atom("=", [_A, _B])
+
+
+@pytest.mark.parametrize("formula", [
+    pytest.param(_IDENTITY_ATOM, id="a=b"),
+    pytest.param(Atom("≠", [_A, _B]), id="a≠b"),
+    pytest.param(Box(_IDENTITY_ATOM), id="box(a=b)"),
+    pytest.param(Implies(Atom("p", []), Diamond(Atom("≠", [_A, _B]))), id="p->dia(a≠b)"),
+])
+def test_an_identity_formula_is_not_alethic_propositional(formula):
+    assert not _runner._is_alethic_propositional(formula)
+    # so the witness search declines instead of raising from satisfies_modal
+    assert _runner._find_alethic_countermodel(formula, "K") is None
+    assert _runner._find_alethic_countermodel(formula, "S5") is None
+
+
+def test_the_propositional_alethic_fragment_is_still_recognised():
+    """Control: only identity changed the answer - a propositional formula over ground
+    atoms still gets its Kripke witness."""
+    p = Atom("p", [])
+    assert _runner._is_alethic_propositional(Implies(Box(p), p))
+    assert _runner._is_alethic_propositional(Atom("Loves", [_A, _B]))   # ground, not identity
+    witness = _runner._find_alethic_countermodel(Implies(Box(p), p), "K")
+    assert witness is not None and "counter-model" in witness
+
+
+def _fake_check_theory(prove_ok, nitpick_ok, seen):
+    def fake(theory_text, theory_name, **kwargs):
+        seen.append(theory_text)
+        ok = prove_ok if len(seen) == 1 else nitpick_ok
+        return _runner.BuildResult(ok=ok, exit_code=0 if ok else 1, output="",
+                                   theory_name=theory_name, session="S", elapsed=0.0)
+    return fake
+
+
+def test_decide_modal_keeps_nitpicks_invalid_verdict_for_an_identity_atom(monkeypatch):
+    """``a = b`` is invalid (one world, two individuals). The fake proof fails and the
+    fake nitpick certifies a countermodel; the runner must RETURN that, with no
+    propositional witness (there is none to exhibit), not raise NotImplementedError."""
+    seen = []
+    monkeypatch.setattr(_runner, "check_theory", _fake_check_theory(False, True, seen))
+    verdict = _runner.isabelle_decide_modal(_IDENTITY_ATOM, install=_FAKE_INSTALL)
+    assert verdict.status == INVALID
+    assert verdict.countermodel is None
+    assert len(seen) == 2                       # prove theory, then nitpick theory
+    assert all("(\\<lambda>_. a = b)" in thy for thy in seen)    # rigid identity, both builds
+
+
+def test_decide_modal_keeps_the_valid_verdict_for_necessity_of_identity(monkeypatch):
+    """``a = b → □(a = b)`` is valid (rigid identity). The proof build succeeds, so the
+    runner returns VALID after a single build."""
+    seen = []
+    monkeypatch.setattr(_runner, "check_theory", _fake_check_theory(True, False, seen))
+    verdict = _runner.isabelle_decide_modal(
+        Implies(_IDENTITY_ATOM, Box(_IDENTITY_ATOM)), install=_FAKE_INSTALL)
+    assert verdict.status == VALID
+    assert len(seen) == 1
+
+
+def test_decide_modal_still_exhibits_a_witness_for_a_propositional_formula(monkeypatch):
+    """Control for the two tests above: a non-identity propositional formula keeps
+    the evaluator's concrete Kripke counter-model."""
+    p = Atom("p", [])
+    monkeypatch.setattr(_runner, "check_theory", _fake_check_theory(False, True, []))
+    verdict = _runner.isabelle_decide_modal(Implies(Box(p), p), install=_FAKE_INSTALL)
+    assert verdict.status == INVALID
+    assert verdict.countermodel is not None and "counter-model" in verdict.countermodel

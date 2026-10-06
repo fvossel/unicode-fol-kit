@@ -32,26 +32,31 @@ instead of push/pop; that is a different API and out of scope here.
 docstring, and the classical-reasoning guide's many-sorted section):
 ``Node.to_z3()`` relativises a sorted quantifier/constant/count to plain
 classical FOL but never asserts that a sort's universe is non-empty — MSFOL,
-by convention, never gives a sort an empty one. :meth:`IncrementalSession.decide`
-closes that gap the same way ``Z3Backend.decide`` does: at EVERY call it
-recomputes ``nonempty_sort_axioms(goal, *premises)`` over the goal and the
-CURRENT premise set (base premises plus whatever :meth:`assert_premise` has
-added and :meth:`retract` has not yet undone) and asserts them, unnegated,
-inside that same call's own push/pop scope — never folded into ``to_z3()``
-itself (polarity-blind, shared with every other caller), and never asserted
-on a scope :meth:`retract` could later pop away with an unrelated premise:
-each ``decide()`` call adds and removes its own copy, so the axioms are
-always exactly the ones the CURRENT premise set and goal need, no more and
-no less — the same set :class:`Z3Backend` would compute from scratch for an
-equivalent one-shot call, so the two always agree.
+by convention, never gives a sort an empty one, and a sorted constant ``c:S``
+denotes an element of ``S``, which the relativisation forgets.
+:meth:`IncrementalSession.decide` closes both gaps the same way
+``Z3Backend.decide`` does: at EVERY call it recomputes
+``sort_axioms(goal, *premises)`` (a ``∃x S(x)`` per sort, an ``S(c)`` per
+sorted constant) over the goal and the CURRENT premise set (base premises plus
+whatever :meth:`assert_premise` has added and :meth:`retract` has not yet
+undone) and asserts them, unnegated, inside that same call's own push/pop
+scope — never folded into ``to_z3()`` itself (polarity-blind, shared with
+every other caller), and never asserted on a scope :meth:`retract` could later
+pop away with an unrelated premise: each ``decide()`` call adds and removes
+its own copy, so the axioms are always exactly the ones the CURRENT premise
+set and goal need, no more and no less — the same set :class:`Z3Backend`
+would compute from scratch for an equivalent one-shot call, so the two always
+agree. In particular, retracting the only premise that mentioned ``c:S``
+takes ``S(c)`` away with it.
 """
 
 import time
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from ..fol._msfl_nodes import nonempty_sort_axioms
-from ..fol.nodes import Node
+from ..fol._msfl_nodes import sort_axioms
+from ..fol.nodes import Node, Z3Env
 from .protocol import PROVED, REFUTED, UNKNOWN, Verdict
+from .z3_models import model_assignment
 
 __all__ = ["IncrementalSession"]
 
@@ -70,9 +75,12 @@ def _model_assignment(model) -> Dict[str, str]:
     model reader, no tracking-tag filtering is needed here: this session
     never uses ``assert_and_track`` (see the module docstring — it has no
     unsat-core proof to build), so no ``"goal"``/``"p<i>"`` Bool declaration
-    is ever present in ``model.decls()`` to begin with.
+    is ever present in ``model.decls()`` to begin with. A name declared more
+    than once (one name at two arities, a function and a predicate of one name)
+    is two symbols and is reported under ``"P/1"`` / ``"P/2"`` keys, as
+    :func:`unicode_fol_kit.atp.z3_models.model_assignment` does.
     """
-    return {str(d.name()): str(model[d]) for d in model.decls()}
+    return model_assignment(model)
 
 
 class IncrementalSession:
@@ -113,7 +121,13 @@ class IncrementalSession:
         # policy. Each premise gets its OWN solver.add call (never folded
         # into one conjunction), so push/pop granularity in assert_premise
         # can later align 1:1 with individual premises the same way.
-        z3_base = [p.to_z3() for p in self._base_premises]
+        #
+        # One Z3Env for the whole premise set (and one copy per push scope,
+        # below), so that a numeral and a constant of the same text are refused
+        # wherever they meet — see Z3Env — and retracting a premise takes its
+        # symbols' claims away with it.
+        base_env = Z3Env()
+        z3_base = [p.to_z3(base_env) for p in self._base_premises]
         for z3_p in z3_base:
             self._solver.add(z3_p)
 
@@ -122,6 +136,8 @@ class IncrementalSession:
         # premise (those have no push scope of their own — see the class
         # docstring).
         self._stack: List[Node] = []
+        # _envs[k] knows the base premises and the first k asserted ones.
+        self._envs: List[Z3Env] = [base_env]
 
     @property
     def premises(self) -> Tuple[Node, ...]:
@@ -147,10 +163,12 @@ class IncrementalSession:
         loudly with the scope stack left exactly as it was — never a
         half-pushed scope.
         """
-        z3_p = p.to_z3()
+        env = self._envs[-1].copy()
+        z3_p = p.to_z3(env)
         self._solver.push()
         self._solver.add(z3_p)
         self._stack.append(p)
+        self._envs.append(env)
 
     def retract(self) -> Node:
         """Undo the most recent :meth:`assert_premise` call (LIFO) and
@@ -169,6 +187,7 @@ class IncrementalSession:
                 "constructor's base premises are never retractable (LIFO "
                 "push/pop only reaches premises added by assert_premise)")
         self._solver.pop()
+        self._envs.pop()
         return self._stack.pop()
 
     def decide(self, goal: Node, *, timeout: Optional[int] = None) -> Verdict:
@@ -177,8 +196,8 @@ class IncrementalSession:
         Mirrors :meth:`~unicode_fol_kit.atp.protocol.Z3Backend.decide`'s
         body on the session's persistent solver instead of a fresh one:
         pushes a new scope, asserts ``Not(goal)`` plus the many-sorted
-        non-emptiness axioms the current premises/goal need (see the module
-        docstring), checks, builds the same three-way PROVED/REFUTED/UNKNOWN
+        axioms the current premises/goal need (non-emptiness and membership;
+        see the module docstring), checks, builds the same three-way PROVED/REFUTED/UNKNOWN
         verdict :class:`~unicode_fol_kit.atp.protocol.Z3Backend` would, then
         pops — leaving :attr:`scope_depth` exactly as it was before this
         call, whichever branch is taken (the push/pop live in a ``finally``).
@@ -197,9 +216,10 @@ class IncrementalSession:
 
         current_premises = self.premises
         try:
-            z3_goal = goal.to_z3()
-            axioms = [ax.to_z3() for ax in
-                     nonempty_sort_axioms(goal, *current_premises)]
+            env = self._envs[-1].copy()
+            z3_goal = goal.to_z3(env)
+            axioms = [ax.to_z3(env) for ax in
+                     sort_axioms(goal, *current_premises)]
         except NotImplementedError as exc:
             return Verdict(UNKNOWN, _BACKEND_NAME, reason="unsupported", detail=str(exc))
 

@@ -15,9 +15,8 @@ export at all:
 
 `ClingoBackend` and `MinizincBackend` close the first gap by grounding into a
 real finite-domain solver instead of exporting; `semantics.asp_models`
-closes the second by letting `clingo` enumerate natively. All three are new
-in this release, and all three share one contract worth reading before
-anything else on this page.
+closes the second by letting `clingo` enumerate natively. All three share one
+contract worth reading before anything else on this page.
 
 ```{warning}
 **These backends never prove anything. They only refute.** `decide(φ,
@@ -75,7 +74,8 @@ print(fragment_check((modal,)))
 `fragment_check` accepts unsorted classical FOL plus `Count`/`Cardinality`
 and refuses everything else **by name** — modal operators (their own
 `kripke-enum` backend already exists for exactly this), second-order
-quantification, the sorted family, substructural connectives, and so on.
+quantification, the sorted family, the truth constants `⊤` / `⊥` (neither
+encoding has a constant for them), substructural connectives, and so on.
 Refusing by name, not by silent mis-encoding, is what makes
 `UNKNOWN`/`"unsupported"` mean something specific instead of "something went
 wrong somewhere."
@@ -116,8 +116,8 @@ backends report `{"kind": "finite_structure", "data": structure.to_dict()}`
 instead, round-trippable through `structure_from_dict` (see below).
 
 The counting fragment sits fully inside that net now, not just the
-classical-FOL fragment: `evaluate_in_structure` gained a reading for
-`Cardinality` comparisons this release, so a `REFUTED` involving `|{v : φ}|`
+classical-FOL fragment: `evaluate_in_structure` has a reading for
+`Cardinality` comparisons, so a `REFUTED` involving `|{v : φ}|`
 is independently checked exactly like every other sentence on this page —
 see "`Cardinality` comparisons: decided, and now independently checked"
 below for the one caveat that remains.
@@ -168,11 +168,12 @@ print(sorted(s9.extensions[("Owns", 2)]))
 #   [('0', '0'), ('1', '1')]
 ```
 
-The classic quantifier-swap fallacy, sorted across two disjoint sorts:
-"every dog has *some* owner" does not entail "*some* person owns every
-dog," and clingo's countermodel is exactly the two-dog-two-owner structure
-you would build by hand — each dog owned only by itself-as-owner, so no
-single person owns them both.
+The classic quantifier-swap fallacy, sorted across two sorts: "every dog has
+*some* owner" does not entail "*some* person owns every dog," and clingo's
+countermodel is the two-element structure you would build by hand — each dog
+owned only by itself-as-owner, so no single person owns them both. The kit
+never makes two sorts disjoint, so the two individuals are both a `Dog` and a
+`Person`.
 
 One soundness point is worth spelling out, because it is the reason
 `lower_msfol` adds more than a bare relativisation: a many-sorted logic's
@@ -189,8 +190,8 @@ v10 = sorted_backend.decide(existential_import, [], max_size=4)
 print(v10.status, v10.reason, bool(v10))   # → unknown bound_hit False
 ```
 
-Valid — `bool(v10)` is `False` for the same reason it was in "the one rule,
-in practice" above: no countermodel up to the bound is the honest verdict a
+Valid — `bool(v10)` is `False` for the same reason it is in "the one rule,
+in practice" below: no countermodel up to the bound is the honest verdict a
 refutation-only search can give, never `PROVED`. `MinizincBackend` shares
 the identical `lower_msfol` call in its own `decide()`, so `to_minizinc`
 renders a sorted problem exactly the same way — a sort name is just another
@@ -224,7 +225,7 @@ var DOM: k_alice;
 
 constraint (p_Human[k_alice] /\ p_Human[k_alice]); % sentence 1
 constraint (not forall(v_x in DOM)((p_Human[v_x] -> p_Mortal[v_x]))); % sentence 2
-constraint exists(v__msfol_Human_witness in DOM)(p_Human[v__msfol_Human_witness]); % sentence 3
+constraint exists(v_x0 in DOM)(p_Human[v_x0]); % sentence 3
 
 solve satisfy;
 
@@ -237,12 +238,13 @@ output [
 ];
 ```
 
-(Sentence 1's `p_Human[k_alice] /\ p_Human[k_alice]` repeats itself — a
-harmless artefact of `to_fol`'s own fact-conjoining, unrelated to sortedness:
-`alice:Human` *is* `Human(alice)`, so relativising the fact and stating it
-again says the same thing twice.) `lower_msfol` lives in `atp.finite_domain`
-alongside `fragment_check`/`FiniteDomainProblem`/`verify_model`, for exactly
-this kind of direct use.
+(Sentence 1's `p_Human[k_alice] /\ p_Human[k_alice]` repeats itself because
+`lower_msfol` asserts the sort membership of every sorted constant:
+`alice:Human` says `Human(alice)`, and the atom it stands in is that same fact.
+With `Mortal(alice:Human)` the sentence would read
+`p_Human[k_alice] /\ p_Mortal[k_alice]`.) `lower_msfol` lives in
+`atp.finite_domain` alongside `fragment_check`/`FiniteDomainProblem`/
+`verify_model`, for exactly this kind of direct use.
 
 ## `ClingoBackend`
 
@@ -328,7 +330,7 @@ satisfy the premise, so this is the smallest countermodel there is.
 
 ### `Cardinality` comparisons: decided, and now independently checked
 
-Until this release `Cardinality` sat in an odd spot: `fragment_check` already
+`Cardinality` used to sit in an odd spot: `fragment_check` already
 admitted it into the encodable fragment (grounding and solving it was never
 the problem — clingo's `#count` aggregate handles it natively, see
 "Rendering the ASP program directly" below), but the independent checker
@@ -337,15 +339,39 @@ this module is *required* to call before it may say `REFUTED` —
 genuinely correct countermodel therefore came back "could not verify," and a
 correct `REFUTED` was downgraded to `ERROR`/`"infra"`.
 
-`semantics.model_eval` closes that gap directly: a comparison with at least
-one numeric operand (`Cardinality` or `Number`) is now read arithmetically —
+`semantics.model_eval` closes that gap directly: a comparison with a
+`Cardinality` operand (the other a `Cardinality` or a `Number` bound) is now read arithmetically —
 `|{v : φ}|` is *counted* over the domain, one budget tick per individual,
 exactly the "counting is decidable on a finite structure" principle that
 already made `Count` native above. Individual-denoting terms are untouched
 by this — the two notions of "term value" (an individual, a count) are kept
-apart and meet only in that one comparison branch. The practical
-consequence: the same query that used to report the gap now reports the real
-answer, verified, with no caveat attached:
+apart and meet only in that one comparison branch.
+
+That branch is the only place a cardinality may stand: `|{v : φ}|` is a natural
+number, not an element of the domain, so it may only be an operand of a
+comparison with a numeral or with another cardinality. As an argument of an
+ordinary predicate or function, or compared with an individual, it has no value,
+and it is refused by name instead of being read as the element that shares its
+count: `evaluate_in_structure`, `modelfinder.find_model`, `tarski.satisfies`,
+`so_find_model`, `minimal_models` and `minimal_entails` raise
+`NotImplementedError`, and `ClingoBackend` answers `UNKNOWN`/`"unsupported"`.
+`MinizincBackend` does too for a comparison with an individual; for an argument
+its independent check refuses the model, so the answer is `ERROR`/`"infra"`,
+never `REFUTED`.
+
+A `Number` is the bound of the count only in that comparison. Anywhere else a
+numeral is a constant identified by its value (`1` and `1.0` are one constant,
+`1 ≠ 2` is not valid), and neither `ClingoBackend` nor `MinizincBackend` has a
+symbol for such a constant: a numeral used as an individual (`P(1)`, `x = 2`),
+a comparison of numerals with no cardinality in it (`1 < 2`), and a
+cardinality set against a plain individual are refused by name
+(`UNKNOWN`/`"unsupported"`). Their domain individuals are the integers
+`0 … size-1`, and reading a numeral as an element number would make
+`(∀x ∀y x = y) → 1 = 2` (valid: one element) refutable. Use `z3` or the finite
+model finder for numerals as constants.
+
+The practical consequence: the same query that used to report the gap now
+reports the real answer, verified, with no caveat attached:
 
 ```python
 more_than_one_p = p.parse("|{v : P(v)}| > 1")
@@ -482,9 +508,10 @@ useful for reading exactly what gets grounded:
 
 ```python
 from unicode_fol_kit.atp import to_asp
+from unicode_fol_kit.fol.nodes import Quantifier
 
 x = Variable("x")
-print(to_asp(FiniteDomainProblem((Atom("Bird", [x]),), size=2)))
+print(to_asp(FiniteDomainProblem((Quantifier("∀", x, Atom("Bird", [x])),), size=2)))
 ```
 
 ```text
@@ -493,8 +520,10 @@ dom(0..1).
 
 { pred0(X0) : dom(X0) }.
 
-sat1(Vx) :- dom(Vx), pred0(Vx).
-:- dom(Vx), not sat1(Vx).
+sat2(Vx) :- dom(Vx), pred0(Vx).
+viol3 :- dom(Vx), not sat2(Vx).
+sat1 :- not viol3.
+:- not sat1.
 
 #show.
 #show pred0/1.
@@ -504,6 +533,25 @@ The free choice (`{ pred0(X0) : dom(X0) }`) is the countermodel search space
 — any subset of the domain `Bird` could hold on; the trailing bare `#show.`
 suppresses clingo's own "no `#show` present → show everything" default, so
 internal `sat`/`dom` bookkeeping atoms never leak into a decoded model.
+
+The writers take closed sentences. A free variable is a parameter of the whole
+problem — one unknown element, the same in the premises and the conclusion —
+and `decide` (of both backends) replaces each by a constant of its own name
+before it writes anything, so `P(x) ⊢ P(alpha)` is refuted (two elements, `P`
+of the one `x` denotes) and a countermodel reports the element under the
+variable's name. `P(x) ⊢ P(x)` and `P(x) ⊢ ∃y P(y)` have no countermodel, since
+premise and conclusion speak of the same element (`UNKNOWN`/`"bound_hit"`, as
+for every valid formula). A free variable spelled like a constant of the same
+problem (`x` free in one sentence, a constant `x` in another) is refused by
+name, `UNKNOWN`/`"unsupported"`: a structure holds one entry per name and could
+not tell the two apart. `to_asp` and `to_minizinc` are handed sentences one by
+one and cannot state that, so they refuse an open sentence by name instead of
+writing it as "every element":
+
+```python
+to_asp(FiniteDomainProblem((Atom("Bird", [x]),), size=2))
+# raises ValueError: to_asp: a sentence has the free variable 'x'. ...
+```
 
 ### Options
 
@@ -664,6 +712,20 @@ print(asp_find_model([p.parse("∀x P(x)"), p.parse("∀x ¬P(x)")], size=1))
 # → None
 ```
 
+A free variable of the premises is a parameter here too: one unknown element,
+the same in every premise, that the returned structure reports under the
+variable's name in `constants` (and that `asp_minimal_models` keeps in the part
+two models must share before they are compared). `P(x)` with `¬P(y)` has a
+model, in which `x` and `y` are two elements; `P(x)` with `¬P(x)` has none; a
+free variable spelled like a constant of the premises raises
+`NotImplementedError`:
+
+```python
+m2 = asp_find_model([p.parse("P(x)"), p.parse("¬P(y)")], size=2)
+print(m2.constants["x"] != m2.constants["y"])   # → True
+print(asp_find_model([p.parse("P(x)"), p.parse("¬P(x)")], size=2))   # → None
+```
+
 ```{note}
 `size` here is a single, exact domain size — clingo grounds once, at that
 size — **not** `minimal_models`'s `max_size`, which unions results across
@@ -686,6 +748,14 @@ domain-individual variables is its own unit of work with its own risk of a
 subtly wrong aggregate, and circumscription premises reason about predicate
 extensions rather than counts, so it buys nothing here. Shipping an
 un-cross-checked encoding path is exactly what this design avoids.
+
+A numeral is one constant per value here, as on every route that was not asked
+for arithmetic: `1` and `1.0` are one constant (`P(1) ∧ ¬P(1.0)` has no model),
+`1 ≠ 2` needs a domain of two elements, and `1 < 2` is an uninterpreted binary
+predicate that a model may make true or false. `ClingoBackend` and
+`MinizincBackend` are narrower: they read a `Number` only as the bound of a
+`Cardinality` comparison and refuse it elsewhere by name (see the `Cardinality`
+section above). The counting reading of the finite-domain routes is unchanged.
 
 ## Registered, but not in the default chain
 

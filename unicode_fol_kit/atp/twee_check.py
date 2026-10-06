@@ -23,6 +23,10 @@ Two things are checked, independently of each other:
    question — see :mod:`atp.twee_entailment`'s module docstring for the
    ``tuple(...)`` encoding a conjunctive conclusion gets rewritten into,
    which this function has to reverse to compare against the original).
+   The two readings it relies on hold only for names of Twee's own: a universally
+   quantified variable stands for a constant that occurs in no axiom of the proof and
+   nowhere in the conclusion, and the symbol that encodes a conjunction is one that
+   occurs in neither (:func:`goal_mismatch` says which name made it refuse).
 
 Independence, concretely: rewrite-step verification is implemented here from
 scratch (:func:`_match`, one-directional structural matching — NOT
@@ -38,13 +42,15 @@ matching soundness, explicitly fine to share.
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, FrozenSet, List, Optional, Sequence, Set, Tuple
 
-from ..fol.nodes import And, Atom, Constant, Function, Node, Number, Quantifier, Variable
+from ..fol.nodes import (
+    And, Atom, Constant, Function, Node, Number, Quantifier, SortedConstant, Variable,
+)
 from ..fol.unification import apply_subst
 from .twee_entailment import TweeChain, TweeCitation, TweeProof
 
-__all__ = ["TweeCheckResult", "check_twee_proof", "goal_matches_conclusion"]
+__all__ = ["TweeCheckResult", "check_twee_proof", "goal_matches_conclusion", "goal_mismatch"]
 
 
 @dataclass(frozen=True)
@@ -70,42 +76,115 @@ class TweeCheckResult:
 # goal_matches_conclusion.
 # ---------------------------------------------------------------------------
 
-def _flatten_equations(node: Node) -> List[Tuple[Node, Node]]:
-    """Flatten a (forall-closed) equation-or-conjunction into ``[(lhs, rhs), ...]``.
+def _erase_sorts(term: Node) -> Node:
+    """``term`` with every sorted constant ``c:S`` read as the constant ``c``.
 
-    Left-to-right in source order (``And`` is binary and this recurses
-    left-then-right), matching the order Twee's own clausifier splits a
-    conjunctive premise/conclusion into. Quantifiers are stripped (matching
-    is variable-name-blind — see module docstring), so the returned pairs
-    are plain term ``Node``s, still possibly containing the original bound
-    variables.
-    """
+    Twee decides unit equality and prints plain constants. A sorted constant is the
+    constant of its name (the kit's one-universe reading: ``c:S`` and ``c`` are one
+    symbol), and what its sort adds, that ``c`` is a member of ``S``, is a premise of
+    the problem, never part of an equation: a derivation of an equation from equations
+    is a derivation whatever else is assumed. So the equations are compared with the
+    sorts read off. A function of no arguments is the constant of its name (the problem
+    writer writes it so, and Twee prints it so), and is read as one."""
+    if isinstance(term, SortedConstant):
+        return Constant(term.name)
+    if isinstance(term, Function):
+        if not term.args:
+            return Constant(term.name)
+        return Function(term.name, tuple(_erase_sorts(a) for a in term.args))
+    return term
+
+
+def _variable_names(term: Node, into: Set[str]) -> None:
+    """Add the name of every ``Variable`` occurring in ``term`` to ``into``."""
+    if isinstance(term, Variable):
+        into.add(term.name)
+    elif isinstance(term, Function):
+        for arg in term.args:
+            _variable_names(arg, into)
+
+
+def _symbol_names(term: Node, into: Set[str]) -> None:
+    """Add the name of every constant and every function symbol occurring in ``term`` to
+    ``into``: ONE namespace, as in a TPTP problem, where a functor ``x`` and a constant ``x``
+    are not told apart by Twee (it renames its own symbol when either is taken)."""
+    if isinstance(term, (Constant, SortedConstant)):
+        into.add(term.name)
+    elif isinstance(term, Function):
+        into.add(term.name)
+        for arg in term.args:
+            _symbol_names(arg, into)
+
+
+def _flatten_scoped(node: Node, bound: FrozenSet[str] = frozenset()
+                    ) -> List[Tuple[Node, Node, FrozenSet[str]]]:
+    """Flatten like :func:`_flatten_equations`, and say which variables each equation
+    leaves FREE: ``[(lhs, rhs, free), ...]`` where ``free`` holds the name of every
+    variable of the equation that no quantifier above it binds."""
     if isinstance(node, Quantifier):
         if node.type not in ("forall", "∀"):
             raise ValueError(f"twee_check: non-universal quantifier {node.type!r} in premise/conclusion")
-        return _flatten_equations(node.formula)
+        return _flatten_scoped(node.formula, bound | {node.variable.name})
     if isinstance(node, And):
-        return _flatten_equations(node.left) + _flatten_equations(node.right)
+        return _flatten_scoped(node.left, bound) + _flatten_scoped(node.right, bound)
     if isinstance(node, Atom) and node.predicate == "=" and len(node.args) == 2:
-        return [(node.args[0], node.args[1])]
+        lhs, rhs = _erase_sorts(node.args[0]), _erase_sorts(node.args[1])
+        occurring: Set[str] = set()
+        _variable_names(lhs, occurring)
+        _variable_names(rhs, occurring)
+        return [(lhs, rhs, frozenset(occurring - bound))]
     raise ValueError(f"twee_check: not an equation or conjunction of equations: "
                      f"{node.to_unicode_str()!r}")
 
 
-def _expected_axiom_equations(axioms: Sequence[Node]) -> Dict[str, Tuple[Node, Node]]:
-    """Map every ``premise_<i>``/``premise_<i>_<k>`` name to its (lhs, rhs) pair.
+def _flatten_equations(node: Node) -> List[Tuple[Node, Node]]:
+    """Flatten a (forall-closed) equation-or-conjunction into ``[(lhs, rhs), ...]``.
 
-    Reproduces :mod:`atp.twee_entailment`'s naming exactly (see its module
-    docstring): premise ``i`` (1-based) flattens to conjuncts ``k = 0, 1,
-    2, ...``; conjunct 0 keeps the bare ``premise_<i>``, every later conjunct
-    is ``premise_<i>_<k>``.
+    Left-to-right in source order (``And`` is binary and this recurses
+    left-then-right). That is the order of the SOURCE and nothing relies on it
+    for naming: Twee numbers the clauses of a conjunctive premise in an order of
+    its own (see :func:`_expected_axiom_equations`). Quantifiers are stripped
+    (matching is variable-name-blind — see module docstring), so the returned
+    pairs are plain term ``Node`` objects, still possibly containing the original bound
+    variables. A sorted constant is read as the plain constant of its name
+    (:func:`_erase_sorts`).
     """
-    mapping: Dict[str, Tuple[Node, Node]] = {}
+    return [(lhs, rhs) for lhs, rhs, _ in _flatten_scoped(node)]
+
+
+def _expected_axiom_equations(axioms: Sequence[Node]) -> Dict[str, List[Tuple[Node, Node]]]:
+    """Map every axiom name Twee can give a clause of the premises to the equations it may be.
+
+    Twee names the clauses of premise ``i`` (1-based) ``premise_<i>``, ``premise_<i>_1``, ...
+    ``premise_<i>_<n - 1>`` for a premise of ``n`` conjuncts, and which clause carries which
+    suffix is Twee's own business, not the order of the source: its clausifier numbers the
+    clauses in an order of its own and drops a ground conjunct that repeats an earlier one
+    (measured, Twee 2.6.1: for ``aa = bb ∧ ∀x ff(x) = x`` the clause ``ff(X) = X`` is
+    ``premise_1`` and ``aa = bb`` is ``premise_1_1``; for ``∀x ∀y (hh(x, y) = hh(y, x) ∧
+    ff(x) = x)`` the clause ``ff(X) = X`` is ``premise_1``; for ``aa = bb ∧ aa = bb ∧ cc = dd``
+    the clause ``cc = dd`` is ``premise_1_1``). So a name determines the
+    PREMISE and nothing else: the value of ``premise_<i>`` and of every ``premise_<i>_<k>`` is
+    the list of all the conjuncts of premise ``i``, and a restated axiom is checked against
+    what it SAYS (:func:`check_twee_proof`: it must be one of them, up to the renaming of its
+    variables), never against its position. A name of another premise, or a suffix beyond
+    the last conjunct, is not a key.
+
+    A premise whose equation has a free variable is refused (``ValueError``): a free
+    variable is one unknown element of the problem, and the axiom Twee restates, with
+    its variables universal, would be a stronger statement than the premise.
+    """
+    mapping: Dict[str, List[Tuple[Node, Node]]] = {}
     for i, premise in enumerate(axioms, start=1):
-        conjuncts = _flatten_equations(premise)
-        for k, eq in enumerate(conjuncts):
-            name = f"premise_{i}" if k == 0 else f"premise_{i}_{k}"
-            mapping[name] = eq
+        equations: List[Tuple[Node, Node]] = []
+        for lhs, rhs, free in _flatten_scoped(premise):
+            if free:
+                raise ValueError(
+                    f"twee_check: premise {i} has the free variable(s) {sorted(free)}: a free "
+                    f"variable is one unknown element, not a universally quantified one, so the "
+                    f"equation is not one a proof's axiom with universal variables restates")
+            equations.append((lhs, rhs))
+        for k in range(len(equations)):
+            mapping[f"premise_{i}" if k == 0 else f"premise_{i}_{k}"] = equations
     return mapping
 
 
@@ -199,17 +278,19 @@ def _match(pattern: Node, term: Node, subst: Dict[str, Node]) -> Optional[Dict[s
         if not isinstance(term, Function) or term.name != pattern.name \
                 or len(term.args) != len(pattern.args):
             return None
+        extended = subst
         for pa, ta in zip(pattern.args, term.args):
-            subst = _match(pa, ta, subst)
-            if subst is None:
+            step = _match(pa, ta, extended)
+            if step is None:
                 return None
-        return subst
+            extended = step
+        return extended
     return None   # a pattern shape this checker does not expect (e.g. an Atom)
 
 
 def _positions(node: Node) -> List[Tuple[int, ...]]:
     """All subterm positions of ``node`` (argument-index paths), including ``()`` (the root)."""
-    positions = [()]
+    positions: List[Tuple[int, ...]] = [()]
     if isinstance(node, Function):
         for i, arg in enumerate(node.args):
             positions.extend((i,) + p for p in _positions(arg))
@@ -234,7 +315,7 @@ def _replace_at(node: Node, path: Tuple[int, ...], replacement: Node) -> Node:
     i, rest = path[0], path[1:]
     new_args = list(node.args)
     new_args[i] = _replace_at(node.args[i], rest, replacement)
-    return Function(node.name, new_args)
+    return Function(node.name, tuple(new_args))
 
 
 def _freshen(node: Node, prefix: str) -> Node:
@@ -257,7 +338,7 @@ def _freshen(node: Node, prefix: str) -> Node:
     if isinstance(node, Variable):
         return Variable(prefix + node.name)
     if isinstance(node, Function):
-        return Function(node.name, [_freshen(a, prefix) for a in node.args])
+        return Function(node.name, tuple(_freshen(a, prefix) for a in node.args))
     return node
 
 
@@ -283,6 +364,8 @@ def _verify_rewrite(term1: Node, term2: Node, from_pattern: Node, to_pattern: No
     to_pattern = _freshen(to_pattern, "#")
     for path in _positions(term1):
         sub1 = _get_at(term1, path)
+        if sub1 is None:   # unreachable: every path of _positions(term1) exists in term1
+            continue
         subst = _match(from_pattern, sub1, {})
         if subst is None:
             continue
@@ -308,12 +391,16 @@ def check_twee_proof(proof: TweeProof, axioms: Sequence[Node]) -> TweeCheckResul
     Two passes:
 
     1. Every ``Axiom N (name): ...`` header in ``proof`` must name a premise
-       (or, for a conjunctive premise, one of its flattened conjuncts — see
-       :func:`_expected_axiom_equations`) actually present in ``axioms``, and
-       its restated equation must be alpha-equivalent to that premise's
-       equation (see :func:`_equation_is_variant`) — this is the boundary
-       that makes the check genuinely independent of trusting Twee's own
-       transcription.
+       actually present in ``axioms`` (``premise_<i>``, or ``premise_<i>_<k>``
+       with ``k`` below the number of its conjuncts — see
+       :func:`_expected_axiom_equations`), and its restated equation must be
+       alpha-equivalent (see :func:`_equation_is_variant`) to that premise's
+       equation or, for a conjunctive premise, to one of its conjuncts: which
+       one is decided by what the axiom says, never by the suffix of its name,
+       because Twee numbers the clauses of a conjunction in an order of its
+       own. This is the boundary that makes the check genuinely independent
+       of trusting Twee's own transcription: every axiom a proof uses is a
+       consequence of a premise.
     2. Every lemma's proof chain, then the goal's, is walked step by step:
        each step must be licensed by :func:`_verify_rewrite` against the
        cited axiom (already cross-checked in pass 1) or an EARLIER lemma in
@@ -341,10 +428,10 @@ def check_twee_proof(proof: TweeProof, axioms: Sequence[Node]) -> TweeCheckResul
                 False, f"axiom {ax.number} ({ax.name}): no given premise (or flattened "
                        f"conjunct of one) is named {ax.name!r}")
         actual = (ax.equation.lhs, ax.equation.rhs)
-        if not _equation_is_variant(exp, actual):
+        if not any(_equation_is_variant(candidate, actual) for candidate in exp):
             return TweeCheckResult(
                 False, f"axiom {ax.number} ({ax.name}): restated equation is not "
-                       f"alpha-equivalent to the given premise")
+                       f"alpha-equivalent to the given premise or to any conjunct of it")
         axiom_by_number[ax.number] = (ax.name, actual)
 
     lemma_by_number: Dict[int, Tuple[Node, Node]] = {}
@@ -360,12 +447,12 @@ def check_twee_proof(proof: TweeProof, axioms: Sequence[Node]) -> TweeCheckResul
                 return None, (f"cites axiom {citation.number} as ({citation.name}), but that "
                               f"axiom number was stated as ({stored_name})")
             return eq, None
-        eq = lemma_by_number.get(citation.number)
-        if eq is None:
+        lemma_eq = lemma_by_number.get(citation.number)
+        if lemma_eq is None:
             return None, f"cites lemma {citation.number}, which is not an earlier proven lemma"
         if enforce_before is not None and citation.number >= enforce_before:
             return None, f"cites lemma {citation.number}, which is not strictly earlier"
-        return eq, None
+        return lemma_eq, None
 
     def _check_chain(chain: TweeChain, enforce_before: Optional[int], label: str) -> Optional[str]:
         for i, citation in enumerate(chain.citations):
@@ -409,22 +496,35 @@ def check_twee_proof(proof: TweeProof, axioms: Sequence[Node]) -> TweeCheckResul
 # goal_matches_conclusion
 # ---------------------------------------------------------------------------
 
-def _matches_conjunct(exp_lhs: Node, exp_rhs: Node, act_lhs: Node, act_rhs: Node) -> bool:
+def _matches_conjunct(exp_lhs: Node, exp_rhs: Node, act_lhs: Node, act_rhs: Node,
+                      taken: FrozenSet[str] = frozenset(),
+                      notes: Optional[List[str]] = None) -> bool:
     """One conjunct's match: ``(exp_lhs, exp_rhs)`` structurally matches ``(act_lhs, act_rhs)``.
 
     Uses the same one-directional :func:`_match` as rewrite-step checking:
-    the conclusion's own (possibly bound) variables bind to whatever term
-    Twee's Goal line actually shows there (a Skolem constant, ordinarily —
-    see :mod:`atp.twee_entailment`'s module docstring), threading ONE
-    substitution across both sides of the equation — and then the binding
-    must be INJECTIVE: two distinct conclusion variables may never collapse
-    onto the same goal term. Skolemization maps distinct universally
-    quantified variables to distinct fresh constants, so a non-injective
-    binding means the Goal line proves a strictly WEAKER statement than the
-    conclusion (adversarial-review reproduced: a ground fact ``f(a) = g(a)``
-    would otherwise "prove" ``∀X,Y. f(X) = g(Y)`` by binding both X and Y
-    to ``a``) — the same bijection discipline :func:`_equation_is_variant`
-    already enforces on the axiom-restatement trust boundary.
+    the conclusion's own (bound) variables bind to whatever term Twee's Goal
+    line actually shows there, threading ONE substitution across both sides
+    of the equation. Two conditions make that binding the Skolemisation of
+    the universal quantifiers and nothing weaker:
+
+    * **Every variable is bound to a fresh constant.** ``Γ ⊨ ∀x φ(x)`` follows
+      from ``Γ ⊨ φ(c)`` only when ``c`` is a constant of its own: one that
+      occurs in no axiom the proof used and nowhere in the conclusion (nor is
+      the name ``taken`` by the encoding of a conjunction, see
+      :func:`goal_mismatch`). A constant that does occur there makes the goal
+      an INSTANCE of the claim, and an instance is weaker: ``f(a) = g(a)`` from
+      the premise ``f(a) = g(a)`` is not ``∀x f(x) = g(x)`` (universe ``{0, 1}``,
+      ``a`` ↦ 0, ``f`` ↦ (0, 0), ``g`` ↦ (0, 1)). A compound term, a number or a
+      variable of the goal is not a constant either. ``taken`` holds the
+      names that are not fresh; a reason for a refusal is appended to ``notes``.
+    * **The binding is INJECTIVE:** two distinct conclusion variables may never
+      collapse onto the same goal constant. Skolemization maps distinct
+      universally quantified variables to distinct fresh constants, so a
+      non-injective binding means the Goal line proves a strictly WEAKER
+      statement than the conclusion (a fresh ``c`` with ``f(c) = g(c)`` would
+      otherwise "prove" ``∀X,Y. f(X) = g(Y)`` by binding both X and Y to
+      ``c``) — the same bijection discipline :func:`_equation_is_variant`
+      already enforces on the axiom-restatement trust boundary.
     """
     subst = _match(exp_lhs, act_lhs, {})
     if subst is None:
@@ -432,24 +532,49 @@ def _matches_conjunct(exp_lhs: Node, exp_rhs: Node, act_lhs: Node, act_rhs: Node
     subst = _match(exp_rhs, act_rhs, subst)
     if subst is None:
         return False
-    values = list(subst.values())
-    return len(set(values)) == len(values)
+    names = []
+    for variable, value in subst.items():
+        if not isinstance(value, Constant):
+            if notes is not None:
+                notes.append(
+                    f"the conclusion's variable {variable} is matched to "
+                    f"{value.to_unicode_str()}, which is not a constant: only a constant of its "
+                    f"own can stand for a universally quantified variable")
+            return False
+        if value.name in taken:
+            if notes is not None:
+                notes.append(
+                    f"the conclusion's variable {variable} is matched to the constant "
+                    f"{value.name}, which already occurs in an axiom of the proof or in the "
+                    f"conclusion, so the goal is an instance of the claim, not the claim")
+            return False
+        names.append(value.name)
+    return len(set(names)) == len(names)
 
 
 def goal_matches_conclusion(proof: TweeProof, conclusion: Node) -> bool:
-    """True iff ``proof.goal`` actually restates ``conclusion``.
+    """True iff ``proof.goal`` actually restates ``conclusion``: :func:`goal_mismatch` has
+    nothing to say against it. Never raises."""
+    return goal_mismatch(proof, conclusion) is None
+
+
+def goal_mismatch(proof: TweeProof, conclusion: Node) -> Optional[str]:
+    """``None`` iff ``proof.goal`` actually restates ``conclusion``, else why it does not.
 
     This is the second, SEPARATE trust boundary from :func:`check_twee_proof`
     (which never sees ``conclusion`` at all): a proof can be internally
     flawless yet prove the wrong thing if Twee's ``Goal`` header were ever
-    inconsistent with the conjecture it was asked to prove.
+    inconsistent with the conjecture it was asked to prove. The two checks speak
+    about ONE proof: the names that must be fresh below are fresh against the
+    axioms the proof restates, which :func:`check_twee_proof` has cross-checked
+    against the premises.
 
     A single-equation ``conclusion`` is matched directly against the goal's
     ``lhs``/``rhs``. A conjunctive ``conclusion`` (``n > 1`` top-level
     conjuncts after flattening) is matched against Twee's observed
-    ``tuple(...)`` encoding: the goal's ``lhs`` and ``rhs`` must each be a
-    :class:`~unicode_fol_kit.fol.nodes.Function` named ``"tuple"`` with
-    exactly ``n`` arguments, matched against the ``n`` conjuncts by a
+    ``tuple(...)`` encoding: the goal's ``lhs`` and ``rhs`` must each be an
+    application of ONE function symbol to exactly ``n`` arguments, matched against the
+    ``n`` conjuncts by a
     backtracking SEARCH for a bijection (slot <-> conjunct), each pairing
     using its own independent fresh substitution — Twee was observed to (a)
     Skolemize each conjunct's variables separately even when they share a
@@ -460,25 +585,111 @@ def goal_matches_conclusion(proof: TweeProof, conclusion: Node) -> bool:
     printed its Goal as ``tuple(f(f(x)), g(g(g(g(x2))))) = tuple(x, x2)``,
     f-conjunct FIRST) — so slot order cannot be assumed to track conjunct
     order; see :mod:`atp.twee_entailment`'s module docstring. Returns
-    ``False`` (never raises) if ``conclusion`` is not itself a valid
+    a reason (never raises) if ``conclusion`` is not itself a valid
     equation/conjunction, or if the tuple shape/bijection does not exist.
+
+    **The encoding symbol is a name of Twee's own.** Twee calls it ``tuple``, and
+    ``tuple2`` (then ``tuple3``, ...) when the problem already uses ``tuple``
+    (measured: ``tuple2(tuple(b, c), e) = tuple2(d, f)`` for the conclusion
+    ``tuple(b, c) = d ∧ e = f``). Which name it chose is not assumed: the symbol must
+    occur in no axiom of the proof and nowhere in the conclusion, and it is not
+    a name a variable of the conclusion is bound to. An equation between applications
+    of a symbol the problem itself uses (a premise ``tuple(f(a), g(a)) = tuple(b, c)``)
+    is a statement about that symbol, never the conjunction ``f(a) = b ∧ g(a) = c``
+    (which does not follow: ``tuple`` need not be injective).
+
+    **The constants a variable is bound to are fresh** (see :func:`_matches_conjunct`):
+    a goal that is an instance of a universal claim at a constant of the problem is a
+    weaker statement, and is refused with the constant's name.
+
+    **A free variable of the conclusion** is one unknown element, not a universal
+    one, and no goal Twee prints can say which: it is refused by name.
+
+    **A conjunct that repeats another is one conjunct.** ``A ∧ A`` is ``A``, and Twee
+    answers it as it answers ``A``: its clausifier drops a repeated GROUND conjunct
+    (measured: ``f(a) = b ∧ f(a) = b`` is proved as the single goal ``f(a) = b``, and
+    ``f(a) = b ∧ g(a) = c ∧ f(a) = b`` as ``tuple(f(a), g(a)) = tuple(b, c)``), where
+    it keeps two conjuncts that have variables apart (each is Skolemised on its own:
+    ``∀x (f(x) = x ∧ f(x) = x)`` is ``tuple(f(x2), f(x)) = tuple(x2, x)``). So the goal
+    is matched against the conjuncts as they stand, and, when some of them repeat an
+    earlier one (equal up to the renaming of their own variables, in the same
+    orientation), also against the conjuncts with the repeats removed. Both are sound
+    readings of the conclusion: a proof of every conjunct of the shorter list proves
+    the longer one, whose extra members are copies of members of the shorter. Neither
+    loosens the match itself: a proof of ``A`` still does not match ``A ∧ B``, a
+    conjunct is still matched under an injective substitution, and a proof of the
+    repeated conjunct matches ``A ∧ A`` only when the goal is that conjunct.
     """
     try:
-        conjuncts = _flatten_equations(conclusion)
-    except ValueError:
-        return False
+        scoped = _flatten_scoped(conclusion)
+    except ValueError as exc:
+        return str(exc)
+
+    free = sorted(set().union(*(variables for _, _, variables in scoped)))
+    if free:
+        return (f"the conclusion has the free variable(s) {free}: a free variable is one unknown "
+                f"element, and the goal of a proof, whose variables are all universal, cannot "
+                f"be the statement about it")
+
+    conjuncts = [(lhs, rhs) for lhs, rhs, _ in scoped]
+    taken: Set[str] = set()
+    for axiom in proof.axioms:
+        _symbol_names(axiom.equation.lhs, taken)
+        _symbol_names(axiom.equation.rhs, taken)
+    for lhs, rhs in conjuncts:
+        _symbol_names(lhs, taken)
+        _symbol_names(rhs, taken)
 
     goal_lhs, goal_rhs = proof.goal.equation.lhs, proof.goal.equation.rhs
+    notes: List[str] = []
 
+    if _goal_matches_conjuncts(goal_lhs, goal_rhs, conjuncts, frozenset(taken), notes):
+        return None
+    distinct = _distinct_conjuncts(conjuncts)
+    if len(distinct) < len(conjuncts) and _goal_matches_conjuncts(
+            goal_lhs, goal_rhs, distinct, frozenset(taken), notes):
+        return None
+    return notes[0] if notes else ("the goal is neither the conclusion's equation nor, for a "
+                                   "conjunction, the equation between two applications of one "
+                                   "fresh symbol to its conjuncts")
+
+
+def _distinct_conjuncts(conjuncts: List[Tuple[Node, Node]]) -> List[Tuple[Node, Node]]:
+    """``conjuncts`` without any that repeats an earlier one: the same equation, in the
+    same orientation, up to a consistent renaming of its variables
+    (:func:`_equation_is_variant`). Order is kept."""
+    kept: List[Tuple[Node, Node]] = []
+    for conjunct in conjuncts:
+        if not any(_equation_is_variant(earlier, conjunct) for earlier in kept):
+            kept.append(conjunct)
+    return kept
+
+
+def _goal_matches_conjuncts(goal_lhs: Node, goal_rhs: Node,
+                            conjuncts: List[Tuple[Node, Node]],
+                            taken: FrozenSet[str], notes: List[str]) -> bool:
+    """Whether the goal ``goal_lhs = goal_rhs`` restates exactly ``conjuncts`` (see
+    :func:`goal_mismatch`): one conjunct against the goal itself, several against
+    the encoding of a conjunction, by a bijection of slots and conjuncts. ``taken`` holds
+    the names the encoding symbol and the constants of the variables must not have."""
     if len(conjuncts) == 1:
         exp_lhs, exp_rhs = conjuncts[0]
-        return _matches_conjunct(exp_lhs, exp_rhs, goal_lhs, goal_rhs)
+        return _matches_conjunct(exp_lhs, exp_rhs, goal_lhs, goal_rhs, taken, notes)
 
     n = len(conjuncts)
-    if not (isinstance(goal_lhs, Function) and goal_lhs.name == "tuple" and len(goal_lhs.args) == n):
+    if not (isinstance(goal_lhs, Function) and len(goal_lhs.args) == n
+            and isinstance(goal_rhs, Function) and goal_rhs.name == goal_lhs.name
+            and len(goal_rhs.args) == n):
         return False
-    if not (isinstance(goal_rhs, Function) and goal_rhs.name == "tuple" and len(goal_rhs.args) == n):
+    encoding = goal_lhs.name
+    if encoding in taken:
+        notes.append(
+            f"the goal is an equation between applications of {encoding}, which is how Twee "
+            f"encodes a conjunction as one equation, but {encoding} is a symbol of an axiom of "
+            f"the proof or of the conclusion, so the goal says something about that symbol, not "
+            f"about the conjuncts")
         return False
+    taken = taken | {encoding}
 
     used = [False] * n
 
@@ -489,7 +700,8 @@ def goal_matches_conclusion(proof: TweeProof, conclusion: Node) -> bool:
         for j in range(n):
             if used[j]:
                 continue
-            if _matches_conjunct(exp_lhs, exp_rhs, goal_lhs.args[j], goal_rhs.args[j]):
+            if _matches_conjunct(exp_lhs, exp_rhs, goal_lhs.args[j], goal_rhs.args[j],
+                                 taken, notes):
                 used[j] = True
                 if backtrack(i + 1):
                     return True

@@ -12,8 +12,9 @@ relations and atom-predicates as the relations) — this correspondence is what
 
 Translation scheme, with ``w`` the current-world variable and ``w'`` a FRESH
 world variable (names ``w0, w1, …`` are generated so nested modalities never
-capture each other; the free current-world name is skipped, so even a caller
-who passes ``world="w0"`` keeps a distinct, uncaptured free variable):
+capture each other; the free current-world name and every variable name of
+the formula are skipped, so even a caller who passes ``world="w0"`` keeps a
+distinct, uncaptured free variable, and an atom ``P(w0)`` keeps its own ``w0``):
 
 - ``Atom A`` (propositional / ground) → ``A(w)``: the atom's predicate is
   applied to the current world. A nullary atom ``P`` becomes ``P(w)``; an atom
@@ -104,11 +105,16 @@ be built mechanically: ``"R"`` (alethic), ``"Rk_" + agent`` (epistemic),
 (bouletic), ``"T"`` (temporal), ``"N"`` (next), ``"D"`` (deontic).
 """
 
-from typing import Dict, List, NoReturn, Optional
+from typing import TYPE_CHECKING, Dict, FrozenSet, Iterable, List, NoReturn, Optional
 
+if TYPE_CHECKING:
+    from ..atp.protocol import Verdict
+
+from ._atom_keys import refuse_alike_agents
+from ._identifiers import fresh_variables, symbol_names
 from .nodes import (
     Node,
-    Variable, Constant, Function,
+    Variable, Constant, LambdaVar,
     Atom, Not, And, Or, Xor, Implies, Iff,
     Quantifier, SortedQuantifier,
     Box, Diamond, Knows, Believes, Says, Wants,
@@ -117,7 +123,9 @@ from .nodes import (
     Historically, Once, Previous, Since,
     Obligatory, Permitted,
     Nominal, At,
+    sort_membership_axioms, substitute,
 )
+from ._truth_constants import truth_value
 # Down (the ↓ binder, N1) is not yet re-exported through fol.nodes / fol's
 # public __init__ / the top-level unicode_fol_kit package — that three-file
 # edit is outside this change's file ownership (see the change's own
@@ -126,11 +134,11 @@ from .nodes import (
 from ._hybrid_nodes import Down
 from .frames import (
     FRAMES as _SHARED_FRAMES, UnsupportedFrameCondition,
-    resolve_frame, unguarded_frame_axiom,
+    is_first_order, resolve_frame, unguarded_frame_axiom,
 )
 from ..semantics._modal_reject import (
     FUZZY_TYPES, LAMBDA_TYPES,
-    reject_fuzzy, reject_lambda,
+    reject_equality, reject_fuzzy, reject_lambda,
 )
 
 # Accessibility predicate names (the contract with the matching Tarski
@@ -155,6 +163,42 @@ _R_DEONTIC = "D"
 # formula whose atoms mention a ground constant `i` cannot collide with the
 # nominal `i`. This is the contract with any structure built for the image.
 _NOM_PREFIX = "nom_"
+
+# Equality is NOT an ordinary atom here. This translation is PROPOSITIONAL: an
+# atom is a world-relative proposition, so appending the world to ``=`` would
+# make identity a ternary, uninterpreted, world-varying relation — under which
+# ``a = a`` comes back "not valid" (measured on 0.28.1) and ``□(a = b) → a = b``
+# is "valid" only through reflexivity of R, not through identity. That is a
+# silent approximation of a construct this layer has no semantics for (the
+# Kripke evaluator reads atoms off a per-world valuation of ground-atom keys
+# and interprets no terms either), so it is refused by name. First-order modal
+# logic with rigid identity is :mod:`unicode_fol_kit.fol.qml`.
+# ``≠`` is the same construct and is refused the same way: the kit prints
+# ``a ≠ b`` as ``Atom("≠", (a, b))``, and appending the world there produced
+# ``≠(a, b, w)`` — a ternary uninterpreted relation unrelated to the ``=`` one,
+# so ``a = b ∨ a ≠ b`` came back "not valid" (measured on 0.28.1). Both
+# spellings live in :data:`EQUALITY_PREDICATES`, and :func:`reject_equality`
+# (shared with the Kripke evaluator, the modal tableau and the GMT embedding)
+# is the single place that says why.
+#: The predicate the FOL IMAGE uses for world identity (``@i j`` becomes
+#: ``i = j``, and the temporal first-step axiom says ``T(w,v) → w = v ∨ …``).
+#: An equality atom in the SOURCE is refused; one in the image is ordinary FOL.
+_EQUALITY = "="
+
+_EQUALITY_ROUTE = "the propositional standard translation"
+_EQUALITY_ATOM_READING = ("an atom becomes a predicate with the world appended, "
+                          "so '=' would become a world-varying uninterpreted "
+                          "relation")
+_EQUALITY_INSTEAD = ("Use unicode_fol_kit.fol.qml (quantified modal logic, "
+                     "where '=' is rigid identity over the object domain) for a "
+                     "formula with identity.")
+
+
+def _reject_equality(formula: Node) -> None:
+    """:func:`reject_equality` with this route's wording (check-and-raise)."""
+    reject_equality(formula, "standard_translation", _EQUALITY_ROUTE,
+                    atom_reading=_EQUALITY_ATOM_READING,
+                    instead=_EQUALITY_INSTEAD)
 
 # Universal/existential quantifier-type spellings used by the AST.
 _FORALL = "∀"
@@ -188,31 +232,59 @@ class _FreshWorlds:
 
     Threading a single counter through one translation guarantees every modal
     operator introduces a distinct bound world variable, so nested boxes /
-    diamonds cannot capture one another's worlds. The free current-world name is
-    held in ``reserved`` and skipped, so passing a current-world name that lies
-    in the ``w0, w1, …`` namespace (e.g. ``world="w0"``) cannot be captured by a
-    bound world variable.
+    diamonds cannot capture one another's worlds. A world variable never has the
+    spelling of a name the translation must leave alone: the free current-world
+    name (so a caller who passes ``world="w0"`` keeps a distinct, uncaptured free
+    variable), every name of the formula, of any kind (an atom ``P(w0)`` of the
+    source keeps its own ``w0`` under a box, which a bound world variable of that
+    name would capture) and every name the caller asks to avoid. Names are compared
+    exactly and with their case folded, because a target that reads a variable
+    ``w0`` and a variable ``W0`` as one word (TPTP, Prover9) would conflate them.
+
+    A variable of the formula that is spelled like the current-world name would be
+    read as the world itself, so it is renamed, once for the whole formula, to a name
+    of its own (:meth:`term` applies the renaming to a term of an atom).
     """
 
-    def __init__(self, reserved: str = ""):
-        """Start the fresh-name counter at zero, reserving the free-world name."""
+    def __init__(self, world: str = "", names: Iterable[str] = (),
+                 variables: Iterable[str] = (), avoid: Iterable[str] = ()):
+        """Start the fresh-name counter at zero and settle the names that are never minted.
+
+        ``world`` is the free current-world name, ``names`` every name of the formula,
+        ``variables`` the names of its variables and ``avoid`` further names to keep
+        clear of.
+        """
         self._n = 0
-        self._reserved = reserved
+        reserved = set(names) | set(variables) | set(avoid) | {world}
+        taken = reserved | {name.casefold() for name in reserved}
+        self._renamed: Dict[str, Variable] = {}
+        for name in sorted(set(variables)):
+            if name.casefold() == world.casefold():
+                new_name = fresh_variables(1, letter="x", avoid=taken)[0]
+                taken = taken | {new_name}
+                self._renamed[name] = Variable(new_name)
+        self._reserved = taken
 
     def next(self) -> Variable:
         """Return the next fresh world Variable (``w0``, ``w1``, …), skipping ``reserved``."""
-        name = f"w{self._n}"
-        self._n += 1
-        if name == self._reserved:
-            return self.next()
-        return Variable(name)
+        while True:
+            name = f"w{self._n}"
+            self._n += 1
+            if name not in self._reserved:
+                return Variable(name)
+
+    def term(self, term: Node) -> Node:
+        """``term`` with each variable spelled like the current world renamed (else unchanged)."""
+        for old, new in self._renamed.items():
+            term = substitute(term, Variable(old), new)
+        return term
 
 
 def _box_like(rel_name: str, world: Node, body: Node, fresh: _FreshWorlds,
              bindings: Dict[str, Node]) -> Node:
     """Build ``∀w' (rel(world, w') → ST(body, w'))`` with a fresh ``w'``."""
     w2 = fresh.next()
-    access = Atom(rel_name, [world, w2])
+    access = Atom(rel_name, (world, w2))
     return Quantifier(_FORALL, w2, Implies(access, _translate(body, w2, fresh, bindings)))
 
 
@@ -220,7 +292,7 @@ def _diamond_like(rel_name: str, world: Node, body: Node, fresh: _FreshWorlds,
                   bindings: Dict[str, Node]) -> Node:
     """Build ``∃w' (rel(world, w') ∧ ST(body, w'))`` with a fresh ``w'``."""
     w2 = fresh.next()
-    access = Atom(rel_name, [world, w2])
+    access = Atom(rel_name, (world, w2))
     return Quantifier(_EXISTS, w2, And(access, _translate(body, w2, fresh, bindings)))
 
 
@@ -237,9 +309,9 @@ def _box_intersection(rel_names: List[str], world: Node, body: Node, fresh: _Fre
     :class:`DistributedKnowledge`'s own constructor refusing an empty group).
     """
     w2 = fresh.next()
-    guard = Atom(rel_names[0], [world, w2])
+    guard: Node = Atom(rel_names[0], (world, w2))
     for name in rel_names[1:]:
-        guard = And(guard, Atom(name, [world, w2]))
+        guard = And(guard, Atom(name, (world, w2)))
     return Quantifier(_FORALL, w2, Implies(guard, _translate(body, w2, fresh, bindings)))
 
 
@@ -247,7 +319,7 @@ def _box_converse(rel_name: str, world: Node, body: Node, fresh: _FreshWorlds,
                   bindings: Dict[str, Node]) -> Node:
     """Build ``∀w' (rel(w', world) → ST(body, w'))`` — a box over the CONVERSE relation."""
     w2 = fresh.next()
-    access = Atom(rel_name, [w2, world])
+    access = Atom(rel_name, (w2, world))
     return Quantifier(_FORALL, w2, Implies(access, _translate(body, w2, fresh, bindings)))
 
 
@@ -255,7 +327,7 @@ def _diamond_converse(rel_name: str, world: Node, body: Node, fresh: _FreshWorld
                       bindings: Dict[str, Node]) -> Node:
     """Build ``∃w' (rel(w', world) ∧ ST(body, w'))`` — a diamond over the CONVERSE relation."""
     w2 = fresh.next()
-    access = Atom(rel_name, [w2, world])
+    access = Atom(rel_name, (w2, world))
     return Quantifier(_EXISTS, w2, And(access, _translate(body, w2, fresh, bindings)))
 
 
@@ -277,7 +349,11 @@ def _translate(formula: Node, world: Node, fresh: _FreshWorlds,
 
     # --- atomic: append the world as the last predicate argument ---
     if isinstance(formula, Atom):
-        return Atom(_user_predicate(formula.predicate), list(formula.args) + [world])
+        if truth_value(formula) is not None:
+            return formula      # `$true` / `$false` are the same at every world: no world argument
+        _reject_equality(formula)
+        return Atom(_user_predicate(formula.predicate),
+                    (*(fresh.term(arg) for arg in formula.args), world))
 
     # --- classical connectives: structural at the same world ---
     if isinstance(formula, Not):
@@ -385,7 +461,7 @@ def _translate(formula: Node, world: Node, fresh: _FreshWorlds,
     if isinstance(formula, Nominal):
         bound = bindings.get(formula.name)
         target = bound if bound is not None else Constant(_NOM_PREFIX + formula.name)
-        return Atom("=", [world, target])
+        return Atom("=", (world, target))
     if isinstance(formula, At):
         bound = bindings.get(formula.nominal.name)
         target = bound if bound is not None else Constant(_NOM_PREFIX + formula.nominal.name)
@@ -433,16 +509,18 @@ def _reject_quantifier(formula: Node) -> NoReturn:
 
 
 def _check_nominal_collision(formula: Node) -> None:
-    """Raise if a user constant/function name collides with a nominal world constant.
+    """Raise if a user symbol's name collides with a nominal world constant.
 
     Each nominal ``i`` (a ``Nominal`` or the label of an ``At``) translates to the
     reserved world constant ``nom_i``. If the formula independently contains a
-    user ``Constant`` or ``Function`` named ``nom_i``, the first-order image would
+    user symbol named ``nom_i`` -- a ``Constant``, a ``SortedConstant``, a
+    ``Function``, or any other node that carries a name and is neither a nominal nor
+    a variable -- the first-order image would
     conflate the two terms and Z3's equality reasoning could report a genuinely
     invalid formula as valid — a hole in the "``True`` is always a proof"
-    guarantee. The parser cannot build such a name (``NAME`` / ``CONSTANT`` tokens
-    carry no underscores outside the ``c_`` prefix), so this only guards hand-built
-    ASTs; it fails fast, exactly like a dangling nominal assignment.
+    guarantee. The parser builds such a name from the text itself (``@i P(nom_i)``),
+    and a hand-built or deserialised AST can carry one in any position; the check fails
+    fast, exactly like a dangling nominal assignment.
     """
     nominal_names, user_names = set(), set()
     for node in formula.walk():
@@ -450,7 +528,8 @@ def _check_nominal_collision(formula: Node) -> None:
             nominal_names.add(node.name)
         elif isinstance(node, At):
             nominal_names.add(node.nominal.name)
-        elif isinstance(node, (Constant, Function)):
+        elif (not isinstance(node, (Variable, LambdaVar))
+              and isinstance(getattr(node, "name", None), str)):
             user_names.add(node.name)
     clash = {_NOM_PREFIX + n for n in nominal_names} & user_names
     if clash:
@@ -463,7 +542,8 @@ def _check_nominal_collision(formula: Node) -> None:
         )
 
 
-def standard_translation(formula: Node, world: str = "w") -> Node:
+def standard_translation(formula: Node, world: str = "w",
+                         avoid: Iterable[str] = ()) -> Node:
     """Translate a propositional modal ``formula`` into a classical FOL Node.
 
     ``world`` names the free current-world variable threaded through the
@@ -480,13 +560,31 @@ def standard_translation(formula: Node, world: str = "w") -> Node:
     ``nom_i`` (the ``"nom_"`` prefix keeps nominal constants disjoint from user
     constants — see the module docstring).
 
+    The variables of an atom (``P(w0)``) are the caller's own, and so are the names
+    the translation mints. The world variables it binds (``w0``, ``w1``, …) never have
+    the spelling of a name of ``formula`` (of any kind: variable, constant, predicate,
+    nominal, …), of ``world`` or of a name in ``avoid``, compared exactly and with the
+    case folded, so ``□P(w0)`` is ``∀w1 (R(w, w1) → P(w0, w1))`` and not a statement
+    about the bound world. A variable of ``formula`` that is spelled like ``world``
+    would be read as the current world itself, so it is renamed to a name of its own
+    (``x0``, …, clear of every name of ``formula``, of ``world`` and of ``avoid``) in
+    the image: it stays one free variable, the same in every atom. To translate several
+    formulas of one problem separately and keep that name the same in all of them, pass
+    the names of the others as ``avoid``.
+
     Raises:
         NotImplementedError: on ``Until`` (not first-order definable), any
             object-level quantifier (first-order modal logic is out of scope for
-            v1), a Łukasiewicz node, or a lambda node.
+            v1), a Łukasiewicz node, or a lambda node; and on two different agent
+            terms that are named alike (the numeral ``1`` and a constant named ``1``):
+            the relation of an agent's operator is named after the agent, so the two
+            would be ONE relation and the image would say another thing than ``formula``.
     """
     _check_nominal_collision(formula)
-    return _translate(formula, Variable(world), _FreshWorlds(reserved=world))
+    refuse_alike_agents([formula], "standard_translation")
+    variables = {node.name for node in formula.walk() if isinstance(node, Variable)}
+    fresh = _FreshWorlds(world, symbol_names(formula), variables, avoid)
+    return _translate(formula, Variable(world), fresh)
 
 
 # =========================
@@ -502,25 +600,184 @@ def standard_translation(formula: Node, world: str = "w") -> Node:
 _HYBRID_FRAMES = _SHARED_FRAMES
 
 
-def _frame_axioms(frame: str) -> List[Node]:
-    """Return the first-order frame axioms over ``R`` for a named frame class.
+# Which accessibility relation each modal family reads, mirroring _st above.
+_AGENT_FAMILY_PREFIX: Dict[str, str] = {
+    "epistemic": _R_KNOWS_PREFIX,
+    "doxastic": _R_BELIEVES_PREFIX,
+    "assertive": _R_SAYS_PREFIX,
+    "bouletic": _R_WANTS_PREFIX,
+}
 
-    ``frame`` is any system in the shared registry
-    (:mod:`unicode_fol_kit.fol.frames`) or a Scott–Lemmon spec like
-    ``"G(1,1,1,1)"``. The axioms are closed formulas over their own bound
-    variables, so they cannot capture anything in a translated formula. A
-    system needing a condition with no first-order frame condition (GL,
-    S4.1, Grz) is refused by name — this route is first-order.
+
+def relations_used(formula: Node) -> FrozenSet[str]:
+    """Every accessibility predicate :func:`standard_translation` emits for
+    ``formula`` (``"R"``, ``"T"``, ``"N"``, ``"D"``, ``"Rk_alice"``, …).
+
+    This is what gates :func:`frame_axioms`: a condition on a relation the
+    formula never mentions is noise, and — on a route that reports a bare
+    "not valid" — noise that can change the answer.
     """
+    used: set = set()
+    for node in formula.walk():
+        if isinstance(node, (Box, Diamond)):
+            used.add(_R_ALETHIC)
+        elif isinstance(node, Knows):
+            used.add(_R_KNOWS_PREFIX + _agent_key(node.agent))
+        elif isinstance(node, (EverybodyKnows, DistributedKnowledge)):
+            used.update(_R_KNOWS_PREFIX + _agent_key(a) for a in node.group)
+        elif isinstance(node, Believes):
+            used.add(_R_BELIEVES_PREFIX + _agent_key(node.agent))
+        elif isinstance(node, Says):
+            used.add(_R_SAYS_PREFIX + _agent_key(node.agent))
+        elif isinstance(node, Wants):
+            used.add(_R_WANTS_PREFIX + _agent_key(node.agent))
+        elif isinstance(node, (Obligatory, Permitted)):
+            used.add(_R_DEONTIC)
+        elif isinstance(node, (Always, Eventually, Historically, Once)):
+            used.add(_R_TEMPORAL)
+        elif isinstance(node, (Next, Previous)):
+            used.add(_R_NEXT)
+    return frozenset(used)
+
+
+def _link(antecedent_relation: str, consequent_relation: str) -> Node:
+    """``∀v0 ∀v1 (A(v0,v1) → B(v0,v1))`` over two relation names."""
+    w, v = Variable("v0"), Variable("v1")
+    return Quantifier(_FORALL, w, Quantifier(_FORALL, v, Implies(
+        Atom(antecedent_relation, (w, v)), Atom(consequent_relation, (w, v)))))
+
+
+def _temporal_first_step() -> Node:
+    """``∀v0 ∀v1 (T(v0,v1) → v0 = v1 ∨ ∃v2 (N(v0,v2) ∧ T(v2,v1)))``.
+
+    The first-order half of ``T ⊆ N*``: the witnessing path of a henceforth-step
+    either stands still or starts with one ``N``-step. ``T ⊆ N*`` itself demands
+    a FINITE path and is not first-order definable, but every model with
+    ``T = N*`` satisfies this, which is what makes asserting it sound. The
+    unguarded twin of :func:`unicode_fol_kit.fol.qml._temporal_first_step_axiom`
+    — the two routes must agree, so they assert the same thing.
+    """
+    w, v, u = Variable("v0"), Variable("v1"), Variable("v2")
+    return Quantifier(_FORALL, w, Quantifier(_FORALL, v, Implies(
+        Atom(_R_TEMPORAL, (w, v)),
+        Or(Atom(_EQUALITY, (w, v)),
+           Quantifier(_EXISTS, u, And(Atom(_R_NEXT, (w, u)),
+                                      Atom(_R_TEMPORAL, (u, v))))))))
+
+
+def frame_axioms(formula: Node, frame: str = "K", systems=None,
+                 temporal_closure: bool = True) -> List[Node]:
+    """The first-order frame axioms for EVERY relation ``formula``'s translation
+    emits — the side conditions of the standard translation.
+
+    ``frame`` constrains the ALETHIC relation ``R`` and is any system in the
+    shared registry (:mod:`unicode_fol_kit.fol.frames`) or a Scott–Lemmon spec
+    like ``"G(1,1,1,1)"``; a system whose condition has no first-order form
+    (GL, S4.1, Grz) is refused by name, because this route is first-order.
+
+    The other families get the conventions :mod:`unicode_fol_kit.fol.qml` and
+    the Isabelle/THF exporters already use, so the routes agree instead of
+    contradicting each other:
+
+    - temporal: ``T`` reflexive and transitive (``temporal_closure=True``,
+      the default), ``N ⊆ T``, and :func:`_temporal_first_step` when both
+      occur — this is what makes ``Ⓖφ → φ``, ``Ⓖφ → Ⓝφ`` and the past mirrors
+      come out valid, as the Kripke evaluator reads them (it evaluates
+      ``Always``/``Eventually`` over the reflexive-transitive CLOSURE of the
+      one-step relation). Until 0.28.1 NOTHING asserted these on this route,
+      so ``hybrid_is_valid(Ⓖ P → P, "S5")`` answered False while
+      ``qml_is_valid`` on the same formula answered True — a bare "not valid"
+      about a formula the kit's own modal semantics validates.
+    - deontic: ``D`` serial (Standard Deontic Logic), so ``Ⓞφ → Ⓟφ`` is valid.
+    - agent-indexed: nothing unless ``systems`` asks, e.g.
+      ``systems={"epistemic": "S5", "doxastic": "KD45"}`` — the families are
+      ``epistemic`` / ``doxastic`` / ``assertive`` / ``bouletic`` and an unknown
+      one raises. A system for a family the formula never mentions contributes
+      nothing (same as ``qml_axioms``).
+    - sorted constants: ``c:S`` is an element of ``S`` at EVERY world (a constant is
+      a rigid designator), so each distinct ``c:S`` of the formula adds
+      ``∀v0 S(c, v0)`` — the sort guard in the translation's own vocabulary (a
+      world as last argument), unguarded by any existence predicate, as in
+      ``qml_axioms``. Without it ``Human(carl:Human)`` has a countermodel in
+      which ``carl`` is no ``Human``, and a route that reads Z3's ``sat`` as
+      "refuted" answers wrongly. A sort that occurs only through a constant needs
+      no non-emptiness axiom: the constant is its member.
+
+    Every axiom is closed over its own bound variables (``v0``, ``v1``, …), so
+    it can never capture anything in the translated formula, and they are
+    returned for the caller to pass as SEPARATE premises — never conjoined onto
+    the translation itself. The names are deliberately ones the kit's own
+    parser reads back: an axiom that prints as ``∀_hw0 R(_hw0, _hw0)`` is text
+    :func:`unicode_fol_kit.api.parse_any` rejects.
+
+    Raises:
+        ValueError: unknown frame system, or an unknown ``systems`` family.
+        UnsupportedFrameCondition: a condition with no first-order frame form.
+    """
+    used = relations_used(formula)
+    axioms: List[Node] = []
+    # Resolve the frame FIRST, whatever the formula mentions: a typo in a frame
+    # name must fail loudly even for a formula with no alethic operator, or the
+    # caller would believe a system was applied that nothing ever looked at.
     try:
-        conds = resolve_frame(frame)
+        alethic = resolve_frame(frame)
     except ValueError as exc:
-        raise ValueError(f"hybrid_is_valid: {exc}") from None
-    return [unguarded_frame_axiom(cond, _R_ALETHIC, prefix="_hw")
-            for cond in conds]
+        raise ValueError(f"frame_axioms: {exc}") from None
+    # ... and refuse a condition with no first-order form here too, rather than
+    # only when the formula happens to mention R: asking this route for GL is a
+    # request it cannot honour either way.
+    for cond in alethic:
+        if not is_first_order(cond):
+            raise UnsupportedFrameCondition(
+                f"frame_axioms: the frame condition {cond!r} has no "
+                f"first-order frame condition, so the standard translation "
+                f"cannot express {frame!r} (Löb, S4.1 and Grz need the "
+                f"higher-order routes: hol.isabelle_modal / hol.thf_modal, or "
+                f"the finite-frame enumerator atp.kripke_enum)")
+    if _R_ALETHIC in used:
+        axioms += [unguarded_frame_axiom(cond, _R_ALETHIC, prefix="v")
+                   for cond in alethic]
+    if _R_TEMPORAL in used and temporal_closure:
+        axioms += [unguarded_frame_axiom("refl", _R_TEMPORAL, prefix="v"),
+                   unguarded_frame_axiom("trans", _R_TEMPORAL, prefix="v")]
+    if _R_TEMPORAL in used and _R_NEXT in used:
+        # Vacuous — and misleading — unless BOTH relations occur.
+        axioms.append(_link(_R_NEXT, _R_TEMPORAL))
+        if temporal_closure:
+            axioms.append(_temporal_first_step())
+    if _R_DEONTIC in used:
+        axioms.append(unguarded_frame_axiom("serial", _R_DEONTIC, prefix="v"))
+    for family, system in dict(systems or {}).items():
+        if family not in _AGENT_FAMILY_PREFIX:
+            raise ValueError(
+                f"frame_axioms: unknown modal family {family!r} in systems "
+                f"(known: {sorted(_AGENT_FAMILY_PREFIX)})")
+        prefix = _AGENT_FAMILY_PREFIX[family]
+        try:
+            conds = resolve_frame(system)
+        except ValueError as exc:
+            raise ValueError(f"frame_axioms: {exc}") from None
+        for relation in sorted(r for r in used if r.startswith(prefix)):
+            axioms += [unguarded_frame_axiom(cond, relation, prefix="v")
+                       for cond in conds]
+    for member in sort_membership_axioms(formula):
+        assert isinstance(member, Atom)     # sort_membership_axioms yields atoms ``S(c)`` only
+        axioms.append(Quantifier(_FORALL, Variable("v0"), Atom(
+            _user_predicate(member.predicate), (member.args[0], Variable("v0")))))
+    return axioms
 
 
-def hybrid_is_valid(formula: Node, frame: str = "K", timeout: int = 10000) -> bool:
+def _frame_axioms(frame: str) -> List[Node]:
+    """Deprecated alias: :func:`frame_axioms` for an alethic-only formula.
+
+    Kept because the name was imported inside the kit; it cannot see which
+    relations a formula uses, so it only ever constrained ``R``.
+    """
+    return frame_axioms(Box(Atom("P", ())), frame=frame)
+
+
+def hybrid_is_valid(formula: Node, frame: str = "K", timeout: int = 10000,
+                    systems=None, temporal_closure: bool = True) -> bool:
     """Return True iff the hybrid-modal ``formula`` is valid over ``frame`` (via Z3).
 
     Validity of H(@) over a frame class: true at EVERY world of EVERY Kripke
@@ -534,8 +791,18 @@ def hybrid_is_valid(formula: Node, frame: str = "K", timeout: int = 10000) -> bo
     FREE in that implication — first-order validity quantifies free constants
     universally, which is exactly "for every nominal assignment" (each constant
     denotes exactly one domain element = one world, matching a nominal's
-    name-exactly-one-world semantics). ``frame`` is one of ``K`` / ``T`` /
-    ``S4`` / ``S5`` and constrains the ALETHIC relation only.
+    name-exactly-one-world semantics).
+
+    ``frame`` constrains the ALETHIC relation and is any system of the shared
+    registry (:mod:`unicode_fol_kit.fol.frames`) or a Scott–Lemmon spec; a
+    system with no first-order condition (GL, S4.1, Grz) is refused by name.
+    The OTHER relations the translation emits get the conventions
+    :func:`frame_axioms` documents — temporal ``T`` reflexive-transitive with
+    ``N ⊆ T`` (``temporal_closure=True``) and deontic ``D`` serial, both ON by
+    default, so this route agrees with ``fol.qml`` and with the Kripke
+    evaluator instead of reporting "not valid" for ``Ⓖφ → φ``; the
+    agent-indexed epistemic / doxastic / assertive / bouletic relations stay K
+    unless ``systems={"epistemic": "S5", …}`` asks for more.
 
     Soundness/completeness: first-order validity is only semi-decidable in
     general, so ``is_valid`` may time out (returning False) on hard instances —
@@ -575,7 +842,8 @@ def hybrid_is_valid(formula: Node, frame: str = "K", timeout: int = 10000) -> bo
     w = Variable("w")
     closed = Quantifier(_FORALL, w, standard_translation(formula, world="w"))
     hyp = None
-    for axiom in _frame_axioms(frame):
+    for axiom in frame_axioms(formula, frame, systems=systems,
+                              temporal_closure=temporal_closure):
         hyp = axiom if hyp is None else And(hyp, axiom)
     goal = closed if hyp is None else Implies(hyp, closed)
     return is_valid(goal, timeout=timeout)
@@ -600,7 +868,8 @@ def hybrid_is_valid(formula: Node, frame: str = "K", timeout: int = 10000) -> bo
 # fol._hybrid_nodes' module docstring and atp.hybrid_down.down_decide, which
 # combines the two into one call).
 
-def down_is_valid(formula: Node, frame: str = "K", timeout: int = 10000) -> "Verdict":
+def down_is_valid(formula: Node, frame: str = "K", timeout: int = 10000,
+                  systems=None, temporal_closure: bool = True) -> "Verdict":
     """Return a :class:`~unicode_fol_kit.atp.protocol.Verdict` for the FULL
     hybrid-modal ``formula`` (H(@,↓), including ``Down``/↓) over ``frame``.
 
@@ -646,7 +915,8 @@ def down_is_valid(formula: Node, frame: str = "K", timeout: int = 10000) -> "Ver
     w = Variable("w")
     closed = Quantifier(_FORALL, w, standard_translation(formula, world="w"))
     hyp = None
-    for axiom in _frame_axioms(frame):
+    for axiom in frame_axioms(formula, frame, systems=systems,
+                              temporal_closure=temporal_closure):
         hyp = axiom if hyp is None else And(hyp, axiom)
     goal = closed if hyp is None else Implies(hyp, closed)
 

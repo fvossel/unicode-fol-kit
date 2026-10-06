@@ -153,16 +153,20 @@ def test_a_plain_large_integer_and_an_ordinary_float_still_round_trip():
     _assert_round_trips("p(A) :- q(A, 123456789012345, 0.5).")
 
 
-def test_a_number_that_would_print_in_scientific_notation_is_refused():
+def test_a_float_too_large_to_have_a_fraction_prints_as_the_integer_it_equals():
     """Hand-checked: ``str(1e20) == '1e+20'`` in Python, and
     parse_prolog_clause's own numeral grammar is ``-?\\d+(\\.\\d+)?`` — no
-    ``e``. Re-parsing ``'p(1e+20).'`` with the kit's own importer really does
-    raise a SYNTAX_ERROR at the ``e`` (verified by hand while writing this
-    test), so emitting it would silently produce text the kit's own reader
-    cannot take back."""
+    ``e``, so the float's own text could not be read back. But a float with a
+    whole value is the integer it equals in a ``Number`` (a value has one
+    spelling: ``Number(1e20)`` IS ``Number(100000000000000000000)``), so there
+    is no exponent text to refuse at this end of the scale and the clause is
+    the integer's, which the importer reads back as the very node. (The
+    other end, ``1e-10``, has a fractional part and is still refused, below.)"""
     node = Atom("P", [Number(1e20)])
-    with pytest.raises(PrologExportError, match="numeral grammar"):
-        formula_to_prolog_clause(node)
+    assert node.args[0].value == 10 ** 20 and isinstance(node.args[0].value, int)
+    text = formula_to_prolog_clause(node)
+    assert text == "p(100000000000000000000)."
+    assert parse_prolog_clause(text) == node
 
 
 def test_a_number_that_would_print_in_small_scientific_notation_is_refused():

@@ -108,6 +108,16 @@ name with ``NotImplementedError`` rather than approximated; use
 or :func:`~unicode_fol_kit.hol.isabelle_runner.isabelle_decide_modal` for
 anything genuinely modal.
 
+**Equality is NOT interpreted here.** An atom is a propositional letter: the elementary
+atoms of the closure are sets of rendered atom keys, and a trace is read off as a valuation of
+those keys. ``a = a`` or ``a ≠ b`` would therefore be an unconstrained letter, and
+``⊢ a = a`` would be refuted by a lasso in which the letter ``a = a`` is false although
+identity is reflexive. Every entry point refuses an equality or disequality atom anywhere in
+its formulas by name (the shared :func:`~unicode_fol_kit.semantics._modal_reject.reject_equality_in`,
+the refusal :mod:`unicode_fol_kit.atp.modal_tableau` and the Kripke evaluator give), before any
+search. Decide identity with :func:`~unicode_fol_kit.fol.qml.qml_is_valid` or another
+first-order route.
+
 **Where this is a strict completeness gain.** Temporal induction
 ``(φ ∧ G(φ → Xφ)) → Gφ`` is the standard textbook example that ``qml_is_valid``
 cannot reach — its own docstring says so explicitly: "reaching an arbitrary
@@ -117,6 +127,14 @@ first-order theory states." This module proves it (see
 that induction directly rather than approximating it with finitely many
 unfoldings.
 
+**Sorted constants and bounds.** A sorted constant ``c:S`` is the constant ``c`` and lies
+in ``S`` at EVERY position (a constant is a rigid designator): ``Mortal(c:S)`` and
+``Mortal(c)`` are one letter, ``S(c)`` is a letter true everywhere, and a countermodel is
+only released if it makes it so (:func:`_lift_sorted_constants`). Besides ``max_atoms`` every
+entry point takes an optional wall-clock ``timeout`` in milliseconds, read while the atoms
+and the graph between them are built and in every step after that (reachability, pruning,
+strongly connected components, fairness, the witness walk); past it the answer is ``"unknown"``.
+
 Public API: :func:`ltl_tableau_closed`, :func:`ltl_valid`, :func:`ltl_decide`,
 :func:`ltl_countermodel`, :func:`ltl_trace_satisfies`, :class:`LTLTrace`.
 """
@@ -125,11 +143,16 @@ import time
 from dataclasses import dataclass
 from typing import Dict, FrozenSet, List, Optional, Sequence, Tuple
 
+from .._deadline import DeadlineReached, passed as _passed
 from ..fol.nodes import (
     Node, Atom, Not, And, Or, Implies, Iff, Xor,
     Next, Always, Eventually, Until,
     Historically, Once, Previous, Since,
 )
+from ..fol._atom_keys import AtomKeys, atom_key
+from ..fol._truth_constants import truth_value
+from ..semantics._modal_reject import reject_equality_in
+from .lj import _forget_constant_sorts
 
 __all__ = [
     "LTLTrace",
@@ -200,6 +223,25 @@ class LTLTrace:
 # --------------------------------------------------------------------------- #
 # Closure construction.
 # --------------------------------------------------------------------------- #
+
+#: How this route reads an atom: the clause the shared equality refusal needs to say why
+#: identity cannot be read here.
+_EQUALITY_ROUTE = "the propositional LTL tableau"
+_EQUALITY_ATOM_READING = ("an atom is a propositional letter: the elementary atoms are sets of "
+                          "rendered atom keys and a trace is a valuation of those keys")
+
+
+def _reject_equality(formulas: Sequence[Node], caller: str) -> None:
+    """Refuse an equality / disequality atom ANYWHERE in ``formulas``, by name.
+
+    A whole-tree scan, run before anything else reads the formulas (see the module
+    docstring's "Equality is NOT interpreted here"): a branch of the search that never
+    reaches the atom would otherwise answer without having looked at it.
+    """
+    for formula in formulas:
+        reject_equality_in(formula, caller, _EQUALITY_ROUTE,
+                           atom_reading=_EQUALITY_ATOM_READING)
+
 
 def _strip_not(node: Node) -> Node:
     """Unwrap every leading ``Not`` (so double negation collapses to nothing)."""
@@ -330,16 +372,28 @@ def _dval(vals: Dict[Node, bool], node: Node) -> bool:
     return _truth(node, vals) != neg
 
 
-def _all_atoms(cl: FrozenSet[Node], max_atoms: int):
+def _all_atoms(cl: FrozenSet[Node], max_atoms: int, deadline: Optional[float] = None):
     """Enumerate every locally consistent atom over ``cl``, or ``None`` if the
-    free-element count would make ``2 ** k`` exceed ``max_atoms``."""
-    free = sorted((c for c in cl if isinstance(c, (Atom, Next, Previous))),
-                 key=repr)
+    free-element count would make ``2 ** k`` exceed ``max_atoms`` or the
+    ``time.perf_counter()`` ``deadline`` passes first."""
+    # `$true` / `$false` are constants: they are never free (not varied), and every
+    # atom gives them their one value.
+    constants: Dict[Node, bool] = {}
+    for c in cl:
+        value = truth_value(c)
+        if value is not None:
+            constants[c] = value
+    free = sorted((c for c in cl
+                   if isinstance(c, (Atom, Next, Previous)) and c not in constants),
+                  key=repr)
     if 2 ** len(free) > max_atoms:
         return None
     atoms = []
     for bits in _bit_combinations(len(free)):
+        if deadline is not None and time.perf_counter() > deadline:
+            return None
         vals: Dict[Node, bool] = dict(zip(free, bits))
+        vals.update(constants)
         for c in cl:
             _truth(c, vals)
         atoms.append(frozenset(c for c in cl if vals[c]))
@@ -361,12 +415,15 @@ def _bit_combinations(k: int):
 # --------------------------------------------------------------------------- #
 
 def _build_graph(atoms: List[FrozenSet[Node]],
-                 next_terms: List[Next], prev_terms: List[Previous]):
+                 next_terms: List[Next], prev_terms: List[Previous],
+                 deadline: Optional[float] = None):
     """Return ``edges``: ``edges[i]`` is the set of ``j`` with atoms[i] -> atoms[j]
     a valid step — for every ``Next(g)``: ``Next(g) in A <=> g holds in B``;
     for every ``Previous(g)``: ``Previous(g) in B <=> g holds in A``. Bucketed
     by B's "as-a-next-target" signature so this is faster than the naive
     O(atoms^2 * |terms|) in the common case of few distinct signatures.
+    Returns ``None`` instead if the ``time.perf_counter()`` instant ``deadline``
+    passes while the edges are built.
     """
     n = len(atoms)
 
@@ -393,6 +450,8 @@ def _build_graph(atoms: List[FrozenSet[Node]],
 
     edges: List[set] = [set() for _ in range(n)]
     for i, A in enumerate(atoms):
+        if deadline is not None and time.perf_counter() > deadline:
+            return None
         for j in buckets.get(next_own_sig(A), ()):
             if prev_own[j] == prev_body[i]:
                 edges[i].add(j)
@@ -403,11 +462,22 @@ def _build_graph(atoms: List[FrozenSet[Node]],
 # Reachability, pruning, SCC, generalized-Büchi fairness, witness extraction.
 # --------------------------------------------------------------------------- #
 
-def _bfs_reachable(starts, edges) -> set:
+def _check(deadline: Optional[float]) -> None:
+    """Raise :class:`~unicode_fol_kit._deadline.DeadlineReached` if ``deadline`` has passed.
+
+    The graph algorithms below call it once per node they take up, so none of them runs
+    past the deadline by more than one node's edges; :func:`_run` catches the exception.
+    """
+    if _passed(deadline):
+        raise DeadlineReached
+
+
+def _bfs_reachable(starts, edges, deadline: Optional[float] = None) -> set:
     """Every index reachable from ``starts`` (inclusive) following ``edges``."""
     seen = set(starts)
     frontier = list(starts)
     while frontier:
+        _check(deadline)
         i = frontier.pop()
         for j in edges[i]:
             if j not in seen:
@@ -416,26 +486,30 @@ def _bfs_reachable(starts, edges) -> set:
     return seen
 
 
-def _bfs_path(start: int, targets: set, edges) -> Optional[List[int]]:
+def _bfs_path(start: int, targets: set, edges,
+              deadline: Optional[float] = None) -> Optional[List[int]]:
     """Shortest path (list of indices, ``start`` first) from ``start`` to any
     index in ``targets``, following only edges whose BOTH ends are keys of
     ``edges`` (i.e. edges already restricted to the relevant induced
     subgraph); ``None`` if unreachable."""
     if start in targets:
         return [start]
-    parent = {start: None}
+    parent: Dict[int, Optional[int]] = {start: None}
     frontier = [start]
     while frontier:
         nxt = []
         for i in frontier:
+            _check(deadline)
             for j in edges.get(i, ()):
                 if j in parent:
                     continue
                 parent[j] = i
                 if j in targets:
                     path = [j]
-                    while parent[path[-1]] is not None:
-                        path.append(parent[path[-1]])
+                    back = parent[j]
+                    while back is not None:
+                        path.append(back)
+                        back = parent[back]
                     path.reverse()
                     return path
                 nxt.append(j)
@@ -443,7 +517,7 @@ def _bfs_path(start: int, targets: set, edges) -> Optional[List[int]]:
     return None
 
 
-def _prune(nodes: set, edges) -> set:
+def _prune(nodes: set, edges, deadline: Optional[float] = None) -> set:
     """Remove nodes with no outgoing edge staying inside the current set,
     to a fixpoint — exactly the nodes that can start SOME infinite path."""
     alive = set(nodes)
@@ -451,13 +525,14 @@ def _prune(nodes: set, edges) -> set:
     while changed:
         changed = False
         for i in list(alive):
+            _check(deadline)
             if not (edges[i] & alive):
                 alive.discard(i)
                 changed = True
     return alive
 
 
-def _sccs(nodes: set, edges) -> List[set]:
+def _sccs(nodes: set, edges, deadline: Optional[float] = None) -> List[set]:
     """Strongly connected components of the subgraph induced by ``nodes``
     (iterative Kosaraju: two passes, no recursion-depth risk)."""
     order: List[int] = []
@@ -468,6 +543,7 @@ def _sccs(nodes: set, edges) -> List[set]:
         stack = [(start, iter(edges[start] & nodes))]
         visited.add(start)
         while stack:
+            _check(deadline)
             node, it = stack[-1]
             advanced = False
             for nxt in it:
@@ -482,6 +558,7 @@ def _sccs(nodes: set, edges) -> List[set]:
 
     reverse: Dict[int, set] = {i: set() for i in nodes}
     for i in nodes:
+        _check(deadline)
         for j in edges[i] & nodes:
             reverse[j].add(i)
 
@@ -491,20 +568,22 @@ def _sccs(nodes: set, edges) -> List[set]:
         if node in seen:
             continue
         comp = set()
-        stack = [node]
+        pending = [node]
         seen.add(node)
-        while stack:
-            cur = stack.pop()
+        while pending:
+            _check(deadline)
+            cur = pending.pop()
             comp.add(cur)
             for prev in reverse[cur]:
                 if prev not in seen:
                     seen.add(prev)
-                    stack.append(prev)
+                    pending.append(prev)
         components.append(comp)
     return components
 
 
-def _fairness_sets(cl: FrozenSet[Node], atoms: List[FrozenSet[Node]]):
+def _fairness_sets(cl: FrozenSet[Node], atoms: List[FrozenSet[Node]],
+                   deadline: Optional[float] = None):
     """Generalized-Büchi acceptance sets: atom-indices where an outstanding
     promise is either not made or already kept. A fair path must hit EVERY
     one of these infinitely often. Two kinds of promise need one:
@@ -533,6 +612,7 @@ def _fairness_sets(cl: FrozenSet[Node], atoms: List[FrozenSet[Node]]):
     """
     sets = []
     for e in cl:
+        _check(deadline)
         if isinstance(e, Eventually):
             sets.append({i for i, atom in enumerate(atoms)
                         if e not in atom or _holds(atom, e.formula)})
@@ -545,19 +625,21 @@ def _fairness_sets(cl: FrozenSet[Node], atoms: List[FrozenSet[Node]]):
     return sets
 
 
-def _has_fair_witness(starts: set, atoms, edges, fairness_sets):
+def _has_fair_witness(starts: set, atoms, edges, fairness_sets,
+                      deadline: Optional[float] = None):
     """Does SOME infinite path from ``starts`` hit every fairness set
     infinitely often? Returns ``(True, entry, scc, reach_edges)`` — ``entry``
     a chosen SCC member and ``reach_edges`` the induced-subgraph edge map
     used to build the witness path — or ``(False, None, None, None)``.
     """
-    reach = _bfs_reachable(starts, edges)
+    reach = _bfs_reachable(starts, edges, deadline)
     reach_edges = {i: (edges[i] & reach) for i in reach}
-    alive = _prune(reach, {i: reach_edges[i] for i in reach})
+    alive = _prune(reach, {i: reach_edges[i] for i in reach}, deadline)
     if not alive:
         return False, None, None, None
     alive_edges = {i: (reach_edges[i] & alive) for i in alive}
-    for comp in _sccs(alive, alive_edges):
+    for comp in _sccs(alive, alive_edges, deadline):
+        _check(deadline)
         nontrivial = len(comp) > 1 or any(i in alive_edges[i] for i in comp)
         if not nontrivial:
             continue
@@ -567,7 +649,8 @@ def _has_fair_witness(starts: set, atoms, edges, fairness_sets):
     return False, None, None, None
 
 
-def _cycle_visiting_all(entry: int, scc: set, edges) -> List[int]:
+def _cycle_visiting_all(entry: int, scc: set, edges,
+                        deadline: Optional[float] = None) -> List[int]:
     """A closed walk ``entry -> ... -> entry`` (indices, entry both ends, at
     least one edge taken) visiting every node of ``scc`` at least once —
     always exists since ``scc`` is strongly connected (or, for a singleton
@@ -583,47 +666,70 @@ def _cycle_visiting_all(entry: int, scc: set, edges) -> List[int]:
     order = [entry] + others + [entry]
     walk = [entry]
     for k in range(len(order) - 1):
-        path = _bfs_path(walk[-1], {order[k + 1]}, local_edges)
+        _check(deadline)
+        path = _bfs_path(walk[-1], {order[k + 1]}, local_edges, deadline)
         walk.extend(path[1:])
     return walk
 
 
 def _valuation(atom: FrozenSet[Node]) -> FrozenSet[str]:
     """Ground-atom keys true at ``atom`` (mirrors modal_tableau's ``_build_model``)."""
-    return frozenset(a.to_unicode_str() for a in atom if isinstance(a, Atom))
+    return frozenset(a.to_unicode_str() for a in atom
+                     if isinstance(a, Atom) and truth_value(a) is None)
 
 
 # --------------------------------------------------------------------------- #
 # The core engine.
 # --------------------------------------------------------------------------- #
 
-def _run(seeds: Sequence[Node], mode: str, max_atoms: int):
+def _run(seeds: Sequence[Node], mode: str, max_atoms: int, timeout: Optional[int] = None):
     """Decide joint satisfiability of ``seeds`` under ``mode``.
 
     Returns ``("unsat", None)``, ``("sat", LTLTrace)``, or ``("unknown", None)``
-    (the atom count exceeded ``max_atoms``).
+    (the atom count exceeded ``max_atoms``, or the ``timeout`` in milliseconds ran
+    out). The clock is read while the atoms and the graph between them are built and
+    in every step after that (the reachability searches, the pruning, the strongly
+    connected components, the fairness test and the witness walk), so the call as a
+    whole ends at its deadline.
     """
     if mode not in ("initial", "floating"):
         raise ValueError(f"ltl_tableau: unknown mode {mode!r} (use 'initial' or 'floating')")
+    _reject_equality(seeds, "ltl_tableau")
 
+    deadline = None if timeout is None else time.perf_counter() + timeout / 1000.0
+    try:
+        return _decide(seeds, mode, max_atoms, deadline)
+    except DeadlineReached:
+        return "unknown", None
+
+
+def _decide(seeds: Sequence[Node], mode: str, max_atoms: int, deadline: Optional[float]):
+    """The search of :func:`_run`; raises :class:`~unicode_fol_kit._deadline.DeadlineReached`
+    once ``deadline`` (a ``perf_counter`` instant, or ``None``) has passed."""
     cl = _closure(seeds)
-    atoms = _all_atoms(cl, max_atoms)
+    atoms = _all_atoms(cl, max_atoms, deadline)
     if atoms is None:
         return "unknown", None
     next_terms = [c for c in cl if isinstance(c, Next)]
     prev_terms = [c for c in cl if isinstance(c, Previous)]
-    edges = _build_graph(atoms, next_terms, prev_terms)
+    edges = _build_graph(atoms, next_terms, prev_terms, deadline)
+    if edges is None:
+        return "unknown", None
 
-    init = {i for i, atom in enumerate(atoms)
-           if all(pv in atom for pv in prev_terms)}
-    seeded = {i for i in range(len(atoms))
-             if all(_holds(atoms[i], s) for s in seeds)}
+    init = set()
+    seeded = set()
+    for i, atom in enumerate(atoms):
+        _check(deadline)
+        if all(pv in atom for pv in prev_terms):
+            init.add(i)
+        if all(_holds(atom, s) for s in seeds):
+            seeded.add(i)
 
     if mode == "initial":
         starts = init & seeded
         prefix_from_init: Dict[int, List[int]] = {i: [i] for i in starts}
     else:
-        reach_from_init = _bfs_reachable(init, edges)
+        reach_from_init = _bfs_reachable(init, edges, deadline)
         starts = reach_from_init & seeded
         if not starts:
             prefix_from_init = {}
@@ -635,6 +741,7 @@ def _run(seeds: Sequence[Node], mode: str, max_atoms: int):
             while frontier:
                 nxt = []
                 for i in frontier:
+                    _check(deadline)
                     for j in edges[i]:
                         if j not in parent:
                             parent[j] = i
@@ -653,8 +760,8 @@ def _run(seeds: Sequence[Node], mode: str, max_atoms: int):
     if not starts:
         return "unsat", None
 
-    fairness_sets = _fairness_sets(cl, atoms)
-    ok, entry, scc, alive_edges = _has_fair_witness(starts, atoms, edges, fairness_sets)
+    fairness_sets = _fairness_sets(cl, atoms, deadline)
+    ok, entry, scc, alive_edges = _has_fair_witness(starts, atoms, edges, fairness_sets, deadline)
     if not ok:
         return "unsat", None
 
@@ -663,17 +770,17 @@ def _run(seeds: Sequence[Node], mode: str, max_atoms: int):
     # and a multi-source BFS only ever discovers a node through ONE origin).
     start_idx = None
     for i in starts:
-        local_reach = _bfs_reachable({i}, edges)
+        local_reach = _bfs_reachable({i}, edges, deadline)
         if entry in local_reach:
             start_idx = i
             break
 
     lead_in = prefix_from_init[start_idx]
-    to_scc_edges = {i: (edges[i] & _bfs_reachable({start_idx}, edges)) for i in
-                    _bfs_reachable({start_idx}, edges)}
-    path_to_scc = _bfs_path(lead_in[-1], scc, to_scc_edges)
+    reach_of_start = _bfs_reachable({start_idx}, edges, deadline)
+    to_scc_edges = {i: (edges[i] & reach_of_start) for i in reach_of_start}
+    path_to_scc = _bfs_path(lead_in[-1], scc, to_scc_edges, deadline)
     entry_actual = path_to_scc[-1]
-    cycle_walk = _cycle_visiting_all(entry_actual, scc, alive_edges)
+    cycle_walk = _cycle_visiting_all(entry_actual, scc, alive_edges, deadline)
 
     full_prefix_idx = lead_in[:-1] + path_to_scc          # ends AT entry_actual
     # `cycle_walk` is the CLOSED walk entry_actual -> ... -> entry_actual, so
@@ -713,7 +820,30 @@ def ltl_trace_satisfies(formula: Node, trace: LTLTrace,
     here use prefixes/cycles of at most a handful of positions), so 200 is
     already far more than any nesting of temporal operators this module's own
     tests exercise could need to stabilise a forward search across.
+
+    An equality or disequality atom is refused by name (``NotImplementedError``), as
+    in every entry point of this module: a trace is a valuation of rendered atom keys,
+    which gives identity no meaning. So are two different atoms that print alike (the
+    numeral ``1`` and a constant named ``1``, a free variable ``x`` and a constant named
+    ``x``): one key of the trace could not tell them apart.
+
+    A sorted constant ``c:S`` is the constant ``c``: ``Mortal(carl:Human)`` is read at the
+    key ``'Mortal(carl)'``, the key every countermodel trace of this module holds. That
+    ``Human(carl)`` is true at every position is a property of the trace which this
+    evaluator, like every evaluator of a given structure, does not check (the decision
+    functions add it as a premise).
     """
+    _reject_equality([formula], "ltl_trace_satisfies")
+    AtomKeys("ltl_trace_satisfies").letters([formula])
+    return _trace_satisfies(formula, trace, position, horizon)
+
+
+def _trace_satisfies(formula: Node, trace: LTLTrace,
+                     position: Optional[int] = None, horizon: int = 200) -> bool:
+    """The evaluation of :func:`ltl_trace_satisfies`, for a formula already known to hold no
+    equality atom and no two atoms of one key (the decision functions verify the witness of
+    a search that kept its atoms as nodes, and read a pair of clashing atoms as ``unknown``
+    rather than refuse)."""
     if position is None:
         position = trace.witness_position
     memo: Dict[Tuple[Node, int], bool] = {}
@@ -725,7 +855,8 @@ def ltl_trace_satisfies(formula: Node, trace: LTLTrace,
         if isinstance(node, Not):
             v = not ev(node.formula, i)
         elif isinstance(node, Atom):
-            v = node.to_unicode_str() in trace.at(i)
+            constant = truth_value(node)
+            v = constant if constant is not None else atom_key(node) in trace.at(i)
         elif isinstance(node, And):
             v = ev(node.left, i) and ev(node.right, i)
         elif isinstance(node, Or):
@@ -791,62 +922,99 @@ def _fold_goal(formula: Node, premises: Sequence[Node]) -> Node:
     return Implies(conj, formula)
 
 
+def _lift_sorted_constants(formulas: Sequence[Node], mode: str):
+    """``formulas`` with every sorted constant plain, and the seeds that keep its sort true of it.
+
+    A sorted constant ``c:S`` is the constant ``c`` and an element of ``S`` at EVERY
+    position (a constant is a rigid designator), so ``Mortal(c:S)`` and ``Mortal(c)``
+    are one letter and the guard atom ``S(c)`` is a letter true everywhere. The seeds
+    are ``Always S(c)`` (and, for ``mode="floating"``, where the anchor may have a
+    past, ``Historically S(c)`` too), one set per distinct ``c:S``. Without them
+    ``Human(carl:Human)`` has a model in which carl is no ``Human``, and a valid
+    formula is reported invalid. A formula without a sorted constant is returned as
+    it is, with no seed.
+    """
+    membership: List[Node] = []
+    plain = [_forget_constant_sorts(f, membership) for f in formulas]
+    seeds: List[Node] = []
+    for atom in dict.fromkeys(membership):
+        seeds.append(Always(atom))
+        if mode == "floating":
+            seeds.append(Historically(atom))
+    return plain, seeds
+
+
 def ltl_tableau_closed(formulas: Sequence[Node], mode: str = "initial",
-                       max_atoms: int = _DEFAULT_MAX_ATOMS) -> bool:
+                       max_atoms: int = _DEFAULT_MAX_ATOMS,
+                       timeout: Optional[int] = None) -> bool:
     """True iff ``formulas`` are jointly UNSATISFIABLE under ``mode`` (see the
     module docstring for "initial" vs. "floating"). ``False`` means either a
     genuine model exists or the search hit ``max_atoms`` — use
-    :func:`ltl_decide`/:func:`ltl_countermodel` to tell those apart."""
-    status, _ = _run(list(formulas), mode, max_atoms)
+    :func:`ltl_decide`/:func:`ltl_countermodel` to tell those apart.
+
+    A sorted constant ``c:S`` lies in ``S`` at every position (see
+    :func:`_lift_sorted_constants`). ``timeout`` (milliseconds, default none) ends
+    the construction of the atoms and of the graph between them: ``False`` then."""
+    plain, seeds = _lift_sorted_constants(list(formulas), mode)
+    status, _ = _run(plain + seeds, mode, max_atoms, timeout)
     return status == "unsat"
 
 
 def ltl_valid(formula: Node, premises: Sequence[Node] = (), mode: str = "initial",
-              max_atoms: int = _DEFAULT_MAX_ATOMS) -> bool:
+              max_atoms: int = _DEFAULT_MAX_ATOMS, timeout: Optional[int] = None) -> bool:
     """True iff ``premises`` entail ``formula`` under the standard linear-time
     reading — i.e. ``¬((∧ premises) → formula)`` has no model. Sound and
     complete for the supported fragment up to ``max_atoms``; use
-    :func:`ltl_decide` to distinguish a genuine "invalid" from "unknown"."""
-    goal = _fold_goal(formula, premises)
-    status, _ = _run([Not(goal)], mode, max_atoms)
+    :func:`ltl_decide` to distinguish a genuine "invalid" from "unknown". ``timeout``
+    is as for :func:`ltl_tableau_closed`."""
+    (goal,), seeds = _lift_sorted_constants([_fold_goal(formula, premises)], mode)
+    status, _ = _run([Not(goal)] + seeds, mode, max_atoms, timeout)
     return status == "unsat"
 
 
 def ltl_decide(formula: Node, premises: Sequence[Node] = (), mode: str = "initial",
-               max_atoms: int = _DEFAULT_MAX_ATOMS) -> str:
+               max_atoms: int = _DEFAULT_MAX_ATOMS, timeout: Optional[int] = None) -> str:
     """Decide ``premises ⊨ formula``: ``"valid"`` / ``"invalid"`` / ``"unknown"``.
 
     * ``"valid"``   — no model of the negation exists (a sound proof).
     * ``"invalid"`` — a witness trace was found AND independently verified by
       :func:`ltl_trace_satisfies` to falsify ``formula`` (at ``witness_position``).
-    * ``"unknown"`` — ``max_atoms`` was hit, or (should never happen — an
+    * ``"unknown"`` — ``max_atoms`` was hit, the ``timeout`` (milliseconds, default
+      none) ran out, or (should never happen — an
       internal-consistency safety net, not a real incompleteness source) the
       witness failed independent verification.
+
+    A sorted constant ``c:S`` lies in ``S`` at every position (see
+    :func:`_lift_sorted_constants`), and a witness is verified to be such a model.
     """
-    goal = _fold_goal(formula, premises)
-    status, trace = _run([Not(goal)], mode, max_atoms)
+    (goal,), seeds = _lift_sorted_constants([_fold_goal(formula, premises)], mode)
+    status, trace = _run([Not(goal)] + seeds, mode, max_atoms, timeout)
     if status == "unsat":
         return "valid"
     if status == "sat" and trace is not None:
-        if not ltl_trace_satisfies(goal, trace):
+        if (not _trace_satisfies(goal, trace)
+                and all(_trace_satisfies(seed, trace) for seed in seeds)):
             return "invalid"
     return "unknown"
 
 
 def ltl_countermodel(formula: Node, premises: Sequence[Node] = (), mode: str = "initial",
-                     max_atoms: int = _DEFAULT_MAX_ATOMS) -> Optional[LTLTrace]:
+                     max_atoms: int = _DEFAULT_MAX_ATOMS,
+                     timeout: Optional[int] = None) -> Optional[LTLTrace]:
     """Return an :class:`LTLTrace` falsifying ``premises ⊨ formula``, or ``None``.
 
     ``None`` means "valid" (the negation is unsatisfiable) **or** the search
     was inconclusive within ``max_atoms``. The returned trace is verified: it
     is only handed back once :func:`ltl_trace_satisfies` confirms ``formula``
-    is false at ``witness_position``, so a countermodel is never spurious.
+    is false at ``witness_position``, so a countermodel is never spurious. ``timeout``
+    is as for :func:`ltl_tableau_closed`.
     """
-    goal = _fold_goal(formula, premises)
-    status, trace = _run([Not(goal)], mode, max_atoms)
+    (goal,), seeds = _lift_sorted_constants([_fold_goal(formula, premises)], mode)
+    status, trace = _run([Not(goal)] + seeds, mode, max_atoms, timeout)
     if status != "sat" or trace is None:
         return None
-    if not ltl_trace_satisfies(goal, trace):
+    if (not _trace_satisfies(goal, trace)
+            and all(_trace_satisfies(seed, trace) for seed in seeds)):
         return trace
     return None
 
@@ -888,7 +1056,8 @@ class LtlTableauBackend(ProverBackend):
         max_atoms = options.pop("max_atoms", _DEFAULT_MAX_ATOMS)
         start = time.perf_counter()
         try:
-            status = ltl_decide(formula, premises, mode=mode, max_atoms=max_atoms)
+            status = ltl_decide(formula, premises, mode=mode, max_atoms=max_atoms,
+                                timeout=timeout)
         except NotImplementedError as exc:
             return Verdict(UNKNOWN, self.name, logic="modal",
                            reason="unsupported", detail=str(exc))
@@ -896,10 +1065,16 @@ class LtlTableauBackend(ProverBackend):
         if status == "valid":
             return Verdict(PROVED, self.name, logic="modal", wall_time=elapsed)
         if status == "invalid":
-            trace = ltl_countermodel(formula, premises, mode=mode, max_atoms=max_atoms)
+            # the witness is a second search; it gets what is left of the limit
+            trace = ltl_countermodel(formula, premises, mode=mode, max_atoms=max_atoms,
+                                     timeout=max(1, int(timeout - elapsed * 1000)))
             witness = trace.to_dict() if trace is not None else None
             return Verdict(REFUTED, self.name, logic="modal", wall_time=elapsed,
                            countermodel=witness)
+        if elapsed * 1000 >= timeout:
+            return Verdict(UNKNOWN, self.name, logic="modal", reason="timeout",
+                           wall_time=elapsed,
+                           detail=f"no verdict within the {timeout} ms limit")
         return Verdict(UNKNOWN, self.name, logic="modal", reason="bound_hit",
                        wall_time=elapsed,
                        detail=f"closure exceeded max_atoms={max_atoms}")

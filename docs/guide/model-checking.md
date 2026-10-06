@@ -384,7 +384,7 @@ everywhere else):
 deadlock = KripkeModel(worlds={0, 1}, relations={"temporal": {(0, 1)}},
                        valuation={0: {"crit1"}})
 ctl_af(deadlock, 0, crit1)
-# → ValueError: ctl_af/ctl_eg/ctl_au: the "temporal" relation is not total on
+# raises ValueError: ctl_af/ctl_eg/ctl_au: the "temporal" relation is not total on
 #   model.worlds — world 1 has no temporal successor inside model.worlds, ...
 ```
 

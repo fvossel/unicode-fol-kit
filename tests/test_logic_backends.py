@@ -133,10 +133,15 @@ def test_lambek_backend_is_order_sensitive():
     assert bad.countermodel is None   # syntactic refutation, no model theory here
 
 
-def test_lambek_backend_rejects_empty_premises():
+def test_lambek_backend_answers_unsupported_for_empty_premises():
+    # The calculus has no sequent with an empty antecedent (Lambek's restriction). A backend states what
+    # its logic cannot say as an answer — UNKNOWN, reason "unsupported", the reason in the detail — and
+    # does not raise for an input a caller may legitimately hand to every backend of a chain; the direct
+    # function lambek_prove keeps its ValueError (tests/test_substructural.py).
     B = _LAM.parse("B")
-    with pytest.raises(ValueError, match="nonempty"):
-        run_backend("lambek", B, [])
+    v = run_backend("lambek", B, [])
+    assert v.status == UNKNOWN and v.reason == "unsupported"
+    assert "empty antecedent" in v.detail
 
 
 def test_lambek_backend_over_and_product():

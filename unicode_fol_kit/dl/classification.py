@@ -17,9 +17,9 @@ from typing import Dict, FrozenSet, Iterable, List, Optional, Set
 
 from .concepts import (
     Concept, Top, Bottom, Atomic, Not, And, Or, Exists, ForAll, AtLeast, AtMost,
-    InverseRole, Nominal,
+    InverseRole, Nominal, HasValue, DATA_CONCEPTS,
 )
-from .tableau import TBox, subsumes
+from .tableau import TBox, subsumes, _reject_beyond_alc, _reject_inputs, _reject_role_box
 
 
 @dataclass(frozen=True)
@@ -48,7 +48,9 @@ class Classification:
 def _atomic_names(concept: Concept, names: Set[str]) -> None:
     """Recursively collect every :class:`Atomic` name occurring in ``concept`` into ``names``.
 
-    Raises ``TypeError`` for a :class:`~unicode_fol_kit.dl.concepts.Nominal`
+    Refuses — through the tableau's own concept guard, with
+    :class:`~unicode_fol_kit.dl.tableau.UnsupportedConceptError`, the refusal every
+    other entry point gives — a :class:`~unicode_fol_kit.dl.concepts.Nominal`
     (caught directly: it is not "atomic-shaped" enough to fall through the
     isinstance chain below, so it hits the final ``else`` on its own) or an
     :class:`~unicode_fol_kit.dl.concepts.InverseRole`-valued ``role`` field
@@ -64,11 +66,30 @@ def _atomic_names(concept: Concept, names: Set[str]) -> None:
     ``_reject_beyond_alc`` guard would never even get called to catch it (see
     :func:`classify`'s docstring: it never calls ``subsumes`` at all when its
     collected vocabulary is empty).
+
+    A :class:`~unicode_fol_kit.dl.concepts.HasValue` and a data restriction are
+    refused through the tableau's own concept guard, with
+    :class:`~unicode_fol_kit.dl.tableau.UnsupportedConceptError`.
     """
     if isinstance(concept, Atomic):
         names.add(concept.name)
     elif isinstance(concept, (Top, Bottom)):
         pass
+    elif isinstance(concept, DATA_CONCEPTS):
+        # A data restriction names a DATA property and a data range, never a
+        # class, so it contributes no name -- but it is outside the fragment the
+        # reduction to ``subsumes`` decides, and with a one-name vocabulary
+        # ``subsumes`` is never called to say so. The tableau's own concept
+        # guard raises the SAME refusal every other entry point gives.
+        _reject_beyond_alc(concept)
+    elif isinstance(concept, HasValue):
+        # Contributes NO class name -- a value restriction names a ROLE and an
+        # INDIVIDUAL, neither of which belongs in a subsumption hierarchy over
+        # named CONCEPTS -- but it is a nominal in disguise, which the reduction
+        # to ``subsumes`` does not decide, and with a one-name vocabulary
+        # ``subsumes`` is never called to say so. The tableau's own concept
+        # guard raises the SAME refusal every other entry point gives.
+        _reject_beyond_alc(concept)
     elif isinstance(concept, Not):
         _atomic_names(concept.concept, names)
     elif isinstance(concept, (And, Or)):
@@ -76,14 +97,16 @@ def _atomic_names(concept: Concept, names: Set[str]) -> None:
         _atomic_names(concept.right, names)
     elif isinstance(concept, (Exists, ForAll, AtLeast, AtMost)):
         if isinstance(concept.role, InverseRole):
-            raise TypeError(
-                f"classify: unsupported InverseRole-valued role ({concept.role.role}⁻) "
-                "— outside ALCHQ (this kit's in-house DL fragment); classify() reduces "
-                "to dl.tableau.subsumes(), which never decides one (see that module's "
-                "'Inverse roles and nominals (I, O)' section) — use dl.owl_reasoner's "
-                "external, HermiT-backed reasoner instead")
+            # An inverse role contributes no class name either, and with a
+            # one-name vocabulary ``subsumes`` is never called to refuse it. The
+            # tableau's own concept guard raises the SAME refusal every other
+            # entry point gives (UnsupportedConceptError, which the MCP tools
+            # return as a structured error; a bare TypeError escaped them).
+            _reject_beyond_alc(concept)
         _atomic_names(concept.concept, names)
     else:
+        # A bare Nominal lands here: refused by the same guard, by name.
+        _reject_beyond_alc(concept)
         raise TypeError(f"classify: unsupported concept {type(concept).__name__}")
 
 
@@ -120,14 +143,41 @@ def classify(tbox: TBox, concepts: Optional[Iterable[Concept]] = None) -> Classi
     names occurring in ``concepts`` when given — useful for a name of interest that
     never appears in an axiom (and so would otherwise be invisible, an isolated node
     with no parents/children/ancestors and a singleton equivalence class).
+
+    Raises:
+        ~unicode_fol_kit.dl.tableau.UnsupportedAxiomError:
+            ``tbox`` carries an axiom KIND no in-house rule
+            decides, exactly as ``subsumes`` would raise -- including for a
+            TBox with ONE named concept, where the pair loop below never calls
+            ``subsumes`` at all (its only ordered pair is ``(A, A)``, answered
+            ``True`` without a tableau), so without the up-front guard that one
+            shape returned a hierarchy for a knowledge base every other entry
+            point refuses.
+        ~unicode_fol_kit.dl.tableau.UnsupportedConceptError:
+            a stored class expression (or one of
+            ``concepts``) contains a value restriction (``HasValue``, a
+            nominal in disguise) or a data restriction -- raised by the
+            tableau's concept guard whatever the vocabulary's size.
     """
+    # The axiom-level guard, once, before anything is decided -- the same call
+    # concept_satisfiable/abox_consistent open with. A TBox with zero or one
+    # named concept never reaches `subsumes`, so inheriting it was not enough.
+    _reject_role_box(tbox, None)
     names: Set[str] = set()
     for sub, sup in tbox.inclusions:
         _atomic_names(sub, names)
         _atomic_names(sup, names)
-    if concepts is not None:
-        for c in concepts:
-            _atomic_names(c, names)
+    extra = list(concepts) if concepts is not None else []
+    for c in extra:
+        _atomic_names(c, names)
+    # The concept-level half of the same guard, over EVERY class expression the
+    # TBox stores (a domain or range filler included -- `_atomic_names` above
+    # reads inclusions only) and over the extra concepts. `subsumes` runs it per
+    # pair, but a vocabulary of fewer than two names makes no such call, and a
+    # knowledge base that every other entry point refuses (an OWL 2 built-in
+    # property name as a restriction's role, a nominal in a domain filler) got a
+    # hierarchy here.
+    _reject_inputs(tbox, None, extra)
     ordered = sorted(names)
 
     # The O(n^2) reduction: decide sub/sup for every ordered pair with `subsumes`.

@@ -216,8 +216,8 @@ def test_bridge_names_agree_across_every_route():
 
 
 def test_version_is_consistent_across_the_release_artefacts():
-    """A release bumps __version__, pyproject and the CHANGELOG together; docs/conf.py
-    reads __version__, so those three are the whole set."""
+    """A release bumps __version__, pyproject, CITATION.cff and the CHANGELOG together;
+    docs/conf.py reads __version__, so those four are the whole set."""
     import unicode_fol_kit as u
 
     root = Path(__file__).resolve().parent.parent
@@ -226,4 +226,10 @@ def test_version_is_consistent_across_the_release_artefacts():
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
     latest = re.search(r"^## \[([0-9][^\]]*)\]", changelog, re.M).group(1)
 
-    assert u.__version__ == declared == latest
+    citation = (root / "CITATION.cff").read_text(encoding="utf-8")
+    cited = re.search(r"^version: (\S+)", citation, re.M).group(1)
+    released = re.search(r'^date-released: "([^"]+)"', citation, re.M).group(1)
+    dated = re.search(r"^## \[[0-9][^\]]*\] - (\S+)", changelog, re.M).group(1)
+
+    assert u.__version__ == declared == latest == cited
+    assert released == dated          # the citation carries the changelog's release date

@@ -23,10 +23,13 @@ Two complementary evaluators:
   graded valuations) under a chosen t-norm.
 """
 
-from .tarski import Structure, term_value, satisfies, models
+from .tarski import (
+    Structure, term_value, satisfies, models,
+    IllegalStructureError, check_structure, structure_violations,
+)
 from .secondorder import (
     satisfies_so, holds,
-    so_find_model, so_find_countermodel, so_is_satisfiable_finite, so_is_valid_finite,
+    so_find_model, so_find_countermodel, so_is_satisfiable_finite, so_is_valid_finite, CandidateBoundExceeded,
 )
 from .thirdorder import (
     satisfies_to, holds_to, slot_values, all_interpretations, interpretation_count,
@@ -87,6 +90,8 @@ from .model_eval import (
 
 __all__ = [
     "Structure", "term_value", "satisfies", "models",
+    # Is a given structure a structure of the many-sorted definition?
+    "IllegalStructureError", "check_structure", "structure_violations",
     # Finite structures + the direct structure evaluator (model CHECKING:
     # is this sentence true in THIS given interpretation?).
     "FiniteStructure", "structure_from_dict", "graph_to_structure",
@@ -97,7 +102,7 @@ __all__ = [
     "satisfies_to", "holds_to",
     "slot_values", "all_interpretations", "interpretation_count",
     "so_find_model", "so_find_countermodel",
-    "so_is_satisfiable_finite", "so_is_valid_finite",
+    "so_is_satisfiable_finite", "so_is_valid_finite", "CandidateBoundExceeded",
     "evaluate", "ground_quantifiers",
     "TNorm", "get_tnorm", "TNORMS", "LUKASIEWICZ", "GODEL", "PRODUCT",
     "KripkeModel", "satisfies_modal", "models_at", "reflexive_transitive_closure",

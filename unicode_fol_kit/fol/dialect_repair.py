@@ -47,6 +47,19 @@ DIFFERENT answers, and which is which is this module's entire content:
    reimplementing them — the two paths cannot drift apart if there is only
    one implementation.
 
+4. **A truth glyph beside another dialect's connectives** — **repaired,
+   and reported.** ``P -> ⊥`` is the Prover9 arrow with the unicode glyph for
+   falsity, and no grammar reads it: the glyph is not ASCII, and the
+   detection of the two ASCII-only dialects (Prover9, TPTP) keys on text that
+   is ASCII, while the unicode ladder does not read ``->``. ``P -> Q`` parses
+   (as Prover9) and ``P → ⊥`` parses (as the unicode ladder), so the mix is
+   repaired the way ``P -> Q`` is: the glyphs ``⊤`` / ``⊥`` are read as the
+   truth constants of the dialect the rest of the text is written in, first
+   as Prover9's ``$T`` / ``$F``, then as TPTP's ``$true`` / ``$false``, and
+   the first rewrite that parses wins. Either way the result holds the truth
+   constants ``$true`` / ``$false``, and an ``"truth_glyph"`` issue says what
+   was read as what. A rewrite that does not parse is discarded whole.
+
 Public API: :func:`repair_formula`, returning a :class:`DialectRepairResult`
 (a :class:`~unicode_fol_kit.fol.tptp_repair.RepairResult` plus the dialect
 that parsed and the renamings applied), so a caller that already handles TPTP
@@ -260,6 +273,52 @@ def _failed(text: str, kind: str, message: str,
 
 
 # ---------------------------------------------------------------------------
+# Case 4 — a truth glyph beside another dialect's connectives
+# ---------------------------------------------------------------------------
+
+#: The unicode glyph of each truth constant and, for the two ASCII dialects, the
+#: constant that dialect spells it with: ``(Prover9, TPTP)``.
+_GLYPH_SPELLINGS = {"⊤": ("$T", "$true"), "⊥": ("$F", "$false")}
+_GLYPH_RE = re.compile("[⊤⊥]")
+
+
+def _glyph_rewrites(text: str):
+    """The texts that spell each truth glyph of ``text`` as an ASCII dialect's own
+    constant, Prover9's first and TPTP's second; nothing when ``text`` has no glyph."""
+    if not _GLYPH_RE.search(text):
+        return
+    for column in (0, 1):
+        yield _GLYPH_RE.sub(lambda m: _GLYPH_SPELLINGS[m.group(0)][column], text), column
+
+
+def _parse_reading_glyphs(text: str, dialect: Optional[str]):
+    """``(parse result, rewritten text)``: ``text`` parsed as it stands, else, when it
+    does not parse and holds a truth glyph, parsed with the glyphs spelled as an ASCII
+    dialect's constants (see the module docstring, case 4). The rewritten text is
+    ``None`` when the text parsed as it stands or no rewrite parsed."""
+    from ..api import parse_any  # deferred: api imports fol
+
+    parsed = parse_any(text, hint=dialect)
+    if parsed.ok:
+        return parsed, None
+    for rewritten, _column in _glyph_rewrites(text):
+        retried = parse_any(rewritten, hint=dialect)
+        if retried.ok:
+            return retried, rewritten
+    return parsed, None
+
+
+def _glyph_issue(rewritten: str, dialect_name: Optional[str]) -> Issue:
+    return Issue(
+        "truth_glyph",
+        "the text writes the truth glyph ⊤ / ⊥ beside the connectives of another "
+        f"dialect, which no single grammar reads; the glyphs were read as that "
+        f"dialect's own truth constants ({rewritten!r}), and the formula parsed "
+        f"as {dialect_name!r}. The result holds the truth constants $true / $false.",
+        suggestion=rewritten)
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -272,7 +331,10 @@ def repair_formula(text: str, *, dialect: Optional[str] = None,
 
     Pipeline:
 
-    1. Parse via :func:`unicode_fol_kit.api.parse_any`. On failure, if the
+    1. Parse via :func:`unicode_fol_kit.api.parse_any`. A text that does not
+       parse but holds the truth glyph ``⊤`` / ``⊥`` beside another dialect's
+       connectives (``P -> ⊥``) is read with the glyph spelled as that
+       dialect's constant (case 4), and says so in an issue. On failure, if the
        grammar refused a mix of same-level connectives, report it and stop
        (case 1' — never bracketed, see the module docstring). Otherwise, if
        ``sanitize_invalid_names``, rename every functor-position name that is
@@ -302,12 +364,12 @@ def repair_formula(text: str, *, dialect: Optional[str] = None,
     Returns:
         A :class:`DialectRepairResult`.
     """
-    from ..api import parse_any  # deferred: api imports fol
-
     issues: List[Issue] = []
     renames: Tuple[Tuple[str, str], ...] = ()
 
-    parsed = parse_any(text, hint=dialect)
+    parsed, glyph_text = _parse_reading_glyphs(text, dialect)
+    if glyph_text is not None:
+        issues.append(_glyph_issue(glyph_text, parsed.dialect))
     if not parsed.ok:
         message = _farthest(parsed.errors)
         if _MIXING_MARKER in message.lower():
@@ -332,7 +394,9 @@ def repair_formula(text: str, *, dialect: Optional[str] = None,
         renames = tuple((name, mapping.for_predicate(name)) for name in candidates)
 
         retried = _apply_renames(text, renames)
-        parsed = parse_any(retried, hint=dialect)
+        parsed, glyph_text = _parse_reading_glyphs(retried, dialect)
+        if glyph_text is not None:
+            issues.append(_glyph_issue(glyph_text, parsed.dialect))
         if not parsed.ok:
             names = sorted(name for name, _legal in renames)
             return _failed(

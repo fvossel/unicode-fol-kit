@@ -22,9 +22,11 @@ Test groups:
   .is_valid_arith``/``is_satisfiable_arith``, same sort) as the oracle, then
   run through Vampire/E via the new typed TFA export. A prover's "Theorem"
   must never be reported for a formula ``z3_arith`` refutes, and vice versa;
-  ``GaveUp``/``Timeout`` (and, for the one E-specific gap documented below,
-  an infra "Type error") stay UNKNOWN/inconclusive rather than asserted
+  ``GaveUp``/``Timeout`` stay UNKNOWN/inconclusive rather than asserted
   against — see ``_classify`` below, which encodes exactly that tolerance.
+  For E the battery has one more outcome: an entry with an arithmetic function
+  symbol or, under ``sort='real'``, a numeral is REFUSED by name before E runs
+  (see the environment note), and the test says which entries those are.
   Includes the flagship $int-vs-$real pin (batch note 3): ``∀x (x > 0 → x ≥
   1)`` is valid over $int, invalid over $real.
 
@@ -35,19 +37,20 @@ short test timeout to positively confirm a genuinely INVALID one (proving
 CounterSatisfiable over an infinite domain is not what saturation-based
 search is built for) — this is why the invalid-side assertions below accept
 UNKNOWN/timeout rather than requiring a decisive CounterSatisfiable, exactly
-per the "GaveUp/Timeout stays UNKNOWN" rule. Separately, this E 3.5.1 build
-has a genuine, reproducible bug unrelated to this exporter: ANY use of the
-``$sum``/``$difference``/... built-ins (even fully ground, e.g. ``3 + 4 =
-7``) makes E's own type-checker report ``terms ...: $i and ...: $int should
-have the same sort`` and abort before reaching an SZS status — confirmed
-by hand-inspecting E's stdout for several cases, all showing the identical
-(mis-)inference regardless of quantifiers/Skolemization. This is an E-side
-type-inference defect in this specific build (this module's own type
-declarations are correct TFA — E parses and *type-checks against* them
-correctly enough to raise a coherent typed error), not a defect in the
-exported problem; ``_classify`` treats E's "infra" verdict the same way it
-treats GaveUp/Timeout, and one decisive (non-arithmetic-heavy) proof is
-still asserted to confirm the route's wiring end-to-end.
+per the "GaveUp/Timeout stays UNKNOWN" rule. E 3.5.1 does not do TFA arithmetic
+at all (measured): ANY use of the ``$sum``/``$difference``/... built-ins (even
+fully ground, e.g. ``3 + 4 = 7``) makes E's own type-checker report ``terms
+...: $i and ...: $int should have the same sort`` and abort before reaching an
+SZS status, because it types them as functions into the individuals; it reads
+a ``$real`` literal only approximately (``0.1 = 0.1000001`` is a theorem for
+it); and it reads ``$less`` and the other comparisons as predicates that it
+never evaluates, so it answers ``GaveUp`` for whatever needs their meaning.
+The writer's type declarations are correct TFA (Vampire proves the same
+texts), so the E route refuses by name what E cannot read or reads wrongly (an
+arithmetic function symbol, a numeral under ``sort='real'``) and asks E the rest,
+where ``_classify`` accepts GaveUp/Timeout as an honest "don't know". One
+decisive proof that needs no arithmetic is still asserted to confirm the route's
+wiring end-to-end.
 """
 
 import shutil
@@ -234,35 +237,58 @@ def test_refuses_predicate_name_folding_collision():
             [Atom("Foo", [Constant("a")])], Not(Atom("foo", [Constant("a")])))
 
 
-def test_refuses_predicate_vs_function_cross_namespace_collision():
-    """Adversarial-review regression: 'Price' (a predicate) and 'price' (a
-    function) both fold to the TFF identifier 'price'. Unlike untyped fof --
-    where syntactic position alone disambiguates a predicate from a
-    function/constant, which is exactly why the reused
-    atp._tptp_problem._check_no_symbol_collisions is correct to guard the
-    two as SEPARATE namespaces there -- TFF has ONE flat symbol table:
-    emitting both 'tff(func_decl_1, type, price: $real > $real ).' and
+def test_predicate_vs_function_cross_namespace_collision_is_renamed_and_recorded():
+    """'Price' (a predicate) and 'price' (a function) both fold to the TFF
+    identifier 'price'. TFF has ONE flat symbol table: emitting both
+    'tff(func_decl_1, type, price: $real > $real ).' and
     'tff(pred_decl_2, type, price: $real > $o ).' is two conflicting type
     declarations for one identifier, which real Vampire/E builds reject
     outright ('Non-boolean term price(X0) of sort $real is used in a
     formula context') before reaching any SZS status -- confirmed live
-    against WSL Vampire 5.0.1 and WSL E 3.5.1 during triage. This must be
-    refused loudly at export time on both entry points instead."""
+    against WSL Vampire 5.0.1 and WSL E 3.5.1 during triage. This used to be
+    REFUSED at export time; the writers now rename the TERM side (the function
+    or constant, never the predicate) to '<name>_term' and record it in the
+    returned TptpNameMap, exactly as the fof and TF0 writers do.
+
+    Hand-derived: predicate Price -> 'price'; function price -> 'price'; the
+    function is the term side, so it becomes 'price_term'. Functions are
+    declared before predicates; the goal is the lone formula."""
     formula = FOL.parse("∀x (Price(x) → price(x) = 1)")
-    with pytest.raises(NotImplementedError, match="Price.*price|price.*Price"):
-        generate_tff_arith_problem([], formula, sort="real")
-    with pytest.raises(NotImplementedError, match="Price.*price|price.*Price"):
-        formula_to_tff_arith(formula, sort="real")
+    text, name_map = generate_tff_arith_problem([], formula, sort="real")
+    assert text == (
+        "tff(func_decl_1, type, price_term: $real > $real ).\n"
+        "tff(pred_decl_2, type, price: $real > $o ).\n"
+        "tff(goal, conjecture, (![X: $real]: (price(X) => (price_term(X) = 1.0))) ).\n")
+    assert name_map.term == {"price": "price_term"}
+    assert name_map.predicate == {"Price": "Price"}
+    assert formula_to_tff_arith(formula, sort="real") == (
+        "(![X: $real]: (price(X) => (price_term(X) = 1.0)))")
 
 
-def test_refuses_predicate_vs_constant_cross_namespace_collision():
-    """Same cross-namespace clash as the Price/price test above, but against
-    a 0-ary Constant rather than a Function -- exercises the const_names
-    branch of _check_no_predicate_function_collision separately from the
-    func_names branch."""
+def test_predicate_vs_constant_cross_namespace_collision_is_renamed_and_recorded():
+    """Same clash as the Price/price test above, but against a 0-ary Constant
+    rather than a Function. Hand-derived: constants are declared in the sorted
+    order of their (sanitised) names, 'c1' < 'price_term', then predicates
+    'price', 'q'."""
+    node = And(Atom("Price", [Constant("c1")]), Atom("Q", [Constant("price")]))
+    text, name_map = generate_tff_arith_problem([], node)
+    assert text == (
+        "tff(const_decl_1, type, c1: $real ).\n"
+        "tff(const_decl_2, type, price_term: $real ).\n"
+        "tff(pred_decl_3, type, price: $real > $o ).\n"
+        "tff(pred_decl_4, type, q: $real > $o ).\n"
+        "tff(goal, conjecture, (price(c1) & q(price_term)) ).\n")
+    assert name_map.term == {"c1": "c1", "price": "price_term"}
+
+
+def test_the_flat_table_backstop_still_refuses_a_clash_the_rename_did_not_see():
+    """_check_no_predicate_function_collision is now a BACKSTOP behind
+    _separate_term_names; calling _analyze directly on an unseparated pair
+    (what the entry points can no longer produce) must still refuse by name."""
+    from unicode_fol_kit.atp._tff_problem import _analyze
     node = And(Atom("Price", [Constant("c1")]), Atom("Q", [Constant("price")]))
     with pytest.raises(NotImplementedError, match="Price.*price|price.*Price"):
-        generate_tff_arith_problem([], node)
+        _analyze([node])
 
 
 # =============================================================================
@@ -303,10 +329,10 @@ def test_eprover_generate_input_sort_route():
 
 
 def test_check_entailment_vampire_detailed_sort_route_reverse_maps_output(monkeypatch):
-    """UNLIKE the many-sorted tff route (whose name_map is unconditionally
-    None -- see test_tptp_tff.py's identical-shaped 'not reverse mapped'
-    test), the sort= route's name_map is a genuine TptpNameMap, so a
-    non-ASCII constant DOES come back reverse-mapped in output_excerpt."""
+    """The sort= route's name_map is a genuine TptpNameMap, so a non-ASCII
+    constant comes back reverse-mapped in output_excerpt -- as it does on the
+    many-sorted tff route (see test_tptp_tff.py's 'is reverse mapped' test),
+    which keeps its name map as well since 0.30.0."""
     def fake_spawn(input_str, vampire_path, timeout=30, use_wsl=False, extra_args=()):
         assert "tff(" in input_str
         assert "theta" in input_str    # the writer already sanitised θ -> theta
@@ -326,16 +352,18 @@ def test_check_entailment_vampire_detailed_sort_route_reverse_maps_output(monkey
 
 
 def test_check_entailment_eprover_detailed_sort_route_reverse_maps_output(monkeypatch):
+    # sort='int': E reads an integer literal exactly, but a numeral under sort='real' is refused
+    # (E reads a $real literal approximately), so the numeral 0 is an integer here.
     def fake_run(problem, command, args, use_wsl, timeout_s):
         assert "tff(" in problem
         assert "theta" in problem
-        return ("tff(f1,axiom,(theta > 0.0)).\n"
+        return ("tff(f1,axiom,($greater(theta,0))).\n"
                 "# SZS status Theorem for problem\n"), False
 
     monkeypatch.setattr(_eb, "_run_tptp_prover", fake_run)
     conclusion = Atom(">", [Constant("θ"), Number(0)])
     result = check_entailment_eprover_detailed(
-        [], conclusion, command="unused", sort="real")
+        [], conclusion, command="unused", sort="int")
     assert result["status"] == "proved"
     assert "theta" not in result["raw"]
     assert "θ" in result["raw"]
@@ -363,8 +391,9 @@ def test_tptp_szs_backend_decide_reads_sort_option(monkeypatch):
     monkeypatch.setattr(_eb, "_binary_version", lambda *a, **k: None)
 
     backend = EProverBackend()
-    verdict = backend.decide(FOL.parse("x > 0"), timeout=1000, sort="real")
-    assert captured["sort"] == "real"
+    # sort='int': a numeral under sort='real' is refused for E (see the module docstring).
+    verdict = backend.decide(FOL.parse("x > 0"), timeout=1000, sort="int")
+    assert captured["sort"] == "int"
     assert verdict.status == "proved"
 
 
@@ -397,9 +426,7 @@ def _classify(status: str, expected_valid: bool, label: str) -> None:
     1): 'Theorem' is never reported for a z3_arith-invalid formula, and
     'CounterSatisfiable'/refuted is never reported for a z3_arith-valid one.
     Anything else (unknown/timeout/error/GaveUp) is an honest "don't know"
-    and asserts nothing -- see module docstring for why E's "error" is
-    folded in here too (a documented, reproducible E-build type-inference
-    bug on this exporter's own ``$sum``/... built-ins, not a defect here).
+    and asserts nothing.
     """
     if status == "proved":
         assert expected_valid, f"{label}: prover said Theorem but z3_arith says invalid"
@@ -440,6 +467,18 @@ _BATTERY = [
     # A false identity.
     ("∀x (x + 1 = x)", "real", False, "x+1=x is never true", False),
 ]
+
+
+#: The battery entries E is asked, worked out by hand. Every other entry has an arithmetic function
+#: symbol (``+ - * /``: E 3.5.1 stops with a type error on one) or, under ``sort='real'``, a numeral
+#: (E reads a ``$real`` literal approximately), and is refused by name. Transitivity of ``<`` has
+#: neither; ``x > 0 → x ≥ 1`` has the integer literals 0 and 1, which E reads exactly under
+#: ``sort='int'``.
+_E_IS_ASKED = {"transitivity of <", "int has no gap between 0 and 1"}
+
+
+def _e_refuses(label: str) -> bool:
+    return label not in _E_IS_ASKED
 
 
 @pytest.mark.skipif(not _HAVE_VAMPIRE, reason="no Vampire binary reachable (native or WSL)")
@@ -500,13 +539,39 @@ class TestEProverLiveDifferential:
 
     @pytest.mark.parametrize("text, sort, expected, label, fast", _BATTERY)
     def test_battery_never_disagrees_with_z3_arith(self, text, sort, expected, label, fast):
-        """Weaker than the Vampire battery test: E's arithmetic decision
-        procedures do not reliably activate in this environment (see module
-        docstring), so GaveUp/error is common and tolerated -- but E must
-        NEVER positively contradict the z3_arith oracle."""
+        """Weaker than the Vampire battery test: E does no arithmetic (see module
+        docstring), so GaveUp is common and tolerated -- but E must NEVER
+        positively contradict the z3_arith oracle. An entry E cannot read is refused
+        by name instead (see ``_e_refuses``)."""
         f = FOL.parse(text)
+        if _e_refuses(label):
+            with pytest.raises(NotImplementedError, match="eprover"):
+                check_entailment_eprover_detailed([], f, sort=sort, timeout=8)
+            return
         result = check_entailment_eprover_detailed([], f, sort=sort, timeout=8)
         _classify(result["status"], expected, f"eprover: {label}")
+
+    @pytest.mark.parametrize("text, sort, operator", [
+        ("∀x (x * 2 = x + x)", "int", "'*'"),
+        ("∀x ∃y (y = x + 1)", "real", "'+'"),
+        ("∀x (x + 1 = x)", "real", "'+'"),
+    ])
+    def test_an_arithmetic_function_is_refused_by_name_and_is_unknown_unsupported(
+            self, text, sort, operator):
+        """E 3.5.1 stops with a type error on every ``$sum``/``$product`` (measured), so the
+        route says what it cannot read: ``unknown`` / ``unsupported`` naming the operator,
+        not an infrastructure failure."""
+        verdict = EProverBackend().decide(FOL.parse(text), timeout=8000, sort=sort)
+        assert (verdict.status, verdict.reason) == ("unknown", "unsupported"), verdict
+        assert operator in verdict.detail and "E 3.5.1" in verdict.detail
+
+    def test_a_real_numeral_is_refused_because_e_reads_a_real_literal_approximately(self):
+        """Hand-derived: ``0.1`` and ``0.1000001`` are two different reals, and ``0.1 = 0.1000001``
+        is not valid; E 3.5.1 proves it (measured), so the route must not hand it over."""
+        goal = Atom("=", [Number(0.1), Number(0.1000001)])
+        verdict = EProverBackend().decide(goal, timeout=8000, sort="real")
+        assert (verdict.status, verdict.reason) == ("unknown", "unsupported"), verdict
+        assert "0.1" in verdict.detail and "sort='real'" in verdict.detail
 
     def test_backend_registry_decide_with_sort_live(self):
         backend = EProverBackend()

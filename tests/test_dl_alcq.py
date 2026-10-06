@@ -33,20 +33,44 @@ item (pure-ALC/ALCH+S inputs never mention AtLeast/AtMost, so every new tableau
 rule here is a no-op for them — see the regression note in the module docstring).
 """
 
+import functools
 import random
 import time
 
 import pytest
 
 import unicode_fol_kit.dl as dl
+from unicode_fol_kit import api
 from unicode_fol_kit.dl.parser import parse_concept, ConceptSyntaxError
 from unicode_fol_kit.dl.owl_manchester import parse_manchester, to_manchester, ManchesterSyntaxError
-from unicode_fol_kit.dl.translate import concept_to_fol, abox_to_fol, rbox_to_fol
-from unicode_fol_kit.fol.nodes import Quantifier, Variable, Constant, Count, Number, Atom, And as FAnd
+from unicode_fol_kit.dl.translate import (
+    concept_to_fol, abox_to_fol, subsumption_to_fol, kb_to_fol,
+)
+from unicode_fol_kit.fol.nodes import (
+    Quantifier, Variable, Constant, Count, Number, Atom, And as FAnd, Not as FNot,
+)
 from unicode_fol_kit.atp.z3_models import is_satisfiable
 
 A, B, C, D = dl.Atomic("A"), dl.Atomic("B"), dl.Atomic("C"), dl.Atomic("D")
 r, s = "r", "s"
+
+# Z3-backed calls take their timeout in MILLISECONDS. 30 s is the budget most of
+# the other dl and owl test files give a Z3 call (the rest use 20 s or 60 s), and it
+# is never shrunk to make a test fast: ``is_satisfiable`` turns a Z3 "unknown" into
+# False, so a budget a loaded machine can exceed makes a differential here report a
+# disagreement with the tableau that is only a timeout.
+TIMEOUT_MS = 30000
+
+# The three differential batteries below also guard the TABLEAU against a
+# catastrophic slowdown (the merge-pair search degenerating to something
+# exponential, say), and only the tableau: the seconds counted against this
+# ceiling are the ones spent inside the in-house calls. A Z3 call that uses its
+# whole TIMEOUT_MS budget would otherwise trip it, and report "too slow" for a
+# solver timeout that has nothing to do with the tableau (and that
+# ``is_satisfiable`` turns into False, which the assertion on the verdicts names
+# on its own). Measured: each battery takes 0.01 to 0.02 s in the tableau, so the
+# ceiling is a margin of three orders of magnitude, not a benchmark.
+TABLEAU_BATTERY_CEILING_S = 10.0
 
 
 # --------------------------------------------------------------------------- #
@@ -203,7 +227,9 @@ def test_manchester_malformed_number_restrictions_are_rejected():
 
 
 @pytest.mark.parametrize("text, needle", [
-    ("r value a", "value"),
+    # `r value a` is READ since 0.30.0 (dl.HasValue) -- see
+    # tests/test_dl_has_value.py. `r some {a}`, its sibling, is still refused
+    # by the `{a, b}` row below.
     ("r Self", "Self"),
     ("inverse r some A", "inverse"),
     ("{a, b}", "nominal"),
@@ -216,12 +242,46 @@ def test_manchester_still_rejects_other_out_of_fragment_constructs(text, needle)
     assert needle in str(exc.value)
 
 
-@pytest.mark.parametrize("characteristic", ["Functional", "InverseFunctional", "Symmetric"])
-def test_manchester_role_characteristics_still_rejected_by_name(characteristic):
-    # Unaffected by C39: these need inverse roles (or are a role-level, not
-    # concept-level, notion) -- still refused, still naming the construct.
-    with pytest.raises(dl.ManchesterSyntaxError, match=characteristic):
-        dl.parse_manchester_role_axiom(f"r Characteristics: {characteristic}")
+@pytest.mark.parametrize("characteristic, tag", [
+    ("Functional", "functional"),
+    ("InverseFunctional", "inversefunctional"),
+    ("Symmetric", "symmetric"),
+])
+def test_manchester_role_characteristics_are_read_and_the_refusal_moved(characteristic,
+                                                                        tag):
+    # These were refused BY THE PARSER until the role box landed. They are now
+    # READ -- a parser never refuses an axiom KIND, because a TBox is what a
+    # parser fills from a file -- and the refusal, where there still is one,
+    # moved to QUERY time where a verdict is actually at stake. Functional IS
+    # decided (it is the GCI ⊤ ⊑ ≤1 r.⊤, so the ALCQ machinery of this very
+    # file covers it); Symmetric and InverseFunctional need inverse roles and
+    # are refused by name from concept_satisfiable/abox_consistent.
+    assert dl.parse_manchester_role_axiom(
+        f"r Characteristics: {characteristic}") == (tag, "r")
+    builder = {"functional": "add_functional_role",
+               "inversefunctional": "add_inverse_functional_role",
+               "symmetric": "add_symmetric_role"}[tag]
+    t = getattr(dl.TBox(), builder)("r")
+    if tag == "functional":
+        assert dl.concept_satisfiable(dl.Atomic("A"), t) is True
+    else:
+        with pytest.raises(dl.UnsupportedAxiomError, match=characteristic):
+            dl.concept_satisfiable(dl.Atomic("A"), t)
+
+
+def test_a_functional_role_is_decided_by_this_files_own_machinery():
+    # The claim above, made concrete: Func(r) internalises ⊤ ⊑ ≤1 r.⊤, and the
+    # ≤-rule + choose-rule this file tests are what then merge the two
+    # successors. No new tableau rule was added for it.
+    A, B = dl.Atomic("A"), dl.Atomic("B")
+    t = dl.TBox().add_functional_role("r")
+    sub = dl.And(dl.Exists("r", A), dl.Exists("r", B))
+    sup = dl.Exists("r", dl.And(A, B))
+    assert dl.subsumes(sub, sup, t) is True
+    # identical to writing the GCI out by hand, which is the point
+    by_hand = dl.TBox().add(dl.Top(), dl.AtMost(1, "r", dl.Top()))
+    assert dl.subsumes(sub, sup, by_hand) is True
+    assert dl.subsumes(sub, sup, dl.TBox()) is False
 
 
 # --------------------------------------------------------------------------- #
@@ -487,14 +547,14 @@ def test_assert_distinct_is_chainable_and_recorded():
 
 def test_concept_to_fol_atleast_hand_checked():
     got = concept_to_fol(dl.AtLeast(2, r, A), "x")
-    x, w = Variable("x"), Variable("x_1")
+    x, w = Variable("x"), Variable("x0")
     expected = Count("ge", Number(2), w, FAnd(Atom(r, (x, w)), Atom("A", (w,))))
     assert got == expected
 
 
 def test_concept_to_fol_atmost_hand_checked():
     got = concept_to_fol(dl.AtMost(1, r, dl.Top()), "x")
-    x, w = Variable("x"), Variable("x_1")
+    x, w = Variable("x"), Variable("x0")
     expected = Count("le", Number(1), w, FAnd(Atom(r, (x, w)), Atom("=", (w, w))))
     assert got == expected
 
@@ -507,13 +567,65 @@ def test_abox_to_fol_renders_distinct_assertions_as_disequality():
     assert got == expected
 
 
+def test_an_individual_asserted_distinct_from_itself_is_inconsistent():
+    """``a ≠ a`` has no model, and both routes have to say so.
+
+    Hand-derived: a model of this ABox would need an interpretation under which
+    the one element denoted by ``a`` is not the element denoted by ``a``. There is
+    none, for the same reason ``¬(a = a)`` is unsatisfiable in FOL, and
+    ``DifferentIndividuals(a a)`` is inconsistent in OWL for exactly this reason.
+
+    Until 0.30.0 ``_Branch.mark_distinct`` dropped the pair when both names were
+    the same node (nothing to add to a set of UNORDERED pairs), so the tableau
+    reported the ABox consistent while ``abox_to_fol`` rendered ``a ≠ a``, which
+    ``api.prove`` refutes — the two routes answered differently about the same
+    knowledge base.
+    """
+    ab = dl.ABox().assert_distinct("a", "a")
+    assert dl.abox_consistent(ab) is False
+    # the FOL cross-check, independently: proving the negation means inconsistent
+    assert api.prove(FNot(abox_to_fol(ab))).status == "proved"
+    # and it survives being buried under other assertions
+    buried = (dl.ABox().assert_concept("b", dl.Atomic("A"))
+              .assert_role("b", "c", r)
+              .assert_distinct("a", "a"))
+    assert dl.abox_consistent(buried) is False
+
+
+def test_distinctness_between_two_individuals_is_still_consistent():
+    """The control: the clash is about ONE individual, not about distinctness.
+
+    Without a unique name assumption ``a`` and ``b`` may denote the same element,
+    and asserting that they do not is satisfiable in any domain with two elements.
+    """
+    ab = dl.ABox().assert_distinct("a", "b")
+    assert dl.abox_consistent(ab) is True
+    assert api.prove(FNot(abox_to_fol(ab))).status != "proved"
+
+
+def test_the_number_restriction_rule_still_reads_the_distinctness_it_needs():
+    """The second control: the ≥/≤-rules are what distinctness exists for here.
+
+    Hand-derived with ``A ⊑ ≤1 r.⊤`` and an ``A``-individual ``x`` with two named
+    ``r``-successors: consistent while the successors may be merged, inconsistent
+    once they are asserted distinct — two distinct successors of an individual
+    that may have at most one. A self-distinctness clash that fired too eagerly
+    (on any pair, say) would make the first of these inconsistent too.
+    """
+    tbox = dl.TBox().add(dl.Atomic("A"), dl.AtMost(1, r, dl.Top()))
+    mergeable = (dl.ABox().assert_concept("x", dl.Atomic("A"))
+                 .assert_role("x", "a", r).assert_role("x", "b", r))
+    assert dl.abox_consistent(mergeable, tbox) is True
+    assert dl.abox_consistent(mergeable.assert_distinct("a", "b"), tbox) is False
+
+
 # --------------------------------------------------------------------------- #
 # Differential vs Z3 (test_oracle item 2): hand-picked cases.
 # --------------------------------------------------------------------------- #
 
 def _z3_concept_sat(concept, var="x") -> bool:
     formula = Quantifier("∃", Variable(var), concept_to_fol(concept, var))
-    return is_satisfiable(formula, timeout=5000)
+    return is_satisfiable(formula, timeout=TIMEOUT_MS)
 
 
 @pytest.mark.parametrize("concept", [
@@ -565,22 +677,19 @@ def test_differential_vs_z3_randomized_concepts():
     # (see the item's "report the performance" instruction).
     rng = random.Random(20260916)
     checked = 0
-    start = time.perf_counter()
+    tableau_seconds = 0.0
     for _ in range(150):
         concept = _rand_concept(3, rng)
+        start = time.perf_counter()
         tableau_result = dl.concept_satisfiable(concept)
+        tableau_seconds += time.perf_counter() - start
         z3_result = _z3_concept_sat(concept)
         assert tableau_result == z3_result, (
             f"disagreement: concept={concept.to_unicode()} "
             f"tableau={tableau_result} z3={z3_result}")
         checked += 1
-    elapsed = time.perf_counter() - start
     assert checked == 150
-    # Loose ceiling: catches a catastrophic performance regression (e.g. the
-    # merge-pair search degenerating to something exponential) without being
-    # flaky on ordinary hardware variance -- see the module docstring's
-    # performance note for the measured baseline (well under a second).
-    assert elapsed < 30.0
+    assert tableau_seconds < TABLEAU_BATTERY_CEILING_S
 
 
 def _rand_abox(rng, individuals=("a", "b", "c")):
@@ -600,7 +709,7 @@ def _rand_abox(rng, individuals=("a", "b", "c")):
 
 
 def _z3_abox_sat(abox: dl.ABox) -> bool:
-    return is_satisfiable(abox_to_fol(abox), timeout=5000)
+    return is_satisfiable(abox_to_fol(abox), timeout=TIMEOUT_MS)
 
 
 def test_differential_vs_z3_randomized_aboxes():
@@ -611,18 +720,19 @@ def test_differential_vs_z3_randomized_aboxes():
     # freshly generated, hence already pairwise-distinct-or-not by construction).
     rng = random.Random(424242)
     checked = 0
-    start = time.perf_counter()
+    tableau_seconds = 0.0
     for _ in range(100):
         abox = _rand_abox(rng)
+        start = time.perf_counter()
         tableau_result = dl.abox_consistent(abox)
+        tableau_seconds += time.perf_counter() - start
         z3_result = _z3_abox_sat(abox)
         assert tableau_result == z3_result, (
             f"disagreement: concepts={abox.concept_assertions} roles={abox.role_assertions} "
             f"distinct={abox.distinct_assertions} tableau={tableau_result} z3={z3_result}")
         checked += 1
-    elapsed = time.perf_counter() - start
     assert checked == 100
-    assert elapsed < 30.0
+    assert tableau_seconds < TABLEAU_BATTERY_CEILING_S
 
 
 # --------------------------------------------------------------------------- #
@@ -684,28 +794,181 @@ def _rand_rbox_abox(rng, individuals=("a", "b", "c")):
 
 
 def _z3_abox_sat_with_rbox(abox: dl.ABox, tbox: dl.TBox) -> bool:
-    return is_satisfiable(FAnd(abox_to_fol(abox), rbox_to_fol(tbox)), timeout=5000)
+    # The knowledge base and the role box travel as kb_to_fol's formula + side axioms;
+    # satisfiability of the knowledge base is satisfiability of their conjunction.
+    kb = kb_to_fol(tbox, abox)
+    return is_satisfiable(functools.reduce(FAnd, [kb.formula, *kb.axioms]), timeout=TIMEOUT_MS)
 
 
 def test_differential_vs_z3_randomized_aboxes_with_role_hierarchy():
     # 100 random ABoxes, each under a TBox declaring TWO sub-roles of r, decided
     # independently by the tableau (dl.abox_consistent(abox, tbox)) and by Z3
-    # through the RBox-aware FOL translation (abox_to_fol ∧ rbox_to_fol). This
+    # through the RBox-aware FOL translation (kb_to_fol: ABox formula ∧ role-box axioms). This
     # is the battery that would have caught the review's blocker before it
     # shipped: with two sub-roles both entailing the number-restricted role r,
     # a shared destination individual is reached by two DIFFERENT edges often
     # enough to exercise _role_neighbours' dedup on nearly every run.
     rng = random.Random(90210)
     checked = 0
-    start = time.perf_counter()
+    tableau_seconds = 0.0
     for _ in range(100):
         abox, tbox = _rand_rbox_abox(rng)
+        start = time.perf_counter()
         tableau_result = dl.abox_consistent(abox, tbox)
+        tableau_seconds += time.perf_counter() - start
         z3_result = _z3_abox_sat_with_rbox(abox, tbox)
         assert tableau_result == z3_result, (
             f"disagreement: concepts={abox.concept_assertions} roles={abox.role_assertions} "
             f"distinct={abox.distinct_assertions} tableau={tableau_result} z3={z3_result}")
         checked += 1
-    elapsed = time.perf_counter() - start
     assert checked == 100
-    assert elapsed < 30.0
+    assert tableau_seconds < TABLEAU_BATTERY_CEILING_S
+
+
+def test_the_battery_ceiling_counts_tableau_seconds_and_not_solver_seconds(monkeypatch):
+    # A Z3 call that is slow (it may use all of TIMEOUT_MS) must not make a
+    # tableau battery fail with "too slow". Here the solver side is replaced by a
+    # stand-in that answers correctly after 20 ms, so each battery spends
+    # 150 x 20 ms = 3 s waiting for it, and the ceiling is lowered to 1 s: a ceiling
+    # that counted the whole battery would fail, one that counts the tableau
+    # calls (about 10 ms for the whole battery) does not.
+    def slow_solver(concept, var="x"):
+        time.sleep(0.02)
+        return dl.concept_satisfiable(concept)
+
+    monkeypatch.setitem(globals(), "_z3_concept_sat", slow_solver)
+    monkeypatch.setitem(globals(), "TABLEAU_BATTERY_CEILING_S", 1.0)
+    start = time.perf_counter()
+    test_differential_vs_z3_randomized_concepts()
+    assert time.perf_counter() - start > 1.0       # the battery really was slow: 150 x 20 ms
+
+
+# --------------------------------------------------------------------------- #
+# Differential vs api.prove over the kb_to_fol bundle: ALCHQ knowledge bases —
+# GCIs with number restrictions on a SIMPLE role, plus a role box (hierarchy +
+# a transitive role) — the one place where Count nodes and the role-box side
+# axioms meet in the same premise list. The tableau (dl.subsumes /
+# dl.abox_consistent) and the FOL route must agree on every case.
+# --------------------------------------------------------------------------- #
+
+_QKB_ROLES = ["r1", "r2", "q"]       # q carries the number restrictions: never transitive,
+                                     # and never has a transitive sub-role (so it is simple)
+
+
+def _rand_qkb_concept(depth, rng):
+    if depth <= 0 or rng.random() < 0.3:
+        return rng.choice(_ATOMS)
+    k = rng.random()
+    if k < 0.12:
+        return dl.Not(_rand_qkb_concept(depth - 1, rng))
+    if k < 0.28:
+        return dl.And(_rand_qkb_concept(depth - 1, rng), _rand_qkb_concept(depth - 1, rng))
+    if k < 0.42:
+        return dl.Or(_rand_qkb_concept(depth - 1, rng), _rand_qkb_concept(depth - 1, rng))
+    if k < 0.60:
+        return dl.Exists(rng.choice(_QKB_ROLES), _rand_qkb_concept(depth - 1, rng))
+    if k < 0.72:
+        return dl.ForAll(rng.choice(_QKB_ROLES), _rand_qkb_concept(depth - 1, rng))
+    if k < 0.86:
+        return dl.AtLeast(rng.randint(1, 2), "q", _rand_qkb_concept(depth - 1, rng))
+    return dl.AtMost(rng.randint(0, 2), "q", _rand_qkb_concept(depth - 1, rng))
+
+
+def _rand_qkb_tbox(rng):
+    """Always has a role box: some of r1 ⊑ r2, q ⊑ r2, Trans(r2) (at least one), plus 0..2 GCIs."""
+    t = dl.TBox()
+    axioms = rng.sample(["r1<r2", "q<r2", "trans r2"], rng.randint(1, 3))
+    if "r1<r2" in axioms:
+        t.add_role_inclusion("r1", "r2")
+    if "q<r2" in axioms:
+        t.add_role_inclusion("q", "r2")
+    if "trans r2" in axioms:
+        t.add_transitive_role("r2")
+    for _ in range(rng.randint(0, 2)):
+        t.add(_rand_qkb_concept(1, rng), _rand_qkb_concept(1, rng))
+    return t
+
+
+# ``api.prove`` asks its backends in order and gives each the whole limit, so the limit is what
+# a problem costs on which the first backend finds nothing. One of the hundred knowledge bases
+# below is such a problem: its consistency question is
+#     ¬(∀x (A(x) → ∃≥2 y (q(x, y) ∧ A(y))) ∧ A(b) ∧ q(a, b)),
+# refuted by a model of two elements that the model finder returns in a tenth of a second,
+# while Z3 instantiates the counting axiom without end. Unlike ``is_satisfiable`` above,
+# ``api.prove`` keeps "no answer" apart from both verdicts (it is counted as undecided, never
+# as a disagreement), so this limit may be short. Measured: every other call of the battery
+# is answered by Z3 in under a second.
+QKB_TIMEOUT_MS = 5000
+
+
+def _qkb_status(goal, premises) -> str:
+    return api.prove(goal, list(premises), backends=["z3", "modelfinder"],
+                     timeout=QKB_TIMEOUT_MS).status
+
+
+def run_qkb_differential(seed: int, n: int) -> dict:
+    """``n`` random ALCHQ knowledge bases, each asked a subsumption question and a
+    consistency question; tableau against ``api.prove`` over :func:`kb_to_fol`."""
+    rng = random.Random(seed)
+    stats = {"seed": seed, "kbs": n, "agree": 0, "disagree": 0, "undecided": 0,
+             "subsumed": 0, "not_subsumed": 0, "inconsistent": 0, "consistent": 0,
+             "with_number_restriction": 0}
+    for _ in range(n):
+        t = _rand_qkb_tbox(rng)
+        sub, sup = _rand_qkb_concept(2, rng), _rand_qkb_concept(2, rng)
+        ab = dl.ABox()
+        for ind in ("a", "b"):
+            if rng.random() < 0.8:
+                ab.assert_concept(ind, _rand_qkb_concept(2, rng))
+        if rng.random() < 0.6:
+            ab.assert_role("a", "b", rng.choice(_QKB_ROLES))
+        if rng.random() < 0.3:
+            ab.assert_distinct("a", "b")
+        shape = rng.random()
+        if shape < 0.15:           # a counting clash: at least 2 q-successors in A, at most 1 in all
+            ab.assert_concept("a", dl.And(dl.AtLeast(2, "q", A), dl.AtMost(1, "q", dl.Top())))
+        elif shape < 0.30:         # a clash that exists only if the role box relates r1 to r2
+            ab.assert_concept("a", dl.And(dl.Exists("r1", A), dl.ForAll("r2", dl.Not(A))))
+        elif shape < 0.40:         # a counting clash only via q ⊑ r2: at most 0 r2-successors, yet a q-edge
+            ab.assert_concept("a", dl.ForAll("r2", dl.Bottom()))
+            ab.assert_role("a", "b", "q")
+        kb = kb_to_fol(t, ab)
+        if any(isinstance(node, Count) for f in (*kb.premises, subsumption_to_fol(sub, sup))
+               for node in f.walk()):
+            stats["with_number_restriction"] += 1
+
+        holds = dl.subsumes(sub, sup, t)
+        stats["subsumed" if holds else "not_subsumed"] += 1
+        status = _qkb_status(subsumption_to_fol(sub, sup), kb.tbox_premises)
+        verdict = {"proved": holds, "refuted": not holds}.get(status)
+        outcome = "undecided" if verdict is None else ("agree" if verdict else "disagree")
+        stats[outcome] += 1
+        if outcome == "disagree":
+            stats.setdefault("failures", []).append(
+                f"subsumption {sub.to_unicode()} ⊑ {sup.to_unicode()}: tableau={holds} fol={status} "
+                f"incl={t.role_inclusions} trans={sorted(t.transitive_roles)} "
+                f"gcis={[(x.to_unicode(), y.to_unicode()) for x, y in t.inclusions]}")
+
+        consistent = dl.abox_consistent(ab, t)
+        stats["consistent" if consistent else "inconsistent"] += 1
+        status = _qkb_status(FNot(kb.formula), kb.axioms)
+        verdict = {"proved": not consistent, "refuted": consistent}.get(status)
+        outcome = "undecided" if verdict is None else ("agree" if verdict else "disagree")
+        stats[outcome] += 1
+        if outcome == "disagree":
+            stats.setdefault("failures", []).append(
+                f"consistency: tableau={consistent} fol={status} abox={ab} "
+                f"incl={t.role_inclusions} trans={sorted(t.transitive_roles)} "
+                f"gcis={[(x.to_unicode(), y.to_unicode()) for x, y in t.inclusions]}")
+    return stats
+
+
+def test_differential_kb_to_fol_alchq_knowledge_bases_vs_tableau():
+    stats = run_qkb_differential(seed=20261005, n=100)
+    assert not stats.get("failures"), stats
+    assert stats["disagree"] == 0
+    assert stats["agree"] >= 0.95 * (2 * stats["kbs"]), stats
+    # the battery reaches number restrictions (the Count image) and both verdicts of each question
+    assert stats["with_number_restriction"] >= 20, stats
+    assert min(stats["subsumed"], stats["not_subsumed"],
+               stats["inconsistent"], stats["consistent"]) >= 5, stats

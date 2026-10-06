@@ -129,7 +129,12 @@ plain :class:`~unicode_fol_kit.fol.nodes.Constant` (never
     parse_casl_spec(to_casl_spec(fs, conjectures=cjs)).conjectures == tuple(cjs)
 
 holds by structural equality (the kit's node dataclasses are frozen with
-value equality). ``tests/test_casl_import.py`` hand-verifies this over a
+value equality) when no bound variable of ``fs`` or ``cjs`` is spelled like a
+symbol of the spec (a constant, function, predicate or sort). Where one is,
+``to_casl_spec`` writes that binder under a fresh name (CASL has one name
+space for a variable and an operation, see ``casl_export``), and the formulas
+read back equal up to the names of those renamed binders.
+``tests/test_casl_import.py`` hand-verifies the contract over a
 representative formula set covering both quantifier kinds, equality, every
 supported connective, function terms, 0-ary predicates/operations, and
 ``%implied``.
@@ -169,6 +174,13 @@ choice about ``_BUILTIN_PREDS``/``_BUILTIN_FUNCS``: importing a leading-
 underscore name across modules would make this parser depend on
 ``casl_export``'s internals staying stable, when the two lists just happen
 to need to agree by CONTENT, not by object identity.
+
+The two keywords ``true`` and ``false`` are not refused where a formula is expected:
+they are CASL's own atomic formulas and read as the truth constants, the nullary atoms
+``$true`` and ``$false`` (which :func:`~unicode_fol_kit.fol.casl_export.to_casl_spec`
+writes as ``true`` and ``false``, so a spec the exporter writes reads back). They
+declare no predicate, and as a NAME (a sort, a predicate, an operation or a variable
+called ``true``) they stay refused.
 """
 
 from collections import namedtuple
@@ -182,6 +194,7 @@ from .nodes import (
     Quantifier, SortedQuantifier,
 )
 from .signature import Signature, PredicateDecl, FunctionDecl, ConstantDecl
+from ._truth_constants import is_truth_constant
 
 __all__ = ["parse_casl_spec", "CaslSpec", "CaslImportError"]
 
@@ -705,6 +718,13 @@ class _Parser:
         return self._parse_primary(env)
 
     def _parse_primary(self, env: frozenset) -> Node:
+        if self._at_ident("true", "false"):
+            # CASL's own atomic formulas: the truth constants.
+            word = self._advance().value
+            if self._at("LPAREN") or self._at("EQ"):
+                self._error(f"'{word}' is a CASL formula, not a predicate or a term: it "
+                            "takes no arguments and is no operand of '='")
+            return Atom("$true" if word == "true" else "$false", ())
         if self._at_ident("forall", "exists"):
             return self._parse_quantifier(env)
         if self._at("LPAREN"):
@@ -813,6 +833,8 @@ def _validate_usage(parser: "_Parser") -> None:
            for i, f in enumerate(parser.conjectures)])
     for label, formula in labeled:
         for node in formula.walk():
+            if is_truth_constant(node):
+                continue    # `true` / `false`: CASL's own formulas, declared by no one
             if isinstance(node, Atom) and node.predicate != "=":
                 decl = parser.predicates.get(node.predicate)
                 if decl is None:

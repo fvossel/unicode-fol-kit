@@ -66,11 +66,13 @@ def _build_maps() -> Tuple[Dict[str, str], Dict[str, str]]:
     importer (:func:`~unicode_fol_kit.fol.tptp_input.parse_tptp_formula`)
     capitalises a parsed predicate's first character on the way IN, and
     :data:`KIT_TO_CHEMLOG`/:func:`to_chemlog_names` invert exactly that on
-    the way back out. Two ChemLog names differing only in a case change
-    AFTER their first character (there happen to be none in the current
-    35-predicate vocabulary, but nothing stops a future addition from
+    the way back out. Two ChemLog names that differ only in the case of their
+    FIRST character (``atom`` and ``Atom`` both become ``Atom``; there is no such
+    pair among the 40 predicates of the current vocabulary, which has no
+    function or constant symbols, but nothing stops a future addition from
     introducing one) would collide under this fold and are refused here
-    rather than silently merged.
+    rather than silently merged. Names that differ in the case of a later
+    character stay two kit names (``isA`` and ``isa``).
 
     This check does NOT protect against a DIFFERENT, unrelated collision:
     a renderer that folds a kit-capitalised name back to TPTP text by

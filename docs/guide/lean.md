@@ -49,7 +49,11 @@ print(lean.to_lean_fol(syllogism))
 
 With `conjecture=False` the formula is emitted as `axiom goal : …` instead —
 no proof line at all, useful for asserting it as a hypothesis in a larger
-hand-written file.
+hand-written file. The formula must then have no free variable: an axiom cannot
+say what one stands for, so a free variable of an asserted formula is refused by
+name (`NotImplementedError`). State the parameter with a constant, or bind it
+with a quantifier. A theorem keeps the universal closure, which for one formula
+with no premise is the parameter reading itself.
 
 ## The one real semantic trap: non-empty domains
 
@@ -112,11 +116,25 @@ becomes a unary guard predicate over the single flat `Ind`, each sorted
 quantifier relativised — `∀x:S φ ↦ ∀x (S(x) → φ)`) and emits the result with
 `to_lean_fol` — **exactly** the reduction `hol.classical.to_isabelle_msfol` /
 `to_thf_msfol` already use, so this module adds no new semantics. `Ind` itself
-is guaranteed non-empty (above); an individual sort's guard predicate is
-**not** additionally forced non-empty — the same reading the two existing
-MSFOL exporters already have (sort non-emptiness is a caller concern,
-`fol.nonempty_sort_axioms`, for callers that want it, e.g. `api.prove` —
-never assumed silently inside a per-formula translation).
+is guaranteed non-empty (above), but that reduction forgets two facts of the
+many-sorted reading: a sort is non-empty, and a sorted constant is an element of
+its sort. So `to_lean_msfol` states each used sort as non-empty and each sorted
+constant as a member of its sort, as named hypotheses of the theorem (the two
+other MSFOL exporters do the same, as `axiom` formulas and as premises of the
+lemma):
+
+```python
+ms_parse = MSFLParser(many_sorted=True).parse
+f = ms_parse("∀x:Human Mortal(x) → Mortal(socrates:Human)")
+print(lean.to_lean_msfol(f).splitlines()[-2])
+# → theorem goal (sort_nonempty_0 : (∃ x0 : Ind, (human x0))) (sort_member_0 : (human socrates)) : ((∀ x : Ind, ((human x) → (mortal x))) → (mortal socrates)) := by
+```
+
+They are hypotheses and not conjuncts of the goal, because `human socrates ∧ φ`
+could not be proved even for a tautology `φ`, and a hand-written proof can use
+them by name. `include_sort_facts=False` gives the bare relativisation, without
+the sort facts. With `conjecture=False` the non-emptiness facts are `axiom` lines
+and the membership atoms stay a conjunct of the asserted formula.
 
 ## Propositional modal K
 
@@ -170,7 +188,7 @@ live-tested against a real Lean 4 toolchain:
    proof = "intro w h1 h2 v hRv\nexact h1 v hRv (h2 v hRv)"
    src = lean.to_lean_modal_k(k_axiom, proof=proof)
    r = lean.check_theory(src, "k_axiom")
-   assert r.ok and not r.uses_sorry            # kernel-checked, live: lean 4.34.0
+   assert r.ok and not r.uses_sorry            # kernel-checked, live: lean 4.34.1
    ```
 
 2. **A known non-theorem, refuted by decision, not just unproved.** `□p → p`
@@ -205,7 +223,7 @@ this module ever modifies `PATH` or a shell profile itself.
 ```python
 lean.lean_available()                      # -> True/False, cheap & cached
 inst = lean.find_lean()
-print(inst)                                 # -> Lean(4.34.0 at .../elan/bin/lean.exe)
+print(inst)                                 # -> Lean(4.34.1 at ...)
 ```
 
 `check_theory(source, name)` writes the file to a scratch directory and runs

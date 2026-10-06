@@ -119,6 +119,9 @@ _CONTROL_SEQUENCES = {
     # Lambda / degree-measure term.
     "lambda": "λ",
     "mu": "μ",
+    # The truth constants (and, in the linear mode, the additive unit ``⊤``).
+    "top": "⊤",
+    "bot": "⊥",
     # Modal / temporal / deontic prefix operators.
     "Box": "□",
     "Diamond": "◇",

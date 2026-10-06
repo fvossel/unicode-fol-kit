@@ -16,6 +16,7 @@ from ..fol.nodes import (
     Variable, Constant, Function, LambdaVar, Lambda,
 )
 from ..fol._symbol_names import dedupe
+from ..fol._truth_constants import truth_value
 from ..fol.qml import _thf_name
 
 
@@ -27,11 +28,22 @@ class UnsupportedHigherOrderNode(NotImplementedError):
     """
 
 
-#: Infix comparison predicates become uninterpreted relations, the convention
-#: the kit's other HOL exports already follow — NOT primitive HOL identity,
-#: which in the modal embedding would additionally be world-independent and so
-#: a different logic.
-EQUALITY = {"=": "feq", "≠": "fneq", "<": "flt", ">": "fgt", "≤": "fle", "≥": "fge"}
+#: The ordering predicates ``<`` ``>`` ``≤`` ``≥``. Neither target format has an
+#: ordering on the uninterpreted individual type, so they are ordinary
+#: uninterpreted relations (WORLD-relativised in the modal embedding, exactly as
+#: :mod:`unicode_fol_kit.fol.qml` reads them) under the stems named here.
+ORDERING = {"<": "flt", ">": "fgt", "≤": "fle", "≥": "fge"}
+
+#: The aliases of the CLASSICAL third-order exporter
+#: (:mod:`unicode_fol_kit.hol.thirdorder`), which reads ``=`` / ``≠`` as the
+#: uninterpreted relations ``feq`` / ``fneq`` — not primitive HOL identity — next to
+#: the :data:`ORDERING` predicates. The MODAL exporter
+#: (:mod:`unicode_fol_kit.hol.ho_modal`) does NOT use the first two entries: there
+#: object identity is RIGID (HOL's own ``=`` over the individual type, no world
+#: argument, as in :func:`unicode_fol_kit.fol.qml.qml_is_valid`), so it takes only
+#: :data:`ORDERING` and reads ``=`` / ``≠`` through
+#: :func:`unicode_fol_kit.hol.isabelle_modal._lower_identity`.
+EQUALITY = {"=": "feq", "≠": "fneq", **ORDERING}
 
 
 def peel_lambdas(node: Node) -> Tuple[List[str], Node]:
@@ -107,8 +119,8 @@ def bound_pred_names(node: Node, acc: Set[str] = None) -> Set[str]:
 def atom_predicates(node: Node, acc: Set[str] = None) -> Set[str]:
     """Collect every predicate name applied in ``node``."""
     acc = set() if acc is None else acc
-    if isinstance(node, Atom):
-        acc.add(node.predicate)
+    if isinstance(node, Atom) and truth_value(node) is None:
+        acc.add(node.predicate)         # (`$true` / `$false` are constants, not predicates)
     for child in node._child_nodes():
         atom_predicates(child, acc)
     return acc

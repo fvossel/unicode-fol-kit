@@ -29,16 +29,37 @@ Deliberately, there is **no classical export**: collapsing ``A\\B`` and ``B/A`` 
 *sound* — every L theorem collapses to a classical one, which the test-suite checks
 against Z3 — but it identifies types L keeps apart.)
 
+**What is read.** The calculus reads exactly the node classes it has rules for: ``•``
+(``Product``), ``\\`` (``Under``) and ``/`` (``Over``), over atoms. An atom over terms
+(``NP(john)``) is ONE category, identified by its predicate and its terms as written. Every
+other node is refused by name with ``NotImplementedError``: a quantifier (sorted or not), a
+counting or cardinality node, a sorted constant, an equality atom, and a node of another logic
+(``And``, ``Or``, ``Not``, ``Box``, a connective of linear logic, ...), because reading it as one
+more category would answer about another formula (``∀x P(x) ⊢ P(alpha)`` holds in every
+first-order reading and has no derivation between the two categories; ``And(A, B) ⊢ A`` holds
+classically and has none between ``And(A, B)`` and ``A``). Decide such input with a route of its
+own logic.
+
 Public API: :class:`LambekSequent`, :class:`LambekDerivation`, :func:`lambek_prove`,
 :func:`lambek_derivable`, :func:`check_lambek_proof`, :func:`verify_lambek_proof`,
 :func:`render_lambek_proof`.
 """
 
 from dataclasses import dataclass
-from typing import Callable, Dict, Iterable, Optional, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 from ..fol.nodes import Node, Product, Under, Over
+from ..fol._truth_constants import refuse_truth_constants
+from ._substructural_input import LAMBEK, refuse_unreadable_input, unreadable_reason
 from .sequent import SequentResult
+
+#: Why the Lambek calculus has no reading of the TPTP constants ``$true`` /
+#: ``$false`` (the reason :func:`lambek_prove` and the Isabelle export name when
+#: they refuse one).
+_NO_TRUTH_CONSTANT_WHY = (
+    "the Lambek calculus has no propositional constants: its formulas are "
+    "category types built from atoms by •, \\ and /, and no type is true or "
+    "false of every sequence")
 
 
 # ---------------------------------------------------------------------------
@@ -195,14 +216,26 @@ def lambek_prove(sequence: Iterable[Node], goal: Node) -> Optional[LambekDerivat
     re-validated by :func:`check_lambek_proof` before it is handed back, so a
     search bug can only lose proofs, never invent them.
 
-    Raises ``ValueError`` on an empty ``sequence`` — L requires nonempty
-    antecedents (Lambek's restriction).
+    The sequent is read through the connectives ``• \\ /`` and atoms: an atom over terms is one
+    category, and every other node (a quantifier, a counting or cardinality node, a sorted
+    constant, an equality atom, a connective of another logic) is refused by name (see the
+    module docstring).
+
+    Raises:
+        ValueError: ``sequence`` is empty — L requires nonempty antecedents (Lambek's
+            restriction).
+        NotImplementedError: a truth constant ``$true`` / ``$false``, or a node L has no rule
+            for (a quantifier, a counting or cardinality node, a sorted constant, an
+            equality atom, a connective of another logic) occurs in the sequent; the message
+            names the node and what to use instead.
     """
     seq = tuple(sequence)
     if not seq:
         raise ValueError(
             "the Lambek calculus requires a nonempty antecedent sequence "
             "(Lambek's restriction)")
+    refuse_truth_constants([*seq, goal], "lambek_prove", _NO_TRUTH_CONSTANT_WHY)
+    refuse_unreadable_input([*seq, goal], "lambek_prove", LAMBEK)
     derivation = _prove(seq, goal, {})
     if derivation is not None and not check_lambek_proof(derivation):
         raise RuntimeError(
@@ -212,7 +245,10 @@ def lambek_prove(sequence: Iterable[Node], goal: Node) -> Optional[LambekDerivat
 
 
 def lambek_derivable(sequence: Iterable[Node], goal: Node) -> bool:
-    """Return True iff ``sequence ⊢ goal`` is derivable in L (a decision procedure)."""
+    """Return True iff ``sequence ⊢ goal`` is derivable in L (a decision procedure).
+
+    Refuses an empty sequence and every node L has no rule for, as :func:`lambek_prove` does.
+    """
     return lambek_prove(sequence, goal) is not None
 
 
@@ -364,6 +400,19 @@ def _verify(deriv: "LambekDerivation"):
     return None, None
 
 
+def _formulas_of(derivation: "LambekDerivation") -> List[Node]:
+    """Every formula of every sequent of a derivation tree."""
+    formulas: List[Node] = []
+    pending = [derivation]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, LambekDerivation) and isinstance(node.conclusion, LambekSequent):
+            formulas.extend(node.conclusion.antecedent)
+            formulas.append(node.conclusion.succedent)
+            pending.extend(node.premises)
+    return formulas
+
+
 def verify_lambek_proof(derivation: "LambekDerivation") -> SequentResult:
     """Check a Lambek derivation and return a
     :class:`~unicode_fol_kit.atp.sequent.SequentResult`.
@@ -371,9 +420,13 @@ def verify_lambek_proof(derivation: "LambekDerivation") -> SequentResult:
     Recursively re-validates that every node's conclusion follows from its
     premises' conclusions by the node's rule — antecedents compared as **ordered
     sequences** and required nonempty throughout — returning the end-sequent and,
-    on failure, the first offending rule and reason.
+    on failure, the first offending rule and reason. A derivation whose sequents hold a
+    node L has no rule for (a quantifier, an equality atom, a connective of another logic,
+    ...) is not a derivation of L: it does not check, and the reason names the node
+    (``error_rule`` is ``"formula"``).
     """
-    err_rule, err = _verify(derivation)
+    unreadable = unreadable_reason(_formulas_of(derivation), "verify_lambek_proof", LAMBEK)
+    err_rule, err = ("formula", unreadable) if unreadable is not None else _verify(derivation)
     end = derivation.conclusion if isinstance(derivation, LambekDerivation) else None
     return SequentResult(err is None, end, err_rule, err)
 

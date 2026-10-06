@@ -151,29 +151,36 @@ searched sentence names one of them, since :func:`fragment_check` no longer
 stops a ``Function`` node on the way in; the caller sees the identical
 ``UNKNOWN``/``"unsupported"`` outcome either way, just raised one call
 frame deeper than before, from inside :func:`to_minizinc`'s rendering loop
-rather than at the gate — an honest gap either way, not a guess. (A plain
-:class:`~unicode_fol_kit.fol.nodes.Number` literal is unaffected by this —
+rather than at the gate — an honest gap either way, not a guess. (A
+:class:`~unicode_fol_kit.fol.nodes.Number` is refused too, for its own reason —
 see the next section.)
 
-``Number`` is always the literal integer it names
--------------------------------------------------------
-The counting fragment mixes two apparent readings of a bare
-:class:`~unicode_fol_kit.fol.nodes.Number` node: as a comparison bound
-(``|{v : φ}| ≥ 3`` — a raw count, unrelated to any domain individual) and,
-in principle, as a term naming a domain individual the way
-:meth:`~unicode_fol_kit.fol.nodes.Number.to_z3` treats it ("a named constant
-in the uninterpreted sort"). Because this backend's domain individuals ARE
-the integers ``0 … n-1`` (not opaque names), both readings collapse onto the
-SAME MiniZinc value: :func:`_number_int` (used by :func:`_term`) renders
-``Number(k)`` as the bare literal ``k`` in every position, term or count
-bound alike — "the individual named 3" and "the count 3" are the same
-MiniZinc integer under this domain-naming convention, so no context-sensitive
-branching is needed to tell the two roles apart. A non-integer ``Number``
-(the dataclass's declared type is ``Union[int, float]``, unlike
-:class:`~unicode_fol_kit.fol.nodes.Count`'s own ``n`` field, which its
-``__post_init__`` already restricts to a non-negative int) has no reading
-under either interpretation and is refused with ``NotImplementedError``
-rather than silently truncated.
+A ``Number`` is the bound of a count, never an individual
+-----------------------------------------------------------
+A numeral (:class:`~unicode_fol_kit.fol.nodes.Number`) has two readings in the
+kit. On every route that was not asked for arithmetic it is a CONSTANT
+identified by its value (``Number(1)`` and ``Number(1.0)`` are one node, one
+constant; ``1 ≠ 2`` is not valid, because two constants may denote one
+element), as :meth:`~unicode_fol_kit.fol.nodes.Number.to_z3` writes it. The
+documented counting fragment gives it the other one: the number a cardinality
+is compared with (``|{v : φ}| ≥ 3`` — a raw count, unrelated to any domain
+individual). This backend's domain individuals are the integers ``0 … n-1``,
+so the bare literal ``k`` would be a DOMAIN ELEMENT, the element number ``k``
+(or no element at all when ``k`` is not below the size), and the kit's
+numerals need not be that: ``(∀x ∀y x = y) → 1 = 2`` is valid (one element,
+so ``1`` and ``2`` denote the same thing), and the index reading refuted it.
+
+So a ``Number`` is read as a number ONLY as an operand of a comparison with a
+:class:`~unicode_fol_kit.fol.nodes.Cardinality` (:func:`_number_int`: the
+bound of the count, a float with a whole value being that integer). Anywhere
+else — as a term of a predicate, of a function, of ``=``, or in a comparison
+of numerals that has no cardinality in it — it is refused by name with
+``NotImplementedError``, which :meth:`MinizincBackend.decide` reports as
+``UNKNOWN``/``"unsupported"``: this backend has no symbol for a numeral, and
+it never reads one as a domain index or as arithmetic. The same holds for a
+comparison that sets a cardinality against a plain individual (the count
+against the element number of a constant has no coherent reading). The
+:class:`~unicode_fol_kit.atp.clingo_backend.ClingoBackend` draws the same line.
 
 Identifier scheme — role-prefixed, ASCII-transliterated, collision-checked
 --------------------------------------------------------------------------
@@ -249,11 +256,14 @@ from ..fol.nodes import (
     Count, Cardinality,
 )
 from ..fol.signature import Signature
+from ..fol._free_parameters import parameterize
 from .finite_domain import (
-    FiniteDomainProblem, fragment_check, lower_msfol, structure_from_solution, verify_model,
+    FiniteDomainProblem, fragment_check, free_variable_reason, lower_msfol,
+    structure_from_solution, verify_model,
 )
 from .protocol import (
     BackendUnavailable, ERROR, ProverBackend, REFUTED, UNKNOWN, Verdict,
+    _native_command_exists,
 )
 
 __all__ = ["MinizincBackend", "minizinc_available", "to_minizinc"]
@@ -367,25 +377,25 @@ _COUNT_OP_TO_MZN = {"ge": ">=", "le": "<=", "eq": "="}
 
 
 def _number_int(node: Number) -> int:
-    """Return ``node``'s value as a plain ``int``, or refuse a non-integer.
+    """Return the value of ``node``, the bound a cardinality is compared with, as a plain ``int``.
 
-    See the module docstring's "``Number`` is always the literal integer it
-    names" section for why a single, context-free rule (no branching on
-    whether this ``Number`` sits in a comparison-bound position or a
-    domain-individual position) is correct here, and why a non-integer
-    ``Number`` — legal per the dataclass's own ``Union[int, float]`` type,
-    unlike :class:`~unicode_fol_kit.fol.nodes.Count`'s own ``n`` field —
-    has no reading under either interpretation.
+    Only :func:`_formula`'s comparison branch calls this, for the ``Number`` operand of a
+    comparison with a :class:`~unicode_fol_kit.fol.nodes.Cardinality` (see the module
+    docstring's "A ``Number`` is the bound of a count, never an individual" section). A
+    :class:`~unicode_fol_kit.fol.nodes.Number` stores a float with a whole value as the
+    integer it equals, so ``2.0`` is the bound ``2``; a count cannot equal ``2.5``, so a
+    fractional ``Number`` — legal per the dataclass's own ``Union[int, float]`` type,
+    unlike :class:`~unicode_fol_kit.fol.nodes.Count`'s own ``n`` field — has no reading
+    and is refused rather than silently truncated.
 
     Raises:
         NotImplementedError: ``node.value`` is not a plain (non-bool) ``int``.
     """
     if isinstance(node.value, bool) or not isinstance(node.value, int):
         raise NotImplementedError(
-            f"to_minizinc: Number({node.value!r}) is not an integer — a finite "
-            "domain of individuals 0..n-1 has no reading for a non-integer "
-            "literal, whether used as a domain individual or as a counting-"
-            "comparison bound."
+            f"to_minizinc: Number({node.value!r}) is not an integer — a count |{{v : φ}}| "
+            "is never equal to a fraction, so a comparison bound that is not an integer "
+            "has no reading in a finite domain of individuals 0..n-1."
         )
     return node.value
 
@@ -417,8 +427,8 @@ def _term(node: Node, ctx: _Ctx) -> str:
 
     Dispatches on node type; every branch either returns a self-contained
     expression string or raises ``NotImplementedError`` naming exactly why
-    (an arithmetic function symbol, a non-integer ``Number``, an undeclared
-    symbol, or a node type with no term-position reading at all — the last
+    (an arithmetic function symbol, a ``Number`` used as an individual, an
+    undeclared symbol, or a node type with no term-position reading at all — the last
     should be unreachable for a ``sentences`` tuple that already passed
     :func:`~unicode_fol_kit.atp.finite_domain.fragment_check`, but is
     checked explicitly rather than assumed).
@@ -434,7 +444,15 @@ def _term(node: Node, ctx: _Ctx) -> str:
             )
         return mzn
     if isinstance(node, Number):
-        return str(_number_int(node))
+        raise NotImplementedError(
+            f"to_minizinc: the numeral {node.value!r} is used as an individual. A numeral "
+            "is a constant identified by its value (1 and 1.0 are one constant), and this "
+            "backend has no symbol for it: it reads a number only as the bound a count "
+            "|{v : φ}| is compared with, never as a domain element, because the index "
+            "reading would make 1 and 2 two different elements that the kit's numerals need "
+            "not be. Use a solver that reads numerals as constants (z3, the finite model "
+            "finder), or name the individual with a constant."
+        )
     if isinstance(node, Function):
         if node.name in _BUILTIN_ARITH_FUNCS:
             raise NotImplementedError(
@@ -464,6 +482,46 @@ def _term(node: Node, ctx: _Ctx) -> str:
     )
 
 
+def _comparison_operands(atom: Atom, ctx: _Ctx) -> Tuple[str, str]:
+    """Render the two operands of the comparison ``atom`` (``= ≠ < > ≤ ≥`` at arity 2).
+
+    A comparison with a :class:`~unicode_fol_kit.fol.nodes.Cardinality` operand is a
+    counting comparison: both operands are then counting terms, a ``Cardinality`` (its
+    ``sum`` over the domain) or a ``Number`` (the bound, :func:`_number_int`). Any other
+    comparison compares individuals, and a ``Number`` among them is refused by
+    :func:`_term`.
+
+    Raises:
+        NotImplementedError: a numeral is compared with no cardinality in the comparison
+            (a statement about constants, not about counts: ``1 = 2`` is not valid, and
+            ``(∀x ∀y x = y) → 1 = 2`` is); a cardinality is compared with a plain
+            individual (no coherent reading); or an operand is refused by :func:`_term` /
+            :func:`_number_int`.
+    """
+    has_cardinality = any(isinstance(a, Cardinality) for a in atom.args)
+    has_numeral = any(isinstance(a, Number) for a in atom.args)
+    if not has_cardinality and not has_numeral:
+        return _term(atom.args[0], ctx), _term(atom.args[1], ctx)
+    if not has_cardinality:
+        raise NotImplementedError(
+            f"to_minizinc: {atom.predicate!r} compares a numeral without a cardinality. A numeral "
+            "is a constant identified by its value, and nothing else is known about it, so such "
+            "a comparison is a statement about constants ('1 ≠ 2' is not valid, "
+            "'(∀x ∀y x = y) → 1 = 2' is), which this backend does not state: it reads a number "
+            "only as the bound a count |{v : φ}| is compared with, and a refutation found under "
+            "the index reading would be wrong for the constants. Use a solver that reads numerals "
+            "as constants (z3, the finite model finder), or compare a cardinality."
+        )
+    if not all(isinstance(a, (Cardinality, Number)) for a in atom.args):
+        raise NotImplementedError(
+            f"to_minizinc: {atom.predicate!r} compares a cardinality against a plain "
+            "individual-denoting term — both sides of a counting comparison must themselves be "
+            "counting terms (a Cardinality or a Number)."
+        )
+    left, right = (str(_number_int(a)) if isinstance(a, Number) else _term(a, ctx) for a in atom.args)
+    return left, right
+
+
 def _formula(node: Node, ctx: _Ctx) -> str:
     """Render ``node`` as a MiniZinc ``bool``-typed expression (a FORMULA position).
 
@@ -478,8 +536,7 @@ def _formula(node: Node, ctx: _Ctx) -> str:
                     f"to_minizinc: comparison predicate {node.predicate!r} "
                     f"used with arity {len(node.args)}, expected 2."
                 )
-            left = _term(node.args[0], ctx)
-            right = _term(node.args[1], ctx)
+            left, right = _comparison_operands(node, ctx)
             return f"({left} {_COMPARISON_OPS[node.predicate]} {right})"
         mzn = ctx.predicates.get(node.predicate)
         if mzn is None:
@@ -622,9 +679,14 @@ def to_minizinc(problem: FiniteDomainProblem) -> str:
             :class:`~unicode_fol_kit.atp.finite_domain.FiniteDomainProblem`.
         NotImplementedError: ``problem.sentences`` fails
             :func:`~unicode_fol_kit.atp.finite_domain.fragment_check`; a
+            sentence has a free variable
+            (:func:`~unicode_fol_kit.atp.finite_domain.free_variable_reason`;
+            :meth:`MinizincBackend.decide` replaces it by a parameter before
+            it writes); a
             sentence uses a node this renderer itself cannot place (an
-            arithmetic function symbol, a non-integer
-            :class:`~unicode_fol_kit.fol.nodes.Number`, or a symbol absent
+            arithmetic function symbol, a
+            :class:`~unicode_fol_kit.fol.nodes.Number` that is not the bound of a
+            comparison with a cardinality or is not an integer, or a symbol absent
             from ``problem.signature`` — see :func:`_term` / :func:`_formula`);
             or two distinct declared constants would transliterate to the
             same MiniZinc identifier (see the module docstring's "Identifier
@@ -641,6 +703,9 @@ def to_minizinc(problem: FiniteDomainProblem) -> str:
             f"{type(problem).__name__}."
         )
     reason = fragment_check(problem.sentences)
+    if reason is None:
+        # A free variable would be written as an identifier the model never declares.
+        reason = free_variable_reason(problem.sentences)
     if reason is not None:
         raise NotImplementedError(f"to_minizinc: {reason}")
 
@@ -949,6 +1014,28 @@ def _atoms_from_solution(
 # Subprocess plumbing
 # =============================================================================
 
+def _environment_for(binary: str) -> Optional[Dict[str, str]]:
+    """The environment to run ``binary`` in: the caller's, with the binary's own
+    folder (and its ``bin`` subfolder) put first on ``PATH``.
+
+    MiniZinc starts its solver as a second program (``bin/fzn-gecode``), and on
+    Windows that program loads libraries that lie next to ``minizinc.exe``. An
+    installer puts that folder on ``PATH``; a binary reached only through
+    ``$UFK_MINIZINC`` has no such entry, and the bundled default solver then
+    ends at once with ``=====ERROR=====`` and an empty error stream (measured
+    with MiniZinc 2.8.4: Gecode fails that way, Chuffed does not). ``None``
+    (inherit the environment unchanged) when ``binary`` is a bare command
+    name, which the shell resolved through ``PATH`` already.
+    """
+    folder = os.path.dirname(binary)
+    if not folder:
+        return None
+    env = dict(os.environ)
+    own = [folder, os.path.join(folder, "bin")]
+    env["PATH"] = os.pathsep.join(own + [env.get("PATH", "")])
+    return env
+
+
 def _run_minizinc(
     model_path: str, binary: str, solver: str, time_limit_ms: int,
 ) -> Tuple[str, str, bool]:
@@ -967,6 +1054,7 @@ def _run_minizinc(
         result = subprocess.run(
             args, capture_output=True, text=True,
             timeout=(time_limit_ms / 1000.0) + 10,
+            env=_environment_for(binary),
         )
         return result.stdout or "", result.stderr or "", False
     except subprocess.TimeoutExpired:
@@ -1003,13 +1091,32 @@ class MinizincBackend(ProverBackend):
         """Pure discovery: see :func:`minizinc_available`."""
         return minizinc_available()
 
+    def available_for(self, options: dict) -> bool:
+        """Whether the binary the run will use is there: ``minizinc_path=`` when the
+        call names one (it must resolve to something the run can start, as an explicit
+        path or as a name on ``PATH``; on Windows the installed ``minizinc.exe`` may be
+        named without its extension, as ``subprocess`` starts it), else the discovery
+        of :func:`minizinc_available` (``$UFK_MINIZINC``, then ``PATH``).
+        :meth:`decide` reads ``minizinc_path=`` before it looks anywhere else, so a
+        call that names a working binary is answered even where nothing is
+        discoverable, and a call that names a missing one is refused here, by name,
+        instead of failing inside the run."""
+        path = options.get("minizinc_path")
+        if path:
+            return _native_command_exists(path)
+        return self.available()
+
     def decide(self, formula: Node, premises: Sequence[Node] = (),
                timeout: int = 10000, **options) -> Verdict:
         """Decide ``premises ⊨ formula`` by CP finite-domain refutation search.
 
         Args:
             formula: the goal.
-            premises: entailment premises (validity search when empty).
+            premises: entailment premises (validity search when empty). A
+                free variable of the premises or the goal is a parameter:
+                one unknown element, the same in all of them, as in
+                ``ClingoBackend.decide``. With ``all_different=True`` such
+                a problem is answered ``unknown`` / ``unsupported``.
             timeout: milliseconds, the TOTAL wall-clock budget across every
                 domain size attempted (not per-size — a size that starts
                 with little budget left gets little budget, and the search
@@ -1055,8 +1162,27 @@ class MinizincBackend(ProverBackend):
         solver = options.pop("solver", "gecode")
         all_different = options.pop("all_different", False)
 
-        premises = list(premises)
-        sentences: Tuple[Node, ...] = tuple(premises) + (Not(formula),)
+        # A free variable is a parameter of the problem: one unknown element, the same in
+        # the premises and the goal. Each is replaced here, in all of them together, by a
+        # constant of its own name, and only then is the goal negated (¬∀x φ(x) is not
+        # ∀x ¬φ(x)); a countermodel reports the element under the variable's name. No
+        # premise is closed universally: P(x) does not entail P(alpha).
+        try:
+            read, parameters = parameterize(list(premises) + [formula], after_variables=True)
+        except NotImplementedError as exc:
+            return Verdict(UNKNOWN, self.name, reason="unsupported", detail=str(exc))
+        if all_different and parameters:
+            # The constants are pairwise distinct under this option, a parameter may equal
+            # any of them, and the model states distinctness over every constant it declares.
+            return Verdict(
+                UNKNOWN, self.name, reason="unsupported",
+                detail=("minizinc: all_different=True with the free variable"
+                        f"{'s' if len(parameters) > 1 else ''} "
+                        f"{', '.join(repr(name) for name in sorted(parameters))}: a parameter "
+                        "is not one of the pairwise distinct constants, and this route cannot "
+                        "leave it out of the distinctness constraint. Bind the variable or "
+                        "drop all_different."))
+        sentences: Tuple[Node, ...] = tuple(read[:-1]) + (Not(read[-1]),)
         # Many-sorted input is relativised to plain classical FOL HERE, once,
         # before Signature.from_formulas / to_minizinc's own fragment_check
         # call ever see it -- see finite_domain.lower_msfol's own docstring

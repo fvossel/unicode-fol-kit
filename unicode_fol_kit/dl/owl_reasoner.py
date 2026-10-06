@@ -141,9 +141,15 @@ from typing import Dict, List, Optional, Set
 from ..atp.protocol import BackendUnavailable
 from .concepts import (
     Concept, Top, Bottom, Atomic, Not, And, Or, Exists, ForAll, AtLeast, AtMost,
-    InverseRole, Nominal,
+    InverseRole, Nominal, HasValue, DATA_CONCEPTS,
 )
-from .tableau import TBox, ABox
+from .tableau import (
+    TBox, ABox, UnsupportedAxiomError, UnsupportedConceptError, _RBox,
+    _abox_individual_names, _check_simple_role_box, _concept_individual_names,
+    _data_layer_kinds, _reject_abox_roles, _reject_concept_role,
+    _reject_concept_roles_deep, _tbox_class_expressions, _validate_data_box,
+    _validate_role_box,
+)
 
 __all__ = [
     "available",
@@ -206,19 +212,59 @@ class _Ctx:
     synthetic names rather than this kit's own name strings verbatim).
     """
 
-    __slots__ = ("ow", "world", "onto", "transitive_roles",
-                 "_classes", "_roles", "_individuals", "_domain", "_counter")
+    __slots__ = ("ow", "world", "onto", "characteristics",
+                 "_classes", "_roles", "_individuals", "_domain", "_counter", "_below")
 
-    def __init__(self, ow, world, onto, transitive_roles: Set[str]):
+    def __init__(self, ow, world, onto, characteristics: Dict[str, Set[str]]):
         self.ow = ow
         self.world = world
         self.onto = onto
-        self.transitive_roles = transitive_roles
+        # ``owlready2 base name -> the role names carrying that characteristic``
+        # (see :data:`_CHARACTERISTIC_BASES`). All SIX characteristics, not just
+        # transitivity: owlready2 needs every one of them among the property
+        # class's BASES at creation time, so they cannot be added later and a
+        # route that carried only one would silently drop the other five — and
+        # this route is where the in-house tableau's own refusals send the user.
+        self.characteristics = characteristics
         self._classes: Dict[str, object] = {}
         self._roles: Dict[str, object] = {}
         self._individuals: Dict[str, object] = {}
         self._domain = None
         self._counter = 0
+        # ``("class" | "role") -> name -> the names directly above it`` for the inclusions
+        # between two NAMED entities that were stated as owlready2 sub-class / sub-property
+        # links (see :meth:`state_named_inclusion`).
+        self._below: Dict[str, Dict[str, Set[str]]] = {"class": {}, "role": {}}
+
+    def state_named_inclusion(self, kind: str, sub_name: str, sup_name: str,
+                              sub_entity, sup_entity) -> None:
+        """Assert ``sub ⊑ sup`` between two named classes (``kind="class"``) or two plain
+        properties (``kind="role"``).
+
+        owlready2 keeps a named class (property) under another as a Python base class, and
+        Python refuses a cycle of bases with a ``TypeError``. Two named entities below each
+        other, an entity below itself, a longer ring, ``EquivalentClasses`` and
+        ``EquivalentObjectProperties`` all read as such a cycle. An inclusion that would close
+        one is therefore stated as the equivalence ``sub ≡ sup``, which is what the ring says:
+        ``sup`` is already below ``sub`` through the links stated so far, so ``sub ⊑ sup``
+        makes every entity on the ring equivalent, and ``sub ≡ sup`` adds only the converse
+        that the ring already gives. An entity below itself says nothing and is not stated.
+        """
+        if sub_name == sup_name:
+            return
+        links = self._below[kind]
+        reachable, pending = set(), [sup_name]
+        while pending:
+            name = pending.pop()
+            if name in reachable:
+                continue
+            reachable.add(name)
+            pending.extend(links.get(name, ()))
+        if sub_name in reachable:
+            sub_entity.equivalent_to.append(sup_entity)
+        else:
+            links.setdefault(sub_name, set()).add(sup_name)
+            sub_entity.is_a.append(sup_entity)
 
     def _fresh_name(self, prefix: str) -> str:
         self._counter += 1
@@ -230,16 +276,24 @@ class _Ctx:
             self._classes[name] = self.ow.types.new_class(self._fresh_name("C"), (self.ow.Thing,))
         return self._classes[name]
 
+    def _role_bases(self, name: str) -> tuple:
+        """``(ObjectProperty, *every declared characteristic's owlready2 class)``
+        for the role named ``name`` — the bases tuple ``role_obj`` creates it with.
+        """
+        bases = [self.ow.ObjectProperty]
+        for base_name, roles in self.characteristics.items():
+            if name in roles:
+                bases.append(getattr(self.ow, base_name))
+        return tuple(bases)
+
     def role_obj(self, name: str):
-        """The owlready2 object property for this kit's role name ``name``,
-        declared transitive at CREATION time iff ``name in self.transitive_roles``
-        (owlready2 needs ``TransitiveProperty`` among the class's bases up
-        front, not added after the fact).
+        """The owlready2 object property for this kit's role name ``name``, with
+        every declared characteristic among its bases at CREATION time
+        (owlready2 needs them up front, not added after the fact).
         """
         if name not in self._roles:
-            bases = ((self.ow.ObjectProperty, self.ow.TransitiveProperty)
-                      if name in self.transitive_roles else (self.ow.ObjectProperty,))
-            self._roles[name] = self.ow.types.new_class(self._fresh_name("R"), bases)
+            self._roles[name] = self.ow.types.new_class(
+                self._fresh_name("R"), self._role_bases(name))
         return self._roles[name]
 
     def role(self, role_field):
@@ -274,7 +328,14 @@ def _translate_concept(concept: Concept, ctx: _Ctx):
     docstring's "Translation route" section). Covers the FULL ALCHQ + I + O
     fragment this module decides — every :class:`Concept` subtype, including
     :class:`InverseRole`-valued roles and :class:`Nominal`.
+
+    An OWL 2 built-in property name as a restriction's role is refused by name
+    (:func:`~unicode_fol_kit.dl.tableau._reject_concept_role`), exactly as the
+    in-house tableau and the FOL image refuse it: owlready2 would create an
+    ORDINARY property of that name, and an oracle that answers about a
+    different restriction agrees with nothing for the right reason.
     """
+    _reject_concept_role(concept, where="dl.owl_reasoner")
     if isinstance(concept, Top):
         return ctx.ow.Thing
     if isinstance(concept, Bottom):
@@ -283,6 +344,9 @@ def _translate_concept(concept: Concept, ctx: _Ctx):
         return ctx.cls(concept.name)
     if isinstance(concept, Nominal):
         return ctx.ow.OneOf([ctx.ind(concept.individual)])
+    if isinstance(concept, HasValue):
+        # owlready2 spells ObjectHasValue(P a) as `prop.value(individual)`.
+        return ctx.role(concept.role).value(ctx.ind(concept.individual))
     if isinstance(concept, Not):
         return ctx.ow.Not(_translate_concept(concept.concept, ctx))
     if isinstance(concept, And):
@@ -299,6 +363,18 @@ def _translate_concept(concept: Concept, ctx: _Ctx):
         return ctx.role(concept.role).min(concept.n, _translate_concept(concept.concept, ctx))
     if isinstance(concept, AtMost):
         return ctx.role(concept.role).max(concept.n, _translate_concept(concept.concept, ctx))
+    if isinstance(concept, DATA_CONCEPTS):
+        raise UnsupportedConceptError(
+            f"dl.owl_reasoner: the data restriction {type(concept).__name__} "
+            f"({concept.to_unicode()}) is not wired to this external route: "
+            f"owlready2 could express it, but this module does not translate the "
+            f"data layer, and an oracle that quietly dropped it would agree with "
+            f"everything. Ask the FOL image: kb = dl.kb_to_fol(tbox, abox, "
+            f"query=[concept]), then api.prove(kb.unsatisfiability_goal(concept), "
+            f"kb.tbox_premises) (kb.subsumption_goal and kb.instance_goal are the "
+            f"other two questions; 'proved' transfers to OWL 2, 'refuted' does not: "
+            f"see kb.refutation_is_decisive) — or decide facet arithmetic over "
+            f"the data ranges alone with atp.z3_arith.is_valid_arith.")
     raise TypeError(f"dl.owl_reasoner: unsupported concept {type(concept).__name__}")
 
 
@@ -314,29 +390,222 @@ def _add_gci(sub: Concept, sup: Concept, ctx: _Ctx) -> None:
         ctx.domain_class().is_a.append(_translate_concept(sup, ctx))
         return
     if isinstance(sub, Atomic):
-        ctx.cls(sub.name).is_a.append(_translate_concept(sup, ctx))
+        if isinstance(sup, Atomic):
+            ctx.state_named_inclusion("class", sub.name, sup.name, ctx.cls(sub.name), ctx.cls(sup.name))
+        else:
+            ctx.cls(sub.name).is_a.append(_translate_concept(sup, ctx))
         return
     gca = ctx.ow.GeneralClassAxiom(_translate_concept(sub, ctx))
     gca.is_a.append(_translate_concept(sup, ctx))
 
 
+#: ``TBox field -> the owlready2 property class that expresses it as a BASE``.
+#: owlready2 requires a characteristic among the property class's bases at
+#: creation time, so ``_Ctx`` has to know all six BEFORE any role is built —
+#: hence a table read by ``_characteristics`` rather than six inline tests.
+_CHARACTERISTIC_BASES = {
+    "transitive_roles": "TransitiveProperty",
+    "symmetric_roles": "SymmetricProperty",
+    "asymmetric_roles": "AsymmetricProperty",
+    "reflexive_roles": "ReflexiveProperty",
+    "irreflexive_roles": "IrreflexiveProperty",
+    "functional_roles": "FunctionalProperty",
+    "inverse_functional_roles": "InverseFunctionalProperty",
+}
+
+
+def _characteristics(tbox: TBox) -> Dict[str, Set[str]]:
+    """``owlready2 base name -> the role names carrying it`` for ``tbox``."""
+    return {base: set(getattr(tbox, field))
+            for field, base in _CHARACTERISTIC_BASES.items()}
+
+
+def _role_expr(role_field, ctx: _Ctx):
+    """A role-box entry (a plain name, or an
+    :class:`~unicode_fol_kit.dl.concepts.InverseRole`) as the owlready2
+    property expression to use on either side of a sub-property axiom.
+
+    ``ctx.role`` already does exactly this for a restriction's role; calling it
+    here is what stops an ``InverseRole`` being used as a DICT KEY and coming
+    back out as a brand-new atomic property — which is what ``_build_kb`` did
+    until 0.30.0, making ``external_subsumes(…, TBox().add_role_inclusion('r',
+    InverseRole('s')))`` answer a question about an ontology that never had the
+    axiom.
+    """
+    return ctx.role(role_field)
+
+
+def _plain_sub_role(sub_role, super_role):
+    """``(sub_role, super_role)`` with a PLAIN role on the left — owlready2
+    attaches a sub-property axiom to the property CLASS on the left
+    (``is_a.append``), which an ``Inverse(...)`` expression is not (it crashed
+    with an ``AttributeError`` for ``s⁻ ⊑ r``, while ``r ⊑ s⁻`` built).
+
+    The rewrite is an equivalence, not an approximation: ``r⁻ ⊑ s`` says every
+    ``r(y, x)`` is an ``s(x, y)``, i.e. every ``r(x, y)`` is an ``s(y, x)``,
+    which is ``r ⊑ s⁻``; and ``r⁻ ⊑ s⁻`` is ``r ⊑ s``, the inverses cancelling.
+    """
+    if isinstance(sub_role, InverseRole):
+        inner = (super_role.role if isinstance(super_role, InverseRole)
+                 else InverseRole(super_role))
+        return sub_role.role, inner
+    return sub_role, super_role
+
+
+def _add_inverse_pair(ctx: _Ctx, partner: Dict[str, str], p: str, q: str) -> None:
+    """Assert ``InverseObjectProperties(p q)`` (``p ≡ q⁻``) into ``ctx``.
+
+    owlready2's ``inverse_property`` holds ONE property, and assigning it a
+    second time REPLACES the first — so ``Inv(p, q)`` together with ``Inv(p, r)``
+    kept only one of them and the oracle reasoned over a weaker knowledge base.
+    The second pair is not lost by being kept as an EQUIVALENCE instead: if ``p``
+    already has the inverse ``q0`` then ``q0 ≡ q`` (both are ``p⁻``), and the
+    symmetric case likewise. ``partner`` records the one inverse each property
+    was given.
+    """
+    if p in partner:
+        if partner[p] != q:
+            ctx.role_obj(partner[p]).equivalent_to.append(ctx.role_obj(q))
+    elif q in partner:
+        if partner[q] != p:
+            ctx.role_obj(partner[q]).equivalent_to.append(ctx.role_obj(p))
+    else:
+        ctx.role_obj(p).inverse_property = ctx.role_obj(q)
+        partner[p], partner[q] = q, p
+
+
 def _build_kb(ctx: _Ctx, tbox: TBox, abox: ABox) -> None:
-    """Populate ``ctx``'s ontology with ``tbox``'s RBox + GCIs and ``abox``'s
+    """Populate ``ctx``'s ontology with ``tbox``'s role box + GCIs and ``abox``'s
     assertions. Must run inside a ``with ctx.onto:`` block (every
     ``ctx.ow.types.new_class``/``GeneralClassAxiom`` call needs the current
     namespace set — see ``owlready2``'s own convention).
+
+    EVERY role-box field is rendered. This module is one of the kit's two
+    INDEPENDENT oracles, and it is the one the in-house tableau's own refusal
+    messages send the user to — an oracle that silently dropped the axiom under
+    test would agree with everything, and would make those messages dishonest.
+    ``tests/test_dl_route_agreement.py`` checks a verdict per field that FLIPS
+    when the field is dropped, which is what makes that claim checkable.
     """
     for sub_role, super_role in tbox.role_inclusions:
-        ctx.role_obj(sub_role).is_a.append(ctx.role_obj(super_role))
+        sub_role, super_role = _plain_sub_role(sub_role, super_role)
+        if isinstance(super_role, str):
+            ctx.state_named_inclusion("role", sub_role, super_role,
+                                      _role_expr(sub_role, ctx), _role_expr(super_role, ctx))
+        else:
+            _role_expr(sub_role, ctx).is_a.append(_role_expr(super_role, ctx))
+    # APPEND, never assign: owlready2 stores a property's property chains,
+    # domains and ranges as lists, and `role.domain = [...]` REPLACES what an
+    # earlier axiom put there. Two ObjectPropertyDomain axioms on one role are
+    # a CONJUNCTION (an element with an r-successor is in both classes), so
+    # assigning kept only the last and the oracle reasoned over a weaker
+    # knowledge base than the tableau and the FOL image -- silently, which is
+    # the one thing an oracle must not do. The same for ranges and for two
+    # chains with one super-property.
+    for chain, super_role in tbox.role_chains:
+        ctx.role_obj(super_role).property_chain.append(
+            ctx.ow.PropertyChain([ctx.role_obj(role) for role in chain]))
+    partner: Dict[str, str] = {}
+    for p, q in tbox.inverse_role_pairs:
+        _add_inverse_pair(ctx, partner, p, q)
+    for left, right in tbox.disjoint_role_pairs:
+        ctx.ow.AllDisjoint([ctx.role_obj(left), ctx.role_obj(right)])
+    # The six characteristics need no statement here: they are already among
+    # each property class's bases (see _Ctx.role_obj). A role that occurs ONLY
+    # in a characteristic declaration still has to be created, though, or the
+    # declaration would never reach the ontology at all.
+    for roles in ctx.characteristics.values():
+        for role in sorted(roles):
+            ctx.role_obj(role)
+    for role, filler in tbox.role_domains:
+        ctx.role_obj(role).domain.append(_translate_concept(filler, ctx))
+    for role, filler in tbox.role_ranges:
+        ctx.role_obj(role).range.append(_translate_concept(filler, ctx))
     for sub, sup in tbox.inclusions:
         _add_gci(sub, sup, ctx)
     for individual, concept in abox.concept_assertions:
         ctx.ind(individual).is_a.append(_translate_concept(concept, ctx))
     for a, b, role in abox.role_assertions:
         role_obj = ctx.role_obj(role)
-        getattr(ctx.ind(a), role_obj.name).append(ctx.ind(b))
+        if issubclass(role_obj, ctx.ow.FunctionalProperty):
+            # owlready2 keeps the value of a FUNCTIONAL property as ONE attribute (None
+            # while unset), not as a list to append to, and a second assignment would
+            # REPLACE the first: two successors of one individual (which functionality
+            # then identifies, or which `distinct_assertions` makes inconsistent) would
+            # reach HermiT as one. The assertion r(a, b) is stated instead as the class
+            # assertion a : ∃r.{b} (ObjectHasValue), which OWL 2 defines to mean the same
+            # and which the negative assertions below already use. The test is the property
+            # CLASS, not the role names the TBox declared functional: a sub-property of a
+            # functional property is a Python subclass of it and holds one value as well.
+            ctx.ind(a).is_a.append(role_obj.value(ctx.ind(b)))
+        else:
+            getattr(ctx.ind(a), role_obj.name).append(ctx.ind(b))
     for a, b in abox.distinct_assertions:
         ctx.ow.AllDifferent([ctx.ind(a), ctx.ind(b)])
+    for a, b in abox.same_assertions:
+        # owlready2's own spelling of SameIndividual: the two individuals
+        # become one entity by equivalence, which is what HermiT then reads.
+        ctx.ind(a).equivalent_to.append(ctx.ind(b))
+    for a, b, role in abox.negative_role_assertions:
+        role_obj = ctx.role_obj(role)
+        ctx.ind(a).is_a.append(ctx.ow.Not(role_obj.value(ctx.ind(b))))
+
+
+def _reject_data_layer(tbox: TBox, abox: ABox) -> None:
+    """Refuse, by name, a knowledge base that carries a DATA axiom kind.
+
+    This module is one of the kit's two INDEPENDENT oracles, and an oracle that
+    silently dropped the axiom under test would agree with everything. owlready2
+    has the machinery for data properties and datatypes, but this module's
+    translation does not use it, so the honest answer is a refusal that names
+    the kinds and the routes that DO answer (the FOL image; for facet arithmetic
+    alone, ``atp.z3_arith``). Data CONCEPTS are refused at translation time, in
+    :func:`_translate_concept`.
+    """
+    kinds = _data_layer_kinds(tbox, abox)
+    if kinds:
+        raise UnsupportedAxiomError(
+            f"dl.owl_reasoner: this knowledge base carries data-layer axiom "
+            f"kinds ({', '.join(kinds)}), which this external route does not "
+            f"translate — it refuses them by name rather than answer for a "
+            f"weaker knowledge base. The in-house tableau has no data domain "
+            f"either, so the route that answers is the FOL image: "
+            f"kb = dl.kb_to_fol(tbox, abox, query=[concept]), then "
+            f"api.prove(kb.unsatisfiability_goal(concept), kb.tbox_premises) — "
+            f"or kb.subsumption_goal / kb.instance_goal; 'proved' transfers to "
+            f"OWL 2, 'refuted' does not (kb.refutation_is_decisive). Facet "
+            f"arithmetic over the data ranges alone is decided by "
+            f"atp.z3_arith.is_valid_arith.")
+
+
+def _guard_inputs(tbox: Optional[TBox], abox: Optional[ABox],
+                  concepts=()) -> None:
+    """The refusals every ``external_*`` function owes BEFORE it builds
+    anything — in ONE place, so an entry point that makes no HermiT call at all
+    (``external_realize`` on an empty vocabulary, ``external_realize_all`` and
+    ``external_instance_retrieval`` on an empty ABox) still runs them: those
+    returned a quiet ``[]`` for a knowledge base the other seven refuse.
+
+    The stored role box and data box must be well-formed — the SAME validation
+    the in-house tableau and the FOL image run (:func:`_validate_role_box`) —;
+    an ABox assertion must not carry an OWL 2 built-in property name; the data
+    layer is refused by name; the role box must satisfy OWL 2's simple-role
+    restriction; and no class expression may use a built-in property name as a
+    role.
+    """
+    tbox = tbox if tbox is not None else TBox()
+    _validate_role_box(tbox, where="dl.owl_reasoner")
+    _validate_data_box(tbox, where="dl.owl_reasoner")
+    _reject_abox_roles(abox, where="dl.owl_reasoner")
+    _reject_data_layer(tbox, abox if abox is not None else ABox())
+    _check_simple_role_box(tbox, _RBox.from_tbox(tbox))
+    for concept in concepts:
+        _reject_concept_roles_deep(concept, where="dl.owl_reasoner")
+    for concept in _tbox_class_expressions(tbox):
+        _reject_concept_roles_deep(concept, where="dl.owl_reasoner")
+    if abox is not None:
+        for _individual, concept in abox.concept_assertions:
+            _reject_concept_roles_deep(concept, where="dl.owl_reasoner")
 
 
 def _kb_consistent(tbox: Optional[TBox], abox: ABox) -> bool:
@@ -349,12 +618,19 @@ def _kb_consistent(tbox: Optional[TBox], abox: ABox) -> bool:
     Raises:
         OwlReasonerError: owlready2 is missing, or HermiT/the JVM failed for
             a reason other than genuine inconsistency.
+        ~unicode_fol_kit.dl.tableau.NonSimpleRoleError:
+            the role box violates OWL 2's own SIMPLE-role
+            restriction (Structural Specification §11). Checked with the KIT's
+            own check, so the same role box is refused with the same message on
+            EVERY route, rather than surfacing as a HermiT error here and as a
+            tableau error there.
     """
     ow = _require_available()
     tbox = tbox if tbox is not None else TBox()
+    _guard_inputs(tbox, abox)
     world = ow.World()
     onto = world.get_ontology("http://unicode-fol-kit.invalid/kb#")
-    ctx = _Ctx(ow, world, onto, tbox.transitive_roles)
+    ctx = _Ctx(ow, world, onto, _characteristics(tbox))
     with onto:
         _build_kb(ctx, tbox, abox)
     try:
@@ -372,15 +648,42 @@ def _kb_consistent(tbox: Optional[TBox], abox: ABox) -> bool:
 # Public API — mirrors dl.tableau's, over the ALCHQ + I + O fragment.
 # --------------------------------------------------------------------------- #
 
+#: The name :func:`external_concept_satisfiable` gives its probe individual when
+#: no individual of the question already has it.
+_PROBE_INDIVIDUAL = "_probe"
+
+
+def _fresh_individual(base: str, taken: Set[str]) -> str:
+    """``base``, or ``base`` followed by the first number that makes it a name
+    outside ``taken`` — an individual name the question does not already use.
+
+    Individual names are compared exactly (they are case-sensitive strings), so
+    exact membership in ``taken`` is the whole test.
+    """
+    name, number = base, 0
+    while name in taken:
+        number += 1
+        name = f"{base}{number}"
+    return name
+
+
 def external_concept_satisfiable(concept: Concept, tbox: Optional[TBox] = None) -> bool:
     """Return True iff ``concept`` is satisfiable with respect to ``tbox`` —
     the external-reasoner twin of :func:`unicode_fol_kit.dl.tableau.concept_satisfiable`,
     but over the FULL ALCHQ + I + O fragment (inverse roles, nominals). Reduced
-    to :func:`_kb_consistent` via a single fresh probe individual, exactly the
-    way the in-house tableau reduces it to one fresh branch node.
+    to :func:`_kb_consistent` via a single probe individual, exactly the way
+    the in-house tableau reduces it to one fresh branch node. The probe is
+    called by a name that no nominal or value restriction of ``concept`` or of
+    ``tbox`` mentions: a probe that shared the name of such an individual would
+    BE that individual, and the question would be asked about it and not about
+    some element.
     """
-    probe_abox = ABox().assert_concept("_probe", concept)
-    return _kb_consistent(tbox, probe_abox)
+    _require_available()
+    _guard_inputs(tbox, ABox().assert_concept(_PROBE_INDIVIDUAL, concept))
+    probe = _fresh_individual(_PROBE_INDIVIDUAL, _concept_individual_names(concept).union(
+        *(_concept_individual_names(expression)
+          for expression in _tbox_class_expressions(tbox))))
+    return _kb_consistent(tbox, ABox().assert_concept(probe, concept))
 
 
 def external_concept_unsatisfiable(concept: Concept, tbox: Optional[TBox] = None) -> bool:
@@ -409,12 +712,17 @@ def _abox_with(abox: ABox, individual: str, concept: Concept) -> ABox:
     """A copy of ``abox`` with one extra concept assertion ``individual : concept``
     (used by :func:`external_instance_check`'s entailment reduction, mirroring
     :func:`unicode_fol_kit.dl.tableau.instance_check`'s own copy-and-extend).
+
+    :meth:`~unicode_fol_kit.dl.tableau.ABox.copy`, not a field-by-field
+    reconstruction: this module is one of the kit's INDEPENDENT oracles, and
+    an oracle that silently drops an assertion kind the caller supplied
+    agrees with the in-house tableau for the wrong reason. (Field-by-field is
+    what this did until 0.30.0, and it dropped ``same_assertions`` /
+    ``negative_role_assertions`` the moment they existed.)
     """
-    return ABox(
-        concept_assertions=abox.concept_assertions + [(individual, concept)],
-        role_assertions=list(abox.role_assertions),
-        distinct_assertions=list(abox.distinct_assertions),
-    )
+    probe = abox.copy()
+    probe.assert_concept(individual, concept)
+    return probe
 
 
 def external_instance_check(abox: ABox, individual: str, concept: Concept,
@@ -428,22 +736,16 @@ def external_instance_check(abox: ABox, individual: str, concept: Concept,
 
 
 def _all_individuals(abox: ABox) -> Set[str]:
-    """Every individual name mentioned in ``abox`` (either assertion list),
-    falling back to a single anonymous ``"a"`` for a wholly empty ABox — the
-    same convention :func:`unicode_fol_kit.dl.tableau._individuals` uses,
-    reimplemented locally (rather than imported) to keep this module decoupled
-    from that one's private internals.
+    """Every individual name mentioned in ``abox`` (ANY assertion list) — the
+    SAME scan the tableau's sweeps and ``kb_to_fol(...).individuals`` read
+    (:func:`~unicode_fol_kit.dl.tableau._abox_individual_names`, driven by the
+    axiom-kind table), and NO anonymous fallback individual: an ABox that names
+    nobody has no one to retrieve or realize. (This used to fall back to an
+    invented ``"a"`` and report it as a member — ``TBox().add(Top(), A)`` over
+    an empty ABox "retrieved" ``{"a"}`` — and its own hand-written scan missed
+    the data assertions.)
     """
-    individuals = {a for a, _ in abox.concept_assertions}
-    for a, b, _ in abox.role_assertions:
-        individuals.add(a)
-        individuals.add(b)
-    for a, b in abox.distinct_assertions:
-        individuals.add(a)
-        individuals.add(b)
-    if not individuals:
-        individuals = {"a"}
-    return individuals
+    return set(_abox_individual_names(abox))
 
 
 def external_instance_retrieval(abox: ABox, concept: Concept,
@@ -451,8 +753,13 @@ def external_instance_retrieval(abox: ABox, concept: Concept,
     """Return every individual of ``abox`` that ``(tbox, abox)`` entails is a
     ``concept`` — sweeps :func:`external_instance_check` exactly like
     :func:`unicode_fol_kit.dl.tableau.instance_retrieval` does.
+
+    The shared refusals run FIRST (:func:`_guard_inputs`): an ABox that names
+    nobody makes the sweep below call :func:`external_instance_check` zero
+    times, and a knowledge base the other entry points refuse got ``set()``.
     """
-    return {ind for ind in _all_individuals(abox)
+    _guard_inputs(tbox, abox, [concept])
+    return {ind for ind in sorted(_all_individuals(abox))
             if external_instance_check(abox, ind, concept, tbox)}
 
 
@@ -460,8 +767,11 @@ def external_realize(abox: ABox, individual: str, vocabulary: List[Concept],
                       tbox: Optional[TBox] = None) -> List[Concept]:
     """Return ``individual``'s most-specific concepts from ``vocabulary`` — the
     same filter-then-drop-non-minimal reduction
-    :func:`unicode_fol_kit.dl.tableau.realize` uses.
+    :func:`unicode_fol_kit.dl.tableau.realize` uses. The shared refusals run
+    first (:func:`_guard_inputs`), since an empty ``vocabulary`` reaches no
+    HermiT call.
     """
+    _guard_inputs(tbox, abox, vocabulary)
     candidates = [c for c in vocabulary if external_instance_check(abox, individual, c, tbox)]
     return [c for c in candidates
             if not any(external_subsumes(d, c, tbox) and not external_subsumes(c, d, tbox)
@@ -470,6 +780,9 @@ def external_realize(abox: ABox, individual: str, vocabulary: List[Concept],
 
 def external_realize_all(abox: ABox, vocabulary: List[Concept],
                           tbox: Optional[TBox] = None) -> Dict[str, List[Concept]]:
-    """Return :func:`external_realize` for every individual named in ``abox``."""
+    """Return :func:`external_realize` for every individual named in ``abox``
+    (``{}`` for an ABox that names none; the shared refusals run first, see
+    :func:`_guard_inputs`)."""
+    _guard_inputs(tbox, abox, vocabulary)
     return {ind: external_realize(abox, ind, vocabulary, tbox)
             for ind in sorted(_all_individuals(abox))}

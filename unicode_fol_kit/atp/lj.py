@@ -19,16 +19,17 @@ Rules: ``Ax``, the structural ``WL`` / ``WR`` / ``CL`` / ``Cut``, the connective
 unlike LK), ``→L`` / ``→R``, ``↔L`` / ``↔R``, and the quantifier rules ``∀L`` / ``∀R``,
 ``∃L`` / ``∃R`` (with the eigenvariable condition on ``∀R`` / ``∃L``).
 
-FALSUM. This toolkit has **no primitive propositional falsum**: the reserved atom
-``"⊥"`` is, throughout — the LJ checker above, :func:`int_prove` below, and
-:func:`unicode_fol_kit.semantics.intuitionistic.int_valid` (the ground truth both are
-checked against) — an *ordinary propositional variable*. There is no ``⊥L`` rule (no
-"``Γ, ⊥ ⊢ Δ`` is an axiom" step) and no ex-falso-quodlibet baked in for it: ``⊥→p`` and
-``¬⊥`` are both *not* derivable. Express ex falso explicitly instead, e.g. via
-``P ∧ ¬P`` (from which anything intuitionistically follows: ``¬(P∧¬P)`` is a theorem,
-but a bare context containing the atom ``⊥`` proves nothing extra). This mirrors
-:mod:`unicode_fol_kit.hol.intuitionistic`'s FALSUM note, which makes the same choice
-for the same reason (faithfulness to ``int_valid``).
+FALSUM. The nullary atoms ``$true`` and ``$false`` (``⊤`` and ``⊥`` in the unicode
+syntax), and the nullary atoms NAMED ``⊤`` and ``⊥`` (the reserved falsum atom of the
+Fitch checker among them), are genuine constants, not propositional letters:
+``Γ ⊢ ⊤`` and ``Γ, ⊥ ⊢ C`` are axioms of the checker (``⊤`` on the left and ``⊥`` on
+the right license nothing), and the decision procedure reads ``⊥`` as its own
+ex-falso sentinel and ``⊤`` as ``⊥→⊥``. So ``⊥ ⊢ p``, ``⊢ ⊤`` and ``⊢ ¬⊥`` are
+derivable, ``⊢ ⊥`` and ``⊤ ⊢ p`` are not — the same verdicts the Kripke semantics
+(:func:`unicode_fol_kit.semantics.intuitionistic.int_valid`, the ground truth both are
+checked against) gives them (``⊤`` forced at every world, ``⊥`` at none). The
+checker's axiom is these two constants and nothing else: any other atom has no ex
+falso, and ``P ∧ ¬P`` still has to be refuted by the connective rules.
 
 ``int_prove`` / ``int_decide`` (below) add a **decision procedure** — Dyckhoff's
 contraction-free **G4ip** calculus — alongside this derivation *checker*; see their
@@ -38,13 +39,18 @@ Public API: :func:`check_lj_proof`, :func:`verify_lj_proof`, :func:`int_prove`,
 :func:`int_decide`.
 """
 
-from typing import Dict, FrozenSet, List, Optional, Tuple
+from typing import Callable, Dict, FrozenSet, List, Optional, Tuple
 
 from ..fol.nodes import (
     Node, Atom, Not, And, Or, Xor, Implies, Iff, Variable,
-    Quantifier, SortedQuantifier,
+    Quantifier, SortedQuantifier, SortedConstant, Constant,
 )
+from ..fol._atom_keys import AtomKeys, atom_key
 from ..fol._so_nodes import SecondOrderQuantifier
+from ..fol._truth_constants import (
+    truth_value, is_true_constant, is_false_constant,
+)
+from ..semantics._modal_reject import reject_equality_in
 from .sequent import (
     Sequent, Derivation, SequentResult, sequent, derive, axiom,
     _ms_eq, _seq_eq, _candidates, _two_match, _canon_derivation, _eigenvar_not_free,
@@ -57,11 +63,23 @@ from .fitch import _subst_var, _q_kind, _is_term
 # ---------------------------------------------------------------------------
 
 def _r_axiom(concl, prems, extra):
-    """Ax: ``Γ, A ⊢ A`` — the one succedent formula occurs in the antecedent."""
+    """Ax: ``Γ, A ⊢ A`` — the one succedent formula occurs in the antecedent.
+
+    Two more axioms for the truth constants, which are not letters: ``Γ ⊢ $true``
+    and ``Γ, $false ⊢ C`` (``C`` any single formula, or no succedent at all).
+    ``$true`` on the LEFT and ``$false`` on the RIGHT license nothing, so an axiom
+    that has only those is rejected.
+    """
     if prems:
         return "Ax takes no premises"
+    if len(concl.succedent) > 1:
+        return "an LJ axiom has at most one succedent formula"
+    if any(is_false_constant(f) for f in concl.antecedent):
+        return None                                     # Γ, $false ⊢ C
     if len(concl.succedent) != 1:
         return "an LJ axiom has exactly one succedent formula"
+    if is_true_constant(concl.succedent[0]):
+        return None                                     # Γ ⊢ $true
     if concl.succedent[0] not in concl.antecedent:
         return "Ax: the succedent formula must occur in the antecedent"
     return None
@@ -302,7 +320,9 @@ def _r_exists_l(concl, prems, extra):
     return "needs ∃x A on the left and premise Γ, A[x:=a] ⊢ Δ"
 
 
-_LJ_RULES: Dict[str, "callable"] = {
+#: One checker per rule name: ``(conclusion, premise conclusions, extra)`` -> an error
+#: message, or ``None`` when the step is a correct instance of the rule.
+_LJ_RULES: Dict[str, Callable[[Sequent, List[Sequent], Tuple], Optional[str]]] = {
     "Ax": _r_axiom,
     "WL": _r_weaken_l, "WR": _r_weaken_r, "CL": _r_contract_l, "Cut": _r_cut,
     "¬L": _r_not_l, "¬R": _r_not_r,
@@ -398,7 +418,7 @@ def check_lj_proof(derivation: "Derivation") -> bool:
 # Internal formula representation. Proof search works over a small IR, deliberately
 # NOT unicode_fol_kit.fol.nodes.Node, so that the ex-falso sentinel used to encode ``¬A``
 # (see below) can never be confused with a Node the caller wrote:
-#   ('atom', key)     -- key = the atom's to_unicode_str(); opaque to G4ip
+#   ('atom', key)     -- key = the atom's written form (fol._atom_keys.atom_key); opaque to G4ip
 #   ('and', L, R) / ('or', L, R) / ('imp', L, R)
 #   _BOT               -- the internal "always false" ex-falso sentinel (see _desugar)
 # A sequent is (ctx: FrozenSet[IR], goal: IR); ctx is a SET, not a multiset — G4ip is
@@ -406,6 +426,7 @@ def check_lj_proof(derivation: "Derivation") -> bool:
 # hypothesis for completeness (unlike naive LJ, which needs an explicit CL rule).
 
 _BOT: Tuple[str] = ('bot',)  # the ex-falso sentinel; never equal to any ('atom', ...)
+_TRUE = ('imp', _BOT, _BOT)  # `$true`: provable from nothing (→R then the sentinel), inert on the left
 
 
 def _desugar(f: Node):
@@ -414,21 +435,27 @@ def _desugar(f: Node):
     exactly (:mod:`unicode_fol_kit.semantics.intuitionistic`), so ``int_prove`` decides
     exactly the semantics ``int_valid`` checks.
 
-    ``¬A`` is encoded the standard way, ``A→⊥`` (Dyckhoff's own presentation), but ``⊥``
-    here is ``_BOT`` — an internal sentinel object, DISTINCT from the reserved surface
-    atom ``"⊥"`` (which desugars via the plain ``Atom`` case below, to ``('atom', '⊥')``,
-    an ordinary variable with no special treatment — see the module docstring's FALSUM
-    paragraph). This is what makes ``¬A`` behave like the *primitive* Kripke clause "no
-    reachable world forces A" — which quantifies over worlds, not over any particular
-    atom's valuation — rather than like material implication into a fellow proposition
-    that could itself be forced somewhere. ``_BOT`` gets a genuine ex-falso rule inside
-    the prover (:func:`_prove`); the surface atom ``"⊥"`` never does.
+    ``¬A`` is encoded the standard way, ``A→⊥`` (Dyckhoff's own presentation), where ``⊥``
+    is ``_BOT`` — an internal sentinel object, DISTINCT from every ``('atom', ...)`` — and
+    the surface falsity constants ``⊥`` / ``$false`` desugar to that very sentinel (see
+    the module docstring's FALSUM paragraph). This is what makes ``¬A`` behave like the
+    *primitive* Kripke clause "no reachable world forces A" — which quantifies over
+    worlds, not over any particular atom's valuation — rather than like material
+    implication into a fellow proposition that could itself be forced somewhere.
+    ``_BOT`` gets a genuine ex-falso rule inside the prover (:func:`_prove`), which no
+    letter has.
     """
     if isinstance(f, Atom):
-        return ('atom', f.to_unicode_str())
+        constant = truth_value(f)
+        if constant is not None:
+            # The truth constants (`$true` / `⊤`, `$false` / `⊥`): falsity IS the ex-falso
+            # sentinel (it is forced at no world, which is what _BOT means), and truth is
+            # `_BOT→_BOT` (forced at every world); neither is a letter.
+            return _TRUE if constant else _BOT
+        return ('atom', atom_key(f))
     if isinstance(f, Not):
-        # ¬A := A→_BOT ("no future world forces A"); _BOT is the INTERNAL ex-falso
-        # sentinel, never the surface atom "⊥" (see the docstring above).
+        # ¬A := A→_BOT ("no future world forces A"); _BOT is the ex-falso sentinel the
+        # surface constant "⊥" desugars to (see the docstring above).
         return ('imp', _desugar(f.formula), _BOT)
     if isinstance(f, And):
         return ('and', _desugar(f.left), _desugar(f.right))
@@ -451,6 +478,33 @@ def _desugar(f: Node):
     )
 
 
+#: G4ip reads an atom as an opaque letter, so it can give identity no meaning:
+#: ``int_prove([], a = a)`` was False (measured on 0.28.1). Refused by name, with
+#: the same wording the Kripke search this calculus is cross-checked against uses
+#: — the two decide the same fragment and must refuse the same input.
+_EQUALITY_ROUTE = "Dyckhoff's G4ip calculus"
+_EQUALITY_ATOM_READING = ("an atom is an opaque letter in a sequent, and no term "
+                          "is interpreted")
+_EQUALITY_INSTEAD = (
+    "Decide identity classically with unicode_fol_kit.api.prove, or on the "
+    "quantified modal route with unicode_fol_kit.fol.qml.qml_is_valid (rigid "
+    "identity over the object domain); intuitionistic logic with equality is not "
+    "what this calculus decides."
+)
+
+
+def _reject_equality_everywhere(formula: Node, caller: str) -> None:
+    """Refuse an identity atom anywhere in ``formula``, before the search.
+
+    Up front, not inside a rule: G4ip closes a branch on an axiom match, so a
+    sequent that closes without ever decomposing the identity atom would return a
+    verdict that never read it.
+    """
+    reject_equality_in(formula, caller, _EQUALITY_ROUTE,
+                       atom_reading=_EQUALITY_ATOM_READING,
+                       instead=_EQUALITY_INSTEAD)
+
+
 def _reject_quantified(formula: Node) -> None:
     """Raise if ``formula`` contains a quantifier -- ``int_prove`` decides the
     PROPOSITIONAL fragment only."""
@@ -469,7 +523,22 @@ def _reject_quantified(formula: Node) -> None:
             )
 
 
-_MAX_STEPS = 200000  # a defensive circuit-breaker, not a completeness bound -- see _prove
+def _forget_constant_sorts(node: Node, membership: List[Node]) -> Node:
+    """``node`` with every sorted constant ``c:S`` replaced by the plain constant ``c``.
+
+    The atom ``S(c)`` of each one is appended to ``membership`` (a constant is in
+    its sort), which is what makes ``Mortal(c:S)`` and ``Mortal(c)`` one letter of
+    the sequent and the annotation a hypothesis instead of a second symbol. This is
+    the sorted-constant half of ``Node._relativize`` and nothing more: any other
+    many-sorted node is left for :func:`_desugar` to refuse by name.
+    """
+    if isinstance(node, SortedConstant):
+        membership.append(Atom(node.sort, (Constant(node.name),)))
+        return Constant(node.name)
+    return node.map_children(lambda child: _forget_constant_sorts(child, membership))
+
+
+_MAX_STEPS = 200000  # the step budget of one search: spent, it ends the search with no answer -- see _prove
 
 
 def _prove(ctx: FrozenSet, goal, cache: Dict, steps: List[int]) -> bool:
@@ -479,11 +548,13 @@ def _prove(ctx: FrozenSet, goal, cache: Dict, steps: List[int]) -> bool:
     tuple), which keeps the differential test battery fast; it does not change the
     result (this is a pure function of ``ctx``/``goal``). ``steps`` is a one-element
     mutable counter: Dyckhoff's calculus is *provably* terminating on its own (every
-    rule strictly decreases a well-founded complexity measure), so this counter should
-    never come close to firing — it exists purely to fail loudly with a diagnosable
-    error instead of hanging if a bug is ever introduced here, not as a soundness- or
-    completeness-affecting bound (contrast ``int_countermodel``'s ``max_steps``, which
-    genuinely bounds an incomplete first-order search).
+    rule strictly decreases a well-founded complexity measure), but the number of steps
+    is exponential in the nesting of implications, so a sequent can need more than the
+    counter allows (Peirce's law nested in itself five times does). The counter then ends
+    the search with a ``RuntimeError`` that says so, instead of running for hours: no
+    answer is given, so it bounds what is decided and never what an answer means
+    (``int_countermodel``'s ``max_steps`` bounds an incomplete first-order search in the
+    same way).
     """
     key = (ctx, goal)
     cached = cache.get(key)
@@ -492,10 +563,11 @@ def _prove(ctx: FrozenSet, goal, cache: Dict, steps: List[int]) -> bool:
     steps[0] += 1
     if steps[0] > _MAX_STEPS:
         raise RuntimeError(
-            "int_prove: internal step budget exceeded. Dyckhoff's G4ip is a provably "
-            "terminating calculus, so this should be unreachable -- please report a bug "
-            "against unicode_fol_kit.atp.lj._prove (formula too large is not expected "
-            "to be the cause)."
+            f"int_prove: internal step budget exceeded ({_MAX_STEPS} steps). Dyckhoff's "
+            "G4ip terminates on every sequent, but the number of steps it takes is "
+            "exponential in the nesting of implications, and this sequent needs more than "
+            "the budget: nothing was decided. (The backend 'intuitionistic' answers "
+            "unknown / bound_hit in this case.)"
         )
     result = _prove_uncached(ctx, goal, cache, steps)
     cache[key] = result
@@ -584,19 +656,43 @@ def int_prove(premises: List[Node], conclusion: Node) -> bool:
     :meth:`~unicode_fol_kit.semantics.intuitionistic.IntKripkeModel.forces` uses, so
     ``int_prove`` decides exactly what
     :func:`~unicode_fol_kit.semantics.intuitionistic.int_valid` checks (the differential
-    test battery in ``tests/test_lj_search.py`` cross-checks this). The reserved atom
-    ``"⊥"`` is an ORDINARY atom here too (see the module docstring's FALSUM paragraph):
-    ``int_prove([], Implies(BOT, p))`` and ``int_prove([], Not(BOT))`` are both False,
-    exactly like ``int_valid``.
+    test battery in ``tests/test_lj_search.py`` cross-checks this). The nullary atoms
+    ``⊥`` / ``$false`` and ``⊤`` / ``$true`` are the falsity and truth constants here
+    too (see the module docstring's FALSUM paragraph): ``int_prove([], Implies(BOT, p))``
+    and ``int_prove([], Not(BOT))`` are both True, exactly like ``int_valid``.
 
     Quantified input raises ``NotImplementedError`` — see :func:`_reject_quantified` for
     where to go instead (the bounded first-order Kripke search, or the propositional
     GMT/S4 HOL route).
+
+    A SORTED constant (``socrates:Human``) is read the way
+    :func:`~unicode_fol_kit.semantics.intuitionistic.int_valid` reads it: the
+    annotation does not make a second symbol, so ``Mortal(socrates:Human)`` and
+    ``Mortal(socrates)`` are ONE letter, and the constant being in its sort — the atom
+    ``Human(socrates)`` — is a HYPOTHESIS of the sequent, exactly as
+    :func:`~unicode_fol_kit.fol._msfl_nodes.sort_membership_axioms` asserts it on every
+    other many-sorted route. So ``int_prove([], Mortal(socrates:Human) →
+    Mortal(socrates))`` is True and ``int_prove([], Human(socrates:Human))`` is True,
+    while ``int_prove([], Mortal(socrates:Human))`` is False, as it is of the plain
+    ``Mortal(socrates)``. A sorted QUANTIFIER is refused, like every quantifier.
+
+    A letter is named by the text its atom prints as, so two different atoms that print
+    alike would be one letter and the sequent another problem. Such a pair is refused by name
+    (``NotImplementedError``): the numeral ``1`` and a constant named ``1``
+    (``Number(1)`` and ``Constant('1')``, which the TPTP reader reads from ``p(1)`` and
+    ``p('1')``), and a free variable ``x`` and a constant named ``x`` (a free variable is a
+    parameter, not the constant of its name).
     """
     for p in premises:
         _reject_quantified(p)
+        _reject_equality_everywhere(p, "int_prove")
     _reject_quantified(conclusion)
-    ctx = frozenset(_desugar(p) for p in premises)
+    _reject_equality_everywhere(conclusion, "int_prove")
+    membership: List[Node] = []
+    premises = [_forget_constant_sorts(p, membership) for p in premises]
+    conclusion = _forget_constant_sorts(conclusion, membership)
+    AtomKeys("int_prove").letters([*premises, *membership, conclusion])
+    ctx = frozenset(_desugar(p) for p in list(premises) + membership)
     goal = _desugar(conclusion)
     return _prove(ctx, goal, {}, [0])
 

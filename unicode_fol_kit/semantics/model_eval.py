@@ -277,6 +277,8 @@ from dataclasses import dataclass
 from typing import Dict, FrozenSet, List, Mapping, Optional, Tuple
 
 from .structures import FiniteStructure, Individual, Key
+from ..fol._tptp_symbols import is_tptp_boolean_atom as _is_tptp_boolean_atom
+from ..fol._tptp_symbols import truth_constant_word as _truth_constant_word
 from ..fol.nodes import (
     Node, Variable, Constant, Number, Cardinality, Function,
     Atom, Not, And, Contrast, Or, Xor, Implies, Iff, Quantifier, Count,
@@ -638,6 +640,10 @@ def _atom_value(atom: Atom, structure: FiniteStructure, assignment: Assignment,
         right = _numeric_value(atom.args[1], structure, assignment,
                                bound_existentials, ctx)
         return _ORDER_OPS[atom.predicate](left, right)
+    if _is_tptp_boolean_atom(atom):
+        # TPTP's defined propositions, not a relation of the structure — the
+        # reading to_z3, the Tarski evaluator and the TPTP writers give them.
+        return _truth_constant_word(atom) == "$true"
     if atom.predicate in ("=", "≠") and len(atom.args) == 2:
         left_i = _term_value(atom.args[0], structure, assignment, ctx)
         right_i = _term_value(atom.args[1], structure, assignment, ctx)

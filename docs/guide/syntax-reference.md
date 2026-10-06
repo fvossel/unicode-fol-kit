@@ -12,11 +12,11 @@ The lexer distinguishes the following token kinds. Because the patterns are mutu
 | Name | term-valued, at least two letters (or one-or-more digits then a letter), may also contain digits, underscores, and uppercase letters after the first character | `socrates`, `distance`, `centerOf`, `foo1`, `dani_Shapiro`, `2008SummerOlympics`, `świątek` | a bare constant or a function symbol |
 | Constant (`c_`) | `c_` followed by letters/digits (any script) | `c_a`, `c_zero`, `c_42`, `c_świątek` | an explicitly marked constant |
 | Constant (Greek) | a run of Greek letters, **excluding** `λ` and `μ` | `θ`, `α`, `π` | a constant, e.g. a threshold `θ` in `μ(x, dim) > θ` |
-| Predicate | one uppercase-signalling letter, then letters/digits (no underscore) | `P`, `Human`, `OnSurfaceOf`, `Ś` | a predicate symbol |
+| Predicate | one uppercase-signalling letter, then letters/digits/underscores | `P`, `Human`, `OnSurfaceOf`, `Has_bond`, `Ś` | a predicate symbol |
 | Number | digits, optional decimal part | `0`, `42`, `3.14` | a numeric literal |
-| Sort annotation | `:` followed by an uppercase-signalling letter and letters/digits | `:Human`, `:Sort1` | a sort tag *(MSFOL and MSFL modes only)* |
+| Sort annotation | `:` followed by an uppercase-signalling letter and letters/digits/underscores | `:Human`, `:Sort1` | a sort tag *(MSFOL and MSFL modes only)* |
 
-"Term-valued letter" and "uppercase-signalling letter" are not ASCII-only: any Unicode letter qualifies, decided by the SAME rule Python's `str.isupper()` uses on that letter — true means uppercase-signalling (Predicate/Sort), anything else (including every letter of a script with no case distinction at all, such as Chinese, Arabic, Hebrew, or Devanagari) means term-valued (Variable/Name/Constant). A caseless-script identifier is therefore always term-valued and can never head an atom by itself. Underscore is a Name-only continuation character — never legal as a token's first character, and deliberately not part of Predicate or Sort, so `Foo_bar(x)` is still rejected exactly as it always was. A Name may also start with one or more ASCII digits followed by a letter (`2008SummerOlympics`); `Number` itself is unaffected, so a bare digit run with no trailing letter (`2008`, `3.14`) still lexes as a number, never a Name. Greek letters are excluded from every one of these classes (not just carved out of Name/Predicate specifically) because `λ`/`μ`/the Greek Constant run already use them; see below.
+"Term-valued letter" and "uppercase-signalling letter" are not ASCII-only: any Unicode letter qualifies, decided by the SAME rule Python's `str.isupper()` uses on that letter — true means uppercase-signalling (Predicate/Sort), anything else (including every letter of a script with no case distinction at all, such as Chinese, Arabic, Hebrew, or Devanagari) means term-valued (Variable/Name/Constant). A caseless-script identifier is therefore always term-valued and can never head an atom by itself. Underscore is a continuation character only — never legal as a token's first character (`_foo` and `_Family(x)` are rejected) — and it may follow the first character of a Name, a Predicate or a Sort, so `Foo_bar(x)` is an atom; a Variable and the tail of a `c_` constant take none. A Name may also start with one or more ASCII digits followed by a letter (`2008SummerOlympics`); `Number` itself is unaffected, so a bare digit run with no trailing letter (`2008`, `3.14`) still lexes as a number, never a Name. Greek letters are excluded from every one of these classes (not just carved out of Name/Predicate specifically) because `λ`/`μ`/the Greek Constant run already use them; see below.
 
 The `c_` form exists so that **single-letter constants** can be written without colliding with variables. A bare `a` is always a variable; if you need the constant *a*, write `c_a`.
 
@@ -28,8 +28,8 @@ A function or predicate is recognised by being immediately followed by a parenth
 from unicode_fol_kit import MSFLParser
 
 p = MSFLParser()
-p.parse("P(x)")        # → Atom(P, [Variable(x)])              bare x: a variable
-p.parse("P(f(x))")     # → Atom(P, [Function(f, [Variable(x)])])  f(...): a function
+p.parse("P(x)")        # → Atom(predicate='P', args=(Variable(name='x'),))   bare x: a variable
+p.parse("P(f(x))")     # → Atom(predicate='P', args=(Function(name='f', args=(Variable(name='x'),)),))   f(...): a function
 ```
 
 The sort annotation token always begins with `:`, which makes it lexically disjoint from all other tokens. **Whitespace before the colon is optional**: `∀x:Human P(x)` and `∀x :Human P(x)` are both valid and produce identical parse trees.
@@ -51,10 +51,23 @@ Arithmetic follows the usual precedence: `*` and `/` bind tighter than `+` and `
 
 ## Atomic formulas
 
-An atomic formula is either:
+An atomic formula is one of:
 
 - a predicate applied to terms: `P`, `Human(socrates)`, `OnSurfaceOf(y, x)` (a predicate may be nullary, i.e. used without arguments)
 - an infix comparison between two terms: `=`, `≠`, `<`, `>`, `≤`, `≥`, e.g. `x1 + 1 = y1` or `distance(y, c) > distance(z, c)`
+- a truth constant, `⊤` or `⊥`: the nullary atoms `$true` and `$false`
+
+Every unicode mode except `linear` and `lambek` reads `⊤` and `⊥` as these two atoms, as does LaTeX `\top` / `\bot`, and they print back as `⊤` / `⊥`. In `linear=True` mode `⊤` is instead the additive truth `Top` and there is no `⊥` (the units are `𝟙 ⊤ 𝟘`); in `lambek=True` mode there are no truth constants.
+
+```python
+from unicode_fol_kit import api
+
+p.parse("⊤")                    # → Atom(predicate='$true', args=())
+p.parse("P → ⊥")                # → Implies(left=Atom(predicate='P', args=()), right=Atom(predicate='$false', args=()))
+api.parse_any("⊥").formula      # → Atom(predicate='$false', args=())
+p.parse("P → ⊥").to_unicode_str()               # → 'P → ⊥'
+MSFLParser(linear=True).parse("⊤")              # → Top()
+```
 
 ## Compound formulas
 
@@ -82,11 +95,11 @@ NL-front-end constructs (these four plus the modal `Say_a` / `Want_a`).
 
 ### MSFOL mode
 
-Same connectives as FOL **except `⊕` (exclusive or) is not available**. Quantifiers require a sort annotation:
+Same connectives as FOL, `⊕` (exclusive or) included. Quantifiers require a sort annotation:
 
 | Syntax | Operator |
 |---|---|
-| `¬φ`, `φ ∧ ψ`, `φ ∨ ψ`, `φ → ψ`, `φ ↔ ψ` | classical (as FOL) |
+| `¬φ`, `φ ∧ ψ`, `φ ∨ ψ`, `φ ⊕ ψ`, `φ → ψ`, `φ ↔ ψ` | classical (as FOL) |
 | `∀x:Sort φ`, `∃x:Sort φ` | sorted quantifiers |
 
 ### MSFL mode
@@ -128,7 +141,7 @@ The precedence levels are the same across all four core modes (MSFL/FL use the s
 | Precedence | Operators | Associativity |
 |---|---|---|
 | 1 (highest) | `¬`, quantifiers `∀` / `∃` | prefix |
-| 2 | `∧` `∨` `⊕` (FOL) / `∧` `∨` (MSFOL) / `∧` `∨` `⊗` `⊕` (MSFL / FL) | left |
+| 2 | `∧` `∨` `⊕` (FOL / MSFOL) / `∧` `∨` `⊗` `⊕` (MSFL / FL) | left |
 | 3 | `→` | right |
 | 4 (lowest) | `↔` | right |
 
@@ -157,7 +170,7 @@ p.parse("P(x) → Q(x) ↔ R(x)")
 The same-level connectives (level 2 above) **cannot be mixed without explicit parentheses**. This is deliberate: it avoids the silent, easy-to-misread grouping that a default precedence would impose.
 
 - **FOL mode** — `∧`, `∨`, `⊕` cannot be mixed.
-- **MSFOL mode** — `∧` and `∨` cannot be mixed.
+- **MSFOL mode** — `∧`, `∨`, `⊕` cannot be mixed.
 - **MSFL / FL mode** — `∧`, `∨`, `⊗`, `⊕` cannot be mixed.
 - **Modal and second-order modes** — same as FOL (`∧`, `∨`, `⊕`), since the modal/temporal and second-order operators bind tighter, like `¬`.
 
@@ -191,7 +204,7 @@ Quantifiers can be stacked directly: `∀x:H ∀y:H ∃z:A φ`.
 | Category | FOL | MSFOL | MSFL | FL |
 |---|---|---|---|---|
 | Quantifiers | `∀` `∃` (unsorted) | `∀` `∃` (sorted `:Sort`) | `∀` `∃` (sorted `:Sort`) | `∀` `∃` (unsorted) |
-| Connectives | `∧` `∨` `⊕` `¬` `→` `↔` | `∧` `∨` `¬` `→` `↔` | `∧` `∨` `⊗` `⊕` `¬` `→` `↔` | `∧` `∨` `⊗` `⊕` `¬` `→` `↔` |
+| Connectives | `∧` `∨` `⊕` `¬` `→` `↔` | `∧` `∨` `⊕` `¬` `→` `↔` | `∧` `∨` `⊗` `⊕` `¬` `→` `↔` | `∧` `∨` `⊗` `⊕` `¬` `→` `↔` |
 | Lambda | `λ` | `λ` | `λ` | `λ` |
 | Sort annotations | — | `:Sort` | `:Sort` | — |
 | Equality / comparison | `=` `≠` `<` `>` `≤` `≥` | same | same | same |
@@ -359,7 +372,7 @@ All nodes are **frozen** Python dataclasses and can be imported from `unicode_fo
 |---|---|---|
 | `Variable` | `name: str` | bound or free variable |
 | `Constant` | `name: str` | bare constant or `c_`-prefixed |
-| `Number` | `value: int \| float` | numeric literal |
+| `Number` | `value: int \| float` | numeric literal; a whole value is stored as the `int` it equals (`1`, `1.0` and `01` are all `Number(value=1)`) |
 | `Function` | `name: str`, `args: tuple` | function application and arithmetic ops |
 | `Atom` | `predicate: str`, `args: tuple` | predicate or infix comparison |
 
@@ -370,7 +383,7 @@ All nodes are **frozen** Python dataclasses and can be imported from `unicode_fo
 | `Not` | `formula` |
 | `And` | `left`, `right` |
 | `Or` | `left`, `right` |
-| `Xor` | `left`, `right` *(FOL only)* |
+| `Xor` | `left`, `right` *(the classical modes; `⊕` is `StrongDisjunction` in MSFL / FL)* |
 | `Implies` | `left`, `right` |
 | `Iff` | `left`, `right` |
 | `Contrast` | `left`, `right` *(FOL — concessive `Ⓒ`; truth-functionally `∧`)* |
@@ -456,13 +469,13 @@ Parse errors are reported with human-readable messages rather than raw parser in
 from unicode_fol_kit import MSFLParser  # these snippets intentionally raise
 
 # FOL mode — hint names ∧, ∨, and ⊕
-MSFLParser().parse("P(x) ∧ Q(x) ∨ R(x)")
+MSFLParser().parse("P(x) ∧ Q(x) ∨ R(x)")    # raises NamingError
 # SYNTAX_ERROR: Unexpected character '∨' at position 13 after closing parenthesis ')'.
 #   Hint: Cannot mix conjunction (∧), disjunction (∨), and exclusive or (⊕) without parentheses
 
-# MSFOL mode — hint names only ∧ and ∨
+# MSFOL mode — classical same-level group, hint names ∧, ∨, and ⊕
 MSFLParser(many_sorted=True).parse("P(x) ∧ Q(x) ∨ R(x)")
-#   Hint: Cannot mix conjunction (∧) and disjunction (∨) without parentheses
+#   Hint: Cannot mix conjunction (∧), disjunction (∨), and exclusive or (⊕) without parentheses
 
 # MSFL / FL mode — hint names all four Łukasiewicz connectives
 MSFLParser(many_sorted=True, fuzzy=True).parse("P(x) ∧ Q(x) ⊗ R(x)")

@@ -221,3 +221,101 @@ def test_the_domain_mode_judgment_call_is_pinned():
     thy_prop = isabelle_ho_modal_theory("JudgmentProp", (), [proved], mode="increasing")
     r_prop = check_theory(thy_prop, "JudgmentProp", session_timeout=240)
     assert r_prop.ok, f"property-level BF unexpectedly not proved:\n{r_prop.output[-2000:]}"
+
+
+# --------------------------------------------------------------------------- #
+# 4. Identity is rigid and NOT existence-guarded, under every domain regime.
+#
+# ``=`` between individuals is HOL's own identity with no world argument (see the
+# module docstring of hol.ho_modal), so a domain regime can only matter through the
+# QUANTIFIER that binds the identity's variables - never through the identity atom.
+# That is the division of labour fol.qml documents ("Equality is rigid") and these
+# rows pin it on the third-order route. Verdicts are derived by hand:
+#
+#   constant / possibilist: every object exists at every world, so the model's one
+#     domain IS the individual type i and a constant carol (an element of i) is in it.
+#   any actualist regime: local domains D(w) are non-empty subsets of i, and an object
+#     may lie outside every one of them. One world with NO successor satisfies every
+#     monotonicity axiom vacuously, so D(w) = {e1} inside i = {e1, e2} with carol = e2 is
+#     a model of every actualist regime at once.
+#
+#   ∃x (x = carol)  -- "carol exists": valid under constant/possibilist (carol is the
+#       witness); refuted under every actualist regime by the model just described.
+#   alice = alice   -- valid everywhere: the atom mentions neither world nor existence.
+#   alice = bob → □(alice = bob)  -- valid everywhere: rigid, so the same at every world.
+#   ∀x ∀y (x = y → □(x = y))  -- valid everywhere: x and y range over D(w), and the
+#       identity they satisfy there holds at every successor, whatever D is there.
+# --------------------------------------------------------------------------- #
+
+_ALL_MODES = ("constant", "possibilist", "varying", "increasing", "cumulative", "decreasing")
+_CONSTANT_REGIMES = frozenset({"constant", "possibilist"})
+_MP = MSFLParser(modal=True)
+
+# (label, text, modes in which it is valid)
+_IDENTITY_MODE_TABLE = [
+    ("exists", "∃x (x = carol)", _CONSTANT_REGIMES),
+    ("refl", "alice = alice", frozenset(_ALL_MODES)),
+    ("necessity", "alice = bob → □(alice = bob)", frozenset(_ALL_MODES)),
+    ("quantified-necessity", "∀x ∀y (x = y → □(x = y))", frozenset(_ALL_MODES)),
+]
+
+
+@pytest.mark.parametrize("mode", _ALL_MODES)
+@pytest.mark.parametrize("label,text,valid_in", _IDENTITY_MODE_TABLE,
+                         ids=[row[0] for row in _IDENTITY_MODE_TABLE])
+def test_identity_under_every_domain_regime_matches_the_first_order_oracle(
+        label, text, valid_in, mode):
+    """Z3 on the first-order shallow embedding gives the hand-derived verdict in every
+    regime, with a DEFINITE answer both ways: a valid row is unsat on its negation and an
+    invalid row is sat (a Z3 'unknown' satisfies neither, so it cannot pass as 'invalid')."""
+    from unicode_fol_kit.atp.z3_models import is_satisfiable, is_valid
+    from unicode_fol_kit.fol.nodes import Not
+    from unicode_fol_kit.fol.qml import qml_validity_formula
+    query = qml_validity_formula(_MP.parse(text), mode=mode, frame="K")
+    if mode in valid_in:
+        assert is_valid(query), f"{text} [{mode}]"
+    else:
+        assert not is_valid(query), f"{text} [{mode}]"
+        assert is_satisfiable(Not(query)), f"{text} [{mode}]: no proof and no countermodel"
+
+
+def test_the_identity_atom_itself_is_never_guarded_by_existsat():
+    """Under an actualist mode the guard sits on the BINDER (``mexists``), not on the
+    identity inside it - guarding the atom would make ``alice = alice`` fail where alice
+    does not exist, which is the negative-free-logic reading this route does not take."""
+    exists = isabelle_ho_modal_theory(
+        "T", (), [HoGoal("g", TOM.parse("∃x (x = carol)"))], mode="varying")
+    assert ('theorem g: "mvalid (mexists (\\<lambda>x::i. (\\<lambda>_. x = carol)))"'
+            in exists)
+    # no existence vocabulary at all for a quantifier-free identity, in any mode
+    bare = isabelle_ho_modal_theory(
+        "T", (), [HoGoal("g", TOM.parse("alice = alice"))], mode="varying")
+    assert "existsAt" not in bare
+    assert 'theorem g: "mvalid (\\<lambda>_. alice = alice)"' in bare
+    # THF: exactly one existsat guard (the quantifier's), and the identity is unguarded
+    problem = to_thf_ho_modal(TOM.parse("∃x (x = carol)"), mode="varying")
+    assert problem.count("( existsat @ X_V @ W0 )") == 1
+    assert "( meq @ X_V @ carol )" in problem
+    assert "existsat" not in to_thf_ho_modal(TOM.parse("alice = alice"), mode="varying")
+
+
+@_isa_live
+@_isa
+@pytest.mark.parametrize("mode", ["constant", "varying", "increasing", "decreasing"])
+def test_identity_under_a_domain_regime_is_decided_by_isabelle_as_derived(mode):
+    """Every row of the table in ONE theory per regime (``possibilist`` is ``constant``
+    and ``cumulative`` is ``increasing`` in the emitted axioms, so those two are covered
+    by their twins). A VALID row is closed by a proof; an INVALID row by
+    ``nitpick [expect = genuine]``, which fails the whole build if nitpick finds no
+    genuine countermodel - so the build succeeds iff every verdict is as derived."""
+    goals = [
+        HoGoal("row_" + label.replace("-", "_"), TOM.parse(text),
+               proof="by (blast | auto | metis)" if mode in valid_in
+               else "nitpick [user_axioms, expect = genuine]\n  oops")
+        for label, text, valid_in in _IDENTITY_MODE_TABLE
+    ]
+    name = f"IdentityMode_{mode}"
+    theory = isabelle_ho_modal_theory(name, (), goals, mode=mode)
+    result = check_theory(theory, name, session_timeout=300)
+    assert result.ok, (f"mode={mode}: a row did not come out as derived "
+                       f"(exit {result.exit_code}):\n{result.output[-2500:]}")

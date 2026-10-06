@@ -129,6 +129,61 @@ def test_render_document_rbox_axioms_precede_tbox_axioms():
     assert trans_idx < subclass_idx
 
 
+def test_render_document_renders_an_inverse_role_inclusion_as_object_inverse_of():
+    # Measured before 0.30.0: `_render_document` used the InverseRole as a _NameMap
+    # KEY, so it came out as a brand-new ATOMIC property -- and the TUPLE-chain
+    # workaround rendered CHARACTER-FOR-CHARACTER IDENTICALLY, making two
+    # different wrong role boxes indistinguishable in the document handed to
+    # FaCT++. `_render_role_expr` existed and simply was not called from here.
+    inverse = _render_document(
+        dl.TBox().add_role_inclusion("r", InverseRole("s")), dl.ABox())
+    assert "SubObjectPropertyOf(:R1 ObjectInverseOf(:R2))" in inverse
+    other_side = _render_document(
+        dl.TBox().add_role_inclusion(InverseRole("r"), "s"), dl.ABox())
+    assert "SubObjectPropertyOf(ObjectInverseOf(:R1) :R2)" in other_side
+    # ... and a property chain is now a DIFFERENT document, as it must be.
+    chain = _render_document(dl.TBox().add_role_chain(("r", "s"), "t"), dl.ABox())
+    assert "SubObjectPropertyOf(ObjectPropertyChain(:R1 :R2) :R3)" in chain
+    assert chain != inverse
+
+
+def test_render_document_renders_every_new_rbox_axiom():
+    # This renderer feeds the kit's SECOND independent oracle, and an oracle
+    # that silently drops the axiom under test agrees with everything. So:
+    # every role-box field, with the exact expected line.
+    tbox = (dl.TBox()
+            .add_disjoint_roles("d1", "d2")
+            .add_inverse_roles("p1", "q1")
+            .add_asymmetric_role("asym")
+            .add_irreflexive_role("irr")
+            .add_functional_role("func")
+            .add_symmetric_role("sym")
+            .add_reflexive_role("refl")
+            .add_inverse_functional_role("invfunc")
+            .add_role_chain(("c1", "c2"), "c3"))
+    text = _render_document(tbox, dl.ABox())
+    # Names are allocated in the order the renderer visits the fields, which is
+    # the order dl.tableau._AXIOM_KINDS lists them -- the same order
+    # dl.owl_functional._render_role_box uses, so the two documents line up.
+    for expected in (
+            "DisjointObjectProperties(:R1 :R2)",
+            "AsymmetricObjectProperty(:R3)",
+            "IrreflexiveObjectProperty(:R4)",
+            "FunctionalObjectProperty(:R5)",
+            "SymmetricObjectProperty(:R6)",
+            "ReflexiveObjectProperty(:R7)",
+            "InverseFunctionalObjectProperty(:R8)",
+            "InverseObjectProperties(:R9 :R10)",
+            "SubObjectPropertyOf(ObjectPropertyChain(:R11 :R12) :R13)",
+    ):
+        assert expected in text, f"{expected!r} missing from:\n{text}"
+    # Every synthetic name used is declared, including roles that occur ONLY in
+    # a characteristic axiom -- an undeclared property is not a legal document.
+    declared = {l.strip() for l in text.splitlines()
+                if l.strip().startswith("Declaration(ObjectProperty(")}
+    assert len(declared) == 13, sorted(declared)
+
+
 def test_render_ce_inverse_role_and_nominal():
     # The one fragment dl.owl_functional.to_owl_functional_class_expression
     # REFUSES outright (see that module's docstring) -- this renderer must
@@ -475,16 +530,12 @@ def test_inverse_role_with_role_hierarchy_and_number_restriction():
 @hets_live
 @live_hets
 def test_equivalent_agrees_with_dl_tableau_on_atomic_equivalence():
-    # Deliberately NOT also compared against dl.owl_reasoner.external_equivalent
-    # here: a genuine atomic<->atomic TBox.add_equivalence (two GCIs, A<=B
-    # AND B<=A) makes owlready2 raise a raw "a __bases__ item causes an
-    # inheritance cycle" TypeError (owlready2 models "is_a" as literal
-    # Python class inheritance, so mutually-inclusive ATOMIC classes form a
-    # cycle in ITS encoding) -- live-confirmed, out of scope to fix here
-    # (dl/owl_reasoner.py is not owned by this change; see this task's
-    # reported open_issues). This module's own OWL-text encoding has no such
-    # restriction (SubClassOf is plain data, not a Python base-class edit),
-    # so it decides this case correctly where that route currently cannot.
+    # A genuine atomic<->atomic TBox.add_equivalence (two GCIs, A<=B AND B<=A).
+    # This module's OWL text has SubClassOf as plain data and decides it. (The
+    # owlready2 route, dl.owl_reasoner.external_equivalent, models "is_a" as
+    # Python class inheritance, where the two inclusions would be a cycle, and
+    # states such a ring as an equivalence: it answers True as well, which
+    # tests/test_owl_reasoner_cycles.py checks.)
     t = dl.TBox().add_equivalence(A, B)
     assert dl.equivalent(A, B, t) is True
     assert external_equivalent(A, B, t) is True

@@ -132,8 +132,11 @@ from ..fol.nodes import (
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier, Count,
     SecondOrderQuantifier,
 )
+from ..fol._fol_nodes import numeral_key
+from ..fol._truth_constants import truth_value as _truth_value
 from .tarski import Structure, _FORALL, _EXISTS, _ORDER_COMPARISONS, _ORDER_OPS, _is_number
-from .modelfinder import _Signature, _universal_closure
+from ..fol._free_parameters import parameterize
+from .modelfinder import _Signature
 from .nonmonotonic import _circ_profile, _strictly_below, _fixed_key
 
 __all__ = ["asp_minimal_models", "asp_find_model", "asp_holds_so"]
@@ -392,8 +395,8 @@ class _AspEncoder:
                 value = structure.constants[name]
             else:
                 # No override -- mirror tarski.term_value's own Number
-                # fallback (a Number is scanned as a constant named
-                # str(value), read as the literal itself unless overridden;
+                # fallback (a Number is scanned as a constant named by its
+                # value, read as the literal itself unless overridden;
                 # see modelfinder._Signature.scan / this module's own _term).
                 try:
                     value = int(name)
@@ -466,8 +469,9 @@ class _AspEncoder:
             if term.name not in var_of:
                 raise ValueError(
                     f"asp_models: variable {term.name!r} is not bound by any "
-                    "enclosing quantifier — sentences must be universally "
-                    "closed (see _universal_closure) before encoding."
+                    "enclosing quantifier — a free variable must have been "
+                    "replaced by a parameter constant (see _closed_sentences) "
+                    "before encoding."
                 )
             return var_of[term.name]
         if isinstance(term, Constant):
@@ -476,14 +480,14 @@ class _AspEncoder:
             return v
         if isinstance(term, Number):
             # Mirrors _Signature.scan exactly: a Number is registered as a
-            # constant named str(value), NOT pinned to its literal value —
-            # see modelfinder._Signature.scan and tarski.term_value. Pinning
-            # it to the literal instead would look more natural but would
-            # silently diverge from what the oracle this module is verified
-            # against actually computes, breaking the one invariant this
-            # module exists to protect.
+            # constant named by its VALUE (numeral_key: 1 and 1.0 are '1'), NOT
+            # pinned to its literal value — see modelfinder._Signature.scan and
+            # tarski.term_value. Pinning it to the literal instead would look
+            # more natural but would silently diverge from what the oracle this
+            # module is verified against actually computes, breaking the one
+            # invariant this module exists to protect.
             v = self._fresh_var()
-            body.append(f"{self.const_asp[str(term.value)]}({v})")
+            body.append(f"{self.const_asp[numeral_key(term.value)]}({v})")
             return v
         if isinstance(term, Function):
             arg_vars = [self._term(a, var_of, body) for a in term.args]
@@ -598,6 +602,16 @@ class _AspEncoder:
         the general branch already does.
         """
         body: List[str] = list(dom_lits)
+        constant = _truth_value(node)
+        if constant is not None:
+            # `$true` holds wherever the head is defined at all, `$false` nowhere: no
+            # rule defines the head, so the solver reads it as false.
+            if constant:
+                if body:
+                    self._rule(head_ref, body)
+                else:
+                    self.rules.append(f"{head_ref}.")
+            return
         if node.predicate in ("=", "≠") and len(node.args) == 2:
             a = self._term(node.args[0], var_of, body)
             b = self._term(node.args[1], var_of, body)
@@ -689,6 +703,24 @@ def _decode_model(model, enc: "_AspEncoder", sig: "_Signature", size: int
 # Shared setup: signature scan + program assembly for both public functions
 # =============================================================================
 
+def _closed_sentences(premises: Iterable[Node]) -> List[Node]:
+    """``premises`` with every free variable read as a PARAMETER of the problem.
+
+    A free variable is one unknown element, the same in every premise: it is replaced,
+    in all the premises together, by a constant of its own name
+    (:func:`~unicode_fol_kit.fol._free_parameters.parameterize`), so ``P(x), ¬P(y)`` has a
+    model (``x`` and ``y`` are two elements) and ``P(x), ¬P(x)`` has none. A premise is
+    never closed universally: ``∀x P(x)`` is another premise than ``P(x)``. The structure
+    a call returns interprets the parameter like any constant, ``constants['x']``.
+
+    Raises:
+        NotImplementedError: a free variable has the spelling of a constant of the
+            premises (a structure holds one entry per name).
+    """
+    sentences, _ = parameterize(list(premises), after_variables=True)
+    return sentences
+
+
 def _build_program(sentences: List[Node], size: int) -> Tuple[str, "_AspEncoder", "_Signature"]:
     """Scan ``sentences`` for their signature and assemble the full ASP program.
 
@@ -698,8 +730,8 @@ def _build_program(sentences: List[Node], size: int) -> Tuple[str, "_AspEncoder"
 
     Raises:
         TypeError: ``size`` is not a plain ``int``, or a member of
-            ``sentences`` is not universally closed (an internal invariant —
-            see :func:`_universal_closure`, applied by both public callers
+            ``sentences`` still has a free variable (an internal invariant —
+            see :func:`_closed_sentences`, applied by both public callers
             before this function ever runs).
         ValueError: ``size < 1``, or a sentence uses a construct outside
             this module's fragment (see :func:`_check_fragment`).
@@ -720,7 +752,7 @@ def _build_program(sentences: List[Node], size: int) -> Tuple[str, "_AspEncoder"
         if free:
             raise TypeError(
                 f"asp_models: sentence {s.to_unicode_str()!r} still has free "
-                f"variable(s) {free} after universal closure — internal "
+                f"variable(s) {free} after the parameters were substituted — internal "
                 "invariant violation."
             )
         enc.rules.append(f":- not {head_ref}.")
@@ -744,10 +776,13 @@ def asp_find_model(premises: Iterable[Node], size: int = 3) -> Optional[Structur
     section; a caller wanting the multi-size search calls this in a loop.
 
     Args:
-        premises: the sentences to satisfy together. Each is universally
-            closed first (free variables read as ``∀``-bound), matching
-            :func:`~unicode_fol_kit.semantics.modelfinder.find_model`'s own
-            convention.
+        premises: the sentences to satisfy together. A free variable is a
+            PARAMETER of the problem, one unknown element shared by every
+            premise (:func:`_closed_sentences`), as in
+            :func:`~unicode_fol_kit.semantics.modelfinder.find_model`:
+            ``P(x), ¬P(y)`` has a model, ``P(x), ¬P(x)`` has none, and the
+            returned structure reports the element under the variable's name,
+            ``constants['x']``.
         size: the exact domain size to search, ``>= 1``.
 
     Returns:
@@ -760,10 +795,12 @@ def asp_find_model(premises: Iterable[Node], size: int = 3) -> Optional[Structur
     Raises:
         ValueError: ``size < 1``, or a premise uses a construct outside this
             module's fragment (see the module docstring).
+        NotImplementedError: a free variable has the spelling of a constant of
+            the premises.
     """
     import clingo
 
-    sentences = [_universal_closure(p) for p in premises]
+    sentences = _closed_sentences(premises)
     program, enc, sig = _build_program(sentences, size)
 
     ctl = clingo.Control(["1"], logger=_silent)
@@ -798,10 +835,12 @@ def asp_minimal_models(premises: Iterable[Node], circumscribed: Optional[Set[str
     what makes this function's answer trustworthy.
 
     Args:
-        premises: the sentences every returned model satisfies. Each is
-            universally closed first, matching
-            :func:`~unicode_fol_kit.semantics.nonmonotonic.minimal_models`'s
-            own convention.
+        premises: the sentences every returned model satisfies. A free
+            variable is a PARAMETER, one constant of its own name shared by
+            every premise (:func:`_closed_sentences`), exactly as
+            :func:`~unicode_fol_kit.semantics.nonmonotonic.minimal_models`
+            reads it; the parameter belongs to the fixed part two models must
+            share to be compared.
         circumscribed: the predicate NAMES to minimise (arity is whatever the
             premises use it at). ``None`` (the default) minimises every
             predicate the premises mention — the same default
@@ -827,10 +866,12 @@ def asp_minimal_models(premises: Iterable[Node], circumscribed: Optional[Set[str
     Raises:
         ValueError: ``size < 1``, or a premise uses a construct outside this
             module's fragment (see the module docstring).
+        NotImplementedError: a free variable has the spelling of a constant of
+            the premises.
     """
     import clingo
 
-    sentences = [_universal_closure(p) for p in premises]
+    sentences = _closed_sentences(premises)
     program, enc, sig = _build_program(sentences, size)
 
     pred_sig = sorted(sig.predicates)

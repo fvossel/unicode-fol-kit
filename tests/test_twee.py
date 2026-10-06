@@ -874,3 +874,23 @@ def test_goal_match_rejects_non_injective_variable_collapse():
     assert goal_matches_conclusion(proof, weaker_claim) is False
     # The honest conclusion still matches.
     assert goal_matches_conclusion(proof, premise) is True
+
+    # The ground proof above is also refused because ``alpha`` is a constant of the premise
+    # (see tests/test_twee_goal_names.py), so on its own it no longer shows that the
+    # injectivity of the binding is checked. This proof does: its constant ``c`` occurs in no
+    # axiom, the goal ``f(c) = g(c)`` IS the claim ``∀x f(x) = g(x)`` from the premise
+    # ``∀z f(z) = g(z)``, and it is not ``∀x ∀y f(x) = g(y)`` (universe {0, 1}, ``f`` and ``g``
+    # the identity: f(0) = 0 but g(1) = 1).
+    fresh = Constant("c")
+    z = Variable("Z")
+    general_premise = MSFLParser().parse("∀z (f(z) = g(z))")
+    fresh_proof = TweeProof(
+        axioms=(TweeAxiom(1, "premise_1", TweeEquation(Function("f", (z,)), Function("g", (z,)))),),
+        lemmas=(),
+        goal=TweeGoal(1, "goal", TweeEquation(Function("f", (fresh,)), Function("g", (fresh,))),
+                      TweeChain(terms=(Function("f", (fresh,)), Function("g", (fresh,))),
+                                citations=(TweeCitation("axiom", 1, "premise_1"),))),
+    )
+    assert check_twee_proof(fresh_proof, [general_premise]).ok
+    assert goal_matches_conclusion(fresh_proof, MSFLParser().parse("∀x (f(x) = g(x))")) is True
+    assert goal_matches_conclusion(fresh_proof, weaker_claim) is False

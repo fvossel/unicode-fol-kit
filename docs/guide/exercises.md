@@ -115,7 +115,7 @@ deliberate, not a bug:
 
 ```python
 generate_theory_with_model_size(sig, target_size=5, seed=1)
-# → ValueError: ... domain size 5's interpretation space exceeds
+# raises ValueError: ... domain size 5's interpretation space exceeds
 #   max_candidates=1048576 and would be SKIPPED, not exhaustively
 #   searched or refuted, by find_model ...
 ```

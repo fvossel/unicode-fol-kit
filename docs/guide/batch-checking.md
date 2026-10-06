@@ -98,7 +98,7 @@ print(row["status"], row["unknown_predicates"])
 ```
 
 Reported as `Lipid/1`, not `lipid/1`: the TPTP importer capitalises every parsed
-predicate and only ChemLog's own 35 symbols are renamed back, so a class
+predicate and only the 40 symbols of the chemical vocabulary are renamed back, so a class
 predicate keeps the kit's spelling. The report names the symbol as the
 *evaluator* saw it — which is the one you have to go and define.
 
@@ -106,7 +106,8 @@ predicate keeps the kit's spelling. The report names the symbol as the
 
 A structure does not depend on the formula. So K definitions over N molecules
 should build N structures, not K·N — and that is exactly what
-{class}`~unicode_fol_kit.chem.StructureCache` does when you pass one in:
+{class}`~unicode_fol_kit.chem.StructureCache` does. A call makes one if you pass none (the
+result's `cache_stats` reports it); pass your own to share it across calls:
 
 ```python
 from unicode_fol_kit.chem import StructureCache
@@ -123,9 +124,10 @@ print(cache.stats()["misses"], cache.stats()["hits"])
 # → 3 3
 ```
 
-Three molecules built once each; the second definition hits all three. Measured
-on this kit with four definitions over sixty molecules: **1860 → 8000 checks per
-second, a factor of 4.3**, at a hit rate of 0.958. The factor depends on how fast
+Three molecules built once each; the second definition hits all three. Four
+definitions over sixty molecules build 60 structures instead of 240, a hit rate of
+0.75; measured on this kit with sixty small alkanols and acetamides, that was
+**1700 → 4600 checks per second, a factor of 2.7**. The factor depends on how fast
 the formula short-circuits — a definition that fails on its first conjunct makes
 the structure build dominate, a hard three-variable pattern on a large molecule
 makes it almost irrelevant.

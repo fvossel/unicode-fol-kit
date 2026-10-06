@@ -164,6 +164,20 @@ prover-exercised files rather than guessed from the paper's grammar alone:
       subtyping/coercion — emitting one anyway would be TYPE-INCORRECT NXF/
       TFF text, not merely a false formula, so it is refused rather than
       silently emitted (see :data:`_UNSUPPORTED_CROSS_SORT_EQUALITY`).
+    - An equality/disequality atom with a bare variable bound by an UNSORTED
+      quantifier, in a formula that also uses a user sort. Every operand pair
+      of such an atom can be well typed (two ``$i`` variables), but the types
+      are disjoint: the unsorted variable ranges over ``$i``, not over the
+      one universe the kit's sorts are subsets of, so ``∀x ∀y x = y`` bounds
+      ``$i`` and says nothing about a user sort, and a prover would answer a
+      different question than the kit's other routes (``∀x ∀y x = y ⊢ ∀x:A
+      ∀z:A x = z`` is valid in the kit and is not a theorem of the typed text).
+      The refusal is :class:`~unicode_fol_kit.atp.tptp_tff.Tf0Refusal` (also a
+      ``NotImplementedError``), the same as the TF0 writer's, with the same
+      message; this exporter does not infer a sort for an unannotated constant
+      (each occurrence is typed on its own and a constant at two types is
+      refused), so that is the only one of the TF0 writer's two typed-reading
+      refusals it needs.
     - The arithmetic comparison predicates (``<``/``>``/``≤``/``≥``) and a
       bare :class:`~fol.nodes.Number` literal anywhere in the formula
       (found by adversarial review) — both need one of TPTP's arithmetic
@@ -194,13 +208,15 @@ prover-exercised files rather than guessed from the paper's grammar alone:
       ``frame="D"``/``"KD"``).
 """
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from ..fol.nodes import (
     Atom, And, Box, Constant, Diamond, Function, Iff, Implies, Node, Not,
     Number, Or, Quantifier, SortedConstant, SortedQuantifier, Variable,
 )
 from ..fol._fol_nodes import tptp_fold_first_letter
+from ..fol._tptp_symbols import is_tptp_boolean_atom
+from .tptp_tff import unsorted_equality_refusal
 
 __all__ = ["to_tptp_ncl"]
 
@@ -354,7 +370,24 @@ def _sort_token(sort_name: str) -> str:
     identifier in this module goes through (see :func:`_term_sort` /
     :meth:`_NxfSymbols.note_predicate`), so a sort name follows the exact
     same TPTP lower_word convention as everything else this exporter emits.
+
+    Raises:
+        NotImplementedError: ``sort_name`` starts with ``$``. Every such word is one of
+            TPTP's own (``$i`` the type of individuals, ``$o`` the booleans, ``$tType``
+            the type of types, ``$int`` / ``$rat`` / ``$real`` the numbers, ``$true``,
+            ...), and this writer writes a sort name as it is, so the sort would be merged
+            with that word, or redeclare it as ``tff($i_type,type, $i: $tType )``. ``$i``
+            matters most: it is the sort this writer gives every UNSORTED quantifier and
+            constant, so a user sort of that name would be one with everything that has no
+            sort.
     """
+    if sort_name.startswith("$"):
+        raise NotImplementedError(
+            f"to_tptp_ncl: a sort named {sort_name!r} cannot be written: a name that starts "
+            "with '$' is one of TPTP's own words ($i is the type of individuals, which this "
+            "writer gives every unsorted quantifier and constant, $o the booleans, $tType the "
+            "type of types, $int/$rat/$real the numbers), so the sort would be merged with "
+            "that word or redeclare it. Rename the sort.")
     return tptp_fold_first_letter(sort_name)
 
 
@@ -379,6 +412,9 @@ class _NxfSymbols:
         self.const_sig: Dict[str, Tuple[str, str]] = {}   # token -> (kit name, sort token)
         self.pred_order: List[str] = []
         self.pred_sig: Dict[str, Tuple[str, tuple]] = {}  # token -> (kit name, arg sort tokens)
+        # The first equality / disequality atom, as text, that has a bare variable
+        # bound by an UNSORTED quantifier as one of its sides (see to_tptp_ncl).
+        self.unsorted_equality: Optional[str] = None
 
     def note_sort(self, name: str, token: str) -> None:
         """Register one kit sort NAME (``SortedQuantifier.sort`` /
@@ -449,21 +485,32 @@ class _NxfSymbols:
         (e.g. a sort named the same as a predicate) -- TPTP identifiers are
         a single flat namespace of ``lower_word`` tokens, so two DIFFERENT
         kit symbols folding to the same token would collide even if neither
-        alone triggered :meth:`note_constant` / :meth:`note_predicate`."""
-        kinds: Dict[str, set] = {}
+        alone triggered :meth:`note_constant` / :meth:`note_predicate`.
+
+        This exporter returns bare text with no name map, so unlike the
+        ``fof``/TF0/TFA problem writers (which rename the function/constant
+        side of such a clash and record it in a ``TptpNameMap``) it can only
+        refuse -- by name, naming both kit symbols and the writers to use."""
+        kinds: Dict[str, List[Tuple[str, str]]] = {}
         for token in self.sort_order:
-            kinds.setdefault(token, set()).add("a sort")
+            kinds.setdefault(token, []).append(("a sort", self.sort_sig[token]))
         for token in self.const_order:
-            kinds.setdefault(token, set()).add("a constant")
+            kinds.setdefault(token, []).append(("a constant", self.const_sig[token][0]))
         for token in self.pred_order:
-            kinds.setdefault(token, set()).add("a predicate")
+            kinds.setdefault(token, []).append(("a predicate", self.pred_sig[token][0]))
         for token, seen in kinds.items():
-            if len(seen) > 1:
+            if len({kind for kind, _ in seen}) > 1:
+                described = " and ".join(f"{kind} ({name!r})" for kind, name in sorted(seen))
                 raise NotImplementedError(
                     f"to_tptp_ncl: the NXF identifier {token!r} would be "
-                    f"declared as both {' and '.join(sorted(seen))} -- TPTP "
-                    "identifiers share one flat namespace; rename one of the "
-                    "colliding symbols so the export stays faithful.")
+                    f"declared as both {described} -- TPTP "
+                    "identifiers share one flat namespace, and this exporter "
+                    "has no name map to record a rename in; rename one of "
+                    "the colliding kit symbols so the export stays faithful "
+                    "(the classical writers generate_tptp_problem_with_mapping "
+                    "and generate_tff_problem_with_mapping rename the "
+                    "function/constant side of such a clash and return the "
+                    "record).")
 
 
 # Atom predicates TPTP renders as the genuinely INFIX built-in ('='/'!=') --
@@ -588,8 +635,14 @@ def _render(node: Node, scope: Dict[str, str], symbols: _NxfSymbols) -> str:
             if left_sort != right_sort:
                 raise NotImplementedError(_UNSUPPORTED_CROSS_SORT_EQUALITY.format(
                     pred=node.predicate, left=left_sort, right=right_sort))
+            if symbols.unsorted_equality is None and any(
+                    isinstance(a, Variable) and scope[a.name] == _DEFAULT_SORT
+                    for a in node.args):
+                symbols.unsorted_equality = node.to_unicode_str()
             return node.to_tptp()
-        if node.predicate.startswith("$"):
+        if node.predicate.startswith("$") or is_tptp_boolean_atom(node):
+            # TPTP's own words, and the truth constants under either spelling
+            # (``⊤`` / ``⊥`` are written ``$true`` / ``$false``): no symbol to declare.
             for arg in node.args:
                 _term_sort(arg, scope, symbols)
             return node.to_tptp()
@@ -693,7 +746,15 @@ def to_tptp_ncl(formula: Node, *, frame: str = "K", domains: str = "constant",
         NotImplementedError: ``formula`` (or a descendant) is outside the
             supported fragment, or two distinct kit symbols would collide
             under NXF's identifier folding — see :func:`_render` /
-            :class:`_NxfSymbols`.
+            :class:`_NxfSymbols`, or an equality over a variable bound by an
+            unsorted quantifier while a user sort occurs (a
+            :class:`~unicode_fol_kit.atp.tptp_tff.Tf0Refusal`, which is also
+            a ``ValueError``). That includes a predicate (or sort) and a
+            constant that fold to one word: this exporter returns bare text,
+            has no name map to record a rename in, and so refuses by name,
+            where :func:`~unicode_fol_kit.atp._tptp_problem
+            .generate_tptp_problem_with_mapping` renames the term side and
+            records it.
     """
     if frame not in _FRAME_TO_SYSTEM:
         raise ValueError(
@@ -708,6 +769,13 @@ def to_tptp_ncl(formula: Node, *, frame: str = "K", domains: str = "constant",
     symbols = _NxfSymbols()
     body = _render(formula, {}, symbols)
     symbols.check_no_cross_namespace_collision()
+    if symbols.unsorted_equality is not None and symbols.sort_order:
+        # TFF's types are disjoint, so the unsorted variable of the equation ranges
+        # over $i, not over the universe a user sort is a subset of (the same
+        # refusal as the TF0 writer's; see unsorted_equality_refusal).
+        raise unsorted_equality_refusal(
+            "to_tptp_ncl", symbols.unsorted_equality,
+            [symbols.sort_sig[token] for token in symbols.sort_order], _DEFAULT_SORT)
 
     lines = [
         f"tff({conjecture_name}_logic,logic,",

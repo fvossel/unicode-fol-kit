@@ -186,12 +186,13 @@ satisfies_so(f, S, {"x": 1}, {})   # → True  (take P = {(1,)})
 
 ### Free predicates: structure predicates
 
-A *free* (structure-level) predicate is read from the structure's `predicates` tables instead of being quantified. Tables for an arity-`k≥1` predicate may be keyed by the bare name or by the `(name, arity)` pair; the relation is a set of tuples. The SO quantifier then ranges over *every* relation while the free predicate stays fixed:
+A *free* (structure-level) predicate is read from the structure's `predicates` tables instead of being quantified. A table is keyed by the pair `(name, arity)` and holds the relation as a set of tuples; a key of any other shape, a bare name for instance, would never be read, so `Structure(...)` refuses it when it is built, with an `IllegalStructureError`; for a bare name the message gives the key to write (`predicates={"Q": {(0,)}}` is refused and says `('Q', 1)`). A predicate with no table under the arity it is applied at denotes the empty relation. The SO quantifier then ranges over *every* relation while the free predicate stays fixed:
 
 ```python
 # Q is a fixed monadic predicate on the domain; P is second-order-quantified.
-S = Structure(domain={0, 1}, predicates={"Q": {(0,)}})
+S = Structure(domain={0, 1}, predicates={("Q", 1): {(0,)}})
 holds(p("∃P ∀x (P(x) ↔ Q(x))"), S)   # → True   (take P = Q)
+holds(p("∀x Q(x)"), S)               # → False  (Q holds of 0 only)
 
 # A binary structure relation R, with an object-level SO-free check:
 SR = Structure(domain={0, 1}, predicates={("R", 2): {(0, 1), (1, 0)}})
@@ -200,7 +201,7 @@ holds(p("∀x ∀y (R(x, y) → R(y, x))"), SR)   # → True   (R is symmetric h
 # Multiple free predicates in the structure
 S_multi = Structure(
     domain={0, 1},
-    predicates={"P": {(0,)}, "Q": {(1,)}}
+    predicates={("P", 1): {(0,)}, ("Q", 1): {(1,)}}
 )
 holds(p("∃R ∀x (R(x) ↔ (P(x) ∨ Q(x)))"), S_multi)  # → True
 ```
@@ -234,14 +235,14 @@ except ValueError as e:
     print(str(e)[:46])
     # → Second-order quantifier ∀R/2 over a 6-element
 
-# Safe combinations:
-# - Arity 1, up to ~4 million elements (unrealistic)
-# - Arity 2, up to ~21 elements (e.g., 21^2 = 441 < 2^22)
-# - Arity 3, up to ~12 elements (e.g., 12^3 = 1728 < 2^22)
+# Safe combinations: 2 ** (n ** k) must not exceed 2 ** 22, that is n ** k <= 22
+# - Arity 1: up to 22 elements
+# - Arity 2: up to 4 elements (4 ** 2 = 16; 5 ** 2 = 25 is above the cap)
+# - Arity 3: up to 2 elements (2 ** 3 = 8; 3 ** 3 = 27 is above the cap)
 safe_1 = Structure(domain=set(range(4)))
 holds(p("∀P ∀x P(x)"), safe_1)  # → fine
 
-safe_2 = Structure(domain=set(range(20)))
+safe_2 = Structure(domain=set(range(4)))
 holds(p("∀R ∀x ∃y R(x, y)"), safe_2)  # → fine
 ```
 
@@ -284,7 +285,7 @@ Second-order logic has no complete proof system, and SO validity is not even sem
 | `so_is_satisfiable_finite(f, max_size=3)` | `bool` | `f` has a finite model of size ≤ `max_size` |
 | `so_is_valid_finite(f, max_size=3)` | `bool` | no finite counter-model found up to `max_size` |
 
-`so_is_valid_finite` is one-sided: `True` is strong evidence of second-order validity (not a proof), while `False` is a genuine refutation whose witness is available from `so_find_countermodel`.
+`so_is_valid_finite` is one-sided: `True` is strong evidence of second-order validity (not a proof) and says that every size `1 .. max_size` was searched, while `False` is a genuine refutation whose witness is available from `so_find_countermodel`.
 
 ### Standard SO validities and refutations
 
@@ -304,7 +305,7 @@ so_is_valid_finite(p("∃P ∀x (P(x) ↔ ¬Q(x))"), max_size=3)        # → Tr
 # Leibniz's definition of equality (indiscernibility ⇔ identity):
 so_is_valid_finite(p("∀x ∀y (∀P (P(x) ↔ P(y)) ↔ x = y)"), max_size=3)   # → True
 
-# Distribution over conjunction (Boolean lattice structure)
+# Identical sides, valid at every size
 so_is_valid_finite(p("∀P ∀Q ∀x ((P(x) ∧ Q(x)) ↔ (P(x) ∧ Q(x)))"), max_size=2)  # → True
 
 # Not valid: "every relation is non-empty" -------------------------------
@@ -323,7 +324,7 @@ so_is_satisfiable_finite(p("∃P ∀x P(x)"), max_size=2)            # → True
 # ∃P (∀x P(x) ∧ ∃x ¬P(x)) is contradictory — no finite model:
 so_is_satisfiable_finite(p("∃P (∀x P(x) ∧ ∃x ¬P(x))"), max_size=3)   # → False
 
-# A formula with no model up to size 3 but perhaps larger:
+# Satisfiable already at size 1:
 unsure = p("∀P (P(a) → ∃x P(x))")
 so_is_satisfiable_finite(unsure, max_size=1)  # → True  (1-element domain)
 ```
@@ -345,15 +346,23 @@ print(m.predicates)   # → {} (R is SO-quantified, not stored)
 
 The exact `repr` of a returned `Structure` depends on the search order over candidate interpretations, so verdicts and `holds(...)` re-checks are the stable things to assert.
 
-### Free symbols and universal closure
+### Free symbols and free variables
 
-The search treats every predicate *not* bound by a `∀P` / `∃P` as a free signature symbol to be interpreted by the candidate structure, and free *object* variables are universally closed before the search. So `∃P P(x)` (with `x` free) is searched as `∀x ∃P P(x)` — valid, since for each `x` you may pick the singleton `P = {(x,)}`:
+The search treats every predicate that no enclosing `∀P` / `∃P` of its name binds as a free signature symbol to be interpreted by the candidate structure; the same name inside such a quantifier is the bound variable. So `¬P(bb) ∧ ∃P P(aa)` speaks of the structure's own `P` in its first conjunct, and it is not valid: a structure whose `P` contains `bb` refutes it. A free *object* variable is a *parameter*: one unknown element, a constant of the variable's own name that every candidate structure interprets and that a returned structure reports as `constants['x']` (a free variable spelled like a constant of the formula is refused by name with a `NotImplementedError`, since a structure holds one entry per name). Nothing closes it universally. So `∃P P(x)` (with `x` free) is valid, since whichever element `x` is you may pick the singleton `P = {(x,)}`:
 
 ```python
-so_is_valid_finite(p("∃P P(x)"), max_size=2)   # → True  (closed over x; pick P = {(x,)})
+so_is_valid_finite(p("¬P(bb) ∧ ∃P P(aa)"), max_size=2)   # → False  (P = {bb} refutes the first conjunct)
 
-# Multiple free variables, universally closed
-so_is_valid_finite(p("∃P P(x, y)"), max_size=2)  # → True  (searched as ∀x ∀y ∃P P(x, y))
+so_is_valid_finite(p("∃P P(x)"), max_size=2)   # → True  (whichever x is, pick P = {(x,)})
+
+# Several free variables are several parameters
+so_is_valid_finite(p("∃P P(x, y)"), max_size=2)  # → True  (whichever x and y are, pick P = {(x, y)})
+```
+
+For validity this gives the verdict that closing the formula universally would give, since a formula is valid iff it holds for every value of its free variables. For satisfiability and models it does not: `Q(x) ∧ ¬Q(y)` is satisfiable, because `x` and `y` may be two different elements, while `∀x ∀y (Q(x) ∧ ¬Q(y))` has no model, since `x = y` already refutes it:
+
+```python
+so_is_satisfiable_finite(p("Q(x) ∧ ¬Q(y)"), max_size=3)   # → True  (x and y are the two elements of a two-element model)
 ```
 
 ### Adjusting max_size
@@ -366,9 +375,25 @@ f = p("∀P ∃x P(x)")
 so_find_countermodel(f, max_size=1) is not None   # → True   (1-element domain suffices)
 so_find_countermodel(f, max_size=5) is not None   # → True   (still found, smaller-first)
 
-# Some formulas require larger domains to even have a model:
+# Sizes are searched smallest first, so a model of size 1 is found at max_size=1:
 sat = p("∃P ∀x (P(x) ↔ x = a)")
 so_is_satisfiable_finite(sat, max_size=1)  # → True  (1-element works for *any* model)
+```
+
+Every size `1 .. max_size` is searched, or the call raises: no size is skipped. The four functions take `max_candidates` (default `MAX_RELATIONS`, 4194304), the most candidate interpretations of the free symbols that they enumerate at one size. A size with more candidates than that, reached before a structure was found at a smaller size, raises `CandidateBoundExceeded` (a `ValueError`, importable from `unicode_fol_kit` and `unicode_fol_kit.semantics`) with the attributes `size`, `candidates` and `max_candidates`; the message gives the two ways out, raise `max_candidates` or lower `max_size`. A structure found at a smaller size is returned as before. The count is of interpretations up to renaming of constants: exact for an unsorted formula, an upper bound for a sorted one.
+
+```python
+from unicode_fol_kit import CandidateBoundExceeded
+
+# With at most two elements, two of any three are equal, so the first disjunct holds at sizes 1 and 2:
+g = p("∀x ∀y ∀z (x = y ∨ y = z ∨ x = z) ∨ ∀x ∀y ∀z ¬T(x, y, z)")
+so_is_valid_finite(g, max_size=2)       # → True
+# At size 3 it fails whenever T is non-empty, but T has 2 ** (3 ** 3) interpretations there:
+try:
+    so_is_valid_finite(g, max_size=3)   # raises CandidateBoundExceeded
+except CandidateBoundExceeded as e:
+    print(e.size, e.candidates, e.max_candidates)
+    # → 3 134217728 4194304
 ```
 
 ### Schemas: comprehension and induction
@@ -454,6 +479,8 @@ so_is_valid_finite(node, max_size=3)   # → True
 
 ```python
 # ∀P ∀Q ∀x ((P(x) ∧ Q(x)) → (P(x) ∨ Q(x)))
+from unicode_fol_kit.fol.nodes import Implies, Or
+
 P = Atom("P", [x])
 Q = Atom("Q", [x])
 inner = Quantifier(
@@ -522,6 +549,14 @@ lines = thy.split('\n')
 print('\n'.join(lines[:15]))  # Header and early declarations
 ```
 
+A binder is written under its own name unless a symbol of the theory is spelled like it; then it is suffixed (`x_2`, then `x_3`, …), so a quantifier never captures a constant of the same spelling:
+
+```python
+clash = to_isabelle_so(p("∃P P(x) ∧ ∀x Q(x)"), name="Clash")   # the free x is declared as a constant
+'consts x :: "i"' in clash        # → True
+"\\<forall>x_2::i." in clash      # → True   (the bound x is written x_2)
+```
+
 ### Equality and uninterpreted relations
 
 In both exports equality `=` / `≠` is an *uninterpreted* relation (`feq` / `fneq`), not primitive HOL identity — add reflexivity / Leibniz axioms in the prover if you need true identity.
@@ -542,31 +577,41 @@ print("feq" in thy_eq)  # → True
 
 ## Scope
 
-This is second-order **predicate** (relation) quantification with standard semantics over finite models. Quantification over functions, third-order and up, and a complete higher-order type system are out of scope; the lambda layer already supplies higher-order *terms* (`λP. P(x)`), which you beta-reduce and lambda-eliminate before evaluation. The `second_order=True` mode does not combine with sorts, fuzziness, or the modal mode — the constructor rejects an unsupported combination with a `ValueError`. For exporting `∀P` / `∃P` to a higher-order prover, see `unicode_fol_kit.hol` (`to_thf_so` / `to_isabelle_so`), which map them to native HOL predicate quantifiers.
+This is second-order **predicate** (relation) quantification with standard semantics over finite models. Quantification over functions and a complete higher-order type system are out of scope; a predicate that takes a property as its argument is third order, see [Third-order logic](third-order.md). The lambda layer already supplies higher-order *terms* (`λP. P(x)`), which you beta-reduce and lambda-eliminate before evaluation. The `second_order=True` mode does not combine with fuzziness or the modal mode — the constructor rejects an unsupported combination with a `ValueError` — and second-order syntax with modal operators is `MSFLParser(third_order=True, modal=True)`. With `many_sorted=True` it accepts the sorted object quantifiers `∀x:S` / `∃x:S`: `satisfies_so` and `holds` range them over the sort listed in the structure's `sorts` (a sort is never empty, so an empty one raises `IllegalStructureError`, and a sort the structure does not list raises `KeyError`). The bounded search functions above read a sorted formula as the model finder does, in one universe: one domain, each sort a non-empty subset of it (sorts may overlap), `c:S` an element of `S`, a sort and the unary predicate of its name one symbol, and `∀P` / `∃P` ranging over every relation on the whole domain. A bound predicate variable with the name of a sort is refused with a `NotImplementedError`, and with `fast=True` a sorted quantifier or constant inside a second-order quantifier is refused with a `ValueError`. `to_thf_so` / `to_isabelle_so` raise `NotImplementedError` on a sorted formula. For exporting `∀P` / `∃P` to a higher-order prover, see `unicode_fol_kit.hol` (`to_thf_so` / `to_isabelle_so`), which map them to native HOL predicate quantifiers.
 
 ### Combining second-order with other modes
 
 ```python
 # These combinations raise ValueError:
 try:
-    MSFLParser(second_order=True, many_sorted=True)  # raises ValueError
-except ValueError as e:
-    print("unsupported combination" in str(e))  # → True
-
-try:
     MSFLParser(second_order=True, fuzzy=True)  # raises ValueError
-except ValueError:
-    pass
+except ValueError as e:
+    print("cannot be combined" in str(e))  # → True
 
 try:
     MSFLParser(second_order=True, modal=True)  # raises ValueError
 except ValueError:
     pass
 
-# But first-order quantifiers, lambdas, and standard logic connectives work fine:
+# Sorted object quantifiers combine with ∀P / ∃P; ∀x:S ranges over the sort of the structure:
+ps = MSFLParser(second_order=True, many_sorted=True).parse
+sorted_S = Structure(domain={0, 1, 2}, sorts={"S": {0, 1}}, predicates={("Q", 1): {(0,)}})
+holds(ps("∃P ∀x:S (P(x) ↔ Q(x))"), sorted_S)   # → True   (take P = Q)
+holds(ps("∃x:S Q(x)"), sorted_S)                # → True   (0 is in S and in Q)
+holds(ps("∀x:S Q(x)"), sorted_S)                # → False  (1 is in S but not in Q)
+
+# The bounded search reads the sorts in one universe: each sort is a non-empty subset of the domain
+so_is_valid_finite(ps("∃x:S ⊤"), max_size=3)     # → True   (a sort is never empty)
+so_is_valid_finite(ps("∃x:S Q(x)"), max_size=3)  # → False  (S may avoid Q)
+try:
+    so_is_valid_finite(ps("∃S ∃x:S S(x)"), max_size=2)   # raises NotImplementedError (∃S has the name of the sort S)
+except NotImplementedError:
+    pass
+
+# And first-order quantifiers, a lambda application, and standard logic connectives work fine:
 p = MSFLParser(second_order=True).parse
 p("∀x ∃P P(x)")           # ✓ mix of ∀x and ∃P
-p("(λx. x)(a) → ∀P P")    # ✓ lambda terms
+p("∃P ((λx. P(x))(a))")   # ✓ a lambda application under the binder
 p("∀P (P ↔ (Q ∧ R))")     # ✓ Boolean connectives
 ```
 

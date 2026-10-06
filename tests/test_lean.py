@@ -195,20 +195,28 @@ def test_lean_fol_predicate_and_bound_variable_of_same_name_are_distinct():
 def test_lean_msfol_sorted_quantifier_relativized():
     f = SortedQuantifier("∀", X, "Human", Atom("Mortal", [X]))
     out = lean.to_lean_msfol(f)
-    body = out.split("theorem goal :")[1]
+    # the theorem header now carries the sort's non-emptiness as a hypothesis (see below); the
+    # statement itself, after the header's `) : `, is the relativised formula and nothing else
+    statement = out.split(") : ")[-1].split(" := by")[0]
     # ∀x:Human Mortal(x)  ==>  ∀x. Human(x) -> Mortal(x)
-    assert "human x" in body and "mortal x" in body
-    assert "→" in body
+    assert statement == "(∀ x : Ind, ((human x) → (mortal x)))"
     assert _balanced(out)
 
 
-def test_lean_msfol_no_nonemptiness_forced_on_the_sort_itself():
-    # Matches to_isabelle_msfol / to_thf_msfol: ONLY Ind is forced nonempty;
-    # the sort guard predicate is not additionally asserted nonempty here.
+def test_lean_msfol_states_the_sort_as_nonempty_in_a_hypothesis_not_in_the_goal():
+    # The sort guard is asserted non-empty, as on every other many-sorted route
+    # (fol.nonempty_sort_axioms): without it ``∀x:Human P x → ∃x:Human P x`` -- valid when no sort is
+    # empty -- has the countermodel in which ``human`` is empty. The old expectation (only ``Ind`` is
+    # non-empty, the guard is "a caller concern") made this export answer a different question.
+    # The fact is a HYPOTHESIS of the theorem: a conjunct of the goal could not be proved.
     f = SortedQuantifier("∀", X, "Human", Atom("Mortal", [X]))
     out = lean.to_lean_msfol(f)
-    assert out.count("Nonempty") == 2   # the Ind_nonempty axiom + the instance line
-    assert "human_nonempty" not in out.lower()
+    assert "theorem goal (sort_nonempty_0 : (∃ x0 : Ind, (human x0))) :" in out
+    assert out.count("Nonempty") == 2   # the Ind_nonempty axiom + the instance line: Ind's own pair only
+    # include_sort_facts=False is the bare relativisation: the old output
+    bare = lean.to_lean_msfol(f, include_sort_facts=False)
+    assert "theorem goal : (∀ x : Ind, ((human x) → (mortal x))) := by" in bare
+    assert "sort_nonempty" not in bare
 
 
 # ---------------------------------------------------------------------------

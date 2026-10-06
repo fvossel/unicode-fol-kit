@@ -73,9 +73,12 @@ from ..fol.nodes import (
     Node, Atom, Not, And, Or, Xor, Implies, Iff, Would, Might,
     Variable, Quantifier,
 )
+from ..fol._atom_keys import AtomKeys
+from ..fol._truth_constants import truth_value as _truth_value
 from .deepshallow._common import AtomConsts, theory_name_ok
 from ._ho_common import ThfNames
 from ..semantics.conditional import CENTERING_LEVELS, check_centering  # noqa: F401
+from ..semantics._modal_reject import reject_equality
 
 #: The Isabelle type of an embedded formula: a predicate on worlds.
 _TAU = r"w \<Rightarrow> bool"
@@ -187,6 +190,23 @@ definition CondC :: "tau \<Rightarrow> tau \<Rightarrow> tau" where
 '''
 
 
+#: The sphere (counterfactual) embedding reads an atom as a world-indexed
+#: PROPOSITION keyed by its rendered form — `p_a___b` in Isabelle, a `w > $o`
+#: functor in THF — so it interprets no term at all. An identity atom is
+#: therefore refused by name, through the same helper the Kripke evaluator, the
+#: modal tableau, the standard translation and the GMT embedding use: until
+#: 0.30.0 `a = b` came out as the letter `a___b`, under which `a = a` is not
+#: valid and `(a = b) □→ (b = a)` is decided by the sphere function alone.
+_EQUALITY_ROUTE = "the propositional sphere (counterfactual) embedding"
+_EQUALITY_ATOM_READING = ("an atom is a world-indexed proposition keyed by its "
+                          "rendered form, and no term is interpreted")
+_EQUALITY_INSTEAD = (
+    "Counterfactuals over identity are outside this embedding; decide identity "
+    "with unicode_fol_kit.fol.qml.qml_is_valid (rigid identity over the object "
+    "domain) on the modal fragment instead."
+)
+
+
 def _atom_is_propositional(node: Atom) -> bool:
     """True unless an argument carries a :class:`Variable` (⇒ genuinely first-order)."""
     return not any(isinstance(n, Variable) for a in node.args for n in a.walk())
@@ -214,12 +234,24 @@ def to_isabelle_conditional(formula: Node,
             so they are rejected rather than silently reinterpreted.
     """
     atoms = AtomConsts() if atoms is None else atoms
-    return _encode(formula, atoms)
+    term = _encode(formula, atoms)
+    # An atom is named by the text it prints as: two different atoms that print alike would be
+    # ONE constant and the theory another problem (checked after the encoding, which refuses
+    # the nodes it cannot read first).
+    AtomKeys("to_isabelle_conditional", "refuse").letters([formula])
+    return term
 
 
 def _encode(formula: Node, atoms: AtomConsts) -> str:
     """Recursive worker for :func:`to_isabelle_conditional`."""
     if isinstance(formula, Atom):
+        constant = _truth_value(formula)
+        if constant is not None:
+            # `$true` / `$false`: the proposition true (false) at every world.
+            return "(\\<lambda>x. True)" if constant else "(\\<lambda>x. False)"
+        reject_equality(formula, "to_isabelle_conditional", _EQUALITY_ROUTE,
+                        atom_reading=_EQUALITY_ATOM_READING,
+                        instead=_EQUALITY_INSTEAD)
         if not _atom_is_propositional(formula):
             raise NotImplementedError(
                 "to_isabelle_conditional: atom with a free variable is first-order; "
@@ -465,6 +497,12 @@ def _thf_encode(formula: Node, world: str, names: ThfNames, depth: int = 0) -> s
     free-standing ``tau`` term -- see the comment above ``_THF_PRELUDE``.
     """
     if isinstance(formula, Atom):
+        constant = _truth_value(formula)
+        if constant is not None:
+            return "( $true )" if constant else "( $false )"    # the same at every world
+        reject_equality(formula, "to_thf_conditional", _EQUALITY_ROUTE,
+                        atom_reading=_EQUALITY_ATOM_READING,
+                        instead=_EQUALITY_INSTEAD)
         if not _atom_is_propositional(formula):
             raise NotImplementedError(
                 "to_thf_conditional: atom with a free variable is first-order; "
@@ -538,8 +576,10 @@ def to_thf_conditional(formula: Node, *, centering: str = "weak") -> str:
     check_centering(centering)
     names = ThfNames(reserved=_THF_RESERVED)
     body = _thf_encode(formula, "X", names)
+    AtomKeys("to_thf_conditional", "refuse").letters([formula])
     lines = list(_THF_PRELUDE)
-    for label in sorted({atom.to_unicode_str() for atom in formula.atoms()}):
+    for label in sorted({atom.to_unicode_str() for atom in formula.atoms()
+                         if _truth_value(atom) is None}):
         functor = names.functor("predicate", label)
         lines.append(f"thf({functor}_type, type, ( {functor} : w > $o )).")
     conclusion = f"( ! [X: w] : {body} )"

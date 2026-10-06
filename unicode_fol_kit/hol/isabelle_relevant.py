@@ -63,7 +63,15 @@ atoms -- there is no B reading for them here either).
 from typing import Optional, Sequence, Tuple
 
 from ..fol.nodes import Node, Atom, Not, And, Or, Implies, Iff
+from ..fol._truth_constants import refuse_truth_constants
 from .deepshallow._common import AtomConsts, theory_name_ok
+
+#: Why the B embeddings have no reading of ``$true`` / ``$false`` (the reason the
+#: refusal names, the same one :mod:`unicode_fol_kit.semantics.relevant` gives).
+_NO_CONSTANT_WHY = (
+    "relevant logic has two truths and two falsities, an additive pair and a "
+    "multiplicative pair, which differ in B, and TPTP's $true / $false names "
+    "neither pair")
 from ._ho_common import ThfNames
 
 #: The Isabelle type of an embedded formula: a predicate on worlds.
@@ -134,6 +142,8 @@ def _encode(formula: Node, atoms: AtomConsts) -> str:
     exception type the oracle raises for the same inputs.
     """
     if isinstance(formula, Atom):
+        refuse_truth_constants([formula], "to_isabelle_relevant", _NO_CONSTANT_WHY,
+                               error=TypeError)
         if formula.args:
             raise TypeError(
                 "to_isabelle_relevant: only nullary propositional atoms are "
@@ -331,6 +341,8 @@ def _thf_encode(formula: Node, world: str, names: ThfNames, depth: int = 0) -> s
     term. See the comment above ``_THF_PRELUDE`` for why.
     """
     if isinstance(formula, Atom):
+        refuse_truth_constants([formula], "to_thf_relevant", _NO_CONSTANT_WHY,
+                               error=TypeError)
         if formula.args:
             raise TypeError(
                 "to_thf_relevant: only nullary propositional atoms are "

@@ -36,7 +36,7 @@ print(formula.to_unicode_str())
 
 Z3 ships with the package. A few features instead drive *external* theorem provers, which you install separately and point at by passing the executable's path:
 
-- **Prover9** — used by `check_logical_entailment(premises, conclusion, prover9_path=...)`.
+- **Prover9** — used by `check_logical_entailment(premises, conclusion, prover9_path=...)`. The `"prover9"` backend of `api.prove` finds the binary through `$UFK_PROVER9`, then `PATH`. A Linux Prover9 inside WSL is reached with `$UFK_PROVER9=<path inside WSL>` and `$UFK_PROVER9_WSL=1` (or `use_wsl=True`, with the path inside WSL as `prover9_path`).
 - **Vampire** — used by `check_logical_entailment_vampire(premises, conclusion, vampire_path=...)`; on Windows it can drive a Vampire installed in WSL via `use_wsl=True`.
 - **Isabelle** — used by `isabelle_decide_modal(...)` (in `unicode_fol_kit.hol.isabelle_runner`) to actually *run* the modal embeddings; `isabelle_available()` / `find_isabelle()` locate the installation.
 

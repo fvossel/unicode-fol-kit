@@ -36,7 +36,10 @@ from unicode_fol_kit.atp.vampire_entailment import _generate_vampire_input
 from unicode_fol_kit.atp.eprover_backend import _generate_tptp_problem as _eprover_generate
 from unicode_fol_kit.atp.twee_entailment import _generate_twee_input
 
-_A = Variable("a")
+# A stand-in argument. It is a constant: the fof writer refuses a free variable (a prover reads
+# one as a syntax error), so an unbound ``Variable("a")`` here would be refused before the
+# collision and renaming behaviour these tests are about is reached.
+_A = Constant("a")
 _PARSE = MSFLParser().parse
 
 
@@ -95,17 +98,21 @@ def test_no_false_positive_for_the_same_predicate_reused():
     """Using the SAME predicate name more than once (the ordinary case) must
     never be flagged — only two DIFFERENT original names colliding are."""
     text = generate_tptp_problem([Atom("Foo", [_A]), Atom("Foo", [_A])], Atom("Foo", [_A]))
-    assert text.count("foo(A)") == 3
+    assert text.count("foo(a)") == 3
 
 
-def test_no_collision_between_predicate_and_function_namespaces():
+def test_predicate_and_term_folding_to_one_identifier_are_separated():
     """A predicate and a function/constant folding to the same identifier are
-    NOT a collision — they occupy separate TPTP syntactic namespaces (formula
-    position vs. term position), unlike two predicates or two functions."""
-    # Atom "Foo" -> predicate 'foo'; Constant "foo" -> term 'foo'. Different
-    # namespaces, so no collision, even though the rendered strings match.
+    NOT a same-kind collision (nothing is refused) — but they are no longer
+    written under one name either. This test used to pin ``foo(foo)`` on the
+    argument that a reader resolves a bare identifier by position; Vampire and
+    E do not (see tests/test_tptp_cross_kind.py for the measured verdicts), so
+    the writer renames the TERM side and records it."""
+    # Atom "Foo" -> predicate 'foo'; Constant "foo" -> term 'foo': one rendered
+    # name in two kinds, so the constant becomes 'foo_term'.
     text = generate_tptp_problem([Atom("Foo", [Constant("foo")])], Atom("Foo", [Constant("foo")]))
-    assert "foo(foo)" in text
+    assert "foo(foo_term)" in text
+    assert "foo(foo)" not in text
 
 
 @pytest.mark.parametrize("generate", [generate_tptp_problem, _generate_vampire_input,
@@ -148,20 +155,26 @@ def test_no_collision_when_predicates_genuinely_distinct():
     """Two predicates whose folded forms differ (first letters 'F' and 'B',
     say) must never be flagged — only an actual identifier collision is."""
     text = generate_tptp_problem([Atom("Foo", [_A])], Atom("Bar", [_A]))
-    assert "foo(A)" in text and "bar(A)" in text
+    assert "foo(a)" in text and "bar(a)" in text
 
 
 def test_equality_and_arithmetic_predicates_never_participate_in_collisions():
-    """'=', '<', '>', etc. map to fixed TPTP tokens outside the name-folding
-    path, so they can never collide with a folded predicate name — even one
-    that happens to render identically to a dollar-word by coincidence is
-    out of this guard's scope (a separate, much narrower concern)."""
+    """'=' maps to the fixed TPTP token '=' outside the name-folding path, so it
+    can never collide with a folded predicate name. '<' is NOT a fixed token any
+    more: the kit reads it as an uninterpreted binary predicate on every route
+    that was not asked for arithmetic, and TPTP's ``$less`` is arithmetic (a
+    prover proves ``$less(1,2)``), so the problem writer writes it as an ordinary
+    predicate under a word of its own.
+
+    This test used to pin ``$less(a,b)``. That text asked the prover a question
+    about its own ordering of numbers, which no formula of the kit says."""
     text = generate_tptp_problem(
         [Atom("=", [Constant("a"), Constant("a")])],
         Atom("<", [Constant("a"), Constant("b")]),
     )
     assert "(a = a)" in text
-    assert "$less(a,b)" in text
+    assert "$less" not in text
+    assert "u003c(a,b)" in text
 
 
 # ---------------------------------------------------------------------------
@@ -177,7 +190,7 @@ class TestHinwegNonAsciiAndDigitLeadingNames:
     check on top of this)."""
 
     def test_non_ascii_constant_becomes_ascii_and_reparses(self):
-        f = _PARSE("LostTo(x, świątek)")
+        f = _PARSE("LostTo(iga, świątek)")
         text = generate_tptp_problem([], f)
         # "świątek" must not appear raw in ASCII-only TPTP text.
         assert "świątek" not in text
@@ -202,7 +215,7 @@ class TestHinwegNonAsciiAndDigitLeadingNames:
         assert "fof(goal, conjecture, p(dani_Shapiro))." in text.splitlines()
 
     def test_all_three_together_reparse_and_reverse_map_to_originals(self):
-        f1 = _PARSE("LostTo(x, świątek)")
+        f1 = _PARSE("LostTo(iga, świątek)")
         f2 = _PARSE("Hosted(beijing, 2008SummerOlympics)")
         f3 = _PARSE("P(dani_Shapiro)")
         text, mapping = generate_tptp_problem_with_mapping([f1, f2], f3)
@@ -293,7 +306,7 @@ class TestR3RoundTripViaApplyReverseTptp:
     example formulas individually."""
 
     @pytest.mark.parametrize("source", [
-        "LostTo(x, świątek)",
+        "LostTo(iga, świątek)",
         "Hosted(beijing, 2008SummerOlympics)",
         "P(dani_Shapiro)",
     ])

@@ -68,8 +68,10 @@ first-order over frames of every cardinality, so :func:`unguarded_frame_axiom`
 and the routes named above still refuse them exactly as before.
 """
 
+import re
 from typing import Callable, Dict, FrozenSet, Iterable, Optional, Tuple
 
+from ._identifiers import variable_pattern
 from .nodes import (
     And, Atom, Box, Diamond, Implies, Node, Not, Or, Quantifier, Variable,
 )
@@ -537,7 +539,7 @@ _FORALL, _EXISTS = "∀", "∃"
 
 
 def unguarded_frame_axiom(condition: str, relation: str = "R", *,
-                          prefix: str = "_fw") -> Node:
+                          prefix: str = "v") -> Node:
     """The first-order frame axiom of ``condition`` over ``relation``.
 
     Written WITHOUT a sort guard, which is what the natural-deduction route
@@ -547,14 +549,24 @@ def unguarded_frame_axiom(condition: str, relation: str = "R", *,
     (:mod:`unicode_fol_kit.fol.qml`) keeps its own ``World``-guarded
     emitters, because there worlds and objects share one domain.
 
-    The axiom is closed over its own bound variables (named with ``prefix``),
-    so it can never capture anything in the formula it is conjoined with.
+    The axiom is closed over its own bound variables (named ``prefix`` + a
+    digit), so it can never capture anything in the formula it is conjoined
+    with. ``prefix`` must be a legal VARIABLE on its own — one term-valued
+    letter — because ``prefix`` + digits has to be a name the kit's own parser
+    reads back: the default used to be ``"_fw"``, and an axiom printed as
+    ``∀_fw0 R(_fw0, _fw0)`` is text ``api.parse_any`` rejects (see
+    :func:`unicode_fol_kit.fol._identifiers.fresh_variables`).
 
     Raises:
         UnsupportedFrameCondition: ``condition`` has no first-order frame
             condition (Löb, McKinsey, Grz).
         ValueError: ``condition`` is not a known condition at all.
     """
+    if not re.fullmatch(variable_pattern(), prefix):
+        raise ValueError(
+            f"unguarded_frame_axiom: prefix {prefix!r} is not a legal variable "
+            f"name, so {prefix!r} + digits is not one either — the axiom would "
+            f"print as text this kit's own parser rejects")
     w, u, v, s = (Variable(f"{prefix}0"), Variable(f"{prefix}1"),
                   Variable(f"{prefix}2"), Variable(f"{prefix}3"))
     R = lambda a, b: Atom(relation, (a, b))

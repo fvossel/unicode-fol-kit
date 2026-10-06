@@ -24,20 +24,22 @@ DAG rather than a bare bool.
 """
 
 import os
+import re
 import subprocess
 import tempfile
-from typing import List, Optional, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 from ..fol.nodes import Node
 from ._ascii_names import reverse_map_text
 from ._tff_problem import generate_tff_arith_problem
-from ._tptp_problem import generate_tptp_problem, generate_tptp_problem_with_mapping
-from .tptp_tff import generate_tff_problem, problem_needs_tff
+from ._tptp_problem import generate_tptp_problem_for_prover, generate_tptp_problem_with_mapping
+from ._writer_support import names_kwargs
 
 
 def _generate_vampire_input(premises: List[Node], conclusion: Node,
                             *, tff: Optional[bool] = None,
-                            sort: Optional[str] = None) -> str:
+                            sort: Optional[str] = None,
+                            premise_names: Optional[Sequence[str]] = None) -> str:
     """Build a TPTP problem string from premises and a conclusion.
 
     Each premise becomes an ``axiom`` and the conclusion the single
@@ -51,25 +53,31 @@ def _generate_vampire_input(premises: List[Node], conclusion: Node,
     caller must ask for it explicitly (every existing caller that never
     passes ``sort`` keeps its current ``tff``-selected/auto-selected
     behaviour byte-for-byte). With ``sort=None``, ``tff`` selects between
-    the two dialects it always did: ``None`` (the default) auto-selects the
-    native, genuinely-typed ``tff`` route (:func:`atp.tptp_tff
-    .generate_tff_problem`) when ``premises``/``conclusion`` contain a
-    SortedQuantifier/SortedConstant/SortedCount node (see
-    :func:`atp.tptp_tff.problem_needs_tff`) and the classical guard-
-    predicate ``fof`` route (:func:`atp._tptp_problem.generate_tptp_problem`
-    — a thin wrapper here, also used by :mod:`atp.eprover_backend` and
-    :mod:`atp.twee_entailment`, which build the identical ``fof`` problem
-    shape) otherwise; ``True``/``False`` force one route explicitly. Every
-    route's own cross-formula symbol-collision guard can raise
-    ``NotImplementedError`` before any TPTP text is produced.
+    the two dialects: ``None`` (the default) tries the native, genuinely-typed
+    ``tff`` route (:func:`atp.tptp_tff.generate_tff_problem`) when
+    ``premises``/``conclusion`` contain a SortedQuantifier/SortedConstant/
+    SortedCount node (see :func:`atp.tptp_tff.problem_needs_tff`), and falls back
+    to the classical guard-predicate ``fof`` route when the typed writer refuses
+    the problem (a :class:`~unicode_fol_kit.atp.tptp_tff.Tf0Refusal`: its text would
+    ask another question than the kit's; or a node it does not cover that the ``fof``
+    writer does: a counting quantifier, ``Contrast``, ``Measure`` — see
+    :func:`atp._tptp_problem.generate_tptp_problem_for_prover`); a problem without a sorted node goes to
+    the ``fof`` route (:func:`atp._tptp_problem.generate_tptp_problem` — also
+    used by :mod:`atp.eprover_backend` and :mod:`atp.twee_entailment`, which build
+    the identical ``fof`` problem shape). ``tff=True``/``False`` force one route
+    explicitly, and ``True`` raises the typed writer's refusal. Every route's own
+    cross-formula symbol-collision guard can raise ``NotImplementedError`` before
+    any TPTP text is produced. ``premise_names`` names the premises' ``axiom`` lines
+    in whichever route is written (see :func:`atp._tptp_problem
+    .generate_tptp_problem_with_mapping`), ``premise_<i>`` when it is ``None``.
     """
     if sort is not None:
-        problem, _name_map = generate_tff_arith_problem(premises, conclusion, sort=sort)
+        problem, _name_map = generate_tff_arith_problem(
+            premises, conclusion, sort=sort, **names_kwargs(premise_names))
         return problem
-    use_tff = problem_needs_tff(premises, conclusion) if tff is None else tff
-    if use_tff:
-        return generate_tff_problem(premises, conclusion)
-    return generate_tptp_problem(premises, conclusion)
+    return generate_tptp_problem_for_prover(
+        premises, conclusion, tff=tff, fof_writer=generate_tptp_problem_with_mapping,
+        premise_names=premise_names).text
 
 
 def _is_entailed_output(stdout: str) -> bool:
@@ -83,6 +91,52 @@ def _is_entailed_output(stdout: str) -> bool:
     all — means it does not.
     """
     return ("SZS status Theorem" in stdout) or ("Refutation found" in stdout)
+
+
+#: Text that says Vampire FAILED rather than ended a search: its own
+#: ``User error: ...``, a parse error or exception, a crash. Seen in an output
+#: it rules out the "ended by itself" reading below, whatever else is printed.
+_FAILURE_TEXT = re.compile(
+    r"\berror\b|exception|assertion|segmentation|core dumped|abort", re.IGNORECASE)
+
+#: The line Vampire's statistics block ends a search with:
+#: ``% Termination reason: Refutation not found, incomplete strategy``.
+_TERMINATION_REASON = re.compile(r"^\s*%?\s*Termination reason:\s*(?P<why>.*?)\s*$",
+                                 re.MULTILINE)
+
+
+def _ended_by_itself(stdout: str) -> Optional[Tuple[str, str]]:
+    """Whether a run WITHOUT an SZS status line is a search Vampire ended itself.
+
+    Vampire does not always print an SZS line when it gives up. Measured on
+    Vampire 5.0.1: a non-theorem of a typed-arithmetic (``$int``) problem ends
+    ``% Refutation not found, incomplete strategy`` ... ``% Termination reason:
+    Refutation not found, incomplete strategy`` (exit code 1, no SZS line), and
+    a run stopped by its own ``--time_limit`` / ``--activation_limit`` ends
+    ``% Termination reason: Time limit`` / ``Activation limit`` the same way.
+    Those are honest answers, not refusals: the problem WAS read and searched.
+
+    Returns ``(reason, why)`` -- the :mod:`atp.protocol` reason axis value and
+    the termination reason as Vampire worded it -- or ``None`` when the output
+    does not show a search that ended: no ``Termination reason`` line and no
+    ``Refutation not found``, or any text of a failure (``User error``, a parse
+    error, an exception, a crash), in which case the caller reports an ERROR.
+    A reason naming a ``limit`` is a budget Vampire was given: ``Time limit`` is
+    ``"timeout"``, any other limit ``"bound_hit"``; every other reason is the
+    prover giving up, ``"incomplete"``.
+    """
+    if _FAILURE_TEXT.search(stdout):
+        return None
+    match = _TERMINATION_REASON.search(stdout)
+    if match is not None:
+        why = match.group("why")
+    elif "Refutation not found" in stdout:
+        why = "Refutation not found"
+    else:
+        return None
+    if re.search(r"\blimit\b", why, re.IGNORECASE):
+        return ("timeout" if re.match(r"time\b", why, re.IGNORECASE) else "bound_hit"), why
+    return "incomplete", why
 
 
 def _to_wsl_path(windows_path: str) -> str:
@@ -123,7 +177,11 @@ def _spawn_vampire(input_str: str, vampire_path: str, timeout: int = 30,
 
     Returns:
         ``(stdout, timed_out)`` — ``stdout`` is Vampire's captured stdout text
-        (``""`` if the process timed out before producing any), ``timed_out``
+        followed by its stderr (``""`` if the process timed out before
+        producing any): Vampire writes its own ``User error: ...`` to stdout,
+        but a launcher failure (``wsl.exe`` cannot find the binary) or a crash
+        speaks on stderr, and a refusal whose explanation was dropped would
+        read like a run that merely found nothing. ``timed_out``
         is ``True`` iff the subprocess exceeded ``timeout`` seconds. A
         subprocess timeout is swallowed into this return value, exactly as the
         Prover9 runner swallows one into a bool; any OTHER error — notably
@@ -152,7 +210,7 @@ def _spawn_vampire(input_str: str, vampire_path: str, timeout: int = 30,
             text=True,
             timeout=timeout,
         )
-        return result.stdout, False
+        return (result.stdout or "") + (result.stderr or ""), False
     except subprocess.TimeoutExpired:
         return "", True
     finally:
@@ -194,8 +252,10 @@ def check_logical_entailment_vampire(premises: List[Node], conclusion: Node,
             the temp-file path to its ``/mnt/...`` form, so a Windows host can
             drive a Linux Vampire installed in WSL.
         tff: which TPTP dialect to export as — see :func:`_generate_vampire_input`.
-            ``None`` (the default) auto-selects the native typed ``tff`` route
-            whenever a sort is used, ``True``/``False`` force one route.
+            ``None`` (the default) tries the native typed ``tff`` route whenever
+            a sort is used and writes ``fof`` when the typed writer refuses the
+            problem; ``True``/``False`` force one route (``True`` raises the
+            typed writer's refusal).
         sort: ``None`` (default) leaves ``tff`` in charge as above; ``'real'``
             or ``'int'`` opts into the single-numeric-sort typed arithmetic
             route (:func:`atp._tff_problem.generate_tff_arith_problem`)
@@ -203,16 +263,22 @@ def check_logical_entailment_vampire(premises: List[Node], conclusion: Node,
             procedures — see that module's docstring for the fragment it
             covers (a formula that genuinely mixes several sorts, or is
             outside the arithmetic fragment, raises ``NotImplementedError``
-            naming the construct rather than silently falling back).
+            naming the construct rather than silently falling back). Without
+            ``sort`` arithmetic is NOT asked for: a numeral is a constant identified
+            by its value and ``+ - * /  < > ≤ ≥`` are uninterpreted symbols, which
+            the problem writers write under ordinary words (see
+            :mod:`unicode_fol_kit.atp._tptp_problem`), so ``1 ≠ 2`` and ``1 + 1 = 2``
+            are not provable here and are with ``sort='int'``.
 
     Returns:
         ``True`` iff Vampire proves the conclusion follows from the premises.
         Note that every premise and the conclusion must be a closed sentence:
         Vampire rejects formulas with unquantified (free) variables, and such a
         rejection is reported as ``False`` (no proof), not raised — EXCEPT on
-        the ``sort=`` route, which raises ``ValueError`` for a free variable
-        instead of silently picking an implicit-closure convention (see
-        :mod:`atp._tff_problem`'s module docstring).
+        the ``sort=`` route, which refuses a free variable
+        (:class:`~unicode_fol_kit.atp._tff_problem.TfaRefusal`, a ``ValueError`` and a
+        ``NotImplementedError``) instead of silently picking an implicit-closure
+        convention (see :mod:`atp._tff_problem`'s module docstring).
 
     Raises:
         FileNotFoundError: ``vampire_path`` does not point to an executable (or,
@@ -224,10 +290,14 @@ def check_logical_entailment_vampire(premises: List[Node], conclusion: Node,
             would render as the same TPTP identifier — see
             :mod:`atp._tptp_problem`'s, :mod:`atp.tptp_tff`'s, and
             :mod:`atp._tff_problem`'s module docstrings for why that is
-            refused rather than silently merged into one symbol.
-        ValueError: on the ``sort=`` route only — an invalid ``sort``, a free
-            variable, an arity conflict, or a constant-vs-function name
-            clash (see :mod:`atp._tff_problem`'s module docstring).
+            refused rather than silently merged into one symbol. With
+            ``tff=True`` it is also a :class:`~unicode_fol_kit.atp.tptp_tff.Tf0Refusal`
+            when the typed text would ask another question than the kit's (that
+            class is a ``ValueError`` too). On the ``sort=`` route it is also a
+            :class:`~unicode_fol_kit.atp._tff_problem.TfaRefusal` for a free
+            variable, an arity conflict, or a constant-vs-function name clash
+            (a ``ValueError`` too; see :mod:`atp._tff_problem`'s module docstring).
+        ValueError: on the ``sort=`` route only — an invalid ``sort``.
     """
     vampire_input = _generate_vampire_input(premises, conclusion, tff=tff, sort=sort)
     return _run_vampire(vampire_input, vampire_path, timeout=timeout,
@@ -249,7 +319,9 @@ def check_entailment_vampire_detailed(premises: List[Node], conclusion: Node,
                                       vampire_path: str, timeout: int = 30,
                                       use_wsl: bool = False,
                                       tff: Optional[bool] = None,
-                                      sort: Optional[str] = None) -> dict:
+                                      sort: Optional[str] = None,
+                                      premise_names: Optional[Sequence[str]] = None,
+                                      axiom_names: bool = False) -> dict:
     """Run Vampire and read its SZS status + TSTP derivation, not just a bool.
 
     Builds the same TPTP ``fof`` problem as :func:`check_logical_entailment_vampire`
@@ -280,34 +352,55 @@ def check_entailment_vampire_detailed(premises: List[Node], conclusion: Node,
         sort: ``None`` (default) leaves ``tff`` in charge; ``'real'``/``'int'``
             opts into the single-numeric-sort typed arithmetic route — see
             :func:`check_logical_entailment_vampire`'s ``sort`` for the full
-            contract. UNLIKE the ``tff`` route, this route's ``name_map`` is
-            a genuine, usable :class:`~unicode_fol_kit.atp._tptp_problem
-            .TptpNameMap` (:mod:`atp._tff_problem` does not share
-            :mod:`atp.tptp_tff`'s "no reverse mapping" limitation — see that
-            module's docstring), so ``output_excerpt`` below IS reverse-
-            mapped to original kit-level names on the ``sort`` route, same
-            as the classical ``fof`` route. ``derivation`` still degrades to
-            ``None`` on this route (see below) — :mod:`atp.tstp` reads only
-            ``fof``/``cnf`` derivation lines, never ``tff``, a pre-existing
-            gap shared with the ``tff`` route.
+            contract. Every route (``fof``, ``tff``, ``sort``) hands back a
+            :class:`~unicode_fol_kit.atp._tptp_problem.TptpNameMap`, so
+            ``output_excerpt`` below IS reverse-mapped to original kit-level
+            names on all of them. ``derivation`` still degrades to ``None``
+            on the ``tff`` and ``sort`` routes (see below) — :mod:`atp.tstp`
+            reads only ``fof``/``cnf`` derivation lines, never ``tff``, a
+            pre-existing gap.
+        premise_names: one name per premise for the problem's ``axiom`` lines
+            instead of ``premise_<i>``, in whichever dialect is written (see
+            :func:`atp._tptp_problem.generate_tptp_problem_with_mapping`). Naming the
+            premises also asks Vampire to print the names of the axioms of its proof
+            (``--output_axiom_names on``), which it otherwise replaces by ``unknown``, so
+            that ``relevant_premises`` below can be read.
+        axiom_names: ask Vampire for the names of the axioms of its proof without naming
+            the premises (they are then ``premise_<i>``). The command line stays
+            ``--proof tptp`` when neither this nor ``premise_names`` is given.
 
     Returns:
         A JSON-compatible dict:
 
         * ``szs_status``: the raw SZS status token (e.g. ``"Theorem"``), or
           ``None`` if Vampire's output had no ``SZS status`` line at all (a
-          timeout before any output, or a Vampire build/mode that suppresses
-          the line — in which case ``status``/``reason`` fall back to the
-          same "Refutation found" substring heuristic
-          :func:`check_logical_entailment_vampire` uses, so this function is
-          never STRICTLY less informative than the old one).
+          timeout before any output, a Vampire build/mode that suppresses
+          the line, or Vampire REFUSING the problem). With no line,
+          ``status``/``reason`` fall back to the same "Refutation found"
+          substring heuristic :func:`check_logical_entailment_vampire` uses
+          (``PROVED`` when it is there, so this function is never STRICTLY
+          less informative than the old one); otherwise to what Vampire
+          printed about how its search ended. A ``Termination reason:`` line
+          (``Refutation not found, incomplete strategy`` — Vampire 5.0.1 ends
+          a non-theorem of a typed-arithmetic problem this way, with no SZS
+          line) is an honest ``UNKNOWN``: ``"incomplete"``, or ``"timeout"``
+          / ``"bound_hit"`` when the reason is Vampire's own ``Time limit`` /
+          another limit (see :func:`_ended_by_itself`). Only when it printed
+          neither a verdict, a refutation nor such an account, although
+          nothing cut it off — or printed an error — is it ``ERROR``/
+          ``"infra"``: a refusal or a crash. Its own message is in
+          ``output_excerpt``.
         * ``status``: ``atp.protocol.PROVED`` / ``REFUTED`` / ``UNKNOWN`` /
-          ``ERROR`` (``UNKNOWN``/``"timeout"`` on a subprocess timeout).
+          ``ERROR`` (``UNKNOWN``/``"timeout"`` on a subprocess timeout;
+          ``ERROR``/``"infra"`` when there is no SZS line and no account of
+          a search that ended, or an SZS line that itself names an error such
+          as ``SyntaxError``).
         * ``reason``: the matching ``atp.protocol`` reason axis value, or
           ``None`` for a definitive verdict.
         * ``output_excerpt``: the last :data:`_EXCERPT_CHARS` characters of
-          Vampire's stdout (the whole thing, if shorter) — always present,
-          even ``""`` on a timeout, so a caller always has something to show.
+          Vampire's stdout and stderr (the whole thing, if shorter) — always
+          present, even ``""`` on a timeout, so a caller always has something
+          to show.
         * ``derivation``: :class:`atp.tstp.TstpDerivation`'s ``to_dict()``
           when the output contained at least one parseable ``fof``/``cnf``
           statement, else ``None`` (no derivation to report — not an error).
@@ -316,25 +409,40 @@ def check_entailment_vampire_detailed(premises: List[Node], conclusion: Node,
           ones, so on the ``tff`` route ``derivation`` is CURRENTLY ALWAYS
           ``None`` — even for a genuine, successful proof whose stdout is
           full of well-formed ``tff(...)`` proof lines. This is a real gap
-          (tracked as tff/tcf-proof-line reading, an explicit non-goal of
-          :mod:`atp.tptp_tff` — see its module docstring), not merely
-          "un-reversed"; :mod:`atp.tstp` is a shared module outside this
-          item's ownership, so fixing the scanner itself is follow-up work.
+          in the READER (:func:`atp.tstp.parse_tstp_derivation` reads
+          ``fof``/``cnf`` lines only), not in the name mapping: the excerpt
+          of a ``tff`` run IS translated back through the TF0 writer's name
+          map.
+        * ``dialect``: which writer produced the problem Vampire was given:
+          ``"fof"``, ``"tff"`` or ``"tfa"`` (the ``sort=`` route).
+        * ``tff_fallback``: ``None``, or — when ``tff=None`` tried the typed
+          writer for a sorted problem, was refused, and wrote ``fof`` instead —
+          the sentence that says so and quotes the typed writer's reason (the
+          backend puts it into the verdict's ``detail``).
+        * ``relevant_premises``: for a PROVED answer to a run that asked for the axiom
+          names (``premise_names`` or ``axiom_names``), the sorted 0-based indices of the
+          premises the proof's axiom leaves are
+          (:func:`atp.tstp.relevant_premises_from_tstp`, read through the problem's name
+          map); ``None`` otherwise, and when the proof cannot be read that way.
+        * ``background_used``: the ``(name, meaning)`` pairs of the background axioms the
+          writer added on its own (the non-emptiness of a sort, the membership of a sorted
+          constant) that the proof used — background, not premises, so they are not in
+          ``relevant_premises``; ``()`` when none, or when ``relevant_premises`` is
+          ``None``.
 
         Every symbol name in ``output_excerpt`` and in ``derivation``'s
         formulas has already been translated back from whatever ASCII-safe
-        token :func:`atp._tptp_problem.generate_tptp_problem_with_mapping`
-        may have substituted (a non-ASCII or digit-leading kit-level name) to
-        the ORIGINAL kit-level name — see that function's module docstring.
-        A name Vampire introduced itself (a Skolem constant, a
-        clausification symbol) was never one of ours and is left as Vampire
-        printed it. EXCEPTION — the ``tff`` route: reading a ``tff`` proof
-        back into original kit-level names is an explicit non-goal of
-        :mod:`atp.tptp_tff` (see its module docstring), so when the ``tff``
-        route is used (auto-selected or forced), ``output_excerpt`` (and any
-        ``derivation``, on the day the scanner above learns ``tff``/``tcf``)
-        is left exactly as Vampire printed it — sanitised (ASCII-safe,
-        TPTP-legal) tokens included, un-reversed.
+        token the problem writer may have substituted (a non-ASCII or
+        digit-leading kit-level name, or a function/constant renamed because
+        its word is a predicate's: ``agent`` -> ``agent_term``) to the
+        ORIGINAL kit-level name — on the ``fof`` route
+        (:func:`atp._tptp_problem.generate_tptp_problem_with_mapping`), the
+        ``tff`` route (:func:`atp.tptp_tff.generate_tff_problem_with_mapping`)
+        and the ``sort`` route alike. A name Vampire introduced itself (a
+        Skolem constant, a clausification symbol) was never one of ours and
+        is left as Vampire printed it, and so is a SORT name on the ``tff``
+        route (the TF0 map covers predicates, functions and constants, not
+        sorts).
 
     Raises:
         FileNotFoundError: ``vampire_path`` does not point to an executable
@@ -346,19 +454,26 @@ def check_entailment_vampire_detailed(premises: List[Node], conclusion: Node,
             surfaced before any subprocess is spawned — same contract as
             :func:`check_logical_entailment_vampire`.
     """
-    from .protocol import PROVED, UNKNOWN
-    from .tstp import extract_szs_status, parse_tstp_derivation, reverse_map_derivation, szs_to_verdict_fields
+    from .protocol import ERROR, PROVED, UNKNOWN
+    from .tstp import (
+        _premise_use_from_tstp, extract_szs_status, parse_tstp_derivation,
+        reverse_map_derivation, szs_to_verdict_fields,
+    )
 
     if sort is not None:
-        vampire_input, name_map = generate_tff_arith_problem(premises, conclusion, sort=sort)
+        vampire_input, name_map = generate_tff_arith_problem(
+            premises, conclusion, sort=sort, **names_kwargs(premise_names))
+        dialect, fallback_note = "tfa", None
     else:
-        use_tff = problem_needs_tff(premises, conclusion) if tff is None else tff
-        if use_tff:
-            vampire_input, name_map = generate_tff_problem(premises, conclusion), None
-        else:
-            vampire_input, name_map = generate_tptp_problem_with_mapping(premises, conclusion)
+        built = generate_tptp_problem_for_prover(
+            premises, conclusion, tff=tff, fof_writer=generate_tptp_problem_with_mapping,
+            premise_names=premise_names)
+        vampire_input, name_map = built.text, built.name_map
+        dialect, fallback_note = built.dialect, built.fallback_note
+    read_axiom_names = axiom_names or premise_names is not None
+    extra_args = ("--proof", "tptp") + (("--output_axiom_names", "on") if read_axiom_names else ())
     stdout, timed_out = _spawn_vampire(vampire_input, vampire_path, timeout=timeout,
-                                       use_wsl=use_wsl, extra_args=("--proof", "tptp"))
+                                       use_wsl=use_wsl, extra_args=extra_args)
 
     if timed_out:
         return {
@@ -367,6 +482,10 @@ def check_entailment_vampire_detailed(premises: List[Node], conclusion: Node,
             "reason": "timeout",
             "output_excerpt": "",
             "derivation": None,
+            "dialect": dialect,
+            "tff_fallback": fallback_note,
+            "relevant_premises": None,
+            "background_used": (),
         }
 
     if name_map is None:
@@ -376,8 +495,22 @@ def check_entailment_vampire_detailed(premises: List[Node], conclusion: Node,
         excerpt = reverse_map_text(stdout[-_EXCERPT_CHARS:], pred_rev, term_rev)
     szs = extract_szs_status(stdout)
     if szs is None:
-        status = PROVED if _is_entailed_output(stdout) else UNKNOWN
-        reason = None if status == PROVED else "incomplete"
+        if _is_entailed_output(stdout):
+            status, reason = PROVED, None
+        elif (ended := _ended_by_itself(stdout)) is not None:
+            # No SZS line, but Vampire printed how its search ended
+            # ("Termination reason: Refutation not found, incomplete strategy"):
+            # it READ the problem and gave up (or hit its own limit). That is
+            # an honest UNKNOWN, not a refusal.
+            status, reason = UNKNOWN, ended[0]
+        else:
+            # No SZS verdict, no refutation and no account of a search, and the
+            # process was not cut off by our timeout (handled above): Vampire
+            # REFUSED the problem (its "User error: ..." / parse-error text is
+            # in the output) or died. That is a failure, not "incomplete" --
+            # reporting it as UNKNOWN made a problem Vampire could not read
+            # look like one it ran out of time on.
+            status, reason = ERROR, "infra"
     else:
         status, reason = szs_to_verdict_fields(szs, query="conjecture")
 
@@ -385,10 +518,23 @@ def check_entailment_vampire_detailed(premises: List[Node], conclusion: Node,
     derivation = parsed if name_map is None else reverse_map_derivation(parsed, name_map)
     derivation_dict = derivation.to_dict() if derivation.steps else None
 
+    # The proof's axiom leaves, by the names the problem gave them: read from the text
+    # Vampire printed (a premise name is not a symbol, so never the renamed excerpt).
+    relevant: Optional[Tuple[int, ...]] = None
+    background_used: Tuple[Tuple[str, str], ...] = ()
+    if read_axiom_names and status == PROVED:
+        use = _premise_use_from_tstp(stdout, len(premises), name_map)
+        if use is not None:
+            relevant, background_used = use
+
     return {
         "szs_status": szs,
         "status": status,
         "reason": reason,
         "output_excerpt": excerpt,
         "derivation": derivation_dict,
+        "dialect": dialect,
+        "tff_fallback": fallback_note,
+        "relevant_premises": relevant,
+        "background_used": background_used,
     }
