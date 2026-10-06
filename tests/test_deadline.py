@@ -19,7 +19,7 @@ from unicode_fol_kit import _deadline
 
 #: A call must end within its limit plus this much (the limits below are a few hundred
 #: milliseconds, and the machine may be busy).
-SLACK = 1.0
+SLACK = 5.0
 
 
 def _blow_up(depth):

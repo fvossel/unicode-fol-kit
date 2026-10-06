@@ -21,7 +21,7 @@ from unicode_fol_kit.atp.ltl_tableau import ltl_decide, ltl_valid
 from unicode_fol_kit.atp.protocol import REFUTED, UNKNOWN, get_backend
 from unicode_fol_kit.fol.nodes import And, Always, Atom, Eventually, Next, Not, Or
 
-SLACK = 1.0
+SLACK = 5.0
 
 
 

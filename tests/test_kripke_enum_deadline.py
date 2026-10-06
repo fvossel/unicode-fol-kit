@@ -28,7 +28,7 @@ from unicode_fol_kit.atp.protocol import REFUTED, UNKNOWN, declared_options, get
 from unicode_fol_kit.fol.nodes import And, Atom, Box, Diamond, Implies, Not, Or
 
 #: A call must end within its limit plus this much.
-SLACK = 1.0
+SLACK = 5.0
 
 P = Atom("p", [])
 

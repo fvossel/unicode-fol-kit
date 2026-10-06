@@ -36,7 +36,7 @@ from unicode_fol_kit.atp.tableau import (
 from unicode_fol_kit.atp.tableau_check import check_tableau_proof
 from unicode_fol_kit.fol.nodes import Atom, Constant, Implies, Not, Or, Quantifier, Variable
 
-SLACK = 1.0
+SLACK = 5.0
 
 P33_PREMISES = [
     "∀x (OwlThing(x) ∧ ∀y (S(x, y) → A(y)) → x ≠ x)",

@@ -25,7 +25,7 @@ from unicode_fol_kit.atp.resolution import is_valid_resolution, prove, refute
 from unicode_fol_kit.fol.nodes import And, Atom, Constant, Iff, Implies, Not, Or
 
 #: A call must end within its limit plus this much.
-SLACK = 1.0
+SLACK = 5.0
 
 GOAL = Atom("Goal", [])
 

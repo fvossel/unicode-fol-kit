@@ -32,9 +32,10 @@ import unicode_fol_kit
 from unicode_fol_kit.atp.logic_backends import IntBackend
 from unicode_fol_kit.fol.nodes import And, Atom, Implies, Not, Or
 
-#: A call must end within its limit plus this much of the limit (and at least a second).
+#: A call must end within its limit plus this much of the limit (and at least five seconds:
+#: a busy runner was measured 1.2 s past a limit of 0.3 s).
 SLACK_FRACTION = 0.25
-SLACK_MINIMUM = 1.0
+SLACK_MINIMUM = 5.0
 #: What a child process may take in all, import of the package included, before it is killed.
 HARD_LIMIT = 40
 

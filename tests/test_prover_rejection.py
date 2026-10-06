@@ -630,8 +630,10 @@ def test_prover9_that_hangs_is_stopped_at_the_budget_and_reported_as_a_timeout(m
     assert verdict.solver_version == "Prover9 (64) version 1.0, fake."
     # The 1000 ms budget was honoured: the process would have run for 60 s, and
     # the runner's own hard-coded 30 s default is not what stopped it.
-    assert 1 <= elapsed < 10, elapsed
-    assert verdict.wall_time >= 1
+    # the runner reads its limit on another clock than this one, which on Windows is coarser
+    # by some milliseconds: 0.9996 s was measured for the limit of one second
+    assert 0.9 <= elapsed < 10, elapsed
+    assert verdict.wall_time >= 0.9
 
 
 # ---------------------------------------------------------------------------

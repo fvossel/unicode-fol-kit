@@ -19,7 +19,7 @@ from unicode_fol_kit._deadline import DeadlineReached
 from unicode_fol_kit.atp import modal_tableau as mt
 from unicode_fol_kit.fol.nodes import Atom, Box, Implies
 
-SLACK = 1.0
+SLACK = 5.0
 
 
 def _chain_branch(worlds, relation="alethic"):
