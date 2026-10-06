@@ -84,6 +84,7 @@ def assignment_of(structure, *formulas):
 @pytest.mark.parametrize("name,premises,conclusion,valid", PROBLEMS, ids=IDS)
 def test_asp_find_model_finds_a_countermodel_exactly_for_the_invalid_problems(
         name, premises, conclusion, valid):
+    pytest.importorskip("clingo")
     theory = list(premises) + [Not(conclusion)]
     structure = asp_models.asp_find_model(theory, size=2)
     assert (structure is None) is valid
@@ -93,6 +94,7 @@ def test_asp_find_model_finds_a_countermodel_exactly_for_the_invalid_problems(
 
 
 def test_asp_find_model_reads_two_free_variables_as_two_elements():
+    pytest.importorskip("clingo")
     # P(x) ∧ ¬P(y) holds when x and y are two elements, one in P and one not
     theory = [P(x), Not(P(y))]
     structure = asp_models.asp_find_model(theory, size=2)
@@ -102,6 +104,7 @@ def test_asp_find_model_reads_two_free_variables_as_two_elements():
 
 
 def test_asp_find_model_keeps_a_variable_free_in_one_premise_apart_from_the_same_name_bound_in_another():
+    pytest.importorskip("clingo")
     # P(x) with x free, and ∀x ¬P(x): the bound x is another symbol, so the premises
     # contradict each other (the parameter is an element of P and no element is)
     assert asp_models.asp_find_model([P(x), forall(x, Not(P(x)))], size=2) is None
@@ -118,6 +121,7 @@ def _key(structure):
 @pytest.mark.parametrize("name,premises,conclusion,valid", PROBLEMS, ids=IDS)
 def test_asp_minimal_models_equal_the_brute_force_minimal_models(
         name, premises, conclusion, valid, circumscribed):
+    pytest.importorskip("clingo")
     theory = list(premises) + [Not(conclusion)]
     for size in (1, 2):
         expected = [m for m in nonmonotonic.minimal_models(theory, circumscribed, max_size=size)
@@ -127,6 +131,7 @@ def test_asp_minimal_models_equal_the_brute_force_minimal_models(
 
 
 def test_asp_minimal_models_of_a_free_variable_circumscribing_its_predicate():
+    pytest.importorskip("clingo")
     # P(x) with P minimised over {0, 1}: the minimal models make P true of x alone, and x is
     # either element, so there are exactly two of them
     found = asp_models.asp_minimal_models([P(x)], {"P"}, size=2)
@@ -210,15 +215,23 @@ def test_so_countermodel_reports_the_falsifying_assignment():
     assert not satisfies(formula, structure, assignment_of(structure, formula))
 
 
-def test_so_validity_checked_through_clingo_with_a_free_variable():
-    # ∀Q (Q(x) → Q(y)) says x and y are one element: it is valid exactly when they are. The
-    # second-order block has no free object variable once x and y are parameters, so the
-    # clingo-grounded check applies, and agrees with the brute-force one.
+def _so_validity_with_a_free_variable(fast):
+    # ∀Q (Q(x) → Q(y)) says x and y are one element: it is valid exactly when they are.
     same = Atom("=", [x, y])
     block = SecondOrderQuantifier("∀", "Q", 1, Implies(Atom("Q", [x]), Atom("Q", [y])))
-    for fast in (False, True):
-        assert secondorder.so_is_valid_finite(block, max_size=2, fast=fast) is False
-        assert secondorder.so_is_valid_finite(Implies(same, block), max_size=2, fast=fast) is True
+    assert secondorder.so_is_valid_finite(block, max_size=2, fast=fast) is False
+    assert secondorder.so_is_valid_finite(Implies(same, block), max_size=2, fast=fast) is True
+
+
+def test_so_validity_with_a_free_variable_by_enumeration():
+    _so_validity_with_a_free_variable(fast=False)
+
+
+def test_so_validity_checked_through_clingo_with_a_free_variable():
+    # The second-order block has no free object variable once x and y are parameters, so the
+    # clingo-grounded check applies, and agrees with the enumeration.
+    pytest.importorskip("clingo")
+    _so_validity_with_a_free_variable(fast=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -311,12 +324,17 @@ def test_clingo_through_api_prove_agrees_in_both_chain_orders():
 # a variable and a constant that share a spelling cannot be told apart in a structure
 # --------------------------------------------------------------------------- #
 
-def test_a_free_variable_spelled_like_a_constant_is_refused_by_name():
+def test_the_asp_routes_refuse_a_free_variable_spelled_like_a_constant_by_name():
+    pytest.importorskip("clingo")
     clash = [P(x), Q(Constant("x"))]
     with pytest.raises(NotImplementedError, match="'x'"):
         asp_models.asp_find_model(clash, size=2)
     with pytest.raises(NotImplementedError, match="'x'"):
         asp_models.asp_minimal_models(clash, size=2)
+
+
+def test_a_free_variable_spelled_like_a_constant_is_refused_by_name():
+    clash = [P(x), Q(Constant("x"))]
     with pytest.raises(NotImplementedError, match="'x'"):
         nonmonotonic.minimal_entails(clash, P(alpha), max_size=2)
     with pytest.raises(NotImplementedError, match="'x'"):

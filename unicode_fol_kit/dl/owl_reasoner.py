@@ -625,9 +625,11 @@ def _kb_consistent(tbox: Optional[TBox], abox: ABox) -> bool:
             EVERY route, rather than surfacing as a HermiT error here and as a
             tableau error there.
     """
-    ow = _require_available()
+    # The kit's own refusals come first, so that a knowledge base it refuses is refused with
+    # the same error whether or not owlready2 is installed.
     tbox = tbox if tbox is not None else TBox()
     _guard_inputs(tbox, abox)
+    ow = _require_available()
     world = ow.World()
     onto = world.get_ontology("http://unicode-fol-kit.invalid/kb#")
     ctx = _Ctx(ow, world, onto, _characteristics(tbox))
@@ -678,8 +680,8 @@ def external_concept_satisfiable(concept: Concept, tbox: Optional[TBox] = None) 
     BE that individual, and the question would be asked about it and not about
     some element.
     """
-    _require_available()
     _guard_inputs(tbox, ABox().assert_concept(_PROBE_INDIVIDUAL, concept))
+    _require_available()
     probe = _fresh_individual(_PROBE_INDIVIDUAL, _concept_individual_names(concept).union(
         *(_concept_individual_names(expression)
           for expression in _tbox_class_expressions(tbox))))
