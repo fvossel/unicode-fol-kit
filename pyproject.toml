@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "unicode-logic-kit"
-version = "0.30.0"
+version = "0.31.0"
 description = "Parse, translate, prove and model-check logic formulas in Unicode notation: first-order, modal, description and higher-order logic, one API over a dozen provers, and an MCP server"
 readme = "README.md"
 license = { text = "MIT" }

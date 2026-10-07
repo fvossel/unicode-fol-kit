@@ -7,6 +7,152 @@ breaking changes.
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-10-07
+
+The package has a new name, `unicode-logic-kit` (import `unicode_logic_kit`). `unicode-fol-kit` 0.31.0 depends on it and forwards the old import with a `DeprecationWarning`, so existing code keeps running. A constant of any name can be written and read: in single quotes, `'k2'`, `'Alice'` and `'G-910'` are the constants named `k2`, `Alice` and `G-910`, and the printer writes a constant in quotes exactly when its bare name would read as something else, so the text of a formula reads back as that formula. One wrong result of long standing is fixed: the canonical form dropped an operand of `∧` or `∨` that differed from another only in a constant or a numeral, so `exact_match`, the canonical levels of `equivalent` and `compute_fol_metrics` called formulas equivalent that are not, in every release from 0.5.0 to 0.30.0.
+
+### The package is `unicode-logic-kit`, and `unicode-fol-kit` forwards to it
+
+The kit covers first-order, modal, description, many-valued and higher-order logic, and the old name said first-order only. The distribution is `unicode-logic-kit`, the import package is `unicode_logic_kit`, the repository is `github.com/fvossel/unicode-logic-kit` (GitHub redirects the old address) and the documentation is at `unicode-logic-kit.readthedocs.io`. Nothing else was renamed: the environment variables keep their `UFK_` prefix, and every module, function and option has the name it had.
+
+`unicode-fol-kit` 0.31.0 is the last version under the old name. It holds no code of its own: it depends on `unicode-logic-kit>=0.31.0`, every extra of it is the extra of the same name of the new package (`unicode-fol-kit[mcp]` installs `unicode-logic-kit[mcp]`), and its one module makes `import unicode_fol_kit`, the import of any submodule, `python -m unicode_fol_kit` and `python -m unicode_fol_kit.mcp` give the modules of `unicode_logic_kit`. They are the same module objects, in either import order, so a class imported under the old name is the class imported under the new one, `isinstance` holds across the two, and a pickle written by 0.30.0 loads. The first import under the old name raises one `DeprecationWarning` that names the new package. So `pip install -U unicode-fol-kit` keeps a project running unchanged, and replacing `unicode_fol_kit` by `unicode_logic_kit` in the imports is the whole migration.
+
+### `fol` — a constant of any name has a text: `'k2'`
+
+Whether a bare word is a variable, a constant or a predicate is decided by its shape: one lower-case letter and digits is a variable, an upper-case first letter makes a predicate. A constant whose name has one of those shapes, or holds a space or a hyphen, had no text at all: `Constant("k2")` printed `k2`, which reads back as a variable, `Constant("Alice")` printed `Alice`, which no parser accepted in a term position, and a caller who built constants from proper names had to rename them. Such constants come from the TPTP and Prover9 readers (`p(a)`), from the description-logic image of an ontology (every individual of the Open Energy Ontology is CamelCase), from the ACE route (`John`) and from hand-built nodes.
+
+A name in single quotes is a constant, in every dialect: `P('k2')`, `P('Alice')`, `Likes('G-910', 'New York')`, `'a' = 'b'`. Between the quotes stands any character except a control character (U+0000 to U+001F, U+007F, U+0085, U+2028, U+2029) and a surrogate; a quote is written `\'` and a backslash `\\`, and there is no other escape, so `'it\'s'` is the constant named `it's`. The empty `''` is not a name. In a many-sorted dialect the sort follows as it does after a bare constant, `'k2':Mountain`. A quoted name that would also read bare is the same constant: `'socrates'` is `socrates`. No text that was read before is read differently, because every text with a `'` was a syntax error.
+
+Only a constant has a quoted form. A predicate, a function, a variable, a sort, the agent of a modal operator and a nominal are written as before, and `'Alice'(x)` is refused with a message that says so (`A name in quotes is a constant and takes no arguments; a predicate or function name has no quoted form`). In a many-sorted dialect `P('k2')` is refused with `In a many-sorted formula a constant carries its sort: write 'k2':Sort`.
+
+### `Node.to_unicode_str()` — the text of a formula reads back as that formula
+
+The printer writes a constant bare when the bare name reads back as that constant, and in quotes when it does not. `P(alice)` prints as it did. `Constant("k2")`, `Constant("Alice")`, `Constant("G-910")` and `Constant("it's")` print `P('k2')`, `P('Alice')`, `P('G-910')` and `P('it\'s')` (0.30.0: `P(k2)`, `P(Alice)`, `P(G-910)`, `P(it's)`), and each of those texts reads back as the node it was printed from. A formula read from TPTP `p(a)` prints `P('a')` (it was `P(a)`, which read back as a formula over the variable `a`); the Prover9 file `before(a,b).` prints `before('a', 'b')`.
+
+A constant whose name has no text is refused where 0.30.0 printed something that was no formula: `Constant("")` raised nothing and printed `P()`, and a name with a line break printed the line break. Both raise `ValueError` from `to_unicode_str()` now, and a name that is not a string raises `TypeError`.
+
+Seven tests of `tests/test_printed_text_reads_back.py` that pinned a documented limit of 0.30.0 (an upper-case individual, an individual spelled like a variable, a non-numeric literal) are round trips now. On the accepted fragment of the Open Energy Ontology 2.13.0, every one of the 4681 printed first-order images reads back as the same formula (54 of them through `sanitize_names`, for the names of the built-in datatypes); 0.30.0 left 711 axioms out of that check because they name an upper-case individual.
+
+### `fol` — `is_variable_name`, `is_bare_constant`, `constant_text`
+
+Three functions, exported from `unicode_logic_kit` and `unicode_logic_kit.fol`, answer for a name what the grammar would do with it, without a parser:
+
+- `is_variable_name(name)`: whether the bare name reads as a variable (`k2`, `x`: yes; `K2`, `alice`: no).
+- `is_bare_constant(name)`: whether the bare name reads as the constant of that name (`alice`, `c_new_york`, `2nd`: yes; `k2`, `K2`, `G-910`: no).
+- `constant_text(name)`: the text of the constant, bare or quoted (`alice`, `'k2'`, `'G-910'`, `'it\'s'`); `ValueError` for a name that has no text.
+
+A program that builds formulas as text from names it does not control writes `constant_text(name)` and gets a constant, whatever the name.
+
+### `c_` words: `c_new_york` is one name in every dialect
+
+The marked form of a constant, `c_` and letters or digits, matched as a prefix: `c_new_york` was lexed as the constant `c_new` followed by `_york`, which nine of the ten dialects refused (`Invalid constant 'c_new' - unexpected character '_'`) and the Earley-parsed `modal` dialect alone read. The marked form matches whole words only, and `c_new_york` is the constant of that name everywhere. `c_a` stays the constant named `c_a`, as before: the mark is part of the name.
+
+### `atom_key` — the key of an atom, and a valuation keyed in either spelling
+
+A valuation, a Kripke model, a trace and every model the kit returns name an atom by a string. That string is the KEY of the atom: its text with every constant written by its bare name. For `Likes` over the constants `a` and `b` the key is `Likes(a, b)`, as it was in 0.30.0, and the text of the formula is `Likes('a', 'b')`. For an atom whose constants read back bare, the two are one string. `atom_key(atom)` returns the key and is exported from `unicode_logic_kit` and `unicode_logic_kit.fol`.
+
+Everything keyed by an atom keeps the keys of 0.30.0, byte for byte: the valuations and models a caller passes to `satisfies_modal`, `fuzzy_evaluate`, the many-valued, matrix, intuitionistic and counterfactual evaluators, `ltl_trace_satisfies` and the probabilistic programs; the countermodels of the modal, intuitionistic, counterfactual and relevant deciders, `tableau_model`, the models of the Kripke enumerator and of the Isabelle runner; the columns of a truth table; the provenance keys of the ProofWriter route. A valuation typed as `{"P(a)": True}` means what it meant.
+
+The guide used to give `atom.to_unicode_str()` as the key. For a hand-built atom over `Constant("a")` that text holds quotes now, so every evaluator that reads a table from its caller looks an atom up under its key and then under its text as a formula: a Kripke model with the valuation `{"Likes('a', 'b')"}` and one with `{"Likes(a, b)"}` are read alike. A mapping that holds both spellings of one atom with different values is refused (`ValueError`, `one atom, two entries`), and one that holds them with equal values is read.
+
+Two spellings must not let one entry answer for two atoms. A key writes every name as it is, so the key of `P` over a constant named `'a'` (quotes in the name) would be `P('a')`, the text of `P` over the constant `a`. A key that holds a complete quoted constant with no letter, digit or apostrophe next to it is refused where it is made (`NotImplementedError`, or the error class of the route): the constants named `'a'`, `ab, 'b'` and `f('b')`, the pair `'a` and `b'` in one atom, a proposition a TPTP file names `'p(\'a\')'`. A name that merely holds an apostrophe keeps its key: `D'Alembert`, `3',5'-cyclic AMP`, `D'Alembert` and `O'Brien` in one atom.
+
+### `fol.key_text` — orders, derived identifiers and model tables use the bare names
+
+`key_text(node)` (in `unicode_logic_kit.fol._msfl_nodes`) is `to_unicode_str()` with every constant written by its bare name, and it is what the kit uses wherever a text is stored, looked up, compared, sorted or turned into an identifier. So nothing that was derived from a printed atom changed with the printer: the term and literal orders of resolution and of its independent checker, the branch order of the tableau and of the Fitch search, the sort key of the linear-logic sequents; the Isabelle, Lean and THF identifiers derived from an atom (`to_isabelle_ill`, `to_isabelle_conditional`, `to_isabelle_relevant`, the deep and shallow embeddings, `hol.lean`, `hol.manyvalued`); the relation names of the modal routes (`K:a`). For these, 0.31.0 writes what 0.30.0 wrote. What a person reads as a formula (a proof line, a refusal, the `% Formula:` comment of a generated file) shows the formula text, quotes included: a resolution proof line reads `1. P('a') [input]`.
+
+### `hol.thirdorder`, `hol.ho_modal`, `hol.secondorder` — a constant is never the variable of its name
+
+0.30.0 listed as a limit, reachable only with hand-built nodes, that the second- and third-order writers could write a constant and a variable of one name as one symbol. With the quoted form a text reaches it, so it is fixed here.
+
+`to_thf_to` and `to_thf_ho_modal` wrote `∀x P(x, 'x')` as `! [X_V: $i] : ( p @ X_V @ X_V )`, the formula `∀x P(x, x)`: the binder captured the constant. They write `( p @ X_V @ x )`. All six writers (THF and Isabelle, for third-order, higher-order modal and second-order formulas) declared ONE symbol for a free variable `x` and the constant `x`: `P(x) ∧ Q('x')` was `( p @ x ) & ( q @ x )` and is `( p @ x ) & ( q @ x_2 )`, with two declarations; in an Isabelle theory, `consts x :: "i"` and `consts x_2 :: "i"`. Run through Vampire, `∀x P(x, 'x') ⊢ P(alpha, alpha)` and `P(x) ⊢ P('x')` are not theorems and `∀x P(x, 'x') ⊢ P(alpha, 'x')` is one, in each writer, as for the same problems with plain names.
+
+A constant of any name gets a legal identifier in these writers, distinct from every other symbol of the problem (a predicate, a function, a nominal, a word of the embedding such as `mall`): `'John Doe'` is `john_Doe`, `'G-910'` is `g_910`, `'1'` is `p1`, `'_sk0'` is `p_sk0`; where two names would share one, the second gets a number (`P('a b') ∧ Q(a_b)`: `a_b` and `a_b_2`). A name that is not a string is a `TypeError`. The text written for a problem whose names are ordinary words is unchanged, byte for byte (327 outputs compared, the theories of the Gödel argument among them).
+
+### Fixed: `to_thf_fol`, `to_isabelle_fol`, `to_thf_modal` and their relatives wrote a name that starts with no letter as an identifier no prover reads
+
+The function `+` was written `_` (`P(alice + bob)`: `p @ ( _ @ alice @ bob )`), and the constants `'_sk0'` and `'-3'` would have been `_sk0` and `_3`: no TPTP lower word and no Isabelle identifier, so the prover rejected the file. A stem that starts with an underscore gets a `p` in front, as a stem that starts with a digit always did: `p_`, `p_sk0`, `p_3`, kept apart from a symbol that is already called that (`_sk0` next to `p_sk0`: `p_sk0` and `p_sk0_2`).
+
+### `atp.minizinc_backend` — a symbol of any name
+
+A MiniZinc identifier was the role letter, an underscore and the name, and MiniZinc rejected it for any name with a space, a hyphen, a quote or a `+`, for a predicate, a function and a bound variable as for a constant: `P('a b') ⊢ P(a_b)`, `P('G-910') ⊢ P('G910')`, `P('it\'s') ⊢ P(its)` and `P('C++') ⊢ P('C')` ended `error` / `infra`. A name of ASCII letters, digits and underscores keeps the identifier it had (the recorded model files are byte-identical); any other name gets an escaped one, `kx_a_20_b` for `'a b'`, in which each character that is no ASCII letter or digit is its code point in hexadecimal between underscores. Two names never share an identifier, and the four problems are `refuted`.
+
+Two names that fold to ONE plain identifier (`theta` and `θ`) are refused by name, as before, and that check covers bound variables now. In `∀ą ∃u0105 R(ą, u0105)` both binders were written `v_u0105`, the inner one captured the occurrences of the outer, and the backend's own check of the solution turned the answer into `error` / `infra`; the pair is refused by name (`unknown` / `unsupported`).
+
+### Fixed: the clingo backend ended with an error of the decoder for a variable with a non-ASCII name
+
+The grammar reads `∀é P(é)`. The encoder wrote the variable `Vé`, which is no ASP variable, and the call of the backend ended in a `UnicodeDecodeError` raised from inside clingo's parser instead of a verdict. A hand-built variable named `x-1` was written `Vx-1`, which ASP reads as arithmetic. A name of ASCII letters, digits and underscores is written as before; any other name gets an escaped ASP variable (`V__e9_` for `é`), two names never share one, and `∃é P(é) ⊢ P(alice)` is `refuted` like its ASCII twin.
+
+### `fol.latex_input`, `fol.dialect_repair`, `mcp` — the stages in front of the parser
+
+`parse_latex` and `latex_to_unicode` refuse a text that holds a `'` with `LatexParsingError`, a subclass of the parser's `ParsingError`: the substitutions of that reader (spaces collapsed, braces removed, `\_` turned into `_`) would change a name between quotes. Such a text was a syntax error before, a prime (`x'`) included; what changed is the message and the class of the exception (it was a `NamingError`). `to_latex` writes a constant by its name, so the LaTeX of `P('k2')` is `P(k2)` and does not read back as the constant.
+
+`repair_formula` leaves the text between the quotes of a constant alone: it renamed nothing there before only because the text did not parse. The MCP tools take and return quoted constants (`parse_formula`, `render`, `prove`, `translate`, `check_equivalence`, `compare_formulas`, `normalize`, `repair_formula`, `find_countermodel` and the others that take formula text); the syntax specification the server hands out has a rule `quoted_constant` with four examples.
+
+### `dl` — the first-order image of an individual of any name reads back
+
+`dl.concept_to_fol(dl.HasValue("HasStateOfMatter", "Liquid"))` prints `HasStateOfMatter(x, 'Liquid')` (it was `HasStateOfMatter(x, Liquid)`, which did not parse), a nominal prints `x = 'Alice'`, a literal that is no number prints as the quoted constant `'"abc"^^xsd:string'`. The images themselves, the nodes, are what they were; what changed is their text. A bound variable still steps over an individual of its name (`∀x0 (r(x0, 'x') → A(x0))`), for the sake of any target that writes both as one symbol.
+
+### Fixed: the canonical form dropped an operand that differed only in a constant
+
+`eval.canonicalize` sorts the operands of a commutative connective by a key and, for `∧` and `∨` (and the fuzzy `min` and `max`), removes an operand whose key it has seen. The key recorded the class of a term and nothing else about it: not the name of a constant, not the value of a numeral, not the name and sort of a sorted constant, not the name of a nominal. Two operands that differ only there got one key, and one of them was removed:
+
+| | 0.5.0 to 0.30.0 | 0.31.0 |
+|---|---|---|
+| `canonicalize(P(alice) ∧ P(bob))` | `P(alice)` | `P(alice) ∧ P(bob)` |
+| `canonicalize(P(bob) ∧ P(alice))` | `P(bob)` | `P(alice) ∧ P(bob)` |
+| `canonicalize(P(alice) ∨ P(bob))` | `P(alice)` | `P(alice) ∨ P(bob)` |
+| `canonicalize(P(1) ∧ P(2))` | `P(1)` | `P(1) ∧ P(2)` |
+| `exact_match(P(alice) ∧ P(bob), P(alice))` | `True` | `False` |
+| `exact_match(P(alice) ∧ P(bob), P(alice) ∧ P(carol))` | `True` | `False` |
+| `aligned_exact_match(P(alice) ∧ P(bob), P(alice))` | `True` | `False` |
+| `equivalent(…, method="canonical")`, `method="predicate_align"` | `equivalent=True` | `equivalent=None` (not decided at this level) |
+| `equivalent(…, method="auto")` | `True`, by the canonical level, credit 1.0 | `False`, by the solver, credit 0.25 |
+| `equivalent(…, method="solver")` | `False`, credit 0.5 | `False`, credit 0.25 |
+| `compute_fol_metrics(["P(alice) ∧ P(bob)"], ["P(alice)"])` | `equivalence_accuracy` 1.0, `mean_partial_credit` 1.0 | 0.0 and 0.25 |
+
+The MCP tools `compare_formulas` and `normalize`, and `ace_round_trip`, call these functions and returned the same wrong results. The result also depended on the order of the operands, as the first two rows show. A measurement over 400 random ground formulas with two constants found the old canonical form not equivalent to its input in 29 to 35 of them, depending on the seed, and the new one in none of 1200. `Xor`, `Iff` and the strong fuzzy connectives never removed an operand, but kept the input order of operands that differ only in a constant; they are ordered now.
+
+The key is a pair: the old key, so that operands it told apart sort as they did, and a detail that holds every field of every node that is not a child node. A logical variable and a lambda variable of one spelling are told apart as well, and a second-order quantifier and `↓` are keyed by the name they bind, which can miss a match (`∀X X(a)` against `∀Y Y(a)`) and cannot make a wrong one. No canonical form that was correct moved: the 1200 formulas showed no difference that was a mere reordering.
+
+**What this means for results obtained with 0.5.0 to 0.30.0.** A score from `exact_match`, `aligned_exact_match`, `equivalent` with `method="canonical"`, `"predicate_align"` or the default `"auto"`, or `compute_fol_metrics` can be too high where a prediction or a reference holds a conjunction or disjunction whose operands differ only in constants or numerals, such as `Human(alice) ∧ Human(bob)`. `equivalent(..., method="solver")` gave the right verdict throughout, with a partial credit that could be too high. Formulas without constants and numerals in such positions were not affected.
+
+### Tests and releases: three parts per platform, and a tag publishes only a tested commit
+
+`pytest --shard I/N` runs the I-th of N parts of the suite. The parts are cut by test file, from a hash of the file's path, so a part is the same on every machine and a test file is never split; by the recorded durations of the tests the three parts hold 1155, 1159 and 1160 seconds of work. The `Tests` workflow runs three parts for each of its five legs (Ubuntu with Python 3.10 to 3.13, Windows with 3.11), and a new push cancels the run of an older commit of the same branch.
+
+The `Publish` workflow no longer runs the suite a second time. It looks for a green `Tests` run on the tagged commit, waits for one that is still running, and stops when there is none or it failed; it also stops when the tag and the version of `pyproject.toml` disagree or the changelog has no section for the version. It builds both distributions, uploads `unicode-logic-kit` and then `unicode-fol-kit`, and creates the GitHub Release itself, with notes taken from this file by `tools/release_notes.py`. Creating a GitHub Release by hand no longer starts an upload.
+
+### Changed: what a caller of this release may notice
+
+Names. The distribution and the import package have new names; the old ones keep working through the forwarding release, with a `DeprecationWarning`. Links to the documentation and to the repository changed.
+
+Printed text. The text of a formula shows a constant in quotes when its bare name would read as something else. That is every constant named by one lower-case letter and digits (`a`, `b`, `x1`: the usual constants of a TPTP or Prover9 file), every constant that starts with an upper-case letter (the individuals of an ontology, the proper names of the ACE route: `Likes('John', 'Mary')`), and every name with a character outside letters, digits and underscore. A test or a program that compares `to_unicode_str()` with a string written for 0.30.0 sees the quotes; so do the `premises` and `hypothesis` fields of the FraCaS and LogicBench loaders, proof renderings (`render_sequent_proof`, the Fitch and resolution proofs: `∀E 1 ['a']`), refusal messages, and the formula column of `truth_table(...).render()` (the atom columns are keys and did not change). The text for a constant named by a lower-case word of two or more letters (`alice`, `socrates`) did not change.
+
+Keys. No key changed: a valuation, a model, a trace or a countermodel is keyed as in 0.30.0. Code that built a key with `atom.to_unicode_str()` keeps working, because the evaluators read that spelling too; `atom_key(atom)` is the function to call.
+
+Texts that are read now. Every text with a quoted constant was a syntax error and is a formula. `P(c_new_york)` was refused by nine dialects and is read by all.
+
+Verdicts and scores. The canonical form, `exact_match`, `aligned_exact_match`, `equivalent` and `compute_fol_metrics` return other results for the formulas described above, so an evaluation that is repeated can report a lower score. MiniZinc answers `refuted` where it answered `error` / `infra` for a name that is no identifier; clingo answers where the call ended in a `UnicodeDecodeError`. The THF and Isabelle text of a problem with a name that is no plain word, or with a free variable next to a constant of its name, differs from what 0.30.0 wrote.
+
+Exceptions that are new. `to_unicode_str()` raises `ValueError` for a constant with the empty name or a control character in its name (it printed `P()`), and `truth_table(...).render()` raises it for such a constant too. `atom_key` and every evaluator refuse an atom whose key holds a complete quoted constant (`NotImplementedError`), and a table that holds both spellings of an atom with different values (`ValueError`). `parse_latex` raises `LatexParsingError` (a `ParsingError`) for a `'`, where it raised `NamingError`. The MiniZinc route refuses two bound variables that fold to one identifier (`unknown` / `unsupported`), also when they are bound in separate places, where the old text happened to be right.
+
+Messages. The parser's message for a character after a quoted constant, for a quoted name with arguments and for a missing sort are new texts; the refusal of two atoms with one key says `have one key and are both written`.
+
+### Known limits
+
+Only a constant has a quoted form. A predicate or function whose name is no word of the grammar (a TPTP `'foo bar'(a)`, a lower-case role of an ontology) still prints a text that does not read back, and `sanitize_names` or `repair_formula` is the route to text for it; so does a predicate named like a built-in datatype (`xsd:integer`). A variable imported from TPTP whose name holds an underscore does not read back either. These are the three limits `tests/test_printed_text_reads_back.py` still pins.
+
+An unbalanced apostrophe pairs with the next one, as in any quoting syntax: `P('a) ∧ Q('b')` is read up to the second quote as the name `a) ∧ Q(`, and the error is reported behind it. LaTeX has no quoted form in either direction.
+
+A route that names an atom by its key still refuses two different atoms with one key: the numeral `1` and the constant `'1'`, a free variable `x` and the constant `'x'`, a constant named like a compound term. The refusal of a key that holds a quoted constant is on the safe side: it refuses the constant named `rock 'n' roll`, whose key is the text of no formula.
+
+The bare TPTP and Prover9 writers write a constant under its own name and refuse a name that is no word of the target (`Node.to_tptp()` for `'a b'`); the problem writers that return a name map carry it. Where two names fall on one word of the target (`'Alice'` next to `alice` in TPTP), the Vampire and E backends answer `unknown`. clingo, MiniZinc and the finite model finder refuse a free variable next to a constant of its name. An Isabelle keyword as a constant name (`in`, `end`) is still written as it is, and Isabelle rejects the theory.
+
+The ProofWriter loader still refuses an entity named by a single letter. `ltl_countermodel` returns `None` for `P(1) → P('1')`, which is not valid (`ltl_valid` says so, `ltl_decide` says `unknown`): the trace that would refute it cannot be keyed. The backstop of the MiniZinc route is the time limit of `subprocess.run`, which on Windows ends `minizinc.exe` and not a solver process it started; twice in the tests for this release a MiniZinc call did not return until a stale `minizinc.exe` was ended by hand, and the cause was not found.
+
+What was run against a real binary for this release: Vampire 5.0.1 (the THF text of the higher-order writers and the first-order routes), E 3.5.1, Prover9 2026-8A, MiniZinc 2.8.4, clingo, Z3 and cvc5 1.3.4, Isabelle2025-2 and HETS for the live suites. The identifiers written for Leo-III, Zipperposition and Lean were checked against the grammar of the format, not against the program.
+
 ## [0.30.0] - 2026-10-06
 
 ### `comorphism`, `logic` — a translation declares what it preserves, and the typed surface carries the side axioms with the term
