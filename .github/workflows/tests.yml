@@ -5,6 +5,17 @@ name: Tests
 # hets_live (a running HETS server; no runner has one). Parallel via
 # pytest-xdist; the pyproject marker comment explains why -n never goes into
 # addopts (the live suites must stay serial).
+#
+# Each platform's suite runs as THREE jobs side by side (`--shard 1/3`, `2/3`,
+# `3/3`; tests/conftest.py deals the test files out by a hash of their path,
+# and tests/test_shard_option.py checks that the parts are a partition). One
+# job of the whole suite took 17 to 27 minutes, so a red test cost that long
+# to see and that long again to re-run. A part takes about a third, and
+# "Re-run failed jobs" repeats the part that failed, not the platform.
+#
+# The publish workflow releases a tag only when a run of THIS workflow is green
+# on the tagged commit (publish.yml), so its name and file name are part of
+# that contract.
 
 on:
   push:
@@ -12,20 +23,35 @@ on:
   pull_request:
   workflow_dispatch:
 
+# A newer push to the same branch or pull request makes the run of the older
+# commit pointless: cancel it instead of letting sixteen jobs finish.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   fast:
+    name: ${{ matrix.os }} / py${{ matrix.python-version }} / part ${{ matrix.shard }} of 3
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
         python-version: ['3.10', '3.11', '3.12', '3.13']
+        shard: [1, 2, 3]
         include:
           # One Windows leg: the primary dev box is Windows, so path handling
           # and subprocess quirks get coverage where they actually differ.
           - os: windows-latest
             python-version: '3.11'
+            shard: 1
+          - os: windows-latest
+            python-version: '3.11'
+            shard: 2
+          - os: windows-latest
+            python-version: '3.11'
+            shard: 3
     steps:
       - uses: actions/checkout@v4
 
@@ -96,7 +122,7 @@ jobs:
       # to "live ACE tests skip", visibly red in the log, not a lost run.
       # The timeout is not decoration: `continue-on-error` catches a FAILING
       # build, but not a HANGING one — and a hang here eats the job's whole
-      # 45-minute budget before the suite ever starts (measured: three legs
+      # time budget before the suite ever starts (measured: three legs
       # of the v0.25.0 run died that way while apt stalled, with the same
       # step taking 13-30 s two hours earlier). Capped, a hang degrades to
       # exactly what a failure degrades to: the ACE live tests skip, the
@@ -116,8 +142,8 @@ jobs:
           ./ape.exe -text "John waits." -solo tptp
           echo "$HOME/APE" >> "$GITHUB_PATH"
 
-      - name: Run the fast suite
-        run: pytest -n auto -m "not isabelle_live and not hets_live"
+      - name: Run part ${{ matrix.shard }} of the fast suite
+        run: pytest -n auto -m "not isabelle_live and not hets_live" --shard ${{ matrix.shard }}/3
 
   # A separate job from `fast` on purpose: a type-check finding is a
   # different kind of red than a failing test, and this job's mypy pin can
@@ -130,7 +156,7 @@ jobs:
   # checked (3.10, this project's floor) independent of which interpreter
   # runs mypy itself.
   #
-  # This is a RATCHET, not a bare `mypy unicode_fol_kit`: the package had no
+  # This is a RATCHET, not a bare `mypy unicode_logic_kit`: the package had no
   # type-check gate before this job existed, and a first real pass surfaces
   # several hundred pre-existing errors across most subpackages. Running
   # mypy directly here would redden every PR regardless of what it touches.
