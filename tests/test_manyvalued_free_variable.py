@@ -187,6 +187,15 @@ def _designated(logic):
 _MAX_LETTERS = 6
 
 
+def _key(atom):
+    """The key of a one-place atom of a variable or a constant: ``P(a)`` for the atom ``P`` of ``a``.
+
+    Written out here, from the name of the term, and not taken from the text of the formula:
+    the text of the formula writes the constant ``a`` in quotes (``P('a')``), the key never does.
+    """
+    return f"{atom.predicate}({atom.args[0].name})"
+
+
 def _oracle(premises, conclusion, logic, kind):
     """The consequence / validity / satisfiability the definition gives, by explicit enumeration.
 
@@ -202,7 +211,7 @@ def _oracle(premises, conclusion, logic, kind):
         for name, element in zip(names, chosen):
             instance = [substitute(f, Variable(name), Constant(element)) for f in instance]
         ground = [_remove_quantifiers(f) for f in instance]
-        keys = sorted({a.to_unicode_str() for f in ground for a in f.atoms()})
+        keys = sorted({_key(a) for f in ground for a in f.atoms()})
         if len(keys) > _MAX_LETTERS:
             return None
         found_countermodel = False

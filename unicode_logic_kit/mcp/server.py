@@ -84,7 +84,10 @@ Probabilistic layer (exact,
 no sampling): probability_bounds computes Nilsson-style entailed bounds
 from probability-interval premises, probability_query answers
 ProbLog-style queries under distribution semantics. Formulas are passed
-as plain text; results are structured JSON.
+as plain text; results are structured JSON. In the unicode syntax a
+constant whose name is one letter, starts upper-case or holds a space or
+punctuation is written in single quotes ('k2', 'Alice', 'John Doe'), and
+every tool takes that text back as it gives it.
 
 Self-correction loop: every parse failure comes back as {"ok": false,
 "argument": ..., "errors": [...], "spec_topic": ...}. Call get_syntax_spec
@@ -601,21 +604,31 @@ def _text_of(node) -> str:
     """The unicode rendering of ``node``, in a form the OTHER tools can read.
 
     Every tool here takes formula TEXT, so a translated formula and its side
-    axioms are only usable as premises if their text parses again. A
-    translation can render a name the text grammar does not accept: the bound
-    variables the translations mint are legal names since 0.30.0, but a name
-    the CALLER supplies is printed as it is, and the FOL grammar wants a
-    predicate to start upper-case, so an OWL-style role (``hasChild``) or a
-    description-logic individual spelled like a variable comes back out as text
-    ``prove`` rejects. Rendered as it is, the result looks right and ``prove``
-    rejects it. So the node is rendered as
-    the kit prints it and, failing that, with its bound variables alpha-renamed
-    to ``q0``, ``q1``, … — a renaming that changes no meaning — and the first
-    spelling that reads back as EXACTLY the same formula wins. Failing both,
-    the first that parses at all (a constant printed as ``a`` reads back as a
-    variable, which no rendering can fix), and failing that the plain
+    axioms are only usable as premises if their text parses again, and as the
+    same formula. A constant always does: the printer writes it in single
+    quotes whenever its bare name would read as something else (``'a'``,
+    ``'k2'``, ``'Alice'``, ``'John Doe'``), so a constant of any name that has
+    a text reads back as itself. A name that is not a constant's is printed as
+    it is, and the text grammar can still refuse or misread it: the bound
+    variables the translations mint are legal names since 0.30.0, but a
+    variable the CALLER names ``hasChild`` is a binder the grammar refuses (a
+    binder is one letter and digits), and a predicate that starts lower-case
+    (an OWL-style role ``hasChild(x, y)``) reads as a function application,
+    which is no formula. Rendered as it is, the result can look right and
+    ``prove`` rejects it. So the node is rendered as the kit prints it and,
+    failing that, with its bound variables alpha-renamed to ``q0``, ``q1``, …
+    — a renaming that changes no meaning, and the one thing that mends the
+    first case — and the first spelling that reads back as EXACTLY the same
+    formula wins. Failing both, the first that parses at all (a FREE variable
+    named like a constant, ``hasChild``, reads back as that constant, and
+    alpha-renaming leaves a free name alone), and failing that the plain
     printing; the ``result`` / ``axioms`` ASTs next to it stay the authority.
     A rendering that already reads back is left exactly as the kit prints it.
+
+    Raises:
+        ValueError: ``node`` holds a constant that has no text (an empty name,
+            or a name with a control character): the printer refuses it by
+            name, and ``translate`` answers that as a structured error.
     """
     from ..eval.canonical import _alpha_normalize
 
@@ -892,6 +905,14 @@ def render(text: str, to: str = "tptp",
     ``smtlib`` this is ``to_z3``'s own refusal (second/third-order,
     modal/hybrid/linear/Lambek/team constructs have no first-order SMT-LIB2
     encoding), named by construct, reused rather than reimplemented.
+
+    A constant whose name is not a bare word is written in single quotes in
+    ``unicode`` (``P('k2')``, ``Q('John Doe')``), and that text goes back into
+    every tool. ``latex`` writes a constant by its name, never in quotes, so
+    the LaTeX text of such a formula does not read back as that constant
+    (``P(k2)`` is the variable ``k2``), and the LaTeX reader refuses a quote:
+    pass the ``unicode`` text on. A target that cannot spell a name (TPTP and
+    Prover9 for ``John Doe``) refuses it as a structured error.
 
     ``tptp`` also refuses a formula in which two DISTINCT names of one kind
     would be written as the same TPTP word (the constants ``θ`` and ``theta``,

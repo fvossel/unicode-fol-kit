@@ -248,6 +248,7 @@ finite-domain backends exist to protect — see
 """
 
 import importlib.util
+import re
 import time
 from typing import Dict, FrozenSet, List, Optional, Sequence, Set, Tuple
 
@@ -326,6 +327,12 @@ def _repeated_constant(constants, parameters: FrozenSet[str]) -> Optional[str]:
                     f"denote {value}.")
         seen[value] = name
     return None
+
+
+#: A variable name that is written ``"V" + name`` as it stands: ASCII letters,
+#: digits and underscores, the first of them a letter or digit (see
+#: :meth:`_AspEncoder._asp_var`).
+_ASP_PLAIN_VARIABLE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_]*")
 
 
 class _EncodingError(ValueError):
@@ -470,18 +477,37 @@ class _AspEncoder:
 
     @staticmethod
     def _asp_var(kit_name: str) -> str:
-        """Map a kit variable name to an ASP variable name.
+        """Map a kit variable name to an ASP variable name; two names never share one.
 
-        ``"V" + name`` — ASP variables must start uppercase; kit variable
-        names are always lowercase-initial identifiers (single letters, or
-        ``x_0``-style fresh names), the same assumption
-        :meth:`~unicode_logic_kit.fol.nodes.Variable.to_prover9` /
-        :meth:`~unicode_logic_kit.fol.nodes.Variable.to_tptp` already make
-        (both just ``.upper()`` the name with no further sanitisation) —
-        this module does not attempt anything more general than the kit's
-        own existing text-based exporters do for the same node type.
+        An ASP variable is an upper-case letter followed by ASCII letters, digits
+        and underscores. A name of ASCII letters, digits and underscores that
+        starts with a letter or digit (``x``, ``x0``, ``x_0``: what the grammar
+        and the kit's own fresh names give) is written ``"V" + name``, as it
+        always was. Every other name is written ``"V_" + code``, where the code
+        keeps ASCII letters and digits and turns each other character into an
+        underscore, its code point in lower-case hexadecimal and an underscore
+        (``é`` is ``V__e9_``, ``x-1`` is ``V_x_2d_1``). The VARIABLE terminal
+        admits any Unicode letter, so ``∀é P(é)`` reaches this encoder from
+        text; ``Vé`` is no ASP variable, and clingo's parser, handed that text,
+        ended the call with an error of the decoder instead of a verdict.
+
+        The two forms never meet (the second character is a letter or digit in
+        the first, an underscore in the second), and the code reads back one way
+        only (a letter or digit stands for itself, every underscore opens one
+        ``_<hex>_`` group), so two variable names always get two ASP variables.
+        The names this encoder mints itself start with ``C`` or ``F``.
+
+        Raises:
+            _EncodingError: the name is not a string.
         """
-        return f"V{kit_name}"
+        if not isinstance(kit_name, str):
+            raise _EncodingError(
+                f"_AspEncoder: the variable name {kit_name!r} is of type "
+                f"{type(kit_name).__name__}, not a string, so it has no ASP variable.")
+        if _ASP_PLAIN_VARIABLE.fullmatch(kit_name):
+            return f"V{kit_name}"
+        return "V_" + "".join(
+            ch if ch.isascii() and ch.isalnum() else f"_{ord(ch):x}_" for ch in kit_name)
 
     @staticmethod
     def _format_atom(name: str, args: Sequence[str]) -> str:

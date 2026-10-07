@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Type
 
 from unicode_logic_kit.fol.nodes import Node, Atom, Iff, Xor, Variable, Quantifier
+from unicode_logic_kit.fol._msfl_nodes import key_text
 from unicode_logic_kit.fol._truth_constants import refuse_truth_constants
 
 #: Why a deep embedding refuses the TPTP constants ``$true`` / ``$false``: its
@@ -123,7 +124,7 @@ def encode_deep(formula: Node, atoms: AtomConsts,
             raise NotImplementedError(
                 f"{logic}: atom with a free variable is first-order; the deep "
                 "embedding is propositional.")
-        return f"(Atm {atoms.name(formula.to_unicode_str())})"
+        return f"(Atm {atoms.name(key_text(formula))})"
     if isinstance(formula, (Quantifier, Variable)):
         raise NotImplementedError(
             f"{logic}: quantifiers/variables are first-order; the deep embedding is "

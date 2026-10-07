@@ -96,7 +96,7 @@ from itertools import product
 from typing import Any, Dict, FrozenSet, Iterable, Iterator, List, Optional, Tuple
 
 from ..fol.nodes import Node, Atom, Not, And, Or, Xor, Implies, Iff, Would, Might
-from ..fol._atom_keys import AtomKeys, refuse_sorted_constant
+from ..fol._atom_keys import AtomKeys, find_key, refuse_sorted_constant
 from ..fol._truth_constants import truth_value as _truth_value
 from ._modal_reject import reject_equality, reject_equality_in
 
@@ -194,8 +194,10 @@ def _reject_free_variable_atom(atom: Atom) -> None:
 class CounterfactualModel:
     """A Lewis sphere model over a set of worlds.
 
-    ``valuation`` maps each world to the set of atom keys (``atom.to_unicode_str()``)
-    true there. ``spheres`` maps each world ``w`` to its nested system of spheres — a
+    ``valuation`` maps each world to the set of atom keys (the text of the atom with every
+    constant written by its name, ``'P(a)'``; the text of the atom as a formula, ``"P('a')"``,
+    is read as the same key) true there. ``spheres`` maps each world ``w``
+    to its nested system of spheres — a
     list of frozensets ordered **innermost (closest) first**, each a superset of the
     previous. A world omitted from ``spheres`` is taken to have the single sphere
     ``{w}``.
@@ -256,7 +258,9 @@ def cf_satisfies(formula: Node, model: CounterfactualModel, world: Any) -> bool:
         _reject_equality_atom(formula, "cf_satisfies")
         _reject_free_variable_atom(formula)
         refuse_sorted_constant(formula, "cf_satisfies")
-        return formula.to_unicode_str() in model.valuation.get(world, frozenset())
+        # The key first, then the text of the atom as a formula, so a valuation keyed either
+        # way is read.
+        return find_key(model.valuation.get(world, frozenset()), formula) is not None
     if isinstance(formula, Not):
         return not cf_satisfies(formula.formula, model, world)
     if isinstance(formula, And):
@@ -324,7 +328,8 @@ def might(model: CounterfactualModel, world: Any,
 # --------------------------------------------------------------------------- #
 
 def _atom_keys(formula: Node) -> Tuple[str, ...]:
-    """The distinct atom keys (``atom.to_unicode_str()``) of ``formula``, sorted.
+    """The distinct atom keys (the text of each atom with every constant written by its
+    name) of ``formula``, sorted.
 
     Rejects identity atoms and free-variable atoms upfront (same contract as
     :func:`cf_satisfies`), so ``cf_countermodel`` / ``cf_valid`` fail fast instead

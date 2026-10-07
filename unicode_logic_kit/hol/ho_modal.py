@@ -77,6 +77,18 @@ loudly, both before anything is rendered:
 The ordering atoms ``<`` ``>`` ``≤`` ``≥`` stay ordinary uninterpreted relations,
 world-relativised, as in ``qml``.
 
+**Constants and free variables.** A constant is a particular individual that its name
+stands for; a free variable is a parameter of the problem, one unknown element shared by
+every formula (see :mod:`unicode_logic_kit.fol._free_parameters`). The two are different
+symbols even when they are spelled alike, so ``P(x)`` with a free ``x`` and ``P('x')`` are
+two statements: each is declared under a name of its own (``x`` for the variable, ``x_2``
+for the constant) and a constant is never looked up among the bound variables, so no binder
+of any name captures it. A constant of any name has a legal identifier in both targets (a
+name that is an Isabelle identifier is written as it is, any other name under the kit's ASCII
+stem of it; THF always uses the stem), and every symbol of the problem — predicate, function,
+free variable, constant, and the embedding's own vocabulary (``R``, ``mall``, ``Rk``, ``nom_i``,
+…) — gets a name of its own, so two names that share a stem are still two symbols.
+
 **Domains — two independent axes.** ``mode=`` (default ``"constant"``, i.e.
 possibilist) accepts the same domain-regime vocabulary as
 :mod:`unicode_logic_kit.hol.isabelle_modal`'s ``_ACTUALIST_MODES``: ``"varying"``,
@@ -124,9 +136,9 @@ from ..fol._ho_nodes import INDIVIDUAL
 from ..fol._truth_constants import truth_value
 from ..fol.frames import FRAMES, resolve_frame, UnsupportedFrameCondition
 from ._ho_common import (
-    UnsupportedHigherOrderNode, ORDERING,
+    UnsupportedHigherOrderNode, ORDERING, FREE_VARIABLE, CONSTANT, ISABELLE_BUILT_IN,
     peel_lambdas, rename_apart, bound_pred_names, atom_predicates,
-    function_symbols, free_individuals, ThfNames, bound_token,
+    function_symbols, individual_symbols, ThfNames, IsabelleNames, bound_token,
 )
 from ._isabelle_binders import (
     PREDICATE, VARIABLE, BinderScope, binder_tokens, collect_binders, declared_names,
@@ -767,31 +779,38 @@ def _domain_axiom_lines(mode: str) -> List[str]:
 
 def _isa_arg(node: Node, bound_arity: Dict[str, int],
              display: Dict[str, str], mode: str,
-             scope: Optional[BinderScope] = None) -> str:
+             scope: Optional[BinderScope] = None,
+             symbols: Optional[IsabelleNames] = None) -> str:
     """Render a node standing in ARGUMENT position — an individual or a property.
 
     ``scope`` holds the binders that enclose the node and the names they are printed under: a
-    variable or a lambda variable is printed under its binder's name, a constant under its own.
-    Without a ``scope`` every binder is printed under its own name.
+    variable or a lambda variable bound by one of them is printed under its binder's name. A
+    free variable and a constant are not bound by any binder, whatever their spelling: each is
+    printed under the name ``symbols`` gives it, and the two have two names. Without a ``scope``
+    every binder is printed under its own name.
     """
     if scope is None:
         scope = BinderScope({})
+    if symbols is None:
+        symbols = IsabelleNames(ISABELLE_BUILT_IN)
     if isinstance(node, (Variable, LambdaVar)):
-        return scope.token(VARIABLE, node.name)
+        # a binder's token is never empty, so "" means: no binder of this name encloses the node
+        return scope.token(VARIABLE, node.name, default="") or symbols.symbol(FREE_VARIABLE, node.name)
     if isinstance(node, Constant):
-        return node.name
+        return symbols.symbol(CONSTANT, node.name)
     if isinstance(node, PredicateTerm):
-        return display.get(node.name, node.name)
+        return display.get(node.name) or symbols.symbol("predicate", node.name)
     if isinstance(node, Lambda):
         names, body = peel_lambdas(node)
         binders = []
         for name in names:
             token, scope = scope.enter(VARIABLE, name)
             binders.append(f"{_LAM}{token}::i.")
-        return f"({' '.join(binders)} {_isa_sigma(body, bound_arity, display, mode, scope)})"
+        return f"({' '.join(binders)} {_isa_sigma(body, bound_arity, display, mode, scope, symbols)})"
     if isinstance(node, Function):
-        args = " ".join(_isa_arg(a, bound_arity, display, mode, scope) for a in node.args)
-        return f"({node.name} {args})" if args else node.name
+        head = symbols.symbol("function", node.name)
+        args = " ".join(_isa_arg(a, bound_arity, display, mode, scope, symbols) for a in node.args)
+        return f"({head} {args})" if args else head
     raise UnsupportedHigherOrderNode(
         f"ho_modal: {type(node).__name__} cannot stand in argument position; an "
         f"argument is an individual term, a predicate name, or a λ-abstraction."
@@ -825,25 +844,30 @@ _NO_DOWN = (
 
 def _isa_sigma(node: Node, bound_arity: Dict[str, int],
                display: Dict[str, str], mode: str,
-               scope: Optional[BinderScope] = None) -> str:
+               scope: Optional[BinderScope] = None,
+               symbols: Optional[IsabelleNames] = None) -> str:
     """Render ``node`` as an Isabelle term of type ``sigma`` (a world-indexed proposition).
 
     ``display`` gives each bound predicate variable the name it is printed under, ``scope`` each
     enclosing object binder (see :mod:`unicode_logic_kit.hol._isabelle_binders`); without a
-    ``scope`` every binder is printed under its own name."""
+    ``scope`` every binder is printed under its own name. ``symbols`` names the free symbols
+    (predicates, functions, free variables, constants) and is the one the declarations were
+    written under."""
     if scope is None:
         scope = BinderScope({})
+    if symbols is None:
+        symbols = IsabelleNames(ISABELLE_BUILT_IN)
     if isinstance(node, Not):
-        return f"(mnot {_isa_sigma(node.formula, bound_arity, display, mode, scope)})"
+        return f"(mnot {_isa_sigma(node.formula, bound_arity, display, mode, scope, symbols)})"
     op = _BINARY_ISA.get(type(node))
     if op is not None:
-        left = _isa_sigma(node.left, bound_arity, display, mode, scope)
-        right = _isa_sigma(node.right, bound_arity, display, mode, scope)
+        left = _isa_sigma(node.left, bound_arity, display, mode, scope, symbols)
+        right = _isa_sigma(node.right, bound_arity, display, mode, scope, symbols)
         return f"({op} {left} {right})"
     if isinstance(node, Box):
-        return f"(mbox {_isa_sigma(node.formula, bound_arity, display, mode, scope)})"
+        return f"(mbox {_isa_sigma(node.formula, bound_arity, display, mode, scope, symbols)})"
     if isinstance(node, Diamond):
-        return f"(mdia {_isa_sigma(node.formula, bound_arity, display, mode, scope)})"
+        return f"(mdia {_isa_sigma(node.formula, bound_arity, display, mode, scope, symbols)})"
     if isinstance(node, Quantifier):
         # The one judgment call this port makes (see the module docstring):
         # ONLY the individual-typed binder is existsAt-guarded under an
@@ -854,50 +878,50 @@ def _isa_sigma(node: Node, bound_arity: Dict[str, int],
         else:
             binder = "mall" if node.type == "∀" else "mex"
         token, inner = scope.enter(VARIABLE, node.variable.name)
-        body = _isa_sigma(node.formula, bound_arity, display, mode, inner)
+        body = _isa_sigma(node.formula, bound_arity, display, mode, inner, symbols)
         return f"({binder} ({_LAM}{token}::i. {body}))"
     if isinstance(node, SecondOrderQuantifier):
         binder = "mall" if node.type == "∀" else "mex"
         arity = bound_arity.get(node.predicate, node.arity)
         name = display.get(node.predicate, node.predicate)
-        body = _isa_sigma(node.formula, bound_arity, display, mode, scope)
+        body = _isa_sigma(node.formula, bound_arity, display, mode, scope, symbols)
         return (f"({binder} ({_LAM}{name}::{_prop_type(arity)}. {body}))")
     if isinstance(node, (Knows, Believes, Says, Wants)):
         macro = {Knows: "mknows", Believes: "mbelieves",
                 Says: "msays", Wants: "mwants"}[type(node)]
-        agent = _isa_arg(node.agent, bound_arity, display, mode, scope)
-        body = _isa_sigma(node.formula, bound_arity, display, mode, scope)
+        agent = _isa_arg(node.agent, bound_arity, display, mode, scope, symbols)
+        body = _isa_sigma(node.formula, bound_arity, display, mode, scope, symbols)
         return f"({macro} {agent} {body})"
     if isinstance(node, Obligatory):
-        return f"(mobl {_isa_sigma(node.formula, bound_arity, display, mode, scope)})"
+        return f"(mobl {_isa_sigma(node.formula, bound_arity, display, mode, scope, symbols)})"
     if isinstance(node, Permitted):
-        return f"(mperm {_isa_sigma(node.formula, bound_arity, display, mode, scope)})"
+        return f"(mperm {_isa_sigma(node.formula, bound_arity, display, mode, scope, symbols)})"
     if isinstance(node, Always):
-        return f"(malways {_isa_sigma(node.formula, bound_arity, display, mode, scope)})"
+        return f"(malways {_isa_sigma(node.formula, bound_arity, display, mode, scope, symbols)})"
     if isinstance(node, Eventually):
-        return f"(meventually {_isa_sigma(node.formula, bound_arity, display, mode, scope)})"
+        return f"(meventually {_isa_sigma(node.formula, bound_arity, display, mode, scope, symbols)})"
     if isinstance(node, Next):
-        return f"(mnext {_isa_sigma(node.formula, bound_arity, display, mode, scope)})"
+        return f"(mnext {_isa_sigma(node.formula, bound_arity, display, mode, scope, symbols)})"
     if isinstance(node, Historically):
-        return f"(mhistorically {_isa_sigma(node.formula, bound_arity, display, mode, scope)})"
+        return f"(mhistorically {_isa_sigma(node.formula, bound_arity, display, mode, scope, symbols)})"
     if isinstance(node, Once):
-        return f"(monce {_isa_sigma(node.formula, bound_arity, display, mode, scope)})"
+        return f"(monce {_isa_sigma(node.formula, bound_arity, display, mode, scope, symbols)})"
     if isinstance(node, Previous):
-        return f"(mprevious {_isa_sigma(node.formula, bound_arity, display, mode, scope)})"
+        return f"(mprevious {_isa_sigma(node.formula, bound_arity, display, mode, scope, symbols)})"
     if isinstance(node, Until):
-        left = _isa_sigma(node.left, bound_arity, display, mode, scope)
-        right = _isa_sigma(node.right, bound_arity, display, mode, scope)
+        left = _isa_sigma(node.left, bound_arity, display, mode, scope, symbols)
+        right = _isa_sigma(node.right, bound_arity, display, mode, scope, symbols)
         return f"(muntil {left} {right})"
     if isinstance(node, Since):
-        left = _isa_sigma(node.left, bound_arity, display, mode, scope)
-        right = _isa_sigma(node.right, bound_arity, display, mode, scope)
+        left = _isa_sigma(node.left, bound_arity, display, mode, scope, symbols)
+        right = _isa_sigma(node.right, bound_arity, display, mode, scope, symbols)
         return f"(msince {left} {right})"
     if isinstance(node, Nominal):
         return f"({_LAM}v::world. v = {_nominal_const(node.name)})"
     if isinstance(node, At):
         # The world binder is anonymous: ``body`` holds the caller's own symbols, and a binder
         # named ``v`` would capture a constant, a function or a predicate called ``v`` there.
-        body = _isa_sigma(node.formula, bound_arity, display, mode, scope)
+        body = _isa_sigma(node.formula, bound_arity, display, mode, scope, symbols)
         return f"({_LAM}_. {body} {_nominal_const(node.nominal.name)})"
     if isinstance(node, Down):
         raise UnsupportedHigherOrderNode(_NO_DOWN)
@@ -912,13 +936,15 @@ def _isa_sigma(node: Node, bound_arity: Dict[str, int],
             # name so a user variable called ``w`` can never be captured by it. The
             # same text isabelle_modal emits for the same atom.
             left, right = _identity_sides(node)
-            return (f"({_LAM}_. {_isa_arg(left, bound_arity, display, mode, scope)} = "
-                    f"{_isa_arg(right, bound_arity, display, mode, scope)})")
-        name = ORDERING.get(node.predicate, node.predicate)
-        name = display.get(name, name)
+            return (f"({_LAM}_. {_isa_arg(left, bound_arity, display, mode, scope, symbols)} = "
+                    f"{_isa_arg(right, bound_arity, display, mode, scope, symbols)})")
+        if node.predicate in ORDERING:
+            name = ORDERING[node.predicate]
+        else:
+            name = display.get(node.predicate) or symbols.symbol("predicate", node.predicate)
         if not node.args:
             return name
-        args = " ".join(_isa_arg(a, bound_arity, display, mode, scope) for a in node.args)
+        args = " ".join(_isa_arg(a, bound_arity, display, mode, scope, symbols) for a in node.args)
         return f"({name} {args})"
     if type(node).__name__ in ("Would", "Might"):
         raise UnsupportedHigherOrderNode(_NO_COUNTERFACTUAL)
@@ -933,51 +959,60 @@ def _isa_sigma(node: Node, bound_arity: Dict[str, int],
     )
 
 
-def _signature_lines(formulas: Sequence[Node]):
-    """Return the ``consts`` declarations for every free symbol, and the analysis behind them.
+def _used_ordering(apart: Sequence[Node]) -> List[str]:
+    """The names of the ordering relations (``flt``, ...) that the formulas use, sorted."""
+    return sorted({ORDERING[p] for f in apart for p in atom_predicates(f) if p in ORDERING})
 
-    The analysis runs over the formulas TOGETHER (with bound predicate variables
-    renamed apart first), because that is the scope on which a free predicate's
-    argument types are determined: ``Positive(G)`` in one axiom and ``G(x)`` in
-    another jointly say that ``Positive`` takes a property of arity 1.
+
+def _signature_lines(apart: Sequence[Node], signatures, symbols: IsabelleNames) -> List[str]:
+    """Return the ``consts`` declarations for every free symbol of ``apart``.
+
+    ``apart`` are the formulas with their bound predicate variables renamed apart and
+    ``signatures`` is the analysis over them TOGETHER, because that is the scope on which a
+    free predicate's argument types are determined: ``Positive(G)`` in one axiom and ``G(x)``
+    in another jointly say that ``Positive`` takes a property of arity 1.
+
+    Every symbol is declared under the name ``symbols`` gives it, and ``symbols`` is the one
+    the formulas are rendered with. A theory has one namespace for its constants, so a
+    predicate, a function, a free variable and a constant that are spelled alike are four
+    constants with four names, and none takes a name of the embedding's own vocabulary.
     """
-    apart, display = rename_apart(formulas)
-    signatures = analyse_signatures(apart)
     bound = set()
     for formula in apart:
         bound |= bound_pred_names(formula)
+    predicates = [pred for pred in sorted(signatures.slots)
+                  if not (pred in bound or pred in EQUALITY_PREDICATES or pred in ORDERING
+                          or pred in ORDERING.values())]
+    # Free individual symbols: a bare NAME parses to a Constant, and a variable left unbound
+    # by any quantifier denotes a particular individual too. Both are individuals of type i,
+    # but a free variable is a parameter and a constant a particular element: two symbols.
+    individuals = individual_symbols(apart)
+    functions = sorted(function_symbols(apart).items())
+    symbols.claim([("predicate", pred) for pred in predicates]
+                  + [("function", name) for name, _ in functions] + individuals)
 
     lines: List[str] = []
-    for pred in sorted(signatures.slots):
-        if (pred in bound or pred in EQUALITY_PREDICATES or pred in ORDERING
-                or pred in ORDERING.values()):
-            continue
+    for pred in predicates:
         parts = []
         for kind in signatures.slots[pred]:
             parts.append("i" if kind == INDIVIDUAL else f"({_prop_type(kind[1])})")
         arrow = "".join(f"{p} {_FUN} " for p in parts)
-        lines.append(f'consts {pred} :: "{arrow}sigma"')
+        lines.append(f'consts {symbols.symbol("predicate", pred)} :: "{arrow}sigma"')
 
-    # Free individual symbols: a bare NAME parses to a Constant, and a variable
-    # left unbound by any quantifier denotes a particular individual too. Both
-    # are individuals of type i.
-    individuals = sorted(free_individuals(apart))
-    for name in individuals:
-        lines.append(f'consts {name} :: "i"')
+    for kind, name in individuals:
+        lines.append(f'consts {symbols.symbol(kind, name)} :: "i"')
 
     # Ordering predicates actually used, as world-relativised relations. Identity is
     # NOT among them: it is HOL's own ``=`` (see _rigid_identity) and is declared
     # nowhere.
-    used_ordering = sorted({ORDERING[p] for f in apart for p in atom_predicates(f)
-                            if p in ORDERING})
-    for name in used_ordering:
+    for name in _used_ordering(apart):
         lines.append(f'consts {name} :: "i {_FUN} i {_FUN} sigma"')
 
     # Function symbols in term position.
-    for name, arity in sorted(function_symbols(apart).items()):
+    for name, arity in functions:
         arrow = "".join(f"i {_FUN} " for _ in range(arity))
-        lines.append(f'consts {name} :: "{arrow}i"')
-    return lines, signatures, apart, display
+        lines.append(f'consts {symbols.symbol("function", name)} :: "{arrow}i"')
+    return lines
 
 
 # --------------------------------------------------------------------------
@@ -1092,7 +1127,8 @@ def isabelle_ho_modal_theory(name: str,
     formulas = _rigid_identity(
         [a.formula for a in axioms] + [g.formula for g in typed_goals],
         "isabelle_ho_modal_theory")
-    signature, signatures, apart, display = _signature_lines(formulas)
+    apart, display = rename_apart(formulas)
+    signatures = analyse_signatures(apart)
     # Arities come from the theory-wide analysis, not from each node's own
     # parse-time field: a binder whose arity only the OTHER axioms determine is
     # exactly the case a per-formula answer gets wrong.
@@ -1120,6 +1156,13 @@ def isabelle_ho_modal_theory(name: str,
         lines.append("")
         lines += extra_vocab
     lines.append("")
+    # The symbols of the formulas share one namespace with the vocabulary above (R, mall,
+    # mnot, Rk, existsAt, nom_i, ...): none of them may take one of those names, and none
+    # takes the name of another symbol, whatever its kind.
+    fixed = declared_names([ho_modal_definitions()] + extra_vocab)
+    symbols = IsabelleNames((fixed - declared_names(())) | ISABELLE_BUILT_IN
+                            | set(_used_ordering(apart)))
+    signature = _signature_lines(apart, signatures, symbols)
     frame_lines = _frame_axiom_lines(frame)
     frame_lines += _family_axiom_lines(usage, resolved_systems, temporal_closure)
     if mode in _ACTUALIST_MODES and usage.has_quant:
@@ -1152,7 +1195,7 @@ def isabelle_ho_modal_theory(name: str,
     for axiom, renamed in zip(axioms, axiom_bodies):
         if axiom.comment:
             lines.append(f"\\<comment> \\<open>{axiom.comment}\\<close>")
-        body = _isa_sigma(renamed, bound_arity, display, mode, scope)
+        body = _isa_sigma(renamed, bound_arity, display, mode, scope, symbols)
         lines.append(f'axiomatization where {axiom.name}: "mvalid {body}"')
     if axioms:
         lines.append("")
@@ -1163,7 +1206,7 @@ def isabelle_ho_modal_theory(name: str,
         if goal.statement is not None:
             proposition = goal.statement
         else:
-            body = _isa_sigma(typed_bodies[goal.name], bound_arity, display, mode, scope)
+            body = _isa_sigma(typed_bodies[goal.name], bound_arity, display, mode, scope, symbols)
             proposition = f"mvalid {body}"
         lines.append(f'{goal.kind} {goal.name}: "{proposition}"')
         lines.append(f"  {goal.proof}")
@@ -1428,10 +1471,13 @@ def _thf_arg(node: Node, upper: Dict[str, str], display: Dict[str, str],
     """Render an argument-position node in THF — an individual or a property.
 
     ``upper`` maps each source name bound in scope to its THF variable token;
-    anything not in it is a free symbol, spelled through ``names``.
+    a variable that is not in it is free and spelled through ``names``. A constant
+    is never looked up in ``upper``: no binder captures it, whatever its spelling.
     """
-    if isinstance(node, (Variable, LambdaVar, Constant)):
-        return upper.get(node.name) or names.functor("individual", node.name)
+    if isinstance(node, (Variable, LambdaVar)):
+        return upper.get(node.name) or names.functor(FREE_VARIABLE, node.name)
+    if isinstance(node, Constant):
+        return names.functor(CONSTANT, node.name)
     if isinstance(node, PredicateTerm):
         return upper.get(node.name) or names.functor("predicate", node.name)
     if isinstance(node, Lambda):
@@ -1650,8 +1696,8 @@ def to_thf_ho_modal(formula: Node, frame: str = "K",
         thf_type = " > ".join(parts + ["mu", "$o"]) if parts else "mu > $o"
         functor = names.functor("predicate", pred)
         lines.append(f"thf({functor}_type, type, ( {functor} : {thf_type} )).")
-    for name in sorted(free_individuals(apart)):
-        functor = names.functor("individual", name)
+    for kind, name in individual_symbols(apart):
+        functor = names.functor(kind, name)
         lines.append(f"thf({functor}_type, type, ( {functor} : $i )).")
     # An ordering atom is a world-dependent uninterpreted relation here, as in qml.
     # Identity is not: it is the ``meq`` macro above, declared nowhere else.

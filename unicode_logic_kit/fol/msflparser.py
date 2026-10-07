@@ -51,27 +51,31 @@ def _safe_find_glyph(text: str, start: int, end: int, glyph: str):
 # ever lets a NAME (>= 2 letters) head a function call: ``NAME "(" termlist
 # ")" -> function_``. A single lowercase letter lexes as VARIABLE instead of
 # NAME, and ``?atom_term: VARIABLE`` has no continuation into "(", so
-# ``f(x)`` fails at the LEXER level (a NamingError: '(' is not a valid
-# continuation after VARIABLE in that grammar position) even though
-# ``Function('f', [...])`` is a perfectly legal AST node — e.g.
-# ``Function('f', [...]).to_unicode_str()`` prints ``f(x)``, which then FAILS
-# to re-parse. Verified unambiguous (no Earley ambiguity against lambda
-# application or the atom/atom_term rules: VARIABLE-as-bare-term and
-# VARIABLE-as-function-head are distinguished purely by whether "(" follows,
-# and a bare term can never itself reduce to a formula, so there is no
-# competing derivation for e.g. "(f)(y)" or "(λx. P(x))(f(y))") by building the
-# patched grammar for every mode and cross-checking against an
-# ``ambiguity="explicit"`` Earley parser, plus running the full parser test
-# suite (test_msfl_parser.py, test_lambda_tools.py, test_resolve_lambda_scope.py).
+# without the patch below ``f(x)`` fails at the LEXER level (a NamingError: '('
+# is not a valid continuation after VARIABLE in that grammar position) even
+# though ``Function('f', [...])`` is a perfectly legal AST node whose
+# ``to_unicode_str()`` prints ``f(x)``. With the patch that text reads back as
+# the function. (The head of a function stays a bare word: a quoted name is a
+# constant, and ``'f'(x)`` is refused.) Verified unambiguous (no Earley
+# ambiguity against lambda application or the atom/atom_term rules:
+# VARIABLE-as-bare-term and VARIABLE-as-function-head are distinguished purely
+# by whether "(" follows, and a bare term can never itself reduce to a formula,
+# so there is no competing derivation for e.g. "(f)(y)" or
+# "(λx. P(x))(f(y))") by building the patched grammar for every mode and
+# cross-checking against an ``ambiguity="explicit"`` Earley parser, plus
+# running the full parser test suite (test_msfl_parser.py, test_lambda_tools.py,
+# test_resolve_lambda_scope.py).
 #
-# The fix belongs at the shared-template level (_fol_nodes.py's
-# _BASE_GRAMMAR_TEMPLATE), but that module is out of scope for this change,
-# so it is applied here as a targeted, self-checking patch to the ASSEMBLED
-# grammar string: splice in a ``VARIABLE "(" termlist ")" -> function_``
-# alternative right next to the existing bare-VARIABLE one. The patch is
-# applied identically to every mode, since the term layer is verbatim-shared
-# across all of them (build_grammar's per-mode variation is entirely in the
-# formula-operator layers, not atom_term).
+# The alternative is applied as a targeted, self-checking patch to the
+# ASSEMBLED grammar string and not written into the shared template
+# (_fol_nodes.py's _BASE_GRAMMAR_TEMPLATE): the patch splices in a
+# ``VARIABLE "(" termlist ")" -> function_`` alternative right next to the
+# existing bare-VARIABLE one, and it finds its place by the head line
+# ``?atom_term: VARIABLE``, so the template keeps that line exactly as it is
+# (the quoted constant is one more alternative after it, not a change to it).
+# The patch is applied identically to every mode, since the term layer is
+# verbatim-shared across all of them (build_grammar's per-mode variation is
+# entirely in the formula-operator layers, not atom_term).
 _ATOM_TERM_VARIABLE_MARKER = '?atom_term: VARIABLE\n'
 _ATOM_TERM_FUNCTION_PATCH = (
     _ATOM_TERM_VARIABLE_MARKER

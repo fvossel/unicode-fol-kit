@@ -67,9 +67,12 @@ def test_underscored_predicate_round_trips():
 
 
 def test_single_letter_constant_becomes_c_form():
-    # A single-letter constant would re-parse as a *variable* without the c_ form.
+    # The bare text P(a) would read as a *variable*, so the printer writes the
+    # single-letter constant in quotes, and the quoted text reads back as the
+    # constant. The sanitiser still renames it to the c_ form, which needs no quotes.
     f = Atom("P", [Constant("a")])
-    assert isinstance(P.parse(f.to_unicode_str()).args[0], Variable)   # the hazard
+    assert f.to_unicode_str() == "P('a')"
+    assert P.parse("P('a')").args[0] == Constant("a")
     s, _ = sanitize_names(f)
     assert s.args[0].name.startswith("c_")
     reparsed = P.parse(s.to_unicode_str())

@@ -432,10 +432,11 @@ def test_roundtrip_congruence():
     r = verify_resolution_proof(d)
     assert r.ok, r.error
     assert r.refuted is True
+    # the constants a and b are single letters, so the text of a formula writes them in quotes
     expected_render = (
-        "1. a = b [input]\n"
-        "2. ¬f(a) = f(b) [input]\n"
-        "3. ¬f(a) = f(a) [paramodulate 1,2]\n"
+        "1. 'a' = 'b' [input]\n"
+        "2. ¬f('a') = f('b') [input]\n"
+        "3. ¬f('a') = f('a') [paramodulate 1,2]\n"
         "4. □ [reflexivity 3]"
     )
     assert render_resolution_proof(d) == expected_render

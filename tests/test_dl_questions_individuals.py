@@ -59,7 +59,7 @@ def test_every_individual_listed_is_a_constant_of_the_image():
     # goal about the individual has to use (a : ∃r.{b} is r(a, b), a ground atom).
     abox = dl.ABox().assert_concept("a", dl.HasValue("r", "b"))
     kb = dl.kb_to_fol(None, abox)
-    assert kb.abox.to_unicode_str() == "r(a, b)"
+    assert kb.abox.to_unicode_str() == "r('a', 'b')"
     assert set(kb.individuals) <= _constants(kb.abox)
 
 

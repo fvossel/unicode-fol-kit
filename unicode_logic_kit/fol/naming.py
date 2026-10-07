@@ -1,5 +1,6 @@
 import weakref
 from copy import copy
+from typing import Optional
 
 from lark import Lark, UnexpectedCharacters, UnexpectedToken, UnexpectedEOF
 from lark.exceptions import ParseError
@@ -22,9 +23,11 @@ except ImportError:  # pragma: no cover - lark renamed its lexer internals
 #
 # The obvious way to get the rest, `Lark.lex()`, is a trap for this grammar:
 #
-#   * MSFL is parsed with parser="earley", which lexes dynamically and keeps no
-#     standing lexer, so `Lark.lex` finds no `self.lexer` and constructs a
-#     fresh BasicLexer on EVERY call;
+#   * the modal dialect falls back to parser="earley", which lexes dynamically
+#     and keeps no standing lexer, so `Lark.lex` finds no `self.lexer` and
+#     constructs a fresh BasicLexer on EVERY call (the other dialects use LALR
+#     with a standing contextual lexer, but a message is built the same way
+#     for all of them);
 #   * BasicLexer.__init__ runs a terminal-collision check whenever the package
 #     `interegular` merely happens to be importable (lark/lexer.py, `if
 #     has_interegular:`), comparing every pair of same-priority terminal
@@ -188,6 +191,7 @@ _NAMED_TOKENS = {
     "NAME": "name/constant",
     "VARIABLE": "variable",
     "CONSTANT": "constant",
+    "QUOTED_NAME": "quoted constant",
     "NUMBER": "number",
     "SORT": "sort annotation",
 }
@@ -326,6 +330,11 @@ class NamingError(UnexpectedCharacters):
                 message += f". Hint: {mixing_hint}"
             return message
 
+        if last_token.type == "QUOTED_NAME":
+            after_quoted = self._after_quoted_constant(last_token, exc)
+            if after_quoted is not None:
+                return after_quoted
+
         message = (
             f"SYNTAX_ERROR: Invalid {display} '{last_token.value}' - "
             f"unexpected character '{exc.char}' at position {exc.column}"
@@ -335,7 +344,9 @@ class NamingError(UnexpectedCharacters):
         # raw pattern text is several kilobytes of \uXXXX-\uYYYY ranges, which
         # is not a message a human (or a model reading the error to retry)
         # can act on, so those five show a short hand-written description
-        # instead of the pattern this module resolved from the grammar.
+        # instead of the pattern this module resolved from the grammar. So does
+        # QUOTED_NAME: its pattern is short, but a character class of escapes
+        # does not say "a quote is written \' inside".
         human = HUMAN_READABLE_PATTERNS.get(last_token.type)
         if human:
             message += f". Expected pattern: {human}"
@@ -344,6 +355,31 @@ class NamingError(UnexpectedCharacters):
             if pattern:
                 message += f". Expected pattern: {pattern}"
         return message
+
+    def _after_quoted_constant(self, last_token, exc: UnexpectedCharacters) -> Optional[str]:
+        """The message for the two things that go wrong AFTER a quoted constant, else ``None``.
+
+        A quoted constant the lexer matched is complete, so "Invalid quoted constant"
+        would blame a good name where the mistake is what follows it:
+
+        * an opening parenthesis: the writer meant a predicate or a function with a
+          quoted name (TPTP has one, ``'foo bar'(a)``), and this grammar quotes
+          constants only;
+        * in a many-sorted grammar, anything but the sort: a constant carries its sort
+          there (``'k2':Mountain``), and the bare ``'k2'`` is what is missing one.
+
+        Any other character keeps the general wording, which describes the shape of
+        the token: that is the case of a stray apostrophe (``P('a'b)``).
+        """
+        where = (f"SYNTAX_ERROR: Unexpected character '{exc.char}' at position {exc.column} "
+                 f"after the quoted constant {last_token.value}")
+        if exc.char == "(":
+            return (f"{where}. A name in quotes is a constant and takes no arguments; a "
+                    f"predicate or function name has no quoted form")
+        if "SORT" in self._patterns and exc.char != ":":
+            return (f"{where}. In a many-sorted formula a constant carries its sort: write "
+                    f"{last_token.value}:Sort")
+        return None
 
     def __str__(self):
         return self.args[0]

@@ -148,8 +148,9 @@ past), and a countermodel word is released only if it is such a model. `ltl_trac
 reads a sorted constant the same way: `Mortal(carl:Human)` is read at the key `'Mortal(carl)'`, the
 key of every countermodel trace (it does not check that `Human(carl)` holds in the trace you give
 it). It refuses, by name, two
-different atoms that print alike (the numeral `1` and a constant named `1`, a free variable `x` and a
-constant named `x`), which one key of a trace could not tell apart:
+different atoms that have one key (the numeral `1` and a constant named `1`, a free variable `x` and a
+constant named `x`; their formula texts `P(1)` and `P('1')`, `P(x)` and `P('x')` differ, their keys do not),
+which one key of a trace could not tell apart:
 
 ```python
 sp = MSFLParser(modal=True, many_sorted=True)

@@ -310,8 +310,15 @@ def render_ill_formula(f: Node) -> str:
     because every compound subformula is fully parenthesised — unlike
     ``to_unicode_str()``'s precedence-based minimal parenthesisation. Used by
     its round-trip-sensitive caller, ``atp.linear.ILLSequent``, in place of
-    ``to_unicode_str()``.
+    ``to_unicode_str()``. A constant whose bare name would read as something else is
+    written in quotes, as ``to_unicode_str()`` writes it.
     """
+    return _render_ill(f, lambda atom: atom.to_unicode_str())
+
+
+def _render_ill(f: Node, atom_text) -> str:
+    """The fully parenthesised rendering of :func:`render_ill_formula`, with the text of an
+    atom (and of anything else that is not an ILL connective) given by ``atom_text``."""
     if isinstance(f, Top):
         return "⊤"
     if isinstance(f, Zero):
@@ -319,25 +326,27 @@ def render_ill_formula(f: Node) -> str:
     if isinstance(f, One):
         return "𝟙"
     if isinstance(f, OfCourse):
-        return f"!({render_ill_formula(f.formula)})"
+        return f"!({_render_ill(f.formula, atom_text)})"
     if isinstance(f, Tensor):
-        return f"({render_ill_formula(f.left)} ⊗ {render_ill_formula(f.right)})"
+        return f"({_render_ill(f.left, atom_text)} ⊗ {_render_ill(f.right, atom_text)})"
     if isinstance(f, With):
-        return f"({render_ill_formula(f.left)} & {render_ill_formula(f.right)})"
+        return f"({_render_ill(f.left, atom_text)} & {_render_ill(f.right, atom_text)})"
     if isinstance(f, OPlus):
-        return f"({render_ill_formula(f.left)} ⊕ {render_ill_formula(f.right)})"
+        return f"({_render_ill(f.left, atom_text)} ⊕ {_render_ill(f.right, atom_text)})"
     if isinstance(f, LinearImplies):
-        return f"({render_ill_formula(f.left)} ⊸ {render_ill_formula(f.right)})"
-    # Atom (and anything else the linear grammar can produce): to_unicode_str
+        return f"({_render_ill(f.left, atom_text)} ⊸ {_render_ill(f.right, atom_text)})"
+    # Atom (and anything else the linear grammar can produce): its own text
     # is safe here since an Atom's children are TERMS (Variable/Constant/
     # Number/Function), never Top/Zero.
-    return f.to_unicode_str()
+    return atom_text(f)
 
 
 def _ill_sort_key(f: Node) -> str:
     """A total-order string key for sorting ILL formulas (multiset bookkeeping
-    in atp.linear): ``render_ill_formula`` first (readable, and identical to
-    the pre-Top/Zero ordering for any formula without Top/Zero, since it then
-    equals ``to_unicode_str()``), then ``repr()`` as a tiebreaker.
+    in atp.linear): the fully parenthesised rendering first (readable, and identical to
+    the pre-Top/Zero ordering for any formula without Top/Zero), with every constant
+    written by its bare name (``key_text``) so that the quotes of a quoted constant play
+    no part in the order, then ``repr()`` as a tiebreaker.
     """
-    return render_ill_formula(f) + "\x00" + repr(f)
+    from ._msfl_nodes import key_text  # lazy: avoid a module-load-order cycle
+    return _render_ill(f, key_text) + "\x00" + repr(f)

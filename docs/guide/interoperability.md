@@ -69,8 +69,8 @@ end_of_list.
 for rec in parse_prover9_problem(text):
     print(rec.role, "|", rec.formula.to_unicode_str())
 # sos   | ∀x ∀y (before(x, y) → ¬before(y, x))
-# sos   | before(a, b)
-# goals | ¬before(b, a)
+# sos   | before('a', 'b')
+# goals | ¬before('b', 'a')
 ```
 
 `before` becomes a new predicate-like (`Atom`-producing) infix operator
@@ -757,7 +757,8 @@ end
 ```
 
 The text reads back as the same formula up to the names of the renamed binders
-(`∀w0 P(w0) ∧ Q(w)`). `to_casl_spec` and `formula_to_casl` take `visible_symbols`
+(`∀w0 P(w0) ∧ Q('w')`, where `'w'` is the constant `w`, written in quotes because a
+bare `w` would be a variable). `to_casl_spec` and `formula_to_casl` take `visible_symbols`
 for the symbols that the text sees without declaring them, and `to_dol_library`
 gives `to_casl_spec` those of the specs that a spec extends.
 
@@ -1264,7 +1265,7 @@ sanitize_modal_identifiers(Atom("≠", [a, b]))   # raises NotImplementedError
 
 ```text
 NotImplementedError: hets.dol: sanitize_modal_identifiers cannot rename a '≠'
-atom (a ≠ b) -- CASL has no native disequality connective, so it would either
+atom ('a' ≠ 'b') -- CASL has no native disequality connective, so it would either
 become a meaningless renamed predicate (masking the lost 'not equal' meaning)
 or crash fol.casl_export's own identifier check. ...
 ```

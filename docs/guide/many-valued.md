@@ -24,7 +24,7 @@ a ↔ b = min(a → b, b → a)
 a ⊕ b = min(max(a, b), 1 − min(a, b))    (exclusive or)
 ```
 
-The valuation maps each ground atom's canonical `to_unicode_str()` key (e.g. `"P"`, `"P(a)"`) to one of the three values. Quantifiers range over a finite `domain` of constant names, with `∀ = min` and `∃ = max`.
+The valuation maps each ground atom's key (e.g. `"P"`, `"P(a)"`) to one of the three values. The key of an atom is `atom_key(atom)`: the text of the atom with every constant written by its bare name. The text of the atom as a formula, `atom.to_unicode_str()`, writes a constant in quotes where its bare name would read as something else (`"P('a')"`), and the evaluators read a key written that way as the same key. Quantifiers range over a finite `domain` of constant names, with `∀ = min` and `∃ = max`.
 
 ```python
 from unicode_logic_kit import MSFLParser, kleene_value
@@ -45,10 +45,24 @@ kleene_value(p.parse("P ⊕ Q"), {"P": 1.0, "Q": 0.5})  # → 0.5   (xor with an
 kleene_value(p.parse("(P ∨ Q) → R"), {"P": 0.0, "Q": 0.5, "R": 0.0})  # → 0.5
 ```
 
-A ground atom's key is its full canonical surface form, so `P` and `P(a)` are independent keys:
+A ground atom's key is the whole atom with every constant written by its name, so `P` and `P(a)` are independent keys:
 
 ```python
 kleene_value(p.parse("P(a) ∧ P(b)"), {"P(a)": 1.0, "P(b)": 0.5})  # → 0.5
+```
+
+For a hand-built atom over `Constant("a")` the key is `P(a)` and the text of the formula is `P('a')`: the bare `a` reads as a variable, so a formula writes the constant in quotes. A valuation keyed by `atom.to_unicode_str()` is read as well as one keyed by `atom_key(atom)`; a valuation that holds both spellings of one atom with different values is refused (`ValueError`, "one atom, two entries"), and with equal values it is read:
+
+```python
+from unicode_logic_kit import Atom, Constant, atom_key
+
+pa = Atom("P", [Constant("a")])
+atom_key(pa)                                         # → 'P(a)'
+pa.to_unicode_str()                                  # → "P('a')"
+kleene_value(pa, {"P(a)": 1.0})                      # → 1.0
+kleene_value(pa, {"P('a')": 1.0})                    # → 1.0
+kleene_value(pa, {"P(a)": 0.5, "P('a')": 0.5})       # → 0.5
+kleene_value(pa, {"P(a)": 1.0, "P('a')": 0.0})       # raises ValueError: one atom, two entries
 ```
 
 The truth constants `⊤` and `⊥` parse to the nullary atoms `$true` and `$false` (the TPTP names). They are not letters: they are `1.0` and `0.0` under every valuation and need no key.
@@ -358,7 +372,7 @@ matrix_entails([p.parse("P"), p.parse("¬P")], p.parse("Q"), K3)    # → True
 
 ### `matrix_value` — one formula under a fixed assignment
 
-`matrix_value(formula, valuation, matrix, domain=None)` is the matrix analogue of `kleene_value`: it scores one formula to a matrix value. The valuation maps each ground-atom key to a value of the matrix; `⊤` and `⊥` need no key, they take the matrix's `top` and `bottom`.
+`matrix_value(formula, valuation, matrix, domain=None)` is the matrix analogue of `kleene_value`: it scores one formula to a matrix value. The valuation maps each ground-atom key (`atom_key(atom)`, or the text of the atom as a formula, as for `kleene_value`) to a value of the matrix; `⊤` and `⊥` need no key, they take the matrix's `top` and `bottom`.
 
 ```python
 from unicode_logic_kit.semantics.matrix import matrix_value, K3_MATRIX

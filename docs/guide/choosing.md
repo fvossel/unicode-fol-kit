@@ -138,7 +138,7 @@ Px = lambda t: Atom("P", [t])
 
 lk = derive(sequent([Quantifier("∀", x, Px(x))], [Px(c)]), "∀L",
             axiom(sequent([Px(c)], [Px(c)])), extra=[c])
-check_sequent_proof(lk)   # → True   (∀L instantiates ∀x P(x) to P(c))
+check_sequent_proof(lk)   # → True   (∀L instantiates ∀x P(x) to P('c'))
 
 P = Atom("P", ())
 lj = derive(sequent([], [Implies(P, Not(Not(P)))]), "→R",

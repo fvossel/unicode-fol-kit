@@ -2,11 +2,13 @@
 
 ``∃≥n x φ`` is decided by expanding it into ``n`` witness variables. Until 0.30.0
 the witnesses avoided the VARIABLE names of ``φ`` only. A constant may be spelled
-like a variable — the grammar cannot write one, but the description-logic image
-does (an individual named ``y0``), the TPTP reader does (``p(x0)``), and so can
-any caller who builds nodes — and ``Variable("y0")`` and ``Constant("y0")`` print
-the same and are the same Z3 constant. A witness named ``y0`` therefore CAPTURED
-the constant.
+like a variable — the grammar writes one in quotes (``'y0'``), the
+description-logic image has one (an individual named ``y0``), the TPTP reader
+reads one (``p(x0)``), and so can any caller who builds nodes. ``Variable("y0")``
+and ``Constant("y0")`` are the texts ``y0`` and ``'y0'`` and two symbols to Z3
+today, but they were ONE Z3 symbol until 0.30.0, and they would be one symbol
+in a target that gives both one namespace. A witness named ``y0`` therefore
+CAPTURED the constant.
 
 Found by an independent OWL 2 oracle run against ``dl.kb_to_fol``: 11 of 4500
 generated knowledge bases with individuals named letter-plus-digits were reported

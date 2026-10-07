@@ -74,6 +74,7 @@ from ..fol.nodes import (
     Variable, Quantifier,
 )
 from ..fol._atom_keys import AtomKeys
+from ..fol._msfl_nodes import key_text
 from ..fol._truth_constants import truth_value as _truth_value
 from .deepshallow._common import AtomConsts, theory_name_ok
 from ._ho_common import ThfNames
@@ -256,7 +257,7 @@ def _encode(formula: Node, atoms: AtomConsts) -> str:
             raise NotImplementedError(
                 "to_isabelle_conditional: atom with a free variable is first-order; "
                 "the sphere embedding is propositional.")
-        return atoms.name(formula.to_unicode_str())
+        return atoms.name(key_text(formula))
     if isinstance(formula, (Quantifier, Variable)):
         raise NotImplementedError(
             "to_isabelle_conditional: quantifiers/variables are first-order; the "
@@ -507,7 +508,7 @@ def _thf_encode(formula: Node, world: str, names: ThfNames, depth: int = 0) -> s
             raise NotImplementedError(
                 "to_thf_conditional: atom with a free variable is first-order; "
                 "the sphere embedding is propositional.")
-        functor = names.functor("predicate", formula.to_unicode_str())
+        functor = names.functor("predicate", key_text(formula))
         return f"( {functor} @ {world} )"
     if isinstance(formula, (Quantifier, Variable)):
         raise NotImplementedError(
@@ -578,7 +579,7 @@ def to_thf_conditional(formula: Node, *, centering: str = "weak") -> str:
     body = _thf_encode(formula, "X", names)
     AtomKeys("to_thf_conditional", "refuse").letters([formula])
     lines = list(_THF_PRELUDE)
-    for label in sorted({atom.to_unicode_str() for atom in formula.atoms()
+    for label in sorted({key_text(atom) for atom in formula.atoms()
                          if _truth_value(atom) is None}):
         functor = names.functor("predicate", label)
         lines.append(f"thf({functor}_type, type, ( {functor} : w > $o )).")

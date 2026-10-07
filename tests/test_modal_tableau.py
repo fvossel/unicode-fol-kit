@@ -424,7 +424,9 @@ def test_equality_refusal_names_the_atom_the_route_and_where_to_go():
         is_modal_valid(Box(EQ))
     msg = str(info.value)
     assert msg.startswith("modal_tableau:")        # the module's own refusal style
-    assert "'a = b'" in msg and "'='" in msg        # the atom, by name
+    # the atom, by name: its text is 'a' = 'b' (each constant a single letter, so written in
+    # quotes), shown by repr, which uses double quotes for a text that holds single quotes
+    assert "\"'a' = 'b'\"" in msg and "'='" in msg
     assert "equality atom" in msg
     assert "propositional modal tableau" in msg     # the route that refuses
     assert "fol.qml.qml_is_valid" in msg and "rigid identity" in msg
@@ -561,7 +563,7 @@ def test_reject_equality_message_is_parameterised_by_route():
         reject_equality(EQ, "my_entry", "some other route", atom_reading="it does X",
                         instead="Go elsewhere.")
     msg = str(info.value)
-    assert msg.startswith("my_entry: the equality atom 'a = b' ('=') is refused by name")
+    assert msg.startswith("my_entry: the equality atom \"'a' = 'b'\" ('=') is refused by name")
     assert "equality is not interpreted by some other route." in msg
     assert "(it does X)" in msg and msg.endswith("Go elsewhere.")
 

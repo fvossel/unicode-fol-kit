@@ -345,7 +345,7 @@ def test_a_facet_bound_must_be_an_exact_number():
     # the ground atom, exactly as ObjectHasValue is.
     (dl.DataHasValue("HasNumber", _integer(1)), "HasNumber(x, 1)"),
     (dl.DataHasValue("HasNumber", _integer(-3)), "HasNumber(x, -3)"),
-    (dl.DataHasValue("HasName", L("abc")), 'HasName(x, "abc"^^xsd:string)'),
+    (dl.DataHasValue("HasName", L("abc")), "HasName(x, '\"abc\"^^xsd:string')"),
     # A number restriction counts the values IN the data range -- the same
     # Count node an object number restriction uses.
     (dl.DataAtLeast(2, "HasNumber", INT), "∃≥2 x0 (HasNumber(x, x0) ∧ xsd:integer(x0))"),
@@ -392,7 +392,7 @@ def test_the_corpus_record_ax04017_prints_exactly():
         'xsd:decimal xsd:minInclusive "10000"^^xsd:decimal xsd:maxInclusive '
         '"30000"^^xsd:decimal)) MediumElectricityGridVoltageLevel))')
     assert dl.abox_to_fol(abox).to_unicode_str() == (
-        "∃x0 (HasNumber(MediumElectricityGridVoltageLevel, x0) ∧ "
+        "∃x0 (HasNumber('MediumElectricityGridVoltageLevel', x0) ∧ "
         "(xsd:decimal(x0) ∧ x0 ≥ 10000 ∧ x0 ≤ 30000))")
 
 
@@ -497,7 +497,8 @@ def test_the_data_box_variables_are_the_callers():
 def test_a_data_property_domain_names_an_individual_called_like_a_bound_variable(name):
     # The data-box axioms bind x, v and w. An individual of the knowledge base
     # called x, v or w must not be captured by them (Variable("x") and
-    # Constant("x") print alike and are one constant to every backend).
+    # Constant("x") are the texts x and 'x', and two symbols to Z3, but would be
+    # one symbol to a target that gives both one namespace).
     #
     # DataPropertyDomain(D {name}) says every individual with a D-value IS `name`,
     # and D(b, 1) gives b a D-value, so OWL 2 entails b = name. A capturing image
@@ -526,15 +527,15 @@ def test_the_data_box_images_rename_a_binder_that_an_individual_would_capture():
     # first free letter+digits; one that does not clash is untouched; `w` is
     # bound only by the functional axiom, so a domain over {w} names a constant.
     assert _box_image(dl.TBox().add_data_property_domain("D", dl.Nominal("x"))) == (
-        "∀x0 ∀v (D(x0, v) → x0 = x)")
+        "∀x0 ∀v (D(x0, v) → x0 = 'x')")
     assert _box_image(dl.TBox().add_data_property_domain("D", dl.Nominal("v"))) == (
-        "∀x ∀v0 (D(x, v0) → x = v)")
+        "∀x ∀v0 (D(x, v0) → x = 'v')")
     assert _box_image(dl.TBox().add_data_property_domain("D", dl.Nominal("w"))) == (
-        "∀x ∀v (D(x, v) → x = w)")
+        "∀x ∀v (D(x, v) → x = 'w')")
     assert _box_image(dl.TBox().add_data_property_domain("D", dl.HasValue("r", "x"))) == (
-        "∀x0 ∀v (D(x0, v) → r(x0, x))")
+        "∀x0 ∀v (D(x0, v) → r(x0, 'x'))")
     assert _box_image(dl.TBox().add_data_property_domain("D", dl.Nominal("a"))) == (
-        "∀x ∀v (D(x, v) → x = a)")
+        "∀x ∀v (D(x, v) → x = 'a')")
 
 
 def test_equivalent_data_properties_are_the_inclusions_they_abbreviate():
@@ -664,12 +665,12 @@ def test_the_functional_style_readers_refuse_a_cyclic_or_repeated_definition():
 @pytest.mark.parametrize("assertion, image", [
     # DataPropertyAssertion(P a lt): the ground atom P(a, t) -- ax04014.
     (lambda a: a.assert_data("LowElectricityGridVoltageLevel", "HasNumber", _integer(400)),
-     "HasNumber(LowElectricityGridVoltageLevel, 400)"),
+     "HasNumber('LowElectricityGridVoltageLevel', 400)"),
     (lambda a: a.assert_negative_data("alice", "HasNumber", _integer(401)),
      "¬HasNumber(alice, 401)"),
     (lambda a: a.assert_data("alice", "HasNumber", _integer(-3)), "HasNumber(alice, -3)"),
     (lambda a: a.assert_data("alice", "HasLabel", L("abc")),
-     'HasLabel(alice, "abc"^^xsd:string)'),
+     "HasLabel(alice, '\"abc\"^^xsd:string')"),
 ])
 def test_a_data_assertion_image(assertion, image):
     abox = dl.ABox()
@@ -822,7 +823,7 @@ def test_literal_distinctness_is_claimed_only_where_a_lexical_form_is_one_value(
     distinct = [f for k, g, f in _side(kb) if k == "LiteralDistinctness"]
     # "1" and "1.0" are ONE term, 1 (one data value, however many spellings); the
     # two strings are two terms; nothing for the hexBinary pair.
-    assert distinct == ['"x"^^xsd:string ≠ "y"^^xsd:string']
+    assert distinct == ["'\"x\"^^xsd:string' ≠ '\"y\"^^xsd:string'"]
 
 
 def _functional_value_inconsistent(*literals) -> bool:
@@ -884,14 +885,16 @@ def test_a_token_is_the_same_value_as_the_string_of_the_collapsed_text():
 def test_the_terms_of_the_whitespace_processed_literals():
     # The string literals' term is the xsd:string term of the processed text, and
     # the typing keeps the datatype they were written with.
-    assert L("  a  b ", "xsd:token").to_term().to_unicode_str() == '"a b"^^xsd:string'
-    assert L("a\tb", "xsd:normalizedString").to_term().to_unicode_str() == '"a b"^^xsd:string'
-    assert L("a  b", "xsd:normalizedString").to_term().to_unicode_str() == '"a  b"^^xsd:string'
-    assert L(" http://a ", "xsd:anyURI").to_term().to_unicode_str() == '"http://a"^^xsd:anyURI'
-    assert L("  a ", "xsd:string").to_term().to_unicode_str() == '"  a "^^xsd:string'
+    # (the term is a constant named by the literal's OWL text, so its Unicode
+    # text is that name in single quotes)
+    assert L("  a  b ", "xsd:token").to_term().to_unicode_str() == "'\"a b\"^^xsd:string'"
+    assert L("a\tb", "xsd:normalizedString").to_term().to_unicode_str() == "'\"a b\"^^xsd:string'"
+    assert L("a  b", "xsd:normalizedString").to_term().to_unicode_str() == "'\"a  b\"^^xsd:string'"
+    assert L(" http://a ", "xsd:anyURI").to_term().to_unicode_str() == "'\"http://a\"^^xsd:anyURI'"
+    assert L("  a ", "xsd:string").to_term().to_unicode_str() == "'\"  a \"^^xsd:string'"
     kb = dl.kb_to_fol(dl.TBox(), dl.ABox().assert_data("a", "d", L(" a ", "xsd:token")))
     typing = [f.to_unicode_str() for f in kb.axioms_of_kind("LiteralTyping")]
-    assert typing == ['OwlData("a"^^xsd:string)', 'xsd:token("a"^^xsd:string)']
+    assert typing == ["OwlData('\"a\"^^xsd:string')", "xsd:token('\"a\"^^xsd:string')"]
 
 
 @pytest.mark.parametrize("datatype", ["xsd:language", "xsd:Name", "xsd:NCName", "xsd:NMTOKEN"])
@@ -1144,14 +1147,14 @@ def test_a_gci_must_be_relativised_to_the_object_domain():
     tbox = dl.TBox().add(dl.Top(), dl.Nominal("a")).add_data_property_range("D", INT)
     abox = dl.ABox().assert_data("a", "D", _integer(5))
     kb = dl.kb_to_fol(tbox, abox)
-    assert kb.formula.to_unicode_str() == "∀x (OwlThing(x) ∧ x = x → x = a) ∧ D(a, 5)"
+    assert kb.formula.to_unicode_str() == "∀x (OwlThing(x) ∧ x = x → x = 'a') ∧ D('a', 5)"
     assert _status(FNot(kb.formula), kb.axioms) == "refuted"      # it has a model
     # The same GCI NOT relativised ranges over data values too: it forces 5 = a,
     # so the data value 5 is the object a, which the separation forbids. The
     # image would be INCONSISTENT for a consistent ontology -- unsound.
     unrelativised = FAnd(dl.tbox_to_fol(tbox, concept_inclusions_only=True),
                          dl.abox_to_fol(abox))
-    assert unrelativised.to_unicode_str() == "∀x (x = x → x = a) ∧ D(a, 5)"
+    assert unrelativised.to_unicode_str() == "∀x (x = x → x = 'a') ∧ D('a', 5)"
     assert _status(FNot(unrelativised), kb.axioms) == "proved"
     # data-lattice mode keeps the GCIs as written, and says so
     assert dl.kb_to_fol(tbox, abox, separation="data-lattice").formula.to_unicode_str() == (

@@ -497,7 +497,7 @@ is_valid(fol_sub)                      # → False   (no TBox axiom asserts it)
 
 For a question *relative to a knowledge base* use `dl.kb_to_fol(tbox, abox)`: it returns the knowledge base as one formula and the role-box axioms separately, to be passed as `api.prove` premises — `kb.tbox_premises` for subsumption, `kb.premises` for instance checking, and `api.prove(Not(kb.formula), kb.axioms)` for consistency (proved means inconsistent). The bundle builds the matching goal as well — `kb.subsumption_goal(sub, sup)`, `kb.unsatisfiability_goal(concept)` and `kb.instance_goal(individual, concept)` — which for a knowledge base without a data layer is the spelling above, and for one with a data layer is the only right one (see "The data layer: two sorts" below). That is what gives `dl.concept_satisfiable` / `dl.subsumes` / `dl.abox_consistent` an independent FOL-level cross-check via `is_valid` / the model finder.
 
-**A bound variable never shares a name with an individual.** In the FOL image an individual is a constant, and a constant and a variable of the same name are the SAME symbol to the prover, so an ABox that names an individual `x` would be captured by the `∀x` the image binds around a general concept inclusion or a role-box axiom — and the knowledge base would silently say something else. The translation therefore renames its bound variables (alpha-equivalence, so the meaning of every axiom is unchanged) so that none of them is an individual of the knowledge base; the rename is one choice for a whole `kb_to_fol` call, so the formula and the axioms always agree on it:
+**A bound variable never shares a name with an individual.** In the FOL image an individual is a constant. A constant and a variable of one name are two symbols to Z3 and two texts in the Unicode syntax (`x` and `'x'`), but a writer that gives the two one namespace (the third-order THF writers `to_thf_to` and `to_thf_ho_modal`) writes them as one symbol, so an ABox that names an individual `x` would be captured there by the `∀x` the image binds around a general concept inclusion or a role-box axiom — and the knowledge base would silently say something else. The translation therefore renames its bound variables (alpha-equivalence, so the meaning of every axiom is unchanged) so that none of them is an individual of the knowledge base; the rename is one choice for a whole `kb_to_fol` call, so the formula and the axioms always agree on it:
 
 ```python
 t = dl.TBox().add_transitive_role("r")
@@ -1209,8 +1209,10 @@ import unicode_logic_kit.dl as dl
 t = dl.TBox().add(dl.Atomic("Sirup"), dl.HasValue("HasStateOfMatter", "Liquid"))
 print(dl.HasValue("HasStateOfMatter", "Liquid"))      # → ∃HasStateOfMatter.{Liquid}
 print(dl.kb_to_fol(t).tbox.to_unicode_str())
-# → ∀x (Sirup(x) → HasStateOfMatter(x, Liquid))
+# → ∀x (Sirup(x) → HasStateOfMatter(x, 'Liquid'))
 ```
+
+An individual whose name starts upper-case is written in single quotes (`'Liquid'`), since a bare upper-case word is a predicate; see "An individual of any name has a printed text" below.
 
 It is also a **nominal**: it names the individual `a` inside a concept. So the
 in-house tableau does not decide it, exactly as it does not decide a bare
@@ -1313,38 +1315,60 @@ since `a = a` holds in every model. A builder that refused could not hold an
 ontology read from a file, and the honest answer to "is this knowledge base
 consistent?" is a verdict, not a constructor exception.
 
-### An upper-case individual name is a documented limit of the PRINTED text
+### An individual of any name has a printed text
 
 The kit decides predicate-versus-term by the first character's case (see
-`fol/_identifiers.py`), so in the first-order grammar there is no spelling of a
-constant whose name starts upper-case. An OWL individual is an IRI or a label,
-where capitals are the norm — every one of the 98 `ObjectHasValue` fillers in
-the Open Energy Ontology starts with one — so the text printed for such an
-individual does not read back as the same formula:
+`fol/_identifiers.py`), so in the first-order grammar a bare word that starts
+upper-case is a predicate, and a bare single letter (with digits) is a variable.
+An OWL individual is an IRI or a label, where capitals are the norm — every one
+of the 98 `ObjectHasValue` fillers in the Open Energy Ontology starts with one.
+The printer therefore writes an individual in single quotes whenever its bare
+word would not read back as that constant (see "Quoted constants" in the
+{doc}`syntax-reference`), and the quoted name is the individual, spelled exactly
+as the ontology spells it. An upper-case individual, one spelled like a variable
+and the literal `"abc"^^xsd:string` all read back as the formula that was printed:
 
 ```python
 import unicode_logic_kit.dl as dl
 from unicode_logic_kit import api
 
-print(api.parse_any(dl.abox_to_fol(
-    dl.ABox().assert_same("Alice", "Bob")).to_unicode_str()).ok)
-# → False: `Alice = Bob` is reported as "Invalid predicate 'Alice'"
+equal = dl.abox_to_fol(dl.ABox().assert_same("Alice", "Bob"))
+print(equal.to_unicode_str())                              # → 'Alice' = 'Bob'
+print(api.parse_any(equal.to_unicode_str()).formula == equal)   # → True
 
 image = dl.concept_to_fol(dl.HasValue("HasStateOfMatter", "Liquid"))
-parsed = api.parse_any(image.to_unicode_str())
-print(parsed.ok)        # → True, but NOT the same formula: only the
-                        #   third-order dialect accepts it, reading `Liquid`
-                        #   as a PredicateTerm rather than a Constant
+print(image.to_unicode_str())                              # → HasStateOfMatter(x, 'Liquid')
+print(api.parse_any(image.to_unicode_str()).formula == image)   # → True
+
+variable_like = dl.abox_to_fol(dl.ABox().assert_concept("x1", dl.Atomic("Person")))
+print(variable_like.to_unicode_str())                      # → Person('x1')
+print(api.parse_any(variable_like.to_unicode_str()).formula == variable_like)   # → True
 ```
 
-This is written down rather than worked around. Refusing the name would turn
-103 ontology axioms into exceptions over a spelling while the AST is perfectly
-sound; renaming on print would make the printed formula stop naming the OWL
-individual, which is the same reason a caller-supplied lower-case ROLE name is
-left alone. The routes that never go through text — the tableau, and
-`api.prove` over `kb_to_fol`'s nodes rather than their printed form — are
-unaffected, and are the routes to use. A lower-case individual reads back
-cleanly, and the domain/range images contain no individual at all.
+A lower-case individual of two letters or more, such as `alice`, stays bare
+(`Person(alice)`). The routes that never go through text — the tableau, and
+`api.prove` over `kb_to_fol`'s nodes — answer the same either way.
+
+What still does not read back is a name that is not an individual, because only a
+constant has a quoted form. A role or a class is a predicate, and a predicate
+starts upper-case in this grammar, so a role spelled in lower case (`hasChild`) is
+printed as it is and the text is rejected; the name of a built-in datatype
+(`xsd:integer`) is a predicate too, and so is rejected (see "The printed text is
+not always readable" in the data-layer section below). Renaming on print would make the
+printed formula stop naming the OWL role, so the kit leaves the name alone:
+
+```python
+role = dl.concept_to_fol(dl.Exists("hasChild", dl.Atomic("Doctor")))
+print(role.to_unicode_str(), api.parse_any(role.to_unicode_str()).ok)
+# → ∃x0 (hasChild(x, x0) ∧ Doctor(x0)) False
+
+upper = dl.concept_to_fol(dl.Exists("HasChild", dl.Atomic("Doctor")))
+print(upper.to_unicode_str(), api.parse_any(upper.to_unicode_str()).ok)
+# → ∃x0 (HasChild(x, x0) ∧ Doctor(x0)) True
+```
+
+The domain and range images contain no individual at all and read back whatever
+the vocabulary.
 
 ## Which route decides what: the axiom-kind table
 
@@ -1416,8 +1440,8 @@ a_pun = dl.ABox().assert_concept("A", dl.Atomic("A"))
 goal = dl.Exists("A", dl.Atomic("B"))
 kb_pun = dl.kb_to_fol(t_pun, a_pun, query=[goal])
 print(kb_pun.formula.to_unicode_str())
-# → ∀x (A(x) → ∃x0 (A(x, x0) ∧ B(x0))) ∧ A(A)
-print(api.prove(kb_pun.instance_goal("A", goal), kb_pun.premises, backends=["z3"]).status)   # → proved  (A(A) puts the element A in the class, the inclusion gives it an A-successor in B)
+# → ∀x (A(x) → ∃x0 (A(x, x0) ∧ B(x0))) ∧ A('A')
+print(api.prove(kb_pun.instance_goal("A", goal), kb_pun.premises, backends=["z3"]).status)   # → proved  (A('A') puts the element A in the class, the inclusion gives it an A-successor in B)
 
 # P is a data property in one box and an object property in the other
 t_p = dl.TBox().add_data_property_range("P", dl.Datatype("xsd:integer"))
@@ -1460,7 +1484,7 @@ api.prove(kb.unsatisfiability_goal(clash), kb.tbox_premises, timeout=30000).stat
 * **A `refuted` is not a verdict when there is a data layer.** The image is sound — every OWL model expands to a model of it — so `proved` always transfers to OWL 2. It is not complete, so `refuted` means only that *the image* has a countermodel, and `kb.refutation_is_decisive` is `False` exactly when there is a data layer (with none, the image is faithful and `refuted` is a real "no"). Three things it does not state: a facet is an uninterpreted comparison, so with `DataPropertyRange(HasN xsd:integer[>= 10])` the assertion `HasN(a, 5)` is OWL-inconsistent and the image says `refuted` (consistent), and `HasN(a, 15)` entails `a : ∃HasN.xsd:integer[>= 3]` in OWL while the image has no fact `15 ≥ 3`; a literal is typed only by the datatype it was written with, so `d(a, "1.0"^^xsd:decimal)` entails `a : ∃d.xsd:integer` (the value 1 is an integer), `d(a, "5"^^xsd:int)` entails `a : ∃d.xsd:nonNegativeInteger` and `d(a, "-1"^^xsd:int)` entails `a : ∃d.xsd:negativeInteger`, each `refuted`; and the number of values in a value space is not stated. An `unknown` is no answer in either direction. Decide facet entailment directly with `atp.z3_arith.is_valid_arith` (timeout in milliseconds): `∀v (xsd:integer(v) ∧ v ≥ 18 → xsd:integer(v) ∧ v ≥ 0)`, built from `dl.datarange_to_fol`, is valid with `sort="int"`. Choose the sort by the base datatype: **`sort="real"` for an `xsd:decimal` base** — over `int` the arithmetic calls `xsd:decimal[> 0] ⊑ xsd:decimal[>= 1]` valid, and OWL 2 refutes it (0.5 is a decimal).
 * **Scope of facets.** `xsd:minInclusive`/`maxInclusive`/`minExclusive`/`maxExclusive` on an exact-number base are read; `xsd:length`, `xsd:pattern` and the rest are refused by name — string length and regular expressions are not first-order, and a facet that constrained nothing would be a silent weakening.
 * **Distinctness is quadratic.** Two different literals of one family (numbers, strings, `xsd:anyURI`, booleans) are different values, stated pairwise: a knowledge base with 1000 distinct integer literals carries 499,500 `LiteralDistinctness` axioms.
-* **The printed text is not always readable.** An image that names a built-in datatype (`xsd:integer(x0)`) or a non-numeric literal (`"abc"^^xsd:string`) prints text that `api.parse_any` rejects — a deliberate carve-out from "what the kit prints reads back": those names are OWL's, not the kit's to rename, and `api.prove` takes the nodes, not the text. To print an image the kit reads, rename its symbols with `sanitize_all` over the *whole* premise list, so one mapping serves every formula; `sanitize_names` applied to each formula with a fresh mapping gives `xsd:integer` and a class called `Xsdinteger` the same token:
+* **The printed text is not always readable.** An image that names a built-in datatype (`xsd:integer(x0)`) prints text that `api.parse_any` rejects, because the datatype is a predicate and a predicate has no quoted form — a deliberate carve-out from "what the kit prints reads back": that name is OWL's, not the kit's to rename, and `api.prove` takes the nodes, not the text. A non-numeric literal is a constant and has one: `"abc"^^xsd:string` prints `'"abc"^^xsd:string'` and reads back. To print an image the kit reads, rename its symbols with `sanitize_all` over the *whole* premise list, so one mapping serves every formula; `sanitize_names` applied to each formula with a fresh mapping gives `xsd:integer` and a class called `Xsdinteger` the same token:
 
 ```python
 from unicode_logic_kit.fol.sanitize import sanitize_all

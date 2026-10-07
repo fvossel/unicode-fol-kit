@@ -83,14 +83,19 @@ not a capture risk because the two calls' quantifier scopes are siblings under
 
 Bound variables never share a name with an individual
 ------------------------------------------------------
-``Variable("x")`` and ``Constant("x")`` print the same text and are the SAME
-constant to Z3, so a quantifier binding ``x`` would capture an individual
-called ``x``: the image of ``∃r.{x} ⊑ A`` printed ``∀x (r(x, x) → A(x))``, and
-``api.prove`` over it called a consistent knowledge base inconsistent, while the
-tableau (which has no variables to capture) said consistent. The same held for
-every FIXED prefix variable — the GCI's ``x``, the role axioms' ``x``/``y``/``z``,
-the data axioms' ``x``/``v``/``w`` — not only the minted ones. So EVERY bound
-variable of an image avoids EVERY individual of the knowledge base: a prefix
+``Variable("x")`` and ``Constant("x")`` are two symbols to Z3 (a variable is the
+symbol ``x!v`` and a constant is named as it is, see ``Z3Env``), and the unicode
+text tells them apart (``x`` and ``'x'``). A target that gives the two one
+namespace would not: it would write ``∀x P(x, 'x')`` with one symbol for both,
+so a quantifier binding ``x`` would capture an individual called ``x`` there.
+It captured it on Z3 as well while Z3 took the pair for one symbol: the image of
+``∃r.{x} ⊑ A`` printed ``∀x (r(x, x) → A(x))``, and ``api.prove`` over it called
+a consistent knowledge base inconsistent, while the tableau (which has no
+variables to capture) said consistent. The same held for every FIXED prefix
+variable — the GCI's ``x``, the role axioms' ``x``/``y``/``z``, the data axioms'
+``x``/``v``/``w`` — not only the minted ones. So EVERY bound
+variable of an image avoids EVERY individual of the knowledge base, whichever
+target the image is written for: a prefix
 variable that clashes is renamed (:func:`_binder_names`, to the first free
 ``letter + digits`` — exact, being alpha-equivalence), consistently across all
 the axioms of one :func:`kb_to_fol` call, and the minted ones avoid the renamed
@@ -150,39 +155,34 @@ for ``⊤`` (over a nullary placeholder constant, since there is no ``x`` in
 scope at that point) — vacuously true, matching "no axioms" / "no
 assertions" imposing no constraint.
 
-An upper-case individual name is a DOCUMENTED LIMIT of the printed text
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+An individual of any name has a printed text
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The kit decides predicate-versus-term by the first character's ``isupper()``
 (see ``fol/_identifiers.py``'s "WHY THE FIRST CHARACTER DECIDES PREDICATE VS.
-TERM"), so in the first-order grammar there is NO spelling of a
-:class:`~unicode_logic_kit.fol.nodes.Constant` whose name starts upper-case. An
-OWL individual, however, is an IRI or a label, where capitals are the norm —
-in the OEO ontology every one of the 98 ``ObjectHasValue`` fillers and all 8
-identity-axiom individuals start with one. So the text this module prints for
-such an individual does not read back as the same formula, in two different
-ways:
-
-* in EQUALITY position (``abox_to_fol`` of an ``assert_same``/
-  ``assert_distinct``, or a ``Nominal``) it does not parse at all —
-  ``Alice = Bob`` is reported as ``Invalid predicate 'Alice'``;
-* in ARGUMENT position (a role assertion, or a
-  :class:`~unicode_logic_kit.dl.concepts.HasValue` image) it DOES parse, but as
-  a DIFFERENT formula: only the third-order dialect accepts
-  ``HasStateOfMatter(x, Liquid)``, and it reads ``Liquid`` as a
-  ``PredicateTerm``, not a ``Constant``.
-
-This is written down rather than worked around, and the two alternatives were
-both rejected. Refusing the name would turn 103 OEO axioms into exceptions
-over a spelling while the AST is perfectly sound (all of their images are
-accepted by the Z3 backend). Renaming on print is wrong for the reason
-``tests/test_printed_text_reads_back.py`` already gives for a lower-case role:
-the name is the CALLER's vocabulary, not one the translation minted, and
-rewriting ``Liquid`` to ``liquid`` would make the printed formula stop naming
-the OWL individual. The ``dl`` route that never goes through text —
-``dl.abox_consistent``/``dl.instance_check`` over the tableau, and
-``api.prove`` over the ``kb_to_fol`` NODES rather than their printed form — is
-unaffected, and is the route to use. The two forms of the limit are asserted
-in ``tests/test_printed_text_reads_back.py``.
+TERM"), so in the first-order grammar no BARE word is a
+:class:`~unicode_logic_kit.fol.nodes.Constant` whose name starts upper-case, and
+none is one whose name is a variable token (``x``, ``x0``). An OWL individual,
+however, is an IRI or a label, where capitals are the norm — in the OEO
+ontology every one of the 98 ``ObjectHasValue`` fillers and all 8
+identity-axiom individuals start with one. The printer therefore writes such a
+constant in single quotes (:func:`~unicode_logic_kit.fol.constant_text`),
+and the quoted name is the constant of exactly that name: ``Person('Alice')``,
+``'Alice' = 'Bob'`` and ``HasStateOfMatter(x, 'Liquid')`` read back as the
+formulas this module built, an individual named ``x0`` prints ``'x0'`` and is no
+free variable, and an individual whose name has a bare spelling stays bare
+(``Person(alice)``). Until 0.30.0 the bare word was all there was, and the text of
+an upper-case individual did not read back as the same formula, in two different
+ways: in EQUALITY position (``abox_to_fol`` of an ``assert_same``/
+``assert_distinct``, or a ``Nominal``) it did not parse at all, and in ARGUMENT
+position (a role assertion, or a :class:`~unicode_logic_kit.dl.concepts.HasValue`
+image) it parsed in the third-order dialect, as a different formula, with the
+individual read as a ``PredicateTerm``. A role and a class are PREDICATES and
+have no quoted form, so a role spelled in lower case (``hasChild``) is still a
+name that does not read back, and so is the name of a built-in datatype
+(``xsd:integer``); the route that never goes through text — ``dl.abox_consistent``/
+``dl.instance_check`` over the tableau, and ``api.prove`` over the ``kb_to_fol``
+NODES rather than their printed form — is unaffected by either. The cases are
+asserted in ``tests/test_printed_text_reads_back.py``.
 
 Inverse roles and nominals (I, O)
 ------------------------------------
@@ -377,6 +377,7 @@ from ..fol.nodes import (
     Box, Diamond, Count,
 )
 from ..fol._identifiers import fresh_variables, fresh_variable_like, variable_pattern
+from ..fol._msfl_nodes import key_text
 from .concepts import (
     Concept, Top, Bottom, Atomic, Not, And, Or, Exists, ForAll, AtLeast, AtMost,
     InverseRole, Nominal, HasValue, DataExists, DataForAll, DataHasValue,
@@ -417,10 +418,13 @@ def _individual_names(concept) -> set:
     here — but the ``individual`` FIELD is not, and a kind missed here fails
     SILENTLY: the avoid set handed to :func:`_fresh_var_factory` would be
     incomplete, so a minted bound variable could share a name with the
-    individual and CAPTURE it (``Variable("x0")`` and ``Constant("x0")`` print
-    the same text and are the same Z3 expression). ``tests/test_dl_has_value.py``
-    has the regression for exactly that, with a HasValue individual named
-    ``"x0"``.
+    individual and CAPTURE it in a target that writes a variable and a constant
+    of one name as one symbol (``Variable("x0")`` is the unicode text ``x0`` and
+    ``Constant("x0")`` is ``'x0'``, and they are two symbols to Z3, but a target
+    with one namespace for both would read them as one: see "Bound variables
+    never share a name with an individual").
+    ``tests/test_dl_has_value.py`` has the regression for exactly that, with a
+    HasValue individual named ``"x0"``.
     """
     names = set()
     stack = [concept]
@@ -446,9 +450,10 @@ def _fresh_var_factory(base: str, avoid=()):
     the letter (and is itself excluded), because it may be an ABox individual's
     name and so no legal variable at all. ``avoid`` is the individual names the
     translation will render as constants (:func:`_individual_names`): a bound
-    variable that happened to share a name with one of them would CAPTURE it —
-    ``Variable("a0")`` and ``Constant("a0")`` print the same and are the same
-    Z3 expression — so the nominal would stop denoting its own individual.
+    variable that happened to share a name with one of them would CAPTURE it in
+    a target that writes ``Variable("a0")`` and ``Constant("a0")`` as one symbol
+    (the unicode text and Z3 keep the two apart, a target with one namespace for
+    both would not), so the nominal would stop denoting its own individual.
     """
     letter = base[:1] if re.fullmatch(variable_pattern(), base[:1] or " ") else "x"
     used = {base} | set(avoid)
@@ -482,8 +487,10 @@ def _binder_names(preferred: Sequence[str], avoid: Iterable[str]) -> Tuple[str, 
     given the individual names ``avoid`` the image renders as ``Constant``\\ s.
 
     A name that clashes with an individual is RENAMED, never refused: a bound
-    variable called ``x`` and a constant called ``x`` print the same text and are
-    the SAME Z3 constant, so ``∃r.{x} ⊑ A`` printed ``∀x (r(x, x) → A(x))`` —
+    variable called ``x`` and a constant called ``x`` are two symbols to Z3 and
+    two texts in the unicode syntax (``x`` and ``'x'``), but one symbol in a
+    target with a single namespace for both, and when Z3 took them for one,
+    ``∃r.{x} ⊑ A`` printed ``∀x (r(x, x) → A(x))`` —
     the quantifier captured the individual — and the knowledge base
     ``∃r.{x} ⊑ ⊥`` with ``r(a, a)``, ``a ≠ x`` (which only forbids an r-edge
     INTO the individual ``x``) was reported inconsistent. Renaming a bound
@@ -697,9 +704,10 @@ def concept_to_fol(concept: Concept, var: str = "x") -> Node:
             variable of the result — the caller quantifies over it — so it
             cannot be renamed behind the caller's back (every other bound
             variable of an image is renamed to avoid a clash, see
-            :func:`_binder_names`); and ``Variable("x")`` and ``Constant("x")``
-            are the same constant to Z3, so ``∃x`` over ``π(∃r.{x}, x)`` would
-            bind the individual. Pass another ``var``.
+            :func:`_binder_names`); and a target that writes ``Variable("x")``
+            and ``Constant("x")`` as one symbol (Z3 and the unicode text do
+            not) would let ``∃x`` over ``π(∃r.{x}, x)`` bind
+            the individual. Pass another ``var``.
         ~unicode_logic_kit.dl.tableau.RoleExpressionError:
             a restriction's role is an OWL 2 built-in property
             name or ``=``/``≠`` (see :func:`~unicode_logic_kit.dl.tableau.reserved_role`):
@@ -712,10 +720,12 @@ def concept_to_fol(concept: Concept, var: str = "x") -> Node:
         raise ValueError(
             f"dl.concept_to_fol: the free variable {var!r} has the same name as "
             f"an individual this concept names (a nominal or a value "
-            f"restriction), and a variable and a constant of one name are the "
-            f"same constant to every backend — the individual would be bound "
-            f"by whatever quantifies {var!r}. Pass var= another name, e.g. "
-            f"var={fresh_variable_like(var, names | {var})!r}.")
+            f"restriction). The unicode text ({var} against {var!r}) and Z3 "
+            f"keep a variable and a constant of one name apart, but a target "
+            f"that writes both as one symbol would let whatever quantifies "
+            f"{var!r} bind the individual, and the image is kept free of that "
+            f"clash for every target. Pass var= another name, "
+            f"e.g. var={fresh_variable_like(var, names | {var})!r}.")
     return _translate(concept, Variable(var), _fresh_var_factory(var, names))
 
 
@@ -753,8 +763,9 @@ def subsumption_to_fol(sub: Concept, sup: Concept, var: str = "x", *,
     ``var`` names the variable the closure binds, and it is a PREFERENCE: when
     ``sub`` or ``sup`` names an individual (a nominal, a value restriction) of
     that very name, the bound variable is renamed to the first free ``letter +
-    digits`` (``∃r.{x} ⊑ A`` prints ``∀x0 (r(x0, x) → A(x0))``, not the
-    capturing ``∀x (r(x, x) → A(x))``). The quantifier binds the variable, so
+    digits`` (``∃r.{x} ⊑ A`` prints ``∀x0 (r(x0, 'x') → A(x0))``, not the
+    ``∀x (r(x, 'x') → A(x))`` that a target with one namespace for variables
+    and constants would read as a capture). The quantifier binds the variable, so
     the rename is exact — the contrast with :func:`concept_to_fol`, whose
     ``var`` is FREE and is refused instead.
 
@@ -805,6 +816,10 @@ def _subsumption_image(sub: Concept, sup: Concept, var: str, object_sort: bool,
 # this tautology). `c = c` is valid whatever `c` denotes, so a knowledge base
 # that happens to name an individual `c_tautology` is still rendered correctly
 # — the same argument concept_to_modal's reserved `_MODAL_TRUE_ATOM` makes.
+# (A constant of any other name has a text too, since the printer quotes what
+# no bare word spells: `Constant("_")` would print `'_' = '_'`, which reads
+# back. The bare `c_tautology` keeps the text of 0.30.0 for every image that
+# holds the tautology.)
 _TAUTOLOGY_CONSTANT = Constant("c_tautology")
 
 
@@ -2213,7 +2228,11 @@ def _sort_axioms(vocabulary: _Vocabulary, separation: str) -> List[SideAxiom]:
         term = literal.to_term()
         entry = terms.setdefault(term, {"datatypes": set(), "family": _literal_family(literal)})
         entry["datatypes"].add(literal.datatype)
-    ordered = sorted(terms, key=lambda term: term.to_unicode_str())
+    # An order, not a text a reader sees: the literals are sorted by the text of
+    # 0.30.0 (every constant by its bare name), so the side axioms keep the order
+    # they had whatever the names hold (an escape in a quoted name changes how
+    # two names compare).
+    ordered = sorted(terms, key=key_text)
     for term in ordered:
         parts.append(SideAxiom("LiteralTyping", "datatype", data(term)))
         for name in sorted(terms[term]["datatypes"]):

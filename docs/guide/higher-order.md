@@ -392,7 +392,7 @@ Binders are renamed away from every user symbol and every declared or built-in I
 from unicode_logic_kit.fol.nodes import Quantifier, Variable, Constant, Atom
 
 x = Variable("x")
-shadow = Quantifier("∀", x, Atom("P", [x, Constant("x")]))    # ∀x P(x, x), the second x a constant
+shadow = Quantifier("∀", x, Atom("P", [x, Constant("x")]))    # ∀x P(x, 'x'), the second x a constant
 print(next(l for l in to_isabelle_so(shadow).splitlines() if l.startswith("lemma")))
 # → lemma "(\<forall>x_2::i. (p x_2 x))"
 ```

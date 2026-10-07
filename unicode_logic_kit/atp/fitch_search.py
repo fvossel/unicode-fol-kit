@@ -34,6 +34,7 @@ from typing import Dict, List, Optional, Tuple
 from ..fol.nodes import (
     Node, Atom, Not, And, Or, Implies, Iff, Quantifier, Variable, Constant, Function,
 )
+from ..fol._msfl_nodes import key_text
 from ..fol._truth_constants import is_true_constant
 from .fitch import (
     Proof, Subproof, Line, premise, assume, line, flag,
@@ -101,7 +102,9 @@ class _Search:
         if not terms:
             terms.add(Constant("a"))          # a witness/instantiation term must exist
         self.used_names = names
-        self.base_terms = sorted(terms, key=lambda t: t.to_unicode_str())
+        # ordered by the bare names of the constants, so that the quotes of a quoted constant
+        # play no part in which term is tried first
+        self.base_terms = sorted(terms, key=key_text)
         self._eigen = [0]
 
     def fresh_var(self) -> Variable:

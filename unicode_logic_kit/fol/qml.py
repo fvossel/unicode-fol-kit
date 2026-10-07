@@ -214,7 +214,7 @@ from ._hybrid_nodes import Down
 from ._fol_nodes import constant_name_to_ascii
 from ._free_parameters import free_parameter_names
 from ._identifiers import fresh_variables
-from ._msfl_nodes import nonempty_sort_axioms, sort_membership_axioms
+from ._msfl_nodes import key_text, nonempty_sort_axioms, sort_membership_axioms
 from ._truth_constants import truth_value
 from .frames import (
     FRAME_CONDITIONS, FRAMES as _SHARED_FRAMES, UnsupportedFrameCondition,
@@ -1249,7 +1249,8 @@ def _signature_typing_facts(formula: Node) -> List[Node]:
     consts, funcs = {}, {}
     for n in formula.walk():
         if isinstance(n, (_C, _N)):
-            consts[n.to_unicode_str()] = n
+            # keyed (and so ordered) by the bare name, as ever: the key is not shown anywhere
+            consts[key_text(n)] = n
         elif isinstance(n, _F):
             funcs[(n.name, len(n.args))] = n
     facts: List[Node] = [Atom(_OBJECT, (t,))
@@ -1521,7 +1522,10 @@ def _thf_name(name: str) -> str:
     functors can never start with a digit, and unlike the predicate/constant/function
     case this class had no digit guard before, since a THF functor name in this exporter
     is always built from a Constant/Function/Atom name, and only Constant names (via the
-    kit's NAME terminal) can be digit-leading in the first place.
+    kit's NAME terminal) can be digit-leading in the first place. A leading underscore
+    gets the same ``p``: the constant ``'_sk0'``, the constant ``'-3'`` and the function
+    ``+`` would otherwise be written ``_sk0``, ``_3`` and ``_``, none of which is a lower
+    word (nor, upper-cased for a variable, an upper word).
 
     Use :class:`_ThfNames` to get a per-formula *unique* functor — ``_thf_name`` alone
     can map distinct symbols (``Ab`` / ``ab``, or ``theta`` / the Greek ``θ``) to the
@@ -1533,7 +1537,7 @@ def _thf_name(name: str) -> str:
                    for c in constant_name_to_ascii(name))
     if not safe:
         return "p"
-    if safe[0].isdigit():
+    if safe[0].isdigit() or safe[0] == "_":
         safe = "p" + safe
     return safe[:1].lower() + safe[1:]
 

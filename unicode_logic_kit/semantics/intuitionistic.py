@@ -94,7 +94,8 @@ from ..fol.nodes import (
     Constant, Variable, Function, substitute,
 )
 from ..fol._so_nodes import SecondOrderQuantifier
-from ..fol._msfl_nodes import sort_axioms
+from ..fol._atom_keys import find_key
+from ..fol._msfl_nodes import key_text, sort_axioms
 from ..fol._free_parameters import parameterize
 from ..fol._numeral_symbols import numerals_as_constants, numeral_name
 from ..fol._truth_constants import truth_value as _truth_value
@@ -170,7 +171,8 @@ def _prepare_many_sorted(formula: Node) -> Node:
 
 
 #: Identity is not one of the atoms this search can read. A world's valuation is
-#: a set of atom KEYS (``atom.to_unicode_str()``), monotone along the order, so
+#: a set of atom KEYS (the text of the atom with every constant written by its name),
+#: monotone along the order, so
 #: ``a = b`` would be an unconstrained letter: ``int_valid(a = a)`` came back False
 #: and ``int_countermodel(a = a)`` handed back a one-world model as if it refuted
 #: reflexivity (both measured on 0.28.1). The Gödel–McKinsey–Tarski embedding
@@ -227,8 +229,11 @@ class IntKripkeModel:
 
     ``upset[w]`` is the set of worlds accessible from ``w`` (its up-set in the partial
     order, reflexive and transitive — including ``w`` itself). ``valuation[key]`` is the
-    up-closed set of worlds forcing the atom ``key`` (its surface form). Build directly,
-    or let :func:`int_countermodel` produce one.
+    up-closed set of worlds forcing the atom ``key`` (its text with every constant written by
+    its name, ``P(a)`` for the atom ``P`` of the constant ``a``; the text of the atom as a
+    formula, ``P('a')``, is read as the same key, and a table that holds both spellings with
+    different sets of worlds is refused). Build directly, or let :func:`int_countermodel`
+    produce one, keyed by the names.
     """
 
     upset: Dict[int, FrozenSet[int]]
@@ -262,7 +267,12 @@ class IntKripkeModel:
             constant = _truth_value(formula)
             if constant is not None:
                 return constant     # `$true` is forced at every world, `$false` at none
-            return world in self.valuation.get(formula.to_unicode_str(), frozenset())
+            # The key first, then the formula text: the elements of the domain are substituted
+            # as constants (``Constant("a")`` is ``'a'`` in the text of a formula), the
+            # valuation of a model is keyed ``P(a)``, and a caller who keyed it by the text of
+            # a hand-built atom, ``P('a')``, is read the same.
+            found = find_key(self.valuation, formula)
+            return found is not None and world in self.valuation[found]
         if isinstance(formula, And):
             return self.forces(world, formula.left) and self.forces(world, formula.right)
         if isinstance(formula, Or):
@@ -286,7 +296,7 @@ class IntKripkeModel:
 
 
 def _atom_keys(formula: Node) -> List[str]:
-    """Distinct atom surface-forms (propositional variables) in ``formula``.
+    """Distinct atom keys (propositional variables) in ``formula``.
 
     A letter is named by the text its atom prints as, so two different atoms that print
     alike (the numeral ``1`` and a constant named ``1``, a free variable ``x`` and a constant
@@ -442,7 +452,7 @@ def _fo_countermodel(formula: Node, max_worlds: int, domain_elements: int,
                 ground, seen = [], set()
                 for name, ar in preds:
                     for tup in product(pool, repeat=ar):
-                        key = Atom(name, [Constant(t) for t in tup]).to_unicode_str()
+                        key = key_text(Atom(name, [Constant(t) for t in tup]))
                         if key not in seen:
                             seen.add(key)
                             allowed = frozenset(w for w in upset if set(tup) <= domains[w])

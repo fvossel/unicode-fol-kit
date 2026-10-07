@@ -194,7 +194,9 @@ def to_kit_names(formula: Node) -> Node:
     Apply before handing a structure-side formula to a route that expects the
     kit's own capitalised naming convention. The unicode renderer
     (:meth:`~unicode_logic_kit.fol.nodes.Node.to_unicode_str`) is always a safe
-    destination — it renders whatever name is on the node verbatim.
+    destination — it renders the name on the node as it is: a predicate or
+    function by its own name, and a constant by its own name too, in single quotes
+    when the bare word would not read back as that constant (``'1,2-diacyl'``).
 
     A route that re-renders the result to TPTP TEXT (e.g. for a prover
     backend) is a DIFFERENT case and is safe only if that renderer restores

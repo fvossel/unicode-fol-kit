@@ -149,7 +149,8 @@ from ..fol.nodes import (
     Next, Always, Eventually, Until,
     Historically, Once, Previous, Since,
 )
-from ..fol._atom_keys import AtomKeys, atom_key
+from ..fol._atom_keys import AtomKeys, find_key
+from ..fol._msfl_nodes import key_text
 from ..fol._truth_constants import truth_value
 from ..semantics._modal_reject import reject_equality_in
 from .lj import _forget_constant_sorts
@@ -184,8 +185,11 @@ class LTLTrace:
     ``prefix + cycle*`` is the infinite word: positions ``0 .. len(prefix)-1``
     are the (possibly empty) finite lead-in, then ``cycle`` repeats forever.
     Each position's valuation is a frozenset of ground-atom keys
-    (``Atom.to_unicode_str()``, the same convention
+    (``atom_key(atom)``, the same convention
     :class:`~unicode_logic_kit.semantics.kripke.KripkeModel` uses) true there.
+    A trace the kit returns is keyed that way; ``ltl_trace_satisfies`` also reads
+    one that a caller keyed by the text of the atom as a formula
+    (``atom.to_unicode_str()``).
 
     ``witness_position`` is the 0-based index (into the infinite word, so it
     may fall inside ``cycle``) at which the formula this trace witnesses was
@@ -674,7 +678,7 @@ def _cycle_visiting_all(entry: int, scc: set, edges,
 
 def _valuation(atom: FrozenSet[Node]) -> FrozenSet[str]:
     """Ground-atom keys true at ``atom`` (mirrors modal_tableau's ``_build_model``)."""
-    return frozenset(a.to_unicode_str() for a in atom
+    return frozenset(key_text(a) for a in atom
                      if isinstance(a, Atom) and truth_value(a) is None)
 
 
@@ -856,7 +860,7 @@ def _trace_satisfies(formula: Node, trace: LTLTrace,
             v = not ev(node.formula, i)
         elif isinstance(node, Atom):
             constant = truth_value(node)
-            v = constant if constant is not None else atom_key(node) in trace.at(i)
+            v = constant if constant is not None else find_key(trace.at(i), node) is not None
         elif isinstance(node, And):
             v = ev(node.left, i) and ev(node.right, i)
         elif isinstance(node, Or):

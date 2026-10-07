@@ -15,6 +15,7 @@ worlds — sound and complete for **B**. ``\<leftrightarrow>`` desugars to ``(A 
 from typing import Optional
 
 from unicode_logic_kit.fol.nodes import Node, Atom, Not, And, Or, Implies, Iff, Variable
+from unicode_logic_kit.fol._msfl_nodes import key_text
 from unicode_logic_kit.fol._truth_constants import refuse_truth_constants
 from ._common import AtomConsts, wrap_theory, formula_section, NO_CONSTANT_WHY
 
@@ -170,7 +171,7 @@ def rel_to_deep(formula: Node, atoms: AtomConsts) -> str:
             raise NotImplementedError(
                 "rel_to_deep: atom with a free variable is first-order; the deep "
                 "embedding is propositional.")
-        return f"(Atm {atoms.name(formula.to_unicode_str())})"
+        return f"(Atm {atoms.name(key_text(formula))})"
     if isinstance(formula, Not):
         return f"(NegD {rel_to_deep(formula.formula, atoms)})"
     if isinstance(formula, Iff):

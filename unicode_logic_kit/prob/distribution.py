@@ -113,6 +113,7 @@ from ..fol.nodes import (
     Node, Atom, Not, And, Or, Implies, Quantifier, Variable, Constant, substitute,
 )
 from ..fol._atom_keys import AtomKeys
+from ..fol._msfl_nodes import key_text
 from ..fol._truth_constants import truth_value
 from ._bdd import BDDManager, weighted_model_count, FALSE as _BDD_FALSE, TRUE as _BDD_TRUE
 
@@ -428,14 +429,16 @@ def _expand_goal(node: Node, constants: Tuple[str, ...]) -> Node:
 
 
 def _goal_atom_keys(node: Node, out: Set[str]) -> None:
-    """Collect the surface-form keys of every Atom leaf in a (already-expanded) goal.
+    """Collect the keys of every Atom leaf in a (already-expanded) goal.
 
+    A key is the text of the atom with every constant written by its name (the same
+    text for the facts, the rules and the goal, whatever the constants are called).
     A truth constant is not an atom of the program and has no key: it is true or
     false in every total choice, so it depends on no probabilistic fact.
     """
     if isinstance(node, Atom):
         if truth_value(node) is None:
-            out.add(node.to_unicode_str())
+            out.add(key_text(node))
         return
     if isinstance(node, Not):
         _goal_atom_keys(node.formula, out)
@@ -457,7 +460,7 @@ def _eval_goal(node: Node, known_true: Set[str]) -> bool:
         constant = truth_value(node)
         if constant is not None:
             return constant
-        return node.to_unicode_str() in known_true
+        return key_text(node) in known_true
     if isinstance(node, Not):
         return not _eval_goal(node.formula, known_true)
     if isinstance(node, And):
@@ -472,14 +475,14 @@ def _goal_bdd(node: Node, atom_bdd: Dict[str, int], manager: BDDManager) -> int:
 
     Same ∧/∨/¬ recursive structure, same default-``False`` (here: the BDD
     ``FALSE`` terminal) treatment of an atom key absent from ``atom_bdd`` —
-    mirroring ``node.to_unicode_str() in known_true`` being ``False`` when the
+    mirroring ``key_text(node) in known_true`` being ``False`` when the
     key was never derived. A truth constant is the BDD terminal of its value.
     """
     if isinstance(node, Atom):
         constant = truth_value(node)
         if constant is not None:
             return _BDD_TRUE if constant else _BDD_FALSE
-        return atom_bdd.get(node.to_unicode_str(), _BDD_FALSE)
+        return atom_bdd.get(key_text(node), _BDD_FALSE)
     if isinstance(node, Not):
         return manager.NOT(_goal_bdd(node.formula, atom_bdd, manager))
     if isinstance(node, And):
@@ -504,8 +507,8 @@ def _dependency_cone(goal_keys: Set[str],
     """
     predecessors: Dict[str, Set[str]] = {}
     for body_atoms, head in grounded_rules:
-        hk = head.to_unicode_str()
-        predecessors.setdefault(hk, set()).update(a.to_unicode_str() for a in body_atoms)
+        hk = key_text(head)
+        predecessors.setdefault(hk, set()).update(key_text(a) for a in body_atoms)
 
     seen = set(goal_keys)
     frontier = list(goal_keys)
@@ -526,10 +529,10 @@ def _least_model(seed_keys: Set[str],
     while changed:
         changed = False
         for body_atoms, head in grounded_rules:
-            hk = head.to_unicode_str()
+            hk = key_text(head)
             if hk in known:
                 continue
-            if all(a.to_unicode_str() in known for a in body_atoms):
+            if all(key_text(a) in known for a in body_atoms):
                 known.add(hk)
                 changed = True
     return known
@@ -552,19 +555,19 @@ def _least_model_bdd(always_true: Set[str], relevant: Sequence["ProbFact"],
     """
     known: Dict[str, int] = {key: _BDD_TRUE for key in always_true}
     for i, fact in enumerate(relevant):
-        key = fact.atom.to_unicode_str()
+        key = key_text(fact.atom)
         known[key] = manager.OR(known.get(key, _BDD_FALSE), manager.variable(i))
 
     changed = True
     while changed:
         changed = False
         for body_atoms, head in grounded_rules:
-            hk = head.to_unicode_str()
+            hk = key_text(head)
             if known.get(hk) == _BDD_TRUE:
                 continue  # already the constant-true function; cannot improve further
             body_bdd = _BDD_TRUE
             for a in body_atoms:
-                body_bdd = manager.AND(body_bdd, known.get(a.to_unicode_str(), _BDD_FALSE))
+                body_bdd = manager.AND(body_bdd, known.get(key_text(a), _BDD_FALSE))
                 if body_bdd == _BDD_FALSE:
                     break
             new_value = manager.OR(known.get(hk, _BDD_FALSE), body_bdd)
@@ -630,7 +633,7 @@ def query(program: ProbProgram, goal: Node, *, max_choice_facts: int = 16,
 
     rule_seeds, grounded_rules = _ground_definite_clauses(program.rules, "rule", constants)
     hard_seeds, hard_grounded = _ground_definite_clauses(program.hard_facts, "hard fact", constants)
-    always_true = {a.to_unicode_str() for a in rule_seeds + hard_seeds}
+    always_true = {key_text(a) for a in rule_seeds + hard_seeds}
     all_grounded_rules = grounded_rules + hard_grounded
 
     # An atom is named by the text it prints as: two different ground atoms that print alike
@@ -643,7 +646,7 @@ def query(program: ProbProgram, goal: Node, *, max_choice_facts: int = 16,
         goal_keys: Set[str] = set()
         _goal_atom_keys(ground_goal, goal_keys)
         cone = _dependency_cone(goal_keys, all_grounded_rules)
-        relevant = [f for f in program.facts if f.atom.to_unicode_str() in cone]
+        relevant = [f for f in program.facts if key_text(f.atom) in cone]
     else:
         relevant = list(program.facts)
 
@@ -665,7 +668,7 @@ def query(program: ProbProgram, goal: Node, *, max_choice_facts: int = 16,
             for fact, is_chosen in zip(relevant, combo):
                 weight *= fact.prob if is_chosen else (Fraction(1) - fact.prob)
                 if is_chosen:
-                    chosen_keys.add(fact.atom.to_unicode_str())
+                    chosen_keys.add(key_text(fact.atom))
             if weight == 0:
                 continue
             known_true = _least_model(chosen_keys, all_grounded_rules)

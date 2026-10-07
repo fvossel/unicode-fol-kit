@@ -562,9 +562,10 @@ def test_a_non_binary_identity_atom_in_an_axiom_is_refused_though_the_goal_is_fi
 
 _PROPERTY_IDENTITY = [
     pytest.param(Atom("=", [_G, _H]), "equality", "G = H", id="two-predicate-names"),
-    pytest.param(Atom("=", [_A, _G]), "equality", "a = G", id="individual-and-predicate"),
+    # the constant a is a single letter, so the text of the atom writes it in quotes
+    pytest.param(Atom("=", [_A, _G]), "equality", "'a' = G", id="individual-and-predicate"),
     pytest.param(Atom("=", [_IS_G, _IS_G]), "equality", "λx. G(x)", id="two-lambdas"),
-    pytest.param(Atom("≠", [_A, _IS_G]), "disequality", "a ≠ λx. G(x)",
+    pytest.param(Atom("≠", [_A, _IS_G]), "disequality", "'a' ≠ λx. G(x)",
                  id="disequality-names-the-atom-as-written"),
     pytest.param(Box(Atom("=", [_G, _H])), "equality", "G = H", id="under-a-box"),
     pytest.param(Atom("Pos", [Lambda(LambdaVar("x"), Atom("=", [_G, _H]))]),

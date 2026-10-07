@@ -96,14 +96,24 @@ same-span multi-terminal ambiguity by priority, and CONSTANT was already
 declared at priority 3 against NAME's 2 (``CONSTANT.3`` / ``NAME.2`` in the
 grammar, both unchanged by this module), so ``c_alpha`` still lexes as
 CONSTANT. The node is ``Constant("c_alpha")`` on either path: the ``const_``
-transform keeps the mark as part of the name, so no text reads as a
-``Constant`` whose name is a variable token (``Constant("k2")`` can only be
-built by hand, and it prints the bare ``k2``, which reads back as a
-variable) — but the two terminals now genuinely overlap where
-they never used to, so that priority ordering has gone from "never
-exercised" to "load-bearing", and is exercised by an explicit regression
-test (see ``tests/test_identifier_widening.py``) rather than left to be an
-accident of how NAME happened to be spelled.
+transform keeps the mark as part of the name. No BARE text reads as a
+``Constant`` whose name is a variable token (``k2`` is a variable); such a
+constant is written in quotes, ``'k2'`` (see the QUOTED_NAME section below).
+The two terminals now genuinely overlap where they never used to, so that
+priority ordering has gone from "never exercised" to "load-bearing", and is
+exercised by an explicit regression test (see
+``tests/test_identifier_widening.py``) rather than left to be an accident of
+how NAME happened to be spelled.
+
+The lexer takes the FIRST terminal that matches, by priority, not the longest
+one, so CONSTANT has to match whole words only. Its ``c_`` form ends in a
+negative lookahead for a character that continues a NAME (a letter, digit,
+underscore or combining mark): ``c_new_york`` is then declined by CONSTANT and
+read whole as a NAME, where before CONSTANT cut it at ``c_new`` and the
+remaining ``_york`` could not be read (nine dialects refused the word; only the
+modal dialect's Earley fallback, which weighs every terminal, read it). The
+lookahead names the whole continuation class and not just the underscore,
+because the engine would otherwise back off to ``c_ne`` and match that.
 
 WHY THE GENERATED PATTERNS ARE SMALL: LOOKAHEAD, NOT A SECOND EXPLICIT LIST
 -----------------------------------------------------------------------------
@@ -224,6 +234,34 @@ alternatives above), codepoint for codepoint. A second test class checks
 codepoints ABOVE ``_MAX_CODEPOINT`` are rejected, since the exhaustive scan
 by construction cannot exercise the CEILING lookahead itself.
 
+WHY A CONSTANT MAY BE QUOTED, AND WHEN ITS NAME IS BARE
+-----------------------------------------------------------
+The shape of a bare word decides what it is: ``k2`` is a variable, ``Alice``
+(third-order dialect) a predicate term, ``1`` a number, ``G-910`` no term at
+all. So a constant with such a name had no text, and ``Constant("k2")``
+printed as ``k2``, which reads back as another node. QUOTED_NAME is the way to
+write any constant: ``'k2'``, ``'Alice'``, ``'G-910'``, ``'John Doe'``. Between
+the quotes stand one or more characters, each either an ordinary character
+(anything but a quote, a backslash, a control character, U+0085, U+2028,
+U+2029 or a surrogate) or one of the two escapes ``\\'`` and ``\\\\``. No other
+escape exists, and the empty name has no quoted form. The terminal begins with
+a character no other terminal can begin with, so it competes with none of them
+and needs no priority. It is accepted exactly where a constant stands as a
+term: bare in the unsorted dialects, and only as ``'k2':Mountain`` in the
+sorted ones (which have no bare constant either). Names of functions,
+predicates, variables, sorts, the subscript of a modal operator (``K_a``) and
+nominals have no quoted form.
+
+:func:`is_bare_constant` says when the bare text of a name reads back as that
+very constant, and it follows the LEXER, not "some dialect happens to accept
+it": the text has to be one whole CONSTANT token or one whole NAME token (with
+CONSTANT's whole-word rule above, this is a full match of either pattern).
+:func:`constant_text` is the text that reads back as ``Constant(name)``: the
+bare name when it can stand bare, else the name in quotes, with ``'`` written
+``\\'`` and ``\\`` written ``\\\\``. A name that cannot be written at all (not a
+string, empty, or holding a character the quoted form excludes) is refused by
+name rather than printed as text that reads as something else.
+
 WHAT THIS MODULE DOES NOT TOUCH
 -----------------------------------
 NUMBER (``[0-9]+(\\.[0-9]+)?``), FORALL, EXISTS, and LAMBDA stay exactly as
@@ -244,11 +282,16 @@ same alphabet outside the grammar (``fol/dialect_repair.py``'s legality
 check, and tests) by splicing them inside its own ``[...]``. They are
 unaffected by the LOOKAHEAD section above: same computation, same returned
 text, before and after. :func:`predicate_pattern`, :func:`name_pattern`,
-:func:`constant_pattern`, :func:`variable_pattern`, and :func:`sort_pattern`
+:func:`constant_pattern`, :func:`variable_pattern`, :func:`sort_pattern` and
+:func:`quoted_name_pattern`
 return the full terminal regex (again without a Lark terminal name or
 priority — just the pattern text between the ``/.../``) for each widened
 terminal, now built from the small internal lookahead atoms rather than
-repeated copies of the class bodies. :func:`terminal_block` renders the
+repeated copies of the class bodies. :func:`is_variable_name`,
+:func:`is_bare_constant` and :func:`constant_text` are the questions the
+terminal shapes answer about one name (is it a variable; does its bare text
+read back as that constant; what text reads back as it) and are exported from
+the package. :func:`terminal_block` renders the
 complete, ready-to-splice Lark terminal declarations (name, priority, and
 pattern together) that ``_fol_nodes.build_grammar`` inserts into every
 mode's grammar text. :data:`HUMAN_READABLE_PATTERNS` maps each widened
@@ -274,8 +317,9 @@ from typing import Callable, NamedTuple, Optional
 __all__ = [
     "uppercase_class", "lowercase_class", "combining_class",
     "predicate_pattern", "name_pattern", "constant_pattern",
-    "variable_pattern", "sort_pattern",
+    "variable_pattern", "sort_pattern", "quoted_name_pattern",
     "terminal_block", "HUMAN_READABLE_PATTERNS",
+    "is_variable_name", "is_bare_constant", "constant_text",
     "fresh_variables", "fresh_variable_like", "fresh_like", "variable_names",
     "symbol_names",
 ]
@@ -307,18 +351,141 @@ __all__ = [
 _ASCII_VARIABLE = re.compile(r"[a-z][0-9]*")
 
 
+#: ASCII core of a BARE constant: the strings of ASCII characters that the CONSTANT
+#: terminal (its ``c_`` form) or the NAME terminal accepts as one whole token. Written
+#: out by hand so that the common case never pays the one-off scan of the Unicode
+#: tables; ``tests/test_identifiers_equivalence.py`` pins it against the generated patterns.
+#:
+#: * ``[a-z][0-9_]*[a-zA-Z][a-zA-Z0-9_]*`` -- NAME led by a letter: the first letter
+#:   (lower case), then, up to the SECOND letter, only digits and underscores, then the
+#:   rest. That is "at least two letters" without a backtracking run.
+#: * ``[0-9]+[a-zA-Z][a-zA-Z0-9_]*`` -- NAME led by digits.
+#: * ``c_[a-zA-Z0-9]+`` -- the ``c_`` form of CONSTANT (its tail has no underscore).
+_ASCII_BARE_CONSTANT = re.compile(
+    r"[a-z][0-9_]*[a-zA-Z][a-zA-Z0-9_]*"
+    r"|[0-9]+[a-zA-Z][a-zA-Z0-9_]*"
+    r"|c_[a-zA-Z0-9]+")
+
+#: The characters a constant's name cannot hold in ANY spelling, bare or quoted: the
+#: control characters (a line break would end the statement of the text that holds the
+#: formula), DEL, NEL, the two Unicode line and paragraph separators, and surrogates
+#: (which no text encoding can carry). The body of a character class, shared by the
+#: QUOTED_NAME terminal and by the printer's refusal, so the two cannot drift apart.
+_UNSPELLABLE_CLASS = r"\x00-\x1f\x7f\x85\u2028\u2029\ud800-\udfff"
+_UNSPELLABLE = re.compile(f"[{_UNSPELLABLE_CLASS}]")
+
+#: A backslash in front of a quote or of a backslash: the only two escapes a quoted
+#: name has. ``_CHARACTER_TO_ESCAPE`` finds the characters that need one.
+_ESCAPED_CHARACTER = re.compile(r"\\(['\\])")
+_CHARACTER_TO_ESCAPE = re.compile(r"(['\\])")
+
+
 @lru_cache(maxsize=None)
 def _compiled(which: str):
     """The compiled terminal pattern called ``which`` (cached per process)."""
     builder = {"variable": variable_pattern, "name": name_pattern,
-               "predicate": predicate_pattern}[which]
+               "predicate": predicate_pattern, "constant": constant_pattern}[which]
     return re.compile(builder())
 
 
-def _is_variable(text: str) -> bool:
-    """Whether the VARIABLE terminal accepts ``text`` as one whole token."""
+def is_variable_name(text) -> bool:
+    """Whether the VARIABLE terminal accepts ``text`` as one whole token.
+
+    One term-valued letter followed by ASCII digits and nothing else: ``x``,
+    ``y12``, ``é``, ``北``. So ``x`` as a term is always the variable, and a
+    constant of that name has to be written in quotes (``'x'``). ``text`` that is
+    not a string is no variable name.
+    """
+    if not isinstance(text, str):
+        return False
     return bool(_ASCII_VARIABLE.fullmatch(text)) or bool(
         _compiled("variable").fullmatch(text))
+
+
+#: How many names the two decisions below remember. The printer asks about every constant
+#: of every formula it writes, and the constants of one problem are few and recur, so the
+#: answer is looked up and not worked out again. A name is a string, so it is its own key.
+_MEMORY = 8192
+
+
+@lru_cache(maxsize=_MEMORY)
+def _is_bare_constant(name: str) -> bool:
+    """:func:`is_bare_constant` for a string (no type check)."""
+    if name.isascii():
+        return _ASCII_BARE_CONSTANT.fullmatch(name) is not None
+    return (_compiled("constant").fullmatch(name) is not None
+            or _compiled("name").fullmatch(name) is not None)
+
+
+def is_bare_constant(name) -> bool:
+    """Whether the bare text ``name`` reads back as ``Constant(name)`` as a term.
+
+    "Reads back" is what the LEXER does: it takes the first terminal that
+    matches, by priority, not the longest, so the text has to be ONE whole
+    CONSTANT token or ONE whole NAME token. CONSTANT matches whole words only (a
+    ``c_`` word that continues, ``c_new_york``, is not CONSTANT's but NAME's), so
+    this is a full match of either pattern. Hence ``socrates``, ``c_k2``,
+    ``c_new_york``, ``θ``, ``2008SummerOlympics`` and ``świątek`` are bare, and
+    ``a`` and ``k2`` (variables), ``Alice`` (a predicate), ``1`` and ``-3``
+    (numbers), ``G-910``, ``C++``, ``a b``, ``_sk0``, ``λ`` and ``x_1`` are not.
+
+    A name that is not a string, or is empty, is not bare.
+    """
+    return isinstance(name, str) and _is_bare_constant(name)
+
+
+def constant_text(name) -> str:
+    """The text that reads back as ``Constant(name)`` in term position.
+
+    The bare ``name`` when :func:`is_bare_constant` holds, else the name in single
+    quotes, with a quote written ``\\'`` and a backslash written ``\\\\``:
+    ``socrates`` stays ``socrates``, ``k2`` becomes ``'k2'``, ``it's`` becomes
+    ``'it\\'s'``. A sorted constant takes the same text of its name
+    (``socrates:Human``, ``'k2':Mountain``).
+
+    Raises:
+        TypeError: ``name`` is not a string.
+        ValueError: ``name`` is empty, or holds a control character (U+0000 to
+            U+001F, U+007F), U+0085, U+2028, U+2029 or a surrogate, which no
+            spelling can carry.
+    """
+    if not isinstance(name, str):
+        raise TypeError(
+            f"constant_text: the name of a constant must be a string, got "
+            f"{name!r} (a {type(name).__name__}). A constant without a string name "
+            f"has no text; give it one.")
+    return _constant_text(name)
+
+
+@lru_cache(maxsize=_MEMORY)
+def _constant_text(name: str) -> str:
+    """:func:`constant_text` for a string (no type check). An exception is not remembered."""
+    if _is_bare_constant(name):
+        return name
+    if not name:
+        raise ValueError(
+            f"constant_text: the constant {name!r} has an empty name, so it has no text: "
+            f"no bare word is empty, and two quotes in a row are no constant. Give it a "
+            f"name of at least one character.")
+    excluded = _UNSPELLABLE.search(name)
+    if excluded is not None:
+        raise ValueError(
+            f"constant_text: the constant named {name!r} has no text: it holds "
+            f"{excluded.group()!r} (U+{ord(excluded.group()):04X}), a character that "
+            f"neither the bare nor the quoted form can carry (control characters, "
+            f"U+007F, U+0085, U+2028, U+2029 and surrogates are excluded). Rename "
+            f"the constant, or drop that character from its name.")
+    return "'" + _CHARACTER_TO_ESCAPE.sub(r"\\\1", name) + "'"
+
+
+def _unquote_constant(token_text: str) -> str:
+    """The name that a QUOTED_NAME token spells: the inverse of :func:`constant_text`.
+
+    ``token_text`` is the whole token, quotes included. Inside, a backslash always
+    stands in front of a quote or a backslash (the terminal admits no other escape),
+    so one left-to-right pass undoes the escapes.
+    """
+    return _ESCAPED_CHARACTER.sub(r"\1", token_text[1:-1])
 
 
 def variable_names(*nodes) -> frozenset:
@@ -409,7 +576,7 @@ def fresh_variables(count: int, *, letter: str = "x", avoid=()) -> tuple:
     Raises:
         ValueError: ``letter`` is not a single character the terminal accepts.
     """
-    if not _is_variable(letter):
+    if not is_variable_name(letter):
         raise ValueError(
             f"fresh_variables: {letter!r} is not a legal variable name on its "
             f"own, so {letter!r} + digits is not one either")
@@ -436,7 +603,7 @@ def _variable_letter(base: str) -> str:
     """
     first = base[:1]
     for candidate in (first, first.lower()):
-        if candidate and _is_variable(candidate):
+        if candidate and is_variable_name(candidate):
             return candidate
     return "x"
 
@@ -472,7 +639,7 @@ def fresh_like(base: str, avoid=()) -> str:
     the kit's parser) is renamed to a legal variable.
     """
     avoid = set(avoid)
-    if not _is_variable(base) and (_compiled("name").fullmatch(base)
+    if not is_variable_name(base) and (_compiled("name").fullmatch(base)
                                    or _compiled("predicate").fullmatch(base)):
         index = 0
         while True:
@@ -817,12 +984,23 @@ def variable_pattern() -> str:
 
 
 def constant_pattern() -> str:
-    """CONSTANT: the ``c_`` form (now accepting Unicode letters/digits/
-    combining marks after the literal ``c_``, e.g. ``c_świątek``) or the
-    pre-existing plain lowercase Greek run — untouched, since Greek is
-    excluded from every generated class (see the module docstring)."""
+    """CONSTANT: the ``c_`` form (accepting Unicode letters/digits/combining
+    marks after the literal ``c_``, e.g. ``c_świątek``) or the plain lowercase
+    Greek run — untouched, since Greek is excluded from every generated class
+    (see the module docstring).
+
+    The ``c_`` form matches WHOLE WORDS only: it may not be followed by a
+    character that continues a NAME (a letter, digit, underscore or combining
+    mark). The lexer takes the first terminal that matches, not the longest, and
+    CONSTANT has the higher priority, so without the lookahead ``c_new_york``
+    was cut at ``c_new`` and the rest (``_york``) could not be read. With it,
+    CONSTANT declines the word and NAME reads all of it. The lookahead has to
+    name the whole continuation class and not just the underscore: a bare
+    ``(?!_)`` lets the engine back off to ``c_ne`` and match that instead.
+    """
     cont = _continuation_atom(underscore=False)
-    c_form = f"c_{cont}+"
+    word_end = f"(?!{_continuation_atom(underscore=True)})"
+    c_form = f"c_{cont}+{word_end}"
     greek_form = "[αβγδεζηθικνξοπρστυφχψω]+"
     return f"(?:{c_form})|(?:{greek_form})"
 
@@ -836,12 +1014,31 @@ def sort_pattern() -> str:
     return f":[{uppercase_class()}]{cont}*"
 
 
+def quoted_name_pattern() -> str:
+    """QUOTED_NAME: a constant written in single quotes.
+
+    A quote, then one or more of: any character that is not a quote, a backslash
+    or one of the characters no spelling can carry (control characters, DEL,
+    U+0085, U+2028, U+2029, surrogates: see :data:`_UNSPELLABLE_CLASS`), or the
+    escape ``\\'`` (a quote) or ``\\\\`` (a backslash); then the closing quote. No
+    other escape exists and the empty ``''`` is not a name.
+
+    The class is written with escapes (``\\x00``, ``\\u2028``) and not with the
+    characters themselves: a literal line break inside a Lark ``/.../`` terminal
+    is a grammar error, and a bare U+2028 in the pattern text would be invisible.
+    No other terminal begins with a quote, so this one has no priority to win
+    and none to lose.
+    """
+    return f"'(?:[^'\\\\{_UNSPELLABLE_CLASS}]|\\\\['\\\\])+'"
+
+
 def terminal_block(*, include_sort: bool) -> str:
     """The complete Lark terminal declarations for PREDICATE, CONSTANT, NAME,
-    VARIABLE, and — when ``include_sort`` is true (the many-sorted modes) —
-    SORT, in the priorities the grammar has always used (``CONSTANT.3`` over
-    ``NAME.2`` over ``VARIABLE.1``; PREDICATE and SORT are unambiguous with
-    everything else so carry no explicit priority). ``include_sort`` is a
+    VARIABLE, QUOTED_NAME, and — when ``include_sort`` is true (the many-sorted
+    modes) — SORT, in the priorities the grammar has always used
+    (``CONSTANT.3`` over ``NAME.2`` over ``VARIABLE.1``; PREDICATE, QUOTED_NAME
+    and SORT are unambiguous with everything else so carry no explicit
+    priority). ``include_sort`` is a
     parameter rather than always-on because SORT never appears in a
     classical/modal/second-order grammar's rules, and declaring an unused
     terminal there is needless generated text for no behavioural gain."""
@@ -853,6 +1050,8 @@ def terminal_block(*, include_sort: bool) -> str:
         f"NAME.2: /{name_pattern()}/",
         "",
         f"VARIABLE.1: /{variable_pattern()}/",
+        "",
+        f"QUOTED_NAME: /{quoted_name_pattern()}/",
     ]
     if include_sort:
         lines += ["", f"SORT: /{sort_pattern()}/"]
@@ -876,6 +1075,10 @@ HUMAN_READABLE_PATTERNS = {
     "CONSTANT": (
         "'c_' followed by letters, digits, or combining marks, or one or "
         "more lowercase Greek letters (α-ω)"
+    ),
+    "QUOTED_NAME": (
+        "a single quote, then the name, then a single quote; inside, a "
+        "quote is written \\' and a backslash \\\\"
     ),
     "VARIABLE": (
         "a single lowercase or caseless letter, optionally followed by "

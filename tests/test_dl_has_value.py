@@ -143,10 +143,10 @@ def test_the_image_is_the_ground_atom():
     # existential (y occurs only in the conjunction) gives P(x, a).
     assert dl.concept_to_fol(
         dl.HasValue("HasStateOfMatter", "Liquid")).to_unicode_str() == \
-        "HasStateOfMatter(x, Liquid)"
+        "HasStateOfMatter(x, 'Liquid')"
     assert dl.concept_to_fol(
         dl.Not(dl.HasValue("HasStateOfMatter", "Liquid"))).to_unicode_str() == \
-        "¬HasStateOfMatter(x, Liquid)"
+        "¬HasStateOfMatter(x, 'Liquid')"
 
 
 def test_the_image_of_the_oeo_subsumption_axiom():
@@ -156,7 +156,7 @@ def test_the_image_of_the_oeo_subsumption_axiom():
     assert dl.subsumption_to_fol(
         dl.Atomic("Sirup"),
         dl.HasValue("HasStateOfMatter", "Liquid")).to_unicode_str() == \
-        "∀x (Sirup(x) → HasStateOfMatter(x, Liquid))"
+        "∀x (Sirup(x) → HasStateOfMatter(x, 'Liquid'))"
 
 
 def test_the_image_of_the_oeo_nested_axiom():
@@ -171,7 +171,7 @@ def test_the_image_of_the_oeo_nested_axiom():
                                  dl.HasValue("HasNormalStateOfMatter", "Gaseous")))
     ).to_unicode_str() == (
         "∀x (GasFiredPowerUnit(x) → ∃x0 (Uses(x, x0) ∧ "
-        "(Fuel(x0) ∧ HasNormalStateOfMatter(x0, Gaseous))))")
+        "(Fuel(x0) ∧ HasNormalStateOfMatter(x0, 'Gaseous'))))")
 
 
 def test_the_image_of_the_oeo_equivalence_axiom():
@@ -182,22 +182,23 @@ def test_the_image_of_the_oeo_equivalence_axiom():
         dl.Atomic("LiquidAir"),
         dl.And(dl.Atomic("Air"), dl.HasValue("HasStateOfMatter", "Liquid")))
     assert dl.tbox_to_fol(tbox).to_unicode_str() == (
-        "∀x (LiquidAir(x) → Air(x) ∧ HasStateOfMatter(x, Liquid)) ∧ "
-        "∀x (Air(x) ∧ HasStateOfMatter(x, Liquid) → LiquidAir(x))")
+        "∀x (LiquidAir(x) → Air(x) ∧ HasStateOfMatter(x, 'Liquid')) ∧ "
+        "∀x (Air(x) ∧ HasStateOfMatter(x, 'Liquid') → LiquidAir(x))")
 
 
 def test_the_individual_cannot_be_captured_by_a_minted_variable():
     # THE regression for _individual_names. That function collects the names
     # the translation will render as CONSTANTS, and _fresh_var_factory avoids
-    # them -- because Variable("x0") and Constant("x0") print the same text and
-    # are the same Z3 expression, so a minted x0 would CAPTURE the individual
+    # them -- because a target that gives Variable("x0") and Constant("x0") one
+    # namespace (the Unicode text writes them x0 and 'x0', and Z3 keeps a
+    # variable a symbol of its own) would let a minted x0 CAPTURE the individual,
     # and it would stop denoting itself. _individual_names walks dataclass
     # FIELDS generically, so a concept kind missing from its explicit check is
     # a SILENT miss: it is the one isinstance chain in the package that does
     # not end in a raise.
     image = dl.concept_to_fol(dl.And(dl.HasValue("r", "x0"),
                                      dl.Exists("s", dl.Atomic("A"))))
-    assert image.to_unicode_str() == "r(x, x0) ∧ ∃x1 (s(x, x1) ∧ A(x1))"
+    assert image.to_unicode_str() == "r(x, 'x0') ∧ ∃x1 (s(x, x1) ∧ A(x1))"
     assert "x0" in {t.name for t in image.walk() if type(t).__name__ == "Constant"}
 
 
@@ -206,7 +207,7 @@ def test_an_inverse_role_swaps_the_atoms_arguments():
     # swaps the atom's argument order and nothing else. The FOL route renders
     # it; the tableau refuses it (see the refusal tests below).
     assert dl.concept_to_fol(
-        dl.HasValue(dl.InverseRole("r"), "a")).to_unicode_str() == "r(a, x)"
+        dl.HasValue(dl.InverseRole("r"), "a")).to_unicode_str() == "r('a', x)"
 
 
 def test_the_image_is_equivalent_to_the_rewrite_it_replaces():
@@ -448,7 +449,7 @@ def test_an_inverse_role_valued_value_restriction_is_refused_as_i_too():
     assert "InverseRole" in message and "HasValue" in message
     # ... while the FOL route renders it, which is why the message points there
     assert dl.concept_to_fol(
-        dl.HasValue(dl.InverseRole("r"), "a")).to_unicode_str() == "r(a, x)"
+        dl.HasValue(dl.InverseRole("r"), "a")).to_unicode_str() == "r('a', x)"
 
 
 # --------------------------------------------------------------------------- #
@@ -586,15 +587,15 @@ def test_a_value_fillers_individual_is_in_the_formula_but_not_in_individuals():
 
     This is also why ``tests/test_owl_corpus.py`` scopes its read-back scan
     on the image's own constants rather than on ``kb.individuals``: that field
-    is empty for a value restriction, so a guard reading it would hand the
-    read-back check a CamelCase name the documented vocabulary limit covers.
+    is empty for a value restriction, so a guard reading it would not see the
+    individual the image names.
     """
     from unicode_logic_kit.dl.tableau import _abox_individual_names
 
     tbox = dl.TBox().add(C, dl.HasValue("r", "a"))
     abox = dl.ABox().assert_concept("b", C)
     kb = dl.kb_to_fol(tbox, abox)
-    assert kb.formula.to_unicode_str() == "∀x (C(x) → r(x, a)) ∧ C(b)"
+    assert kb.formula.to_unicode_str() == "∀x (C(x) → r(x, 'a')) ∧ C('b')"
     assert kb.individuals == ("b",)
     assert sorted(_abox_individual_names(abox)) == ["b"]
     assert sorted({node.name for node in kb.formula.walk()
@@ -716,7 +717,7 @@ def test_the_construct_itself_is_untouched_by_the_refusal():
     tbox = dl.TBox().add(C, dl.Not(D))
     assert dl.concept_satisfiable(dl.And(C, D), tbox) is False
     assert dl.HasValue("r", "a") == dl.HasValue("r", "a")
-    assert dl.concept_to_fol(HV).to_unicode_str() == "r(x, a)"
+    assert dl.concept_to_fol(HV).to_unicode_str() == "r(x, 'a')"
 
 
 # --------------------------------------------------------------------------- #

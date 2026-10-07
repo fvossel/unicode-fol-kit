@@ -9,9 +9,9 @@ over every distribution in that polytope — a linear program, decided here
 EXACTLY (rational arithmetic throughout, never a float) via :mod:`z3`'s
 ``Optimize`` over ``Real`` variables fed rational literals.
 
-**Semantics, precisely.** Collect every distinct atom (by surface form —
-:meth:`~unicode_logic_kit.fol.nodes.Node.to_unicode_str`, the kit-wide
-convention for "what counts as one propositional variable"; see
+**Semantics, precisely.** Collect every distinct atom (by key — the text of the
+atom with every constant written by its name, the kit-wide convention for "what
+counts as one propositional variable"; see
 :mod:`unicode_logic_kit.semantics.truthtable`) occurring in the constraints and
 the conclusion; a quantified formula is refused (see below). The two truth
 constants (``⊤`` / ``$true`` and ``⊥`` / ``$false``) are not atoms: every
@@ -191,7 +191,7 @@ _UNSUPPORTED = (
 
 
 def _collect_atoms(formula: Node, atoms: set, keys: Optional[AtomKeys] = None) -> None:
-    """Add every distinct atom (by ``to_unicode_str()``) in ``formula`` to ``atoms``.
+    """Add the key of every distinct atom in ``formula`` to ``atoms``.
 
     The two truth constants (``⊤`` / ``$true``, ``⊥`` / ``$false``) are not
     atoms: a distribution gives the true constant probability 1 and the false
@@ -223,7 +223,7 @@ def _collect_atoms(formula: Node, atoms: set, keys: Optional[AtomKeys] = None) -
 def _eval(formula: Node, valuation: dict) -> bool:
     """Evaluate ``formula`` (¬ ∧ ∨ → ↔ ⊕ over Atom leaves) under ``valuation``.
 
-    ``valuation`` maps each atom's ``to_unicode_str()`` to a bool; a truth
+    ``valuation`` maps each atom's key to a bool; a truth
     constant is read as the truth value it is and is never looked up. Raises
     ``ValueError`` on an unsupported node type (defensive: :func:`_collect_atoms`
     already rejects these upstream of every call site in this module).
@@ -253,7 +253,7 @@ def _to_z3_bool(formula: Node, atom_vars: dict):
 
     The exact structural mirror of :func:`_eval`, one recursive case for
     one recursive case, with ``atom_vars`` (mapping each atom's
-    ``to_unicode_str()`` to its own :func:`z3.Bool` variable) standing in
+    key to its own :func:`z3.Bool` variable) standing in
     for the Python ``valuation`` dict — so a world is no longer a fixed
     Python bool assignment to evaluate against, but a Z3 model Z3 itself
     gets to choose, which is exactly what :mod:`unicode_logic_kit.prob._column_gen`'s pricing

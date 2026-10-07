@@ -124,6 +124,7 @@ Public API: :class:`ResolutionStep`, :class:`ResolutionDerivation`,
 from dataclasses import dataclass
 from typing import Dict, FrozenSet, Optional, Tuple
 
+from ..fol._msfl_nodes import key_text
 from ..fol.nodes import Node, Atom, Not, Variable, Constant, Number, Function
 
 
@@ -581,11 +582,13 @@ def _lit_atom_polarity(literal: Node) -> Optional[Tuple[Atom, bool]]:
 
 
 def _lit_key(literal: Node) -> str:
-    """Canonical sort key for a literal (its surface form): search order over a
+    """Canonical sort key for a literal (its surface form with every constant written by its
+    bare name, ``key_text``): search order over a
     clause's literals must be a function of CONTENT, not of frozenset iteration
     order (hash-randomised across processes), so the checker's behaviour and
-    :func:`render_resolution_proof`'s output are reproducible run to run."""
-    return literal.to_unicode_str()
+    :func:`render_resolution_proof`'s output are reproducible run to run. The quotes that the
+    text of a formula puts around a constant play no part in the order."""
+    return key_text(literal)
 
 
 # ---------------------------------------------------------------------------
@@ -616,8 +619,8 @@ def _term_weight(term: Node) -> int:
 
 def _term_order_key(term: Node):
     """Term order, part 2 — ties in weight broken lexicographically by the
-    term's ``to_unicode_str()`` rendering."""
-    return (_term_weight(term), term.to_unicode_str())
+    term's rendering with every constant written by its bare name (``key_text``)."""
+    return (_term_weight(term), key_text(term))
 
 
 def _term_gt(s: Node, t: Node) -> bool:

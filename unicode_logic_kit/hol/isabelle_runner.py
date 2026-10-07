@@ -519,7 +519,10 @@ def _find_alethic_countermodel(formula: Node, frame: str,
 
     conds = _FRAME_CONDS[frame]
     from unicode_logic_kit.fol._truth_constants import truth_value
-    keys = sorted({n.to_unicode_str() for n in formula.walk()
+    from unicode_logic_kit.fol._msfl_nodes import key_text
+    # the valuation keys are the ones satisfies_modal looks up, and the ones the readable
+    # counter-model shows: every constant by its bare name, as ever
+    keys = sorted({key_text(n) for n in formula.walk()
                    if isinstance(n, Atom) and truth_value(n) is None})
     for n in range(1, max_worlds + 1):
         worlds = list(range(n))

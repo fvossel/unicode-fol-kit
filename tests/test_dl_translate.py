@@ -190,16 +190,17 @@ def test_abox_to_fol_with_nested_restriction_translates_correctly():
 
 
 def test_a_nominal_named_like_a_minted_variable_is_not_captured():
-    # A Nominal becomes a Constant, and Variable("x0") and Constant("x0") print
-    # the same and are the SAME Z3 expression, so a bound variable that reused
-    # the name would capture the nominal: the concept would stop saying "related
-    # to the individual x0" and start saying "related to something".
+    # A Nominal becomes a Constant. Variable("x0") and Constant("x0") are the
+    # texts x0 and 'x0', and two symbols to Z3, but would be one symbol to a
+    # target that gives both one namespace, so a bound variable that reused the
+    # name would capture the nominal there: the concept would stop saying
+    # "related to the individual x0" and start saying "related to something".
     concept = dl.Exists("r", dl.And(dl.Nominal("x0"), A))
     got = dl.concept_to_fol(concept, "x")
     assert got.variable == Variable("x1")
     assert "x0" in {t.name for t in got.formula.walk() if isinstance(t, Constant)}
     # the nominal still says WHICH individual
-    assert got.to_unicode_str() == "∃x1 (r(x, x1) ∧ (x1 = x0 ∧ A(x1)))"
+    assert got.to_unicode_str() == "∃x1 (r(x, x1) ∧ (x1 = 'x0' ∧ A(x1)))"
 
 
 # --------------------------------------------------------------------------- #

@@ -44,7 +44,8 @@ import pytest
 
 import unicode_logic_kit.dl as dl
 from unicode_logic_kit import api
-from unicode_logic_kit.fol import Constant
+from unicode_logic_kit.atp import generate_tptp_problem_with_mapping
+from unicode_logic_kit.fol import Constant, is_bare_constant
 from unicode_logic_kit.fol.sanitize import sanitize_names
 from unicode_logic_kit.atp.tstp_check import _formula_alpha_equal
 
@@ -214,16 +215,15 @@ def test_the_needs_census_accounts_for_every_refusal():
         f"{sorted(set(labels) - set(_REFUSAL_CEILINGS))}")
 
 
-def _names_an_upper_case_individual(node) -> bool:
-    """Does ``node`` carry a constant that would re-read as a predicate?
+def _names_a_quoted_individual(node) -> bool:
+    """Does ``node`` carry a constant that its text writes in quotes?
 
-    The kit decides predicate from term by the first character's case, so a
-    constant the ontology spells ``Gaseous`` prints as itself and comes back
-    as a predicate — the documented limit of the read-back property, in
-    ``tests/test_printed_text_reads_back.py``. A lower-case constant round
-    trips, so it is NOT excluded here.
+    In OEO every individual is CamelCase, and a bare ``Gaseous`` would read as a
+    predicate, so the text writes the constant ``'Gaseous'``. The scan counts
+    these images to show that the quoted form is exercised at the scale of the
+    corpus; a lower-case individual is written bare and is not counted.
     """
-    return any(isinstance(sub, Constant) and sub.name[:1].isupper()
+    return any(isinstance(sub, Constant) and not is_bare_constant(sub.name)
                for sub in node.walk())
 
 
@@ -239,31 +239,25 @@ def _names_a_prefixed_datatype(node) -> bool:
 
 @real_corpus
 def test_no_printed_image_of_the_corpus_is_unreadable():
-    """Everything the kit prints must read back — the 0.30.0 property, at the
-    scale of a real ontology.
+    """Everything the kit prints must read back, at the scale of a real
+    ontology.
 
-    Scoped to the axioms whose own VOCABULARY is readable. An individual or a
-    role name the ontology supplies is the caller's, not a name the translation
-    minted: an upper-case individual prints as itself and re-reads as a
-    predicate term, and in OEO every individual is CamelCase. That is the
-    documented limit of the property (see
-    ``tests/test_printed_text_reads_back.py``), and the route for such a
-    vocabulary is the one that never goes through text — ``kb_to_fol``'s nodes
-    reach ``api.prove`` and ``to_z3`` as ASTs. So the assertion here is about
-    the axioms that name NO upper-case individual, where a failure would be
-    the translation's own fault.
+    An individual the ontology supplies is the caller's name, not one the
+    translation minted, and in OEO every individual is CamelCase. Until 0.30.0
+    such a constant printed as itself and re-read as a predicate term, so the
+    axioms that name one were left out of this scan (711 of them). A constant
+    whose bare name would read as something else is written in quotes now
+    (``'Gaseous'``), so those axioms are in the scan like every other, and the
+    count of images with a quoted individual is asserted to be large: a scan
+    that met none would not be testing the quoted form.
 
-    The scope is read off the IMAGE's own constants, not off
-    ``kb.individuals``: that field is the ABox scan and is documented as such,
-    and since 0.30.0 a caller's individual also reaches the TBox half — the
-    ``ObjectHasValue(r a)`` image is ``∀x (C(x) → r(x, a))`` and the
-    ``ObjectOneOf(a)`` one ``∀x (C(x) → x = a)``, each with
-    ``kb.individuals == ()``. Asking the nodes which constants they carry
-    covers those and every later construct that puts a name in term position,
-    and it keeps a LOWER-case individual in scope, because that one does read
-    back and a failure there would be real.
+    The constants are read off the IMAGE, not off ``kb.individuals``: that
+    field is the ABox scan and is documented as such, and a caller's
+    individual also reaches the TBox half — the ``ObjectHasValue(r a)`` image
+    is ``∀x (C(x) → r(x, 'a'))`` and the ``ObjectOneOf(a)`` one
+    ``∀x (C(x) → x = 'a')``, each with ``kb.individuals == ()``.
     """
-    checked, unreadable, with_individuals = 0, [], 0
+    checked, unreadable, quoted_individuals = 0, [], 0
     datatype_named, unrepaired = 0, []
     for record in _records():
         try:
@@ -271,12 +265,9 @@ def test_no_printed_image_of_the_corpus_is_unreadable():
         except dl.OwlFunctionalSyntaxError:
             continue
         kb = dl.kb_to_fol(tbox, abox)
-        if any(_names_an_upper_case_individual(node)
-               for node in (kb.formula, *kb.axioms)):
-            with_individuals += 1
-            continue
         for node in (kb.formula, *kb.axioms):
             checked += 1
+            quoted_individuals += _names_a_quoted_individual(node)
             parsed = api.parse_any(node.to_unicode_str())
             if parsed.ok and _formula_alpha_equal(node, parsed.formula):
                 continue
@@ -293,12 +284,14 @@ def test_no_printed_image_of_the_corpus_is_unreadable():
                     unrepaired.append((record.get("id"), node.to_unicode_str()[:120]))
                 continue
             unreadable.append((record.get("id"), node.to_unicode_str()[:120]))
-    print(f"\nprinted images checked: {checked}; axioms skipped for an "
-          f"upper-case individual in term position (the documented "
-          f"vocabulary limit): {with_individuals}; images naming a built-in "
+    print(f"\nprinted images checked: {checked}; images with an individual "
+          f"written in quotes: {quoted_individuals}; images naming a built-in "
           f"datatype (the data layer's documented limit, repaired by "
           f"sanitize_names): {datatype_named}")
     assert checked > 2000, f"only {checked} images checked; the scan is broken"
+    assert quoted_individuals > 500, (
+        f"only {quoted_individuals} images hold an individual written in quotes: "
+        f"the quoted form is not being exercised")
     assert datatype_named > 0, (
         "no image names a built-in datatype: the data layer is not being exercised")
     assert not unreadable, (
@@ -337,7 +330,17 @@ def test_the_whole_accepted_fragment_is_one_usable_knowledge_base():
     print(f"the knowledge base prints in {len(text)} characters; "
           f"{len(kb.side_axioms)} side axioms")
     assert len(text) > 100000
-    for export in (kb.formula.to_tptp, kb.formula.to_z3, kb.formula.to_dict):
+    for export in (kb.formula.to_z3, kb.formula.to_dict):
         export()
+    # TPTP: the data layer names a built-in datatype by its OWL name, and
+    # ``xsd:decimal`` is no TPTP word, so the bare writer refuses it by name
+    # (since 0.30.0 it writes no text a prover cannot read). The problem writer
+    # that returns its name map is the route for a vocabulary like this one, and
+    # it has to carry a formula of this size as well.
+    with pytest.raises(NotImplementedError, match="is not a TPTP word"):
+        kb.formula.to_tptp()
+    problem, names = generate_tptp_problem_with_mapping([kb.formula])
+    assert problem.count("fof(") >= 1 and len(problem) > 100000
+    assert "xsd:" not in problem
     assert isinstance(hash(kb.formula), int)
     assert len(kb.premises) == 1 + len(kb.axioms)

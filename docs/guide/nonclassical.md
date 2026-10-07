@@ -457,7 +457,7 @@ A **hybrid-logic nominal** under an announcement is refused for the same reason,
 
 The material conditional gets counterfactuals wrong. `A □→ B` ("if A were the case, B would be") is evaluated over Lewis's system of spheres: each world carries a nested sequence of world-sets ordered innermost (closest) first, and `A □→ B` holds iff, in the smallest sphere that contains an `A`-world, every `A`-world is a `B`-world (vacuously true if no sphere holds an `A`-world). The "might" counterfactual `A ◇→ B` is the dual `¬(A □→ ¬B)`.
 
-A `CounterfactualModel` takes the worlds, a `valuation` mapping each world to the set of atom keys (`atom.to_unicode_str()`) true there, and `spheres` mapping each world to its nested list of frozensets. A world omitted from `spheres` defaults to the single sphere `{w}`.
+A `CounterfactualModel` takes the worlds, a `valuation` mapping each world to the set of atom keys (`atom_key(atom)`: the text of the atom with every constant written by its bare name, `"P(a)"`; the text of the atom as a formula, `atom.to_unicode_str()`, is read as the same key) true there, and `spheres` mapping each world to its nested list of frozensets. A world omitted from `spheres` defaults to the single sphere `{w}`.
 
 ```python
 from unicode_logic_kit.fol.nodes import Atom, Not, And

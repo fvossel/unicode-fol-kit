@@ -297,8 +297,10 @@ free_variables(p.parse("R(x, y) ∧ ∃y Q(y)"))
 # → {Variable(name='x'), Variable(name='y')}   (the leftmost y is free; the ∃-bound y is not)
 
 substitute(p.parse("P(x)"), Variable("x"), Constant("a")).to_unicode_str()
-# → 'P(a)'
+# → "P('a')"
 ```
+
+The constant `a` prints in single quotes because a bare `a` would read back as a variable (see "Quoted constants" in the {doc}`syntax-reference`).
 
 Substitution is **capture-avoiding**: replacing into a formula whose binder would capture the incoming variable renames the binder first. The new name is one letter and digits (`x0`, `x1`, …), which is the shape the kit's own parser reads back, and it is the first one that is none of: a free variable of what is substituted in, the variable being replaced, the old binder, or a name of any kind (variable, constant, function, predicate, sort) that the binder's scope or the replacement carries. A lambda parameter keeps its kind: `y` becomes `y0`, a name `foo` becomes `foo_0`, a predicate `P` becomes `P_0`. A binder is renamed whenever its name meets a free variable of what is substituted in, also when one is a lambda parameter and the other a logical variable: the text has one name for both, so `beta_reduce` of `(λx. λy. R(x, y))(y)` is `λy0. R(y, y0)`, which reads back as itself, and not `λy. R(y, y)`.
 
@@ -674,7 +676,7 @@ end_of_list.
 
 # SMT-LIB2 text (parsed via Z3's own parser)
 [a.to_unicode_str() for a in parse_smtlib("(declare-fun x () Int) (assert (< x (+ x 1)))")]
-# → ['x < x + 1']
+# → ["'x' < 'x' + 1"]   (a free Z3 symbol is a constant, and a bare x would be a variable)
 ```
 
 - **TPTP** — `parse_tptp_formula(s)` reads one FOF/CNF formula; `parse_tptp(text)` reads a whole problem into a list of `TptpFormula(name, role, formula)` records; `load_tptp(path)` reads a `.p`/`.tptp` file. `%` and `/* */` comments are ignored. TPTP lowercases predicates, so a predicate is capitalised on import (`man` → `Man`); **single-quoted atoms** (`'http___example_org_Thing'`, the form OWL→FOL dumps use for IRIs) are read with the quotes stripped and `\'` / `\\` unescaped; `$true`/`$false` import as the nullary atoms `Atom('$true')` / `Atom('$false')`, which are TPTP's own propositions and no symbol of yours: the TPTP writers and `to_tptp()` write them back verbatim, `to_z3()` reads them as true and false (so z3 and a TPTP prover answer the same question), and `to_prover9()` writes `$T` / `$F`; `tff` formulas of the monomorphic dialect (TF0) and `include` directives (`parse_tptp` resolves them against `base_dir=`) are read too, and `parse_tff_problem` also reads the type declarations (see {doc}`interoperability`), while `thf`, TF1 polymorphism and TPTP's arithmetic sorts (`$int`, `$rat`, `$real`) are refused by name.
@@ -686,8 +688,8 @@ The TPTP and Prover9 readers map the comparison and arithmetic operators back to
 ```python
 parse_tptp_formula("X = Y").to_unicode_str()         # → 'x = y'
 parse_tptp_formula("X != Y").to_unicode_str()        # → 'x ≠ y'
-parse_tptp_formula("$less(x, y)").to_unicode_str()   # → 'x < y'
-parse_tptp_formula("p($sum(x, y))").to_unicode_str() # → 'P(x + y)'
+parse_tptp_formula("$less(x, y)").to_unicode_str()   # → "'x' < 'y'"   (lower-case TPTP words are constants)
+parse_tptp_formula("p($sum(x, y))").to_unicode_str() # → "P('x' + 'y')"
 
 parse_prover9("all X (X >= 0 -> p(X)).").to_unicode_str()
 # → '∀x (x ≥ 0 → p(x))'
@@ -730,10 +732,13 @@ parse_tptp_formula(classical.to_tptp()).to_unicode_str()
 An external problem file can carry symbol names that the AST accepts but the
 `MSFLParser` *lexer* does not — IRIs with underscores and mixed case (an OWL→FOL TPTP
 dump renders `'http___example_org_Thing'` as the predicate `Http___example_org_Thing`),
-single-letter or digit-bearing constants, and so on. Rendering such a node then yields a
-string that does not re-parse. `sanitize_names(node)` (and `sanitize_all(nodes)` for a
-whole problem) rewrites every symbol to a legal token so the render round-trips, leaving
-already-legal names untouched and returning a `NameMapping` that recovers the originals:
+and so on. Rendering such a node then yields a string that does not re-parse. A constant is
+the exception: a single-letter, digit-bearing or upper-case constant prints in single quotes
+(`'a'`, `'x1'`), which reads back as the constant it was, and a quoted constant is the way
+to keep a name as it is in the Unicode syntax. `sanitize_names(node)` (and
+`sanitize_all(nodes)` for a whole problem) is the other way, and it renames: it rewrites
+every symbol to a legal token so the render round-trips, leaving already-legal names
+untouched and returning a `NameMapping` that recovers the originals:
 
 ```python
 from unicode_logic_kit import MSFLParser, parse_tptp, sanitize_names
@@ -756,7 +761,8 @@ legal bare name or take the `c_…` form, and variables keep `[a-z][0-9]*` or ma
 `v0`/`v1`/….
 
 Each symbol class is rewritten to its own legal shape. A single-letter constant takes the
-explicit `c_…` form (so it does not collapse to a variable on re-parse), and a function
+explicit `c_…` form, a bare word that is no variable (the printer's own spelling of that
+constant, `'a'`, keeps the name but is a quoted constant, not a bare word), and a function
 that is too short to be a `NAME` is padded:
 
 ```python

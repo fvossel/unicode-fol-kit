@@ -3,18 +3,23 @@
 An imported formula (e.g. from a TPTP file produced by an OWL→FOL translation) can
 carry symbol names that the toolkit's AST accepts but the ``MSFLParser`` *lexer* does
 not — IRIs with underscores and mixed case (``'http___example_org_Thing'`` →
-``Http___example_org_Thing``), single-letter or digit-leading constants, and so on.
-Rendering such a node with :meth:`Node.to_unicode_str` then produces a string that does
-**not** re-parse.
+``Http___example_org_Thing``), a predicate that starts lower-case, a variable with an
+underscore, and so on. Rendering such a node with :meth:`Node.to_unicode_str` then
+produces a string that does **not** re-parse. A CONSTANT is the exception: the Unicode
+syntax writes a constant of any name in single quotes when its bare word would read as
+something else (``'x1'``, ``'Alice'``, ``'G-910'``), so the text of a constant keeps the
+name as it is, and a quoted constant is the way to keep a name in the Unicode syntax.
 
-:func:`sanitize_names` rewrites every symbol name to a token that re-parses to its
-intended class, so ``parse(sanitized.to_unicode_str()) == sanitized``:
+:func:`sanitize_names` is the other way, and it still renames: it gives every symbol
+name a token that re-parses to its intended class, so
+``parse(sanitized.to_unicode_str()) == sanitized``, and the names are bare words of
+the plain shapes the ASCII targets take, with a mapping back to the originals:
 
 - **predicates** → ``[A-Z][a-zA-Z0-9]*`` (uppercase-initial, alphanumeric);
 - **functions** → a multi-letter lowercase ``NAME``;
 - **constants** → kept verbatim if already a legal bare ``NAME``, else the explicit
   ``c_…`` constant form (so a single-letter or digit-bearing constant such as ``a`` /
-  ``x1`` does not collapse to a variable on re-parse);
+  ``x1`` is a bare word that is no variable);
 - **variables** → kept if already ``[a-z][0-9]*``, else mapped to ``v0`` / ``v1`` / …
 
 Already-legal names pass through unchanged, so a clean classical formula is untouched.

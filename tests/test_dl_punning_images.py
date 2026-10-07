@@ -91,7 +91,7 @@ def test_the_image_of_a_name_used_as_class_property_and_individual_is_three_symb
     predicates, constants = _symbols(kb.formula)
     assert predicates == {("A", 1), ("A", 2), ("B", 1)}
     assert constants == {"A"}
-    assert kb.formula.to_unicode_str() == "∀x (A(x) → ∃x0 (A(x, x0) ∧ B(x0))) ∧ A(A)"
+    assert kb.formula.to_unicode_str() == "∀x (A(x) → ∃x0 (A(x, x0) ∧ B(x0))) ∧ A('A')"
 
 
 def test_the_box_by_box_images_are_the_images_of_the_whole():

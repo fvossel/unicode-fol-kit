@@ -47,6 +47,7 @@ from typing import Dict, List, Optional, Tuple
 
 from ..fol._atom_keys import AtomKeys
 from ..fol._identifiers import symbol_names
+from ..fol._msfl_nodes import key_text
 from ..fol.nodes import (
     Node, Atom, Not, And, Or, Xor, Implies, Iff, Quantifier, Variable, Constant, Number, Function,
     Contrast, Count, Cardinality,
@@ -138,7 +139,9 @@ def _terms_of(formula: Node, existing: Tuple[Node, ...], cap: int) -> Tuple[Node
     acc: set = set()
     _ground_terms(formula, acc)
     result = list(existing)
-    for t in sorted(acc, key=lambda n: n.to_unicode_str()):
+    # The order is by the bare names of the constants (key_text), so that the quotes of a
+    # quoted constant play no part in which term is tried first.
+    for t in sorted(acc, key=key_text):
         if t not in result:
             result.append(t)
             if len(result) >= cap:

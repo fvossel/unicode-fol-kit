@@ -136,7 +136,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from ..fol._msfl_nodes import _reduce_nl_nodes
+from ..fol._msfl_nodes import _reduce_nl_nodes, key_text
 from ..fol._numeral_symbols import numerals_as_constants, prefixed_numeral_name
 from ..fol._symbol_names import dedupe
 from ..fol._truth_constants import truth_value
@@ -550,8 +550,8 @@ def _reject_non_propositional_modal(formula: Node) -> None:
 
 class _ModalAtomNames:
     """Map each DISTINCT ground atom (by its rendered Unicode key,
-    ``atom.to_unicode_str()`` — the same key
-    :func:`~unicode_logic_kit.semantics.kripke.satisfies_modal` uses) to a
+    ``key_text(atom)`` — the text with every constant written by its bare name, the same
+    key :func:`~unicode_logic_kit.semantics.kripke.satisfies_modal` uses) to a
     unique Lean identifier stem, exactly the way :class:`_SymbolResolver`
     de-collides FOL symbols: keyed on the ORIGINAL atom key, not the
     sanitised string, so two semantically distinct atoms that happen to
@@ -584,7 +584,7 @@ def _lean_modal_body(node: Node, world: str, counter: List[int],
     if isinstance(node, Atom):
         if truth_value(node) is not None:
             return "True" if truth_value(node) else "False"
-        atom_key = node.to_unicode_str()
+        atom_key = key_text(node)
         ident = names.safe(("atom", atom_key), atoms.ident(atom_key))
         return f"({ident} {world})"
     if isinstance(node, Not):
@@ -655,7 +655,7 @@ def to_lean_modal_k(formula: Node, conjecture: bool = True, proof: str = "sorry"
     seen_set = set()
     for n in formula.walk():
         if isinstance(n, Atom) and truth_value(n) is None:
-            key = n.to_unicode_str()
+            key = key_text(n)
             if key not in seen_set:
                 seen_set.add(key)
                 seen.append(key)

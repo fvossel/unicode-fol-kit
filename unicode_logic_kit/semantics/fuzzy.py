@@ -1,8 +1,10 @@
 """Łukasiewicz fuzzy evaluator: truth DEGREE in [0, 1] of an FL/MSFL formula.
 
 The evaluator interprets the Łukasiewicz operators over the real interval
-[0, 1] under a *valuation* — a mapping from ground atoms (keyed by their
-canonical ``to_unicode_str()`` rendering, e.g. ``'P(alice)'``) to degrees. A sorted constant
+[0, 1] under a *valuation* — a mapping from ground atoms (keyed by the text they print as,
+with every constant written by its name, e.g. ``'P(alice)'``, ``'P(a)'`` for the atom ``P``
+of a constant named ``a``; the text of the atom as a formula, ``"P('a')"``, is read as the
+same key) to degrees. A sorted constant
 ``alice:Person`` is the constant ``alice``, so ``Tall(alice:Person)`` has the key
 ``'Tall(alice)'`` -- the key the grounding of ``∀x:Person Tall(x)`` gives its instance at
 ``alice`` -- and two different atoms that print alike (the numeral ``1`` and a constant named
@@ -45,7 +47,7 @@ from ..fol.nodes import (
     LukNegation, LukImplication, LukEquivalence,
     LambdaVar, Lambda, Application,
 )
-from ..fol._atom_keys import AtomKeys, atom_key
+from ..fol._atom_keys import AtomKeys, atom_key, find_own_key
 from ..fol._truth_constants import truth_value as _truth_value
 from .tnorm import get_tnorm
 
@@ -156,12 +158,14 @@ def evaluate(node: Node,
         node: an FL or MSFL formula node. Build it with
             ``MSFLParser(fuzzy=True)`` (unsorted FL) or
             ``MSFLParser(many_sorted=True, fuzzy=True)`` (sorted MSFL).
-        valuation: maps a ground atom's canonical key — its
-            ``to_unicode_str()`` rendering, e.g. ``'P(alice)'`` — to a degree in
-            [0, 1]. A missing key raises ``KeyError`` with a helpful message. A sorted
-            constant ``alice:Person`` is the constant ``alice``: ``Tall(alice:Person)``
-            has the key ``'Tall(alice)'``, the key the grounding of ``∀x:Person Tall(x)``
-            gives its instance at ``alice``.
+        valuation: maps a ground atom's key — the text it prints as, with every
+            constant written by its name (``'P(alice)'``, and ``'P(a)'`` for a constant
+            named ``a``, which the text of the formula writes ``P('a')``) — to a degree in
+            [0, 1]. A key written as the text of the atom as a formula (``atom.to_unicode_str()``,
+            ``"P('a')"``) is read as the same key. A missing key raises ``KeyError`` with a
+            helpful message. A sorted constant ``alice:Person`` is the constant ``alice``:
+            ``Tall(alice:Person)`` has the key ``'Tall(alice)'``, the key the grounding of
+            ``∀x:Person Tall(x)`` gives its instance at ``alice``.
         domain: a set of constant-name strings over which unsorted quantifiers
             range. Required whenever a ``Quantifier`` is evaluated.
         sort_universes: maps each sort name to its set of constant-name strings;
@@ -176,7 +180,8 @@ def evaluate(node: Node,
     Raises:
         KeyError: a ground atom's key is absent from the valuation.
         ValueError: a quantifier lacks its domain / sort universe, or one is empty,
-            or ``tnorm`` is unknown.
+            or ``tnorm`` is unknown, or the valuation holds both spellings of one atom
+            (its key and its text as a formula) with different degrees.
         TypeError: the node carries a classical connective, lambda construct,
             numeric literal, comparison atom, or otherwise unsupported type.
         NotImplementedError: two different atoms print alike (the numeral ``1`` and a
@@ -246,13 +251,15 @@ def _evaluate(node: Node, valuation: Dict[str, float], domain: Optional[Set[str]
             # `$true` / `$false` are the top and the bottom degree under every valuation.
             return 1.0 if constant else 0.0
         _reject_comparison_atom(node)
-        key = atom_key(node) if keys is None else keys.key(node)
-        if key not in valuation:
+        found = (find_own_key(valuation, node) if keys is None
+                 else keys.find(valuation, node))
+        if found is None:
+            key = atom_key(node)
             raise KeyError(
                 f"No degree for ground atom {key!r} in the valuation. "
                 "Provide valuation[{!r}] as a number in [0, 1].".format(key)
             )
-        return _clamp(float(valuation[key]))
+        return _clamp(float(valuation[found]))
 
     # --- strong negation (t-norm residual negation; involutive for Łukasiewicz) -
     if isinstance(node, LukNegation):

@@ -188,6 +188,85 @@ class TestConstantPriorityOverName:
     def test_c_prefixed_unicode_constant_parses(self):
         assert FOL.parse("P(c_świątek)") == Atom("P", [Constant("c_świątek")])
 
+    def test_c_prefixed_digit_constants_lex_as_constant(self):
+        for word in ("c_1", "c_12", "c_k2", "c_ab"):
+            assert [t.type for t in lex_for_message(FOL.parser, word)] == ["CONSTANT"], word
+
+
+# ---------------------------------------------------------------------------
+# CONSTANT matches whole words only
+# ---------------------------------------------------------------------------
+
+#: Words that start with ``c_`` and go on past the first run of letters and digits (a second
+#: underscore): one NAME token each. The lexer takes the FIRST terminal that matches, by
+#: priority, not the longest, and CONSTANT has the higher priority, so CONSTANT must decline a
+#: word it would cut short. Before it did, nine dialects read ``c_a`` and then failed on ``_b``,
+#: and only the modal dialect, whose Earley fallback weighs every terminal, read the word.
+C_WORDS_OF_ONE_NAME = ("c_a_b", "c_a_", "c_ab_c", "c_1_a", "c_a1_b", "c_a__b", "c__a", "cc_a",
+                       "c_new_york", "c_ś_a")
+
+#: the dialects without sorts and the ones with sorts, as the keyword arguments that select them
+_UNSORTED_DIALECTS = [
+    {}, {"modal": True}, {"second_order": True}, {"third_order": True}, {"dependence": True},
+    {"fuzzy": True}, {"linear": True}, {"lambek": True}, {"third_order": True, "modal": True},
+]
+_SORTED_DIALECTS = [
+    {"many_sorted": True}, {"many_sorted": True, "fuzzy": True},
+    {"many_sorted": True, "modal": True}, {"many_sorted": True, "second_order": True},
+]
+
+
+class TestConstantMatchesWholeWords:
+    @pytest.mark.parametrize("word", C_WORDS_OF_ONE_NAME)
+    def test_the_word_lexes_as_one_name_token(self, word):
+        assert [(t.type, str(t)) for t in lex_for_message(FOL.parser, word)] == [("NAME", word)]
+
+    @pytest.mark.parametrize("word", C_WORDS_OF_ONE_NAME)
+    def test_the_word_is_the_constant_of_that_name_in_the_classical_dialect(self, word):
+        assert FOL.parse(f"P({word})") == Atom("P", [Constant(word)])
+
+    @pytest.mark.parametrize("kwargs", _UNSORTED_DIALECTS)
+    def test_every_unsorted_dialect_reads_the_words(self, kwargs):
+        parser = MSFLParser(**kwargs)
+        for word in C_WORDS_OF_ONE_NAME:
+            assert parser.parse(f"P({word})") == Atom("P", [Constant(word)]), word
+
+    @pytest.mark.parametrize("kwargs", _SORTED_DIALECTS)
+    def test_every_sorted_dialect_reads_the_words_with_a_sort(self, kwargs):
+        parser = MSFLParser(**kwargs)
+        for word in C_WORDS_OF_ONE_NAME:
+            assert parser.parse(f"P({word}:Human)") == Atom(
+                "P", [SortedConstant(word, "Human")]), word
+
+    def test_a_classical_formula_is_no_longer_reported_as_a_modal_one(self):
+        from unicode_logic_kit import api
+        result = api.parse_any("P(c_new_york)")
+        assert result.ok
+        assert result.dialect == "fol"
+        assert result.formula == Atom("P", [Constant("c_new_york")])
+
+    def test_the_words_that_were_always_read_are_read_as_before(self):
+        for word in ("c_k2", "c_1", "c_12", "c_alpha", "c_ab", "c__a", "cc_a", "c_świątek"):
+            assert FOL.parse(f"P({word})") == Atom("P", [Constant(word)]), word
+
+    def test_the_marks_that_are_no_word_stay_errors(self):
+        for word in ("c_", "c_1_"):
+            with pytest.raises(NamingError):
+                FOL.parse(f"P({word})")
+
+    def test_the_greek_alternative_is_untouched(self):
+        # a Greek run is still taken as far as it goes; the letter after it is then no token
+        assert [t.type for t in lex_for_message(FOL.parser, "αβγ")] == ["CONSTANT"]
+        assert FOL.parse("P(αβγ)") == Atom("P", [Constant("αβγ")])
+        for word in ("αa", "α1", "cα", "c_α"):
+            with pytest.raises((NamingError, ParsingError)):
+                FOL.parse(f"P({word})")
+
+    def test_a_function_whose_name_has_the_shape_of_a_constant_is_still_not_readable(self):
+        # out of scope: a function head is NAME-shaped, and CONSTANT is not a head
+        with pytest.raises((NamingError, ParsingError)):
+            FOL.parse("P(c_k2(x))")
+
 
 # ---------------------------------------------------------------------------
 # λ, μ, and the Greek CONSTANT alternative are unaffected

@@ -63,6 +63,7 @@ atoms -- there is no B reading for them here either).
 from typing import Optional, Sequence, Tuple
 
 from ..fol.nodes import Node, Atom, Not, And, Or, Implies, Iff
+from ..fol._msfl_nodes import key_text
 from ..fol._truth_constants import refuse_truth_constants
 from .deepshallow._common import AtomConsts, theory_name_ok
 
@@ -150,7 +151,7 @@ def _encode(formula: Node, atoms: AtomConsts) -> str:
                 f"supported; got {formula.to_unicode_str()!r} with arguments -- "
                 "matching semantics.relevant._reject_non_propositional's "
                 "rejection of non-nullary atoms.")
-        return atoms.name(formula.to_unicode_str())
+        return atoms.name(key_text(formula))
     if isinstance(formula, And):
         return f"(AndC {_encode(formula.left, atoms)} {_encode(formula.right, atoms)})"
     if isinstance(formula, Or):
@@ -349,7 +350,7 @@ def _thf_encode(formula: Node, world: str, names: ThfNames, depth: int = 0) -> s
                 f"supported; got {formula.to_unicode_str()!r} with arguments -- "
                 "matching semantics.relevant._reject_non_propositional's "
                 "rejection of non-nullary atoms.")
-        functor = names.functor("predicate", formula.to_unicode_str())
+        functor = names.functor("predicate", key_text(formula))
         return f"( {functor} @ {world} )"
     if isinstance(formula, And):
         return (f"( {_thf_encode(formula.left, world, names, depth)} & "
@@ -402,7 +403,7 @@ def to_thf_relevant(formula: Node) -> str:
     names = ThfNames(reserved=_THF_RESERVED)
     body = _thf_encode(formula, "X", names)
     lines = list(_THF_PRELUDE)
-    for label in sorted({atom.to_unicode_str() for atom in formula.atoms()}):
+    for label in sorted({key_text(atom) for atom in formula.atoms()}):
         functor = names.functor("predicate", label)
         lines.append(f"thf({functor}_type, type, ( {functor} : w > $o )).")
     lines.append(

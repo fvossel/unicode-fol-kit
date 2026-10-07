@@ -864,8 +864,8 @@ print(fo.to_fitch())
 ```text
 1 │ ∀x P(x)   Premise
   ├──────
-2 │ P(a)      ∀E 1 [a]
-3 │ ∃x P(x)   ∃I 2 [a]
+2 │ P('a')    ∀E 1 ['a']
+3 │ ∃x P(x)   ∃I 2 ['a']
 ```
 
 Like the resolution prover it is sound and, under its depth bound, incomplete: `find_fitch_proof` returning `None` means "no proof found within `max_depth`", never "not a theorem". Classical FOL only (the non-classical checkers above are verification-only).
@@ -884,7 +884,7 @@ from unicode_logic_kit.fol.nodes import Atom, Quantifier, Variable, Constant
 x, c = Variable("x"), Constant("c")
 def Px(t): return Atom("P", [t])
 
-# ∀x P(x) ⊢ P(c)   via the ∀L rule (instantiating the bound x with the term c)
+# ∀x P(x) ⊢ P('c')   via the ∀L rule (instantiating the bound x with the constant c, written 'c')
 d = derive(sequent([Quantifier("∀", x, Px(x))], [Px(c)]), "∀L",
            axiom(sequent([Px(c)], [Px(c)])),
            extra=[c])
@@ -896,8 +896,8 @@ print(render_sequent_proof(d))
 `render_sequent_proof` prints the derivation as an indented tree (conclusion first, premises below, each annotated with its rule):
 
 ```text
-∀x P(x) ⊢ P(c)   [∀L c]
-  P(c) ⊢ P(c)   [Ax]
+∀x P(x) ⊢ P('c')   [∀L 'c']
+  P('c') ⊢ P('c')   [Ax]
 ```
 
 **Propositional LK.** The right rules build the succedent; `¬R` moves a formula across the turnstile and `∨R` takes *both* disjuncts on the right (`Γ ⊢ Δ, A, B`). Classical excluded middle is the canonical two-formula-succedent derivation:
@@ -1006,7 +1006,7 @@ tableau_closed([p("P"), p("¬P")])                 # → True (jointly unsatisfi
 tableau_model([p("P → Q"), p("P")])               # → {'P': True, 'Q': True}
 ```
 
-`tableau_model` returns a dict mapping each atom's surface form to its truth value, or `None` if every branch closes. A model that would hold two different atoms written alike under one key (the numeral `1` and the constant `'1'`, a free variable `x` and a constant `x`) is refused by name with `NotImplementedError`. Modal formulas are routed to the labelled modal tableau (system **K** by default).
+`tableau_model` returns a dict mapping each atom's key to its truth value, or `None` if every branch closes; the key is the atom's surface form with every constant written by its bare name (`P(a)` for the atom that prints as `P('a')`). A model that would hold two different atoms under one key (the numeral `1` and the constant named `1`, a free variable `x` and a constant named `x`: the formula texts `P(1)` and `P('1')`, `P(x)` and `P('x')` tell them apart, the keys do not) is refused by name with `NotImplementedError`. Modal formulas are routed to the labelled modal tableau (system **K** by default).
 
 **Bounds.** The search is a loop over an explicit stack of branches, so a branch is bounded by `max_steps` (default 20 000) and by an optional wall-clock `timeout` in milliseconds, never by Python's recursion limit: a valid chain of several thousand implications closes, and a branch that is too long is "not closed", never a `RecursionError`. First-order γ-instantiation is also bounded by `max_terms` (default 8). Through `api.prove` the answer is `unknown`, and its `detail` names the reason: `bound_hit` when a bound ended the search and `timeout` when the deadline did. A formula nested deeper than the recursive helpers that walk it can follow (about a thousand levels at the default recursion limit) ends a direct call as a bound does (`prove_tableau` gives `False`). The helpers of the proof checker follow fewer levels (a few hundred), and `check_tableau_proof` refuses a proof of a formula nested deeper than they can follow with `TableauCheckError`, not `RecursionError`. `api.prove` reads a formula that deep on a worker thread with a larger stack and decides it up to a nesting of about eight thousand levels; a deeper one gives `unknown` / `bound_hit` with the nesting depth named in the `detail`.
 
@@ -1138,7 +1138,7 @@ models(msfol.parse("Mortal(socrates:Human)"), outside)
 
 ## Truth tables (propositional)
 
-For the **propositional** fragment, the most direct decision method is the truth table: `truth_table` enumerates every assignment to a formula's atoms and records the formula's value under each. The convenience predicates `is_tautology`, `is_contradiction`, and `is_satisfiable_tt` read off the result. Each distinct atom *surface-form* is one column (`P` and `P(a)` are different columns, and `r(1)` is one column for the numerals `1` and `1.0`); two different atoms that are written alike are refused by name with `NotImplementedError`, as under `tableau_model` above; quantified formulas have no finite table and raise `ValueError`.
+For the **propositional** fragment, the most direct decision method is the truth table: `truth_table` enumerates every assignment to a formula's atoms and records the formula's value under each. The convenience predicates `is_tautology`, `is_contradiction`, and `is_satisfiable_tt` read off the result. Each distinct atom *surface-form* (its key, as under `tableau_model` above) is one column (`P` and `P(a)` are different columns, and `r(1)` is one column for the numerals `1` and `1.0`); two different atoms that have one key are refused by name with `NotImplementedError`, as under `tableau_model` above; quantified formulas have no finite table and raise `ValueError`.
 
 ```python
 from unicode_logic_kit import (

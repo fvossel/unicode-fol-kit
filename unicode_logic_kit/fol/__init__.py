@@ -92,6 +92,8 @@ from .dialect_detect import detect_dialects
 from .signature import (
     Signature, PredicateDecl, FunctionDecl, ConstantDecl, inventory_of,
 )
+from ._identifiers import is_variable_name, is_bare_constant, constant_text
+from ._atom_keys import atom_key
 
 __all__ = [
     # The shared modal frame registry — one table for every modal route.
@@ -121,6 +123,7 @@ __all__ = [
     "simplify_for_checking", "SimplifyResult",
     "count_from_existential_chain", "expand_count",
     "detect_dialects",
+    "is_variable_name", "is_bare_constant", "constant_text", "atom_key",
     "Signature", "PredicateDecl", "FunctionDecl", "ConstantDecl",
     "inventory_of",
     "SortedQuantifier", "SortedConstant",

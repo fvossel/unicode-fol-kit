@@ -118,7 +118,10 @@ def _sanitize(name: str) -> str:
     so that was silent corruption, not sanitisation. A leading digit (which can
     now also arise from a transliterated escape, though those always start with
     the ASCII letter ``u``) is still prefixed with ``p`` so the result is a
-    legal lower identifier.
+    legal lower identifier, and so is a leading underscore: the constant
+    ``'_sk0'``, the constant ``'-3'`` and the function ``+`` would otherwise be
+    written ``_sk0``, ``_3`` and ``_``, which neither THF nor Isabelle reads as
+    an identifier.
 
     NOTE: this is *not* injective — neither the old filter (``'Ab'``/``'ab'``
     collide) nor ``constant_name_to_ascii`` (a literal ``'theta'`` and the Greek
@@ -135,7 +138,7 @@ def _sanitize(name: str) -> str:
     safe = "".join(c if (c.isalnum() or c == "_") else "_" for c in ascii_name)
     if not safe:
         return "p"
-    if safe[0].isdigit():
+    if safe[0].isdigit() or safe[0] == "_":
         safe = "p" + safe
     return safe[:1].lower() + safe[1:]
 

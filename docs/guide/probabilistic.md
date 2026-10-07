@@ -107,7 +107,7 @@ entailment_bounds([absurd], p.parse("Rain"))
 # raises ValueError: entailment_bounds: probabilistically inconsistent — ...
 ```
 
-An atom is a world bit named by the text it prints as, so two different ground atoms that print alike (the numeral `1` and a constant named `1`, both `P(1)`) would be one bit and the bounds another problem's. `entailment_bounds` refuses them with a `ValueError` that names the pair, and refuses in the same way an atom with a sorted constant (`P(alice:Human)`), since the probabilities have no statement of whether `alice` lies in `Human`:
+An atom is a world bit named by its key, the text it prints as with every constant written by its bare name, so two different ground atoms that have one key (the numeral `1` and a constant named `1`, both keyed `P(1)`, though their formula texts `P(1)` and `P('1')` tell them apart) would be one bit and the bounds another problem's. `entailment_bounds` refuses them with a `ValueError` that names the pair, and refuses in the same way an atom with a sorted constant (`P(alice:Human)`), since the probabilities have no statement of whether `alice` lies in `Human`:
 
 ```python
 from fractions import Fraction
@@ -116,7 +116,7 @@ from unicode_logic_kit.prob import ProbConstraint, entailment_bounds
 
 numeral, constant = Atom("P", [Number(1)]), Atom("P", [Constant("1")])
 entailment_bounds([ProbConstraint(numeral, Fraction(1, 2), Fraction(1, 2))], constant)
-# raises ValueError: entailment_bounds: two different atoms are both written 'P(1)': ...
+# raises ValueError: entailment_bounds: two different atoms have one key and are both written 'P(1)': ...
 ```
 
 ### A second, algorithm-only route: `strategy="column_generation"`
@@ -266,7 +266,7 @@ choices, and an exact method has to say where it stops rather than quietly
 switching to sampling.
 
 As in `entailment_bounds`, `query` refuses with a `ValueError` two different ground atoms of the
-program and goal that print alike (the numeral `1` and a constant named `1`), and an atom with a
+program and goal that have one key (the numeral `1` and a constant named `1`), and an atom with a
 sorted constant.
 
 ### A second, compiled route: `method="compile"`

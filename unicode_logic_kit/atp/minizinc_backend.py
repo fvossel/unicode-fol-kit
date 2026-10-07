@@ -182,10 +182,10 @@ comparison that sets a cardinality against a plain individual (the count
 against the element number of a constant has no coherent reading). The
 :class:`~unicode_logic_kit.atp.clingo_backend.ClingoBackend` draws the same line.
 
-Identifier scheme — role-prefixed, ASCII-transliterated, collision-checked
---------------------------------------------------------------------------
-Every declared symbol is rendered under a role prefix — predicate ``p_``,
-function ``f_``, constant ``k_``, bound variable ``v_`` — rather than its
+Identifier scheme — role-prefixed, ASCII-only, injective
+---------------------------------------------------------
+Every declared symbol is rendered under a role prefix — predicate ``p``,
+function ``f``, constant ``k``, bound variable ``v`` — rather than its
 bare kit-level name, for two independent reasons. First, MiniZinc reserves a
 long list of lower-case keywords (``output``, ``function``, ``predicate``,
 ``array``, ``where``, ``let``, …), and while this kit's own grammar (see
@@ -198,23 +198,57 @@ rather than relying on the grammar's current shape staying that way forever.
 Second, it keeps predicates, functions and constants in three textually
 disjoint MiniZinc namespaces, matching how the kit's own
 :class:`~unicode_logic_kit.fol.signature.Signature` already keeps them apart
-conceptually. A predicate/function/constant/variable name may additionally be
-non-ASCII (Greek, e.g. ``θ``; or any other script the widened FOL grammar now
-accepts, e.g. ``świątek`` — MiniZinc identifiers are ASCII-only), so
-:func:`_mzn_pred_name`, :func:`_mzn_func_name`, :func:`_mzn_const_name`, and
-:func:`_mzn_var_name` all reuse the kit's own
-:func:`~unicode_logic_kit.fol._fol_nodes.constant_name_to_ascii` (the same
-transliteration :meth:`~unicode_logic_kit.fol.nodes.Constant.to_prover9` /
-``to_tptp`` already use) rather than inventing a second one. That
-transliteration is NOT injective in general (a literal ``c_theta`` and the
-Greek ``θ`` both fold to ``theta``), so :func:`to_minizinc` runs the exact
-same collision guard :func:`~unicode_logic_kit.atp._tptp_problem
-.generate_tptp_problem` already runs for its own (different) folding
-function, separately for the predicate, function, and constant namespaces
-(NOT for the variable namespace — see :func:`_mzn_var_name`'s own docstring
-for why not), refusing with ``NotImplementedError`` naming both colliding
-kit-level names rather than silently merging two distinct symbols into one
-MiniZinc identifier.
+conceptually.
+
+A MiniZinc identifier is an ASCII letter followed by ASCII letters, digits and
+underscores, and is not a keyword. A kit-level name need not be one: it may be
+non-ASCII (Greek, e.g. ``θ``, or any other script the widened FOL grammar
+accepts, e.g. ``świątek``), and since a constant may be written in quotes, and a
+TPTP file may quote a predicate or a function, it may hold a space, a hyphen, a
+quote, a ``+``, or any other character (``'a b'``, ``'G-910'``, ``'C++'``). So a
+name is written in one of two forms, and every identifier of a model is one of
+them:
+
+* **The plain form** ``<role>_<name>``, for a name that consists only of ASCII
+  letters, digits and underscores once the kit's own
+  :func:`~unicode_logic_kit.fol._fol_nodes.constant_name_to_ascii` has folded it
+  (the transliteration :meth:`~unicode_logic_kit.fol.nodes.Constant.to_prover9` /
+  ``to_tptp`` already use: ``θ`` becomes ``theta``, another non-ASCII
+  character a ``uXXXX`` escape). It is the form this module always wrote, and it
+  stays exactly as it was for every name it was legal for, so a model that was
+  written before is written again byte for byte (the files under
+  ``tests/fixtures/minizinc/``).
+* **The escaped form** ``<role>x_<code>``, for every other name. ``<code>`` is
+  the name with each ASCII letter and digit kept and every other character
+  replaced by an underscore, the code point of the character in lower-case
+  hexadecimal, and an underscore: ``a b`` is ``kx_a_20_b``, ``G-910`` is
+  ``kx_G_2d_910``, ``C++`` is ``kx_C_2b__2b_``.
+
+The escaped form cannot meet any other identifier of a model, for three reasons.
+(1) Every plain identifier has an underscore as its second character and every
+escaped one has an ``x`` there (``k_a`` against ``kx_a``), so the two forms never
+meet, in one role or across roles. (2) The model's own names are ``n``, ``DOM``
+and the index variables ``i0``, ``i1``, … of the ``output`` item, none of which
+holds an underscore, and no MiniZinc keyword holds one either, while an escaped
+identifier always has one in its third position. (3) Within the escaped form the
+code cannot be read two ways: a letter or digit stands for itself, and every
+underscore opens exactly one ``_<hex>_`` group (an underscore of the name is
+written ``_5f_``, so none appears bare), so two different names give two
+different codes.
+
+The plain form is NOT injective in general (a literal ``theta`` and the Greek
+``θ`` both fold to ``theta``; a literal ``u03d1`` and the theta symbol ``ϑ``
+fold alike), and it
+cannot be changed for those names without changing the identifier of a name that
+was legal. :func:`to_minizinc` therefore runs the exact same collision guard
+:func:`~unicode_logic_kit.atp._tptp_problem.generate_tptp_problem` already runs
+for its own (different) folding function, separately for the predicate,
+function, constant and variable namespaces, refusing with
+``NotImplementedError`` naming both colliding kit-level names rather than
+silently merging two distinct symbols into one MiniZinc identifier. (The
+variable namespace needs the guard for the same reason: two bound variables
+that share an identifier would make an inner quantifier capture the outer one's
+occurrences.)
 
 Output — a hand-written wire format, not ``--output-mode json``
 ---------------------------------------------------------------------
@@ -242,6 +276,7 @@ ever running ``minizinc``.
 
 import itertools
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -300,60 +335,98 @@ def minizinc_available() -> bool:
 # Identifier scheme
 # =============================================================================
 
-def _mzn_pred_name(name: str) -> str:
-    """Predicate ``name`` -> its MiniZinc identifier: ASCII-transliterated, then prefixed.
+# What may follow the role prefix of a plain identifier: ASCII letters, digits and
+# underscores, written out as ranges so that a Unicode letter or digit never matches.
+_MZN_PLAIN_TAIL = re.compile(r"[A-Za-z0-9_]*")
 
-    Reuses :func:`~unicode_logic_kit.fol._fol_nodes.constant_name_to_ascii`, exactly
-    like :func:`_mzn_const_name` — a predicate NAME token is not restricted to ASCII
-    any more than a constant one is (see ``fol/grammars/terminals.lark``: PREDICATE
-    admits any Unicode letter with ``str.isupper()``), and MiniZinc identifiers are
-    ASCII-only, so a raw ``p_świątek`` would be as illegal as an untransliterated
-    constant. See the module docstring's "Identifier scheme" section for why this can
-    collide across two distinct kit-level names and why :func:`to_minizinc` checks for
-    that separately (this function does not check on its own; it has no visibility
-    into sibling predicates).
+
+def _mzn_escape(name: str) -> str:
+    """The code of ``name`` in an escaped identifier: ASCII letters and digits stay, any other
+    character becomes an underscore, its code point in lower-case hexadecimal, an underscore.
+
+    Injective: a letter or digit stands for itself, and every underscore of the result
+    opens exactly one ``_<hex>_`` group (an underscore of ``name`` is the group ``_5f_``),
+    so the result reads back one way only. The result holds only ASCII letters, digits and
+    underscores. See the module docstring's "Identifier scheme" section.
     """
-    return f"p_{constant_name_to_ascii(name)}"
+    return "".join(
+        ch if ch.isascii() and ch.isalnum() else f"_{ord(ch):x}_"
+        for ch in name
+    )
+
+
+def _mzn_identifier(role: str, name: str, kind: str) -> str:
+    """The MiniZinc identifier of the ``kind`` symbol ``name``, written under the one-letter ``role``.
+
+    The plain form ``<role>_<name>`` when the name, folded by
+    :func:`~unicode_logic_kit.fol._fol_nodes.constant_name_to_ascii`, is made of ASCII letters,
+    digits and underscores only (the form this module always wrote, so such a name keeps its
+    identifier); the escaped form ``<role>x_<code>`` for every other name (see
+    :func:`_mzn_escape`). The two forms never meet: a plain identifier has an underscore as
+    its second character, an escaped one an ``x``. See the module docstring's "Identifier
+    scheme" section for that argument and for the one case this does not settle (two names
+    that fold to one plain identifier), which :func:`_mzn_names_or_raise` refuses.
+
+    Raises:
+        NotImplementedError: ``name`` is not a string, so it has no identifier.
+    """
+    if not isinstance(name, str):
+        raise NotImplementedError(
+            f"to_minizinc: the {kind} name {name!r} is of type {type(name).__name__}, not a "
+            "string, so it has no MiniZinc identifier."
+        )
+    folded = constant_name_to_ascii(name)
+    if _MZN_PLAIN_TAIL.fullmatch(folded):
+        return f"{role}_{folded}"
+    return f"{role}x_{_mzn_escape(name)}"
+
+
+def _mzn_pred_name(name: str) -> str:
+    """Predicate ``name`` -> its MiniZinc identifier, ``p_<name>`` or the escaped ``px_<code>``.
+
+    A predicate NAME token is not restricted to ASCII (see ``fol/grammars/terminals.lark``:
+    PREDICATE admits any Unicode letter with ``str.isupper()``), and a TPTP file may quote
+    one that holds a space or a hyphen; MiniZinc identifiers are ASCII letters, digits and
+    underscores, so the name goes through :func:`_mzn_identifier`. This function does not
+    check for two names that share an identifier (it has no visibility into sibling
+    predicates); :func:`to_minizinc` does.
+    """
+    return _mzn_identifier("p", name, "predicate")
 
 
 def _mzn_func_name(name: str) -> str:
-    """Function ``name`` -> its MiniZinc identifier: ASCII-transliterated, then prefixed.
+    """Function ``name`` -> its MiniZinc identifier, ``f_<name>`` or the escaped ``fx_<code>``.
 
     Same reasoning and the same collision caveat as :func:`_mzn_pred_name` — see
     the module docstring's "Identifier scheme" section.
     """
-    return f"f_{constant_name_to_ascii(name)}"
+    return _mzn_identifier("f", name, "function")
 
 
 def _mzn_const_name(name: str) -> str:
-    """Constant ``name`` -> its MiniZinc identifier: ASCII-transliterated, then prefixed.
+    """Constant ``name`` -> its MiniZinc identifier, ``k_<name>`` or the escaped ``kx_<code>``.
 
-    Reuses :func:`~unicode_logic_kit.fol._fol_nodes.constant_name_to_ascii` —
-    see the module docstring's "Identifier scheme" section for why this can
-    collide across two distinct kit-level names and why :func:`to_minizinc`
-    checks for that separately (this function does not check on its own; it
-    has no visibility into sibling constants).
+    A constant may be written in quotes, so its name may be any text (``'a b'``,
+    ``'G-910'``, ``'C++'``); see :func:`_mzn_identifier` and the module docstring's
+    "Identifier scheme" section. Two names that fold to one plain identifier (``theta`` and
+    ``θ``) are refused by :func:`to_minizinc`, which sees all the constants at once; this
+    function does not.
     """
-    return f"k_{constant_name_to_ascii(name)}"
+    return _mzn_identifier("k", name, "constant")
 
 
 def _mzn_var_name(name: str) -> str:
-    """Bound variable ``name`` -> its MiniZinc identifier (see module docstring).
+    """Bound variable ``name`` -> its MiniZinc identifier, ``v_<name>`` or the escaped ``vx_<code>``.
 
-    ASCII-transliterated like the predicate/function/constant names above: the
-    VARIABLE terminal (``fol/grammars/terminals.lark``) admits any Unicode letter,
-    so a raw non-ASCII variable name (e.g. ``ą``) would otherwise reach the
-    generated ``.mzn`` text verbatim as ``v_ą`` — not a legal MiniZinc identifier.
-    Unlike predicates/functions/constants this is not run through a collision
-    guard in :func:`to_minizinc`: a bound variable's MiniZinc name is used only
-    locally, inside the one ``forall``/``exists``/comprehension generator that
-    binds it (see ``_formula``/``_term``), never declared or looked up by a second
-    call site the way a predicate/function/constant's identifier is, and the
-    kit's VARIABLE terminal keeps a raw name to a single letter plus ASCII digits
-    — too small a space for the escape-based transliteration below to plausibly
-    collide two DISTINCT names inside one formula's nested binders.
+    The VARIABLE terminal (``fol/grammars/terminals.lark``) admits any Unicode letter, so a
+    raw non-ASCII variable name (e.g. ``ą``) would otherwise reach the generated ``.mzn``
+    text verbatim — not a legal MiniZinc identifier — and a hand-built variable may be named
+    anything. A bound variable's identifier is used only inside the ``forall``, ``exists`` or
+    comprehension generator that binds it, but two distinct variable names that fold to one
+    identifier would let an inner binder capture the outer one's occurrences, so
+    :func:`to_minizinc` runs the collision guard over the variable names too.
     """
-    return f"v_{constant_name_to_ascii(name)}"
+    return _mzn_identifier("v", name, "variable")
 
 
 # The four arithmetic operators are legal Function names, and fragment_check
@@ -610,16 +683,13 @@ def _mzn_names_or_raise(
     names: Iterable[str], namer: Callable[[str], str], kind: str,
 ) -> Dict[str, str]:
     """Map each raw ``name`` in ``names`` to ``namer(name)``, refusing a same-namespace
-    collision (two distinct kit-level ``kind`` symbols transliterating to the same
-    MiniZinc identifier).
+    collision (two distinct kit-level ``kind`` symbols that get the same MiniZinc identifier).
 
-    Shared by :func:`to_minizinc`'s predicate, function, and constant declaration
-    loops — the SAME guard :func:`_mzn_const_name`'s docstring already described, now
-    applied identically to all three namespaces since ``constant_name_to_ascii`` is
-    reused (via :func:`_mzn_pred_name` / :func:`_mzn_func_name`) for predicate and
-    function names too. Deliberately not applied to the variable namespace — see
-    :func:`_mzn_var_name`'s own docstring for why a bound variable's MiniZinc name
-    does not need this guard.
+    Shared by :func:`to_minizinc`'s predicate, function, constant and variable
+    namespaces. The only names that can collide are two that fold to one plain
+    identifier (``theta`` and ``θ``; see the module docstring's "Identifier scheme"
+    section): an escaped identifier is different for every name and never equals a
+    plain one.
     """
     out: Dict[str, str] = {}
     seen: Dict[str, str] = {}
@@ -639,7 +709,7 @@ def _mzn_names_or_raise(
             raise NotImplementedError(
                 f"to_minizinc: distinct {kind}s {prior!r} and {name!r} "
                 f"would both render as the MiniZinc identifier {mzn!r} "
-                "(constant_name_to_ascii is not injective) — refusing to "
+                "(the ASCII folding of a name, constant_name_to_ascii, is not injective) — refusing to "
                 "silently merge two distinct symbols; rename one of them "
                 "before exporting this problem. Mirrors "
                 "atp._tptp_problem.generate_tptp_problem's identical "
@@ -648,6 +718,20 @@ def _mzn_names_or_raise(
         seen[mzn] = name
         out[name] = mzn
     return out
+
+
+def _bound_variable_names(sentences: Iterable[Node]) -> List[str]:
+    """Every variable name that ``sentences`` write: occurrences, and the variable a
+    quantifier, a count or a cardinality binds (a binder is written even when its body
+    does not use the variable)."""
+    names = set()
+    for sentence in sentences:
+        for node in sentence.walk():
+            if isinstance(node, Variable):
+                names.add(node.name)
+            elif isinstance(node, (Quantifier, Count, Cardinality)):
+                names.add(node.variable.name)
+    return sorted(names)
 
 
 def to_minizinc(problem: FiniteDomainProblem) -> str:
@@ -688,14 +772,18 @@ def to_minizinc(problem: FiniteDomainProblem) -> str:
             :class:`~unicode_logic_kit.fol.nodes.Number` that is not the bound of a
             comparison with a cardinality or is not an integer, or a symbol absent
             from ``problem.signature`` — see :func:`_term` / :func:`_formula`);
-            or two distinct declared constants would transliterate to the
-            same MiniZinc identifier (see the module docstring's "Identifier
+            a symbol name is not a string; or two distinct predicates,
+            functions, constants or bound variables would get the same
+            MiniZinc identifier (two names that fold to one plain identifier,
+            ``theta`` and ``θ``; see the module docstring's "Identifier
             scheme" section — raised as ``NotImplementedError``, not
             ``ValueError``, to match
             :func:`~unicode_logic_kit.atp._tptp_problem.generate_tptp_problem`'s
             identical collision guard and so it is caught by the same
             "cannot encode this fragment" site in
-            :meth:`MinizincBackend.decide`).
+            :meth:`MinizincBackend.decide`). A name that is no MiniZinc
+            identifier by itself (a quoted constant ``'a b'``) is not a
+            reason to raise: it is written in its escaped form.
     """
     if not isinstance(problem, FiniteDomainProblem):
         raise TypeError(
@@ -714,6 +802,8 @@ def to_minizinc(problem: FiniteDomainProblem) -> str:
     pred_names = _mzn_names_or_raise(sig.predicates, _mzn_pred_name, "predicate")
     func_names = _mzn_names_or_raise(sig.functions, _mzn_func_name, "function")
     const_names = _mzn_names_or_raise(sig.constants, _mzn_const_name, "constant")
+    # The identifier of a bound variable is not stored (see _term), so only the guard runs.
+    _mzn_names_or_raise(_bound_variable_names(problem.sentences), _mzn_var_name, "variable")
 
     needs_alldifferent = bool(problem.all_different and const_names)
 

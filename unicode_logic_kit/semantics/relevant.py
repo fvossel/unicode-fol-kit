@@ -42,6 +42,7 @@ from itertools import chain, combinations, permutations, product
 from typing import Dict, FrozenSet, Iterator, List, Mapping, Optional, Tuple
 
 from ..fol.nodes import Node, Atom, Not, And, Or, Implies, Iff
+from ..fol._msfl_nodes import key_text
 from ..fol._truth_constants import refuse_truth_constants
 
 
@@ -189,7 +190,7 @@ def _reject_non_propositional(formula: Node) -> None:
 def _sat(model: RelevantModel, world: str, formula: Node) -> bool:
     """The simplified Routley–Meyer truth clauses (input already validated)."""
     if isinstance(formula, Atom):
-        return world in model.valuation.get(formula.to_unicode_str(), frozenset())
+        return world in model.valuation.get(key_text(formula), frozenset())
     if isinstance(formula, And):
         return _sat(model, world, formula.left) and _sat(model, world, formula.right)
     if isinstance(formula, Or):
@@ -235,12 +236,13 @@ def rel_satisfies(model: RelevantModel, world: str, formula: Node) -> bool:
 
 
 def _atom_keys(formula: Node) -> List[str]:
-    """Distinct atom surface-forms in ``formula``, in first-seen order."""
+    """Distinct atom keys in ``formula``, in first-seen order (the atoms are nullary here,
+    so a key is the name of the predicate)."""
     keys: List[str] = []
     seen = set()
     for node in formula.walk():
         if isinstance(node, Atom):
-            key = node.to_unicode_str()
+            key = key_text(node)
             if key not in seen:
                 seen.add(key)
                 keys.append(key)

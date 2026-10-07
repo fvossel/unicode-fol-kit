@@ -72,6 +72,7 @@ from ..fol.nodes import (
     Variable, Constant, Number, Function,
 )
 from ..fol._atom_keys import AtomKeys
+from ..fol._msfl_nodes import key_text
 from ..fol._truth_constants import truth_value as _truth_value
 from ..semantics.matrix import (
     TruthMatrix, Value, matrix_value, matrix_is_valid, matrix_entails,
@@ -144,12 +145,14 @@ def _check_propositional(formula: Node) -> None:
 # ---------------------------------------------------------------------------
 #
 # An *atom* of the propositional formula is keyed by its canonical
-# ``to_unicode_str()`` rendering -- EXACTLY the key the toolkit's evaluators use
-# (e.g. ``valuation[atom.to_unicode_str()]`` in matrix_value). Distinct atoms
-# become distinct universally-quantified valuation variables.
+# rendering with every constant written by its bare name (``key_text``) -- EXACTLY
+# the key the toolkit's evaluators use (e.g. ``valuation[key_text(atom)]`` in
+# matrix_value), and not the text of the formula, which writes a constant such as
+# ``k2`` in quotes. Distinct atoms become distinct universally-quantified
+# valuation variables.
 
 def _atom_keys(*formulas: Node) -> List[str]:
-    """Distinct atom keys (canonical ``to_unicode_str``) in first-seen order, over all
+    """Distinct atom keys (canonical ``key_text``) in first-seen order, over all
     ``formulas`` of one problem.
 
     ``$true`` / ``$false`` are the matrix's top / bottom value, not letters. Two different atoms
@@ -439,7 +442,7 @@ def _thf_eval_matrix(node: Node, names_by_key: dict, conns: Dict[Type[Node], str
         truth = _truth_value(node)
         if truth is not None:
             return _constant_term(constants, truth, node, "to_thf_matrix")
-        return names_by_key[node.to_unicode_str()]
+        return names_by_key[key_text(node)]
     if isinstance(node, Not):
         return f"( {conns[Not]} @ {_thf_eval_matrix(node.formula, names_by_key, conns, constants)} )"
     for cls in (And, Or, Xor, Implies, Iff):
@@ -646,7 +649,7 @@ def _isa_eval_matrix(node: Node, names_by_key: dict, conns: Dict[Type[Node], str
         truth = _truth_value(node)
         if truth is not None:
             return _constant_term(constants, truth, node, "to_isabelle_matrix")
-        return names_by_key[node.to_unicode_str()].lower()
+        return names_by_key[key_text(node)].lower()
     if isinstance(node, Not):
         return f"({conns[Not]} {_isa_eval_matrix(node.formula, names_by_key, conns, constants)})"
     for cls in (And, Or, Xor, Implies, Iff):

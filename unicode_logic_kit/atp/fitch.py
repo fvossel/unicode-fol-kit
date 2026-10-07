@@ -72,7 +72,7 @@ from ..fol.frames import (
     FRAMES as _SHARED_FRAMES, UnsupportedFrameCondition,
     resolve_frame, unguarded_frame_axiom,
 )
-from ..fol._msfl_nodes import _rename, _fresh_binder_name, subst_slash_set
+from ..fol._msfl_nodes import _rename, _fresh_binder_name, key_text, subst_slash_set
 from ._html import esc_html, html_page
 
 
@@ -1258,13 +1258,13 @@ def _collect_modal_frames(nodes, alethic_system):
             if isinstance(n, (Box, Diamond)):
                 frames["R"] = alethic_system
             elif isinstance(n, Knows):
-                frames["Rk_" + (getattr(n.agent, "name", None) or n.agent.to_unicode_str())] = "S5"
+                frames["Rk_" + (getattr(n.agent, "name", None) or key_text(n.agent))] = "S5"
             elif isinstance(n, (EverybodyKnows, DistributedKnowledge, CommonKnowledge)):
                 # The group operators quantify over the members' own Rk_ relations.
                 for member in n.group:
-                    frames["Rk_" + (getattr(member, "name", None) or member.to_unicode_str())] = "S5"
+                    frames["Rk_" + (getattr(member, "name", None) or key_text(member))] = "S5"
             elif isinstance(n, Believes):
-                frames["Rb_" + (getattr(n.agent, "name", None) or n.agent.to_unicode_str())] = "KD45"
+                frames["Rb_" + (getattr(n.agent, "name", None) or key_text(n.agent))] = "KD45"
             elif isinstance(n, (Obligatory, Permitted)):
                 frames["D"] = "KD"
             elif isinstance(n, (Always, Eventually, Next, Until,

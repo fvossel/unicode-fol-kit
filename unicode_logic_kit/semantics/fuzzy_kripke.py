@@ -113,7 +113,8 @@ from ..fol._modal_nodes import (
     Announce, AnnounceDiamond,
     EverybodyKnows, DistributedKnowledge, CommonKnowledge,
 )
-from ..fol._atom_keys import atom_key
+from ..fol._atom_keys import find_key
+from ..fol._msfl_nodes import key_text
 from ..fol._truth_constants import truth_value as _truth_value
 from ._modal_reject import LAMBDA_TYPES, reject_quantifier, reject_lambda
 from .tnorm import TNorm, LUKASIEWICZ
@@ -145,7 +146,7 @@ def _agent_key(agent: Node) -> str:
     promises), so a ``relations=`` dict built for one evaluator names its
     agent keys identically for the other.
     """
-    return getattr(agent, "name", None) or agent.to_unicode_str()
+    return getattr(agent, "name", None) or key_text(agent)
 
 
 def _clamp(x: float) -> float:
@@ -174,12 +175,16 @@ class FuzzyKripkeModel:
             relation; within a named relation, a missing ``(w, w')`` pair
             reads as weight ``0.0``. Each weight is clamped into ``[0, 1]``.
         valuation: maps a world to a ``Dict[str, float]`` of GROUND-ATOM-KEY
-            (``atom.to_unicode_str()`` with a sorted constant ``c:S`` read as the constant
-            ``c``, the same convention as
+            (the text of the atom with every constant written by its name, ``P(a)``
+            for the atom ``P`` of the constant ``a``, and a sorted constant ``c:S``
+            read as the constant ``c``, the same convention as
             :mod:`~unicode_logic_kit.semantics.fuzzy`'s valuation and
             :class:`~unicode_logic_kit.semantics.kripke.KripkeModel`'s atom
-            keys) to a degree in ``[0, 1]``. A missing world, or a missing
-            key within a world, reads as degree ``0.0``. Each degree is
+            keys; the text of the atom as a formula, ``P('a')``, is read as
+            the same key) to a degree in ``[0, 1]``. A missing world, or a
+            missing key within a world, reads as degree ``0.0``. A world that
+            holds both spellings of one atom with different degrees is refused
+            when the atom is read (``ValueError``). Each degree is
             clamped into ``[0, 1]``.
         tnorm: a :class:`~unicode_logic_kit.semantics.tnorm.TNorm` instance
             (one of :data:`~unicode_logic_kit.semantics.tnorm.LUKASIEWICZ`,
@@ -346,6 +351,8 @@ def satisfies_fuzzy_modal(formula: Node, model: FuzzyKripkeModel, world: World) 
             node type.
         TypeError: on a classical crisp connective (build the formula with
             fuzzy connective nodes instead).
+        ValueError: the valuation of a world holds both spellings of an atom (its key and
+            its text as a formula) with different degrees.
     """
     t = model.tnorm
 
@@ -354,7 +361,11 @@ def satisfies_fuzzy_modal(formula: Node, model: FuzzyKripkeModel, world: World) 
         constant = _truth_value(formula)
         if constant is not None:
             return 1.0 if constant else 0.0     # the top / bottom degree at every world
-        return _clamp(model.atom_degree(world, atom_key(formula)))
+        # The key first, then the text of the atom as a formula: a valuation keyed either
+        # way is read, and a key found in neither spelling reads as degree 0.0.
+        degrees = model.valuation.get(world, MappingProxyType({}))
+        found = find_key(degrees, formula)
+        return 0.0 if found is None else _clamp(model.atom_degree(world, found))
 
     # --- Łukasiewicz connectives: verbatim dispatch into model.tnorm ---
     if isinstance(formula, LukNegation):

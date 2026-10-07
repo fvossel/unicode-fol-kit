@@ -128,8 +128,12 @@ def test_the_countermodel_of_a_quantified_row_has_the_parameter_in_every_domain(
 
 
 def ground(name, *individuals):
-    """The key of the atom ``name(individuals…)`` in a valuation, written as the model writes it."""
-    return Atom(name, [Constant(i) for i in individuals]).to_unicode_str()
+    """The key of the atom ``name(individuals…)`` in a valuation, written as the model writes it.
+
+    The key writes every individual by its name (``P(x)``); the text of a formula quotes a
+    constant whose bare name would read as a variable (``P('x')``), which is not a key.
+    """
+    return f"{name}({', '.join(individuals)})" if individuals else name
 
 
 def test_the_countermodel_of_row_1_built_by_hand_refutes_the_formula():

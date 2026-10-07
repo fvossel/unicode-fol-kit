@@ -61,15 +61,18 @@ different one for a different value:
   text: they are REFUSED by name, like ``xsd:float``;
 * every other literal becomes ``Constant('"abc"^^xsd:string')`` — its own
   OWL text, kept verbatim, which is the convention :mod:`unicode_logic_kit.dl`
-  already follows for IRI-shaped names. Text like that is a name the CALLER's
-  vocabulary supplies, not one this module mints, so it is a documented limit
-  of the printed form, and it is a limit of RULE 5 (what the kit prints reads
-  back through ``api.parse_any``) that holds BY DESIGN for the data layer: every
-  image that names a built-in datatype (``xsd:integer(x0)``) or a non-numeric
-  literal (``"abc"^^xsd:string``) prints text ``api.parse_any`` rejects, and
-  ``tests/test_printed_text_reads_back.py`` carves exactly that out. The AST
-  route (``api.prove`` over the nodes) is unaffected. To print such an image as
-  text the kit reads, rename its symbols with
+  already follows for IRI-shaped names. The unicode syntax writes a constant of
+  any name in single quotes when its bare word would not read back as that
+  constant, so this one prints ``'"abc"^^xsd:string'`` and reads back through
+  ``api.parse_any`` as the very constant (a single quote inside the lexical form
+  is escaped with a backslash between the quotes). What stays a documented limit
+  of the printed form, and a limit of RULE 5 (what the kit prints reads back
+  through ``api.parse_any``) that holds BY DESIGN for the data layer, is the name
+  of a built-in datatype: it is a PREDICATE, a predicate has no quoted form, and
+  so every image that names one (``xsd:integer(x0)``) prints text
+  ``api.parse_any`` rejects, which ``tests/test_printed_text_reads_back.py``
+  carves out. The AST route (``api.prove`` over the nodes) is unaffected. To
+  print such an image as text the kit reads, rename its symbols with
   :func:`unicode_logic_kit.fol.sanitize.sanitize_all` over the WHOLE premise list
   with one shared mapping — ``sanitize_names`` applied to each formula with a
   fresh mapping gives ``xsd:integer`` and a class called ``Xsdinteger`` the same

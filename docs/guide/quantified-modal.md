@@ -171,6 +171,8 @@ satisfies_modal(Quantifier("∃", x, A(x)), m, 0)  # → True
 satisfies_modal(Quantifier("∃", x, A(x)), m, 1)  # → True
 ```
 
+The strings in `valuation` are *keys*, not formula text. An evaluator looks an atom up under its text with every constant written by its bare name: for `A(a)` above the key is `"A(a)"`, while the formula itself prints as `A('a')` (`A(a).to_unicode_str()`), because a bare `a` in formula text would be a variable. Keys always write the bare name, so a valuation typed by hand never needs the quotes. An evaluator also finds an atom under its formula text, so a valuation built from `atom.to_unicode_str()` (`"A('a')"`) is read the same way; `atom_key(atom)` gives the key.
+
 ### Multi-world, multi-predicate models
 
 Build realistic scenarios with multiple predicates and connectivity:

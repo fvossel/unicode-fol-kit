@@ -7,11 +7,14 @@ formula *at a world*, following the standard Kripke satisfaction relation.
 
 Only the **propositional / ground** modal fragment is interpreted here (this is
 v1): the modal operators wrap classical connectives and ground atoms. A ground
-atom is identified by its rendered Unicode key (``atom.to_unicode_str()``, e.g.
-``"P"`` or ``"Likes(a, b)"``); a world's valuation is the set of atom keys true
-there, so a missing key is false. Object quantifiers (plain ``Quantifier`` and
-sorted ``SortedQuantifier``, see "Many-sorted formulas" below) ARE interpreted,
-over per-world domains; Łukasiewicz operators and lambda nodes are rejected
+atom is identified by its key (:func:`~unicode_logic_kit.fol.atom_key`: the text it prints as,
+with every constant written by its name, e.g. ``"P"`` or ``"Likes(a, b)"``, also where the
+formula text writes the constant in quotes, ``Likes('a', 'b')``); a world's valuation
+is the set of atom keys true there, and an atom whose key is written either way (its key or
+its text as a formula, ``atom.to_unicode_str()``) is found, so a missing key is false.
+Object quantifiers
+(plain ``Quantifier`` and sorted ``SortedQuantifier``, see "Many-sorted formulas"
+below) ARE interpreted, over per-world domains; Łukasiewicz operators and lambda nodes are rejected
 with NotImplementedError — fuzzy modal logic is future work.
 
 Many-sorted formulas: ``satisfies_modal`` relativizes the WHOLE input formula
@@ -219,6 +222,8 @@ from ..fol._modal_nodes import (
     Announce, AnnounceDiamond,
     EverybodyKnows, DistributedKnowledge, CommonKnowledge,
 )
+from ..fol._atom_keys import find_key
+from ..fol._msfl_nodes import key_text
 from ..fol._truth_constants import truth_value as _truth_value
 from ._modal_reject import (
     EQUALITY_PREDICATES, FUZZY_TYPES, LAMBDA_TYPES,
@@ -246,9 +251,11 @@ def _agent_key(agent: Node) -> str:
     The agent is a term (Variable or Constant). Object quantifiers ground a bound
     agent to a Constant before the modality is reached (``∀x (… → K_x φ)`` becomes
     ``K_<d> φ`` per individual ``d``), so this is the constant/variable name and the
-    relation key matches the model's ``"K:"+name`` / ``"B:"+name`` convention.
+    relation key matches the model's ``"K:"+name`` / ``"B:"+name`` convention. A term
+    without a name of its own (a numeral) is keyed by its text with every constant
+    written by its name, like an atom: a relation name is a key, not formula text.
     """
-    return getattr(agent, "name", None) or agent.to_unicode_str()
+    return getattr(agent, "name", None) or key_text(agent)
 
 
 World = Any
@@ -268,7 +275,10 @@ class KripkeModel:
             in Standard Deontic Logic). A missing name is the empty relation.
             Each edge set is copied into a frozen set.
         valuation: maps a world to the set of GROUND-ATOM KEYS true there, where
-            a key is ``atom.to_unicode_str()`` (e.g. ``"P"`` or ``"Likes(a, b)"``).
+            a key is the text of the atom with every constant written by its name
+            (e.g. ``"P"`` or ``"Likes(a, b)"``; :func:`~unicode_logic_kit.fol.atom_key`).
+            The text of the atom as a formula, ``"Likes('a', 'b')"``, is read as the
+            same key.
             A missing world maps to the empty set (every atom false there). Each
             entry is copied into a frozen set.
         nominals: maps a NOMINAL NAME (str) to the single world it names (the
@@ -681,7 +691,11 @@ def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
         constant = _truth_value(formula)
         if constant is not None:
             return constant         # `$true` / `$false`: the same at every world
-        return formula.to_unicode_str() in model.atoms_true_at(world)
+        # The key of the atom first, then its formula text: an element ``a`` of a domain is
+        # substituted as ``Constant("a")``, which the formula text writes ``P('a')``, and the
+        # valuation holds the key the user typed, ``P(a)``, or the text of the atom as a
+        # formula, ``P('a')``, which the guide taught as the key of a hand-built atom.
+        return find_key(model.atoms_true_at(world), formula) is not None
 
     # --- hybrid: a nominal is true exactly at the world it names; @ jumps there ---
     if isinstance(formula, Nominal):
@@ -904,9 +918,8 @@ def sorted_constant_violations(formula: Node,
         assert isinstance(atom, Atom)
         constant = atom.args[0]
         assert isinstance(constant, Constant)
-        key = atom.to_unicode_str()
         for world in worlds:
-            if key not in model.atoms_true_at(world):
+            if find_key(model.atoms_true_at(world), atom) is None:
                 violations.append((constant.name, atom.predicate, world))
     return violations
 

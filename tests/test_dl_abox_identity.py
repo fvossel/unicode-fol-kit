@@ -84,7 +84,7 @@ def test_the_same_individual_image_is_the_equality_atom():
     # ax03484 is SameIndividual(CRFSectorIPCC2006Transport NCBRSectorTransport).
     assert dl.abox_to_fol(dl.ABox().assert_same(
         "CRFSectorIPCC2006Transport", "NCBRSectorTransport")).to_unicode_str() == \
-        "CRFSectorIPCC2006Transport = NCBRSectorTransport"
+        "'CRFSectorIPCC2006Transport' = 'NCBRSectorTransport'"
 
 
 def test_the_negative_role_image_is_the_negated_ground_literal():
@@ -93,7 +93,7 @@ def test_the_negative_role_image_is_the_negated_ground_literal():
     assert dl.abox_to_fol(dl.ABox().assert_negative_role(
         "MMRSectorMInternationalAviationInTheEUETS", "GovRegSectorDivision",
         "IsDefinedBy")).to_unicode_str() == \
-        "¬IsDefinedBy(MMRSectorMInternationalAviationInTheEUETS, GovRegSectorDivision)"
+        "¬IsDefinedBy('MMRSectorMInternationalAviationInTheEUETS', 'GovRegSectorDivision')"
 
 
 def test_the_five_assertion_kinds_conjoin_in_kind_order():
@@ -110,7 +110,7 @@ def test_the_five_assertion_kinds_conjoin_in_kind_order():
             .assert_same("a", "d")
             .assert_negative_role("a", "c", "r"))
     assert dl.abox_to_fol(abox).to_unicode_str() == \
-        "C(a) ∧ r(a, b) ∧ (a ≠ c ∧ a = d) ∧ ¬r(a, c)"
+        "C('a') ∧ r('a', 'b') ∧ ('a' ≠ 'c' ∧ 'a' = 'd') ∧ ¬r('a', 'c')"
 
 
 def test_the_new_endpoints_are_in_the_knowledge_bases_individuals():

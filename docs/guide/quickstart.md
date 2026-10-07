@@ -64,9 +64,18 @@ is_valid(parse(
 ```
 
 Note that a single lowercase letter like `x` is a *variable*; an individual constant needs
-a multi-character name such as `socrates`. (This matters for the model finder below: a
-formula like `P(a)` with the variable `a` is read as a parameter, one unknown element
-shared by every formula that mentions `a`.)
+a multi-character name such as `socrates`, or single quotes: `'a'` is the constant named
+`a`. (This matters for the model finder below: a formula like `P(a)` with the variable
+`a` is read as a parameter, one unknown element shared by every formula that mentions
+`a`.) A quoted constant can have any name, `'Alice'` or `'G-910'` included, and the text
+the kit prints for a formula quotes exactly the constants that need it; see "Quoted
+constants" in the {doc}`syntax-reference`.
+
+```python
+parse("P(a)")     # → Atom(predicate='P', args=(Variable(name='a'),))
+parse("P('a')")   # → Atom(predicate='P', args=(Constant(name='a'),))
+parse("P('a')").to_unicode_str()   # → "P('a')"
+```
 
 ### More validity examples
 
@@ -257,7 +266,7 @@ prove(
 
 `find_model([φ, …])` searches finite domains of increasing size and returns the first
 `Structure` satisfying **every** formula in the list, or `None` if it finds none up to
-`max_size` (default `4`). Use multi-character names so they are read as constants:
+`max_size` (default `4`). Use multi-character names (or quoted ones, `'a'`) so they are read as constants:
 
 ```python
 struct = find_model([
@@ -441,7 +450,9 @@ to_english(parse("∀x (Person(x) → ∃y (Parent(x, y)))"))
 
 `to_unicode_str()` is the inverse of parsing: it renders any node back to a parseable
 Unicode string, and re-parsing reproduces a structurally equal AST. The renderer is
-precedence-aware — it inserts only the parentheses the grammar requires.
+precedence-aware — it inserts only the parentheses the grammar requires — and it writes a
+constant in single quotes exactly when no bare word spells it (`P('a')`, `P('Alice')`), so
+that holds for a constant of any name.
 
 ```python
 ast = parse("∀x (Human(x) → Mortal(x))")

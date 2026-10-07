@@ -26,11 +26,40 @@ The control-sequence map also accepts the common hand-written synonyms a person
 would type by hand (``\\neg`` for ``¬``, ``\\to`` for ``→``, ``\\iff`` for
 ``↔``, ``\\le`` for ``≤``, ``\\times`` for ``*``, …) so that pasted LaTeX need
 not have come from ``to_latex``.
+
+A single quote is the one character this reader refuses. The Unicode syntax
+writes a constant whose name is not a bare word in single quotes (``'k2'``,
+``'John Doe'``), and the name between the quotes is the name exactly; the
+substitutions above know nothing of quotes, so they would collapse the spaces
+of ``'John  Doe'``, turn ``'a\\_b'`` into ``'a_b'`` and strip the braces of
+``'f{x}'`` without a word, and the formula would come back with another
+constant. Until this reader tracks quotes it reads no text that holds one: a
+:class:`LatexParsingError` names the quote and says to write the formula in the
+Unicode syntax. A prime (``x'``) is such a quote. Before quoted constants it
+was a syntax error of the parser (an unexpected character after ``x``); it is
+this refusal now, and ``to_latex`` never writes one.
 """
 
 import re
 
 from .msflparser import MSFLParser
+from .naming import ParsingError
+
+
+class LatexParsingError(ParsingError):
+    """A LaTeX input the reader refuses, carrying a plain message.
+
+    Subclasses :class:`~unicode_logic_kit.fol.naming.ParsingError`, so every
+    caller that handles the parser's own failures handles this one too; it takes
+    a string instead of a Lark exception, the way the other importers' errors
+    do (:class:`~unicode_logic_kit.fol.prover9_input.Prover9ParsingError`).
+    """
+
+    def __init__(self, message: str):
+        self.args = (message,)
+
+    def __str__(self):
+        return self.args[0]
 
 
 # Control sequences whose argument-brace constructs must be resolved before the
@@ -218,10 +247,30 @@ def _replace_control_seq(match: "re.Match") -> str:
     return name
 
 
+def _refuse_quote(text: str) -> None:
+    """Raise a :class:`LatexParsingError` when ``text`` holds a single quote.
+
+    The refusal comes before any substitution, because the substitutions are
+    what would change a quoted name. It names the first quote by its position in
+    ``text`` (counted from 1, like the positions of the parser's messages).
+    """
+    index = text.find("'")
+    if index < 0:
+        return
+    raise LatexParsingError(
+        "SYNTAX_ERROR: the LaTeX reader does not read a quoted constant ('k2'): "
+        f"the quote at position {index + 1} would start one, and the "
+        "substitutions of this reader (spaces collapsed, braces removed, \\_ "
+        "turned into _) would change the name between the quotes. Write the "
+        "formula in the Unicode syntax instead, where 'k2' is the constant "
+        "named k2. A prime (x') is refused for the same reason.")
+
+
 def latex_to_unicode(text: str) -> str:
     """Translate a LaTeX math-mode formula into the toolkit's Unicode surface syntax.
 
-    The result is a Unicode string ready for :class:`MSFLParser`. The pipeline:
+    The result is a Unicode string ready for :class:`MSFLParser`. A text that
+    holds a single quote is refused (see below). The pipeline:
 
     1. Resolve multi-token brace constructs (``\\mathbin{\\mathsf{U}}``,
        ``\\mathsf{G}`` and the other temporal/deontic/agentive markers,
@@ -252,7 +301,26 @@ def latex_to_unicode(text: str) -> str:
        grouping carries no information the parser needs) and restore the
        placeholders from step 3 to real literal braces.
     10. Collapse redundant whitespace.
+
+    Steps 5 to 10 rewrite text without knowing where a quoted name begins and
+    ends, so a text that holds a single quote is refused up front instead of
+    being rewritten: the Unicode syntax reads ``'k2'`` and ``'John Doe'`` as
+    constants named exactly that, and these steps would change the name. This
+    includes a prime (``x'``), which was a syntax error of the parser before
+    and is this refusal now.
+
+    Args:
+        text: a LaTeX math-mode formula.
+
+    Returns:
+        The same formula in the Unicode surface syntax.
+
+    Raises:
+        LatexParsingError: ``text`` holds a single quote. The message says that
+            the LaTeX reader does not read a quoted constant and that the
+            formula is to be written in the Unicode syntax.
     """
+    _refuse_quote(text)
     s = text
 
     # 1. Multi-token brace constructs, most specific first.
@@ -335,6 +403,18 @@ def parse_latex(text: str, many_sorted: bool = False, fuzzy: bool = False,
 
     Returns:
         The parsed AST :class:`~unicode_logic_kit.fol.nodes.Node`.
+
+    Raises:
+        LatexParsingError: ``text`` holds a single quote (a quoted constant such
+            as ``'k2'``, or a prime ``x'``): this reader does not read quotes,
+            see :func:`latex_to_unicode`. ``to_latex`` writes a constant by its
+            name and never in quotes, so the LaTeX text of a formula that holds
+            a constant such as ``k2`` or ``Alice`` does not read back as that
+            constant; write such a formula in the Unicode syntax.
+        ~unicode_logic_kit.fol.naming.NamingError:
+            a name of the translated text is not legal in the chosen mode.
+        ~unicode_logic_kit.fol.naming.ParsingError:
+            the translated text is not a formula of the chosen mode.
     """
     unicode_text = latex_to_unicode(text)
     parser = MSFLParser(

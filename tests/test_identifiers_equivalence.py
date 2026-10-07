@@ -50,6 +50,7 @@ against the same ground truth, so a regression in either half of the module
 repeated use) would show up here.
 """
 
+import itertools
 import re
 import unicodedata
 
@@ -209,3 +210,142 @@ class TestTerminalBlockShrank:
             f"terminal_block(include_sort=True) is {size} chars — the "
             "lookahead-based atoms should keep this well under the ~192KB "
             "it was before _identifiers.py stopped repeating class bodies")
+
+
+class TestConstantMatchesWholeWordsOnly:
+    """CONSTANT's ``c_`` form is a lexer terminal that wins over NAME by priority, and the lexer
+    takes the first terminal that matches, not the longest. A ``c_`` word that goes on after
+    its first run of letters and digits (``c_new_york``) must therefore not be matched in part:
+    the pattern ends in a negative lookahead for any character that continues a NAME."""
+
+    CONSTANT = re.compile(ident.constant_pattern())
+    NAME = re.compile(ident.name_pattern())
+
+    WHOLE_WORDS = ("c_k2", "c_1", "c_12", "c_alpha", "c_ab", "c_świątek",
+                   "α", "θ", "αβ", "ωω")
+    DECLINED_WORDS = ("c_a_b", "c_a_", "c_ab_c", "c_1_a", "c_a1_b", "c_a__b", "c_", "c_1_",
+                      "c_new_york")
+
+    def test_a_word_is_matched_whole(self):
+        for word in self.WHOLE_WORDS:
+            assert self.CONSTANT.fullmatch(word), word
+
+    def test_a_word_that_goes_on_is_not_matched_at_all_and_not_in_part(self):
+        for word in self.DECLINED_WORDS:
+            assert self.CONSTANT.fullmatch(word) is None, word
+            assert self.CONSTANT.match(word) is None, word
+
+    def test_a_declined_word_is_a_name_when_it_has_two_letters(self):
+        # the NAME terminal reads all of it: the words of the lexer's second choice
+        for word in ("c_a_b", "c_a_", "c_ab_c", "c_1_a", "c_a1_b", "c_a__b", "c_new_york"):
+            assert self.NAME.fullmatch(word), word
+        # one letter only (the c): no NAME either, so the word is no term at all
+        for word in ("c_", "c_1_"):
+            assert self.NAME.fullmatch(word) is None, word
+
+    def test_a_match_ends_where_no_name_character_follows(self):
+        """Over every string of up to five characters of an alphabet whose characters ALL
+        continue a NAME (letters, a digit, an underscore, a combining mark), a match of CONSTANT is
+        the whole string: there is no character after it that could continue the word."""
+        alphabet = ["c", "_", "a", "1", "é", chr(0x301)]
+        checked = 0
+        for length in range(1, 6):
+            for chars in itertools.product(alphabet, repeat=length):
+                text = "".join(chars)
+                found = self.CONSTANT.match(text)
+                if found is not None:
+                    assert found.end() == len(text), text
+                    checked += 1
+        assert checked > 20      # the check had something to check
+
+    def test_control_without_the_lookahead_a_match_stops_inside_the_word(self):
+        """The check can fail: the ``c_`` form as it was, without the lookahead, matches the
+        part ``c_a`` of ``c_a_b``, which is what made the lexer cut the word short."""
+        without_lookahead = re.compile(f"c_{ident._continuation_atom(underscore=False)}+")
+        assert without_lookahead.match("c_a_b").group() == "c_a"
+        assert without_lookahead.match("c_ab_c").group() == "c_ab"
+
+    def test_the_greek_run_is_unchanged(self):
+        # no lookahead on it: a Greek run is taken as far as the Greek letters go
+        assert self.CONSTANT.match("αβγ").group() == "αβγ"
+        assert self.CONSTANT.match("αa").group() == "α"
+        assert self.CONSTANT.match("α1").group() == "α"
+        assert self.CONSTANT.match("aα") is None
+
+
+class TestAsciiCoreOfABareConstant:
+    """``is_bare_constant`` decides an ASCII name with a small pattern that needs no scan of the
+    Unicode tables. It has to be the CONSTANT or NAME pattern restricted to ASCII."""
+
+    def test_the_core_agrees_with_the_generated_patterns_on_short_strings(self):
+        name = re.compile(ident.name_pattern())
+        constant = re.compile(ident.constant_pattern())
+        checked = 0
+        for length in (1, 2, 3):
+            for chars in itertools.product("aAcz_09 -'", repeat=length):
+                text = "".join(chars)
+                expected = bool(name.fullmatch(text) or constant.fullmatch(text))
+                assert (ident._ASCII_BARE_CONSTANT.fullmatch(text) is not None) is expected, text
+                checked += 1
+        for chars in itertools.product("acB_1", repeat=4):
+            text = "".join(chars)
+            expected = bool(name.fullmatch(text) or constant.fullmatch(text))
+            assert (ident._ASCII_BARE_CONSTANT.fullmatch(text) is not None) is expected, text
+            checked += 1
+        assert checked == 10 + 100 + 1000 + 625
+
+    def test_control_a_core_that_forgets_the_c_form_disagrees(self):
+        without_c_form = re.compile(
+            r"[a-z][0-9_]*[a-zA-Z][a-zA-Z0-9_]*|[0-9]+[a-zA-Z][a-zA-Z0-9_]*")
+        constant = re.compile(ident.constant_pattern())
+        assert constant.fullmatch("c_1")                     # a CONSTANT, and no NAME
+        assert without_c_form.fullmatch("c_1") is None
+        assert ident._ASCII_BARE_CONSTANT.fullmatch("c_1") is not None
+
+
+class TestQuotedNameTerminal:
+    """QUOTED_NAME: a quote, one or more of (an ordinary character, or a backslash and a quote, or
+    two backslashes), a quote. The characters no spelling can carry are not ordinary."""
+
+    QUOTED = re.compile(ident.quoted_name_pattern())
+    BS = chr(92)
+
+    def test_what_it_matches(self):
+        bs = self.BS
+        for text in ("'a'", "'k2'", "'a b'", "'G-910'", "'1,2-diacyl'", "'é北'", "'𝔸'",
+                     "' '", "'('", "'" + bs + "''", "'" + bs + bs + "'", "'a" + bs + "'b'",
+                     "'" + bs + bs + bs + "''"):
+            assert self.QUOTED.fullmatch(text), text
+
+    def test_what_it_does_not_match(self):
+        bs = self.BS
+        for text in ("''", "'", "'a", "a'", "a", "'a'b'", "'a" + bs + "b'", "'a" + bs + "'",
+                     "'" + bs + "'", "\"a\"", "'a'" + "'"):
+            assert self.QUOTED.fullmatch(text) is None, text
+
+    def test_the_excluded_characters_are_not_ordinary(self):
+        for code in (0x00, 0x09, 0x0A, 0x0D, 0x1F, 0x7F, 0x85, 0x2028, 0x2029, 0xD800, 0xDFFF):
+            assert self.QUOTED.fullmatch("'a" + chr(code) + "b'") is None, hex(code)
+
+    def test_the_neighbours_of_the_excluded_characters_are_ordinary(self):
+        for code in (0x20, 0x7E, 0x80, 0x84, 0x86, 0x9F, 0xA0, 0x2027, 0x202A, 0xE000):
+            assert self.QUOTED.fullmatch("'a" + chr(code) + "b'"), hex(code)
+
+    def test_it_is_declared_without_a_priority_in_every_terminal_block(self):
+        for include_sort in (False, True):
+            lines = ident.terminal_block(include_sort=include_sort).split("\n")
+            declared = [line for line in lines if line.startswith("QUOTED_NAME")]
+            assert len(declared) == 1
+            assert declared[0].startswith("QUOTED_NAME: /")
+
+    def test_no_other_terminal_can_begin_with_a_quote(self):
+        quote = chr(39)
+        for pattern in (ident.predicate_pattern(), ident.name_pattern(), ident.constant_pattern(),
+                        ident.variable_pattern(), ident.sort_pattern()):
+            assert re.match(pattern, quote) is None
+
+    def test_it_has_a_description_for_messages(self):
+        assert "QUOTED_NAME" in ident.HUMAN_READABLE_PATTERNS
+        assert ident.HUMAN_READABLE_PATTERNS["QUOTED_NAME"] == (
+            "a single quote, then the name, then a single quote; inside, a quote is written "
+            + self.BS + chr(39) + " and a backslash " + self.BS + self.BS)

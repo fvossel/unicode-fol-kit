@@ -292,18 +292,19 @@ def test_the_queries_object_properties_are_typed_too():
 
 
 def test_a_binder_avoids_the_individuals_of_the_query():
-    # Variable("x") and Constant("x") are the same constant to every backend, so
-    # a GCI binder called x would capture a queried individual called x: the
-    # binder is renamed to the first free letter+digits, x0 -- exactly as it is
-    # for an individual of the knowledge base.
+    # Variable("x") and Constant("x") are the texts x and 'x', and two symbols to
+    # Z3, but would be one symbol to a target that gives both one namespace, so
+    # a GCI binder called x would capture a queried individual called x there:
+    # the binder is renamed to the first free letter+digits, x0 -- exactly as it
+    # is for an individual of the knowledge base.
     kb = dl.kb_to_fol(dl.TBox().add(A, B), query=[dl.Nominal("x")])
     assert kb.formula.to_unicode_str() == "∀x0 (A(x0) → B(x0))"
     two = dl.kb_to_fol(dl.TBox().add_data_property_range("HasV", INT), query=[dl.Nominal("x")])
     assert two.unsatisfiability_goal(dl.And(A, dl.Nominal("x"))).to_unicode_str() == (
-        "¬∃x0 (OwlThing(x0) ∧ (A(x0) ∧ x0 = x))")
+        "¬∃x0 (OwlThing(x0) ∧ (A(x0) ∧ x0 = 'x'))")
     # and an individual of the query is typed like any other
     assert [a.to_unicode_str() for a in two.axioms_of_kind("IndividualTyping")] == [
-        "OwlThing(x)"]
+        "OwlThing('x')"]
 
 
 def test_data_sort_axioms_takes_the_same_query():
@@ -610,7 +611,7 @@ def test_the_renderers_still_render_what_has_no_pun():
         "∃x0 (r(x, x0) ∧ B(x0)) ∧ ∃x1 (d(x, x1) ∧ xsd:integer(x1))")
     same = dl.And(dl.Atomic("Thing1"), dl.Exists("Thing1", dl.Nominal("Thing1")))
     assert dl.concept_to_fol(same).to_unicode_str() == (
-        "Thing1(x) ∧ ∃x0 (Thing1(x, x0) ∧ x0 = Thing1)")
+        "Thing1(x) ∧ ∃x0 (Thing1(x, x0) ∧ x0 = 'Thing1')")
 
 
 # --------------------------------------------------------------------------- #

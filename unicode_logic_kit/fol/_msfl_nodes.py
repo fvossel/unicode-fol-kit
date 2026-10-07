@@ -1,5 +1,6 @@
 """MSFL node classes (sorted quantifiers/constants, Łukasiewicz operators) and to_fol reduction."""
 
+import contextvars
 import logging
 from dataclasses import dataclass, is_dataclass, replace
 from typing import List, Optional, Tuple, TYPE_CHECKING
@@ -12,7 +13,8 @@ from ._fol_nodes import (
     register_parser_op, _fold_binary, _number_text, _prover9_outermost,
 )
 from ._identifiers import (
-    fresh_like, fresh_variable_like, fresh_variables, symbol_names, variable_names,
+    constant_text, fresh_like, fresh_variable_like, fresh_variables, symbol_names,
+    variable_names,
 )
 from ._team_nodes import SlashedExists
 # PredicateTerm is a term-level leaf like Variable/Constant, so the shared
@@ -601,7 +603,12 @@ def _sorted_quantifier_transform(items):
 
 
 def _sorted_const_transform(items):
-    """Build a SortedConstant from [NAME/CONSTANT, SORT]; NAME pre-converts to Constant."""
+    """Build a SortedConstant from [NAME/CONSTANT/QUOTED_NAME, SORT].
+
+    NAME and QUOTED_NAME are converted to a Constant by their token handlers (the
+    quoted one with its escapes undone), CONSTANT arrives as a raw token; either way
+    the name is the constant's own.
+    """
     first, sort_tok = items
     name = first.name if isinstance(first, Constant) else str(first)
     sort = str(sort_tok)[1:]  # strip leading ':'
@@ -653,7 +660,8 @@ register_parser_op(Quantifier, "fl", "quantifier", "quantifier_",
                    "(FORALL | EXISTS) VARIABLE prefix", _luk_quantifier_transform)
 
 # --- sorted constant transform (term layer, MSFOL + MSFL via the SORTED flag) ---
-# build_grammar emits the NAME SORT / CONSTANT SORT -> sorted_const_ rules for
+# build_grammar emits the NAME SORT / CONSTANT SORT / QUOTED_NAME SORT ->
+# sorted_const_ rules for
 # sorted modes; the transform is registered as a non-grammar-contributing handler
 # so it is attached to the assembled Transformer for those modes.
 for _m in ("msfol", "msfl"):
@@ -1432,6 +1440,49 @@ def _uni_spine(node):
     return n, args
 
 
+#: Whether the rendering in progress writes every constant by its bare name (the key
+#: of an atom, see :func:`key_text`) instead of by the text that reads back as it. A
+#: context variable and not a parameter: a rendering recurses through methods of
+#: several node modules (modal, linear, ...) that call ``to_unicode_str()`` on their
+#: children, and a parameter would be lost there.
+_BARE_CONSTANTS = contextvars.ContextVar("unicode_logic_kit_bare_constants", default=False)
+
+
+def key_text(node) -> str:
+    """The text of ``node`` used as a KEY: ``to_unicode_str()`` with every constant
+    written by its bare name.
+
+    ``Node.to_unicode_str()`` is the text of a formula, and a constant whose name
+    does not read back bare is written in quotes there (``P('a')``). A route that
+    names an atom, a model entry, a sort order or a target identifier by the printed
+    text of an atom needs the name of the constant instead, as it was before the
+    quoted form existed: a user types ``"P(a)"`` as the key of the atom ``P`` over
+    the domain element ``a``, and the identifier of a target is derived from that
+    text. Use this function wherever the text is stored, looked up, compared,
+    sorted, hashed or turned into a name; use ``to_unicode_str()`` wherever it is
+    shown to a person as a formula or handed to the parser.
+
+    The two renderings are one code path and differ ONLY in the text of
+    ``Constant`` and ``SortedConstant`` names, so for a node whose constants all
+    read back bare they are the same string. Here a name is written as it is and is
+    never refused (the empty name is written as nothing, as it always was).
+
+    The setting is a context variable that is restored when the call ends, however it
+    ends, so a rendering that is running is not disturbed by a call to this
+    function, nor this call by a rendering.
+    """
+    token = _BARE_CONSTANTS.set(True)
+    try:
+        return node.to_unicode_str()
+    finally:
+        _BARE_CONSTANTS.reset(token)
+
+
+def _constant_name_text(name) -> str:
+    """The text of the name of a constant in the rendering that is running."""
+    return name if _BARE_CONSTANTS.get() else constant_text(name)
+
+
 def _uni_term(node) -> str:
     """Render a node occurring in term (argument) position.
 
@@ -1439,14 +1490,23 @@ def _uni_term(node) -> str:
     λfoo, parsed as a Function then rewritten to Application(LambdaVar, …)) are
     rendered back as function-call syntax so they re-parse and re-resolve to the
     same node.
+
+    A ``Constant`` or ``SortedConstant`` is written by ``constant_text``: bare when
+    its name reads back as that constant, in quotes when it does not (``'k2'``,
+    ``'Alice'``, ``'G-910'``), and a name that has no text is refused. ``key_text``
+    switches this one place to the bare name. A variable, a lambda variable, a
+    predicate term and the head of a function or of an application keep printing
+    their name as it is.
     """
     cls = type(node).__name__
-    if cls in ("Variable", "LambdaVar", "Constant", "PredicateTerm"):
+    if cls == "Constant":
+        return _constant_name_text(node.name)
+    if cls in ("Variable", "LambdaVar", "PredicateTerm"):
         return node.name
     if cls == "Number":
         return _number_text(node.value)
     if cls == "SortedConstant":
-        return f"{node.name}:{node.sort}"
+        return f"{_constant_name_text(node.name)}:{node.sort}"
     if cls == "Measure":
         # μ(entity, dimension) — a measure-function term.
         return f"μ({_uni_term(node.entity)}, {_uni_term(node.dimension)})"

@@ -91,7 +91,7 @@ mp.parse("∀x (K_x P → ∃y R(x, y))")
 
 ## Evaluating over a Kripke model
 
-`satisfies_modal(formula, model, world)` evaluates a modal formula at a world of a `KripkeModel`. A model is built from worlds, **named** accessibility relations, and a valuation mapping each world to the set of ground-atom keys (an atom key is `atom.to_unicode_str()`) true there. The recognised relation names are `"alethic"` (`□`/`◇`), `"K:"+agent`, `"B:"+agent`, `"deontic"` (`Ⓞ`/`Ⓟ`), and `"temporal"` (the tense operators).
+`satisfies_modal(formula, model, world)` evaluates a modal formula at a world of a `KripkeModel`. A model is built from worlds, **named** accessibility relations, and a valuation mapping each world to the set of ground-atom keys (an atom key is `atom_key(atom)`: the text of the atom with every constant written by its bare name) true there. The recognised relation names are `"alethic"` (`□`/`◇`), `"K:"+agent`, `"B:"+agent`, `"deontic"` (`Ⓞ`/`Ⓟ`), and `"temporal"` (the tense operators).
 
 ```python
 from unicode_logic_kit import KripkeModel, satisfies_modal, Atom, Box, Diamond
@@ -128,20 +128,29 @@ satisfies_modal(Box(p), m2, 0)      # → False  (world 2 lacks P)
 satisfies_modal(Diamond(p), m2, 0)  # → True   (world 1 has P)
 ```
 
-An atom with arguments is keyed by its **rendered** Unicode string (`atom.to_unicode_str()`), so a binary atom's valuation key is `"Likes(a, b)"`:
+An atom with arguments is keyed by `atom_key(atom)`, the text of the atom with every constant written by its **bare name**, so the valuation key of the binary atom over the constants `a` and `b` is `"Likes(a, b)"`. The text of the same atom as a **formula**, `atom.to_unicode_str()`, writes a constant in quotes where the bare name would read as something else (the bare `a` is a variable): `"Likes('a', 'b')"`. The evaluator reads a valuation keyed either way, and for an atom whose constants are all bare words (`Likes(alice, bob)`) the two texts are one string:
 
 ```python
-from unicode_logic_kit import Constant
+from unicode_logic_kit import Constant, atom_key
 
 likes = Atom("Likes", [Constant("a"), Constant("b")])
-likes.to_unicode_str()                # → 'Likes(a, b)'   — this is the valuation key
+atom_key(likes)                       # → 'Likes(a, b)'   — this is the valuation key
+likes.to_unicode_str()                # → "Likes('a', 'b')"   — the text of the formula, read as the same key
 mk = KripkeModel(
     worlds={0, 1},
     relations={"alethic": {(0, 1)}},
-    valuation={1: {"Likes(a, b)"}},   # use the rendered key, spaces and all
+    valuation={1: {"Likes(a, b)"}},   # use the key, spaces and all
 )
 satisfies_modal(Box(likes), mk, 0)    # → True
+mk_text = KripkeModel(
+    worlds={0, 1},
+    relations={"alethic": {(0, 1)}},
+    valuation={1: {likes.to_unicode_str()}},   # keyed by the text of the formula
+)
+satisfies_modal(Box(likes), mk_text, 0)   # → True
 ```
+
+The models that the kit returns (the countermodels of `modal_countermodel`, `modal_enum_search` and the other deciders) are keyed by `atom_key`. A constant whose name is itself a complete quoted constant (`Constant("'a'")`) is refused where a key is made, because its key would also be the text of the atom over the constant `a`.
 
 Combine multiple agents with their own epistemic relations:
 
@@ -392,7 +401,7 @@ standard_translation(mp.parse("□□P")).to_unicode_str()
 # → '∀w0 (R(w, w0) → ∀w1 (R(w0, w1) → P(w1)))'
 
 standard_translation(Box(Atom("Likes", [Constant("a"), Constant("b")]))).to_unicode_str()
-# → '∀w0 (R(w, w0) → Likes(a, b, w0))'   — the world is appended as the last argument
+# → "∀w0 (R(w, w0) → Likes('a', 'b', w0))"   — the world is appended as the last argument; the text of a formula writes a constant `a` in quotes
 ```
 
 The `world=` argument names the free current-world variable (default `"w"`); the past-tense operators translate over the **converse** of their relation (`T(w0, w)`, `N(w0, w)`):

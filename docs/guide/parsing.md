@@ -74,7 +74,7 @@ A bare term-valued token resolves to one of three terminal classes — and there
 
 - **`VARIABLE`** — a single term-valued letter, optionally followed by digits (`x`, `y`, `x2`). It becomes a `Variable`.
 - **`NAME`** — a multi-character term-valued identifier with a non-leading letter (`alice`, `socrates`). It becomes a `Constant` (and, when applied with parentheses, the head of a `Function`).
-- **`CONSTANT`** — the explicit `c_`-prefix form (`c_7`, `c_alice`). It becomes a `Constant` too, and is the way to force a single-symbol name to be a constant.
+- **`CONSTANT`** — the explicit `c_`-prefix form (`c_7`, `c_alice`). It becomes a `Constant` too, and the mark stays part of the name: `c_alice` is the constant named `c_alice`, not the one named `alice`.
 
 ```python
 parser = MSFLParser()
@@ -84,6 +84,13 @@ parser.parse("P(x2)")         # → Atom(predicate='P', args=(Variable(name='x2'
 parser.parse("P(alice)")      # → Atom(predicate='P', args=(Constant(name='alice'),))
 parser.parse("P(c_7)")        # → Atom(predicate='P', args=(Constant(name='c_7'),))
 parser.parse("P(c_alice)")    # → Atom(predicate='P', args=(Constant(name='c_alice'),))
+```
+
+A fourth spelling, a **quoted constant**, writes a constant of any name, including the names no bare token can spell: a single letter (`'a'`), a variable-shaped name (`'k2'`), an upper-case name (`'Alice'`), a name with a hyphen or a space (`'G-910'`, `'John Doe'`). The text between the single quotes is the name, exactly, and the printer writes a constant in quotes whenever its bare word would read as something else, so printed text reads back. See "Quoted constants" in the {doc}`syntax-reference` for the escapes, the sorted form and the limits.
+
+```python
+parser.parse("P('a', x)")     # → Atom(predicate='P', args=(Constant(name='a'), Variable(name='x')))
+parser.parse("P('Alice')")    # → Atom(predicate='P', args=(Constant(name='Alice'),))
 ```
 
 A single term-valued letter standing alone is a *variable*, but followed by an argument list it is a function symbol, like a multi-character `NAME`: `father(x)` and `f(x)` are both a `Function`:

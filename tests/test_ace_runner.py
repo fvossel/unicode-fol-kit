@@ -98,21 +98,23 @@ def test_every_not_ace_row_recorded_an_error_message():
 # donkey sentence gets the universal reading of its indefinite.
 # ---------------------------------------------------------------------------
 
+# A name that begins with an upper-case letter is written in quotes (``'John'``): bare, it
+# would read as a predicate and not as the constant.
 HAND_CHECKED = {
-    "svo-intransitive": ["∃a Predicate1(a, wait, John)"],
+    "svo-intransitive": ["∃a Predicate1(a, wait, 'John')"],
     "universal": ["∀a (Man(a) → ∃b Predicate1(b, wait, a))"],
     "donkey": ["∀a ∀b ∀c (Farmer(a) ∧ (Donkey(b) ∧ Predicate2(c, own, a, b))"
                " → ∃d Predicate2(d, beat, a, b))"],
-    "negation-verb": ["¬∃a Predicate1(a, wait, John)"],
+    "negation-verb": ["¬∃a Predicate1(a, wait, 'John')"],
     "if-then": ["∀a ∀b ∀c (Man(a) ∧ (Dog(b) ∧ Predicate2(c, see, a, b))"
                 " → ∃d Predicate1(d, wait, a))"],
-    "or-sentences": ["∃a (Predicate1(a, wait, John)"
-                     " ∨ ∃b Predicate1(b, wait, Mary))"],
+    "or-sentences": ["∃a (Predicate1(a, wait, 'John')"
+                     " ∨ ∃b Predicate1(b, wait, 'Mary'))"],
     "card-geq": ["∃a ∃b (Predicate1(a, wait, b)"
                  " ∧ Object(b, man, countable, na, geq, 3))"],
     "collective": ["∃a ∃b ∃c (Object(a, na, countable, na, eq, 2)"
-                   " ∧ (Has_part(a, Mary) ∧ (Predicate2(b, lift, a, c)"
-                   " ∧ (Table(c) ∧ Has_part(a, John)))))"],
+                   " ∧ (Has_part(a, 'Mary') ∧ (Predicate2(b, lift, a, c)"
+                   " ∧ (Table(c) ∧ Has_part(a, 'John')))))"],
 }
 
 

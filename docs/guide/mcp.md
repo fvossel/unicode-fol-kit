@@ -36,6 +36,14 @@ carries a `spec_topic` and why the grammar itself is served as a tool.
 Every tool takes formulas as plain text with the dialect auto-detected, and
 returns structured JSON.
 
+A constant whose name is one letter, starts upper-case or holds a space or
+punctuation is written in single quotes: `P('k2') ∧ Q('John Doe')`. Every tool
+reads that text and writes it back the same way, so the `unicode` and
+`axioms_unicode` of a result go into the next call as they are. A predicate or
+function name has no quoted form. The LaTeX reader refuses a quote, and
+`render` with `to="latex"` writes a constant by its name (`P(k2)`, which reads
+back as a variable): pass the `unicode` text on, not the LaTeX.
+
 `get_signature` answers `{"ok": True, "signature": {...}}`; `check_formula` and
 `diagnose` take that whole result, or just its `signature` value, as their
 `signature`, to hold further generations to the same vocabulary (the loose form
@@ -195,11 +203,14 @@ there is exactly one right answer. Two shapes qualify — both of them cost a
 generation attempt for nothing otherwise:
 
 - **A name no symbol class accepts**: a chemical name carrying digits, commas
-  or hyphens. The kit's unicode syntax has no quoting mechanism, so the name is
-  renamed to a legal predicate — and the original stays in `names`, so nothing
-  about it is lost; it lives beside the formula instead of inside it. Pass a
-  shared `NameMapping` (via `fol.repair_formula`) to keep one class named the
-  same way across a whole run.
+  or hyphens, used as a predicate or a function. The kit's unicode syntax can
+  quote a constant (`'1,2-diacyl'`) but has no quoted form for a predicate or
+  a function name, so the name is renamed to a legal predicate — and the
+  original stays in `names`, so nothing about it is lost; it lives beside the
+  formula instead of inside it. Whatever stands between single quotes is a
+  constant's name and is left exactly as written. Pass a shared `NameMapping`
+  (via `fol.repair_formula`) to keep one class named the same way across a
+  whole run.
 - **A free variable**: always reported, and closed on request
   (`close_free_variables=True`) — by dropping the argument where the formula is
   a `P(x) ↔ …` definition whose `x` never recurs on the right, else by

@@ -46,6 +46,13 @@ EXAMPLES = (
      "Hosted(beijing, 2008SummerOlympics)"),
     ("caseless-script-is-term-valued", "fol", "P(中文)", "P(中文)"),
     ("greek-is-a-constant-not-a-name", "fol", "P(α)", "P(α)"),
+    ("quoted-constant", "fol", "P('k2') ∧ Q('John Doe') ∧ R('Alice')",
+     "P('k2') ∧ Q('John Doe') ∧ R('Alice')"),
+    ("quoted-constant-with-an-escape", "fol", r"P('it\'s') ∧ Q('a\\b')",
+     r"P('it\'s') ∧ Q('a\\b')"),
+    ("quoted-constant-that-needs-no-quotes", "fol", "P('socrates')",
+     "P(socrates)"),
+    ("quoted-sorted-constant", "msfol", "P('k2':Mountain)", "P('k2':Mountain)"),
     ("universal", "fol", "∀x (Dog(x) → Animal(x))", "∀x (Dog(x) → Animal(x))"),
     ("existential", "fol", "∃x (Dog(x) ∧ Black(x))", "∃x (Dog(x) ∧ Black(x))"),
     ("counting", "fol", "∃≥40 x Carbon(x)", "∃≥40 x Carbon(x)"),
@@ -129,7 +136,9 @@ def _overview() -> dict:
         "most_common_mistake": (
             "Assuming a lowercase name is a predicate. In the kit's OWN "
             "unicode syntax a single lowercase letter is a VARIABLE and a "
-            "predicate must start uppercase — see topic 'naming'. In TPTP the "
+            "predicate must start uppercase — see topic 'naming', which also "
+            "says how a constant of any such name is written, in single "
+            "quotes ('a', 'Alice', 'John Doe'). In TPTP the "
             "convention is exactly inverted. If your vocabulary has lowercase "
             "predicate names (as chemical signatures do), write TPTP."),
         "topics": list(SPEC_TOPICS),
@@ -174,7 +183,9 @@ def _naming() -> dict:
              "note": "'a1' is a VARIABLE, not a constant — digits do not "
                      "change the kind. This is unchanged from a plain-ASCII "
                      "reading of the rule; only the letter itself is no "
-                     "longer restricted to 'a'-'z'."},
+                     "longer restricted to 'a'-'z'. A CONSTANT with such a "
+                     "name is written in single quotes ('a', 'a1') — see "
+                     "'quoted_constant'."},
             {"kind": "constant",
              "shape": "term-valued, at least two letters (any script) with "
                       "one not first — OR one-or-more ASCII digits then a "
@@ -190,6 +201,30 @@ def _naming() -> dict:
                      "underscore is legal ('dani_Shapiro') — but never as "
                      "the FIRST character of any identifier ('_foo' is a "
                      "NamingError)."},
+            {"kind": "quoted_constant",
+             "shape": "a constant whose name is one letter (or one letter "
+                      "and digits), starts upper-case, or holds a space or "
+                      "punctuation is written in single quotes. The text "
+                      "between the quotes is the name, exactly. Inside, a "
+                      "quote is written \\' and a backslash \\\\; no other "
+                      "escape exists, and '' (no name) is a syntax error.",
+             "matches": ["'a'", "'k2'", "'Alice'", "'G-910'", "'C++'",
+                         "'John Doe'", "'1,2-diacyl'", "'it\\'s'"],
+             "note": "Without quotes k2 is a VARIABLE and Alice is no "
+                     "constant, so a constant of such a name MUST be "
+                     "quoted: 'k2' is the constant named k2. A name that "
+                     "reads as a constant bare may be quoted too, and is the "
+                     "same constant ('socrates' and socrates). A quoted "
+                     "constant stands where a constant stands, as an "
+                     "argument or an operand; in a many-sorted dialect "
+                     "(msfol, msfl) a constant always carries its sort, "
+                     "'k2':Mountain. A predicate, a function name, a "
+                     "variable, a sort, an agent and a nominal have NO "
+                     "quoted form: 'Foo'(x) is a syntax error. Close every "
+                     "quote you open: P('x) ∧ Q(y') is read as the one "
+                     "atom P of the single constant named x) ∧ Q(y. Write "
+                     "such a formula in the Unicode syntax, not in LaTeX: "
+                     "the LaTeX reader refuses a quote."},
             {"kind": "predicate",
              "shape": "one uppercase-signalling letter (str.isupper() true), "
                       "then letters/digits — never an underscore, never a "
@@ -231,6 +266,10 @@ def _naming() -> dict:
                               "underscore-continuation", "digit-leading-name",
                               "caseless-script-is-term-valued",
                               "greek-is-a-constant-not-a-name",
+                              "quoted-constant",
+                              "quoted-constant-with-an-escape",
+                              "quoted-constant-that-needs-no-quotes",
+                              "quoted-sorted-constant",
                               "tptp-lowercase-predicates"),
     }
 
@@ -553,11 +592,18 @@ def _errors() -> dict:
              "symptom": "A chemical name used as a predicate starts with a "
                         "digit or contains punctuation, e.g. '(2S)Flavan4One' "
                         "or '1,2-diacyl-sn-glycero-3-phosphocholine'.",
-             "fix": "Wrap it in single quotes — TPTP allows any characters "
-                    "inside a quoted atomic word. Do NOT invent a sanitised "
-                    "camel-case name: that silently discards chemically "
-                    "meaningful prefixes and breaks the link to the ontology "
-                    "class.",
+             "fix": "What single quotes can hold depends on what the name "
+                    "is. A CONSTANT of any name is written in single quotes "
+                    "in the kit's own unicode syntax and in TPTP alike "
+                    "('1,2-diacyl', 'John Doe'). A PREDICATE or a FUNCTION "
+                    "name has no quoted form in the unicode syntax, where "
+                    "'Foo'(x) is a syntax error; write the formula in TPTP "
+                    "(dialect='tptp_bare'), where any characters are allowed "
+                    "inside a quoted atomic word, or let repair_formula "
+                    "rename the predicate (the original is kept in its "
+                    "'names'). Do NOT invent a sanitised camel-case name by "
+                    "hand: that silently discards chemically meaningful "
+                    "prefixes and breaks the link to the ontology class.",
              "topic": "naming"},
             {"kind": "unbound_variable",
              "symptom": "'threeOxoSteroid(X) <=> (steroid & ?[A1]: c(A1))' — "

@@ -90,19 +90,21 @@ def test_end_to_end_fol_refutation():
 # (e) render_resolution_proof, pinned for the part-(a) refutation.
 #
 # Hand-derivation of the expected string: each literal renders via
-# to_unicode_str() (Atom "P(a)"; Not(Atom) "¬P(x)"; nullary-arg atoms render
-# with no comma, e.g. "Q(x)"); a 2-literal clause is sorted by that rendered
-# string, and 'Q' (U+0051) sorts before '¬' (U+00AC) codepoint-wise, so
-# {¬P(x), Q(x)} renders "Q(x) ∨ ¬P(x)". The empty clause renders "□".
+# to_unicode_str() (Atom "P('a')", the constant ``a`` being written in quotes
+# because the bare letter would read back as a variable; Not(Atom) "¬P(x)";
+# nullary-arg atoms render with no comma, e.g. "Q(x)"); a 2-literal clause is
+# sorted by the bare-name text of its literals, and 'Q' (U+0051) sorts before
+# '¬' (U+00AC) codepoint-wise, so {¬P(x), Q(x)} renders "Q(x) ∨ ¬P(x)". The
+# empty clause renders "□".
 # ---------------------------------------------------------------------------
 
 def test_render_resolution_proof_pinned():
     d = _part_a_derivation()
     expected = (
-        "1. P(a) [input]\n"
+        "1. P('a') [input]\n"
         "2. Q(x) ∨ ¬P(x) [input]\n"
-        "3. ¬Q(a) [input]\n"
-        "4. Q(a) [resolve 1,2]\n"
+        "3. ¬Q('a') [input]\n"
+        "4. Q('a') [resolve 1,2]\n"
         "5. □ [resolve 3,4]"
     )
     assert render_resolution_proof(d) == expected

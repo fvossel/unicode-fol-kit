@@ -492,7 +492,9 @@ def test_equality_refusal_names_the_atom_the_route_and_where_to_go():
         gmt_translate(Implies(p, EQ))
     msg = str(info.value)
     assert msg.startswith("intuitionistic GMT:")        # the module's own refusal style
-    assert "'a = b'" in msg and "'='" in msg             # the atom, by name
+    # the atom, by name: its text is 'a' = 'b' (each constant a single letter, so written in
+    # quotes), shown by repr, which uses double quotes for a text that holds single quotes
+    assert "\"'a' = 'b'\"" in msg and "'='" in msg
     assert "Gödel–McKinsey–Tarski" in msg and "int_valid" in msg
     assert "fol.qml.qml_is_valid" in msg and "rigid identity" in msg
     with pytest.raises(NotImplementedError) as info:

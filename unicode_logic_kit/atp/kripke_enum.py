@@ -114,6 +114,7 @@ from ..fol.nodes import (
     sort_axioms, sort_membership_axioms,
 )
 from ..fol._atom_keys import AtomKeys, refuse_alike_agents
+from ..fol._msfl_nodes import key_text
 from ..fol._truth_constants import truth_value as _truth_value
 from ..semantics.kripke import KripkeModel, satisfies_modal
 from ..fol.frames import (
@@ -149,14 +150,15 @@ def _agent_key(agent: Node) -> str:
     private cross-module import for a two-line function): the agent's
     ``.name`` if it has one (a Constant or Variable), else its rendered form.
     """
-    return getattr(agent, "name", None) or agent.to_unicode_str()
+    return getattr(agent, "name", None) or key_text(agent)
 
 
 def _collect(formula: Node) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
     """Scan ``formula`` for its ground-atom keys and the relation families it uses.
 
     Returns ``(atoms, families)``, both sorted tuples (deterministic order):
-    ``atoms`` are the ``Atom.to_unicode_str()`` keys the valuation must cover;
+    ``atoms`` are the ``key_text`` keys (every constant written by its bare name) the
+    valuation must cover;
     ``families`` are the relation NAMES (in the ``semantics.kripke`` convention)
     the enumerator must build a relation for — one entry per distinct alethic /
     epistemic-per-agent / doxastic-per-agent / assertive-per-agent /
@@ -169,7 +171,7 @@ def _collect(formula: Node) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
     for node in formula.walk():
         if isinstance(node, Atom):
             if _truth_value(node) is None:      # `$true` / `$false` are not varied
-                atoms.add(node.to_unicode_str())
+                atoms.add(key_text(node))
         elif isinstance(node, (Box, Diamond)):
             families.add(_ALETHIC)
         elif isinstance(node, Knows):
@@ -333,7 +335,7 @@ def _scan_sorted(formula: Node) -> Tuple[Node, Tuple[str, ...]]:
     """
     if not sort_axioms(formula):
         return formula, ()
-    fixed = tuple(sorted({atom.to_unicode_str()
+    fixed = tuple(sorted({key_text(atom)
                           for atom in sort_membership_axioms(formula)}))
     return formula._relativize([]), fixed
 

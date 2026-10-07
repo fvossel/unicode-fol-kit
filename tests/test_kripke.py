@@ -350,9 +350,14 @@ def test_missing_relation_and_valuation_defaults():
 
 
 def test_atom_with_arguments_key():
-    """A ground atom with arguments is keyed by its Unicode rendering."""
+    """A ground atom with arguments is keyed by its text with every constant written by its name.
+
+    The text of the FORMULA writes the one-letter constants in quotes, because ``a`` alone
+    would read as a variable; the key does not, and is what a valuation is typed with.
+    """
     likes = Atom("Likes", [Constant("a"), Constant("b")])
-    key = likes.to_unicode_str()
+    assert likes.to_unicode_str() == "Likes('a', 'b')"
+    key = "Likes(a, b)"
     model = KripkeModel(worlds={0}, valuation={0: {key}})
     assert satisfies_modal(likes, model, 0) is True
     assert satisfies_modal(Not(likes), model, 0) is False
@@ -566,7 +571,8 @@ def test_equality_refusal_names_the_atom_and_the_route():
         satisfies_modal(Box(EQ), _everything_model(), 0)
     msg = str(info.value)
     assert msg.startswith("satisfies_modal:")         # the module's own refusal style
-    assert "'a = b'" in msg and "'='" in msg           # the atom, by name
+    # the atom, by name, as the text of a formula writes it: the one-letter constants are quoted
+    assert "\"'a' = 'b'\"" in msg and "'='" in msg
     assert "fol.qml.qml_is_valid" in msg and "first-order" in msg
     with pytest.raises(NotImplementedError) as info:
         satisfies_modal(NEQ, _everything_model(), 0)
@@ -660,8 +666,9 @@ def test_equality_refused_by_the_group_operators_through_satisfies_modal():
 def test_other_infix_atoms_are_still_ordinary_keyed_atoms():
     """Only '=' / '≠' are refused: '<', '≤' ... are looked up by key exactly as before."""
     lt = Atom("<", (_A, _B))
-    m = KripkeModel(worlds={0, 1}, valuation={0: {lt.to_unicode_str()}})
-    assert lt.to_unicode_str() == "a < b"
+    m = KripkeModel(worlds={0, 1}, valuation={0: {"a < b"}})
+    # the text of the formula quotes the constants, the key does not
+    assert lt.to_unicode_str() == "'a' < 'b'"
     assert satisfies_modal(lt, m, 0) is True and satisfies_modal(lt, m, 1) is False
     assert satisfies_modal(Atom("≤", (_A, _B)), m, 0) is False
 

@@ -172,14 +172,15 @@ Quantified input is out of scope here — `int_prove` raises `NotImplementedErro
 pointing at the bounded first-order Kripke search (`int_valid` / `int_countermodel`)
 or the propositional GMT/S4 route below.
 
-A propositional letter is named by the text its atom prints as, so two different atoms that print alike — the numeral `1` and a constant `'1'` in `P(1)`, or a free variable `x` and a constant `x` in `P(x)` — are refused by name with `NotImplementedError` by `int_valid`, `int_countermodel`, `int_prove` and `int_decide`, and `api.prove(f, logic="intuitionistic")` answers `unknown` with that sentence in its detail:
+A propositional letter is named by the key of its atom: the text the atom prints as with every constant written by its bare name. Two different atoms can have one key although their formula texts tell them apart — the numeral `1` and a constant named `1` (the texts `P(1)` and `P('1')`, the key `P(1)`), or a free variable `x` and a constant named `x` (the texts `P(x)` and `P('x')`, the key `P(x)`). The route would read them as one letter, so `int_valid`, `int_countermodel`, `int_prove` and `int_decide` refuse them by name with `NotImplementedError`, and `api.prove(f, logic="intuitionistic")` answers `unknown` with that sentence in its detail:
 
 ```python
 from unicode_logic_kit.fol.nodes import Atom, Implies, Variable, Constant
 
-# the free variable x and the constant x are two atoms that both print as P(x)
+# the free variable x and the constant x are two atoms with one key, P(x)
 alike = Implies(Atom("P", [Variable("x")]), Atom("P", [Constant("x")]))
-int_decide(alike)   # raises NotImplementedError: two different atoms are both written 'P(x)'
+alike.to_unicode_str()   # → "P(x) → P('x')"
+int_decide(alike)   # raises NotImplementedError: two different atoms have one key and are both written 'P(x)'
 ```
 
 The calculus terminates, but its number of steps grows exponentially with the nesting of implications, and `int_prove` counts its steps against an internal budget of 200000. Peirce's law `((A → B) → A) → A` with `A` replaced by the formula built so far and a fresh `B` at each of five levels spends the budget, and `int_prove` raises `RuntimeError`:
@@ -319,7 +320,8 @@ dict(model.upset)                          # → {0: frozenset({0}), 1: frozense
 
 Read it the same way: the root (`world 1`) has the individual `_e0` but has not yet learned
 `P(_e0)` (which becomes forced at `world 0`), so `P(_e0) ∨ ¬P(_e0)` is unforced and the
-universal fails.
+universal fails. (`P(_e0)` is the key of the atom, which writes the individual by its bare name;
+as formula text the individual is quoted, `P('_e0')`.)
 
 A variable that is free in a first-order formula is a **parameter**: one unknown individual, the same everywhere in the formula, that exists in every world of the model (it exists where the formula is evaluated, and domains only grow). The search reads it as a constant of its own name, so the returned model has it in every domain:
 
@@ -421,7 +423,7 @@ print(render_sequent_proof(nc))
 ```
 
 The quantifier rules pass their term / eigenvariable through `extra=`. A `∀L`
-instantiation `∀x P(x) ⊢ P(c)`:
+instantiation `∀x P(x) ⊢ P('c')`:
 
 ```python
 x, c = Variable("x"), Constant("c")
@@ -432,8 +434,8 @@ fa = derive(sequent([Quantifier("∀", x, Px(x))], [Px(c)]), "∀L",
 
 check_lj_proof(fa)                 # → True
 print(render_sequent_proof(fa))
-# → ∀x P(x) ⊢ P(c)   [∀L c]
-# →   P(c) ⊢ P(c)   [Ax]
+# → ∀x P(x) ⊢ P('c')   [∀L 'c']
+# →   P('c') ⊢ P('c')   [Ax]
 ```
 
 ### What LJ rejects

@@ -1,14 +1,16 @@
 r"""The capture invariant itself: no bound variable of an image has the name of a
 constant of that image.
 
-``Variable("x0")`` and ``Constant("x0")`` print alike and are one constant to
-every backend, so a quantifier that binds ``x0`` captures an individual called
-``x0``. Round 1 made every binder of every image — the GCI's prefix variable, the
-role axioms' ``x``/``y``/``z``, the data axioms' ``x``/``v``/``w``, the sort
-axioms', and every MINTED ``x0``, ``x1``, … — avoid the individuals of the whole
-knowledge base. ``tests/test_dl_binder_capture.py`` pins the semantic consequences
+``Variable("x0")`` and ``Constant("x0")`` are the texts ``x0`` and ``'x0'`` and two
+symbols to Z3, but would be one symbol to a target that gives both one
+namespace, so a quantifier that binds ``x0`` would capture an individual called
+``x0`` there. Every binder of
+every image — the GCI's prefix variable, the role axioms' ``x``/``y``/``z``, the
+data axioms' ``x``/``v``/``w``, the sort axioms', and every MINTED ``x0``, ``x1``,
+… — therefore avoids the individuals of the whole knowledge base.
+``tests/test_dl_binder_capture.py`` pins the semantic consequences
 (a consistent knowledge base reported inconsistent), one binder at a time; three
-mutants of that fix still survived all of it, because each needs the individual
+mutants of that avoidance still survived all of it, because each needs the individual
 that would be captured to stand in a DIFFERENT conjunct than the binder:
 
 * ``abox_to_fol``'s minted variables avoiding only the individuals of the
@@ -26,8 +28,8 @@ another — the individuals are named like the names the translation mints
 
 The invariant is stricter than the semantics need (a binder only captures inside
 its own scope), and that is the point: it holds without a case analysis of which
-conjunct could see which, and it is what a reader of the printed formula needs
-to be sure ``x0`` means one thing.
+conjunct could see which, and it is what a writer with one namespace for
+variables and constants needs to be sure ``x0`` means one thing.
 """
 
 import pytest

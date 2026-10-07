@@ -71,6 +71,7 @@ from ..fol.nodes import (
     Product, Under, Over,
 )
 from ..fol._linear_nodes import Top, Zero
+from ..fol._msfl_nodes import key_text
 from ..fol._truth_constants import refuse_truth_constants
 from ..atp.linear import (
     ILLDerivation, ILLSequent, ill_prove, check_ill_proof,
@@ -95,9 +96,12 @@ def _isa_str(s: str) -> str:
     """Render a Python string as an Isabelle ``string`` literal ``''...''``.
 
     ILL/Lambek atoms in this kit are propositional letters / atomic categories
-    (``A``, ``NP``, ...); their rendered text never legitimately contains a
+    (``A``, ``NP``, ...); their text never legitimately contains a
     single quote, so — rather than silently mis-escaping — an embedded ``'``
-    is rejected outright with a message pointing at why.
+    is rejected outright with a message pointing at why. The text of an atom
+    is its key (``key_text``: every constant by its bare name), not the text of
+    the formula: that writes a constant such as ``k2`` in quotes, which would
+    turn an export that works into this refusal.
     """
     if "'" in s:
         raise NotImplementedError(
@@ -236,7 +240,7 @@ def _lift_ill(node: Node) -> str:
     """Lift an ILL formula to its ``ill``-datatype Isabelle term."""
     if isinstance(node, Atom):
         refuse_truth_constants([node], "to_isabelle_ill", _ILL_NO_CONSTANT_WHY)
-        return f"(IAtom {_isa_str(node.to_unicode_str())})"
+        return f"(IAtom {_isa_str(key_text(node))})"
     if isinstance(node, Tensor):
         return f"(ITensor {_lift_ill(node.left)} {_lift_ill(node.right)})"
     if isinstance(node, With):
@@ -613,7 +617,7 @@ def _lift_lambek(node: Node) -> str:
     """Lift a Lambek type/formula to its ``lam``-datatype Isabelle term."""
     if isinstance(node, Atom):
         refuse_truth_constants([node], "to_isabelle_lambek", _LAMBEK_NO_CONSTANT_WHY)
-        return f"(LAtom {_isa_str(node.to_unicode_str())})"
+        return f"(LAtom {_isa_str(key_text(node))})"
     if isinstance(node, Product):
         return f"(LProduct {_lift_lambek(node.left)} {_lift_lambek(node.right)})"
     if isinstance(node, Under):

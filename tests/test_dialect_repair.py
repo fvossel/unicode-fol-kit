@@ -13,9 +13,12 @@ program run):
   The tests below pin BOTH halves of that claim (input and output).
   What the grammar refuses instead — ``A ∧ B ∨ C``, mixed at one level — is
   reported and never repaired: two readings, no way to know which was meant.
-* **Case 2** (invalid predicate name): the unicode grammar has no quoting
-  mechanism, so the fix is a rename through
-  :class:`~unicode_logic_kit.fol.sanitize.NameMapping`. Its rule, from
+* **Case 2** (invalid predicate name): the unicode grammar quotes a
+  constant (``'1,2-diacyl'``) but has no quoted form for a predicate or a
+  function name, so the fix is a rename through
+  :class:`~unicode_logic_kit.fol.sanitize.NameMapping`. Whatever stands
+  between single quotes is a constant's name and is never renamed; the tests
+  of that are in ``tests/test_quoted_constants_before_the_parser.py``. Its rule, from
   ``sanitize.NameMapping.for_predicate``: keep the ASCII-alphanumerics, and
   if the result does not start with a letter, prefix ``P``; then upper-case
   the first character. Hand-applied per test, character by character.

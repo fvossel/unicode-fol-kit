@@ -56,7 +56,7 @@ Pipeline:
      SOUND in either direction (from ``s`` into occurrences that look like
      ``s``, or symmetrically from ``t`` into occurrences that look like
      ``t``); a simple term order (:func:`_term_gt` — weight = term size, ties
-     broken lexicographically by ``to_unicode_str()``, see its docstring)
+     broken lexicographically by ``key_text()``, see its docstring)
      prunes the search by allowing paramodulation only from the
      order-greater side when the order strictly decides, trying both
      directions only when it does not (which, under this concrete order,
@@ -118,7 +118,7 @@ from typing import Optional
 from .._deadline import instant as _instant, remaining_ms as _remaining_ms, run_until as _run_until
 from ..fol._free_parameters import parameterize
 from ..fol._identifiers import symbol_names
-from ..fol._msfl_nodes import sort_axioms
+from ..fol._msfl_nodes import key_text, sort_axioms
 from ..fol._truth_constants import truth_value
 from ..fol.nodes import (
     Node, Atom, Not, Implies, Quantifier, Variable, Constant, Number, Function,
@@ -356,10 +356,14 @@ def _rename_term(node: Node, mapping: dict) -> Node:
 # ---------------------------------------------------------------------------
 
 def _lit_key(literal) -> str:
-    """Canonical sort key for a literal (its surface form): the saturation loop
+    """Canonical sort key for a literal (its surface form with every constant written by
+    its bare name, ``key_text``): the saturation loop
     must visit literals and clauses in a content-determined order so a proof
-    search is reproducible run to run (frozenset iteration is hash-randomised)."""
-    return literal.to_unicode_str()
+    search is reproducible run to run (frozenset iteration is hash-randomised).
+    The quotes that the text of a formula puts around a constant such as ``k2`` play no part
+    in the order, so the search visits the same literals in the same order as it did before
+    a constant could be written in quotes."""
+    return key_text(literal)
 
 
 def _clause_vars(clause: frozenset) -> set:
@@ -633,11 +637,11 @@ def _term_weight(term: Node) -> int:
 
 def _term_order_key(term: Node):
     """The module's term order, part 2: ties in weight are broken
-    LEXICOGRAPHICALLY by the term's ``to_unicode_str()`` rendering (plain
-    Python string comparison). Returns the ``(weight, rendering)`` pair
-    compared by :func:`_term_gt`.
+    LEXICOGRAPHICALLY by the term's rendering with every constant written by its bare name
+    (``key_text``, plain Python string comparison: the quotes of a quoted constant play no
+    part). Returns the ``(weight, rendering)`` pair compared by :func:`_term_gt`.
     """
-    return (_term_weight(term), term.to_unicode_str())
+    return (_term_weight(term), key_text(term))
 
 
 def _term_gt(s: Node, t: Node) -> bool:

@@ -50,6 +50,10 @@ there. Two deliberate exceptions:
    SCHEMA_VERSION
    Z3Env
    detect_dialects
+   is_variable_name
+   is_bare_constant
+   constant_text
+   atom_key
    to_english
    CCGDerivation
    reduction_derivation

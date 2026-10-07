@@ -246,6 +246,13 @@ With `Mortal(alice:Human)` the sentence would read
 `atp.finite_domain` alongside `fragment_check`/`FiniteDomainProblem`/
 `verify_model`, for exactly this kind of direct use.
 
+A name made of ASCII letters, digits and underscores is written as above
+(`p_Human`, `k_alice`, `v_x`). Any other name gets an escaped identifier, in
+which each character that is no ASCII letter or digit is written as its code
+point in hexadecimal between underscores: the constant `'a b'` is `kx_a_20_b`
+and `'G-910'` is `kx_G_2d_910`. Two names never share an identifier, and the
+model that comes back is reported under the names of the formula.
+
 ## `ClingoBackend`
 
 Dependency: `pip install unicode-logic-kit[asp]` (`clingo`, MIT-licensed, ships

@@ -38,8 +38,15 @@ import pytest
 pytest.importorskip("cvc5")
 
 BUDGET_MS = 3000
+#: What a machine that runs several test workers at once may add to a call. The
+#: bound below was exactly twice the budget, and a loaded machine measured 6.14 s
+#: against 6.0 s for a backend that had stopped on time. The slack is the one the
+#: deadline tests of the in-house searches use; a backend that ignores its budget
+#: runs into the hard cap, which is a minute later, so the test still tells the
+#: two apart.
+SLACK_S = 5.0
 #: "within about twice the budget": the backend's own wall time for the call.
-WALL_LIMIT_S = 2 * BUDGET_MS / 1000
+WALL_LIMIT_S = 2 * BUDGET_MS / 1000 + SLACK_S
 #: What the CHILD may take in all (interpreter start, imports, translation, the
 #: check). A cvc5 that ignores its budget is cut off here and the test fails.
 HARD_CAP_S = 120

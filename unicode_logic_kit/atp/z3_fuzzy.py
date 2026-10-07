@@ -99,7 +99,8 @@ def _z3_tnorm_ops(tnorm: str) -> dict:
 def _collect_atoms(formula: Node, atom_vars: dict, keys: Optional[AtomKeys] = None) -> None:
     """Populate atom_vars: {atom-key -> z3 Real} for every ground atom in formula.
 
-    The key is the atom's ``to_unicode_str()`` (a sorted constant ``c:S`` read as the
+    The key is the atom's text with every constant written by its bare name (``atom_key``,
+    a sorted constant ``c:S`` read as the
     constant ``c``) so two structurally identical ground atoms share a single Z3
     variable. Mutates atom_vars in place (it is private working state owned by the
     caller, never a user input). ``keys`` records the atom behind every key of one problem
@@ -207,7 +208,7 @@ def degree_expr(formula: Node, tnorm: str = "lukasiewicz",
       the chosen ``tnorm`` (``"lukasiewicz"`` or ``"godel"``),
     * ``constraints`` is a list of ``0 <= v`` and ``v <= 1`` bounds, one pair
       per distinct ground atom,
-    * ``atom_vars`` maps each atom key (its ``to_unicode_str()``) to its Z3
+    * ``atom_vars`` maps each atom key (``atom_key``: every constant by its bare name) to its Z3
       ``Real`` variable.
 
     A quantified formula is first **grounded** over ``domain`` (unsorted ∀x/∃x) and
@@ -325,8 +326,8 @@ def fuzzy_get_model(formula: Node, threshold: float = 1.0,
                     domain=None, sort_universes=None):
     """Return an atom->degree assignment reaching the threshold, or None.
 
-    On success the returned dict maps each ground-atom key (its
-    ``to_unicode_str()``) to a float degree in [0, 1], plus a ``'degree'`` entry
+    On success the returned dict maps each ground-atom key (its text with every constant
+    written by its bare name, ``atom_key``) to a float degree in [0, 1], plus a ``'degree'`` entry
     giving the formula's resulting degree. Returns None if no valuation reaches
     the threshold (``degree >= threshold``) or Z3 cannot decide within timeout.
 

@@ -21,7 +21,12 @@ not the contract):
     Unicode formula string, and that the string it renders parses back
     (via the matching ``MSFLParser`` mode) to a structurally equal node —
     the roundtrip guarantee documented on ``to_unicode_str`` itself and
-    exercised by the FOL-fragment roundtrip test suite.
+    exercised by the FOL-fragment roundtrip test suite. A constant whose name
+    does not read back as that constant when written bare (``k2`` is a
+    variable, ``Alice`` a predicate, ``G-910`` no term) is written in single
+    quotes, ``'k2'``, so that the text reads back for every constant that has
+    a text; a constant that reads back bare (``socrates``) is written as it
+    always was.
 
 A consumer that builds nodes by calling these constructors directly and
 serialises them back to text via ``to_unicode_str`` — the way a mutation-

@@ -157,6 +157,7 @@ from ..fol.frames import (
     UnsupportedFrameCondition, resolve_frame, require_supported,
 )
 from ..fol._atom_keys import refuse_alike_agents
+from ..fol._msfl_nodes import key_text
 from ..fol._truth_constants import is_true_constant, is_truth_constant
 from .fitch import is_falsum
 from .lj import _forget_constant_sorts
@@ -191,7 +192,7 @@ _TEMPORAL_CLOSURE = (Always, Eventually, Until, Historically, Once, Previous, Si
 
 def _agent_key(agent: Node) -> str:
     """Relation-key suffix for an epistemic/doxastic agent term (its name)."""
-    return getattr(agent, "name", None) or agent.to_unicode_str()
+    return getattr(agent, "name", None) or key_text(agent)
 
 
 # ---------------------------------------------------------------------------
@@ -886,9 +887,9 @@ def _build_model(b: _Branch, ctx: _Ctx) -> KripkeModel:
     (a distributed-knowledge box over relations that are all dead ends at the world) honest.
     """
     valuation = {}
-    always = {fact.to_unicode_str() for fact in b.facts}
+    always = {key_text(fact) for fact in b.facts}
     for w, s in b.tv.items():
-        valuation[w] = {f.to_unicode_str() for f in s
+        valuation[w] = {key_text(f) for f in s
                         if isinstance(f, Atom) and not is_truth_constant(f)} | always
     relations = {r: set(e) for r, e in b.rels.items()}
     worlds = set(b.tv) | {0}

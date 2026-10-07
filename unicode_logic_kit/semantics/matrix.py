@@ -36,7 +36,7 @@ from itertools import product
 from typing import Callable, Dict, FrozenSet, Hashable, List, Optional, Sequence, Tuple
 
 from ..fol.nodes import Node, Atom, Not, And, Or, Xor, Implies, Iff, Quantifier
-from ..fol._atom_keys import AtomKeys, atom_key
+from ..fol._atom_keys import AtomKeys, atom_key, find_own_key
 from ..fol._truth_constants import truth_value as _truth_value
 from . import manyvalued as _manyvalued
 from .manyvalued import (_atom_keys, _instantiate, _ground, _parameter_instances,
@@ -138,10 +138,13 @@ def matrix_value(formula: Node, valuation: Dict[str, Value],
                  matrix: TruthMatrix, domain: Optional[Sequence[str]] = None) -> Value:
     """Evaluate ``formula`` to a matrix value under ``valuation``.
 
-    ``valuation`` maps each ground atom's ``to_unicode_str()`` key to a value of
-    ``matrix``. Quantifiers fold ``conj`` (∀) / ``disj`` (∃) over ``domain`` (a set
+    ``valuation`` maps each ground atom's key (the text it prints as, with every constant
+    written by its name: ``'P(a)'``; the text of the atom as a formula, ``"P('a')"``, is
+    read as the same key) to a value of ``matrix``. Quantifiers fold ``conj`` (∀)
+    / ``disj`` (∃) over ``domain`` (a set
     of constant names), generalising min/max. A missing atom key raises ``KeyError``;
-    a value outside the matrix raises ``ValueError``; a modal/fuzzy/sorted/lambda
+    a valuation that holds both spellings of one atom with different values raises
+    ``ValueError``, and so does a value outside the matrix; a modal/fuzzy/sorted/lambda
     node is rejected with the same message :func:`kleene_value` uses, and so is a
     sorted constant inside an atom and a pair of different atoms that print alike (the
     numeral ``1`` and a constant named ``1``, a free variable ``x`` and a constant
@@ -168,10 +171,11 @@ def _matrix_value(formula: Node, valuation: Dict[str, Value], matrix: TruthMatri
                     "TruthMatrix.from_functions(..., top=..., bottom=...), or write "
                     "the formula without the constant.")
             return value
-        key = atom_key(formula) if keys is None else keys.key(formula)
-        if key not in valuation:
-            raise KeyError(f"No value for ground atom {key!r} in the valuation.")
-        v = valuation[key]
+        found = (find_own_key(valuation, formula) if keys is None
+                 else keys.find(valuation, formula))
+        if found is None:
+            raise KeyError(f"No value for ground atom {atom_key(formula)!r} in the valuation.")
+        v = valuation[found]
         return _check(v, set(matrix.values), matrix.name)
     if isinstance(formula, Not):
         return matrix.neg[_matrix_value(formula.formula, valuation, matrix, domain, keys)]

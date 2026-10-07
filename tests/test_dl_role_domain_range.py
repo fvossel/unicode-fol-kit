@@ -93,18 +93,19 @@ def test_a_value_restriction_filler_renders_as_the_ground_atom():
     # in the argument position at the range axiom's SECOND variable.
     assert dl.rbox_to_fol(dl.TBox().add_role_range(
         "P", dl.HasValue("Q", "A"))).to_unicode_str() == \
-        "∀x ∀y (P(x, y) → Q(y, A))"
+        "∀x ∀y (P(x, y) → Q(y, 'A'))"
 
 
 def test_a_minted_variable_steps_over_an_individual_of_the_same_name():
     # The avoid set must carry every individual name in the FILLER: a minted x0
-    # colliding with an individual named x0 would CAPTURE it (a Variable and a
-    # Constant of the same name print the same text and are the same Z3
-    # expression), so the individual would stop denoting itself. Here the
+    # colliding with an individual named x0 would CAPTURE it in a target that
+    # gives a Variable and a Constant of one name a single namespace (the
+    # Unicode text writes them x0 and 'x0', and Z3 keeps them apart, but such a
+    # target would not), so the individual would stop denoting itself. Here the
     # nested ∃ must mint x1.
     assert dl.rbox_to_fol(dl.TBox().add_role_domain(
         "P", dl.Exists("Q", dl.HasValue("R", "x0")))).to_unicode_str() == \
-        "∀x ∀y (P(x, y) → ∃x1 (Q(x, x1) ∧ R(x1, x0)))"
+        "∀x ∀y (P(x, y) → ∃x1 (Q(x, x1) ∧ R(x1, 'x0')))"
 
 
 def test_the_caller_can_choose_the_quantified_variable_names():
@@ -117,9 +118,8 @@ def test_the_caller_can_choose_the_quantified_variable_names():
 
 def test_the_images_read_back_through_the_kits_own_parser():
     # Neither image contains an INDIVIDUAL, so unlike A1's and A8's these two
-    # read back cleanly in the plain `fol` dialect -- see
-    # tests/test_printed_text_reads_back.py for the limit that applies when one
-    # does.
+    # hold no quoted constant and read back in the plain `fol` dialect -- see
+    # tests/test_printed_text_reads_back.py for the images that do hold one.
     for tbox in (dl.TBox().add_role_domain("Covers", dl.Atomic("Study")),
                  dl.TBox().add_role_range("HasUnit", dl.Atomic("Unit"))):
         text = dl.rbox_to_fol(tbox).to_unicode_str()

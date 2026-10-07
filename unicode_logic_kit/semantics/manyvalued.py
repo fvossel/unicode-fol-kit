@@ -23,9 +23,11 @@ That single choice produces the headline contrasts: the law of excluded middle
 This module operates on **classical** AST nodes (Atom, Not, And, Or, Xor,
 Implies, Iff, Quantifier) parsed by ``MSFLParser()`` — no new grammar. Truth
 values are the floats ``0.0``, ``0.5`` and ``1.0``. A *valuation* maps a ground
-atom's canonical ``to_unicode_str()`` key (e.g. ``'P'`` or ``'P(a)'``) to one of
-those three values. The nullary atoms ``$true`` and ``$false`` (``⊤`` and ``⊥``) are
-not letters of the formula but the constants truth and falsity: they have the value
+atom's key (the text it prints as, with every constant written by its name, e.g.
+``'P'`` or ``'P(a)'``, also for a constant named ``a`` that the text of the formula
+writes in quotes, ``P('a')``, which is read as the same key) to one of those three values.
+The nullary atoms ``$true`` and
+``$false`` (``⊤`` and ``⊥``) are not letters of the formula but the constants truth and falsity: they have the value
 ``1.0`` and ``0.0`` under every valuation, and an enumeration does not vary them.
 
 Quantifiers are read substitutionally over a finite ``domain`` of constant
@@ -63,7 +65,7 @@ Parse inputs with ``MSFLParser()`` (classical propositional / FOL).
 from itertools import product
 from typing import Collection, Dict, Iterator, List, Optional, Sequence, Set, Tuple
 
-from ..fol._atom_keys import AtomKeys, atom_key
+from ..fol._atom_keys import AtomKeys, atom_key, find_own_key
 from ..fol._free_parameters import free_parameter_names
 from ..fol.nodes import (
     Node, Variable, Constant, Number, Function, Atom,
@@ -195,10 +197,12 @@ def kleene_value(formula: Node,
     Args:
         formula: a classical FOL formula node (Atom, Not, And, Or, Xor, Implies,
             Iff, Quantifier). Build it with ``MSFLParser()``.
-        valuation: maps a ground atom's canonical key — its
-            ``to_unicode_str()`` rendering, e.g. ``'P'`` or ``'P(a)'`` — to a
-            value in ``{0.0, 0.5, 1.0}``. A missing key raises ``KeyError``. The atom of
-            a free variable (``'P(x)'``) is one more key.
+        valuation: maps a ground atom's key — the text it prints as, with every
+            constant written by its name, e.g. ``'P'`` or ``'P(a)'`` — to a
+            value in ``{0.0, 0.5, 1.0}``. A key written as the text of the atom as a
+            formula (``atom.to_unicode_str()``, ``"P('a')"``) is read as the same key. A
+            missing key raises ``KeyError``. The atom of a free variable (``'P(x)'``) is one
+            more key.
         domain: a set of constant-name strings over which quantifiers range
             (∀ = min, ∃ = max). Required whenever a ``Quantifier`` is present.
 
@@ -208,7 +212,9 @@ def kleene_value(formula: Node,
     Raises:
         KeyError: a ground atom's key is absent from the valuation.
         ValueError: a quantifier lacks a domain (or the domain is empty), or a
-            valuation entry is not snappable to ``{0.0, 0.5, 1.0}``.
+            valuation entry is not snappable to ``{0.0, 0.5, 1.0}``, or the valuation holds
+            both spellings of one atom (its key and its text as a formula) with different
+            values.
         NotImplementedError: the node is a Łukasiewicz, sorted, lambda or modal
             construct, which has no strong-Kleene three-valued reading here; a
             sorted constant inside an atom is refused the same way; so is a pair of
@@ -232,13 +238,15 @@ def _kleene_value(formula: Node, valuation: Dict[str, float],
         constant = _truth_value(formula)
         if constant is not None:
             return TRUE if constant else FALSE
-        key = atom_key(formula) if keys is None else keys.key(formula)
-        if key not in valuation:
+        found = (find_own_key(valuation, formula) if keys is None
+                 else keys.find(valuation, formula))
+        if found is None:
+            key = atom_key(formula)
             raise KeyError(
                 f"No truth value for ground atom {key!r} in the valuation. "
                 f"Provide valuation[{key!r}] as one of 0.0, 0.5 or 1.0."
             )
-        return _snap(float(valuation[key]))
+        return _snap(float(valuation[found]))
 
     # --- Negation ----------------------------------------------------------
     if isinstance(formula, Not):
@@ -329,7 +337,7 @@ def _designated_set(logic: str) -> frozenset:
 def _atom_keys(*formulas: Node, route: str = "manyvalued") -> List[str]:
     """Distinct ground-atom keys across the formulas, in first-seen order.
 
-    The key is each atom's canonical ``to_unicode_str()`` — these are the
+    The key is the text of each atom with every constant written by its name — these are the
     independent variables enumerated over ``{0.0, 0.5, 1.0}``. A sorted constant, and
     two different atoms that print alike, are refused by name (``route`` names the
     caller in the message).
@@ -371,8 +379,8 @@ def _compile(node: Node, index: Dict[str, int]):
 
     ``values`` is a tuple of truth values positionally aligned with ``index``
     (atom key → tuple position). The returned closure computes the strong-Kleene
-    value with no per-assignment AST walk and no per-atom ``to_unicode_str()``
-    rendering — those happen once, here, at compile time. It is the enumeration
+    value with no per-assignment AST walk and no per-atom key rendering — those
+    happen once, here, at compile time. It is the enumeration
     fast path; it is exhaustively cross-checked against :func:`kleene_value` in the
     test suite (they must agree on every assignment), and uses the SAME strong-
     Kleene truth functions and the SAME rejection (:func:`_reject_if_unsupported`).

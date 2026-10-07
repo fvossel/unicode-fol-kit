@@ -10,17 +10,18 @@ The lexer distinguishes the following token kinds. Because the patterns are mutu
 |---|---|---|---|
 | Variable | one term-valued letter, optional trailing digits | `x`, `y`, `x1`, `z42`, `ś`, `ś1` | a (possibly bound) logical variable |
 | Name | term-valued, at least two letters (or one-or-more digits then a letter), may also contain digits, underscores, and uppercase letters after the first character | `socrates`, `distance`, `centerOf`, `foo1`, `dani_Shapiro`, `2008SummerOlympics`, `świątek` | a bare constant or a function symbol |
-| Constant (`c_`) | `c_` followed by letters/digits (any script) | `c_a`, `c_zero`, `c_42`, `c_świątek` | an explicitly marked constant |
+| Constant (`c_`) | `c_` followed by letters/digits (any script) | `c_a`, `c_zero`, `c_42`, `c_świątek` | an explicitly marked constant; the mark stays in the name (`c_a` is `Constant("c_a")`) |
 | Constant (Greek) | a run of Greek letters, **excluding** `λ` and `μ` | `θ`, `α`, `π` | a constant, e.g. a threshold `θ` in `μ(x, dim) > θ` |
+| Constant (quoted) | `'`, one or more characters, `'`; inside, `\'` is a quote and `\\` is a backslash | `'a'`, `'k2'`, `'Alice'`, `'G-910'`, `'John Doe'` | a constant of exactly that name, whatever its spelling (see [Quoted constants](#quoted-constants)) |
 | Predicate | one uppercase-signalling letter, then letters/digits/underscores | `P`, `Human`, `OnSurfaceOf`, `Has_bond`, `Ś` | a predicate symbol |
 | Number | digits, optional decimal part | `0`, `42`, `3.14` | a numeric literal |
 | Sort annotation | `:` followed by an uppercase-signalling letter and letters/digits/underscores | `:Human`, `:Sort1` | a sort tag *(MSFOL and MSFL modes only)* |
 
 "Term-valued letter" and "uppercase-signalling letter" are not ASCII-only: any Unicode letter qualifies, decided by the SAME rule Python's `str.isupper()` uses on that letter — true means uppercase-signalling (Predicate/Sort), anything else (including every letter of a script with no case distinction at all, such as Chinese, Arabic, Hebrew, or Devanagari) means term-valued (Variable/Name/Constant). A caseless-script identifier is therefore always term-valued and can never head an atom by itself. Underscore is a continuation character only — never legal as a token's first character (`_foo` and `_Family(x)` are rejected) — and it may follow the first character of a Name, a Predicate or a Sort, so `Foo_bar(x)` is an atom; a Variable and the tail of a `c_` constant take none. A Name may also start with one or more ASCII digits followed by a letter (`2008SummerOlympics`); `Number` itself is unaffected, so a bare digit run with no trailing letter (`2008`, `3.14`) still lexes as a number, never a Name. Greek letters are excluded from every one of these classes (not just carved out of Name/Predicate specifically) because `λ`/`μ`/the Greek Constant run already use them; see below.
 
-The `c_` form exists so that **single-letter constants** can be written without colliding with variables. A bare `a` is always a variable; if you need the constant *a*, write `c_a`.
+A **single-letter constant** is written in quotes, so that it does not collide with a variable. A bare `a` is always a variable; if you need the constant *a*, write `'a'`. (`c_a` is still a constant, but the constant of the name `c_a`, not of `a`: the `c_` mark stays part of the name.) The quoted form is the one the printer uses, and it covers names no bare word can spell: see [Quoted constants](#quoted-constants) below.
 
-Greek letters (except the reserved operators `λ` Lambda and `μ` Measure) name constants directly — handy for symbolic thresholds and parameters, e.g. `μ(x, volume) > θ` (“too much”). This is **constants only**: predicates, function names, and variables never draw from this Greek-letter Constant form, though they do accept non-Greek Unicode letters as described above. The Kripke evaluator and Z3 carry the raw unicode name; `Constant.to_prover9`/`to_tptp` transliterate a constant's own name deterministically and reversibly (`θ` → `theta`, other non-ASCII → a `uXXXX` codepoint escape) on their own, node by node. A non-ASCII predicate or function name, and any digit-leading term, need a wider fix a single node cannot do by itself — an injective rewrite across a whole problem, with the original names translated back out of a prover's answer — which every ASCII-only export route (TPTP, Prover9, SMT-LIB2, THF, Isabelle, MiniZinc) now applies before rendering; see {doc}`transforms` for how. `unicode_logic_kit.fol.sanitize` is a different mechanism for a different problem: it rewrites a name to a token THIS PARSER's own grammar can re-parse (an import from outside the kit, not a name this parser already accepts), and is unrelated to what any export format accepts.
+Greek letters (except the reserved operators `λ` Lambda and `μ` Measure) name constants directly — handy for symbolic thresholds and parameters, e.g. `μ(x, volume) > θ` (“too much”). This is **constants only**: predicates, function names, and variables never draw from this Greek-letter Constant form, though they do accept non-Greek Unicode letters as described above. The Kripke evaluator and Z3 carry the raw unicode name; `Constant.to_prover9`/`to_tptp` transliterate a constant's own name deterministically and reversibly (`θ` → `theta`, other non-ASCII → a `uXXXX` codepoint escape) on their own, node by node. A non-ASCII predicate or function name, and any digit-leading term, need a wider fix a single node cannot do by itself — an injective rewrite across a whole problem, with the original names translated back out of a prover's answer — which every ASCII-only export route (TPTP, Prover9, SMT-LIB2, THF, Isabelle, MiniZinc) now applies before rendering; see {doc}`transforms` for how. `unicode_logic_kit.fol.sanitize` is a different mechanism for a different problem: it rewrites a name to a token THIS PARSER's own grammar can re-parse (an import from outside the kit, not a name this parser already accepts), and is unrelated to what any export format accepts. (A constant needs no rewriting for this parser: a [quoted constant](#quoted-constants) keeps its name as it is, and `sanitize` is the way to give a name the bare spelling the ASCII targets take.)
 
 A function or predicate is recognised by being immediately followed by a parenthesised argument list, e.g. `distance(x, y)` or `Human(socrates)`. The same token class (Name) serves both as a bare constant and, when applied, as a function symbol. **A single term-valued letter is the one exception to "Variable, always"**: standing alone it is a variable (`f` in `∀f P(f)`), but immediately followed by `(` it is read as a one-letter function symbol instead — `f(x)` is `Function("f", [x])`, not a variable applied to something:
 
@@ -39,15 +40,91 @@ The sort annotation token always begins with `:`, which makes it lexically disjo
 A term is one of:
 
 - a variable (`x`, `x1`)
-- a constant (`socrates`, `c_a`) or number (`42`, `3.14`)
-- in MSFOL / MSFL modes: a **sort-annotated constant** (`alice:Human`, `c_a:Sort1`)
+- a constant (`socrates`, `c_a`, or a quoted one: `'a'`, `'Alice'`) or number (`42`, `3.14`)
+- in MSFOL / MSFL modes: a **sort-annotated constant** (`alice:Human`, `c_a:Sort1`, `'k2':Mountain`)
 - a function application (`f(t1, …, tn)`, e.g. `centerOf(x)`)
 - an arithmetic combination of terms using `+`, `-`, `*`, `/`
 - a parenthesised term (`(t)`)
 
 Arithmetic follows the usual precedence: `*` and `/` bind tighter than `+` and `-`, and both groups are left-associative. For example `x + y * z` parses as `x + (y * z)`.
 
-**Sort rules in MSFOL / MSFL modes:** variables are sorted implicitly by the quantifier that binds them; ground constants must carry an explicit sort annotation. An unsorted constant (e.g. bare `alice`) is a syntax error in sorted modes.
+**Sort rules in MSFOL / MSFL modes:** variables are sorted implicitly by the quantifier that binds them; ground constants must carry an explicit sort annotation. An unsorted constant (e.g. bare `alice`, or quoted `'alice'`) is a syntax error in sorted modes.
+
+### Quoted constants
+
+A constant may be written in single quotes: `'k2'`, `'K2'`, `'G-910'`, `'C++'`, `'John Doe'`, `'1,2-diacyl'`. The text between the quotes is the name, exactly. So `'k2'` is the constant named `k2`, where a bare `k2` is a variable, and `'Alice'` is a constant, where a bare `Alice` is a predicate. A quoted name that could also be written bare is the same constant: `'socrates'` is `Constant("socrates")`, and so is `socrates`.
+
+```python
+from unicode_logic_kit import MSFLParser
+
+p = MSFLParser()
+p.parse("P('a', x)")                 # → Atom(predicate='P', args=(Constant(name='a'), Variable(name='x')))
+p.parse("'k2' = y")                  # → Atom(predicate='=', args=(Constant(name='k2'), Variable(name='y')))
+p.parse("Visited('John Doe')")       # → Atom(predicate='Visited', args=(Constant(name='John Doe'),))
+p.parse("P('socrates')") == p.parse("P(socrates)")    # → True
+```
+
+- **What may stand between the quotes.** One or more characters of any script, with these exceptions: the quote and the backslash (they have the escapes below), a control character (U+0000 to U+001F and U+007F), the line separators U+0085, U+2028 and U+2029, and a surrogate (U+D800 to U+DFFF). `''` is not a constant.
+- **Two escapes.** `\'` is a quote and `\\` is a backslash. No other escape exists: `'a\b'` is a syntax error. The name `it's` is written `'it\'s'`, and the name `C:\tmp` is written `'C:\\tmp'`.
+- **Where it stands.** Wherever a constant stands as a term, in every unsorted dialect and in the combined modes. A sorted dialect (`many_sorted=True`, which `msfol` and `msfl` use) has no bare constant, so there a quoted constant carries its sort, `'k2':Mountain`, and is read as a `SortedConstant`; without the sort it is a syntax error, like `alice` without one.
+- **A variable and a constant of one spelling are two terms.** `x` is a variable and `'x'` is a constant, so `P(x, 'x')` says something about two things.
+
+```python
+sp = MSFLParser(many_sorted=True)
+sp.parse("Climbed('k2':Mountain)")   # → Atom(predicate='Climbed', args=(SortedConstant(name='k2', sort='Mountain'),))
+```
+
+**The printer.** `to_unicode_str()` writes a constant bare when the bare word reads back as that very constant, and in quotes otherwise, so the text of a formula reads back as the formula for a constant of any name. A name is bare exactly when it is one whole `NAME` or `c_` constant token (or a Greek one):
+
+| written bare | written in quotes |
+|---|---|
+| `socrates` | `'a'` (a bare `a` is a variable) |
+| `c_k2` | `'k2'` (a bare `k2` is a variable) |
+| `θ` | `'Alice'` (a bare `Alice` is a predicate) |
+| `2008SummerOlympics` | `'G-910'` (no bare word has a hyphen) |
+
+Other quoted names are `'1'` (a bare `1` is a number), `'C++'`, `'John Doe'` and `'_sk0'`.
+
+```python
+from unicode_logic_kit import Atom, Constant
+
+for name in ["socrates", "c_k2", "θ", "2008SummerOlympics", "a", "k2", "Alice", "G-910"]:
+    print(Atom("P", [Constant(name)]).to_unicode_str())
+# → P(socrates)
+# → P(c_k2)
+# → P(θ)
+# → P(2008SummerOlympics)
+# → P('a')
+# → P('k2')
+# → P('Alice')
+# → P('G-910')
+Atom("P", [Constant("it's")]).to_unicode_str()      # → "P('it\\'s')"
+```
+
+The three functions `is_variable_name`, `is_bare_constant` and `constant_text` (from `unicode_logic_kit`, and from `unicode_logic_kit.fol`) answer the same question in code, so a program that writes formula text by hand does not have to repeat the rule:
+
+```python
+from unicode_logic_kit import is_variable_name, is_bare_constant, constant_text
+
+is_variable_name("k2")           # → True    one letter and digits: the VARIABLE terminal takes it
+is_bare_constant("k2")           # → False   the bare text k2 does not read as the constant
+is_bare_constant("socrates")     # → True
+constant_text("socrates")        # → 'socrates'
+constant_text("k2")              # → "'k2'"
+constant_text("it's")            # → "'it\\'s'"
+```
+
+`constant_text` raises `ValueError` for a name that has no text at all: the empty name, and a name that holds one of the excluded characters; the message names the constant.
+
+**What has no quoted form.** Only a constant can be quoted. The name of a function, of a predicate, of a variable or a binder, of a sort, the subscript of `K_a` (and of the other agent operators), and a nominal (`@i`) are written as they are, and `'f'(x)` is a syntax error. So `Function("foo", [])` still prints `foo()`, a predicate named `hasChild` still prints `hasChild(x)` (which does not read back, because a predicate starts upper-case), and a variable with an underscore (`var_gn_x1`, as a TPTP import can produce one) still prints as it is and does not read back. A quoted name never stands for one of these; `∀'x' P(x)`, `K_'a' P`, `@'i' P`, `'P'(x)` and `∀x:'S' P(x)` are all syntax errors.
+
+**A stray apostrophe.** A quote opens a name that runs to the next quote, whatever lies between, so a text with a single apostrophe in two places can read as something other than what was meant: `P('x) ∧ Q(y')` is the atom `P` of one constant named `x) ∧ Q(y`.
+
+```python
+p.parse("P('x) ∧ Q(y')")             # → Atom(predicate='P', args=(Constant(name='x) ∧ Q(y'),))
+```
+
+Two more limits belong to the text of a formula. `to_latex()` writes a constant by its name, without quotes, and the LaTeX reader (`parse_latex`) refuses an input that holds a quote, so the LaTeX text of a formula with a quoted constant does not read back; the Unicode text does. And a key of a valuation or a model table (`"P(a)"`, in the evaluators over a finite domain) is not formula text: it writes every constant by its bare name, as it always did.
 
 ## Atomic formulas
 
@@ -371,7 +448,7 @@ All nodes are **frozen** Python dataclasses and can be imported from `unicode_lo
 | Class | Fields | Notes |
 |---|---|---|
 | `Variable` | `name: str` | bound or free variable |
-| `Constant` | `name: str` | bare constant or `c_`-prefixed |
+| `Constant` | `name: str` | a constant of any name: written bare, `c_`-prefixed, or [quoted](#quoted-constants) |
 | `Number` | `value: int \| float` | numeric literal; a whole value is stored as the `int` it equals (`1`, `1.0` and `01` are all `Number(value=1)`) |
 | `Function` | `name: str`, `args: tuple` | function application and arithmetic ops |
 | `Atom` | `predicate: str`, `args: tuple` | predicate or infix comparison |

@@ -26,37 +26,56 @@ text back and compares the two formulas up to a renaming of bound variables. A
 future generator that invents its own naming convention fails here without anyone
 remembering to add it to a list of forbidden prefixes.
 
-What is deliberately NOT asserted: a name the CALLER supplied. ``concept_to_fol``
-on an OWL-style role ``hasChild`` prints ``hasChild(x, x0)``, and a predicate must
-start upper-case in this grammar, so that text does not read back — the role name
-is the caller's vocabulary, not a name the translation minted, and silently
-rewriting it would break the correspondence between the DL and FOL symbol. The
-same holds for an individual spelled like a variable, and for an individual whose
-name starts UPPER-case (the OWL case: in OEO 2.13.0 every individual is
-CamelCase) — ``Person(Alice)`` is legal text that re-reads ``Alice`` as a
-predicate term rather than as the constant it was, and ``Alice ≠ Bob`` does not
-parse at all. All three are covered by their own case below, as the documented
-limits of the property; for an upper-case vocabulary the route to use is the one
-that never goes through text, since ``dl.kb_to_fol``'s nodes reach ``api.prove``,
-``to_z3`` and ``to_tptp`` as ASTs.
+What is deliberately NOT asserted: a name the CALLER supplied that has no text in
+this grammar. Three such limits are left, each a property of the caller's
+vocabulary and none of the translation, and each has its own case below:
 
-A limit of the TEXT is not a licence to capture, though. What the translation
-always owes the caller's individuals is that no QUANTIFIER binds one: a bound
-variable steps over every individual's name (``∃R.{x} ⊑ A`` prints
-``∀x0 (R(x0, x) → A(x0))``, not the capturing ``∀x (R(x, x) → A(x))`` it printed
-until 0.30.0, which was a wrong ANSWER and not a spelling).
-``test_an_individual_named_like_a_bound_prefix_variable_limit_and_fix`` states the
-two halves side by side; the answers are pinned in
-``tests/test_dl_binder_capture.py``.
+* a role spelled in lower case. ``concept_to_fol`` on an OWL-style role
+  ``hasChild`` prints ``hasChild(x, x0)``, and a predicate must start upper-case
+  in this grammar; a predicate has no quoted form, and silently rewriting the
+  name would break the correspondence between the DL and the FOL symbol;
+* a TPTP variable with an underscore (``VAR_gn_x1``). The VARIABLE terminal is one
+  letter and digits, and a variable has no quoted form;
+* the name of a built-in datatype (``xsd:integer``): it is a predicate of the data
+  image, and a colon is no part of a predicate name.
 
-The upper-case limit has two FORMS, which fail differently, so each has its own
-case: in EQUALITY position (``abox_to_fol`` of an ``assert_same`` or an
-``assert_distinct``, or a ``Nominal``) the text does not parse at all, while in
-ARGUMENT position (a role assertion, or a ``HasValue`` image) it DOES parse and
-the formula is not the same one — which is the dangerous half. The domain and
-range images mention no individual at all and so read back cleanly whatever the
-vocabulary; that contrast is asserted too, because it is what makes the limit
-precise rather than a blanket "OWL names do not round-trip".
+For all three the route that never goes through text is the one to use, since the
+nodes reach ``api.prove``, ``to_z3`` and ``to_tptp`` as ASTs; ``sanitize_names``
+is the route to text, because it rewrites a name to one the grammar reads and
+keeps the mapping back.
+
+An INDIVIDUAL is not a limit any more. A constant of any name has a text: the
+printer writes it bare when the bare word reads back as that constant and in
+single quotes otherwise, so ``Alice`` prints ``'Alice'``, the individual ``x0``
+prints ``'x0'``, and the literal ``"abc"^^xsd:string`` prints
+``'"abc"^^xsd:string'``. Until 0.30.0 these were limits of the property: an
+upper-case individual (the OWL case: in OEO 2.13.0 every individual is CamelCase)
+printed bare and was re-read as a predicate term in argument position
+(``Person(Alice)``, a different formula) or did not parse at all in equality
+position (``Alice ≠ Bob``); one spelled like a variable was re-read as a free
+variable; and a literal that is no number was no term at all. Every one of them
+has a case below that prints the nodes, reads the text back and compares the two
+formulas up to a renaming of bound variables. The text of 0.30.0 (every constant
+by its bare name, which :func:`unicode_logic_kit.fol._msfl_nodes.key_text` still
+writes) is kept in one control case, because that is what shows that the check can
+fail on these constants.
+
+Quoting a constant is not a licence to capture, though, and the nodes do not rely
+on it: what the translation always owes the caller's individuals is that no
+QUANTIFIER binds one. A bound variable steps over every individual's name
+(``∃R.{x} ⊑ A`` prints ``∀x0 (R(x0, 'x') → A(x0))``, not the capturing
+``∀x (R(x, x) → A(x))`` it printed until 0.30.0, which was a wrong ANSWER and not a
+spelling), because in a text with ONE namespace (SMT-LIB, TPTP, Prover9) a
+variable and a constant of one spelling still meet.
+``test_an_individual_named_like_a_bound_prefix_variable_reads_back_and_is_not_captured``
+states both halves; the answers are pinned in ``tests/test_dl_binder_capture.py``.
+
+An individual stands in EQUALITY position (``abox_to_fol`` of an ``assert_same`` or
+an ``assert_distinct``, or a ``Nominal``) or in ARGUMENT position (a role
+assertion, or a ``HasValue`` image), and each has its own case. The domain and
+range images mention no individual at all and read back whatever the vocabulary;
+that contrast is asserted too, because it keeps the three limits above precise
+rather than a blanket "OWL names do not read back".
 """
 
 import pytest
@@ -65,7 +84,7 @@ from unicode_logic_kit import MSFLParser, api
 from unicode_logic_kit.atp.tstp_check import _formula_alpha_equal
 from unicode_logic_kit.comorphism import DEFAULT_REGISTRY
 from unicode_logic_kit.fol._identifiers import variable_names, variable_pattern
-from unicode_logic_kit.fol._msfl_nodes import nonempty_sort_axioms
+from unicode_logic_kit.fol._msfl_nodes import key_text, nonempty_sort_axioms
 from unicode_logic_kit.fol.frames import unguarded_frame_axiom
 from unicode_logic_kit.fol.modal_translation import frame_axioms, standard_translation
 from unicode_logic_kit.fol.nodes import (
@@ -88,19 +107,28 @@ FOLP = MSFLParser()
 # The property, once.
 # --------------------------------------------------------------------------- #
 
-def _reads_back(node):
-    """``(parsed_ok, alpha_equal)`` for the text ``node`` prints as."""
-    text = node.to_unicode_str()
+def _reads_back(node, text=None):
+    """``(parsed_ok, alpha_equal, text, result)`` for the text ``node`` prints as,
+    or for ``text`` when a caller names the text to read instead (the control case
+    reads the text of 0.30.0)."""
+    if text is None:
+        text = node.to_unicode_str()
     result = api.parse_any(text)
     if not result.ok:
         return False, False, text, result
     return True, _formula_alpha_equal(node, result.formula), text, result
 
 
-def assert_reads_back(node, what):
-    ok, same, text, result = _reads_back(node)
+def assert_reads_back(node, what, text=None):
+    ok, same, text, result = _reads_back(node, text)
     assert ok, f"{what}: the kit printed text it cannot parse: {text!r} ({result.errors})"
     assert same, f"{what}: the text parsed, but as a DIFFERENT formula: {text!r}"
+
+
+def names_of(node, class_name):
+    """The names of the nodes of one class (``"Constant"``, ``"Variable"``,
+    ``"PredicateTerm"``) in a formula, as a set."""
+    return {t.name for t in node.walk() if type(t).__name__ == class_name}
 
 
 def assert_every_bound_name_is_legal(node, what):
@@ -269,8 +297,9 @@ _CONCEPTS = [
     # A value restriction mints NO variable of its own (its image is the ground
     # atom R(x, alice)), which is exactly why it belongs here: the property this
     # file holds is about what the GENERATOR prints, and a generator that prints
-    # a constant has to print one the parser reads. LOWER-case individual on
-    # purpose -- the upper-case case is the documented limit further down.
+    # a constant has to print one the parser reads. A lower-case individual, which
+    # prints bare; the individuals that print in quotes have their own cases
+    # further down.
     ("hasvalue", dl.HasValue("R", "alice")),
     ("hasvalue-nested", dl.Exists("S", dl.And(dl.Atomic("A"),
                                               dl.HasValue("R", "alice")))),
@@ -368,97 +397,125 @@ def test_every_role_box_axiom_image_reads_back():
     assert_every_bound_name_is_legal(whole, "rbox_to_fol(role box)")
 
 
-def test_an_upper_case_individual_is_the_third_documented_limit():
-    # The kit's CONSTANT/NAME terminals are lower-case; a PREDICATE must start
-    # upper-case. So an individual named `Alice` prints as itself and the text
-    # re-reads it as a PREDICATE term, not as the constant it was -- the text
-    # parses, and the formula is not the same one. This matters because it is
-    # the OWL case: every individual in a real ontology (OEO 2.13.0: all of
-    # them) is CamelCase, and the kit does NOT invent a second spelling for
-    # them, because a renamed individual would stop denoting the individual the
-    # ontology names. The route that does not go through text is the one to use
-    # instead: dl.kb_to_fol's nodes go straight to api.prove / to_z3 / to_tptp
-    # as ASTs, where the constant is a constant whatever its first letter.
+def test_an_upper_case_individual_reads_back_in_quotes():
+    # The kit's CONSTANT/NAME terminals are lower-case, so the bare word `Alice`
+    # is no constant of this grammar -- and it is the OWL case: every individual
+    # in a real ontology (OEO 2.13.0: all of them) is CamelCase. The printer
+    # writes the constant in single quotes, `Person('Alice')`, and the quoted
+    # name is the constant of exactly that name, so the individual keeps the
+    # name the ontology gives it and the text reads back as the formula it was.
     abox = dl.ABox().assert_concept("Alice", dl.Atomic("Person"))
     image = dl.abox_to_fol(abox)
     assert_every_bound_name_is_legal(image, "abox_to_fol(upper-case individual)")
-    assert image.to_unicode_str() == "Person(Alice)"
+    assert image.to_unicode_str() == "Person('Alice')"
+    assert_reads_back(image, "abox_to_fol(upper-case individual)")
     parsed = api.parse_any(image.to_unicode_str())
-    assert parsed.ok                                       # the TEXT is legal ...
-    assert not _formula_alpha_equal(image, parsed.formula)  # ... the formula is not
-    assert "Alice" in {t.name for t in parsed.formula.walk()
-                       if type(t).__name__ == "PredicateTerm"}
-    assert "Alice" in {t.name for t in image.walk()
-                       if type(t).__name__ == "Constant"}
-    # ... and a distinctness assertion over such names does not even parse,
-    # because `Alice ≠ Bob` reads `Alice` as a predicate and then finds `≠`.
+    assert names_of(parsed.formula, "Constant") == {"Alice"}
+    assert names_of(parsed.formula, "PredicateTerm") == set()      # not a predicate term
+    assert names_of(image, "Constant") == {"Alice"}
+    # A distinctness assertion over such names reads back too ...
     distinct = dl.abox_to_fol(dl.ABox().assert_distinct("Alice", "Bob"))
-    assert distinct.to_unicode_str() == "Alice ≠ Bob"
-    assert not api.parse_any(distinct.to_unicode_str()).ok
-    # The AST route is unaffected: the same formula is refutable through Z3.
+    assert distinct.to_unicode_str() == "'Alice' ≠ 'Bob'"
+    assert_reads_back(distinct, "abox_to_fol(upper-case distinctness)")
+    # ... and the text says what the nodes say: two names may denote one element,
+    # so the assertion is not valid, whichever way it reaches the prover.
     assert api.prove(distinct, [], timeout=10000).status == "refuted"
-    # and the lower-case spelling of the same assertions reads back in full
-    assert_reads_back(dl.abox_to_fol(dl.ABox().assert_concept("alice", dl.Atomic("Person"))),
-                      "abox_to_fol(lower-case individual)")
-    assert_reads_back(dl.abox_to_fol(dl.ABox().assert_distinct("alice", "bob")),
-                      "abox_to_fol(lower-case distinctness)")
+    assert api.prove(api.parse_any(distinct.to_unicode_str()).formula, [],
+                     timeout=10000).status == "refuted"
+    # The lower-case spelling of the same assertions prints bare and reads back.
+    lower = dl.abox_to_fol(dl.ABox().assert_concept("alice", dl.Atomic("Person")))
+    assert lower.to_unicode_str() == "Person(alice)"
+    assert_reads_back(lower, "abox_to_fol(lower-case individual)")
+    lower_distinct = dl.abox_to_fol(dl.ABox().assert_distinct("alice", "bob"))
+    assert lower_distinct.to_unicode_str() == "alice ≠ bob"
+    assert_reads_back(lower_distinct, "abox_to_fol(lower-case distinctness)")
 
 
-def test_an_upper_case_individual_in_an_equality_does_not_parse_at_all():
-    # The 0.30.0 half of the same limit: `assert_same` renders the EQUALITY
-    # atom, which fails for exactly the reason `Alice != Bob` does -- the text
-    # reads `Alice` as a predicate and then finds `=`. Nothing is minted here at
-    # all, so the failure is purely the vocabulary's.
+def test_an_upper_case_individual_in_an_equality_reads_back():
+    # `assert_same` renders the EQUALITY atom. Before quoting, its text read
+    # `Alice` as a predicate and then found `=`, so it did not parse at all;
+    # now both sides are constants and the atom is an equation between them.
     image = dl.abox_to_fol(dl.ABox().assert_same("Alice", "Bob"))
     assert_every_bound_name_is_legal(image, "abox_to_fol(assert_same)")
-    assert image.to_unicode_str() == "Alice = Bob"
+    assert image.to_unicode_str() == "'Alice' = 'Bob'"
+    assert_reads_back(image, "abox_to_fol(assert_same)")
     parsed = api.parse_any(image.to_unicode_str())
-    assert not parsed.ok
-    assert any("Invalid predicate 'Alice'" in error["message"]
-               for error in parsed.errors), parsed.errors
-    # The AST route is unaffected: Alice = Bob is SATISFIABLE (two names may
-    # denote one element), so it is refutable rather than provable through Z3.
+    assert names_of(parsed.formula, "Constant") == {"Alice", "Bob"}
+    # Alice = Bob is SATISFIABLE (two names may denote one element), so it is
+    # refutable rather than provable, through the nodes and through the text.
     assert api.prove(image, [], timeout=10000).status == "refuted"
-    # ... and the lower-case spelling reads back in full.
-    assert_reads_back(dl.abox_to_fol(dl.ABox().assert_same("alice", "bob")),
-                      "abox_to_fol(lower-case sameness)")
+    assert api.prove(parsed.formula, [], timeout=10000).status == "refuted"
+    # ... and the lower-case spelling reads back, bare.
+    lower = dl.abox_to_fol(dl.ABox().assert_same("alice", "bob"))
+    assert lower.to_unicode_str() == "alice = bob"
+    assert_reads_back(lower, "abox_to_fol(lower-case sameness)")
 
 
-def test_an_upper_case_individual_in_an_argument_is_read_as_a_predicate_term():
-    # The ARGUMENT-position half, and the DANGEROUS one: this text parses, and
-    # the formula is not the same. Every one of the 98 ObjectHasValue fillers in
-    # OEO 2.13.0 is CamelCase, so this is the universal case for a real ontology
-    # rather than an edge case -- and it is still an IMPROVEMENT on the rewrite
-    # it replaces, whose image api.parse_any rejects outright.
+def test_an_upper_case_individual_in_an_argument_reads_back():
+    # The ARGUMENT position: a role assertion, a HasValue image, a nominal. Every
+    # one of the 98 ObjectHasValue fillers in OEO 2.13.0 is CamelCase, so this is
+    # the universal case for a real ontology rather than an edge case. Until
+    # 0.30.0 this text parsed, as a formula in which the filler was a predicate
+    # term -- the dangerous half of the old limit, since nothing refused it.
     image = dl.concept_to_fol(dl.HasValue("HasStateOfMatter", "Liquid"))
     assert_every_bound_name_is_legal(image, "concept_to_fol(HasValue)")
-    assert image.to_unicode_str() == "HasStateOfMatter(x, Liquid)"
+    assert image.to_unicode_str() == "HasStateOfMatter(x, 'Liquid')"
+    assert_reads_back(image, "concept_to_fol(HasValue)")
     parsed = api.parse_any(image.to_unicode_str())
-    assert parsed.ok                                       # the TEXT is legal ...
-    assert not _formula_alpha_equal(image, parsed.formula)  # ... the formula is not
-    assert "Liquid" in {t.name for t in parsed.formula.walk()
-                        if type(t).__name__ == "PredicateTerm"}
-    assert "Liquid" in {t.name for t in image.walk()
-                        if type(t).__name__ == "Constant"}
-    # The rewrite this image replaces does not parse at all, which is the
-    # before/after of the same axiom.
+    assert names_of(parsed.formula, "Constant") == {"Liquid"}
+    assert names_of(parsed.formula, "PredicateTerm") == set()
+    # The nominal rewrite of the same axiom, which did not parse at all before:
+    # `x0 = Liquid` read `Liquid` as a predicate and then found the `=`.
     rewrite = dl.subsumption_to_fol(
         dl.Atomic("Sirup"), dl.Exists("HasStateOfMatter", dl.Nominal("Liquid")))
-    assert not api.parse_any(rewrite.to_unicode_str()).ok
+    assert rewrite.to_unicode_str() == (
+        "∀x (Sirup(x) → ∃x0 (HasStateOfMatter(x, x0) ∧ x0 = 'Liquid'))")
+    assert_reads_back(rewrite, "subsumption_to_fol(nominal)")
     # ... and a NEGATIVE role assertion over such names is the same story.
     negative = dl.abox_to_fol(dl.ABox().assert_negative_role(
         "MMRSectorM", "GovRegSectorDivision", "IsDefinedBy"))
-    text = negative.to_unicode_str()
-    assert text == "¬IsDefinedBy(MMRSectorM, GovRegSectorDivision)"
-    reparsed = api.parse_any(text)
-    assert reparsed.ok
-    assert not _formula_alpha_equal(negative, reparsed.formula)
+    assert negative.to_unicode_str() == "¬IsDefinedBy('MMRSectorM', 'GovRegSectorDivision')"
+    assert_reads_back(negative, "abox_to_fol(negative role assertion)")
+
+
+def test_control_the_text_of_0_30_0_did_not_read_back_as_the_individual():
+    # The check above must be able to fail. `key_text` writes every constant by
+    # its bare name, which is exactly what the printer wrote until 0.30.0, and
+    # for these constants that text is not the formula: `Person(Alice)` parses,
+    # with the individual read as a predicate term; the equality, the nominal
+    # rewrite and the individual that looks like a variable either do not parse
+    # or come back as a free variable. Each text below is written out by hand.
+    argument = dl.abox_to_fol(dl.ABox().assert_concept("Alice", dl.Atomic("Person")))
+    assert key_text(argument) == "Person(Alice)"
+    with pytest.raises(AssertionError, match="DIFFERENT formula"):
+        assert_reads_back(argument, "the text of 0.30.0", text=key_text(argument))
+    parsed = api.parse_any("Person(Alice)")
+    assert names_of(parsed.formula, "PredicateTerm") == {"Alice"}
+    assert names_of(parsed.formula, "Constant") == set()
+    #
+    equality = dl.abox_to_fol(dl.ABox().assert_same("Alice", "Bob"))
+    assert key_text(equality) == "Alice = Bob"
+    with pytest.raises(AssertionError, match="cannot parse"):
+        assert_reads_back(equality, "the text of 0.30.0", text=key_text(equality))
+    #
+    rewrite = dl.subsumption_to_fol(
+        dl.Atomic("Sirup"), dl.Exists("HasStateOfMatter", dl.Nominal("Liquid")))
+    assert key_text(rewrite) == "∀x (Sirup(x) → ∃x0 (HasStateOfMatter(x, x0) ∧ x0 = Liquid))"
+    assert not api.parse_any(key_text(rewrite)).ok
+    #
+    like_a_variable = dl.subsumption_to_fol(dl.HasValue("R", "x"), dl.Atomic("A"))
+    assert key_text(like_a_variable) == "∀x0 (R(x0, x) → A(x0))"
+    with pytest.raises(AssertionError, match="DIFFERENT formula"):
+        assert_reads_back(like_a_variable, "the text of 0.30.0",
+                          text=key_text(like_a_variable))
+    assert names_of(api.parse_any("∀x0 (R(x0, x) → A(x0))").formula, "Variable") == {"x0", "x"}
 
 
 def test_the_domain_and_range_images_read_back_whatever_the_vocabulary():
-    # The contrast that makes the limit precise: a domain or range image
-    # contains NO individual, so it reads back cleanly even with an OWL-style
-    # CamelCase vocabulary throughout. 218 of OEO's axioms are this shape.
+    # The contrast that keeps the limits of the module docstring precise: a
+    # domain or range image contains NO individual and every role and class name
+    # is upper-case, so it reads back cleanly with an OWL-style CamelCase
+    # vocabulary throughout. 218 of OEO's axioms are this shape.
     tbox = (dl.TBox()
             .add_role_domain("Covers", dl.Atomic("Study"))
             .add_role_range("HasUnit", dl.Atomic("Unit")))
@@ -467,60 +524,58 @@ def test_the_domain_and_range_images_read_back_whatever_the_vocabulary():
         assert_every_bound_name_is_legal(axiom, "rbox_to_fol(domain/range)")
 
 
-def test_an_individual_spelled_like_a_variable_is_the_other_documented_limit():
-    # A Nominal becomes a Constant, and a one-letter-plus-digits CONSTANT prints
-    # as text the grammar reads as a VARIABLE. So this round trip parses and
-    # comes back a different formula — a free variable where the source had an
-    # individual. That is the caller's vocabulary again, not a minted name, and
-    # what the translation DOES owe here is not to capture it: the bound variable
-    # steps over the nominal's name.
+def test_an_individual_spelled_like_a_variable_reads_back_in_quotes():
+    # A Nominal becomes a Constant, and a one-letter-plus-digits name is what the
+    # grammar's VARIABLE terminal takes, so the bare text `x0` would be a free
+    # variable. The printer writes the constant `'x0'`, which reads back as the
+    # individual. What the translation owes the individual besides is not to
+    # capture it: the bound variable steps over the nominal's name, so the
+    # existential binds x1 and not x0.
     concept = dl.Exists("R", dl.And(dl.Nominal("x0"), dl.Atomic("A")))
     image = dl.concept_to_fol(concept, "x")
     assert_every_bound_name_is_legal(image, "concept_to_fol(individual named x0)")
     assert image.variable == Variable("x1")          # x0 was stepped over
-    assert "x0" in {t.name for t in image.formula.walk()
-                    if type(t).__name__ == "Constant"}
+    assert names_of(image.formula, "Constant") == {"x0"}
+    assert image.to_unicode_str() == "∃x1 (R(x, x1) ∧ (x1 = 'x0' ∧ A(x1)))"
+    assert_reads_back(image, "concept_to_fol(individual named x0)")
     parsed = api.parse_any(image.to_unicode_str())
-    assert parsed.ok                                  # the TEXT is legal ...
-    assert not _formula_alpha_equal(image, parsed.formula)   # ... the formula is not the same
-    assert "x0" in {t.name for t in parsed.formula.walk()
-                    if type(t).__name__ == "Variable"}
+    assert names_of(parsed.formula, "Constant") == {"x0"}
+    assert names_of(parsed.formula, "Variable") == {"x", "x1"}      # x0 is no variable
 
 
-def test_an_individual_named_like_a_bound_prefix_variable_limit_and_fix():
-    # What is still a limit of the TEXT, and what was a wrong ANSWER and is now
-    # fixed, for one concrete case: the GCI  ∃r.{x} ⊑ A  over an individual
-    # called x -- the name of the GCI's own prefix variable.
+def test_an_individual_named_like_a_bound_prefix_variable_reads_back_and_is_not_captured():
+    # One concrete case, for the GCI  ∃r.{x} ⊑ A  over an individual called x --
+    # the name of the GCI's own prefix variable.
     #
-    # FIXED (a wrong answer, not a spelling): the prefix variable used to be the
-    # fixed letter x, so the image printed `∀x (R(x, x) → A(x))` -- a different
-    # sentence, whose NODES conflated the bound variable and the constant (the
-    # same Z3 constant), so api.prove called a consistent knowledge base
-    # inconsistent. Now the bound variable steps over the individual, in the
-    # nodes AND in the text: `∀x0 (R(x0, x) → A(x0))`, derived by hand from
-    # "the first free x-name after the individual x". tests/test_dl_binder_capture.py
-    # pins the answers; this pins what the text says. (The role is upper-case:
-    # a lower-case one is the separate limit tested below.)
+    # The prefix variable used to be the fixed letter x, so the image printed
+    # `∀x (R(x, x) → A(x))` -- a different sentence, whose NODES conflated the
+    # bound variable and the constant (the same Z3 constant), so api.prove called
+    # a consistent knowledge base inconsistent. That was a wrong ANSWER, not a
+    # spelling, and it is fixed in the nodes AND in the text: the bound variable
+    # steps over the individual, `∀x0 (R(x0, 'x') → A(x0))`, derived by hand from
+    # "the first free x-name after the individual x". The step stays although the
+    # text could now tell `x` from `'x'`: a text with one namespace (SMT-LIB,
+    # TPTP, Prover9) cannot, and a binder that left the individual's name alone
+    # would capture it there. tests/test_dl_binder_capture.py pins the answers;
+    # this pins what the text says. (The role is upper-case: a lower-case one is
+    # the limit tested below.)
     image = dl.subsumption_to_fol(dl.HasValue("R", "x"), dl.Atomic("A"))
-    assert image.to_unicode_str() == "∀x0 (R(x0, x) → A(x0))"
+    assert image.to_unicode_str() == "∀x0 (R(x0, 'x') → A(x0))"
     assert set(variable_names(image)) == {"x0"}               # x is NOT a binder
-    assert {t.name for t in image.walk() if type(t).__name__ == "Constant"} == {"x"}
+    assert names_of(image, "Constant") == {"x"}
     #
-    # STILL A LIMIT OF THE TEXT (the vocabulary's, not the translation's): a
-    # one-letter CONSTANT prints as text this grammar reads as a VARIABLE. So the
-    # printed formula parses, and it is not the same formula -- the individual x
-    # comes back as a free variable. That is the same limit as an individual
-    # spelled x0 (the test above), and the route that never goes through text is
-    # unaffected: the nodes' answers are the right ones.
+    # The one-letter CONSTANT prints in quotes, so the text reads back as the
+    # formula: the individual x is the constant it was, and no free variable x
+    # appears.
+    assert_reads_back(image, "subsumption_to_fol(individual named x)")
     parsed = api.parse_any(image.to_unicode_str())
-    assert parsed.ok                                           # the TEXT is legal ...
-    assert not _formula_alpha_equal(image, parsed.formula)     # ... the formula is not
-    assert "x" in {t.name for t in parsed.formula.walk()
-                   if type(t).__name__ == "Variable"}
-    # An upper-case individual (the OWL case) fails the other way, as pinned
-    # above: it reads back as a predicate term. Neither is a capture any more.
+    assert names_of(parsed.formula, "Constant") == {"x"}
+    assert names_of(parsed.formula, "Variable") == {"x0"}
+    # An upper-case individual (the OWL case) is quoted too, and needs no step:
+    # x is a free name here.
     capital = dl.subsumption_to_fol(dl.HasValue("R", "X"), dl.Atomic("A"))
-    assert capital.to_unicode_str() == "∀x (R(x, X) → A(x))"   # no clash: x is untouched
+    assert capital.to_unicode_str() == "∀x (R(x, 'X') → A(x))"
+    assert_reads_back(capital, "subsumption_to_fol(individual named X)")
 
 
 def test_a_caller_supplied_lower_case_role_is_the_documented_limit():
@@ -559,12 +614,12 @@ def test_a_registry_translation_and_its_axioms_read_back(source, target, build):
 
 
 # --------------------------------------------------------------------------- #
-# The fourth documented limit: a variable name IMPORTED from a TPTP file.
-# Appended by the Hets-route package, because that route is what makes a real
-# TPTP translation of an ontology reachable at all.
+# A documented limit: a variable name IMPORTED from a TPTP file. The Hets
+# route (OWL to CASL to TPTP) is what makes a real TPTP translation of an
+# ontology reachable at all.
 # --------------------------------------------------------------------------- #
 
-def test_an_imported_tptp_variable_with_an_underscore_is_the_fourth_limit():
+def test_an_imported_tptp_variable_with_an_underscore_is_a_documented_limit():
     # tptp_input's reader lower-cases a TPTP VAR to get a kit Variable
     # (_TptpTransformer.var: `Variable(str(items[0]).lower())`). That is right
     # for TPTP's own `X`/`X1`, but the kit's VARIABLE terminal is ONE
@@ -573,7 +628,7 @@ def test_an_imported_tptp_variable_with_an_underscore_is_the_fourth_limit():
     # output uses universally (`VAR_gn_x1`) -- becomes a kit variable the kit's
     # own parser rejects.
     #
-    # This is a PRE-EXISTING property of the reader, not of this package:
+    # This is a property of the reader, not of the translations in this file:
     # measured identical before 0.30.0, where `parse_tptp` already produced
     # `Variable('var_gn_x1')`. It is documented rather than fixed because
     # renaming an imported bound variable would change the AST of every TPTP
@@ -583,11 +638,11 @@ def test_an_imported_tptp_variable_with_an_underscore_is_the_fourth_limit():
     # formulas of a real translation.
     #
     # The route that does not go through text is the one to use, exactly as for
-    # the upper-case individual above: a TptpFormula's `.formula` reaches
+    # the lower-case role above: a TptpFormula's `.formula` reaches
     # api.prove / to_z3 / to_tptp as an AST, where a bound variable's spelling
-    # is irrelevant.
-    # Imported locally rather than in this module's shared import block, so
-    # three other packages editing that block do not conflict over one line.
+    # is irrelevant. A variable has no quoted form (only a constant has), so
+    # nothing in the text can keep the name.
+    # Imported where it is used, as the other readers of TPTP below are.
     from unicode_logic_kit.fol.tptp_input import parse_tptp
 
     formulas = parse_tptp("fof(a, axiom, ! [VAR_gn_x1] : pred_p(VAR_gn_x1)).")
@@ -614,7 +669,7 @@ def test_an_imported_tptp_variable_with_an_underscore_is_the_fourth_limit():
 
 
 # --------------------------------------------------------------------------- #
-# The data layer (A7). Every generator of the data image gets a case here: the
+# The data layer. Every generator of the data image gets a case here: the
 # data-range translation (reached through the concept images), the data box,
 # the sort axioms, a literal's term, and the NUMBER terminal that a negative
 # literal needed.
@@ -668,14 +723,15 @@ def test_a_data_subsumption_translation_reads_back(name, concept):
 
 
 def _prefixed_names(node):
-    """The predicate and constant names in ``node`` that carry a prefix colon
-    (``xsd:integer``) -- the one thing in the data image that is not legal text."""
+    """The PREDICATE names in ``node`` that carry a prefix colon (``xsd:integer``)
+    -- the one thing in the data image that is not legal text. A CONSTANT with a
+    colon in its name (the literal ``"abc"^^xsd:string``) is not one: it is
+    written in quotes and reads back."""
     names = set()
     for part in node.walk():
-        for attribute in ("predicate", "name"):
-            name = getattr(part, attribute, None)
-            if isinstance(name, str) and ":" in name:
-                names.add(name)
+        name = getattr(part, "predicate", None)
+        if isinstance(name, str) and ":" in name:
+            names.add(name)
     return names
 
 
@@ -691,8 +747,8 @@ def assert_reads_back_modulo_datatype_names(node, what):
         assert_every_bound_name_is_legal(node, what)
         return
     for name in prefixed:
-        assert name.split(":")[0] in ("xsd", "rdf", "rdfs", "owl") or name.startswith('"'), (
-            f"{what}: {name!r} is not a built-in datatype name or a literal's name")
+        assert name.split(":")[0] in ("xsd", "rdf", "rdfs", "owl"), (
+            f"{what}: {name!r} is not a built-in datatype name")
     assert not api.parse_any(node.to_unicode_str()).ok, what
     sanitized, _mapping = sanitize_names(node)
     assert_reads_back(sanitized, f"sanitize_names({what})")
@@ -820,9 +876,9 @@ def test_a_negative_number_prints_as_text_the_parser_accepts():
     assert api.parse_any(text).ok
 
 
-# -- the documented limits of the data layer's printed text -----------------------
+# -- the documented limit of the data layer's printed text ---------------------------
 
-def test_a_built_in_datatype_name_is_the_fifth_documented_limit():
+def test_a_built_in_datatype_name_is_a_documented_limit():
     # `xsd:integer` is the name OWL 2 gives the datatype, and a colon is no part
     # of a PREDICATE in this grammar, so a data image over a built-in datatype
     # prints text the kit cannot read back -- exactly as `concept_to_fol` of
@@ -850,38 +906,54 @@ def test_a_built_in_datatype_name_is_the_fifth_documented_limit():
 
 
 def test_a_non_numeric_literal_is_a_constant_named_by_its_owl_text():
-    # An exact number is a NUMBER and reads back. Every other literal is a
+    # An exact number is a NUMBER and reads back bare. Every other literal is a
     # CONSTANT named by its own OWL text (`"abc"^^xsd:string`), which is no NAME
-    # of this grammar: the same documented limit, the same two remedies.
+    # of this grammar. It is written in quotes, and the quoted name is that text:
+    # the double quotes, the carets and the colon are all allowed between the
+    # single quotes. Until 0.30.0 this text did not parse at all.
     abox = dl.ABox().assert_data("alice", "HasLabel", _Literal("abc"))
     image = dl.abox_to_fol(abox)
-    assert image.to_unicode_str() == 'HasLabel(alice, "abc"^^xsd:string)'
-    assert not api.parse_any(image.to_unicode_str()).ok
-    assert "\"abc\"^^xsd:string" in {t.name for t in image.walk() if isinstance(t, Constant)}
+    assert image.to_unicode_str() == """HasLabel(alice, '"abc"^^xsd:string')"""
+    assert_reads_back(image, "abox_to_fol(string literal)")
+    assert names_of(image, "Constant") == {'"abc"^^xsd:string', "alice"}
+    assert names_of(api.parse_any(image.to_unicode_str()).formula, "Constant") == {
+        '"abc"^^xsd:string', "alice"}
+    # The text of 0.30.0 is the control: the same literal by its bare name does
+    # not parse.
+    assert key_text(image) == 'HasLabel(alice, "abc"^^xsd:string)'
+    assert not api.parse_any(key_text(image)).ok
+    # A single quote inside the lexical form is written as a backslash and a
+    # quote between the single quotes (the OWL text itself does not escape it).
+    apostrophe = dl.abox_to_fol(dl.ABox().assert_data("alice", "HasLabel", _Literal("it's")))
+    assert apostrophe.to_unicode_str() == """HasLabel(alice, '"it\\'s"^^xsd:string')"""
+    assert_reads_back(apostrophe, "abox_to_fol(string literal with an apostrophe)")
+    assert names_of(apostrophe, "Constant") == {'"it\'s"^^xsd:string', "alice"}
+    # The sanitiser is the other route to text for the ASCII targets: it still
+    # gives the name a spelling those targets take, and the result reads back.
     sanitized, _ = sanitize_names(image)
     assert_reads_back(sanitized, "sanitize_names(string literal)")
-    # and the AST route is unaffected
+    # and the AST route gives the same answer as the text
     assert api.prove(image, [], timeout=10000).status == "refuted"
+    assert api.prove(api.parse_any(image.to_unicode_str()).formula, [],
+                     timeout=10000).status == "refuted"
 
 
-def test_an_upper_case_individual_in_a_data_assertion_is_read_as_a_predicate_term():
-    # The ARGUMENT-position half of the upper-case limit, for the data layer:
-    # `HasNumber(LowElectricityGridVoltageLevel, 400)` PARSES, and reads the
-    # individual back as a predicate term. In OEO 2.13.0 every individual is
-    # CamelCase, so this is the universal case for a real ontology -- and the
-    # kit does not invent a second spelling for the individual.
+def test_an_upper_case_individual_in_a_data_assertion_reads_back():
+    # The ARGUMENT position for the data layer: `HasNumber('LowElectricityGridVoltageLevel', 400)`.
+    # In OEO 2.13.0 every individual is CamelCase, so this is the universal case
+    # for a real ontology. Until 0.30.0 the text parsed and read the individual
+    # back as a predicate term, which is a different formula.
     abox = dl.ABox().assert_data("LowElectricityGridVoltageLevel", "HasNumber", _integer(400))
     image = dl.abox_to_fol(abox)
-    assert image.to_unicode_str() == "HasNumber(LowElectricityGridVoltageLevel, 400)"
+    assert image.to_unicode_str() == "HasNumber('LowElectricityGridVoltageLevel', 400)"
     assert_every_bound_name_is_legal(image, "abox_to_fol(upper-case data individual)")
+    assert_reads_back(image, "abox_to_fol(upper-case data individual)")
     parsed = api.parse_any(image.to_unicode_str())
-    assert parsed.ok                                         # the TEXT is legal ...
-    assert not _formula_alpha_equal(image, parsed.formula)    # ... the formula is not
-    assert "LowElectricityGridVoltageLevel" in {t.name for t in parsed.formula.walk()
-                                                if type(t).__name__ == "PredicateTerm"}
-    assert "LowElectricityGridVoltageLevel" in {t.name for t in image.walk()
-                                                if isinstance(t, Constant)}
-    # The lower-case spelling of the same assertion reads back in full, and so
+    assert names_of(parsed.formula, "Constant") == {"LowElectricityGridVoltageLevel"}
+    assert names_of(parsed.formula, "PredicateTerm") == set()
+    assert {t.value for t in parsed.formula.walk() if isinstance(t, Number)} == {400}
+    assert names_of(image, "Constant") == {"LowElectricityGridVoltageLevel"}
+    # The lower-case spelling of the same assertion reads back in full, bare, and so
     # does the contrast case with NO individual at all: a data-property RANGE.
     assert_reads_back(dl.abox_to_fol(dl.ABox().assert_data("alice", "HasNumber", _integer(400))),
                       "abox_to_fol(lower-case data individual)")
@@ -895,8 +967,7 @@ def test_an_upper_case_individual_in_a_data_assertion_is_read_as_a_predicate_ter
 # --------------------------------------------------------------------------- #
 
 def _empty_box_drs_cases():
-    # Imported locally, like the TPTP case above, so the shared import block is
-    # not a conflict point between packages.
+    # Imported where it is used, like the TPTP reader above.
     from unicode_logic_kit.drt.nodes import DRS, Impl, Neg, Or, Pred
 
     empty = DRS(referents=(), conditions=())

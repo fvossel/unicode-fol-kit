@@ -169,3 +169,100 @@ def test_the_refusal_of_two_agents_names_the_route_and_both_terms():
     message = str(info.value)
     assert message.startswith("the route:") and "Variable(name='x')" in message
     assert "Constant(name='x')" in message and "free variable is a parameter" in message
+
+
+# ---------------------------------------------------------------------------
+# The key is not the text of the formula
+# ---------------------------------------------------------------------------
+#
+# ``Constant("k2")`` is written ``'k2'`` in the text of a formula (a bare ``k2`` is a variable),
+# and the key of the atom keeps writing it ``k2``: a user types the key of the atom ``P`` over the
+# domain element ``k2`` as ``"P(k2)"``.
+
+def test_the_key_writes_every_constant_by_its_name_and_the_formula_text_quotes_it():
+    atom = P(Constant("k2"), Constant("Alice"), Constant("socrates"))
+    assert atom.to_unicode_str() == "P('k2', 'Alice', socrates)"
+    assert atom_key(atom) == "P(k2, Alice, socrates)"
+    assert AtomKeys("route").key(atom) == "P(k2, Alice, socrates)"
+
+
+def test_a_sorted_constant_with_a_quoted_name_has_the_key_of_the_plain_constant_by_its_name():
+    atom = Atom("Mortal", [SortedConstant("G-910", "Human")])
+    assert atom.to_unicode_str() == "Mortal('G-910':Human)"
+    assert atom_key(atom) == "Mortal(G-910)"
+
+
+def test_a_name_with_a_quote_or_a_space_is_a_key_as_it_is():
+    assert atom_key(P(Constant("it's"), Constant("a b"))) == "P(it's, a b)"
+
+
+def test_the_key_of_a_term_inside_a_function_is_the_key_text_too():
+    assert atom_key(P(Function("f", [Constant("a")]))) == "P(f(a))"
+
+
+def test_a_variable_and_a_constant_of_one_name_have_one_key_although_their_texts_differ():
+    keys = AtomKeys("the route")
+    constant_atom, variable_atom = P(Constant("x")), P(Variable("x"))
+    assert constant_atom.to_unicode_str() == "P('x')" and variable_atom.to_unicode_str() == "P(x)"
+    keys.key(constant_atom)
+    with pytest.raises(NotImplementedError) as info:
+        keys.key(variable_atom)
+    message = str(info.value)
+    assert message.startswith("the route: two different atoms have one key and are both written 'P(x)'")
+    assert "free variable is a parameter" in message
+
+
+def test_the_numeral_and_the_constant_of_one_digit_string_have_one_key_although_their_texts_differ():
+    keys = AtomKeys("the route")
+    keys.key(P(Number(1)))
+    assert P(Constant("1")).to_unicode_str() == "P('1')"
+    with pytest.raises(NotImplementedError, match="have one key") as info:
+        keys.key(P(Constant("1")))
+    assert "'P(1)'" in str(info.value) and "numeral 1" in str(info.value)
+
+
+def test_a_constant_named_like_a_compound_term_and_the_term_have_one_key():
+    keys = AtomKeys("the route")
+    keys.key(P(Function("f", [Constant("a")])))
+    assert P(Constant("f(a)")).to_unicode_str() == "P('f(a)')"
+    with pytest.raises(NotImplementedError, match="have one key"):
+        keys.key(P(Constant("f(a)")))
+
+
+def test_two_constants_that_differ_are_never_refused_for_the_quotes():
+    keys = AtomKeys("route")
+    assert keys.letters([Implies(P(Constant("k2")), P(Constant("K2")))]) == ["P(k2)", "P(K2)"]
+
+
+# ---------------------------------------------------------------------------
+# The key is public
+# ---------------------------------------------------------------------------
+
+def test_atom_key_is_exported_from_the_package_and_from_fol():
+    import unicode_logic_kit
+    import unicode_logic_kit.fol
+    assert unicode_logic_kit.atom_key is atom_key
+    assert unicode_logic_kit.fol.atom_key is atom_key
+    assert "atom_key" in unicode_logic_kit.__all__
+    assert "atom_key" in unicode_logic_kit.fol.__all__
+
+
+def test_the_docstring_of_atom_key_is_the_definition_of_a_key():
+    doc = atom_key.__doc__
+    assert "every constant written by its bare name" in doc
+    # the evaluators read the text of the formula as the same key, and the tables the kit returns
+    # are keyed by atom_key
+    assert "to_unicode_str" in doc
+    assert "RETURNS" in doc
+
+
+def test_a_key_that_holds_a_complete_quoted_constant_is_refused():
+    # its key P('a') would also be the text of the formula for the atom over the constant a
+    assert P(Constant("a")).to_unicode_str() == "P('a')"
+    with pytest.raises(NotImplementedError, match="reads as the text of another atom"):
+        atom_key(P(Constant("'a'")))
+    with pytest.raises(NotImplementedError, match="reads as the text of another atom"):
+        AtomKeys("route").key(P(Constant("'a'")))
+    # a name that merely holds an apostrophe keeps its key
+    assert atom_key(P(Constant("D'Alembert"))) == "P(D'Alembert)"
+    assert atom_key(P(Constant("3'-phosphate"))) == "P(3'-phosphate)"

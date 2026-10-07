@@ -209,6 +209,7 @@ from ...fol.nodes import (
     Node, Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
     Variable, Constant, substitute,
 )
+from ...fol._msfl_nodes import key_text
 from ._base import DatasetExample, _register_dataset_info
 from . import _proofwriter_proof as _proof
 
@@ -756,7 +757,9 @@ def _closed_model(premises: "List[Node]", constants: "List[Constant]", *,
     """The theory's closed model, by STRATIFIED forward chaining.
 
     Returns ``(true_atoms, has_naf)`` — the set of ground-atom keys
-    (``to_unicode_str``) true in the perfect model, and whether any rule
+    (``key_text``: the text of the atom with every constant written by its name,
+    which is not the text of the formula where the formula writes a constant in
+    quotes) true in the perfect model, and whether any rule
     body used negation (i.e. the theory is beyond the definite fragment, so
     membership is NOT classical entailment and must not be cross-checked
     against a classical prover). With ``record_provenance=True`` a THIRD
@@ -807,7 +810,7 @@ def _closed_model(premises: "List[Node]", constants: "List[Constant]", *,
     derived it — the "OR-forest" a gold proof may cite any one branch of).
     Signing ``antecedent_keys`` does NOT change ``true_atoms``/``stratum``
     below: NAF satisfaction there is still checked by plain ABSENCE from
-    ``true_atoms`` (``(atom.to_unicode_str() in true_atoms) == positive``),
+    ``true_atoms`` (``(key_text(atom) in true_atoms) == positive``),
     exactly ProofWriter's own stratified-fixpoint semantics; ``provenance``
     is a side record of what ALSO fired explicitly, not a different
     satisfaction rule.
@@ -836,17 +839,17 @@ def _closed_model(premises: "List[Node]", constants: "List[Constant]", *,
     # below).
     stratum: "Dict[str, int]" = {}
     for body, (head_atom, _) in ground_rules:
-        stratum.setdefault(head_atom.to_unicode_str(), 0)
+        stratum.setdefault(key_text(head_atom), 0)
         for atom, _ in body:
-            stratum.setdefault(atom.to_unicode_str(), 0)
+            stratum.setdefault(key_text(atom), 0)
     for _ in range(len(stratum) + 1):
         changed = False
         for body, (head_atom, head_positive) in ground_rules:
             if not head_positive:
                 continue
-            head_key = head_atom.to_unicode_str()
+            head_key = key_text(head_atom)
             for atom, positive in body:
-                required = (stratum[atom.to_unicode_str()]
+                required = (stratum[key_text(atom)]
                             + (0 if positive else 1))
                 if stratum[head_key] < required:
                     stratum[head_key] = required
@@ -873,7 +876,7 @@ def _closed_model(premises: "List[Node]", constants: "List[Constant]", *,
         # ProofWriter proofs prefer a constructive ¬X derivation over silent
         # absence whenever one exists).
         ante_keys = tuple(
-            atom.to_unicode_str() if positive else Not(atom).to_unicode_str()
+            key_text(atom) if positive else key_text(Not(atom))
             for atom, positive in body)
         provenance.setdefault(signed_key, set()).add((origin[gi], ante_keys))
 
@@ -884,24 +887,24 @@ def _closed_model(premises: "List[Node]", constants: "List[Constant]", *,
         if head[1]
     ]
     max_stratum = max(
-        (stratum[head[0].to_unicode_str()] for _, _, head in positive_rules),
+        (stratum[key_text(head[0])] for _, _, head in positive_rules),
         default=0)
     for level in range(max_stratum + 1):
         level_rules = [
             (gi, body, head) for gi, body, head in positive_rules
-            if stratum[head[0].to_unicode_str()] == level
+            if stratum[key_text(head[0])] == level
         ]
         changed = True
         while changed:
             changed = False
             for gi, body, (head_atom, _) in level_rules:
                 fires = all(
-                    (atom.to_unicode_str() in true_atoms) == positive
+                    (key_text(atom) in true_atoms) == positive
                     for atom, positive in body
                 )
                 if not fires:
                     continue
-                key = head_atom.to_unicode_str()
+                key = key_text(head_atom)
                 _record(key, gi, body)
                 if key not in true_atoms:
                     true_atoms.add(key)
@@ -912,10 +915,10 @@ def _closed_model(premises: "List[Node]", constants: "List[Constant]", *,
     for gi, (body, (head_atom, head_positive)) in enumerate(ground_rules):
         if head_positive:
             continue
-        if all((atom.to_unicode_str() in true_atoms) == positive
+        if all((key_text(atom) in true_atoms) == positive
                for atom, positive in body):
-            negative_atoms.add(head_atom.to_unicode_str())
-            _record(Not(head_atom).to_unicode_str(), gi, body)
+            negative_atoms.add(key_text(head_atom))
+            _record(key_text(Not(head_atom)), gi, body)
 
     contradictions = sorted(true_atoms & negative_atoms)
     if contradictions:
@@ -1107,7 +1110,7 @@ def solve_structured_example(example: DatasetExample, *,
     cache: "Dict[str, bool]" = {}
 
     def atom_oracle(atom: Atom) -> bool:
-        key = atom.to_unicode_str()
+        key = key_text(atom)
         if key not in cache:
             in_model = key in model
             record: dict = {"atom": key, "derivable": in_model}
@@ -1208,14 +1211,14 @@ def _rule_body_holds(rule_node: Node, target_key: str,
     rule = _as_rule(rule_node)
     matches = []
     for g_body, (g_head_atom, g_head_positive) in _ground_rule(rule, constants):
-        signed = (g_head_atom.to_unicode_str() if g_head_positive
-                  else Not(g_head_atom).to_unicode_str())
+        signed = (key_text(g_head_atom) if g_head_positive
+                  else key_text(Not(g_head_atom)))
         if signed != target_key:
             continue
         matches.append(g_body)
     if not matches:
         return None
-    return any(all((atom.to_unicode_str() in true_atoms) == positive
+    return any(all((key_text(atom) in true_atoms) == positive
                     for atom, positive in g_body)
                for g_body in matches)
 
@@ -1396,7 +1399,9 @@ def check_gold_proof(example: DatasetExample) -> dict:
             f"proofwriter: example {example.id}: target "
             f"{target.to_unicode_str()!r} is not a (possibly negated) atom "
             "— cannot check its proof against a ground fixpoint")
-    target_key = target.to_unicode_str()
+    # The signed key of the target (``¬Foo(a)`` for a negated atom), the form the
+    # fixpoint's provenance is filed under.
+    target_key = key_text(target)
 
     constants = _collect_constants(premises + [conclusion])
     true_atoms, _has_naf, provenance = _closed_model(

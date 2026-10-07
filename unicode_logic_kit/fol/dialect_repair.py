@@ -26,10 +26,13 @@ DIFFERENT answers, and which is which is this module's entire content:
    used as a predicate (``1,2-diacyl-sn-glycero-3-phospho‐
    choline``, ``(2S)Flavan4One``) is not a legal token in any FOL surface
    syntax. TPTP has an escape hatch, single quoting, which preserves the
-   name exactly; the unicode grammar has **no quoting mechanism at all**
-   (``'1,2-diacyl'(x)`` fails on the quote character itself), so the fix
-   here is a sanitising RENAME through
-   :class:`~unicode_logic_kit.fol.sanitize.NameMapping`.
+   name exactly; the unicode grammar quotes a CONSTANT (``'1,2-diacyl'`` as
+   a term) but has no quoted form for a PREDICATE or a FUNCTION name
+   (``'1,2-diacyl'(x)`` fails at the bracket after the closing quote), so the
+   fix here is a sanitising RENAME through
+   :class:`~unicode_logic_kit.fol.sanitize.NameMapping`. What stands between a
+   pair of single quotes is a constant's name, exactly as written, and is
+   never a candidate for this rename (see the limits below).
 
    Renaming such a name to a plain camelCase identifier is the obvious
    fallback, and it is a loss: the mapping back to the original chemical
@@ -73,6 +76,13 @@ Hard limits (refuse rather than silently reinterpret)
   and it is kept only if the rewritten text then parses. A rewrite that does
   not make the input parseable is discarded whole: ``ok=False``, the original
   text returned untouched, and the parser's own farthest diagnosis reported.
+* Every text between a pair of single quotes is left byte for byte as it was,
+  in every step of this module (the scan for names, the rename, the reading of
+  a truth glyph): a quoted constant such as ``'Foo-bar(x)'`` or ``'⊤'`` is a
+  name, not a functor-position span and not a glyph. A pair is what the
+  quoted-name terminal reads, and the escapes ``\\'`` and ``\\\\`` inside it
+  do not end it; a quote without a partner is no pair and is left to the
+  parser's message.
 * The rename always picks the PREDICATE spelling (``[A-Z][a-zA-Z0-9]*``).
   A functor-position name is a predicate or a function depending only on its
   spelling, so this is a choice, not a reading — stated in the issue message
@@ -104,6 +114,7 @@ from .nodes import Node, free_variables
 # _is_legal_name has to ask what THIS dialect's grammar accepts, which is
 # _identifiers, not what sanitize.py is willing to export.
 from ._identifiers import (
+    _UNSPELLABLE_CLASS,
     predicate_pattern as _predicate_pattern,
     name_pattern as _name_pattern,
     variable_pattern as _variable_pattern,
@@ -146,17 +157,68 @@ class DialectRepairResult(RepairResult):
 
 
 # ---------------------------------------------------------------------------
+# Quoted constants: what the scans below must not look into
+# ---------------------------------------------------------------------------
+#
+# A constant may be written in single quotes, and the text between the quotes
+# is its name exactly (``'1,2-diacyl'``, ``'Foo_bar(x)'``, ``'⊤'``). The scans
+# of this module are regular expressions over raw text and know nothing of
+# that, so each of them runs only on the stretches OUTSIDE the quoted spans.
+#
+# A quoted span is read the way the QUOTED_NAME terminal reads one — a quote,
+# characters that are no quote, backslash or unspellable character, the escapes
+# of a quote and of a backslash, a quote — with one deliberate widening: a
+# backslash in front of ANY spellable character is taken as an escape. The
+# grammar refuses ``'a\b'``, but a text that is being repaired may hold one, and
+# its span still has to end at the quote the writer meant, not at the quote
+# before it. The empty ``''`` is a span too (it has nothing to protect, and
+# counting it keeps the quotes after it paired as the writer paired them).
+# A quote with no partner is no span.
+_QUOTED_SPAN = re.compile(
+    rf"'(?:[^'\\{_UNSPELLABLE_CLASS}]|\\[^{_UNSPELLABLE_CLASS}])*'")
+
+
+def _unquoted_stretches(text: str) -> List[str]:
+    """The pieces of ``text`` between its quoted spans, in order.
+
+    ``len(result)`` is one more than the number of spans; an empty piece stands
+    where a span begins or ends the text. A piece never holds a quote that has a
+    partner.
+    """
+    pieces: List[str] = []
+    last = 0
+    for span in _QUOTED_SPAN.finditer(text):
+        pieces.append(text[last:span.start()])
+        last = span.end()
+    pieces.append(text[last:])
+    return pieces
+
+
+def _map_unquoted(text: str, rewrite) -> str:
+    """``text`` with ``rewrite`` applied to each piece outside its quoted spans;
+    every quoted span stays exactly as it was."""
+    out: List[str] = []
+    last = 0
+    for span in _QUOTED_SPAN.finditer(text):
+        out.append(rewrite(text[last:span.start()]))
+        out.append(span.group(0))
+        last = span.end()
+    out.append(rewrite(text[last:]))
+    return "".join(out)
+
+
+# ---------------------------------------------------------------------------
 # Case 2 — invalid names: raw-text detection
 # ---------------------------------------------------------------------------
 #
 # Mirrors tptp_repair._CANDIDATE_RE (a name-shaped span immediately before an
 # argument list's "(", optionally preceded by one non-nested parenthesised
 # fragment, with a left-boundary lookbehind so scanning is non-overlapping)
-# with one deliberate difference: "_" is a candidate character here. TPTP's
-# lower_word admits underscores, so tptp_repair never has to fix a name that
-# merely contains one; the kit's own predicate class ([A-Z][a-zA-Z0-9]*) does
-# not, so `Foo_bar(x)` IS a case-2 name in this dialect and has to be
-# detectable as one.
+# with one deliberate difference: "_" is a candidate character here, so a
+# name-shaped span that holds an underscore is found whole and not from the
+# underscore on. An underscore is legal inside a predicate of this dialect
+# (`Foo_bar(x)` reads as it is), so it does not by itself make a name a case-2
+# name; a hyphen does (`Foo-bar(x)`).
 _CANDIDATE_RE = re.compile(
     r"(?<![A-Za-z0-9_,\-)])"
     r"((?:\([^()\n]{1,40}\))?[A-Za-z0-9][A-Za-z0-9_,\-]*)"
@@ -220,15 +282,17 @@ def _is_legal_name(name: str) -> bool:
 
 def _find_name_candidates(text: str) -> List[str]:
     """Distinct, order-preserving functor-position names in ``text`` that are
-    legal in no symbol class."""
+    legal in no symbol class. Nothing between a pair of single quotes is a
+    candidate: that is a constant's name, not a name in functor position."""
     seen = set()
     out: List[str] = []
-    for match in _CANDIDATE_RE.finditer(text):
-        name = match.group(1)
-        if _is_legal_name(name) or name in seen:
-            continue
-        seen.add(name)
-        out.append(name)
+    for stretch in _unquoted_stretches(text):
+        for match in _CANDIDATE_RE.finditer(stretch):
+            name = match.group(1)
+            if _is_legal_name(name) or name in seen:
+                continue
+            seen.add(name)
+            out.append(name)
     return out
 
 
@@ -241,11 +305,17 @@ def _apply_renames(text: str, renames: Tuple[Tuple[str, str], ...]) -> str:
     end with another (``3-oxo-steroid`` and ``oxo-steroid``), and rewriting
     the shorter one first would eat the tail of the longer one's occurrences
     and leave a half-renamed name behind.
+
+    Only the text outside single quotes is rewritten: the spelling of a quoted
+    constant is the constant, so a quoted span that holds a candidate's
+    spelling (``'1,2-diacyl(x)'``) stays as it is.
     """
-    out = text
-    for name, legal in sorted(renames, key=lambda pair: -len(pair[0])):
-        out = re.sub(re.escape(name) + r"(?=\s*\()", legal, out)
-    return out
+    def rewrite(stretch: str) -> str:
+        for name, legal in sorted(renames, key=lambda pair: -len(pair[0])):
+            stretch = re.sub(re.escape(name) + r"(?=\s*\()", legal, stretch)
+        return stretch
+
+    return _map_unquoted(text, rewrite)
 
 
 def _farthest(errors) -> str:
@@ -284,11 +354,17 @@ _GLYPH_RE = re.compile("[⊤⊥]")
 
 def _glyph_rewrites(text: str):
     """The texts that spell each truth glyph of ``text`` as an ASCII dialect's own
-    constant, Prover9's first and TPTP's second; nothing when ``text`` has no glyph."""
-    if not _GLYPH_RE.search(text):
+    constant, Prover9's first and TPTP's second; nothing when ``text`` has no glyph.
+
+    A glyph between single quotes is part of a constant's name (``'⊤'``) and is
+    neither found nor rewritten."""
+    if not any(_GLYPH_RE.search(stretch) for stretch in _unquoted_stretches(text)):
         return
     for column in (0, 1):
-        yield _GLYPH_RE.sub(lambda m: _GLYPH_SPELLINGS[m.group(0)][column], text), column
+        yield _map_unquoted(
+            text,
+            lambda stretch, column=column: _GLYPH_RE.sub(
+                lambda m: _GLYPH_SPELLINGS[m.group(0)][column], stretch)), column
 
 
 def _parse_reading_glyphs(text: str, dialect: Optional[str]):
@@ -389,7 +465,10 @@ def repair_formula(text: str, *, dialect: Optional[str] = None,
             mapping = NameMapping()
         # Preseed with the identifiers already in the text so a legalised
         # name can never collide with a symbol that is already there (see
-        # the module docstring's collision limit).
+        # the module docstring's collision limit). The words of a quoted
+        # constant are in the preseed too, on purpose: that reads the text and
+        # rewrites nothing, and a legal name that a constant already spells is
+        # one more name to keep the renamed predicate away from.
         mapping.used.update(match.group(0) for match in _ident_re().finditer(text))
         renames = tuple((name, mapping.for_predicate(name)) for name in candidates)
 

@@ -111,6 +111,7 @@ if TYPE_CHECKING:
     from ..atp.protocol import Verdict
 
 from ._atom_keys import refuse_alike_agents
+from ._msfl_nodes import key_text
 from ._identifiers import fresh_variables, symbol_names
 from .nodes import (
     Node,
@@ -153,7 +154,7 @@ _R_WANTS_PREFIX = "Rw_"
 def _agent_key(agent: Node) -> str:
     """Agent term's name for the per-agent relation (this propositional translation
     rejects object quantifiers, so the agent is always a ground Constant here)."""
-    return getattr(agent, "name", None) or agent.to_unicode_str()
+    return getattr(agent, "name", None) or key_text(agent)
 _R_TEMPORAL = "T"
 _R_NEXT = "N"
 _R_DEONTIC = "D"

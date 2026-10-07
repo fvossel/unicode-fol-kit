@@ -475,6 +475,28 @@ class Node:
         unsorted variable ranges over the whole universe), so decide, translate
         and export it as a node, or write the sort on every occurrence (or on none)
         before printing it.
+
+        **A constant is written bare or in quotes.** ``Constant(name)`` is written
+        as the bare name when that text reads back as this constant
+        (``socrates``, ``c_k2``) and in single quotes otherwise (``'k2'``,
+        ``'Alice'``, ``'G-910'``, ``'John Doe'``), with ``'`` written ``\\'`` and
+        ``\\`` written ``\\\\``; a sorted constant is the same text of its name,
+        ``:``, and the sort (``'k2':Mountain``). So the text reads back as the node
+        for every constant that has a text. A name that has none is refused: the
+        empty name, a name with a control character, U+007F, U+0085, U+2028,
+        U+2029 or a surrogate (``ValueError``), and a name that is not a string
+        (``TypeError``). The names of functions, predicates, variables, sorts,
+        the subscript of a modal operator (``K_a``) and nominals have no quoted
+        form and are written as they are.
+
+        A route that uses the printed text of an atom as a KEY (a valuation, a
+        table of a model, an order, an identifier of a target) does not use this
+        text: it writes every constant by its bare name, as before the quoted
+        form existed (``key_text`` in ``_msfl_nodes.py``).
+
+        Raises:
+            ValueError: a constant of the node has a name that has no text.
+            TypeError: a constant of the node has a name that is not a string.
         """
         from ._msfl_nodes import _uni
         return _uni(self)
@@ -486,6 +508,12 @@ class Node:
         Symbol/function/predicate names are emitted verbatim (no \\mathrm
         wrapping). The renderer lives in _msfl_nodes.py (imported lazily) so it
         can dispatch over both FOL and MSFL/lambda nodes.
+
+        A constant is written by its name here, never in quotes: the LaTeX text
+        of a formula that holds a constant whose name does not read back bare
+        (``k2``, ``Alice``, ``G-910``) does not read back as that constant,
+        and ``parse_latex`` does not read a quoted one. Use ``to_unicode_str``
+        for text that reads back.
         """
         from ._msfl_nodes import _latex
         return _latex(self)
@@ -1395,12 +1423,24 @@ def _numeral_symbol(value):
 
 @dataclass(frozen=True)
 class Constant(Node):
-    """A ground constant, produced by a bare NAME, a ``c_``-prefixed CONSTANT, or a
-    non-ASCII (Greek, e.g. ``θ``) CONSTANT token.
+    """A ground constant, produced by a bare NAME, a ``c_``-prefixed CONSTANT, a
+    non-ASCII (Greek, e.g. ``θ``) CONSTANT token, or a quoted name (``'k2'``).
 
     The name may contain non-ASCII letters; the Kripke evaluator and Z3 use them
     directly, while the ASCII-only Prover9 / TPTP exporters transliterate them via
-    :func:`constant_name_to_ascii` (``θ`` → ``theta``)."""
+    :func:`constant_name_to_ascii` (``θ`` → ``theta``).
+
+    Every constant has a text of its own in the kit's syntax, whatever its name
+    (the empty name and a name with a control character excepted: those are refused
+    when printed). ``to_unicode_str`` writes the name bare when the bare word reads
+    back as this constant (``socrates``, ``c_k2``, ``θ``) and in single quotes when
+    it does not: ``'k2'`` (a bare ``k2`` is a variable), ``'Alice'``, ``'G-910'``,
+    ``'John Doe'``, ``'1'`` (a bare ``1`` is a number). Inside the quotes ``'`` is
+    written ``\\'`` and ``\\`` is written ``\\\\``. So the text of a formula reads
+    back as the formula, for a hand-built constant as for a parsed one. The text a
+    route uses as a KEY (a valuation, a model table) writes the bare name instead,
+    as it always did. In the text of a formula the constant ``'a'`` and the
+    variable ``a`` are therefore told apart."""
 
     name: str
 
@@ -2399,14 +2439,18 @@ class Count(Node):
         "Every name" means a name of EVERY kind that the matrix holds
         (:func:`~unicode_logic_kit.fol._identifiers.symbol_names`): the constants,
         and also the functions (the nullary one is a constant), the predicates and
-        the sorts. A constant may be spelled like a variable — the grammar cannot
-        write one, but a caller who builds nodes can, and so do the
-        description-logic image (an individual named ``y0``) and the TPTP reader
-        (``p(x0)``). ``Variable("y0")`` and ``Constant("y0")`` print the same and
-        are the same symbol in a text with one namespace, so a witness named ``y0``
-        would CAPTURE that constant: ``∃≥1 y1 r(y0, y1)`` used to expand to
-        ``∃y0 r(y0, y0)``, which an irreflexive ``r`` contradicts — a consistent
-        knowledge base came out inconsistent. A witness named like a predicate or
+        the sorts. A constant may be spelled like a variable — the grammar writes
+        one in quotes (``'y0'``), a caller who builds nodes can make one, and so
+        do the description-logic image (an individual named ``y0``) and the TPTP
+        reader (``p(x0)``). ``Variable("y0")`` and ``Constant("y0")`` are two
+        nodes, and the Unicode text (``y0`` against ``'y0'``) and Z3 keep them
+        apart; a target that writes both as one symbol does not, and there a
+        witness named ``y0`` would CAPTURE that constant: ``∃≥1 y1 r(y0, y1)``
+        used to expand to an ``∃y0`` over ``r`` of the constant ``y0`` and the
+        variable ``y0``, which such a target reads as ``∃y0 r(y0, y0)`` and an
+        irreflexive ``r`` contradicts — a consistent knowledge base came out
+        inconsistent. So a witness avoids every constant, for every target. A
+        witness named like a predicate or
         a function is the same defect in SMT-LIB text, where a bound variable and
         the symbol it shadows are one identifier (``(exists ((x0 S)) (x0 x0))``).
         What the matrix does not hold is the caller's to pass: the other formulas
@@ -2928,15 +2972,21 @@ application_: "(" formula ")" "(" app_arg ")"
 
 
 # The two constant-handling variants for the atom_term layer. Plain (FOL / FL /
-# modal / second-order) treats a bare NAME as a Constant and c_-constants via
-# const_; sorted (MSFOL / MSFL) requires a SORT annotation on each.
+# modal / second-order) treats a bare NAME as a Constant, c_-constants via
+# const_, and a quoted name (QUOTED_NAME, whose token handler builds the
+# Constant) as the constant of exactly that name; sorted (MSFOL / MSFL) requires a
+# SORT annotation on each, so a quoted constant there is ``'k2':Mountain`` and
+# never bare. The head line ``?atom_term: VARIABLE`` stays where it is:
+# msflparser patches the assembled grammar by that exact line.
 _CONST_ALTS_PLAIN = (
     "    | NAME\n"
-    "    | CONSTANT                              -> const_"
+    "    | CONSTANT                              -> const_\n"
+    "    | QUOTED_NAME"
 )
 _CONST_ALTS_SORTED = (
     "    | NAME SORT                             -> sorted_const_\n"
-    "    | CONSTANT SORT                         -> sorted_const_"
+    "    | CONSTANT SORT                         -> sorted_const_\n"
+    "    | QUOTED_NAME SORT                      -> sorted_const_"
 )
 
 
@@ -3210,6 +3260,15 @@ class FOLTransformer(Transformer):
     def const_(self, items):
         """Transform a ``c_``-prefixed constant token into a Constant node."""
         return Constant(str(items[0]))
+
+    def QUOTED_NAME(self, items):
+        """Transform a quoted name token (``'k2'``) into the Constant of that name.
+
+        A token handler, like :meth:`NAME`, so the source span of the constant
+        is the token's own (quotes included) and ``_sorted_const_transform``
+        takes the name of the Constant here exactly as it does for a NAME.
+        """
+        return Constant(_identifiers._unquote_constant(str(items)))
 
     def number_(self, items):
         """Transform numeric literal token into Number node."""

@@ -59,7 +59,7 @@ fuzzy_evaluate(classical.parse("P ∧ Q"), {"P": 0.5, "Q": 0.5})
 
 ## `fuzzy_evaluate` — truth degree under a valuation
 
-`fuzzy_evaluate(node, valuation, domain=None, sort_universes=None, tnorm="lukasiewicz")` returns the degree in `[0, 1]`. The `valuation` maps each ground atom's canonical key — its `to_unicode_str()` rendering, with a sorted constant `c:S` written as `c`, e.g. `"P(alice)"` or just `"P"` — to a degree. A missing key raises `KeyError`. Two different atoms that print alike (the numeral `1` and a constant named `1`, a free variable `x` and a constant named `x`) would have one key and are refused with `NotImplementedError`, by the Z3 deciders below as by `fuzzy_evaluate`.
+`fuzzy_evaluate(node, valuation, domain=None, sort_universes=None, tnorm="lukasiewicz")` returns the degree in `[0, 1]`. The `valuation` maps each ground atom's key — `atom_key(atom)`, the text of the atom with every constant written by its bare name and a sorted constant `c:S` written as `c`, e.g. `"P(alice)"`, `"P(a)"` or just `"P"` — to a degree. The text of the atom as a formula (`atom.to_unicode_str()`) writes a constant in quotes when its bare name would read as something else, `"P('a')"`, and a valuation keyed that way is read as the same key; a valuation that holds both spellings of one atom with different degrees raises `ValueError`. A missing key raises `KeyError`. Two different atoms that print alike (the numeral `1` and a constant named `1`, a free variable `x` and a constant named `x`) would have one key and are refused with `NotImplementedError`, by the Z3 deciders below as by `fuzzy_evaluate`.
 
 ```python
 from unicode_logic_kit import MSFLParser, fuzzy_evaluate
@@ -123,6 +123,18 @@ Quantifiers are the infimum (`∀` = min) and supremum (`∃` = max) over a fini
 ```python
 fuzzy_evaluate(fl.parse("∀x P(x)"), {"P(a)": 0.3, "P(b)": 0.8}, domain={"a", "b"})  # → 0.3 (min)
 fuzzy_evaluate(fl.parse("∃x P(x)"), {"P(a)": 0.3, "P(b)": 0.8}, domain={"a", "b"})  # → 0.8 (max)
+```
+
+The element `a` of the domain is the constant `a`, whose text as a formula is `'a'`: the key `"P('a')"` names the same atom as `"P(a)"`, and a valuation may use either (or one of each, as long as an atom is not given two different degrees):
+
+```python
+from unicode_logic_kit import Atom, Constant, atom_key
+
+pa = Atom("P", [Constant("a")])
+atom_key(pa)                                                      # → 'P(a)'
+pa.to_unicode_str()                                               # → "P('a')"
+fuzzy_evaluate(pa, {pa.to_unicode_str(): 0.3})                    # → 0.3  (keyed by the text of the formula)
+fuzzy_evaluate(fl.parse("∀x P(x)"), {"P(a)": 0.3, "P('b')": 0.8}, domain={"a", "b"})  # → 0.3  (one key of each kind)
 ```
 
 For sorted quantifiers, pass `sort_universes`. The bound variable is grounded to a bare constant, and a sorted constant `alice:Person` **is** the constant `alice`, so the valuation keys carry no sort annotation: `Tall(alice:Person)` has the key `'Tall(alice)'`, the key of the instance of `∀x:Person Tall(x)` at `alice`:
@@ -360,7 +372,7 @@ fuzzy_is_valid(q, domain={"a", "b"}, tnorm="godel")        # → True
 fuzzy_is_valid(q, domain={"a", "b"}, tnorm="lukasiewicz")  # → False
 ```
 
-Grounded satisfiability and models work the same way — the model keys are the grounded ground atoms:
+Grounded satisfiability and models work the same way — the model keys are the keys (`atom_key`, every constant by its bare name) of the grounded atoms:
 
 ```python
 from unicode_logic_kit import fuzzy_is_satisfiable, fuzzy_get_model
@@ -489,7 +501,10 @@ worlds" gives `Box = 1.0` / `Diamond = 0.0` exactly, matching
 degrees restricted to `{0.0, 1.0}`, `satisfies_fuzzy_modal` agrees exactly
 with `semantics.kripke.satisfies_modal` on the structurally matching crisp
 formula, for every t-norm — the collapse `tests/test_fuzzy_kripke.py`
-checks over hundreds of random frames.
+checks over hundreds of random frames. An atom with arguments is keyed in
+a world's valuation as it is for `fuzzy_evaluate`: by `atom_key(atom)`
+(`"Likes(a, b)"`), or by the text of the atom as a formula
+(`"Likes('a', 'b')"`), which is read as the same key.
 
 The Gödel t-norm's negation is not involutive, so the residuated duality
 `◇φ = ¬□¬φ` — which DOES hold exactly under Łukasiewicz — can fail under

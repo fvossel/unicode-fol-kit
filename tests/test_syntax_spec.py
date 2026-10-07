@@ -175,3 +175,102 @@ def test_overview_lists_the_live_dialect_order():
     order = syntax_spec("overview")["dialects_in_detection_order"]
     assert order[-1] == "unicode"
     assert detect_dialects("fof(a, axiom, p).")[0] in order
+
+
+# ---------------------------------------------------------------------------
+# The quoted constant: the naming rule, its examples and the advice on quotes
+# ---------------------------------------------------------------------------
+
+def _quoted_constant_rule():
+    return next(rule for rule in syntax_spec("naming")["rules"]
+                if rule["kind"] == "quoted_constant")
+
+
+#: Each match of the quoted-constant rule and the name it spells, worked out by
+#: hand: the text between the quotes, with \' read as a quote.
+_QUOTED_MATCHES = [
+    ("'a'", "a"), ("'k2'", "k2"), ("'Alice'", "Alice"), ("'G-910'", "G-910"),
+    ("'C++'", "C++"), ("'John Doe'", "John Doe"),
+    ("'1,2-diacyl'", "1,2-diacyl"), ("'it\\'s'", "it's"),
+]
+
+
+def test_the_quoted_constant_rule_lists_exactly_the_matches_pinned_here():
+    assert _quoted_constant_rule()["matches"] == [m for m, _name in _QUOTED_MATCHES]
+
+
+@pytest.mark.parametrize("match, name", _QUOTED_MATCHES, ids=[m for m, _n in _QUOTED_MATCHES])
+def test_every_match_of_the_quoted_constant_rule_reads_as_a_constant_of_that_name(match, name):
+    parsed = api.parse_any(f"P({match})", hint="fol")
+    assert parsed.ok, parsed.errors
+    assert parsed.formula.args == (Constant(name),)
+
+
+def test_control_the_same_names_bare_read_as_something_else_or_not_at_all():
+    """The rule exists because the bare spelling does not read as the constant:
+    a one-letter name, or one letter and digits, is a variable, and an
+    upper-case name or one with a space or a sign is no term of the fol dialect."""
+    assert api.parse_any("P(a)", hint="fol").formula.args == (Variable("a"),)
+    assert api.parse_any("P(k2)", hint="fol").formula.args == (Variable("k2"),)
+    for bare in ("Alice", "G-910", "C++", "John Doe"):
+        assert not api.parse_any(f"P({bare})", hint="fol").ok
+
+
+def test_a_name_that_reads_bare_is_the_same_constant_quoted():
+    assert (api.parse_any("P('socrates')", hint="fol").formula
+            == api.parse_any("P(socrates)", hint="fol").formula)
+
+
+def test_the_quoted_constant_rule_states_what_the_parser_refuses():
+    """The rule's prose claims five refusals; each is checked against the
+    parser: no empty name, no other escape, no quoted predicate or function
+    name, no bare constant in a sorted dialect, and a stray pair of apostrophes
+    swallowing what lies between them."""
+    assert not api.parse_any("P('')", hint="fol").ok
+    assert not api.parse_any("P('a\\b')", hint="fol").ok
+    assert not api.parse_any("'Foo'(x)", hint="fol").ok
+    assert not api.parse_any("P('f'(x))", hint="fol").ok
+    assert not api.parse_any("P('k2')", hint="msfol").ok
+    assert api.parse_any("P('k2':Mountain)", hint="msfol").ok
+    stray = api.parse_any("P('x) ∧ Q(y')", hint="fol")
+    assert stray.formula.args == (Constant("x) ∧ Q(y"),)
+    note = _quoted_constant_rule()["note"]
+    for claim in ("'k2':Mountain", "'Foo'(x)", "P('x) ∧ Q(y')"):
+        assert claim in note
+
+
+def test_the_overview_and_the_variable_rule_point_at_the_quoted_constant():
+    assert "single quotes" in syntax_spec("overview")["most_common_mistake"]
+    variable = next(rule for rule in syntax_spec("naming")["rules"]
+                    if rule["kind"] == "variable")
+    assert "quoted_constant" in variable["note"]
+
+
+def test_the_naming_topic_shows_the_quoted_constant_examples():
+    labels = [e["label"] for e in syntax_spec("naming")["examples"]]
+    for label in ("quoted-constant", "quoted-constant-with-an-escape",
+                  "quoted-constant-that-needs-no-quotes", "quoted-sorted-constant"):
+        assert label in labels
+
+
+def test_the_advice_on_quotes_says_what_each_kind_of_name_can_do():
+    """The errors catalogue used to say 'wrap it in single quotes', which is
+    true in TPTP for any name and in the unicode syntax for a constant only.
+    The entry now says so per kind, and each claim is checked."""
+    entry = next(c for c in syntax_spec("errors")["classes"]
+                 if c["kind"] == "invalid_predicate_name")
+    fix = entry["fix"]
+    for kind in ("CONSTANT", "PREDICATE", "FUNCTION", "tptp_bare", "repair_formula"):
+        assert kind in fix
+    # A constant is quoted in the unicode syntax and in TPTP.
+    assert api.parse_any("P('1,2-diacyl')", hint="fol").formula.args == (
+        Constant("1,2-diacyl"),)
+    assert api.parse_any("p('1,2-diacyl')", hint="tptp_bare").formula.args == (
+        Constant("1,2-diacyl"),)
+    # A predicate or a function name is quoted in TPTP and refused in unicode.
+    assert api.parse_any("'1,2-diacyl'(X)", hint="tptp_bare").formula.predicate == \
+        "1,2-diacyl"
+    assert api.parse_any("p('1,2-diacyl'(X))", hint="tptp_bare").formula.args[0].name == \
+        "1,2-diacyl"
+    assert not api.parse_any("'1,2-diacyl'(x)", hint="fol").ok
+    assert not api.parse_any("P('1,2-diacyl'(x))", hint="fol").ok

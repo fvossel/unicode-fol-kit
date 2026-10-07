@@ -406,7 +406,8 @@ def test_the_symbols_a_c_and_a_c_c_of_one_text_are_two_constants():
     solver.add(z3.parse_smt2_string(TWO_CONSTANTS_ONE_NAME_APART))
     assert solver.check() == z3.sat
     nodes = parse_smtlib(TWO_CONSTANTS_ONE_NAME_APART)
-    assert [n.to_unicode_str() for n in nodes] == ["¬a!c = a!c!c", "P(a!c)", "¬P(a!c!c)"]
+    # a name with a "!" is no bare word of the kit's syntax, so the text writes it in quotes
+    assert [n.to_unicode_str() for n in nodes] == ["¬'a!c' = 'a!c!c'", "P('a!c')", "¬P('a!c!c')"]
     verdict = api.prove(Atom("$false", []), nodes, backends=["z3"], timeout=8000)
     assert verdict.status == REFUTED
     # the countermodel has the three symbols of the text, the two constants told apart

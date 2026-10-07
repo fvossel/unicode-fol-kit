@@ -62,10 +62,10 @@ def parameterize(formulas: Sequence[Node], *, avoid: Iterable[str] = (),
 
     With ``after_variables=True`` the constant carries the variable's own name, so that
     a structure found for the closed formulas reports the parameter under the name the
-    caller wrote. A parameter that would then have the spelling of a constant of the
-    problem (``Constant('x')`` next to a free variable ``x``, which the text
-    ``c_x`` and ``x`` spells) cannot be told from that constant in a table keyed by
-    name, so it is refused.
+    caller wrote. A parameter that would then have the name of a constant of the
+    problem (``Constant('x')`` next to a free variable ``x``: the Unicode text tells the
+    two apart, ``P(x) ∧ Q('x')``, but a structure holds one entry per name) cannot be
+    told from that constant in a table keyed by name, so it is refused.
 
     Raises:
         NotImplementedError: ``after_variables`` is true and a free variable has the

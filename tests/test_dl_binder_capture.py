@@ -1,13 +1,18 @@
 r"""A bound variable never shares a name with an individual.
 
-``Variable("x")`` and ``Constant("x")`` print the same text and are the SAME
-constant to Z3, so a quantifier that binds ``x`` captures an individual called
-``x``. Until 0.30.0 only the variables the translation MINTED (``x0``, ``x1``,
-...) avoided the individuals; the FIXED ones — the GCI's prefix variable ``x``,
-the role axioms' ``x``/``y``/``z``, the data axioms' ``x``/``v``/``w`` — did not,
-so ``∃r.{x} ⊑ A`` printed ``∀x (r(x, x) → A(x))`` and ``api.prove`` over it called
-a consistent knowledge base inconsistent while the tableau (which has no
-variables to capture) said consistent. ``Nominal`` had the same defect.
+``Variable("x")`` and ``Constant("x")`` are two texts in the Unicode syntax (``x``
+and ``'x'``) and two symbols to Z3 (a variable is the symbol ``x!v``), but a
+target that gives variables and constants one namespace would read them as one
+symbol, and there a quantifier that binds ``x`` would capture an individual
+called ``x``. Until 0.30.0 only the variables the translation MINTED (``x0``,
+``x1``, ...) avoided the individuals; the FIXED ones — the GCI's prefix variable
+``x``, the role axioms' ``x``/``y``/``z``, the data axioms' ``x``/``v``/``w`` —
+did not, so ``∃r.{x} ⊑ A`` printed ``∀x (r(x, x) → A(x))`` and, while Z3 took the
+pair for one symbol, ``api.prove`` over it called a consistent knowledge base
+inconsistent while the tableau (which has no variables to capture) said
+consistent. ``Nominal`` had the same defect. The text of such an image now
+writes the individual in quotes (``∀x0 (r(x0, 'x') → A(x0))``); the avoidance
+stays, because it keeps the image right for a target with one namespace.
 
 Every expected value below is derived by hand from the OWL 2 direct semantics,
 in the comment above it, and never read off what the code prints:
@@ -213,31 +218,33 @@ def test_no_bound_variable_of_the_image_is_named_like_an_individual(individuals)
 def test_the_prefix_variable_steps_over_the_individual():
     # GCI ∃r.{x} ⊑ A.  The preferred prefix variable is x; the individual x
     # takes it, so the first free `letter + digits` of x is x0, and the
-    # sentence is  ∀x0 (r(x0, x) → A(x0))  with x the CONSTANT.
+    # sentence is  ∀x0 (r(x0, 'x') → A(x0))  with 'x' the CONSTANT, which the
+    # text writes in quotes because the bare x would read as a variable.
     image = dl.subsumption_to_fol(dl.HasValue("r", "x"), A)
-    assert image.to_unicode_str() == "∀x0 (r(x0, x) → A(x0))"
+    assert image.to_unicode_str() == "∀x0 (r(x0, 'x') → A(x0))"
     assert {t.name for t in image.walk() if type(t).__name__ == "Constant"} == {"x"}
     # tbox_to_fol and kb_to_fol print the same sentence.
     tbox = dl.TBox().add(dl.HasValue("r", "x"), A)
-    assert dl.tbox_to_fol(tbox).to_unicode_str() == "∀x0 (r(x0, x) → A(x0))"
-    assert dl.kb_to_fol(tbox).tbox.to_unicode_str() == "∀x0 (r(x0, x) → A(x0))"
-    # A name that does not clash is left exactly as it was.
+    assert dl.tbox_to_fol(tbox).to_unicode_str() == "∀x0 (r(x0, 'x') → A(x0))"
+    assert dl.kb_to_fol(tbox).tbox.to_unicode_str() == "∀x0 (r(x0, 'x') → A(x0))"
+    # A name that does not clash is left exactly as it was (and is written in
+    # quotes all the same, because the bare a would read as a variable).
     assert (dl.subsumption_to_fol(dl.HasValue("r", "a"), A).to_unicode_str()
-            == "∀x (r(x, a) → A(x))")
+            == "∀x (r(x, 'a') → A(x))")
 
 
 def test_the_fixed_prefix_variables_of_the_role_box_step_over_the_individuals():
     # Range(P, {y}): preferred names x, y, z; y clashes with the individual y,
-    # so it becomes y0, x and z are untouched:  ∀x ∀y0 (P(x, y0) → y0 = y).
+    # so it becomes y0, x and z are untouched:  ∀x ∀y0 (P(x, y0) → y0 = 'y').
     rng = dl.TBox().add_role_range("P", dl.Nominal("y"))
-    assert dl.rbox_to_fol(rng).to_unicode_str() == "∀x ∀y0 (P(x, y0) → y0 = y)"
-    # Domain(P, ∃R.{x}): x clashes, so x0:  ∀x0 ∀y (P(x0, y) → R(x0, x)).
+    assert dl.rbox_to_fol(rng).to_unicode_str() == "∀x ∀y0 (P(x, y0) → y0 = 'y')"
+    # Domain(P, ∃R.{x}): x clashes, so x0:  ∀x0 ∀y (P(x0, y) → R(x0, 'x')).
     dom = dl.TBox().add_role_domain("P", dl.HasValue("R", "x"))
-    assert dl.rbox_to_fol(dom).to_unicode_str() == "∀x0 ∀y (P(x0, y) → R(x0, x))"
+    assert dl.rbox_to_fol(dom).to_unicode_str() == "∀x0 ∀y (P(x0, y) → R(x0, 'x'))"
     # Data property domain over an individual called v: preferred x, v, w, so v
-    # becomes v0:  ∀x ∀v0 (d(x, v0) → R(x, v)).
+    # becomes v0:  ∀x ∀v0 (d(x, v0) → R(x, 'v')).
     data = dl.TBox().add_data_property_domain("d", dl.HasValue("R", "v"))
-    assert dl.databox_to_fol(data).to_unicode_str() == "∀x ∀v0 (d(x, v0) → R(x, v))"
+    assert dl.databox_to_fol(data).to_unicode_str() == "∀x ∀v0 (d(x, v0) → R(x, 'v'))"
 
 
 def test_one_kb_to_fol_call_uses_one_set_of_binder_names_for_every_axiom():
@@ -289,6 +296,6 @@ def test_concept_to_fol_refuses_a_free_variable_named_like_an_individual():
         dl.concept_to_fol(dl.HasValue("r", "x"))
     with pytest.raises(ValueError, match="free variable 'x'"):
         dl.concept_to_fol(dl.Nominal("x"))
-    # π(∃r.{x}, y) = r(y, x)   and   π({x}, y) = (y = x)
-    assert dl.concept_to_fol(dl.HasValue("r", "x"), "y").to_unicode_str() == "r(y, x)"
-    assert dl.concept_to_fol(dl.Nominal("x"), "y").to_unicode_str() == "y = x"
+    # π(∃r.{x}, y) = r(y, 'x')   and   π({x}, y) = (y = 'x')
+    assert dl.concept_to_fol(dl.HasValue("r", "x"), "y").to_unicode_str() == "r(y, 'x')"
+    assert dl.concept_to_fol(dl.Nominal("x"), "y").to_unicode_str() == "y = 'x'"

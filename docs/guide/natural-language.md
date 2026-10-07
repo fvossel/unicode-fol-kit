@@ -335,7 +335,7 @@ with an empty role `''`:
 
 ```python
 loose = parse_prover9_problem("P(a) | Q(a).")
-loose[0].role, loose[0].formula.to_unicode_str()   # → ('', 'P(a) ∨ Q(a)')
+loose[0].role, loose[0].formula.to_unicode_str()   # → ('', "P('a') ∨ Q('a')")
 ```
 
 `load_prover9(path)` is the same reader over a file on disk:
@@ -349,7 +349,7 @@ os.close(fd)
 
 from unicode_logic_kit import load_prover9
 [(f.role, f.formula.to_unicode_str()) for f in load_prover9(path)]
-# → [('sos', '∀x (P(x) → Q(x))'), ('sos', 'P(a)')]
+# → [('sos', '∀x (P(x) → Q(x))'), ('sos', "P('a')")]
 os.remove(path)
 ```
 
@@ -365,9 +365,9 @@ Prover9 keeps `"rain"` and `rain` apart and the kit has one name for both:
 def read(text):
     return parse_prover9_problem(text)[0].formula.to_unicode_str()
 
-read('P("Gaseous").')    # → 'P(Gaseous)'
+read('P("Gaseous").')    # → "P('Gaseous')"
 read('P("2.5").')        # → 'P(2.5)'
-read('P(-(a, b)).')      # → 'P(a - b)'
+read('P(-(a, b)).')      # → "P('a' - 'b')"
 read('P("rain"). Q(rain).')
 # raises Prover9ParsingError: SYNTAX_ERROR: the constant 'rain' is written both with and without double quotes ...
 ```
@@ -375,9 +375,12 @@ read('P("rain"). Q(rain).')
 ## Making imported names re-parseable — `sanitize_names`
 
 A formula imported from TPTP, SMT-LIB, or Prover9 can carry symbol names the AST accepts
-but the `MSFLParser` *lexer* does not — IRIs with underscores and mixed case, single-letter
-or digit-leading constants, and so on. Rendering such a node with `to_unicode_str` then
-yields a string that does **not** re-parse. `sanitize_names(node)` rewrites every symbol to
+but the `MSFLParser` *lexer* does not — IRIs with underscores and mixed case, a predicate
+that starts lower-case, and so on. Rendering such a node with `to_unicode_str` then yields a
+string that does **not** re-parse. A constant is the exception: a single-letter, digit-leading
+or upper-case constant prints in single quotes (`'a'`), which reads back as the constant it
+was, so a quoted constant (see {doc}`syntax-reference`) keeps its name in the Unicode syntax.
+`sanitize_names(node)` is the other way, and it renames: it rewrites every symbol to
 a token that re-parses to its intended class, returning `(clean_node, mapping)`:
 
 ```python
@@ -386,14 +389,16 @@ from unicode_logic_kit.fol.nodes import Atom, Constant
 
 # an OWL→FOL import: an IRI predicate over a single-letter constant
 raw = Atom("http___example_org_Thing", [Constant("a")])
+raw.to_unicode_str()                       # → "http___example_org_Thing('a')"   (the predicate does not read back)
 clean, mapping = sanitize_names(raw)
 clean.to_unicode_str()                     # → 'HttpexampleorgThing(c_a)'
 p.parse(clean.to_unicode_str()) == clean   # True   (now it round-trips)
 ```
 
 Predicates become `[A-Z][a-zA-Z0-9]*`, functions a multi-letter lowercase name, and a
-single-letter or digit-bearing constant takes the explicit `c_…` form so it does not
-collapse to a variable on re-parse. The returned `NameMapping` records every renaming and
+single-letter or digit-bearing constant takes the explicit `c_…` form, a bare word that is no
+variable (a different name from `a`, which the mapping records; the quoted `'a'` keeps the name
+itself, in the Unicode syntax only). The returned `NameMapping` records every renaming and
 `reverse()` recovers the originals:
 
 ```python
