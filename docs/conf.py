@@ -1,9 +1,9 @@
-"""Sphinx configuration for the unicode-fol-kit documentation.
+"""Sphinx configuration for the unicode-logic-kit documentation.
 
 Builds a narrative guide (MyST Markdown pages under ``guide/``) plus an
 autosummary-driven API reference that pulls the package's rich docstrings. The
 package is imported for the version and for autodoc, so the build environment must
-have ``unicode-fol-kit`` installed (Read the Docs does this via ``.readthedocs.yaml``).
+have ``unicode-logic-kit`` installed (Read the Docs does this via ``.readthedocs.yaml``).
 """
 
 import os
@@ -14,12 +14,12 @@ from datetime import date
 sys.path.insert(0, os.path.abspath(".."))
 
 try:
-    from unicode_fol_kit import __version__ as _version
+    from unicode_logic_kit import __version__ as _version
 except Exception:  # pragma: no cover - fallback if the package is not installed yet
     _version = "0.0.0"
 
 # -- Project information ------------------------------------------------------
-project = "unicode-fol-kit"
+project = "unicode-logic-kit"
 author = "Felix Vossel"
 copyright = f"{date.today().year}, {author}"
 release = _version
@@ -66,13 +66,13 @@ autosummary_generate = True
 # lower-case member of each pair to a distinct filename makes the build
 # identical everywhere.
 autosummary_filename_map = {
-    "unicode_fol_kit.announce": "unicode_fol_kit.announce_function",
-    "unicode_fol_kit.line": "unicode_fol_kit.line_function",
-    "unicode_fol_kit.might": "unicode_fol_kit.might_function",
-    "unicode_fol_kit.sequent": "unicode_fol_kit.sequent_function",
-    "unicode_fol_kit.would": "unicode_fol_kit.would_function",
-    "unicode_fol_kit.comorphism": "unicode_fol_kit.comorphism_module",
-    "unicode_fol_kit.semantics.PRODUCT": "unicode_fol_kit.semantics.PRODUCT_tnorm",
+    "unicode_logic_kit.announce": "unicode_logic_kit.announce_function",
+    "unicode_logic_kit.line": "unicode_logic_kit.line_function",
+    "unicode_logic_kit.might": "unicode_logic_kit.might_function",
+    "unicode_logic_kit.sequent": "unicode_logic_kit.sequent_function",
+    "unicode_logic_kit.would": "unicode_logic_kit.would_function",
+    "unicode_logic_kit.comorphism": "unicode_logic_kit.comorphism_module",
+    "unicode_logic_kit.semantics.PRODUCT": "unicode_logic_kit.semantics.PRODUCT_tnorm",
 }
 autodoc_default_options = {
     "members": True,
@@ -82,13 +82,13 @@ autodoc_default_options = {
     # `SpanMap` lives in `fol.spans` and is RE-EXPORTED by `chem` (whose
     # rename_with_spans / to_chemlog_names_with_spans carry a caller-supplied one
     # across the rename). Because it is named in `chem.__all__`, `automodule` on
-    # that package documented it a second time as `unicode_fol_kit.chem.SpanMap` --
+    # that package documented it a second time as `unicode_logic_kit.chem.SpanMap` --
     # and both descriptions register the same CANONICAL name
-    # `unicode_fol_kit.fol.spans.SpanMap`, which is the "duplicate object
+    # `unicode_logic_kit.fol.spans.SpanMap`, which is the "duplicate object
     # description" Sphinx reported. The class keeps its own page (generated from
-    # the `unicode_fol_kit.SpanMap` entry in api.md); this only stops the chem page
+    # the `unicode_logic_kit.SpanMap` entry in api.md); this only stops the chem page
     # from claiming to be a second home for it. `__all__` is untouched, so
-    # `from unicode_fol_kit.chem import SpanMap` and `import *` work as before.
+    # `from unicode_logic_kit.chem import SpanMap` and `import *` work as before.
     "exclude-members": "SpanMap",
 }
 autodoc_typehints = "description"
@@ -106,10 +106,10 @@ intersphinx_mapping = {
 
 # -- HTML output -------------------------------------------------------------
 html_theme = "furo"
-html_title = f"unicode-fol-kit {release}"
+html_title = f"unicode-logic-kit {release}"
 html_static_path = ["_static"]
 html_theme_options = {
-    "source_repository": "https://github.com/fvossel/unicode-fol-kit/",
+    "source_repository": "https://github.com/fvossel/unicode-logic-kit/",
     "source_branch": "main",
     "source_directory": "docs/",
 }

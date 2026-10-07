@@ -22,10 +22,10 @@ import subprocess
 
 import pytest
 
-import unicode_fol_kit as u
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.protocol import get_backend
-from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
+import unicode_logic_kit as u
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.protocol import get_backend
+from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
 
 _HAS_CVC5 = importlib.util.find_spec("cvc5") is not None
 
@@ -67,10 +67,10 @@ def test_top_level_exports_for_the_tier1_wave():
                  "TstpStep", "TstpDerivation", "parse_tstp_derivation",
                  "check_entailment_vampire_detailed",
                  "explain_countermodel", "batch_decide"):
-        assert hasattr(u, name), f"unicode_fol_kit.{name} missing"
+        assert hasattr(u, name), f"unicode_logic_kit.{name} missing"
         assert name in u.__all__, f"{name} not in __all__"
     # The datasets subpackage rides in via eval.
-    from unicode_fol_kit.eval import datasets
+    from unicode_logic_kit.eval import datasets
     assert hasattr(datasets, "load_folio") and hasattr(datasets, "load_malls")
 
 

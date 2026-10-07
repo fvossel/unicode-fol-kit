@@ -18,7 +18,7 @@ import shutil
 
 import pytest
 
-from unicode_fol_kit.semantics.kripke import KripkeModel
+from unicode_logic_kit.semantics.kripke import KripkeModel
 
 
 # ---------------------------------------------------------------------------

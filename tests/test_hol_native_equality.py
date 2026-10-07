@@ -30,9 +30,9 @@ import subprocess
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import Atom, Variable, And, Implies
-from unicode_fol_kit.hol.classical import to_thf_fol, to_isabelle_fol
-from unicode_fol_kit.atp.z3_models import is_valid
+from unicode_logic_kit.fol.nodes import Atom, Variable, And, Implies
+from unicode_logic_kit.hol.classical import to_thf_fol, to_isabelle_fol
+from unicode_logic_kit.atp.z3_models import is_valid
 
 x, y, z = Variable("x"), Variable("y"), Variable("z")
 P = lambda t: Atom("P", [t])  # noqa: E731 - short local alias, used throughout
@@ -119,7 +119,7 @@ live_vampire = pytest.mark.skipif(not _wsl_vampire_ok(),
 
 
 def _szs_status(problem: str, seconds: int) -> str:
-    from unicode_fol_kit.atp.vampire_entailment import _spawn_vampire
+    from unicode_logic_kit.atp.vampire_entailment import _spawn_vampire
     out, timed_out = _spawn_vampire(problem, "vampire", timeout=seconds + 15,
                                     use_wsl=True, extra_args=("-t", str(seconds)))
     assert "parse error" not in out and "User error" not in out, out[-2000:]
@@ -154,7 +154,7 @@ def test_vampire_does_not_prove_with_default_uninterpreted_equality(formula):
 # install is found (UFK_ISABELLE_HOME / ISABELLE_HOME / PATH / standard scan).
 # ---------------------------------------------------------------------------
 
-from unicode_fol_kit.hol.isabelle_runner import isabelle_available, check_theory  # noqa: E402
+from unicode_logic_kit.hol.isabelle_runner import isabelle_available, check_theory  # noqa: E402
 
 # Applied per-function (not as a module-level `pytestmark`) so only the
 # Isabelle tests below are gated/marked — the Z3 and Vampire tests above run

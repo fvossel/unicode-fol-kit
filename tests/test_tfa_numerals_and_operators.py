@@ -29,18 +29,18 @@ import subprocess
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import eprover_backend as _eb
-from unicode_fol_kit.atp._tff_problem import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import eprover_backend as _eb
+from unicode_logic_kit.atp._tff_problem import (
     _render_number, formula_to_tff_arith, generate_tff_arith_problem,
 )
-from unicode_fol_kit.atp.eprover_backend import (
+from unicode_logic_kit.atp.eprover_backend import (
     EProverBackend, ZipperpositionBackend, check_entailment_eprover_detailed, eprover_available,
 )
-from unicode_fol_kit.atp.protocol import get_backend
-from unicode_fol_kit.atp.vampire_entailment import check_entailment_vampire_detailed
-from unicode_fol_kit.atp.z3_arith import is_valid_arith
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.atp.protocol import get_backend
+from unicode_logic_kit.atp.vampire_entailment import check_entailment_vampire_detailed
+from unicode_logic_kit.atp.z3_arith import is_valid_arith
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Function, Implies, Not, Number, Or, Quantifier, Variable,
 )
 

@@ -13,19 +13,19 @@ the prover proves what nobody asked. Every expectation is derived by hand:
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import resolution, tableau
-from unicode_fol_kit.atp.tableau import TableauClosure, TableauProof, TableauStep
-from unicode_fol_kit.atp.tableau_check import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import resolution, tableau
+from unicode_logic_kit.atp.tableau import TableauClosure, TableauProof, TableauStep
+from unicode_logic_kit.atp.tableau_check import (
     TableauCheckError, check_entailment_tableau_detailed, check_tableau_proof,
 )
-from unicode_fol_kit.fol._identifiers import symbol_names
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol._identifiers import symbol_names
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Function, Implies, Not, Quantifier, SortedConstant, SortedQuantifier,
     Variable,
 )
-from unicode_fol_kit.semantics import modelfinder
-from unicode_fol_kit.semantics.tarski import satisfies
+from unicode_logic_kit.semantics import modelfinder
+from unicode_logic_kit.semantics.tarski import satisfies
 
 x, y = Variable("x"), Variable("y")
 GENERATED = {"tableau": "_t0", "resolution": "_sk0"}

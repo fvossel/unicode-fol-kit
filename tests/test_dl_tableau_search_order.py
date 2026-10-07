@@ -25,8 +25,8 @@ import random
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit.dl import tableau
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit.dl import tableau
 
 A, B, C, D = (dl.Atomic(n) for n in "ABCD")
 NOT_A = dl.Not(A)

@@ -1,4 +1,4 @@
-"""Tests for the K3/LP three-valued -> HOL export (unicode_fol_kit.hol.manyvalued).
+"""Tests for the K3/LP three-valued -> HOL export (unicode_logic_kit.hol.manyvalued).
 
 The export emits a many-valued shallow embedding (THF problem / Isabelle theory)
 whose theorem-hood encodes K3 / LP propositional validity (and, for the
@@ -7,7 +7,7 @@ entailment variants, K3/LP entailment). These tests assert:
   * structural well-formedness of the emitted artifacts (declarations, the
     three-valued type, the exhaustiveness/distinctness axioms, the conjecture);
   * that the emitted strong-Kleene truth tables are byte-faithful to the
-    toolkit's own evaluator (unicode_fol_kit.semantics.manyvalued.kleene_value)
+    toolkit's own evaluator (unicode_logic_kit.semantics.manyvalued.kleene_value)
     on EVERY truth-table cell; and
   * that validity / entailment decided *purely from the emitted text's axioms*
     agrees with manyvalued.is_valid / manyvalued.entails on a hand-checked
@@ -19,10 +19,10 @@ from itertools import product
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol import nodes as N
-from unicode_fol_kit.semantics import manyvalued as MV
-from unicode_fol_kit.hol.manyvalued import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol import nodes as N
+from unicode_logic_kit.semantics import manyvalued as MV
+from unicode_logic_kit.hol.manyvalued import (
     to_thf_k3lp, to_isabelle_k3lp,
     to_thf_k3lp_entailment, to_isabelle_k3lp_entailment,
     SYSTEMS,

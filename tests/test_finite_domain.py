@@ -1,4 +1,4 @@
-"""Tests for unicode_fol_kit.atp.finite_domain — the solver-independent core
+"""Tests for unicode_logic_kit.atp.finite_domain — the solver-independent core
 shared by ClingoBackend and MinizincBackend.
 
 Four things this module is responsible for, four test classes below:
@@ -41,10 +41,10 @@ from dataclasses import dataclass
 
 import pytest
 
-from unicode_fol_kit.atp.finite_domain import (
+from unicode_logic_kit.atp.finite_domain import (
     FiniteDomainProblem, fragment_check, structure_from_solution, verify_model,
 )
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Node,
     Variable, Constant, Number, Function,
     Atom, Not, And, Or, Implies, Quantifier,
@@ -52,8 +52,8 @@ from unicode_fol_kit.fol.nodes import (
     SortedQuantifier, Box, SecondOrderQuantifier, Tensor, Lambda, LambdaVar,
     Dependence, WeakConjunction,
 )
-from unicode_fol_kit.fol.signature import Signature, PredicateDecl, FunctionDecl, ConstantDecl
-from unicode_fol_kit.semantics.structures import FiniteStructure
+from unicode_logic_kit.fol.signature import Signature, PredicateDecl, FunctionDecl, ConstantDecl
+from unicode_logic_kit.semantics.structures import FiniteStructure
 
 X, Y = Variable("x"), Variable("y")
 

@@ -40,14 +40,14 @@ together; rows 1, 2 and 5 are decided by the propositional route and give the sa
 
 import pytest
 
-from unicode_fol_kit.atp.lj import int_decide, int_prove
-from unicode_fol_kit.atp.logic_backends import IntBackend
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.atp.lj import int_decide, int_prove
+from unicode_logic_kit.atp.logic_backends import IntBackend
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Implies, Not, Number, Or, Quantifier, SortedQuantifier, Variable,
     substitute,
 )
-from unicode_fol_kit.semantics import intuitionistic
-from unicode_fol_kit.semantics.intuitionistic import (
+from unicode_logic_kit.semantics import intuitionistic
+from unicode_logic_kit.semantics.intuitionistic import (
     IntKripkeModel, int_countermodel, int_valid,
 )
 

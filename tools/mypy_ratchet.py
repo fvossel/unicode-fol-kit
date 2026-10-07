@@ -1,10 +1,10 @@
-r"""Ratchet a per-file mypy error-count baseline for ``unicode_fol_kit``.
+r"""Ratchet a per-file mypy error-count baseline for ``unicode_logic_kit``.
 
 The package has never been under a type-check gate (no ``mypy``/``ruff``
 config existed anywhere in the repo before this file), and a first real
 ``mypy`` pass surfaces several hundred pre-existing errors spread across most
 of the thirteen subpackages — turning that straight into a hard ``mypy
-unicode_fol_kit`` CI gate would just redden every PR from day one, including
+unicode_logic_kit`` CI gate would just redden every PR from day one, including
 ones that touch none of the offending code. This module is the gate instead:
 it runs mypy, counts errors **per file**, and compares that against a
 committed baseline (``tools/mypy_baseline.json``). A file's count is allowed
@@ -76,10 +76,10 @@ DEFAULT_BASELINE_PATH = REPO_ROOT / "tools" / "mypy_baseline.json"
 # The one command both this script and .github/workflows/tests.yml run —
 # keep them in lockstep by construction rather than by two hand-copied
 # strings that can drift apart.
-MYPY_COMMAND: Tuple[str, ...] = (sys.executable, "-m", "mypy", "unicode_fol_kit")
+MYPY_COMMAND: Tuple[str, ...] = (sys.executable, "-m", "mypy", "unicode_logic_kit")
 
 # mypy's default text-output diagnostic line, e.g.:
-#   unicode_fol_kit/mcp/server.py:709: error: Need type annotation for "used"  [var-annotated]
+#   unicode_logic_kit/mcp/server.py:709: error: Need type annotation for "used"  [var-annotated]
 # `.+` is greedy, so it matches up to the LAST `:<digits>: <severity>: ` —
 # safe even if a (relative, as invoked here) file path contained a colon.
 _DIAGNOSTIC_RE = re.compile(

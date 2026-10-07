@@ -29,15 +29,15 @@ import random
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import resolution
-from unicode_fol_kit.atp import resolution_check
-from unicode_fol_kit.atp.resolution_check import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import resolution
+from unicode_logic_kit.atp import resolution_check
+from unicode_logic_kit.atp.resolution_check import (
     ResolutionDerivation, ResolutionStep, _apply, _match_term, _unify, verify_resolution_proof,
 )
-from unicode_fol_kit.atp.tstp import parse_tstp_derivation
-from unicode_fol_kit.atp.tstp_check import _check_tstp_demodulation, check_tstp_derivation
-from unicode_fol_kit.fol.nodes import Atom, Constant, Function, Not, Or, Variable
+from unicode_logic_kit.atp.tstp import parse_tstp_derivation
+from unicode_logic_kit.atp.tstp_check import _check_tstp_demodulation, check_tstp_derivation
+from unicode_logic_kit.fol.nodes import Atom, Constant, Function, Not, Or, Variable
 
 x, y, z = Variable("x"), Variable("y"), Variable("z")
 

@@ -1,4 +1,4 @@
-"""Tests for :mod:`unicode_fol_kit.mcp.chem_tools`.
+"""Tests for :mod:`unicode_logic_kit.mcp.chem_tools`.
 
 Every expected value below is hand-derived from RDKit's documented,
 deterministic SMILES atom/bond order (the same convention
@@ -9,7 +9,7 @@ the formula under test, never copied from a first run of the code. Where a
 derivation is non-trivial it is spelled out in the test's own docstring.
 
 Skipped entirely (module-level ``importorskip``) on a machine without RDKit
-— :mod:`unicode_fol_kit.mcp.chem_tools` itself imports fine without it (only
+— :mod:`unicode_logic_kit.mcp.chem_tools` itself imports fine without it (only
 the functions that call ``chem.mol_to_structure`` need it, and each reports
 a structured ``{"error": {"type": "ImportError", ...}}`` rather than raising
 when it is missing), but every test here exercises real molecule
@@ -20,7 +20,7 @@ import pytest
 
 rdkit = pytest.importorskip("rdkit")
 
-from unicode_fol_kit.mcp import chem_tools as ct
+from unicode_logic_kit.mcp import chem_tools as ct
 
 # The amide-bond pattern used throughout: "some carbon double-bonded to an
 # oxygen and singly bonded to a nitrogen" — the textbook -C(=O)-N- amide
@@ -119,7 +119,7 @@ def test_chemical_signature_names_core_predicates():
     # than a literal, so extending the vocabulary updates one place: the
     # point of this assertion is that the MCP tool publishes the WHOLE
     # signature, not that the signature has some particular size.
-    from unicode_fol_kit.chem import CHEMLOG_SIGNATURE
+    from unicode_logic_kit.chem import CHEMLOG_SIGNATURE
 
     assert len(predicates) == len(CHEMLOG_SIGNATURE.predicates) == 40
 
@@ -438,7 +438,7 @@ def test_simplify_definition_preserves_mixed_case_chemlog_names():
     assert "bdouble" not in result["after_tptp"]
     assert "removed_count" in result and result["removed_count"] == 1  # the x=x
 
-    from unicode_fol_kit import chem
+    from unicode_logic_kit import chem
     reparsed = chem.parse_chemlog_tptp(result["after_tptp"])
     expected_text = "?[X,Y]: (c(X) & o(Y) & bDOUBLE(X,Y) & 'ChiralR'(X))"
     expected = chem.parse_chemlog_tptp(expected_text)

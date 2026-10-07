@@ -22,9 +22,9 @@ import random
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit.dl.concepts import Concept, InverseRole
-from unicode_fol_kit.dl.parser import ConceptSyntaxError, parse_concept
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit.dl.concepts import Concept, InverseRole
+from unicode_logic_kit.dl.parser import ConceptSyntaxError, parse_concept
 
 A, B, C, D = dl.Atomic("A"), dl.Atomic("B"), dl.Atomic("C"), dl.Atomic("D")
 

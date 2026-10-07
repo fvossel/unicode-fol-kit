@@ -29,23 +29,23 @@ from typing import List, Optional
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import (
     TptpNameMap, apply_reverse_tptp, generate_tff_arith_problem,
     generate_tff_problem, generate_tff_problem_with_mapping,
     generate_tptp_problem, generate_tptp_problem_with_mapping,
 )
-from unicode_fol_kit.atp.tptp_tff import formula_to_tff
-from unicode_fol_kit.atp.z3_arith import is_satisfiable_arith
-from unicode_fol_kit.atp.z3_models import is_satisfiable
-from unicode_fol_kit.fol import _tptp_symbols as symbols
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.atp.tptp_tff import formula_to_tff
+from unicode_logic_kit.atp.z3_arith import is_satisfiable_arith
+from unicode_logic_kit.atp.z3_models import is_satisfiable
+from unicode_logic_kit.fol import _tptp_symbols as symbols
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Contrast, Count, Function, Iff, Implies, Measure, Node,
     Not, Number, Or, Quantifier, SortedConstant, SortedCount, SortedQuantifier,
     Variable, Xor, nonempty_sort_axioms,
 )
-from unicode_fol_kit.fol.tptp_input import parse_tptp, parse_tptp_formula
-from unicode_fol_kit.fol.tptp_repair import repair_tptp_formula
+from unicode_logic_kit.fol.tptp_input import parse_tptp, parse_tptp_formula
+from unicode_logic_kit.fol.tptp_repair import repair_tptp_formula
 
 X, Y, Z = Variable("x"), Variable("y"), Variable("z")
 A, B, D = Constant("a"), Constant("b"), Constant("d")
@@ -95,7 +95,7 @@ def szs_status(problem: str, seconds: int = 30) -> str:
 
 
 def _eprover_ready():
-    from unicode_fol_kit.atp import eprover_available
+    from unicode_logic_kit.atp import eprover_available
     return eprover_available()
 
 
@@ -109,8 +109,8 @@ def z3_status(conclusion: Node, premises) -> str:
 
 def prover_statuses(premises, conclusion, **options):
     """``(vampire, eprover)`` statuses through the kit's own backends."""
-    from unicode_fol_kit.atp.eprover_backend import check_entailment_eprover_detailed
-    from unicode_fol_kit.atp.vampire_entailment import check_entailment_vampire_detailed
+    from unicode_logic_kit.atp.eprover_backend import check_entailment_eprover_detailed
+    from unicode_logic_kit.atp.vampire_entailment import check_entailment_vampire_detailed
     out = []
     if _VAMPIRE is not None:
         out.append(check_entailment_vampire_detailed(
@@ -344,7 +344,7 @@ def all_node_classes() -> List[type]:
             if sub not in seen:
                 seen.add(sub)
                 stack.append(sub)
-    return sorted((c for c in seen if c.__module__.startswith("unicode_fol_kit")),
+    return sorted((c for c in seen if c.__module__.startswith("unicode_logic_kit")),
                   key=lambda c: (c.__module__, c.__qualname__))
 
 
@@ -868,7 +868,7 @@ def test_vampire_proves_a_tfa_problem_with_a_dotted_constant():
     constant = Constant("a.b")
     premises = [Atom("=", (constant, Number(1)))]
     conclusion = Atom("=", (Function("+", (constant, Number(1))), Number(2)))
-    from unicode_fol_kit.atp.vampire_entailment import check_entailment_vampire_detailed
+    from unicode_logic_kit.atp.vampire_entailment import check_entailment_vampire_detailed
     result = check_entailment_vampire_detailed(premises, conclusion, timeout=30, sort="int", **vampire_kwargs())
     assert result["status"] == "proved"
 
@@ -963,7 +963,7 @@ def test_the_repair_layer_prints_a_small_number_in_positional_notation():
 # ===========================================================================
 
 def _derivation(clauses, steps):
-    from unicode_fol_kit.atp.resolution_check import (
+    from unicode_logic_kit.atp.resolution_check import (
         ResolutionDerivation, ResolutionStep, verify_resolution_proof)
     built = tuple(ResolutionStep(*step) for step in steps)
     derivation = ResolutionDerivation(tuple(frozenset(c) for c in clauses), built)
@@ -974,7 +974,7 @@ def _derivation(clauses, steps):
 def test_to_tstp_rewrites_a_name_that_is_not_a_tptp_word():
     """A ground literal and its negation resolve to the empty clause; the predicate
     ``has-part`` is written ``hasu002dpart`` like it is in a problem."""
-    from unicode_fol_kit.atp.tstp import to_tstp
+    from unicode_logic_kit.atp.tstp import to_tstp
     literal = Atom("has-part", (A,))
     derivation = _derivation([{literal}, {Not(literal)}], [
         (1, frozenset({literal}), "input"), (2, frozenset({Not(literal)}), "input"),
@@ -989,7 +989,7 @@ def test_to_tstp_refuses_two_variables_of_one_clause_that_are_one_tptp_variable(
     """The clause ``{P(x), Q(X)}`` has TWO variables; written ``p(X) | q(X)`` it has one,
     and the 'derivation' of ``Q(X)`` from it would be a different clause set. Variables
     of different clauses bind separately (``x`` in one, ``X`` in another is fine)."""
-    from unicode_fol_kit.atp.tstp import to_tstp
+    from unicode_logic_kit.atp.tstp import to_tstp
     big = Variable("X")
     p, q = Atom("P", (X,)), Atom("Q", (big,))
     derivation = _derivation([{p, q}, {Not(p)}, {Not(q)}], [
@@ -1018,7 +1018,7 @@ def test_names_the_writers_mint_for_illegal_names_read_back_as_kit_text():
     tests/test_printed_text_reads_back.py gates for every generator). The writers mint no
     bound variable here, so the check that matters is that each minted name is a legal kit
     NAME / PREDICATE."""
-    from unicode_fol_kit.atp.tstp_check import _formula_alpha_equal
+    from unicode_logic_kit.atp.tstp_check import _formula_alpha_equal
     premises = [Quantifier("∀", X, Implies(Atom("has-part", (X,)), Atom("Bar", (X,)))),
                 Atom("Bar", (Constant("a.b"),)), Atom("Bar", (Constant("_x"),)),
                 Atom("owl:Thing", (Constant("9lives"),))]

@@ -42,15 +42,15 @@ import sys
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import protocol as proto
-from unicode_fol_kit.atp.prover9_entailment import generate_prover9_input_with_mapping
-from unicode_fol_kit.atp.protocol import Prover9Backend, get_backend
-from unicode_fol_kit.fol._msfl_nodes import SortedConstant, SortedQuantifier
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import protocol as proto
+from unicode_logic_kit.atp.prover9_entailment import generate_prover9_input_with_mapping
+from unicode_logic_kit.atp.protocol import Prover9Backend, get_backend
+from unicode_logic_kit.fol._msfl_nodes import SortedConstant, SortedQuantifier
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Function, Not, Number, Or, Variable,
 )
-from unicode_fol_kit.fol.prover9_input import (
+from unicode_logic_kit.fol.prover9_input import (
     Prover9ParsingError, parse_prover9, parse_prover9_problem,
 )
 
@@ -555,7 +555,7 @@ def test_a_probe_that_fails_is_no_version_and_never_raises(probe, failure):
 
 
 def test_the_verdict_carries_the_banner_of_the_binary_it_was_given(probe):
-    import unicode_fol_kit.atp.prover9_entailment as p9
+    import unicode_logic_kit.atp.prover9_entailment as p9
 
     run = _Run(stdout=_HELP)
     probe.setattr(subprocess, "run", run)
@@ -580,7 +580,7 @@ def test_the_version_probe_does_not_wait_for_an_idle_inherited_stdin():
         "tool = ('import sys; sys.stdin.read(); '\n"
         "        'print(\"=== Prover9 ===\\\\nProver9 (64) version 9.9, stand-in.\")')\n"
         "subprocess.run = lambda cmd, *a, **k: real_run([sys.executable, '-c', tool], *a, **k)\n"
-        "from unicode_fol_kit.atp.protocol import Prover9Backend\n"
+        "from unicode_logic_kit.atp.protocol import Prover9Backend\n"
         "started = time.perf_counter()\n"
         "banner = Prover9Backend._banner('fake-prover9', False)\n"
         "print(f'{banner}|{time.perf_counter() - started:.2f}')\n")

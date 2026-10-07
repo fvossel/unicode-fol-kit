@@ -10,10 +10,10 @@ search:
 
 | Logic | Functions | Module |
 | --- | --- | --- |
-| ILL prover (complete decision for the !-free fragment) | `ill_prove`, `ill_derivable` | `unicode_fol_kit.atp.linear` |
-| ILL derivation checker | `check_ill_proof`, `verify_ill_proof` | `unicode_fol_kit.atp.linear` |
-| Lambek decision procedure (L is decidable) | `lambek_prove`, `lambek_derivable` | `unicode_fol_kit.atp.lambek` |
-| Lambek derivation checker | `check_lambek_proof`, `verify_lambek_proof` | `unicode_fol_kit.atp.lambek` |
+| ILL prover (complete decision for the !-free fragment) | `ill_prove`, `ill_derivable` | `unicode_logic_kit.atp.linear` |
+| ILL derivation checker | `check_ill_proof`, `verify_ill_proof` | `unicode_logic_kit.atp.linear` |
+| Lambek decision procedure (L is decidable) | `lambek_prove`, `lambek_derivable` | `unicode_logic_kit.atp.lambek` |
+| Lambek derivation checker | `check_lambek_proof`, `verify_lambek_proof` | `unicode_logic_kit.atp.lambek` |
 
 Both provers return an explicit derivation tree that the corresponding checker
 re-validates step by step (and does so automatically before any proof is handed
@@ -27,7 +27,7 @@ resource accounting underivable: one `A` does not make two, and a resource canno
 be silently discarded.
 
 ```python
-from unicode_fol_kit import MSFLParser, ill_derivable
+from unicode_logic_kit import MSFLParser, ill_derivable
 
 p = MSFLParser(linear=True).parse   # ⊗  &  ⊕  ⊸  !  𝟙
 
@@ -94,7 +94,7 @@ ill_derivable([p("A"), p("𝟘")], p("B"))      # → True    0L: 𝟘 in the an
 `ill_prove` names the rules `⊤R` / `0L`:
 
 ```python
-from unicode_fol_kit import ill_prove
+from unicode_logic_kit import ill_prove
 
 print(ill_prove([p("A")], p("⊤")).render())
 # → A ⊢ ⊤   [⊤R]
@@ -121,7 +121,7 @@ ill_derivable([p("Coin")], p("!Coin"))               # → False  one coin is no
 each node (premises indented below their conclusion):
 
 ```python
-from unicode_fol_kit import ill_prove
+from unicode_logic_kit import ill_prove
 
 d = ill_prove([p("A"), p("A ⊸ B")], p("B"))
 print(d.render())
@@ -143,7 +143,7 @@ A transitive verb like *sees* is `(NP \ S) / NP`: it first finds its object `NP`
 on the right, then its subject `NP` on the left, yielding a sentence:
 
 ```python
-from unicode_fol_kit import lambek_prove, lambek_derivable
+from unicode_logic_kit import lambek_prove, lambek_derivable
 
 q = MSFLParser(lambek=True).parse
 verb = q("(NP \\ S) / NP")                             # note: \\ is \ in source
@@ -219,7 +219,7 @@ ill_derivable([p("!A")], p("!A ⊗ !A"))                # → True   the default
 `hol.isabelle_substructural` does not attempt the classical-collapse export the next section rules out. Instead it takes a derivation the toolkit's *own* cut-free search already found and **replays** it in Isabelle, one `intro` rule application per tree node — no automation searches for the proof, so a successful build is a genuine, independent re-check of the search. The sequent rules themselves become an Isabelle `inductive derivable` predicate over a deep-embedded `datatype`: a **list** antecedent with an explicit `Exch` (exchange) rule for ILL (whose sequents are really multisets — the module docstring explains why list-plus-`Exch` rather than a native Isabelle multiset type), and a plain **list**, with no `Exch` at all, for Lambek — the absence is the point, since order is exactly what L tracks.
 
 ```python
-from unicode_fol_kit.hol.isabelle_substructural import to_isabelle_ill, to_isabelle_lambek
+from unicode_logic_kit.hol.isabelle_substructural import to_isabelle_ill, to_isabelle_lambek
 
 thy = to_isabelle_ill([p("A"), p("A ⊸ B")], p("B"))
 "inductive derivable" in thy      # → True   the deep-embedded sequent calculus
@@ -229,8 +229,8 @@ thy = to_isabelle_ill([p("A"), p("A ⊸ B")], p("B"))
 `to_isabelle_ill(premises, goal, ...)` / `to_isabelle_lambek(sequence, goal, ...)` run the toolkit's own prover internally and transcribe whatever derivation it finds; `ill_derivation_theory(derivation)` / `lambek_derivation_theory(derivation)` do the same starting from an already-computed `ILLDerivation` / `LambekDerivation` (e.g. one you inspected with `.render()` above), so you never pay for the search twice:
 
 ```python
-from unicode_fol_kit import ill_prove
-from unicode_fol_kit.hol.isabelle_substructural import ill_derivation_theory
+from unicode_logic_kit import ill_prove
+from unicode_logic_kit.hol.isabelle_substructural import ill_derivation_theory
 
 d = ill_prove([p("A"), p("A ⊸ B")], p("B"))
 theory = ill_derivation_theory(d)
@@ -244,9 +244,9 @@ Building the theory needs a local Isabelle install (see {doc}`higher-order` for 
 Intuitionistic linear logic reads the connectives `⊗ & ⊕ ⊸ !` and the units `𝟙 ⊤ 𝟘`; the Lambek calculus reads `• \ /`. Both read them over atoms, and an atom over terms is one category (see below). Every other node is refused by name: `NotImplementedError` from `ill_prove` / `lambek_prove` and the `_derivable` functions, `unknown` with reason `unsupported` from the `ill` and `lambek` backends. The refused nodes are quantifiers, counting and cardinality nodes, sorted constants and equality atoms; the nodes of other logics (`And`, `Or`, `Not`, `Implies`, the modal, temporal, epistemic and hybrid operators, the connectives of the other calculus); the lambda layer (`Lambda`, `Application`); the truth constants of the other routes (the nullary atoms `⊤` and `⊥`, `$true` and `$false`), which neither calculus reads as a truth, ILL having the units `⊤`, `𝟙`, `𝟘` of its own and L no constants; and a term where a formula stands. `And(A, B) ⊢ A` is refused rather than answered "no derivation": it holds classically, and between the categories `And(A, B)` and `A` it has none, so any verdict would be about another formula.
 
 ```python
-from unicode_fol_kit import And, Atom
-from unicode_fol_kit.atp.linear import ILLDerivation, ILLSequent, verify_ill_proof
-from unicode_fol_kit.atp.protocol import get_backend
+from unicode_logic_kit import And, Atom
+from unicode_logic_kit.atp.linear import ILLDerivation, ILLSequent, verify_ill_proof
+from unicode_logic_kit.atp.protocol import get_backend
 
 conj = And(Atom("A", []), Atom("B", []))                        # a classical conjunction, not a ⊗ or a &
 verdict = get_backend("ill").decide(p("A"), [conj])

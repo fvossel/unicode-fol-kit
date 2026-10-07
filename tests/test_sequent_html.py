@@ -1,8 +1,8 @@
 """HTML rendering for sequent-calculus derivations
-(``unicode_fol_kit.atp.sequent.Derivation.to_html``).
+(``unicode_logic_kit.atp.sequent.Derivation.to_html``).
 
 The oracle for content is DIFFERENTIAL against
-:func:`~unicode_fol_kit.atp.sequent.render_sequent_proof` (the trusted text
+:func:`~unicode_logic_kit.atp.sequent.render_sequent_proof` (the trusted text
 renderer, hand-checked in ``test_sequent.py`` and ``docs/guide/
 classical-reasoning.md``): every node's ``Γ ⊢ Δ`` string, rule name, and
 ``extra`` annotation that the text renderer prints must also appear (HTML-
@@ -15,10 +15,10 @@ output back and counting divs.
 
 import html.parser
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, And, Or, Not, Quantifier, Variable, Constant,
 )
-from unicode_fol_kit.atp.sequent import (
+from unicode_logic_kit.atp.sequent import (
     Sequent, Derivation, sequent, derive, axiom,
     check_sequent_proof, render_sequent_proof,
 )

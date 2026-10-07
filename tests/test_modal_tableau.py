@@ -1,4 +1,4 @@
-"""Tests for the labelled modal tableau (unicode_fol_kit.atp.modal_tableau).
+"""Tests for the labelled modal tableau (unicode_logic_kit.atp.modal_tableau).
 
 The verdicts are hand-checked against the standard modal correspondence theory
 (T↔reflexive, 4↔transitive, B↔symmetric, 5↔euclidean, D↔serial) and, in bulk,
@@ -13,16 +13,16 @@ import random
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Implies, Iff, Box, Diamond,
     Knows, Believes, Obligatory, Permitted, Next, Always, Eventually, Until,
 )
-from unicode_fol_kit.atp.modal_tableau import (
+from unicode_logic_kit.atp.modal_tableau import (
     is_modal_valid, modal_prove, modal_decide, modal_countermodel,
     modal_tableau_closed, has_modal,
 )
-from unicode_fol_kit.atp.tableau import is_valid_tableau, prove_tableau, tableau_model
-from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
+from unicode_logic_kit.atp.tableau import is_valid_tableau, prove_tableau, tableau_model
+from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
 
 p, q, r = Atom("p", ()), Atom("q", ()), Atom("r", ())
 
@@ -208,7 +208,7 @@ def test_temporal_closure_verdicts_are_sound():
 def test_quantified_constructs_are_opaque_literals_not_crashes():
     # A quantified construct under a modal operator has no rule either, but a
     # syntactic-complement closure is still sound — the identity is provable.
-    from unicode_fol_kit.fol.msflparser import MSFLParser
+    from unicode_logic_kit.fol.msflparser import MSFLParser
     m = MSFLParser(modal=True)
     assert modal_decide(m.parse("◇(∃≥1 x P(x)) → ◇(∃≥1 x P(x))")) == "valid"
     # No closure and no verifiable countermodel → honest unknown, no crash.
@@ -339,15 +339,15 @@ def test_differential_vs_brute_force_oracle():
 # tests/test_kripke.py holds the same table for the Kripke evaluator.
 # --------------------------------------------------------------------------- #
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Constant, Variable, Xor, Says, Wants, Historically, Once, Previous, Since,
     Quantifier, SortedQuantifier,
 )
-from unicode_fol_kit.fol._modal_nodes import (
+from unicode_logic_kit.fol._modal_nodes import (
     EverybodyKnows, DistributedKnowledge, CommonKnowledge,
     Announce, AnnounceDiamond,
 )
-from unicode_fol_kit.semantics._modal_reject import (
+from unicode_logic_kit.semantics._modal_reject import (
     reject_equality, reject_equality_in, is_equality_atom, EQUALITY_PREDICATES,
 )
 
@@ -505,7 +505,7 @@ def test_the_backend_reports_unsupported_not_a_verdict():
     """The portfolio's tableau backend turns the refusal into UNKNOWN/unsupported, so
     the chain moves on to a route that DOES interpret identity instead of an
     ``invalid`` / ``unknown`` read off a propositional letter."""
-    from unicode_fol_kit.atp.protocol import ModalTableauBackend, UNKNOWN
+    from unicode_logic_kit.atp.protocol import ModalTableauBackend, UNKNOWN
     for f in (Implies(EQ, Box(EQ)), EQ, Implies(Box(NEQ), NEQ)):
         v = ModalTableauBackend().decide(f)
         assert v.status == UNKNOWN and v.reason == "unsupported", f.to_unicode_str()
@@ -515,8 +515,8 @@ def test_the_backend_reports_unsupported_not_a_verdict():
 def test_the_default_modal_chain_reaches_a_route_that_reads_identity():
     """End to end: ``a = b → □(a = b)`` is valid under rigid identity. The tableau
     refuses it; the chain's identity-aware route (qml) proves it."""
-    from unicode_fol_kit import api
-    from unicode_fol_kit.atp.protocol import PROVED
+    from unicode_logic_kit import api
+    from unicode_logic_kit.atp.protocol import PROVED
     v = api.prove(Implies(EQ, Box(EQ)))
     assert v.status == PROVED and v.backend != "modal-tableau"
 

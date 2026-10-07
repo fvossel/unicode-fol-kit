@@ -11,13 +11,13 @@ theorems (and refute the non-theorems).
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import Atom, Implies, Or, Box, Diamond
-from unicode_fol_kit.fol.qml import qml_is_valid, to_thf_modal
-from unicode_fol_kit.hol.isabelle_modal import (
+from unicode_logic_kit.fol.nodes import Atom, Implies, Or, Box, Diamond
+from unicode_logic_kit.fol.qml import qml_is_valid, to_thf_modal
+from unicode_logic_kit.hol.isabelle_modal import (
     isabelle_modal_theory, modal_axiom_names,
 )
-from unicode_fol_kit.hol.thf_modal import to_thf_modal_full
-from unicode_fol_kit.hol.isabelle_runner import isabelle_available, check_theory, isabelle_decide_modal
+from unicode_logic_kit.hol.thf_modal import to_thf_modal_full
+from unicode_logic_kit.hol.isabelle_runner import isabelle_available, check_theory, isabelle_decide_modal
 
 p, q = Atom("p", ()), Atom("q", ())
 _B_AX = Implies(p, Box(Diamond(p)))                                    # Brouwer

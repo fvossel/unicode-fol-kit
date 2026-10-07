@@ -7,8 +7,8 @@ closure ``∀x ∀y (P(x) ∧ ¬P(y))`` has none: taking ``y = x`` asks ``P`` to
 element.
 """
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.eval import minimal_model_size
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.eval import minimal_model_size
 
 parse = MSFLParser().parse
 

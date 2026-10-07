@@ -27,11 +27,11 @@ hand-derived from the OWL 2 direct semantics in the comment above it.
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit import api
-from unicode_fol_kit.dl import owl_reasoner as _owl
-from unicode_fol_kit.dl.tableau import RESERVED_ROLE_SPELLINGS
-from unicode_fol_kit.fol.nodes import (
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit import api
+from unicode_logic_kit.dl import owl_reasoner as _owl
+from unicode_logic_kit.dl.tableau import RESERVED_ROLE_SPELLINGS
+from unicode_logic_kit.fol.nodes import (
     And as FAnd, Atom, Implies, Iff, Not as Not_, Quantifier, Variable,
 )
 
@@ -396,7 +396,7 @@ def test_the_remedies_the_messages_give_are_the_axioms_they_claim():
     # standard translation's argument swap) and compared, by Z3, with the image
     # of the builder the message points at, and with the plain spelling the old
     # message advised. Each equivalence is derived by hand in its comment.
-    from unicode_fol_kit.dl.translate import _chain_axiom, _role_atom
+    from unicode_logic_kit.dl.translate import _chain_axiom, _role_atom
 
     x, y, z = Variable("x"), Variable("y"), Variable("z")
     inv = dl.InverseRole

@@ -11,9 +11,9 @@ import pytest
 
 pytest.importorskip("cvc5")
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import cvc5_backend
-from unicode_fol_kit.atp.cvc5_backend import Cvc5Backend
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import cvc5_backend
+from unicode_logic_kit.atp.cvc5_backend import Cvc5Backend
 
 PREMISES = [api.parse_any("∀x (P(x) → Q(x))").formula, api.parse_any("P(a)").formula]
 GOAL = api.parse_any("Q(a)").formula

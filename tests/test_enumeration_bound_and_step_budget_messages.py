@@ -13,10 +13,10 @@
 
 import pytest
 
-from unicode_fol_kit.atp import lj
-from unicode_fol_kit.fol.nodes import And, Atom, Implies
-from unicode_fol_kit.semantics import manyvalued
-from unicode_fol_kit.semantics.matrix import K3_MATRIX, matrix_is_valid
+from unicode_logic_kit.atp import lj
+from unicode_logic_kit.fol.nodes import And, Atom, Implies
+from unicode_logic_kit.semantics import manyvalued
+from unicode_logic_kit.semantics.matrix import K3_MATRIX, matrix_is_valid
 
 A, B, C, D = (Atom(name, []) for name in "ABCD")
 FOUR_ATOMS = Implies(And(And(A, B), And(C, D)), A)

@@ -21,13 +21,13 @@ import shutil
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import protocol
-from unicode_fol_kit.atp.minizinc_backend import MinizincBackend
-from unicode_fol_kit.atp.protocol import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import protocol
+from unicode_logic_kit.atp.minizinc_backend import MinizincBackend
+from unicode_logic_kit.atp.protocol import (
     BackendUnavailable, Prover9Backend, VampireBackend, get_backend, run_backend,
 )
-from unicode_fol_kit.fol.nodes import Atom
+from unicode_logic_kit.fol.nodes import Atom
 
 GOAL = Atom("P", [])
 ON_WINDOWS = os.name == "nt"

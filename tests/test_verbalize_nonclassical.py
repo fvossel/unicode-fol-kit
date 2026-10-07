@@ -8,15 +8,15 @@ has explicit modal / second-order entries.
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Box, Diamond, Knows, Believes, Obligatory, Permitted,
     Always, Eventually, Next, Until, Historically, Once, Previous, Since,
     StrongConjunction, WeakConjunction, StrongDisjunction, WeakDisjunction,
     LukNegation, LukImplication, LukEquivalence,
 )
-from unicode_fol_kit.fol._so_nodes import SecondOrderQuantifier
-from unicode_fol_kit.fol.verbalize import to_english
-from unicode_fol_kit.fol.naming import _MIXING_INFO
+from unicode_logic_kit.fol._so_nodes import SecondOrderQuantifier
+from unicode_logic_kit.fol.verbalize import to_english
+from unicode_logic_kit.fol.naming import _MIXING_INFO
 
 p, q = Atom("p", ()), Atom("q", ())
 

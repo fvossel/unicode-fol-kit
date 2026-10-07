@@ -33,12 +33,12 @@ pytest.importorskip("cvc5")
 
 import z3
 
-from unicode_fol_kit.atp.cvc5_backend import (
+from unicode_logic_kit.atp.cvc5_backend import (
     _SMTLIB_CORE_SYMBOLS, _SMTLIB_RESERVED_WORDS, _SMTLIB_THEORIES, _SMTLIB_THEORY_SYMBOLS,
     _is_smtlib_safe, _sanitize_many_for_smtlib,
 )
-from unicode_fol_kit.atp.z3_input import to_smtlib
-from unicode_fol_kit.fol.nodes import Atom, Constant, Function, Implies, Quantifier, Variable
+from unicode_logic_kit.atp.z3_input import to_smtlib
+from unicode_logic_kit.fol.nodes import Atom, Constant, Function, Implies, Quantifier, Variable
 
 CA, CB, X = Constant("ca"), Constant("cb"), Variable("x")
 
@@ -65,8 +65,8 @@ ROLES = ("predicate", "function", "constant")
 
 _CHILD = r"""
 import json, sys
-from unicode_fol_kit.atp.cvc5_backend import Cvc5Backend
-from unicode_fol_kit.fol.nodes import (Atom, Constant, Function, Implies, Quantifier, Variable)
+from unicode_logic_kit.atp.cvc5_backend import Cvc5Backend
+from unicode_logic_kit.fol.nodes import (Atom, Constant, Function, Implies, Quantifier, Variable)
 
 names, logics = json.loads(sys.argv[1]), json.loads(sys.argv[2])
 ca, cb, x = Constant("ca"), Constant("cb"), Variable("x")
@@ -248,8 +248,8 @@ def test_cvc5_reads_the_text_to_smtlib_writes_for_a_theory_symbol(name):
 
 _VARIABLE_CHILD = r"""
 import json
-from unicode_fol_kit.atp.cvc5_backend import Cvc5Backend
-from unicode_fol_kit.fol.nodes import Atom, Constant, Measure, Quantifier, Variable
+from unicode_logic_kit.atp.cvc5_backend import Cvc5Backend
+from unicode_logic_kit.fol.nodes import Atom, Constant, Measure, Quantifier, Variable
 
 out = []
 for name in ["select", "not", "2008x", "str.len", "-1"]:

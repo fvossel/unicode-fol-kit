@@ -21,9 +21,9 @@ import zlib
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.modal_tableau import modal_countermodel, modal_decide
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.modal_tableau import modal_countermodel, modal_decide
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Box, Constant, Diamond, DistributedKnowledge, Iff, Implies, Knows, Not, Obligatory,
     Or, Permitted,
 )

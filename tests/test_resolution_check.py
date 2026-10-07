@@ -1,4 +1,4 @@
-"""Tests for the independent resolution-proof checker (unicode_fol_kit.atp.resolution_check).
+"""Tests for the independent resolution-proof checker (unicode_logic_kit.atp.resolution_check).
 
 Every expected value below is hand-derived (see the comment above each
 assertion for the derivation) rather than taken from running the checker
@@ -6,25 +6,25 @@ first. Two families of tests target the module's two deliberate independence
 requirements (see its module docstring):
 
 - A differential battery comparing the checker's own :func:`_unify` against
-  :func:`unicode_fol_kit.fol.unification.unify` on unifiable/non-unifiable atom
+  :func:`unicode_logic_kit.fol.unification.unify` on unifiable/non-unifiable atom
   pairs (independence requirement 1).
 - Hand-checked trap cases plus a reflexivity/symmetry/transitivity sweep for
   the exact backtracking variant (alpha-equivalence) search, :func:`_is_variant`
   (independence requirement 2).
 
 Plus a differential end-to-end check against the searcher
-(:func:`unicode_fol_kit.atp.resolution.prove`): for formula sets it proves,
+(:func:`unicode_logic_kit.atp.resolution.prove`): for formula sets it proves,
 hand-built resolution derivations for the SAME refutation must verify.
 """
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, Implies, Or, Variable, Constant, Function,
 )
-from unicode_fol_kit.fol.unification import unify as kit_unify, apply_subst as kit_apply_subst
-from unicode_fol_kit.atp.resolution import prove
-from unicode_fol_kit.atp.resolution_check import (
+from unicode_logic_kit.fol.unification import unify as kit_unify, apply_subst as kit_apply_subst
+from unicode_logic_kit.atp.resolution import prove
+from unicode_logic_kit.atp.resolution_check import (
     ResolutionStep, ResolutionDerivation, ResolutionCheckResult,
     verify_resolution_proof, check_resolution_proof, render_resolution_proof,
     _unify, _apply, _is_variant,

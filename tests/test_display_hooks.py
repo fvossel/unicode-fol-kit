@@ -26,11 +26,11 @@ from dataclasses import dataclass
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import Node, Atom
-from unicode_fol_kit.semantics.truthtable import truth_table
-from unicode_fol_kit.semantics.tarski import Structure
-from unicode_fol_kit.semantics.structures import FiniteStructure
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import Node, Atom
+from unicode_logic_kit.semantics.truthtable import truth_table
+from unicode_logic_kit.semantics.tarski import Structure
+from unicode_logic_kit.semantics.structures import FiniteStructure
 
 FOL = MSFLParser()
 parse = FOL.parse

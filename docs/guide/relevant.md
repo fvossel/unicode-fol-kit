@@ -33,7 +33,7 @@ Two devices do all the work. The **star** decouples the truth of `¬A` at `w` fr
 ## Validity and the headline failures
 
 ```python
-from unicode_fol_kit import MSFLParser, rel_valid
+from unicode_logic_kit import MSFLParser, rel_valid
 
 p = MSFLParser().parse
 
@@ -61,7 +61,7 @@ The profile is instructively different from intuitionistic logic: **B keeps both
 `rel_countermodel(φ)` returns `None` or a verified pair `(model, world)`: a `RelevantModel` together with a *normal* world of it where `φ` fails. The refutation of excluded middle is a two-world model whose star swaps the worlds:
 
 ```python
-from unicode_fol_kit import rel_countermodel, rel_satisfies
+from unicode_logic_kit import rel_countermodel, rel_satisfies
 
 model, world = rel_countermodel(p("P ∨ ¬P"))
 
@@ -104,7 +104,7 @@ Read the last three lines against the normal-world clause: `P → (Q → P)` hol
 `RelevantModel` accepts plain tuples, sets and dicts and freezes them internally (the constructor validates that `N` is nonempty, that the star is a total involution, and that `R` is sourced at non-normal worlds only). `star` defaults to the identity and `R` to empty. Here is an *inconsistent* world refuting explosion — note that `w1 ⊨ P ∧ ¬P` does **not** make everything true there:
 
 ```python
-from unicode_fol_kit import RelevantModel
+from unicode_logic_kit import RelevantModel
 
 m = RelevantModel(
     worlds=("w0", "w1"), normal={"w0"},
@@ -141,7 +141,7 @@ The search space is exponential — roughly `2^((n−1)·n²)` ternary relations
 One consequence of the semantics is worth internalising: a **1-world** interpretation *is* a classical valuation — the single world is normal, the only involution on it is the identity (so `¬` is classical negation) and `R` must be empty (so `→` is material implication over that world). Hence `max_worlds=1` decides *classical* validity, and B's soundness with respect to classical logic (`B ⊆ CL`) is executable:
 
 ```python
-from unicode_fol_kit import is_valid
+from unicode_logic_kit import is_valid
 
 # B ⊆ CL: everything B-valid is classically valid (the Z3 oracle agrees) ...
 rel_valid(p("(P ∧ Q) → P"))         # → True
@@ -158,7 +158,7 @@ rel_valid(p("P ∨ ¬P"), max_worlds=2)    # → False   the star needs a second
 
 ```python
 # doctest: +SKIP
-from unicode_fol_kit import MSFLParser, isabelle_decide_relevant
+from unicode_logic_kit import MSFLParser, isabelle_decide_relevant
 
 p = MSFLParser().parse
 print(isabelle_decide_relevant(p("(P ∧ Q) → P")))

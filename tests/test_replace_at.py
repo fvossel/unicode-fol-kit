@@ -9,7 +9,7 @@ for every node EXCEPT a ``Quantifier``, whose bound variable is excluded: a
 ``Quantifier``'s only path child is its ``formula``, at index 0 (see
 ``fol/_fol_nodes.py``'s "Public tree editing" section and
 ``fol/spans.py``'s module docstring for why — this is the SAME convention
-:func:`unicode_fol_kit.fol.spans.traverse`/:class:`~unicode_fol_kit.fol.spans.SpanMap`
+:func:`unicode_logic_kit.fol.spans.traverse`/:class:`~unicode_logic_kit.fol.spans.SpanMap`
 use, so a path from one is valid input to the other, per spec item A2).
 
 This suite checks: root replacement, a nested replacement several levels
@@ -21,7 +21,7 @@ tree, while the spine from the root down to the replaced node is rebuilt.
 
 import pytest
 
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser,
     Variable, Constant, Atom, And, Implies, Or, Quantifier,
     replace_at,

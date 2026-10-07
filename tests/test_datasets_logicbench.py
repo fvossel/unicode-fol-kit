@@ -1,4 +1,4 @@
-"""Tests for the LogicBench adapter (unicode_fol_kit.eval.datasets.logicbench).
+"""Tests for the LogicBench adapter (unicode_logic_kit.eval.datasets.logicbench).
 
 The fixtures under ``tests/fixtures/logicbench/`` are REAL rows copied
 verbatim from a local clone of ``https://github.com/Mihir3009/LogicBench``
@@ -24,8 +24,8 @@ from dataclasses import replace
 
 import pytest
 
-from unicode_fol_kit.eval.datasets import DATASET_INFO, DatasetExample, audit_examples
-from unicode_fol_kit.eval.datasets.logicbench import (
+from unicode_logic_kit.eval.datasets import DATASET_INFO, DatasetExample, audit_examples
+from unicode_logic_kit.eval.datasets.logicbench import (
     LOGIC_TYPES, NM_LOGIC_TYPE, load_logicbench, solve_example,
 )
 
@@ -528,9 +528,9 @@ def test_nonmonotonic_route_answers_without_flagging_disagreeing_minimal_models(
     # confident-looking answer out of this route with no signal that the
     # question was underspecified; this test exists so the module docstring
     # and this behavior cannot silently drift apart again.
-    from unicode_fol_kit import api
-    from unicode_fol_kit.semantics.nonmonotonic import minimal_entails, minimal_models
-    from unicode_fol_kit.semantics.tarski import models as tarski_models
+    from unicode_logic_kit import api
+    from unicode_logic_kit.semantics.nonmonotonic import minimal_entails, minimal_models
+    from unicode_logic_kit.semantics.tarski import models as tarski_models
 
     example = DatasetExample(
         id="logicbench:BQA:test:ambiguous:1:0",

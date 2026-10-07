@@ -19,13 +19,13 @@ from typing import Tuple
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.atp import protocol as P
-from unicode_fol_kit.atp.tstp import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.atp import protocol as P
+from unicode_logic_kit.atp.tstp import (
     TstpDerivation, TstpStep,
     extract_szs_status, parse_tstp_derivation, szs_to_verdict_fields,
 )
-from unicode_fol_kit.atp.vampire_entailment import check_entailment_vampire_detailed
+from unicode_logic_kit.atp.vampire_entailment import check_entailment_vampire_detailed
 
 _FOL = MSFLParser()
 
@@ -406,8 +406,8 @@ class TestParseTstpDerivation:
 # any live prover run).
 # ---------------------------------------------------------------------------
 
-from unicode_fol_kit.atp.tstp import _deep_ancestor_names, _relevant_axiom_names
-from unicode_fol_kit.atp.tstp import relevant_premises_from_tstp
+from unicode_logic_kit.atp.tstp import _deep_ancestor_names, _relevant_axiom_names
+from unicode_logic_kit.atp.tstp import relevant_premises_from_tstp
 
 
 class TestDeepAncestorNames:
@@ -591,7 +591,7 @@ class TestCheckEntailmentVampireDetailed:
             assert extra_args == ("--proof", "tptp")
             return stdout, timed_out
         monkeypatch.setattr(
-            "unicode_fol_kit.atp.vampire_entailment._spawn_vampire", fake_spawn)
+            "unicode_logic_kit.atp.vampire_entailment._spawn_vampire", fake_spawn)
 
     def test_theorem_with_derivation(self, monkeypatch):
         self._patch(monkeypatch, _THEOREM_OUTPUT)

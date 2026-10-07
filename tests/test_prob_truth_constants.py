@@ -18,10 +18,10 @@ from fractions import Fraction as F
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.fol._truth_constants import truth_value
-from unicode_fol_kit.fol.nodes import And, Atom, Constant, Implies, Not, Or
-from unicode_fol_kit.prob import ProbConstraint, ProbFact, ProbProgram, entailment_bounds, query
+from unicode_logic_kit import api
+from unicode_logic_kit.fol._truth_constants import truth_value
+from unicode_logic_kit.fol.nodes import And, Atom, Constant, Implies, Not, Or
+from unicode_logic_kit.prob import ProbConstraint, ProbFact, ProbProgram, entailment_bounds, query
 
 STRATEGIES = ["direct", "column_generation"]
 
@@ -163,7 +163,7 @@ def test_a_predicate_spelled_like_a_constant_but_applied_is_an_ordinary_atom(str
 def _fold(node):
     """``node`` with every truth constant folded away: a Python bool when the whole formula is one,
     else a node over letters only. An independent oracle for the routes (it never looks at a world)."""
-    from unicode_fol_kit.fol.nodes import Iff, Xor
+    from unicode_logic_kit.fol.nodes import Iff, Xor
     if isinstance(node, Atom):
         return truth_value(node) if truth_value(node) is not None else node
     if isinstance(node, Not):
@@ -197,7 +197,7 @@ def test_the_routes_agree_with_an_oracle_that_folds_the_constants_away():
     A constraint that folds to a constant is no constraint (its value is the one the distribution
     gives it, 0 or 1); a condition that folds to ⊥ makes the conditional vacuous."""
     import random
-    from unicode_fol_kit.fol.nodes import Iff, Xor
+    from unicode_logic_kit.fol.nodes import Iff, Xor
 
     rng = random.Random(20241)
     letters = [Atom("P", ()), Atom("Q", ())]
@@ -420,7 +420,7 @@ def test_a_predicate_spelled_like_a_constant_but_applied_is_an_ordinary_atom(met
 # The MCP tools, with each text spelling of the constants
 # ===========================================================================
 
-mcp = pytest.importorskip("unicode_fol_kit.mcp.server", reason="optional [mcp] extra not installed")
+mcp = pytest.importorskip("unicode_logic_kit.mcp.server", reason="optional [mcp] extra not installed")
 
 @pytest.mark.parametrize("text", TRUE_TEXTS + FALSE_TEXTS)
 def test_every_text_spelling_reads_to_atoms_that_are_all_constants(text):

@@ -1,4 +1,4 @@
-"""Tests for the FraCaS adapter (unicode_fol_kit.eval.datasets.fracas).
+"""Tests for the FraCaS adapter (unicode_logic_kit.eval.datasets.fracas).
 
 The fixture (``tests/fixtures/fracas_mini.xml``) is SYNTHETIC — sentences
 written for this suite, in the real file's XML shape — for two reasons: the
@@ -22,11 +22,11 @@ from pathlib import Path
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.eval.datasets import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.eval.datasets import (
     DATASET_INFO, DatasetExample, audit_examples,
 )
-from unicode_fol_kit.eval.datasets.fracas import (
+from unicode_logic_kit.eval.datasets.fracas import (
     FRACAS_ANSWERS, ace_census, load_fracas, solve_example,
 )
 
@@ -346,7 +346,7 @@ def test_the_real_problem_set_reads_as_measured():
 
 
 @pytest.mark.skipif(
-    not __import__("unicode_fol_kit.ace", fromlist=["x"]).ape_available(),
+    not __import__("unicode_logic_kit.ace", fromlist=["x"]).ape_available(),
     reason="no APE binary reachable")
 def test_the_ace_census_reports_one_row_per_sentence():
     """A measurement helper, so what is pinned is its SHAPE and honesty: one

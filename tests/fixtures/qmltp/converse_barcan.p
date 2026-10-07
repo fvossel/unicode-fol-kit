@@ -1,5 +1,5 @@
 %--------------------------------------------------------------------------
-% File     : converse_barcan : unicode-fol-kit fixture in QMLTP v1.1 syntax
+% File     : converse_barcan : unicode-logic-kit fixture in QMLTP v1.1 syntax
 % Domain   : Syntactic (modal)
 % Problem  : Converse Barcan scheme instance.
 % English  : if necessarily for every x f(x), then for every x
@@ -17,7 +17,7 @@
 %             S4  Non-Theorem  Theorem      Theorem
 %             S5  Non-Theorem  Theorem      Theorem
 %
-% Comments : Written for unicode-fol-kit's test suite, not taken from the
+% Comments : Written for unicode-logic-kit's test suite, not taken from the
 %            QMLTP library. Status derived by hand: the converse Barcan
 %            scheme is exactly what a non-shrinking (cumulative) domain
 %            validates, in every frame; a varying domain may drop an

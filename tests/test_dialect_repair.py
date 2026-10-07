@@ -1,4 +1,4 @@
-"""Tests for :mod:`unicode_fol_kit.fol.dialect_repair` — the same three
+"""Tests for :mod:`unicode_logic_kit.fol.dialect_repair` — the same three
 LLM-syntax failure classes as ``tests/test_tptp_repair.py``, but for
 formulas written in the kit's own unicode surface syntax.
 
@@ -15,7 +15,7 @@ program run):
   reported and never repaired: two readings, no way to know which was meant.
 * **Case 2** (invalid predicate name): the unicode grammar has no quoting
   mechanism, so the fix is a rename through
-  :class:`~unicode_fol_kit.fol.sanitize.NameMapping`. Its rule, from
+  :class:`~unicode_logic_kit.fol.sanitize.NameMapping`. Its rule, from
   ``sanitize.NameMapping.for_predicate``: keep the ASCII-alphanumerics, and
   if the result does not start with a letter, prefix ``P``; then upper-case
   the first character. Hand-applied per test, character by character.
@@ -27,12 +27,12 @@ program run):
 
 import json
 
-from unicode_fol_kit import api
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Function, Iff, Implies, Quantifier, Variable,
 )
-from unicode_fol_kit.fol.sanitize import NameMapping
-from unicode_fol_kit.fol.dialect_repair import (
+from unicode_logic_kit.fol.sanitize import NameMapping
+from unicode_logic_kit.fol.dialect_repair import (
     DialectRepairResult, _find_name_candidates, _is_legal_name, repair_formula,
 )
 
@@ -358,7 +358,7 @@ def test_unrepairable_input_keeps_its_text_and_reports_the_farthest_diagnosis():
 def test_the_result_is_a_repairresult_and_serialises():
     """A caller that already handles TPTP repairs handles these unchanged —
     same dataclass, two extra fields, JSON all the way down."""
-    from unicode_fol_kit.fol.tptp_repair import RepairResult
+    from unicode_logic_kit.fol.tptp_repair import RepairResult
 
     result = repair_formula("∀x (1,2-diacyl(x) → Lipid(x))")
 

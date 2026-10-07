@@ -27,13 +27,13 @@ ones.
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.prover9_entailment import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.prover9_entailment import (
     _sanitize_for_prover9, generate_prover9_input_with_mapping,
 )
-from unicode_fol_kit.atp.protocol import Prover9Backend, get_backend
-from unicode_fol_kit.fol._msfl_nodes import SortedConstant, SortedQuantifier
-from unicode_fol_kit.fol.nodes import And, Atom, Constant, Function, Variable
+from unicode_logic_kit.atp.protocol import Prover9Backend, get_backend
+from unicode_logic_kit.fol._msfl_nodes import SortedConstant, SortedQuantifier
+from unicode_logic_kit.fol.nodes import And, Atom, Constant, Function, Variable
 
 x = Variable("x")
 

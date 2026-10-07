@@ -10,9 +10,9 @@ named like a sort reads as the empty relation.
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import Atom, Constant, Not, PredicateTerm, Quantifier, Variable
-from unicode_fol_kit.semantics.tarski import IllegalStructureError, Structure, satisfies
-from unicode_fol_kit.semantics.thirdorder import _extension_in, holds_to, satisfies_to
+from unicode_logic_kit.fol.nodes import Atom, Constant, Not, PredicateTerm, Quantifier, Variable
+from unicode_logic_kit.semantics.tarski import IllegalStructureError, Structure, satisfies
+from unicode_logic_kit.semantics.thirdorder import _extension_in, holds_to, satisfies_to
 
 HUMAN = frozenset({(0,)})                  # the property "is a Human" when Human = {0}
 POSITIVE_HUMAN = Atom("Positive", [PredicateTerm("Human")])

@@ -17,14 +17,14 @@ and compares the names that a binder or a free axiom variable has with the decla
 
 import re
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Always, And, At, Atom, Believes, Box, Constant, Diamond, Eventually, Function, Historically,
     Implies, Knows, Next, Nominal, Obligatory, Once, Permitted, Previous, Quantifier, Says, Since,
     SortedConstant, SortedQuantifier, Until, Variable, Wants,
 )
-from unicode_fol_kit.hol import isabelle_modal
-from unicode_fol_kit.hol.classical import to_isabelle_fol, to_isabelle_msfol
-from unicode_fol_kit.hol.isabelle_modal import to_isabelle_modal
+from unicode_logic_kit.hol import isabelle_modal
+from unicode_logic_kit.hol.classical import to_isabelle_fol, to_isabelle_msfol
+from unicode_logic_kit.hol.isabelle_modal import to_isabelle_modal
 
 _MACRO = re.compile(r"\\<[A-Za-z^]+>")
 

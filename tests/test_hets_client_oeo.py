@@ -16,12 +16,12 @@ import urllib.error
 
 import pytest
 
-from unicode_fol_kit.fol.tptp_input import TptpParsingError, parse_tptp
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.tptp_input import TptpParsingError, parse_tptp
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Function, Iff, Implies, Not, Number, Or, Quantifier,
     Variable, Xor,
 )
-from unicode_fol_kit.hets import (
+from unicode_logic_kit.hets import (
     HetsClient,
     HetsNoTranslationsError,
     HetsSublogicError,
@@ -327,7 +327,7 @@ def test_a_predicate_named_logic_still_parses():
     these parsing exactly as before.
     """
     assert parse_tptp("fof(a, axiom, logic & p).")[0].name == "a"
-    from unicode_fol_kit.fol.tptp_input import parse_tptp_formula
+    from unicode_logic_kit.fol.tptp_input import parse_tptp_formula
     assert parse_tptp_formula("logic | p") is not None
 
 
@@ -398,7 +398,7 @@ def test_the_battery_covers_every_binary_connective_and_both_equalities():
     grammar text itself."""
     import re
 
-    from unicode_fol_kit.fol import tptp_input
+    from unicode_logic_kit.fol import tptp_input
 
     grammar_ops = set(re.findall(r'"(<=>|<~>|=>|<=|~\||~&|\||&)"', tptp_input._GRAMMAR))
     assert grammar_ops == {op for op, _ in _LOGIC_BINARY_CASES}
@@ -410,7 +410,7 @@ def test_the_battery_covers_every_binary_connective_and_both_equalities():
 def test_a_formula_whose_first_line_is_logic_and_an_operator_is_never_a_header(
         text, expected):
     """Red before the fix, 'Hets theory rendering' for every one of them."""
-    from unicode_fol_kit.fol.tptp_input import parse_tptp_formula
+    from unicode_logic_kit.fol.tptp_input import parse_tptp_formula
 
     assert parse_tptp_formula(text) == expected
 
@@ -421,7 +421,7 @@ def test_nothing_the_bare_grammar_accepts_is_refused_by_the_pointer(text, expect
     """The guarantee the pointer must keep, tested against an INDEPENDENT oracle:
     the raw Earley grammar, which has no pointer at all. Whatever it accepts,
     ``parse_tptp_formula`` must accept too."""
-    from unicode_fol_kit.fol.tptp_input import _FORMULA_PARSER, parse_tptp_formula
+    from unicode_logic_kit.fol.tptp_input import _FORMULA_PARSER, parse_tptp_formula
 
     _FORMULA_PARSER.parse(text)                 # the oracle accepts (else the case is wrong)
     parse_tptp_formula(text)                    # ... so the pointer must not fire
@@ -436,7 +436,7 @@ def test_nothing_the_bare_grammar_accepts_is_refused_by_the_pointer(text, expect
     "  logic   SoftFOL.Sub  ",                          # padded
 ])
 def test_a_real_header_is_still_named(first_line):
-    from unicode_fol_kit.fol.tptp_input import parse_tptp_formula
+    from unicode_logic_kit.fol.tptp_input import parse_tptp_formula
 
     with pytest.raises(TptpParsingError) as caught:
         parse_tptp_formula(first_line + "\n%{\n}%\nfof(a, axiom, p).")

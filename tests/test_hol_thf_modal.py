@@ -4,7 +4,7 @@ Structural checks (balanced parentheses, every referenced macro declared, every
 relation typed, the agent threaded as a real argument, a genuine conjecture) plus
 faithfulness checks: the lifted macros are read back as ordinary HOL definitions and
 compared, on small explicit Kripke models, against
-:func:`unicode_fol_kit.semantics.kripke.satisfies_modal` for the propositional
+:func:`unicode_logic_kit.semantics.kripke.satisfies_modal` for the propositional
 fragment the two share.
 """
 
@@ -13,18 +13,18 @@ import re
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Variable, Constant, Function, Atom, Not, And, Or, Implies, Iff, Quantifier,
     Box, Diamond, Knows, Believes, Obligatory, Permitted,
     Always, Eventually, Next, Until,
 )
-from unicode_fol_kit.fol.qml import (
+from unicode_logic_kit.fol.qml import (
     qml_is_valid, qml_translate, to_thf_modal as qml_to_thf_modal,
 )
-from unicode_fol_kit.hol.thf_modal import (
+from unicode_logic_kit.hol.thf_modal import (
     to_thf_modal_full, thf_full_definitions, thf_full_frame_axioms,
 )
-from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
+from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
 
 
 # --------------------------------------------------------------------------- #
@@ -791,7 +791,7 @@ def test_until_and_since_embed_as_impredicative_fixpoints():
     # TH0 quantifies over predicates, so strong Until IS shallow-embeddable as
     # the Knaster–Tarski least fixpoint over tnext (the earlier rejection's
     # "not (higher-order) shallow-embeddable" claim was factually wrong).
-    from unicode_fol_kit.fol.nodes import Since
+    from unicode_logic_kit.fol.nodes import Since
     out = to_thf_modal_full(Until(Atom("p", []), Atom("q", [])))
     assert "( muntil @ p @ q )" in out
     assert "thf(muntil, definition" in out and "! [S: mu>$o]" in out

@@ -29,20 +29,20 @@ import itertools
 
 import pytest
 
-from unicode_fol_kit.hol.isabelle_modal import (
+from unicode_logic_kit.hol.isabelle_modal import (
     BRIDGES, to_isabelle_modal, isabelle_modal_theory, modal_axiom_names,
     _BRIDGES as _ISA_BRIDGES,
 )
-from unicode_fol_kit.hol.thf_modal import (
+from unicode_logic_kit.hol.thf_modal import (
     to_thf_modal_full, thf_full_frame_axioms, _THF_BRIDGE_LINES,
 )
-from unicode_fol_kit.atp import modal_tableau as mt
+from unicode_logic_kit.atp import modal_tableau as mt
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, And, Implies, Box, Diamond, Knows, Believes, Says, Obligatory,
     Permitted, Constant,
 )
-from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
+from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
 
 
 P = Atom("P", [])
@@ -456,7 +456,7 @@ def test_the_d_subset_r_trap_is_measured_not_folklore():
 
 def test_names_match_the_qml_route():
     """The option names must be identical across every route that offers bridges."""
-    from unicode_fol_kit.fol.qml import QML_BRIDGES
+    from unicode_logic_kit.fol.qml import QML_BRIDGES
     assert set(QML_BRIDGES) == set(BRIDGES)
 
 
@@ -470,7 +470,7 @@ def test_qml_and_hol_agree_on_ought_implies_can_strength():
     principles the same way. Asserted against the Kripke oracle AND against qml's
     own verdicts, because the two registries are deliberately separate modules.
     """
-    from unicode_fol_kit.fol.qml import QML_BRIDGES, qml_is_valid
+    from unicode_logic_kit.fol.qml import QML_BRIDGES, qml_is_valid
     assert QML_BRIDGES["ought_implies_can"]["fact"] == "d_meets_r"
     artifact = Implies(Box(P), Obligatory(P))
     permission = Implies(Permitted(P), Diamond(P))

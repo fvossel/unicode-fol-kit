@@ -1,7 +1,7 @@
 """Tests for the ↓ binder (N1): full hybrid logic H(@,↓).
 
 H(@,↓) adds the state-variable binder ↓x.φ to H(@) — see
-``unicode_fol_kit.fol._hybrid_nodes``' module docstring for the architecture.
+``unicode_logic_kit.fol._hybrid_nodes``' module docstring for the architecture.
 Unlike H(@) (decidable), H(@,↓) validity is UNDECIDABLE, so this file covers
 TWO independent, cross-checking routes, mirroring ``docs/guide/hybrid.md``'s
 existing tableau-vs-Z3 pattern for H(@):
@@ -34,7 +34,7 @@ import itertools
 
 import pytest
 
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser, Node,
     Atom, Not, And, Or, Implies, Iff, Box, Diamond,
     KripkeModel, satisfies_modal,
@@ -42,25 +42,25 @@ from unicode_fol_kit import (
     is_modal_valid, modal_decide, modal_countermodel, modal_prove,
     modal_tableau_closed,
 )
-from unicode_fol_kit.fol.modal_translation import hybrid_is_valid, down_is_valid
-from unicode_fol_kit.atp.kripke_enum import (
+from unicode_logic_kit.fol.modal_translation import hybrid_is_valid, down_is_valid
+from unicode_logic_kit.atp.kripke_enum import (
     modal_enum_search, KripkeEnumBackend, kripke_model_from_dict,
 )
-from unicode_fol_kit.atp.hybrid_down import down_decide
-from unicode_fol_kit.atp.protocol import PROVED, REFUTED, UNKNOWN
+from unicode_logic_kit.atp.hybrid_down import down_decide
+from unicode_logic_kit.atp.protocol import PROVED, REFUTED, UNKNOWN
 
 # The four HOL/THF shallow-embedding routes and the alethic-only QML export --
 # imported as modules (not individual functions) so the refusal battery below
 # can name each call site the same way the batch notes name the routes
 # themselves ("fol.qml", "hol.isabelle_modal", "hol.thf_modal", "hol.ho_modal").
-from unicode_fol_kit.fol import qml
-from unicode_fol_kit.hol import isabelle_modal, thf_modal, ho_modal
+from unicode_logic_kit.fol import qml
+from unicode_logic_kit.hol import isabelle_modal, thf_modal, ho_modal
 
-# Down/Nominal/At are not yet re-exported through unicode_fol_kit's top-level
+# Down/Nominal/At are not yet re-exported through unicode_logic_kit's top-level
 # __init__ (that edit is outside this change's file ownership — see the
 # change's own report); imported directly from their defining module, the
 # same class objects either import path would give.
-from unicode_fol_kit.fol._hybrid_nodes import Down, Nominal, At
+from unicode_logic_kit.fol._hybrid_nodes import Down, Nominal, At
 
 mp = MSFLParser(modal=True)
 

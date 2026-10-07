@@ -38,22 +38,22 @@ from typing import Iterable, List
 
 import pytest
 
-import unicode_fol_kit
-import unicode_fol_kit.dl  # noqa: F401  (import every package that may define a Node)
-import unicode_fol_kit.drt  # noqa: F401
-from unicode_fol_kit.atp import _tptp_problem
-from unicode_fol_kit.atp._tptp_problem import (
+import unicode_logic_kit
+import unicode_logic_kit.dl  # noqa: F401  (import every package that may define a Node)
+import unicode_logic_kit.drt  # noqa: F401
+from unicode_logic_kit.atp import _tptp_problem
+from unicode_logic_kit.atp._tptp_problem import (
     generate_tptp_problem, generate_tptp_problem_with_mapping,
 )
-from unicode_fol_kit.fol import _tptp_symbols as symbols
-from unicode_fol_kit.fol._fol_nodes import constant_name_to_ascii
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol import _tptp_symbols as symbols
+from unicode_logic_kit.fol._fol_nodes import constant_name_to_ascii
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Box, Constant, Contrast, Count, Function, Iff, Implies, Measure,
     Node, Not, Number, Or, Quantifier, SortedConstant, SortedCount,
     SortedQuantifier, Variable, Xor, to_fol,
 )
-from unicode_fol_kit.fol.tptp_input import parse_tptp_formula
-from unicode_fol_kit.mcp import server
+from unicode_logic_kit.fol.tptp_input import parse_tptp_formula
+from unicode_logic_kit.mcp import server
 
 X, Y, Z = Variable("x"), Variable("y"), Variable("z")
 A, B = Constant("a"), Constant("b")
@@ -803,7 +803,7 @@ def test_mcp_render_of_a_clean_formula_is_unchanged():
 
 
 def test_cli_render_helper_is_guarded():
-    from unicode_fol_kit.__main__ import _render
+    from unicode_logic_kit.__main__ import _render
     node = Iff(Atom("P", (Constant("θ"),)), Atom("P", (Constant("theta"),)))
     with pytest.raises(NotImplementedError, match="'θ' and 'theta'"):
         _render(node, "tptp")

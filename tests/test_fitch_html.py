@@ -1,8 +1,8 @@
-"""HTML rendering for Fitch proofs (``unicode_fol_kit.atp.fitch.Proof.to_html``).
+"""HTML rendering for Fitch proofs (``unicode_logic_kit.atp.fitch.Proof.to_html``).
 
 ``Proof.to_html`` is a straight sink of the already-computed, already-trusted
-:func:`~unicode_fol_kit.atp.fitch._visual_rows` rows — the exact rows
-:func:`~unicode_fol_kit.atp.fitch.render_fitch` itself consumes (hand-checked
+:func:`~unicode_logic_kit.atp.fitch._visual_rows` rows — the exact rows
+:func:`~unicode_logic_kit.atp.fitch.render_fitch` itself consumes (hand-checked
 in ``test_fitch.py``'s Fitch-notation examples, which match this module's
 worked example in ``docs/guide/classical-reasoning.md``). So the oracle here
 is DIFFERENTIAL against that trusted text renderer: every formula/
@@ -22,9 +22,9 @@ captured-before-the-fact golden string pins that.
 
 import html.parser
 
-from unicode_fol_kit.fol.derivation import CCGDerivation
-from unicode_fol_kit.fol.nodes import Atom, Implies, Constant
-from unicode_fol_kit.atp.fitch import (
+from unicode_logic_kit.fol.derivation import CCGDerivation
+from unicode_logic_kit.fol.nodes import Atom, Implies, Constant
+from unicode_logic_kit.atp.fitch import (
     Proof, Subproof, premise, assume, line,
     check_proof, render_fitch, _visual_rows,
 )
@@ -240,10 +240,10 @@ def test_to_html_flat_proof_has_single_scope_bar_throughout():
 #
 # This item's spec allowed sharing HTML helpers between fol/derivation.py and
 # the new atp renderers, but atp already depends on fol at module scope (e.g.
-# this very module imports unicode_fol_kit.fol.nodes), while fol/__init__.py
+# this very module imports unicode_logic_kit.fol.nodes), while fol/__init__.py
 # eagerly imports .derivation — so a fol/derivation.py that reached back into
 # atp at module scope would risk a real import cycle. The design chosen here
-# (see unicode_fol_kit/atp/_html.py's module docstring) keeps atp -> fol
+# (see unicode_logic_kit/atp/_html.py's module docstring) keeps atp -> fol
 # one-way and leaves fol/derivation.py's HTML renderer untouched; this test
 # pins that with a byte-for-byte comparison against output captured from the
 # unmodified module.

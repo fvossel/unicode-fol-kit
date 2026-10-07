@@ -16,10 +16,10 @@ binary (natively, or inside WSL with $UFK_PROVER9_WSL=1) where there is one.
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import Atom, Constant, Function, Variable
-from unicode_fol_kit.fol.prover9_input import parse_prover9
-from unicode_fol_kit.atp.prover9_entailment import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import Atom, Constant, Function, Variable
+from unicode_logic_kit.fol.prover9_input import parse_prover9
+from unicode_logic_kit.atp.prover9_entailment import (
     _generate_prover9_input,
     _sanitize_for_prover9,
     generate_prover9_input_with_mapping,

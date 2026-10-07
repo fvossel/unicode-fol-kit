@@ -14,11 +14,11 @@ is a wrong answer about the text the reader was given.
 
 import pytest
 
-from unicode_fol_kit.atp._tff_problem import formula_to_tff_arith
-from unicode_fol_kit.atp.z3_arith import is_valid_arith
-from unicode_fol_kit.atp.z3_input import parse_smtlib
-from unicode_fol_kit.fol.nodes import Atom, Function, Number, Quantifier, Variable
-from unicode_fol_kit.fol.prover9_input import parse_prover9
+from unicode_logic_kit.atp._tff_problem import formula_to_tff_arith
+from unicode_logic_kit.atp.z3_arith import is_valid_arith
+from unicode_logic_kit.atp.z3_input import parse_smtlib
+from unicode_logic_kit.fol.nodes import Atom, Function, Number, Quantifier, Variable
+from unicode_logic_kit.fol.prover9_input import parse_prover9
 
 X, Y = Variable("x"), Variable("y")
 

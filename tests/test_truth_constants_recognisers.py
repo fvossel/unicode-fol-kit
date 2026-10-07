@@ -1,4 +1,4 @@
-"""The recognisers of the two truth constants (``unicode_fol_kit.fol._truth_constants``).
+"""The recognisers of the two truth constants (``unicode_logic_kit.fol._truth_constants``).
 
 ``$true`` and ``$false`` are the NULLARY atoms. The same name WITH arguments is an
 ordinary predicate that happens to be spelled like a reserved word, and is neither
@@ -7,8 +7,8 @@ constant.
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import Atom, Constant, And, Or, Implies
-from unicode_fol_kit.fol._truth_constants import (
+from unicode_logic_kit.fol.nodes import Atom, Constant, And, Or, Implies
+from unicode_logic_kit.fol._truth_constants import (
     TRUE, FALSE, truth_value, is_true_constant, is_false_constant, is_truth_constant,
     truth_constants_in, refuse_truth_constants,
 )

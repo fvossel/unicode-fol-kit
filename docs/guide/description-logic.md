@@ -1,6 +1,6 @@
 # Description logic ALC
 
-The `unicode_fol_kit.dl` subpackage (new in 0.9.0) implements **ALC**, the smallest propositionally closed description logic and the notation underlying OWL, extended with role hierarchies and transitive roles (**ALCH+S** — see "Role hierarchies and transitive roles (RBox)" below) and qualified number restrictions (**ALCQ**, giving **ALCHQ** combined — see "Qualified number restrictions" below). It provides concept constructors, negation-normal-form rewriting, and a tableau reasoner that decides satisfiability, subsumption, equivalence, and ABox consistency over **general** TBoxes. Import it as `import unicode_fol_kit.dl as dl`.
+The `unicode_logic_kit.dl` subpackage (new in 0.9.0) implements **ALC**, the smallest propositionally closed description logic and the notation underlying OWL, extended with role hierarchies and transitive roles (**ALCH+S** — see "Role hierarchies and transitive roles (RBox)" below) and qualified number restrictions (**ALCQ**, giving **ALCHQ** combined — see "Qualified number restrictions" below). It provides concept constructors, negation-normal-form rewriting, and a tableau reasoner that decides satisfiability, subsumption, equivalence, and ABox consistency over **general** TBoxes. Import it as `import unicode_logic_kit.dl as dl`.
 
 ## Concept constructors
 
@@ -20,7 +20,7 @@ A *concept* describes a set of individuals; a *role* (a plain string) describes 
 | `dl.AtMost(n, "r", C)` | ≤n r.C | at most `n` pairwise-distinct `r`-successors are in C |
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 Person = dl.Atomic("Person")
 parent = dl.And(Person, dl.Exists("hasChild", Person))
@@ -32,7 +32,7 @@ value. The two roles below (`hasChild`, `hasPet`) are just strings, and ⊤/⊥ 
 the trivial top and bottom concepts:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 Person = dl.Atomic("Person")
 Dog    = dl.Atomic("Dog")
@@ -55,7 +55,7 @@ print(dl.Exists("r", dl.Top()) == dl.Exists("r", dl.Bottom()))  # → False
 Build richer descriptions by nesting constructors. Quantifiers can express cardinality constraints (at least one, all):
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 A, B, C = dl.Atomic("A"), dl.Atomic("B"), dl.Atomic("C")
 
@@ -75,7 +75,7 @@ print(mixed.to_unicode())  # → A ⊓ ¬B ⊔ C
 Multiple roles can be combined. An existential restriction ties requirements to exactly one role:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 Person = dl.Atomic("Person")
 Happy = dl.Atomic("Happy")
@@ -100,7 +100,7 @@ print(all_family_happy.to_unicode())  # → ∀hasParent.Happy ⊓ ∀hasSibling
 `Concept.to_unicode()` renders with the standard DL glyphs and precedence-aware parenthesisation (binding order: atoms/⊤/⊥ tightest, then ¬ / ∃ / ∀ / ≥ / ≤, then ⊓, then ⊔). The reader folds a chain of one connective to the left, so the right operand of a connective of the same kind is parenthesised as well: `And(A, And(B, C))` renders as `A ⊓ (B ⊓ C)`, `And(And(A, B), C)` as `A ⊓ B ⊓ C`. `str(C)` is the same glyph text but never raises (it is display text); `C.to_unicode()` raises `ValueError` when a name would read back as a different concept.
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 c = dl.Or(dl.Atomic("A"), dl.And(dl.Atomic("B"), dl.Not(dl.Atomic("C"))))
 print(c.to_unicode())                                  # → A ⊔ B ⊓ ¬C
@@ -113,7 +113,7 @@ print(dl.Top().to_unicode(), dl.Bottom().to_unicode())  # → ⊤ ⊥
 Precedence rules are consistent across deeply nested expressions. Understand the precedence order to predict parenthesisation:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 A, B, C, D = (dl.Atomic("A"), dl.Atomic("B"), 
               dl.Atomic("C"), dl.Atomic("D"))
@@ -141,7 +141,7 @@ under a quantifier or ¬ gets wrapped, and so does the right operand of a connec
 its own kind; tighter structure does not:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 A, B, C = dl.Atomic("A"), dl.Atomic("B"), dl.Atomic("C")
 
@@ -177,7 +177,7 @@ dl.Atomic("A ⊓ B").to_unicode()
 `dl.parse_concept(text)` is the inverse of `to_unicode()`: it reads the same glyph syntax the renderer emits (`⊤ ⊥ ¬ ⊓ ⊔ ∃r.C ∀r.C ≥n r.C ≤n r.C`, plus parentheses for grouping) and returns a `Concept`. `parse_concept(c.to_unicode()) == c` holds as exact concept equality for every constructor that syntax can read, with no re-folding of a nested chain. Four kinds of concept are written but do not read back: a `Nominal` and a `HasValue` (refused by name), an `InverseRole` (a role name ending in `⁻` is refused as an INVERSE role name, not read as a role of that name), and the data restrictions (the glyph syntax has no data layer: a built-in datatype name is refused by name, a datatype you defined reads as a class, and a data value `∃d.{v}` is refused like a `HasValue`). `dl.parse_gci(text)` parses a **general concept inclusion** `C ⊑ D` and returns the `(sub, sup)` pair ready for `dl.subsumes(sub, sup)` or a `TBox`.
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 c = dl.parse_concept("∃hasChild.Person ⊓ ∀hasPet.Dog")
 c.to_unicode()                          # → '∃hasChild.Person ⊓ ∀hasPet.Dog'
@@ -218,7 +218,7 @@ dl.parse_concept("Person ⊓")
 `dl.nnf(C)` pushes ¬ inward so that negation occurs only on atomic concepts, using the De Morgan and modal dualities (`¬⊤=⊥`, `¬¬C=C`, `¬(C⊓D)=¬C⊔¬D`, `¬∃r.C=∀r.¬C`, `¬∀r.C=∃r.¬C`). This is the shape the tableau consumes.
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 neg = dl.Not(dl.Exists("r", dl.And(dl.Atomic("A"), dl.Atomic("B"))))
 print(dl.nnf(neg).to_unicode())   # → ∀r.(¬A ⊔ ¬B)
@@ -229,7 +229,7 @@ print(dl.nnf(dl.Not(dl.ForAll("r", dl.Atomic("A")))).to_unicode())  # → ∃r.�
 Each rewrite rule, in isolation:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 A, B = dl.Atomic("A"), dl.Atomic("B")
 
@@ -246,7 +246,7 @@ Negation is driven all the way down to the atoms in a single pass, even through
 deeply nested mixtures of quantifiers and connectives:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 A, B = dl.Atomic("A"), dl.Atomic("B")
 
@@ -263,7 +263,7 @@ print(dl.nnf(already) == already)  # → True
 Push negation through multiple layers of quantifiers and connectives:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 A, B, C = dl.Atomic("A"), dl.Atomic("B"), dl.Atomic("C")
 
@@ -285,7 +285,7 @@ print(dl.nnf(multi_q).to_unicode())  # → ∀r.∃s.¬A
 NNF is idempotent: applying it twice gives the same result as once:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 A = dl.Atomic("A")
 complex_c = dl.Not(dl.And(dl.Exists("r", A), dl.ForAll("s", A)))
@@ -309,7 +309,7 @@ The reasoner is a tableau with **TBox internalisation** and **subset blocking**.
 ALC is exactly the multi-modal logic **K** — a role `r` is a modality, `∃r` its ◇ and `∀r` its □ — which is why these tasks are decidable.
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 A = dl.Atomic("A")
 print(dl.concept_satisfiable(dl.And(A, dl.Not(A))))    # → False
@@ -332,7 +332,7 @@ satisfiable, ⊥ never; `∃r.⊥` cannot be witnessed (the successor would be i
 `∀r.⊥` is satisfiable by an individual with *no* `r`-successors:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 A = dl.Atomic("A")
 print(dl.concept_satisfiable(dl.Top()))                 # → True
@@ -352,7 +352,7 @@ print(dl.concept_satisfiable(clash))                    # → False
 Role interactions can indirectly force unsatisfiability. When existential and universal quantifiers conflict over a shared role:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 A, B = dl.Atomic("A"), dl.Atomic("B")
 
@@ -381,7 +381,7 @@ print(dl.concept_satisfiable(no_conflict))  # → True (different roles, differe
 ∃ and ∀ (replacing the filler by a superconcept preserves the inclusion):
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 A = dl.Atomic("A")
 print(dl.subsumes(dl.Bottom(), A))                      # → True   (⊥ ⊑ A)
@@ -395,7 +395,7 @@ print(dl.subsumes(dl.ForAll("r", A), dl.ForAll("r", dl.Top())))  # → True
 Subsumption behaves classically for conjunctions and complements:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 A, B, C = dl.Atomic("A"), dl.Atomic("B"), dl.Atomic("C")
 
@@ -421,7 +421,7 @@ print(dl.subsumes(A, B))  # → False (without TBox)
 as the ALC-specific facts that ∃ distributes over ⊔ and ∀ over ⊓:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 A, B, C = dl.Atomic("A"), dl.Atomic("B"), dl.Atomic("C")
 
@@ -444,7 +444,7 @@ print(dl.equivalent(dl.ForAll("r", dl.And(A, B)),
 De Morgan's laws and modal dualities hold:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 A, B = dl.Atomic("A"), dl.Atomic("B")
 
@@ -475,8 +475,8 @@ print(dl.equivalent(
 The tableau above is a purpose-built ALC reasoner. `dl.translate` gives you the other route: the **standard translation** of ALC into classical FOL — `∃r.C` becomes `∃y (r(x, y) ∧ C(y))`, `∀r.C` becomes `∀y (r(x, y) → C(y))`, and the propositional connectives pass through unchanged — so ALC reasoning can reuse every FOL-facing tool in the kit: `is_valid`, the resolution prover, the finite model finder, and the Isabelle/THF exporters.
 
 ```python
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit import is_valid
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit import is_valid
 
 c = dl.And(dl.Exists("hasPet", dl.Atomic("Dog")), dl.ForAll("hasPet", dl.Atomic("Mammal")))
 fol = dl.concept_to_fol(c, "x")               # concept membership, one free variable
@@ -563,7 +563,7 @@ box or an assertion the reasoner cannot honour is refused by name and never
 answered silently because the loop body never ran.
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 Human, Mortal = dl.Atomic("Human"), dl.Atomic("Mortal")
 t = dl.TBox().add(Human, Mortal)
@@ -587,7 +587,7 @@ print([c.to_unicode() for c in dl.realize(kb, "rex", vocabulary, t2)])   # → [
 `dl.TBox()` holds general concept inclusions (GCIs). `add(sub, sup)` adds `sub ⊑ sup`; `add_equivalence(C, D)` adds `C ≡ D` (the two inclusions `C ⊑ D` and `D ⊑ C`). Both return the TBox, so calls chain. Each GCI is internalised as the concept `nnf(¬sub ⊔ sup)`, forced on every individual.
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 t = dl.TBox()
 t.add(dl.Atomic("Dog"), dl.Atomic("Mammal"))
@@ -602,7 +602,7 @@ inspect what each GCI becomes internally with `internalized()` — one `nnf(¬su
 concept per inclusion, the form forced on every individual:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 t = (dl.TBox()
      .add(dl.Atomic("Dog"), dl.Atomic("Mammal"))
@@ -616,7 +616,7 @@ A GCI of the form `C ⊑ ⊥` makes `C` itself unsatisfiable — the classic way
 modelling error where a named concept can have no instances:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 t = dl.TBox().add(dl.Atomic("Squircle"), dl.Bottom())
 print(dl.concept_satisfiable(dl.Atomic("Squircle"), t))  # → False
@@ -627,7 +627,7 @@ Domain/range-style axioms work too. Saying "anything with a `hasChild` edge is a
 `Parent`:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 t = dl.TBox().add(dl.Exists("hasChild", dl.Top()), dl.Atomic("Parent"))
 print(dl.subsumes(dl.Exists("hasChild", dl.Atomic("Person")),
@@ -637,7 +637,7 @@ print(dl.subsumes(dl.Exists("hasChild", dl.Atomic("Person")),
 `add_equivalence` lets you give a concept a definition and then reason with it:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 Person = dl.Atomic("Person")
 Parent = dl.Atomic("Parent")
@@ -653,7 +653,7 @@ print(dl.equivalent(Parent, definition, t))                            # → Tru
 A disjointness axiom (`Cat ⊑ ¬Dog`) makes the conjunction unsatisfiable:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 t = dl.TBox()
 t.add(dl.Atomic("Cat"), dl.Not(dl.Atomic("Dog")))
@@ -665,7 +665,7 @@ print(dl.concept_satisfiable(dl.And(dl.Atomic("Cat"), dl.Atomic("Dog")), t))  # 
 Build taxonomies with multiple levels and cross-cutting relationships:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 Animal = dl.Atomic("Animal")
 Mammal = dl.Atomic("Mammal")
@@ -699,7 +699,7 @@ print(dl.subsumes(Bird, Animal, t))    # → True
 Add constraints to concepts: what must be true of all members of a concept:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 Person = dl.Atomic("Person")
 Adult = dl.Atomic("Adult")
@@ -725,7 +725,7 @@ print(dl.subsumes(Person, Adult, t))  # → False
 Express constraints on roles — who can have what relationship:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 Person = dl.Atomic("Person")
 Parent = dl.Atomic("Parent")
@@ -767,7 +767,7 @@ A role hierarchy alone lets an `r`-edge count as an `s`-edge for every declared
 inclusion is declared:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 sub, sup = dl.Exists("hasSon", dl.Top()), dl.Exists("hasChild", dl.Top())
 print(dl.subsumes(sub, sup))                                   # → False (unrelated roles)
@@ -780,7 +780,7 @@ A transitive role makes a 2-hop chain collapse into a 1-hop fact. `Trans("partOf
 makes "part of a part of an Engine" entail "part of an Engine":
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 Engine = dl.Atomic("Engine")
 sub = dl.Exists("partOf", dl.Exists("partOf", Engine))
@@ -798,7 +798,7 @@ propagates down an arbitrarily long `hasChild` chain — three hops here, `alice
 down to `carol`:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 Happy = dl.Atomic("Happy")
 t = dl.TBox().add_role_inclusion("hasChild", "hasDescendant").add_transitive_role("hasDescendant")
@@ -821,7 +821,7 @@ r(y,z) → r(x,z))` — giving an independent cross-check for the tableau's RBox
 via any FOL prover, the same way `tbox_to_fol` cross-checks GCIs:
 
 ```python
-from unicode_fol_kit.dl.translate import rbox_to_fol
+from unicode_logic_kit.dl.translate import rbox_to_fol
 
 print(rbox_to_fol(t).to_unicode_str())
 # → '∀x ∀y (hasChild(x, y) → hasDescendant(x, y)) ∧
@@ -833,7 +833,7 @@ RBox axioms also read from OWL Manchester syntax's two matching one-line shapes,
 `dl.parse_manchester_role_axiom`:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 print(dl.parse_manchester_role_axiom("hasChild SubPropertyOf hasDescendant"))
 # → ('subproperty', 'hasChild', 'hasDescendant')
@@ -890,7 +890,7 @@ The three clash conditions cost nothing but a check on the branch's EDGES,
 because each forbids an edge PATTERN and forces no concept on anybody:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 t = dl.TBox().add_irreflexive_role("hasPhysicalInput")
 ab = dl.ABox().assert_role("a", "a", "hasPhysicalInput")
@@ -1055,7 +1055,7 @@ object one.
 `dl.AtLeast(n, role, C)` (≥n r.C) and `dl.AtMost(n, role, C)` (≤n r.C) count *pairwise-distinct* `role`-successors in `C`. There is **no unique name assumption** anywhere in this reasoner — an individual (named or generated) is distinct from another only when something forces it — so `n` really means "n individuals the reasoner cannot merge together", not "n names":
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 Person = dl.Atomic("Person")
 c = dl.AtLeast(2, "hasChild", Person)
@@ -1097,7 +1097,7 @@ dl.concept_satisfiable(dl.AtLeast(2, "hasChild", Person), t2)
 # unsound or non-terminating result.
 ```
 
-Role hierarchies compose correctly with counting: an `r`-edge counts as an `s`-neighbour for every declared `r ⊑ s`, so `≤n s.C` and `≥n s.C` are decided over every such neighbour, not just literal `s`-edges — see `unicode_fol_kit.dl.tableau`'s "Qualified number restrictions" section for the full tableau algorithm (the ≥-rule, the ≤-rule's merge, and the choose-rule needed for the ≤-rule's completeness) and its termination argument. This counts *neighbours*, not *edges*: if `bob` is reached from `alice` by two DIFFERENT sub-roles of `hasChild` at once, he is still exactly one `hasChild`-neighbour, so a `≤1 hasChild.Person` bound is satisfied (not, say, spuriously violated by counting him twice):
+Role hierarchies compose correctly with counting: an `r`-edge counts as an `s`-neighbour for every declared `r ⊑ s`, so `≤n s.C` and `≥n s.C` are decided over every such neighbour, not just literal `s`-edges — see `unicode_logic_kit.dl.tableau`'s "Qualified number restrictions" section for the full tableau algorithm (the ≥-rule, the ≤-rule's merge, and the choose-rule needed for the ≤-rule's completeness) and its termination argument. This counts *neighbours*, not *edges*: if `bob` is reached from `alice` by two DIFFERENT sub-roles of `hasChild` at once, he is still exactly one `hasChild`-neighbour, so a `≤1 hasChild.Person` bound is satisfied (not, say, spuriously violated by counting him twice):
 
 ```python
 t3 = dl.TBox().add_role_inclusion("hasSon", "hasChild").add_role_inclusion("hasDaughter", "hasChild")
@@ -1114,7 +1114,7 @@ print(dl.abox_consistent(ab3, t3))   # → False (bob is still a genuine hasChil
 OWL Manchester Syntax's `min`/`max`/`exactly` parse into exactly these constructors, with the qualifying class optional (defaulting to `owl:Thing`):
 
 ```python
-from unicode_fol_kit.dl.owl_manchester import parse_manchester, to_manchester
+from unicode_logic_kit.dl.owl_manchester import parse_manchester, to_manchester
 
 parse_manchester("hasChild min 2 Person")     # → AtLeast(n=2, role='hasChild', concept=Atomic(name='Person'))
 parse_manchester("hasChild min 2")            # → AtLeast(n=2, role='hasChild', concept=Top())
@@ -1138,7 +1138,7 @@ parse_manchester(to_manchester(dl.And(A, dl.And(B, C)))) == dl.And(A, dl.And(B, 
 `dl.ABox()` collects assertions. `assert_concept(individual, C)` adds `individual : C`; `assert_role(a, b, role)` adds `(a, b) : role`; `assert_distinct(a, b)` adds `a ≠ b` (see "Qualified number restrictions" above — there is no unique name assumption, so this is the only thing that ever forces two individuals apart). All three chain. `dl.abox_consistent(abox, tbox)` checks the whole knowledge base.
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 Person = dl.Atomic("Person")
 t = dl.TBox().add_equivalence(
@@ -1155,7 +1155,7 @@ An empty ABox is trivially consistent, and a single individual asserted to be bo
 `P` and `¬P` is the simplest inconsistency:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 print(dl.abox_consistent(dl.ABox()))   # → True
 
@@ -1169,7 +1169,7 @@ The TBox constrains every named individual too. With `Cat ⊑ ¬Dog`, asserting 
 `nemo` is both a `Cat` and a `Dog` is inconsistent:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 t = dl.TBox().add(dl.Atomic("Cat"), dl.Not(dl.Atomic("Dog")))
 abox = dl.ABox().assert_concept("nemo", dl.And(dl.Atomic("Cat"), dl.Atomic("Dog")))
@@ -1179,7 +1179,7 @@ print(dl.abox_consistent(abox, t))     # → False
 Role assertions propagate value restrictions: `alice` has only happy children, but `bob` is asserted not happy, so the ∀-rule produces a clash.
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 abox = dl.ABox()
 abox.assert_concept("alice", dl.ForAll("hasChild", dl.Atomic("Happy")))
@@ -1204,7 +1204,7 @@ Functional Syntax `ObjectHasValue(r a)`), and its first-order image is the
 ground atom, not a minted variable plus an equality:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 t = dl.TBox().add(dl.Atomic("Sirup"), dl.HasValue("HasStateOfMatter", "Liquid"))
 print(dl.HasValue("HasStateOfMatter", "Liquid"))      # → ∃HasStateOfMatter.{Liquid}
@@ -1231,9 +1231,9 @@ generated node is blocked by the first, a blocked node never gets the edge back 
 `b`, and the clash is never seen. The FOL image proves the real verdict, and HermiT agrees:
 
 ```python
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit import api
-from unicode_fol_kit.fol.nodes import Not as FNot, Quantifier, Variable
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit import api
+from unicode_logic_kit.fol.nodes import Not as FNot, Quantifier, Variable
 
 # Asym(s), and range(s) = ∃s.∃s.{b}
 tbox = (dl.TBox().add_asymmetric_role("s")
@@ -1267,7 +1267,7 @@ does internalise exactly those GCIs, so there is no new rule and nothing about
 termination changes:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 t = dl.TBox().add_role_domain("Covers", dl.Atomic("Study"))
 t.add_role_range("HasUnit", dl.Atomic("Unit"))
@@ -1294,7 +1294,7 @@ collapses all three); a negative role assertion by a clash condition over
 forbidden edges, closed under the role hierarchy the same way:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 ab = (dl.ABox()
       .assert_concept("alice", dl.Atomic("Person"))
@@ -1323,8 +1323,8 @@ the Open Energy Ontology starts with one — so the text printed for such an
 individual does not read back as the same formula:
 
 ```python
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit import api
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit import api
 
 print(api.parse_any(dl.abox_to_fol(
     dl.ABox().assert_same("Alice", "Bob")).to_unicode_str()).ok)
@@ -1357,7 +1357,7 @@ Every question about a knowledge base has two routes in this kit — the in-hous
 **The FOL image keeps the knowledge base and its side axioms apart.** `kb_to_fol(tbox, abox).formula` is the knowledge base; `.side_axioms` are the premises that are deliberately NOT part of it. Each is a `dl.SideAxiom` carrying the OWL 2 keyword it came from, so a census of an ontology's image is a question with an answer:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 t = dl.TBox().add(dl.Atomic("Cat"), dl.Atomic("Animal"))
 t.add_role_inclusion("hasPart", "overlapsWith").add_transitive_role("overlapsWith")
@@ -1377,7 +1377,7 @@ print(kb.axioms == tuple(a.formula for a in kb.side_axioms))   # → True
 OWL 2 has two domains: individuals, and the data values of datatypes (`xsd:integer`, `xsd:string`, …), disjoint from each other. A data property relates an individual to a value; a datatype is a set of values; a data range is a datatype, a restriction of one by facets, an enumeration, or a Boolean combination of those. The kit stores all of it — `DataExists`, `DataForAll`, `DataHasValue`, `DataAtLeast`/`DataAtMost` as concepts, `Literal` and the data ranges as their operands, `TBox.add_data_property_*` / `add_datatype_definition` and `ABox.assert_data` / `assert_negative_data` as axioms — and it reads and writes it in Manchester and Functional-Style syntax:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 tbox = dl.TBox()
 tbox.add_data_property_range(
@@ -1408,7 +1408,7 @@ print(kb.formula.to_unicode_str())
 One name is one predicate, so `dl.kb_to_fol` and the functions that collect the vocabulary (`dl.data_sort_axioms`, `dl.databox_to_fol`, `dl.abox_to_fol`) refuse — with `UnsupportedDatatypeError` — a name used both as an object property and a data property, or both as a class and a datatype, which OWL 2 DL forbids; the image would otherwise read the name as both at once and change what follows (a functional property with an object successor and a data value came out inconsistent). Rename one of the two. A class, an object property and an individual that share a name (punning that OWL 2 DL *does* allow) are accepted: the image holds three symbols, the unary predicate `A(x)`, the binary predicate `A(x, y)` and the constant `A`, and the TPTP route (Vampire, E) and the Z3 route answer over such a knowledge base. The check is made over what one call is given, so `tbox_to_fol`, `rbox_to_fol`, `databox_to_fol` and `abox_to_fol` each see only their own box; `dl.check_kb_names(tbox, abox, ...)` runs the check of `kb_to_fol` over boxes you rendered separately and conjoined by hand. Pass it the `TBox` / `ABox` (or the `KnowledgeBaseFOL`) the images came from, not the formulas, which do not record whether a predicate was an object or a data property:
 
 ```python
-from unicode_fol_kit import api
+from unicode_logic_kit import api
 
 # A ⊑ ∃A.B, and the individual A is an A: one name, three symbols
 t_pun = dl.TBox().add(dl.Atomic("A"), dl.Exists("A", dl.Atomic("B")))
@@ -1435,7 +1435,7 @@ Six things follow, and the first two are the ones that go wrong if forgotten:
 * **Let the bundle build the goal, and tell it what you will ask about.** Every GCI of `kb.formula` is restricted to `OwlThing` — otherwise `⊤ ⊑ {a}` would also range over data values and turn an OWL-consistent knowledge base inconsistent — and a goal must be restricted the same way. The side axioms are also derived from the *names the knowledge base uses*, so a goal that names a datatype, a data property, a literal or an object property the knowledge base does not is asked of a weaker theory: a question about `xsd:decimal` over a knowledge base that only mentions `xsd:integer` has no `integer ⊑ decimal` to use. So hand the concepts you are going to ask about to `kb_to_fol(tbox, abox, query=[...])` — their vocabulary joins everything derived from the vocabulary, and a data restriction in the query makes the image two-sorted even when the TBox and ABox have no data layer — and ask through the three methods of the bundle, each of which builds the goal the bundle's `separation` calls for: `kb.subsumption_goal(sub, sup)` and `kb.unsatisfiability_goal(concept)` with `kb.tbox_premises`, `kb.instance_goal(individual, concept)` with `kb.premises`. A concept the bundle does not cover is *refused by name*, saying to pass `query=`, instead of answered wrongly:
 
 ```python
-from unicode_fol_kit import api
+from unicode_logic_kit import api
 
 older = dl.parse_manchester("hasAge some xsd:decimal")
 kb = dl.kb_to_fol(tbox, abox, query=[older])
@@ -1463,7 +1463,7 @@ api.prove(kb.unsatisfiability_goal(clash), kb.tbox_premises, timeout=30000).stat
 * **The printed text is not always readable.** An image that names a built-in datatype (`xsd:integer(x0)`) or a non-numeric literal (`"abc"^^xsd:string`) prints text that `api.parse_any` rejects — a deliberate carve-out from "what the kit prints reads back": those names are OWL's, not the kit's to rename, and `api.prove` takes the nodes, not the text. To print an image the kit reads, rename its symbols with `sanitize_all` over the *whole* premise list, so one mapping serves every formula; `sanitize_names` applied to each formula with a fresh mapping gives `xsd:integer` and a class called `Xsdinteger` the same token:
 
 ```python
-from unicode_fol_kit.fol.sanitize import sanitize_all
+from unicode_logic_kit.fol.sanitize import sanitize_all
 
 text = dl.concept_to_fol(dl.DataExists("hasAge", dl.Datatype("xsd:integer"))).to_unicode_str()
 print(text, api.parse_any(text).ok)
@@ -1479,12 +1479,12 @@ print(legal[1].to_unicode_str(), all(api.parse_any(f.to_unicode_str()).ok for f 
 
 ## OWL 2 Functional-Style Syntax
 
-`unicode_fol_kit.dl.owl_functional` reads and writes a whole ontology *document* — not just a single class expression or axiom, like OWL Manchester Syntax above — in the W3C's [OWL 2 Functional-Style Syntax](https://www.w3.org/TR/owl2-syntax/#Functional-Style_Syntax), restricted to ALCHQ. Unlike Manchester Syntax's keyword-infix notation, Functional Syntax is a flat `Keyword(arg arg ...)` S-expression form, so there is no precedence to resolve when rendering: every compound expression is already fully parenthesised by its own keyword.
+`unicode_logic_kit.dl.owl_functional` reads and writes a whole ontology *document* — not just a single class expression or axiom, like OWL Manchester Syntax above — in the W3C's [OWL 2 Functional-Style Syntax](https://www.w3.org/TR/owl2-syntax/#Functional-Style_Syntax), restricted to ALCHQ. Unlike Manchester Syntax's keyword-infix notation, Functional Syntax is a flat `Keyword(arg arg ...)` S-expression form, so there is no precedence to resolve when rendering: every compound expression is already fully parenthesised by its own keyword.
 
 `dl.to_owl_functional(tbox, abox, ontology_iri=...)` writes a `Declaration(...)` block for every class/role/individual name referenced, the RBox (`SubObjectPropertyOf`/`TransitiveObjectProperty`), the TBox's inclusions (as `SubClassOf`/`EquivalentClasses`), and the ABox's assertions (`ClassAssertion`/`ObjectPropertyAssertion`/`DifferentIndividuals`); `dl.parse_owl_functional(text)` reads it all back into a `(TBox, ABox)` pair:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 Person, Doctor = dl.Atomic("Person"), dl.Atomic("Doctor")
 t = dl.TBox().add(Doctor, dl.And(Person, dl.Exists("hasChild", Doctor)))
@@ -1531,7 +1531,7 @@ print(dl.to_owl_functional_class_expression(c))
 Every construct outside ALCHQ is rejected by its OWL name, the same honesty convention as Manchester Syntax:
 
 ```python
-from unicode_fol_kit.dl.owl_functional import OwlFunctionalSyntaxError
+from unicode_logic_kit.dl.owl_functional import OwlFunctionalSyntaxError
 
 try:
     dl.parse_owl_functional("Ontology(SubClassOf(A ObjectHasSelf(r)))")
@@ -1552,7 +1552,7 @@ boundaries — and returns everything it could read plus one `RefusedAxiom` per
 axiom it could not:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 doc = dl.parse_owl_functional_axioms(
     "Ontology(SubClassOf(A B) HasKey(A () (r)) SubClassOf(B C))")
@@ -1616,7 +1616,7 @@ asserting `a : ∀r.A` together with `a : ∃r.¬A` forces the generated witness
 `A` and `¬A`:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 A = dl.Atomic("A")
 abox = (dl.ABox()
@@ -1630,7 +1630,7 @@ print(dl.abox_consistent(abox))   # → False
 Two constructs sit outside ALCHQ, this kit's in-house DL fragment: `InverseRole("r")` (the role expression `r⁻`, used wherever a plain role name is expected) and `Nominal("a")` (the singleton concept `{a}`; its disguise, the value restriction `HasValue("r", "a")` = `∃r.{a}`, is refused with it — see "Value restrictions" above for the counterexample). `dl.concepts`/`dl.tableau` recognise them all — they can be built, printed, and negated — but the in-house tableau refuses to *reason* over them, by name, rather than risk an unsound or silently-incomplete result:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 A = dl.Atomic("A")
 r = "r"
@@ -1646,7 +1646,7 @@ except dl.UnsupportedConceptError as e:
 #   external, HermiT-backed reasoner instead.
 ```
 
-Every entry point built on `dl.tableau.subsumes`/`abox_consistent` refuses it too: `subsumes`, `equivalent` and `instance_check` by reduction, and `dl.classify`, `instance_retrieval`, `realize` and `realize_all` by running the same guard themselves (a reduction with nothing to reduce would otherwise return before any guard had run). `dl.translate`, by contrast, translates both faithfully to FOL (`r⁻` swaps the role atom's argument order; `{a}` becomes the equality `x = a`) — see `unicode_fol_kit.dl.translate`'s module docstring. `to_manchester` can still *render* a concept using either (useful for diagnostics), while `parse_manchester` keeps refusing the matching input, unchanged:
+Every entry point built on `dl.tableau.subsumes`/`abox_consistent` refuses it too: `subsumes`, `equivalent` and `instance_check` by reduction, and `dl.classify`, `instance_retrieval`, `realize` and `realize_all` by running the same guard themselves (a reduction with nothing to reduce would otherwise return before any guard had run). `dl.translate`, by contrast, translates both faithfully to FOL (`r⁻` swaps the role atom's argument order; `{a}` becomes the equality `x = a`) — see `unicode_logic_kit.dl.translate`'s module docstring. `to_manchester` can still *render* a concept using either (useful for diagnostics), while `parse_manchester` keeps refusing the matching input, unchanged:
 
 ```python
 c = dl.Exists(dl.InverseRole("hasChild"), dl.Top())
@@ -1676,7 +1676,7 @@ except TypeError as e:
 #   decide a concept that needs them.
 ```
 
-To actually *decide* a concept that needs I/O, use `dl.owl_reasoner`'s external, HermiT-backed reasoner (`pip install unicode-fol-kit[owl]`, an optional dependency — `dl.owl_reasoner_available()` checks whether it is installed). Every `dl.external_*` function mirrors its in-house-tableau namesake's signature and reduction exactly, just decided over the bigger ALCHQ + I + O fragment:
+To actually *decide* a concept that needs I/O, use `dl.owl_reasoner`'s external, HermiT-backed reasoner (`pip install unicode-logic-kit[owl]`, an optional dependency — `dl.owl_reasoner_available()` checks whether it is installed). Every `dl.external_*` function mirrors its in-house-tableau namesake's signature and reduction exactly, just decided over the bigger ALCHQ + I + O fragment:
 
 ```python
 print(dl.owl_reasoner_available())   # → True (once the 'owl' extra is installed)
@@ -1698,16 +1698,16 @@ print(dl.external_abox_consistent(ab2))   # → False: alice and bob can no long
 
 `dl.external_concept_satisfiable` asks its question about a probe individual of its own, named so that no individual of the concept or the TBox bears the name. A hand-written ABox like `ab2` must not reuse a name that a nominal of the concept already names: with `{_probe} ⊑ A`, the concept `¬A ⊓ ∃r.{_probe}` is satisfiable (its witness is some other element), but asserted of an individual named `_probe` it makes the knowledge base inconsistent.
 
-`dl.owl_reasoner` spawns a fresh `java` subprocess (HermiT, via `owlready2`) per call, so it is orders of magnitude slower than the in-house tableau — expected for an occasional cross-check over the I/O-extended fragment, not a hot-path reasoner. See `unicode_fol_kit.dl.owl_reasoner`'s module docstring for the full translation and licensing (`owlready2` is LGPL-3.0-or-later) notes.
+`dl.owl_reasoner` spawns a fresh `java` subprocess (HermiT, via `owlready2`) per call, so it is orders of magnitude slower than the in-house tableau — expected for an occasional cross-check over the I/O-extended fragment, not a hot-path reasoner. See `unicode_logic_kit.dl.owl_reasoner`'s module docstring for the full translation and licensing (`owlready2` is LGPL-3.0-or-later) notes.
 
 ## A second, independent external oracle: Hets/FaCT++
 
-`dl.owl_reasoner` is one external OWL 2 DL route (HermiT, in-process via `owlready2`). `unicode_fol_kit.hets.owl_backend` is a second, INDEPENDENT one: it renders the same `TBox`/`ABox`/`Concept` AST to an OWL 2 Functional-Style Syntax document, uploads it to a running [Hets](https://github.com/spechub/Hets) server (`unicode_fol_kit.hets`, the same Docker-backed REST server the kit's FOL route uses — see the [interoperability guide](interoperability.md)), and asks it to run `Fact` (FaCT++, a *different* reasoner implementation, LGPL-2.1) via `POST /consistency-check`. Agreement between two independently-implemented reasoners, reached two structurally different ways (an in-process JVM binding vs. a Docker container's REST API), is a stronger correctness signal than either alone — this is why it exists, not to replace `dl.owl_reasoner`.
+`dl.owl_reasoner` is one external OWL 2 DL route (HermiT, in-process via `owlready2`). `unicode_logic_kit.hets.owl_backend` is a second, INDEPENDENT one: it renders the same `TBox`/`ABox`/`Concept` AST to an OWL 2 Functional-Style Syntax document, uploads it to a running [Hets](https://github.com/spechub/Hets) server (`unicode_logic_kit.hets`, the same Docker-backed REST server the kit's FOL route uses — see the [interoperability guide](interoperability.md)), and asks it to run `Fact` (FaCT++, a *different* reasoner implementation, LGPL-2.1) via `POST /consistency-check`. Agreement between two independently-implemented reasoners, reached two structurally different ways (an in-process JVM binding vs. a Docker container's REST API), is a stronger correctness signal than either alone — this is why it exists, not to replace `dl.owl_reasoner`.
 
-It lives outside the `dl` package on purpose (in `unicode_fol_kit.hets`, alongside the kit's other Hets/Docker integration) and mirrors `dl.owl_reasoner`'s function-per-namesake shape exactly, over the same ALCHQ + I + O fragment:
+It lives outside the `dl` package on purpose (in `unicode_logic_kit.hets`, alongside the kit's other Hets/Docker integration) and mirrors `dl.owl_reasoner`'s function-per-namesake shape exactly, over the same ALCHQ + I + O fragment:
 
 ```python
-from unicode_fol_kit.hets.owl_backend import (
+from unicode_logic_kit.hets.owl_backend import (
     hets_owl_available, external_subsumes, external_instance_check,
 )
 
@@ -1725,14 +1725,14 @@ query = dl.Exists(dl.InverseRole("hasChild"), dl.Top())
 print(external_instance_check(ab, "bob", query))   # → True
 ```
 
-Like `dl.owl_reasoner` and `unicode_fol_kit.atp.hets_backend`, this is opt-in and never part of any default chain: no function here starts a container, and `hets_owl_available()` only ever checks whether one is already reachable. It needs Docker running with the `spechub2/hets` image, nothing extra pip-installed (it talks plain HTTP, the same as the rest of `unicode_fol_kit.hets`). See `unicode_fol_kit.hets.owl_backend`'s module docstring for the live capability spike that justified building this at all (which reasoners the image actually offers, and why), and `unicode_fol_kit.hets.docker`'s "OWL 2 / description-logic support" section for the underlying wire-protocol facts.
+Like `dl.owl_reasoner` and `unicode_logic_kit.atp.hets_backend`, this is opt-in and never part of any default chain: no function here starts a container, and `hets_owl_available()` only ever checks whether one is already reachable. It needs Docker running with the `spechub2/hets` image, nothing extra pip-installed (it talks plain HTTP, the same as the rest of `unicode_logic_kit.hets`). See `unicode_logic_kit.hets.owl_backend`'s module docstring for the live capability spike that justified building this at all (which reasoners the image actually offers, and why), and `unicode_logic_kit.hets.docker`'s "OWL 2 / description-logic support" section for the underlying wire-protocol facts.
 
 ## Cyclic TBoxes terminate
 
 A GCI such as `A ⊑ ∃r.A` would naively generate an infinite chain of `r`-successors. The tableau uses **subset blocking**: a generated individual whose label is contained in that of an earlier individual is not expanded (its successors are reused). This is sound and complete for ALC, so cyclic axioms terminate.
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 A = dl.Atomic("A")
 t = dl.TBox().add(A, dl.Exists("r", A))   # A ⊑ ∃r.A
@@ -1744,7 +1744,7 @@ generated chain is still found. If the same `r`-successor required by the cycle 
 forced to be empty (`∀r.⊥`), the concept is unsatisfiable:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 A = dl.Atomic("A")
 t = dl.TBox().add(A, dl.And(dl.Exists("r", A), dl.ForAll("r", dl.Bottom())))
@@ -1755,7 +1755,7 @@ And the cyclic concept can still impose constraints that interact with extra
 assumptions. Here `A ⊑ ∃r.A ⊓ ¬B`, so nothing in `A` is ever `B`:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 A, B = dl.Atomic("A"), dl.Atomic("B")
 t = dl.TBox().add(A, dl.And(dl.Exists("r", A), dl.Not(B)))
@@ -1768,7 +1768,7 @@ print(dl.concept_satisfiable(dl.And(A, B), t))    # → False
 Express recursive structures that reference themselves:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 Node = dl.Atomic("Node")
 Terminal = dl.Atomic("Terminal")
@@ -1793,7 +1793,7 @@ print(dl.concept_satisfiable(acyclic_one_level, t))  # → True
 Combine cyclic axioms with role constraints:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 Tree = dl.Atomic("Tree")
 Leaf = dl.Atomic("Leaf")
@@ -1815,7 +1815,7 @@ Putting it together — define a vocabulary as a TBox, classify the concepts by
 subsumption, then check a concrete ABox of individuals against it.
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 Person, Male, Female = dl.Atomic("Person"), dl.Atomic("Male"), dl.Atomic("Female")
 Parent, Mother, Father = dl.Atomic("Parent"), dl.Atomic("Mother"), dl.Atomic("Father")
@@ -1858,7 +1858,7 @@ closure, a free byproduct of the pairwise matrix). It is itself a pure reduction
 `dl.subsumes`, so it adds no reasoning risk beyond what the tableau already carries.
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 Person, Male, Female = dl.Atomic("Person"), dl.Atomic("Male"), dl.Atomic("Female")
 Parent, Mother, Father = dl.Atomic("Parent"), dl.Atomic("Mother"), dl.Atomic("Father")
@@ -1887,7 +1887,7 @@ print(sorted(cl.ancestors["Mother"]))  # → ['Female', 'Parent', 'Person']
 A realistic scenario with multiple concept levels, roles, and consistency checking:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 Person = dl.Atomic("Person")
 Student = dl.Atomic("Student")
@@ -1928,7 +1928,7 @@ print(dl.abox_consistent(bad_kb, t))  # → False
 Organize products with constraints on features and relationships:
 
 ```python
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 Product = dl.Atomic("Product")
 PhysicalProduct = dl.Atomic("PhysicalProduct")

@@ -21,14 +21,14 @@ import re
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Box, Cardinality, Constant, Function, Implies, Lambda, LambdaVar, Number,
     PredicateTerm, Quantifier, SecondOrderQuantifier, Variable,
 )
-from unicode_fol_kit.fol._hybrid_nodes import At
-from unicode_fol_kit.hol.ho_modal import to_isabelle_ho_modal
-from unicode_fol_kit.hol.secondorder import to_isabelle_so
-from unicode_fol_kit.hol.thirdorder import to_isabelle_to
+from unicode_logic_kit.fol._hybrid_nodes import At
+from unicode_logic_kit.hol.ho_modal import to_isabelle_ho_modal
+from unicode_logic_kit.hol.secondorder import to_isabelle_so
+from unicode_logic_kit.hol.thirdorder import to_isabelle_to
 
 V, C = Variable, Constant
 
@@ -279,7 +279,7 @@ def _build(tree, rename, counter, fresh):
     if kind == "batom":
         return Atom(rename.get(("pred", tree[1]), tree[1]), [_build_term(tree[2], rename)])
     if kind == "not":
-        from unicode_fol_kit.fol.nodes import Not
+        from unicode_logic_kit.fol.nodes import Not
         return Not(_build(tree[1], rename, counter, fresh))
     if kind in ("and", "imp"):
         cls = And if kind == "and" else Implies

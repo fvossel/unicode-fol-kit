@@ -1,4 +1,4 @@
-"""Tests for the external OWL 2 DL reasoner backend (unicode_fol_kit.dl.owl_reasoner).
+"""Tests for the external OWL 2 DL reasoner backend (unicode_logic_kit.dl.owl_reasoner).
 
 Two tiers:
 
@@ -29,8 +29,8 @@ import shutil
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit.dl.owl_reasoner import available
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit.dl.owl_reasoner import available
 
 owl_live = pytest.mark.owl_live
 _JAVA_ON_PATH = shutil.which("java") is not None
@@ -65,7 +65,7 @@ def test_available_matches_find_spec(monkeypatch):
     # available() must track importlib.util.find_spec("owlready2") exactly,
     # with no import performed to answer it.
     import importlib.util
-    import unicode_fol_kit.dl.owl_reasoner as owl_reasoner_module
+    import unicode_logic_kit.dl.owl_reasoner as owl_reasoner_module
 
     real_find_spec = importlib.util.find_spec
 
@@ -79,7 +79,7 @@ def test_available_matches_find_spec(monkeypatch):
 
 
 def test_unavailable_raises_owl_reasoner_error(monkeypatch):
-    import unicode_fol_kit.dl.owl_reasoner as owl_reasoner_module
+    import unicode_logic_kit.dl.owl_reasoner as owl_reasoner_module
 
     monkeypatch.setattr(owl_reasoner_module, "available", lambda: False)
     with pytest.raises(owl_reasoner_module.OwlReasonerError, match="owlready2"):
@@ -98,7 +98,7 @@ def test_all_individuals_helper():
     # alone: the node a TBox has to run on. Reporting it from a sweep answered
     # about an individual nobody named; the FOL image, which invents none, is
     # checked below. This test pinned {"a"} until the sweeps stopped inventing it.)
-    from unicode_fol_kit.dl.owl_reasoner import _all_individuals
+    from unicode_logic_kit.dl.owl_reasoner import _all_individuals
 
     ab = dl.ABox().assert_role("alice", "bob", "hasChild")
     assert _all_individuals(ab) == {"alice", "bob"}
@@ -107,7 +107,7 @@ def test_all_individuals_helper():
 
 
 def test_a_fresh_individual_is_the_base_or_the_first_numbered_name_outside_the_taken_ones():
-    from unicode_fol_kit.dl.owl_reasoner import _fresh_individual
+    from unicode_logic_kit.dl.owl_reasoner import _fresh_individual
 
     assert _fresh_individual("_probe", set()) == "_probe"
     assert _fresh_individual("_probe", {"a", "b"}) == "_probe"
@@ -126,7 +126,7 @@ def test_the_probe_individual_of_a_satisfiability_question_is_not_an_individual_
     # of the question names would BE that individual (one element, not "some element"):
     # `{p} ⊑ A` with C = ¬A is then inconsistent, although ¬A is satisfiable (the nominal's
     # element in A, another one outside it).
-    import unicode_fol_kit.dl.owl_reasoner as module
+    import unicode_logic_kit.dl.owl_reasoner as module
 
     taken = {"_probe"}
     concept, tbox = dl.Not(A), dl.TBox()
@@ -304,7 +304,7 @@ def test_a_nominal_named_like_the_probe_does_not_make_a_satisfiable_concept_unsa
     assert dl.external_concept_satisfiable(dl.Not(A), tbox) is True
     assert dl.external_subsumes(dl.Top(), A, tbox) is False
     # and the FOL image agrees: ¬A is not refuted from the terminology
-    from unicode_fol_kit import api
+    from unicode_logic_kit import api
     kb = dl.kb_to_fol(tbox, None, query=[dl.Not(A)])
     status = api.prove(kb.unsatisfiability_goal(dl.Not(A)), list(kb.tbox_premises),
                        backends=["z3"], timeout=20000).status
@@ -481,7 +481,7 @@ def _data_layer_sample(holder_name, field):
     helper has no value for fails here with the instruction to add one."""
     import typing
 
-    from unicode_fol_kit.dl.datatypes import DataRange, Datatype, Literal
+    from unicode_logic_kit.dl.datatypes import DataRange, Datatype, Literal
 
     holder_cls = dl.TBox if holder_name == "tbox" else dl.ABox
     hint = typing.get_type_hints(holder_cls)[field]
@@ -525,8 +525,8 @@ def test_characteristics_table_covers_every_characteristic_field():
     # between them: an OBJECT-layer side field is rendered here (a
     # characteristic, or one of the six handled explicitly in _build_kb), and
     # every DATA-layer field makes this route refuse by name.
-    from unicode_fol_kit.dl import owl_reasoner as _r
-    from unicode_fol_kit.dl.tableau import _AXIOM_KINDS, _holder_fields
+    from unicode_logic_kit.dl import owl_reasoner as _r
+    from unicode_logic_kit.dl.tableau import _AXIOM_KINDS, _holder_fields
 
     side = set(_holder_fields("tbox", part="side"))
     object_side = set(_holder_fields("tbox", part="side", layer="object"))

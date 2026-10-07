@@ -1,6 +1,6 @@
 """Tests for free_variables over all node types."""
 import pytest
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Node, Variable, Constant, Number, Function,
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
     SortedQuantifier, SortedConstant,

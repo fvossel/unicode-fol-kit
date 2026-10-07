@@ -28,10 +28,10 @@ Z3-backed calls take their ``timeout`` in MILLISECONDS and it is never shrunk.
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit import api
-from unicode_fol_kit.dl import owl_reasoner as _owl_reasoner
-from unicode_fol_kit.fol.nodes import Iff, Not as FNot, Quantifier, Variable
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit import api
+from unicode_logic_kit.dl import owl_reasoner as _owl_reasoner
+from unicode_logic_kit.fol.nodes import Iff, Not as FNot, Quantifier, Variable
 
 TIMEOUT_MS = 20000
 
@@ -365,7 +365,7 @@ def test_the_manchester_fallback_message_names_the_two_new_frames():
 
 
 def test_the_mcp_row_shapes_build_both_axioms():
-    from unicode_fol_kit.mcp.server import _build_dl_tbox
+    from unicode_logic_kit.mcp.server import _build_dl_tbox
 
     tbox, err = _build_dl_tbox(
         [{"domainrole": "Covers", "domain": "Study"},

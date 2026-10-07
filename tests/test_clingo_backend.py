@@ -20,11 +20,11 @@ Coverage map (see the task instructions this file was written under):
 * :func:`test_invalid_formula_refuted_with_verifiable_countermodel` — an
   invalid formula comes back ``REFUTED`` with a countermodel that genuinely
   satisfies the refutation goal under
-  :func:`~unicode_fol_kit.semantics.evaluate_in_structure` (an INDEPENDENT
+  :func:`~unicode_logic_kit.semantics.evaluate_in_structure` (an INDEPENDENT
   re-check, not trusting the backend's own internal ``verify_model`` call).
 * :func:`test_differential_against_modelfinder_agrees_on_refutation` — ten
   hand-picked entailment questions, compared against
-  :func:`~unicode_fol_kit.semantics.modelfinder.find_countermodel` at the
+  :func:`~unicode_logic_kit.semantics.modelfinder.find_countermodel` at the
   same size bound; a disagreement is reported by NAME.
 * :func:`test_cardinality_comparison_rejected_by_z3_but_accepted_by_clingo`
   and :func:`test_count_quantifier_entailment_fully_decided_with_verified_countermodel`
@@ -56,17 +56,17 @@ import pytest
 
 clingo = pytest.importorskip("clingo")
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     Variable, Constant, Number, Function, Atom, Not, Quantifier, Count, Cardinality, Box,
 )
-from unicode_fol_kit.semantics import structure_from_dict, evaluate_in_structure
-from unicode_fol_kit.semantics.modelfinder import find_countermodel
-from unicode_fol_kit.atp.finite_domain import FiniteDomainProblem, fragment_check
-from unicode_fol_kit.atp.clingo_backend import (
+from unicode_logic_kit.semantics import structure_from_dict, evaluate_in_structure
+from unicode_logic_kit.semantics.modelfinder import find_countermodel
+from unicode_logic_kit.atp.finite_domain import FiniteDomainProblem, fragment_check
+from unicode_logic_kit.atp.clingo_backend import (
     ClingoBackend, clingo_available, to_asp, _universal_closure,
 )
-from unicode_fol_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, ERROR
+from unicode_logic_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, ERROR
 
 _P = MSFLParser()
 _backend = ClingoBackend()
@@ -219,7 +219,7 @@ def test_differential_against_modelfinder_agrees_on_refutation():
     """Ten small entailment questions, checked against an independent oracle.
 
     Over the corpus above, ``ClingoBackend`` and
-    :func:`~unicode_fol_kit.semantics.modelfinder.find_countermodel` must
+    :func:`~unicode_logic_kit.semantics.modelfinder.find_countermodel` must
     agree on REFUTED-vs-not-found at the same ``max_size`` — both search
     the identical question (premises independently ∀-closed, conclusion
     ``¬∀`` pre-closed-then-negated; see ``clingo_backend``'s own "Refutation

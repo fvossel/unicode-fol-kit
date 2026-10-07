@@ -1,5 +1,5 @@
-"""Tests for unicode_fol_kit.eval.exercise_gen (roadmap C61) and the
-unicode_fol_kit.semantics.modelfinder.is_size_exhaustive helper it needs.
+"""Tests for unicode_logic_kit.eval.exercise_gen (roadmap C61) and the
+unicode_logic_kit.semantics.modelfinder.is_size_exhaustive helper it needs.
 
 Per this batch's test oracle, every generated exercise is re-checked by a
 route INDEPENDENT of the generator's own internal call -- never "trust the
@@ -26,16 +26,16 @@ import itertools
 import pytest
 import z3
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Implies, Quantifier, Variable, Z3Env, SortedQuantifier,
 )
-from unicode_fol_kit.fol.signature import Signature
-from unicode_fol_kit.semantics.tarski import Structure, models
-from unicode_fol_kit.semantics import modelfinder
-from unicode_fol_kit.atp.fitch import (
+from unicode_logic_kit.fol.signature import Signature
+from unicode_logic_kit.semantics.tarski import Structure, models
+from unicode_logic_kit.semantics import modelfinder
+from unicode_logic_kit.atp.fitch import (
     Proof, Subproof, assume, line, check_proof, FALSUM,
 )
-from unicode_fol_kit.eval.exercise_gen import (
+from unicode_logic_kit.eval.exercise_gen import (
     ValidInvalidPair, generate_valid_invalid_pair,
     EntailmentExercise, generate_entailment_with_proof,
     ModelSizeExercise, generate_theory_with_model_size,

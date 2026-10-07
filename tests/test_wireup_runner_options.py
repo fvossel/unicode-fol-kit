@@ -26,10 +26,10 @@ from pathlib import Path
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Believes, Box, Diamond, Implies, Knows, Obligatory, Would,
 )
-from unicode_fol_kit.hol import isabelle_runner as R
+from unicode_logic_kit.hol import isabelle_runner as R
 
 P, Q = Atom("P", ()), Atom("Q", ())
 
@@ -181,10 +181,10 @@ def test_modal_bridge_suppresses_the_reconstructed_witness(monkeypatch):
 # --------------------------------------------------------------------------- #
 
 def test_new_public_names_are_exported():
-    import unicode_fol_kit as u
-    import unicode_fol_kit.fol as fol
-    import unicode_fol_kit.hol as hol
-    import unicode_fol_kit.semantics as sem
+    import unicode_logic_kit as u
+    import unicode_logic_kit.fol as fol
+    import unicode_logic_kit.hol as hol
+    import unicode_logic_kit.semantics as sem
 
     for module, name in ((u, "CENTERING_LEVELS"), (sem, "CENTERING_LEVELS"),
                          (u, "QML_BRIDGES"), (fol, "QML_BRIDGES"),
@@ -194,8 +194,8 @@ def test_new_public_names_are_exported():
 
 
 @pytest.mark.parametrize("module_name", [
-    "unicode_fol_kit", "unicode_fol_kit.fol", "unicode_fol_kit.hol",
-    "unicode_fol_kit.semantics", "unicode_fol_kit.atp",
+    "unicode_logic_kit", "unicode_logic_kit.fol", "unicode_logic_kit.hol",
+    "unicode_logic_kit.semantics", "unicode_logic_kit.atp",
 ])
 def test_every_exported_name_resolves(module_name):
     """__all__ is a promise: `from <pkg> import *` must not raise."""
@@ -208,9 +208,9 @@ def test_every_exported_name_resolves(module_name):
 def test_bridge_names_agree_across_every_route():
     """The option value is a bare string a user copies between routes; if the three
     lists drifted, a name valid on one route would be a ValueError on another."""
-    from unicode_fol_kit.atp.modal_tableau import _KNOWN_BRIDGES
-    from unicode_fol_kit.fol.qml import QML_BRIDGES
-    from unicode_fol_kit.hol.isabelle_modal import BRIDGES
+    from unicode_logic_kit.atp.modal_tableau import _KNOWN_BRIDGES
+    from unicode_logic_kit.fol.qml import QML_BRIDGES
+    from unicode_logic_kit.hol.isabelle_modal import BRIDGES
 
     assert set(QML_BRIDGES) == set(BRIDGES) == set(_KNOWN_BRIDGES)
 
@@ -218,7 +218,7 @@ def test_bridge_names_agree_across_every_route():
 def test_version_is_consistent_across_the_release_artefacts():
     """A release bumps __version__, pyproject, CITATION.cff and the CHANGELOG together;
     docs/conf.py reads __version__, so those four are the whole set."""
-    import unicode_fol_kit as u
+    import unicode_logic_kit as u
 
     root = Path(__file__).resolve().parent.parent
     pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")

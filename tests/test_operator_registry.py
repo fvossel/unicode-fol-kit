@@ -16,10 +16,10 @@ from dataclasses import dataclass
 
 import pytest
 
-from unicode_fol_kit.fol._fol_nodes import (
+from unicode_logic_kit.fol._fol_nodes import (
     Node, Atom, OperatorSpec, OPERATORS, register_operator, NODE_CLASSES,
 )
-from unicode_fol_kit.fol._msfl_nodes import _uni, _latex
+from unicode_logic_kit.fol._msfl_nodes import _uni, _latex
 
 
 P = Atom("P", [])
@@ -160,7 +160,7 @@ def test_prefix_renders_via_registry(dummy_operators):
 def test_prefix_wraps_looser_operand(dummy_operators):
     """The prefix operand is parenthesised when it binds looser than the prefix level."""
     # An Implies (precedence 2) under a prefix (4) must be parenthesised.
-    from unicode_fol_kit.fol._fol_nodes import Implies
+    from unicode_logic_kit.fol._fol_nodes import Implies
     node = _MyPrefix(Implies(P, Q))
     assert _uni(node) == "✦(P → Q)"
     assert _latex(node) == "\\myprefix (P \\rightarrow Q)"
@@ -256,12 +256,12 @@ _EXPECTED_REAL_OPERATORS = [
 def test_real_operator_registered(name, fixity, uni, latex, prec):
     """Every shipped regular operator has the expected spec in OPERATORS.
 
-    Importing this test module imports unicode_fol_kit.fol._fol_nodes (classical
+    Importing this test module imports unicode_logic_kit.fol._fol_nodes (classical
     ops) and, via _msfl_nodes, the Łukasiewicz ops. The modal/temporal/deontic
     ops register when their module loads; import it explicitly so this test does
     not depend on import order.
     """
-    import unicode_fol_kit.fol._modal_nodes  # noqa: F401  (triggers registration)
+    import unicode_logic_kit.fol._modal_nodes  # noqa: F401  (triggers registration)
 
     spec = OPERATORS[name]
     assert spec.fixity == fixity
@@ -298,7 +298,7 @@ def _renderer_source_bodies():
     could hide; the helpers they call are fixity-agnostic.
     """
     import inspect
-    from unicode_fol_kit.fol import _msfl_nodes
+    from unicode_logic_kit.fol import _msfl_nodes
     return inspect.getsource(_msfl_nodes._uni) + inspect.getsource(_msfl_nodes._latex)
 
 
@@ -313,7 +313,7 @@ def test_renderers_have_no_per_operator_branch():
     """
     # Importing the modal module ensures the modal/temporal/deontic operators are
     # in OPERATORS, so they are covered by this guard too.
-    import unicode_fol_kit.fol._modal_nodes  # noqa: F401
+    import unicode_logic_kit.fol._modal_nodes  # noqa: F401
 
     src = _renderer_source_bodies()
     offenders = [name for name in OPERATORS if f'"{name}"' in src or f"'{name}'" in src]
@@ -330,7 +330,7 @@ def test_every_registered_fixity_is_handled_by_both_renderers():
     wired into _uni and _latex, else operators using it would silently fall
     through. We assert each valid fixity name appears in both renderer bodies.
     """
-    from unicode_fol_kit.fol._fol_nodes import _VALID_FIXITIES
+    from unicode_logic_kit.fol._fol_nodes import _VALID_FIXITIES
 
     src = _renderer_source_bodies()
     missing = [fx for fx in _VALID_FIXITIES if f'"{fx}"' not in src]

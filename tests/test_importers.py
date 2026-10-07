@@ -12,16 +12,16 @@ import random
 import pytest
 import z3
 
-from unicode_fol_kit import is_valid
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import is_valid
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier, Variable, Constant, Number, Function,
 )
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     parse_tptp, parse_tptp_formula, load_tptp, TptpFormula,
     parse_prover9, from_z3, parse_smtlib, load_smtlib,
 )
-from unicode_fol_kit.fol.tptp_input import TptpParsingError
-from unicode_fol_kit.fol.prover9_input import Prover9ParsingError
+from unicode_logic_kit.fol.tptp_input import TptpParsingError
+from unicode_logic_kit.fol.prover9_input import Prover9ParsingError
 
 
 # ---------------------------------------------------------------------------
@@ -221,7 +221,7 @@ def test_prover9_rejects_malformed(bad):
 # ---------------------------------------------------------------------------
 
 def test_prover9_problem_file():
-    from unicode_fol_kit import parse_prover9_problem, Prover9Formula
+    from unicode_logic_kit import parse_prover9_problem, Prover9Formula
     text = """
     % Socrates is mortal
     set(prolog_style_variables).
@@ -249,7 +249,7 @@ def test_prover9_problem_file():
 
 
 def test_prover9_problem_bare_and_empty():
-    from unicode_fol_kit import parse_prover9_problem
+    from unicode_logic_kit import parse_prover9_problem
     bare = parse_prover9_problem("P(a).\n-Q(b).")
     assert [r.role for r in bare] == ["", ""]
     assert bare[1].formula == Not(Atom("Q", [Constant("b")]))
@@ -260,7 +260,7 @@ def test_prover9_problem_bare_and_empty():
 def test_prover9_problem_round_trip_random():
     rng = random.Random(99)
     conn = ["not", "and", "or", "imp", "iff"]
-    from unicode_fol_kit import parse_prover9_problem
+    from unicode_logic_kit import parse_prover9_problem
     for _ in range(200):
         f = _rand_formula(rng, rng.randint(1, 3), [], connectives=conn)
         # to_prover9 writes for set(prolog_style_variables), as every file of the writer says so
@@ -279,13 +279,13 @@ def test_prover9_problem_round_trip_random():
 def test_prover9_problem_rejects_malformed_lists(bad):
     # A malformed list structure is a hard error — NOT silently degraded to bare
     # formulas with the role information lost (the old Earley-backtracking behaviour).
-    from unicode_fol_kit import parse_prover9_problem
+    from unicode_logic_kit import parse_prover9_problem
     with pytest.raises(Prover9ParsingError):
         parse_prover9_problem(bad)
 
 
 def test_prover9_problem_skips_op_directive_and_keeps_decimals():
-    from unicode_fol_kit import parse_prover9_problem
+    from unicode_logic_kit import parse_prover9_problem
     recs = parse_prover9_problem(
         "set(prolog_style_variables).\nop(800, infix, foo).\nlt(x, 3.14).")
     # set/op directives are skipped; the decimal point is not a statement terminator.
@@ -352,7 +352,7 @@ def test_parse_smtlib_arithmetic():
 # ---------------------------------------------------------------------------
 
 def test_importer_exports():
-    import unicode_fol_kit as u
+    import unicode_logic_kit as u
     for name in ("parse_tptp", "parse_tptp_formula", "load_tptp", "TptpFormula",
                  "parse_prover9", "parse_prover9_problem", "load_prover9",
                  "Prover9Formula", "from_z3", "parse_smtlib", "load_smtlib"):

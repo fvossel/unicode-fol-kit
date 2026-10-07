@@ -9,14 +9,14 @@ import random
 
 import pytest
 
-from unicode_fol_kit.semantics.kripke import (
+from unicode_logic_kit.semantics.kripke import (
     KripkeModel, satisfies_modal, models_at, reflexive_transitive_closure,
     ctl_ex, ctl_af, ctl_eg, ctl_au,
 )
-from unicode_fol_kit.semantics.action_models import (
+from unicode_logic_kit.semantics.action_models import (
     everybody_knows, distributed_knowledge_holds, common_knowledge_holds,
 )
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Constant, Not, And, Or, Xor, Implies, Iff,
     Box, Diamond, Knows, Believes, Says, Wants,
     Always, Eventually, Next, Until,
@@ -25,7 +25,7 @@ from unicode_fol_kit.fol.nodes import (
     Quantifier, Variable, SortedQuantifier,
     LukNegation, Lambda, LambdaVar,
 )
-from unicode_fol_kit.fol._modal_nodes import (
+from unicode_logic_kit.fol._modal_nodes import (
     EverybodyKnows, DistributedKnowledge, CommonKnowledge,
     Announce, AnnounceDiamond,
 )

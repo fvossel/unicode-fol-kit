@@ -1,6 +1,6 @@
-"""Tests for ``unicode_fol_kit.prob.nilsson.entailment_bounds(strategy="column_generation")``.
+"""Tests for ``unicode_logic_kit.prob.nilsson.entailment_bounds(strategy="column_generation")``.
 
-The column-generation strategy (:mod:`unicode_fol_kit.prob._column_gen`)
+The column-generation strategy (:mod:`unicode_logic_kit.prob._column_gen`)
 solves the EXACT SAME linear program the default ``strategy="direct"`` path
 does, without ever materialising a ``2^n``-sized world array. This file's
 central check, repeated in every class below, is DIFFERENTIAL: run both
@@ -37,13 +37,13 @@ from fractions import Fraction as F
 
 import pytest
 
-import unicode_fol_kit
-from unicode_fol_kit import api
-from unicode_fol_kit.fol.nodes import (
+import unicode_logic_kit
+from unicode_logic_kit import api
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Iff, Implies, Not, Or, Quantifier, Variable, Xor,
 )
-from unicode_fol_kit.prob import _column_gen
-from unicode_fol_kit.prob.nilsson import ProbBounds, ProbConstraint, _eval, entailment_bounds
+from unicode_logic_kit.prob import _column_gen
+from unicode_logic_kit.prob.nilsson import ProbBounds, ProbConstraint, _eval, entailment_bounds
 
 P = api.parse_any
 
@@ -556,8 +556,8 @@ class TestMeasuredSpeedup:
     _MEASUREMENT = textwrap.dedent("""
         import json, time
         from fractions import Fraction as F
-        from unicode_fol_kit.fol.nodes import And, Atom
-        from unicode_fol_kit.prob.nilsson import ProbConstraint, entailment_bounds
+        from unicode_logic_kit.fol.nodes import And, Atom
+        from unicode_logic_kit.prob.nilsson import ProbConstraint, entailment_bounds
 
         n = 11
         atoms = [Atom(f"V{i}", ()) for i in range(n)]
@@ -578,7 +578,7 @@ class TestMeasuredSpeedup:
 
     def test_column_generation_faster_than_direct_at_n_eleven(self, capsys):
         n = 11
-        package_root = os.path.dirname(os.path.dirname(os.path.abspath(unicode_fol_kit.__file__)))
+        package_root = os.path.dirname(os.path.dirname(os.path.abspath(unicode_logic_kit.__file__)))
         env = dict(os.environ)
         env["PYTHONPATH"] = os.pathsep.join(filter(None, [package_root, env.get("PYTHONPATH")]))
         run = subprocess.run([sys.executable, "-c", self._MEASUREMENT], env=env,

@@ -32,8 +32,8 @@ to be sure ``x0`` means one thing.
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit.fol.nodes import Constant, Count, Quantifier
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit.fol.nodes import Constant, Count, Quantifier
 
 A, B, C, D = (dl.Atomic(name) for name in "ABCD")
 

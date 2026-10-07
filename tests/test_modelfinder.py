@@ -12,18 +12,18 @@ bounded searches use.
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Implies, Iff, Quantifier, Variable, Constant, Function,
 )
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.semantics.modelfinder import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.semantics.modelfinder import (
     find_model, find_countermodel, is_satisfiable_finite, is_valid_finite,
     _universal_closure,
 )
-from unicode_fol_kit.semantics.secondorder import (
+from unicode_logic_kit.semantics.secondorder import (
     holds, so_find_countermodel, so_is_valid_finite,
 )
-from unicode_fol_kit.semantics.tarski import models
+from unicode_logic_kit.semantics.tarski import models
 
 x, y, z = Variable("x"), Variable("y"), Variable("z")
 
@@ -196,7 +196,7 @@ def test_leibniz_equality_is_second_order_valid():
     # HAND CHECK: Leibniz's definition of equality, ∀x∀y(x=y <-> ∀P(P(x)<->P(y))),
     # is a second-order validity in any domain: "=" is definable from indiscernibility.
     a, b = Constant("a"), Constant("b")
-    from unicode_fol_kit.fol._so_nodes import SecondOrderQuantifier
+    from unicode_logic_kit.fol._so_nodes import SecondOrderQuantifier
     P = lambda t: Atom("P", [t])
     leibniz = Quantifier("∀", x, Quantifier("∀", y, Iff(
         Atom("=", [x, y]), SecondOrderQuantifier("∀", "P", 1, Iff(P(x), P(y))))))
@@ -208,7 +208,7 @@ def test_constants_need_not_be_distinguishable_is_second_order_invalid():
     # relation that never separates them) refutes it; a 1-element domain forces
     # a=b, refuting it outright.
     a, b = Constant("a"), Constant("b")
-    from unicode_fol_kit.fol._so_nodes import SecondOrderQuantifier
+    from unicode_logic_kit.fol._so_nodes import SecondOrderQuantifier
     P = lambda t: Atom("P", [t])
     formula = SecondOrderQuantifier("∃", "P", 1, And(P(a), Not(P(b))))
     assert so_is_valid_finite(formula, max_size=3) is False

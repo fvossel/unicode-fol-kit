@@ -7,8 +7,8 @@ Hand-checkable oracles use the Łukasiewicz semantics over [0, 1]:
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.atp.z3_fuzzy import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.atp.z3_fuzzy import (
     fuzzy_is_satisfiable,
     fuzzy_is_valid,
     fuzzy_get_model,

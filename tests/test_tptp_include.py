@@ -31,10 +31,10 @@ from pathlib import Path
 
 import pytest
 
-from unicode_fol_kit.fol.naming import ParsingError
-from unicode_fol_kit.fol.nodes import Atom, Constant, Variable
-from unicode_fol_kit.fol.signature import Signature, PredicateDecl, ConstantDecl
-from unicode_fol_kit.fol.tptp_input import (
+from unicode_logic_kit.fol.naming import ParsingError
+from unicode_logic_kit.fol.nodes import Atom, Constant, Variable
+from unicode_logic_kit.fol.signature import Signature, PredicateDecl, ConstantDecl
+from unicode_logic_kit.fol.tptp_input import (
     parse_tptp, parse_tptp_formula, load_tptp,
     parse_tptp_problem, load_tptp_problem,
     parse_tff_problem, load_tff_problem,

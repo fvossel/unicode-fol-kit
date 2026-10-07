@@ -23,11 +23,11 @@ import time
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, get_backend
-from unicode_fol_kit.fol._lambek_nodes import Product
-from unicode_fol_kit.fol._linear_nodes import LinearImplies
-from unicode_fol_kit.fol.nodes import Atom
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, get_backend
+from unicode_logic_kit.fol._lambek_nodes import Product
+from unicode_logic_kit.fol._linear_nodes import LinearImplies
+from unicode_logic_kit.fol.nodes import Atom
 
 LIMIT_MS = 300
 
@@ -76,8 +76,8 @@ def test_through_api_prove_the_chain_ends_at_the_limit_and_says_timeout(backend)
     assert verdict.status == UNKNOWN and "timeout" in verdict.detail
 
 
-@pytest.mark.parametrize("backend, patched", [("ill", "unicode_fol_kit.atp.linear.ill_derivable"),
-                                              ("lambek", "unicode_fol_kit.atp.lambek.lambek_prove")])
+@pytest.mark.parametrize("backend, patched", [("ill", "unicode_logic_kit.atp.linear.ill_derivable"),
+                                              ("lambek", "unicode_logic_kit.atp.lambek.lambek_prove")])
 def test_a_search_that_does_not_return_is_cut_off_whatever_the_speed_of_the_machine(backend, patched, monkeypatch):
     # A stand-in search that runs in pure Python for three seconds, then reports a derivation: the backend must
     # not wait for it, and must not turn the answer it never got into a verdict.

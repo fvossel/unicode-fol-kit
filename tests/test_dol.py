@@ -1,5 +1,5 @@
-r"""Tests for :mod:`unicode_fol_kit.hets.dol` (DOL library emission over
-:mod:`unicode_fol_kit.fol.casl_export`).
+r"""Tests for :mod:`unicode_logic_kit.hets.dol` (DOL library emission over
+:mod:`unicode_logic_kit.fol.casl_export`).
 
 Two tiers, mirroring ``tests/test_hets_client.py``'s split:
 
@@ -7,11 +7,11 @@ OFFLINE (default run, no server needed) — the golden library text (hand-
 derived against ``to_casl_spec``'s own documented, already-tested emission
 rules, never by running the code and copying its output), the ``extends``
 header shape, export/import consistency against
-:func:`unicode_fol_kit.fol.casl_import.parse_casl_spec` per spec block, name
+:func:`unicode_logic_kit.fol.casl_import.parse_casl_spec` per spec block, name
 refusals, and refusals propagated unchanged from ``to_casl_spec``.
 
 LIVE (``@pytest.mark.hets_live`` on ``TestDolLive``, gated by
-:func:`~unicode_fol_kit.hets.docker.hets_available` exactly like
+:func:`~unicode_logic_kit.hets.docker.hets_available` exactly like
 ``TestHetsLive`` in ``test_hets_client.py``) — uploads a real 2-spec
 library (``B`` extends ``A``, ``B``'s ``%implied`` goal follows from
 ``A + B``) to a real Hets server, checks ``/dg?format=json`` names BOTH
@@ -26,11 +26,11 @@ Every test in ``TestDolLive`` is also individually gated by the module-level
 missing (this kit's "loud failures, never a silent skip" convention).
 
 Wire facts this file relies on for the live tier (verified live against
-``spechub2/hets:latest``, see ``unicode_fol_kit/hets/client.py``'s own
+``spechub2/hets:latest``, see ``unicode_logic_kit/hets/client.py``'s own
 module docstring for the full account):
   * the stored-path IRI returned by ``upload`` must be percent-encoded
     (including ``/``) for every later endpoint — handled internally by
-    :class:`~unicode_fol_kit.hets.client.HetsClient`, never done by hand
+    :class:`~unicode_logic_kit.hets.client.HetsClient`, never done by hand
     here;
   * ``/dg/<iri>?format=json`` lists every development-graph node under
     ``DGraph.DGNode``, each with its own ``name`` — one node per ``spec`` in
@@ -38,7 +38,7 @@ module docstring for the full account):
     "B"}``;
   * SPASS (via Hets's default ``CASL2TPTP_FOF`` translation) is the reliably
     working reasoner in the shipped image — eprover/Vampire are broken there
-    (always ``Open``, see ``unicode_fol_kit/hets/docker.py``'s docstring),
+    (always ``Open``, see ``unicode_logic_kit/hets/docker.py``'s docstring),
     so the live proof check uses SPASS, never those two;
   * a node with zero ``%implied`` goals answers the plain-text "nothing to
     prove" rather than JSON — irrelevant to this file's own live test (node
@@ -48,7 +48,7 @@ module docstring for the full account):
 Roadmap item C6 (the ``fol.qml`` -> CASL/DOL/Hets bridge) is split across two
 files: ``tests/test_qml_casl.py`` owns the OFFLINE half (the public
 ``qml_validity_formula`` entry point and the identifier-sanitisation shim in
-isolation); THIS file owns :func:`~unicode_fol_kit.hets.dol.to_dol_library_from_modal`
+isolation); THIS file owns :func:`~unicode_logic_kit.hets.dol.to_dol_library_from_modal`
 itself (an offline wiring/shape test, near the bottom of the OFFLINE section)
 and the LIVE cross-check battery (``TestModalCaslHetsLive``, at the very end)
 that uploads a battery of known modal theorems/non-theorems — T/S4/S5 axioms
@@ -61,7 +61,7 @@ through the sanitiser, and its round trip — lives in ``tests/test_qml_casl.py`
 this file's own offline share is
 ``test_to_dol_library_from_modal_renders_identity_as_native_equality``)
 — and asserts the Hets verdict agrees with
-:func:`~unicode_fol_kit.fol.qml.qml_is_valid`'s own (Z3) verdict wherever Hets
+:func:`~unicode_logic_kit.fol.qml.qml_is_valid`'s own (Z3) verdict wherever Hets
 returns a definite ``Proved``/``Disproved`` (an ``Open`` result is SKIPPED —
 per this file's own docstring point 9 above and batch note (2), it is neither
 agreement nor refutation).
@@ -71,18 +71,18 @@ from collections import OrderedDict
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.fol.casl_export import to_casl_spec
-from unicode_fol_kit.fol.casl_import import parse_casl_spec
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.fol.casl_export import to_casl_spec
+from unicode_logic_kit.fol.casl_import import parse_casl_spec
+from unicode_logic_kit.fol.nodes import (
     Atom, Box, Constant, Diamond, Implies, Quantifier, Variable,
 )
-from unicode_fol_kit.fol._msfl_nodes import SortedQuantifier
-from unicode_fol_kit.fol.frames import modal_axiom
-from unicode_fol_kit.fol.qml import BARCAN, CONVERSE_BARCAN, qml_is_valid
-from unicode_fol_kit.hets.dol import to_dol_library, DolSpec, to_dol_library_from_modal
-from unicode_fol_kit.hets.docker import discover_hets_url, hets_available
-from unicode_fol_kit.hets.client import HetsClient
+from unicode_logic_kit.fol._msfl_nodes import SortedQuantifier
+from unicode_logic_kit.fol.frames import modal_axiom
+from unicode_logic_kit.fol.qml import BARCAN, CONVERSE_BARCAN, qml_is_valid
+from unicode_logic_kit.hets.dol import to_dol_library, DolSpec, to_dol_library_from_modal
+from unicode_logic_kit.hets.docker import discover_hets_url, hets_available
+from unicode_logic_kit.hets.client import HetsClient
 
 FOL = MSFLParser()
 
@@ -356,8 +356,8 @@ def test_to_dol_library_from_modal_is_a_single_spec_conjecture_only_library():
     # Independent check: what to_dol_library_from_modal built is exactly what
     # feeding the same sanitised Node to to_casl_spec directly would render —
     # i.e. the wrapper adds ONLY the library/logic preamble, nothing else.
-    from unicode_fol_kit.hets.dol import sanitize_modal_identifiers
-    from unicode_fol_kit.fol.qml import qml_validity_formula
+    from unicode_logic_kit.hets.dol import sanitize_modal_identifiers
+    from unicode_logic_kit.fol.qml import qml_validity_formula
     san = sanitize_modal_identifiers(qml_validity_formula(f, frame="T"))
     direct = to_casl_spec([], conjectures=[san], spec_name="Q", default_sort="World_")
     assert text == "library ModalLib\nlogic CASL\n\n" + direct
@@ -408,8 +408,8 @@ def test_to_dol_library_from_modal_renders_identity_as_native_equality():
     it to the plain a = b at w, and both identity atoms are rendered infix.
     The text then parses back (casl_import, a separate code path) to exactly
     the sanitised qml query, so nothing was renamed or lost on the way."""
-    from unicode_fol_kit.fol.qml import qml_validity_formula
-    from unicode_fol_kit.hets.dol import sanitize_modal_identifiers
+    from unicode_logic_kit.fol.qml import qml_validity_formula
+    from unicode_logic_kit.hets.dol import sanitize_modal_identifiers
 
     a, b = Constant("a"), Constant("b")
     eq = Atom("=", [a, b])
@@ -451,7 +451,7 @@ def test_modal_tableau_refuses_a_box_equality_formula_that_qml_decides():
     rigid identity: □(a = b) → a = b is valid under T and not under K. (The two
     routes used to be asserted to agree here; they agreed only because this one
     formula is a T-schema instance, which holds whatever the atom means.)"""
-    from unicode_fol_kit.atp.modal_tableau import is_modal_valid
+    from unicode_logic_kit.atp.modal_tableau import is_modal_valid
 
     a, b = Constant("a"), Constant("b")
     f = Implies(Box(Atom("=", [a, b])), Atom("=", [a, b]))
@@ -502,7 +502,7 @@ class TestDolLive:
 # "qml_is_valid's Z3 verdict AND atp.modal_tableau's verdict". modal_tableau
 # is a PROPOSITIONAL-modal engine with no quantifier rules at all (it refuses
 # Quantifier/SortedQuantifier by construction — see its own module docstring
-# and the _QUANTIFIED tuple in unicode_fol_kit/atp/modal_tableau.py), so it
+# and the _QUANTIFIED tuple in unicode_logic_kit/atp/modal_tableau.py), so it
 # can only ever join the T/S4/S5 slice of the battery below — never the
 # Barcan/converse-Barcan/sorted/quantified-non-theorem/collision cases, which
 # are genuinely outside what a propositional tableau can even state. It also
@@ -523,7 +523,7 @@ def test_modal_tableau_agrees_with_qml_is_valid_on_the_propositional_slice(
         axiom, frame, expected):
     """See the section comment above: the third independent route the
     battery's test_oracle names, wherever it can even express the query."""
-    from unicode_fol_kit.atp.modal_tableau import is_modal_valid
+    from unicode_logic_kit.atp.modal_tableau import is_modal_valid
 
     f = modal_axiom(axiom)
     assert qml_is_valid(f, frame=frame) is expected

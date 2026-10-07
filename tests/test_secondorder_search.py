@@ -10,11 +10,11 @@ re-checked to actually refute the formula.
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Implies, Iff, Quantifier, Variable, Constant,
 )
-from unicode_fol_kit.fol._so_nodes import SecondOrderQuantifier
-from unicode_fol_kit.semantics.secondorder import (
+from unicode_logic_kit.fol._so_nodes import SecondOrderQuantifier
+from unicode_logic_kit.semantics.secondorder import (
     holds, so_find_model, so_find_countermodel,
     so_is_satisfiable_finite, so_is_valid_finite,
 )

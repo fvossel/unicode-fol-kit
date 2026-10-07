@@ -19,10 +19,10 @@ import time
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.protocol import UNKNOWN, get_backend
-from unicode_fol_kit.semantics import modelfinder
-from unicode_fol_kit.semantics.modelfinder import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.protocol import UNKNOWN, get_backend
+from unicode_logic_kit.semantics import modelfinder
+from unicode_logic_kit.semantics.modelfinder import (
     find_countermodel, find_model, is_satisfiable_finite, is_valid_finite,
 )
 
@@ -151,7 +151,7 @@ def test_a_chain_of_one_backend_ends_at_the_limit_of_the_call():
 
 def test_the_limit_is_not_an_option_the_backend_declares():
     # ``timeout`` is the parameter of ``decide`` itself, as for every backend
-    from unicode_fol_kit.atp.protocol import declared_options
+    from unicode_logic_kit.atp.protocol import declared_options
     assert "timeout" not in declared_options(get_backend("modelfinder"), "fol")
     assert {"max_size", "max_candidates", "symmetry_breaking", "subsorts"} <= declared_options(
         get_backend("modelfinder"), "fol")

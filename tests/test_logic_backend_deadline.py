@@ -28,9 +28,9 @@ import subprocess
 import sys
 import time
 
-import unicode_fol_kit
-from unicode_fol_kit.atp.logic_backends import IntBackend
-from unicode_fol_kit.fol.nodes import And, Atom, Implies, Not, Or
+import unicode_logic_kit
+from unicode_logic_kit.atp.logic_backends import IntBackend
+from unicode_logic_kit.fol.nodes import And, Atom, Implies, Not, Or
 
 #: A call must end within its limit plus this much of the limit (and at least five seconds:
 #: a busy runner was measured 1.2 s past a limit of 0.3 s).
@@ -43,8 +43,8 @@ _CHILD = '''
 import json
 import time
 
-from unicode_fol_kit.atp.logic_backends import IntBackend, RelevantBackend
-from unicode_fol_kit.fol.nodes import And, Atom, Implies, Or
+from unicode_logic_kit.atp.logic_backends import IntBackend, RelevantBackend
+from unicode_logic_kit.fol.nodes import And, Atom, Implies, Or
 
 
 def atom(name):
@@ -81,7 +81,7 @@ print(json.dumps({"status": verdict.status, "reason": verdict.reason,
 
 def _in_child(kind, limit_ms):
     """The verdict of ``kind`` under ``limit_ms`` in a child process, as a dict (and its wall time)."""
-    root = os.path.dirname(os.path.dirname(os.path.abspath(unicode_fol_kit.__file__)))
+    root = os.path.dirname(os.path.dirname(os.path.abspath(unicode_logic_kit.__file__)))
     env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONDONTWRITEBYTECODE="1",
                PYTHONPATH=os.pathsep.join([root] + [p for p in os.environ.get("PYTHONPATH", "").split(os.pathsep) if p]))
     code = _CHILD.replace("KIND", repr(kind)).replace("LIMIT", str(limit_ms))
@@ -140,7 +140,7 @@ def test_a_search_that_finishes_in_time_answers_as_it_did_without_a_limit():
     assert refuted.status == "refuted"
     assert refuted.countermodel is not None and refuted.countermodel["kind"] == "intuitionistic_kripke"
     # (p ∧ q) → p is a theorem of intuitionistic logic; the relevant backend never answers "proved"
-    from unicode_fol_kit.atp.logic_backends import RelevantBackend
+    from unicode_logic_kit.atp.logic_backends import RelevantBackend
     q = Atom("q", [])
     small = RelevantBackend().decide(p, [And(p, q)], timeout=60_000)
     assert small.status == "unknown" and small.reason == "bound_hit"

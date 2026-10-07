@@ -7,7 +7,7 @@ the curated facts, three differential oracles keep the provers honest:
   ⊕ → ∨; ⊸ → →; !A → A; 𝟙 → ⊤) and Lambek→classical (• → ∧; A\\B and B/A → A → B)
   turns every derivable sequent ``Γ ⊢ C`` into a classically valid ``⋀Γ → C``
   (the collapse interprets each proof rule as a classical entailment). Checked with
-  ``unicode_fol_kit.is_valid`` for every curated *and* seeded-random derivable
+  ``unicode_logic_kit.is_valid`` for every curated *and* seeded-random derivable
   sequent — a prover bug that derives too much gets caught here.
 - **L embeds in ILL.** Forgetting order (• → ⊗; A\\B → A⊸B; B/A → A⊸B) maps every
   L rule to an admissible ILL rule, so every Lambek-derivable sequent must be
@@ -22,7 +22,7 @@ from functools import reduce
 
 import pytest
 
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser, is_valid,
     Atom, Not, And, Or, Implies, Iff,
     Tensor, With, OPlus, LinearImplies, OfCourse, One,
@@ -32,12 +32,12 @@ from unicode_fol_kit import (
 # wiring lands centrally); render_ill_formula is _linear_nodes' safe
 # substitute for Node.to_unicode_str() on a formula that may contain them
 # (see that module's comment above its register_operator calls).
-from unicode_fol_kit.fol._linear_nodes import Top, Zero, render_ill_formula
-from unicode_fol_kit.atp.linear import (
+from unicode_logic_kit.fol._linear_nodes import Top, Zero, render_ill_formula
+from unicode_logic_kit.atp.linear import (
     ILLDerivation, ILLSequent, check_ill_proof, ill_derivable, ill_prove,
     render_ill_proof, verify_ill_proof,
 )
-from unicode_fol_kit.atp.lambek import (
+from unicode_logic_kit.atp.lambek import (
     LambekDerivation, LambekSequent, check_lambek_proof, lambek_derivable,
     lambek_prove, render_lambek_proof, verify_lambek_proof,
 )

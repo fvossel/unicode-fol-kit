@@ -1,4 +1,4 @@
-"""Exhaustive equivalence check for ``unicode_fol_kit.fol._identifiers``'s
+"""Exhaustive equivalence check for ``unicode_logic_kit.fol._identifiers``'s
 lookahead-based letter atoms against the module's own, fully-enumerated
 ground truth.
 
@@ -53,7 +53,7 @@ repeated use) would show up here.
 import re
 import unicodedata
 
-from unicode_fol_kit.fol import _identifiers as ident
+from unicode_logic_kit.fol import _identifiers as ident
 
 MAX_CODEPOINT = ident._MAX_CODEPOINT  # 0x2FFFF, per the module's own docstring
 

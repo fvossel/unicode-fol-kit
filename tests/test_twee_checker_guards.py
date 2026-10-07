@@ -22,14 +22,14 @@ shape Twee prints, over three equations whose derivations are one line each:
 
 import pytest
 
-from unicode_fol_kit.atp.twee_check import (
+from unicode_logic_kit.atp.twee_check import (
     _equation_is_variant, _match, _matches_conjunct, _replace_at, _verify_rewrite,
     check_twee_proof, goal_mismatch, goal_matches_conclusion,
 )
-from unicode_fol_kit.atp.twee_entailment import (
+from unicode_logic_kit.atp.twee_entailment import (
     TweeAxiom, TweeChain, TweeCitation, TweeEquation, TweeGoal, TweeLemma, TweeProof,
 )
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Function, Not, Number, Or, Quantifier, Variable,
 )
 

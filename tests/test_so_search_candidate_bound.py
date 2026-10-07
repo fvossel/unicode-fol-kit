@@ -26,19 +26,19 @@ import random
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.fol._so_nodes import SecondOrderQuantifier
-from unicode_fol_kit.fol._truth_constants import TRUE
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.fol._so_nodes import SecondOrderQuantifier
+from unicode_logic_kit.fol._truth_constants import TRUE
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Iff, Implies, Not, Or, Quantifier, SortedConstant, SortedQuantifier,
     Variable,
 )
-from unicode_fol_kit.semantics import modelfinder
-from unicode_fol_kit.semantics import secondorder as so
-from unicode_fol_kit.semantics.secondorder import (
+from unicode_logic_kit.semantics import modelfinder
+from unicode_logic_kit.semantics import secondorder as so
+from unicode_logic_kit.semantics.secondorder import (
     holds, so_find_countermodel, so_find_model, so_is_satisfiable_finite, so_is_valid_finite,
 )
-from unicode_fol_kit.semantics.tarski import check_structure
+from unicode_logic_kit.semantics.tarski import check_structure
 
 x, y = Variable("x"), Variable("y")
 aa, bb, cc = Constant("aa"), Constant("bb"), Constant("cc")

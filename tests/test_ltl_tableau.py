@@ -1,4 +1,4 @@
-"""Tests for unicode_fol_kit.atp.ltl_tableau — the standard linear-time
+"""Tests for unicode_logic_kit.atp.ltl_tableau — the standard linear-time
 LTL(+Past) decision procedure over the discrete order on the natural numbers.
 
 Three independent channels back every verdict here, matching the kit's
@@ -36,18 +36,18 @@ import random
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Implies, Iff,
     Next, Always, Eventually, Until, Historically, Once, Previous, Since,
     Box, Quantifier, Variable,
 )
-from unicode_fol_kit.atp.ltl_tableau import (
+from unicode_logic_kit.atp.ltl_tableau import (
     LTLTrace, ltl_tableau_closed, ltl_valid, ltl_decide, ltl_countermodel,
     ltl_trace_satisfies,
 )
-from unicode_fol_kit.atp.protocol import get_backend, PROVED, REFUTED, UNKNOWN
-from unicode_fol_kit.fol.qml import qml_is_valid
-from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
+from unicode_logic_kit.atp.protocol import get_backend, PROVED, REFUTED, UNKNOWN
+from unicode_logic_kit.fol.qml import qml_is_valid
+from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
 
 p, q = Atom("p", ()), Atom("q", ())
 

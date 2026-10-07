@@ -1,5 +1,5 @@
 """Tests for the second-order circumscription axiom
-(unicode_fol_kit.semantics.nonmonotonic.circumscription_formula /
+(unicode_logic_kit.semantics.nonmonotonic.circumscription_formula /
 circumscription_entails_so), cross-checked against the bounded minimal-model
 search (minimal_entails) already tested in test_new_subsystems.py.
 
@@ -17,14 +17,14 @@ Every case's EXPECTED verdict is derived by hand in a comment before either
 oracle is consulted.
 """
 
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser, Atom, And, Not, Implies, Or, Quantifier, Variable, Constant,
     SecondOrderQuantifier,
 )
-from unicode_fol_kit.semantics.nonmonotonic import (
+from unicode_logic_kit.semantics.nonmonotonic import (
     minimal_entails, circumscription_formula, circumscription_entails_so,
 )
-from unicode_fol_kit.semantics.secondorder import so_is_valid_finite
+from unicode_logic_kit.semantics.secondorder import so_is_valid_finite
 
 FOL = MSFLParser()
 p = FOL.parse

@@ -8,14 +8,14 @@ yields a conjunction of disjunctions of literals.
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.normalforms import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.normalforms import (
     to_dnf, to_tseitin_cnf, _prenex_split, _conjuncts, _disjuncts,
 )
-from unicode_fol_kit.fol._fol_nodes import (
+from unicode_logic_kit.fol._fol_nodes import (
     Atom, Not, And, Or, Implies, Iff, Quantifier,
 )
-from unicode_fol_kit import formulas_are_equivalent, is_satisfiable
+from unicode_logic_kit import formulas_are_equivalent, is_satisfiable
 
 FOL = MSFLParser()
 

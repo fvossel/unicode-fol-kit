@@ -43,14 +43,14 @@ import re
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import prover9_entailment as p9
-from unicode_fol_kit.atp.prover9_entailment import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import prover9_entailment as p9
+from unicode_logic_kit.atp.prover9_entailment import (
     Prover9Rejected, _sanitize_for_prover9, generate_prover9_input_with_mapping,
 )
-from unicode_fol_kit.atp.protocol import Prover9Backend, get_backend
-from unicode_fol_kit.fol._msfl_nodes import SortedConstant, SortedQuantifier
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.atp.protocol import Prover9Backend, get_backend
+from unicode_logic_kit.fol._msfl_nodes import SortedConstant, SortedQuantifier
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Count, Function, Iff, Implies, Not, Number, Or, Quantifier, Variable,
 )
 
@@ -292,7 +292,7 @@ def test_a_constant_spelled_like_a_sort_is_another_symbol_than_the_sort():
 def _rebinds(line, enclosing=frozenset()):
     """The variable names a written formula binds INSIDE the scope of a binder of the same name
     (``(all X0 ... (exists X0 ...))``), read back with the kit's own Prover9 reader."""
-    from unicode_fol_kit.fol.prover9_input import parse_prover9
+    from unicode_logic_kit.fol.prover9_input import parse_prover9
 
     def walk(node, bound):
         found = []
@@ -347,7 +347,7 @@ def test_a_nested_counting_quantifier_never_rebinds_a_name_of_its_scope():
 def test_a_counting_quantifier_over_a_sort_is_expanded_the_same_way():
     # ∃≥2 x:S P(x): the matrix is guarded with S, then expanded. The premise binds x0, and the
     # non-emptiness fact of S (a closed sentence of its own) binds x1; the witnesses avoid both.
-    from unicode_fol_kit.fol._msfl_nodes import SortedCount
+    from unicode_logic_kit.fol._msfl_nodes import SortedCount
     x0 = Variable("x0")
     assumptions, goals, _ = _written([Quantifier("∃", x0, Atom("Q", [x0]))],
                                      SortedCount("ge", Number(2), x, "S", Atom("P", [x])))

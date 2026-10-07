@@ -37,9 +37,9 @@ import pytest
 import lark.lexer
 from lark import UnexpectedCharacters
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.fol import naming
-from unicode_fol_kit.fol.naming import NamingError, lex_for_message
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.fol import naming
+from unicode_logic_kit.fol.naming import NamingError, lex_for_message
 
 
 # A formula that fails at the LEXER level: the second conjunction cannot follow

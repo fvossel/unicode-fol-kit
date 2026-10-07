@@ -4,7 +4,7 @@ Two texts are sent to every registered tool that takes text, through the server'
 (``call_tool``): a chain of four hundred quantifiers, ``∀x ∀x … ∀x P(x)``, and a chain of three thousand
 negations, ``¬¬…¬P``. Each tool comes back with an answer or with the structured refusal that every other
 refusal of the server is (``{"error": …}`` or ``{"ok": False, …}``); an exception is the failure, and so is a
-refusal that says the recursion limit ran out where the deep worker of :mod:`unicode_fol_kit.api` could have
+refusal that says the recursion limit ran out where the deep worker of :mod:`unicode_logic_kit.api` could have
 read the input.
 
 The quantifier chain is read by the parser. ``∀x ∀x … ∀x P(x)`` binds the one variable ``x`` four hundred
@@ -23,8 +23,8 @@ import pytest
 
 pytest.importorskip("mcp", reason="optional [mcp] extra not installed")
 
-from unicode_fol_kit.mcp import server as tools   # noqa: E402
-from unicode_fol_kit.mcp.server import create_server   # noqa: E402
+from unicode_logic_kit.mcp import server as tools   # noqa: E402
+from unicode_logic_kit.mcp.server import create_server   # noqa: E402
 
 CHAIN = "∀x " * 400 + "P(x)"
 SHAPES = {

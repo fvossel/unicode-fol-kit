@@ -21,7 +21,7 @@ Covers the four hybrid work surfaces:
 
 import pytest
 
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser, Node,
     Atom, Not, And, Or, Implies, Iff, Box, Diamond,
     Constant, Variable, Quantifier,
@@ -31,9 +31,9 @@ from unicode_fol_kit import (
     is_modal_valid, modal_decide, modal_countermodel, modal_prove,
     modal_tableau_closed, is_valid_tableau,
 )
-from unicode_fol_kit.atp.modal_tableau import has_modal
-from unicode_fol_kit.fol.modal_translation import hybrid_is_valid
-from unicode_fol_kit.semantics.tarski import Structure, satisfies
+from unicode_logic_kit.atp.modal_tableau import has_modal
+from unicode_logic_kit.fol.modal_translation import hybrid_is_valid
+from unicode_logic_kit.semantics.tarski import Structure, satisfies
 
 mp = MSFLParser(modal=True)
 
@@ -300,8 +300,8 @@ def test_unknown_frame_rejected():
 
 
 def test_the_hybrid_route_shares_the_common_frame_table():
-    from unicode_fol_kit.fol.frames import FRAMES
-    from unicode_fol_kit.fol.modal_translation import _HYBRID_FRAMES
+    from unicode_logic_kit.fol.frames import FRAMES
+    from unicode_logic_kit.fol.modal_translation import _HYBRID_FRAMES
 
     assert _HYBRID_FRAMES is FRAMES
 

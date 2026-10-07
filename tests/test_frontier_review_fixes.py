@@ -6,12 +6,12 @@ reintroduces it fails here with a clear pointer.
 
 import pytest
 
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser, Atom, And, Implies, Constant, Variable, At, Nominal,
     exact_match, substitute, free_variables, beta_reduce,
 )
-from unicode_fol_kit.fol.modal_translation import hybrid_is_valid, standard_translation
-from unicode_fol_kit.fol.nodes import SlashedExists
+from unicode_logic_kit.fol.modal_translation import hybrid_is_valid, standard_translation
+from unicode_logic_kit.fol.nodes import SlashedExists
 
 _MODAL = MSFLParser(modal=True)
 _DEP = MSFLParser(dependence=True)
@@ -37,7 +37,7 @@ def test_lambda_redex_beta_reduces_and_exports(text):
 
 
 def test_lambda_application_not_routed_to_modal_tableau():
-    from unicode_fol_kit.atp.modal_tableau import has_modal
+    from unicode_logic_kit.atp.modal_tableau import has_modal
     assert has_modal(_MODAL.parse("(λx. P(x))(y)")) is False
 
 
@@ -89,7 +89,7 @@ def test_slashed_alpha_equivalence_and_distinctness():
 
 
 def test_canonicalize_does_not_capture_a_free_slash_name():
-    from unicode_fol_kit import canonicalize
+    from unicode_logic_kit import canonicalize
     # q0 is free and appears only in the slash set; the canonical rename must not
     # mint q0 for the bound variable and capture it.
     a = _DEP.parse("∃y/{q0} R(y)")
@@ -112,7 +112,7 @@ def test_substitute_ground_term_drops_slash_entry():
     # the sole slash entry drops and the binder degrades to a plain existential.
     # (Expected built directly: a single-letter name lexes as a Variable, not a
     # Constant, so the substituted Constant('c') has no parseable spelling here.)
-    from unicode_fol_kit.fol.nodes import Quantifier
+    from unicode_logic_kit.fol.nodes import Quantifier
     out = substitute(_DEP.parse("∃y/{x} R(x, y)"), Variable("x"), Constant("c"))
     expected = Quantifier("∃", Variable("y"),
                           Atom("R", [Constant("c"), Variable("y")]))

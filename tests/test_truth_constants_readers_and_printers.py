@@ -15,10 +15,10 @@ constants) are propositions the language defines, not symbols of the user's:
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, And, Box, Constant, Iff, Implies, Not, Or, Quantifier, Variable,
 )
-from unicode_fol_kit.fol.signature import Signature, inventory_of
+from unicode_logic_kit.fol.signature import Signature, inventory_of
 
 TRUE = Atom("$true", ())
 FALSE = Atom("$false", ())
@@ -76,7 +76,7 @@ def test_the_same_name_with_arguments_is_an_ordinary_undeclared_predicate(name):
 # ---------------------------------------------------------------------------
 
 def test_the_prover9_reader_reads_dollar_t_and_dollar_f_as_the_constants():
-    from unicode_fol_kit.fol.prover9_input import parse_prover9
+    from unicode_logic_kit.fol.prover9_input import parse_prover9
     assert parse_prover9("$T") == TRUE
     assert parse_prover9("$F") == FALSE
     assert parse_prover9("$T.") == TRUE                      # a trailing period ends the formula
@@ -89,19 +89,19 @@ def test_the_prover9_reader_reads_dollar_t_and_dollar_f_as_the_constants():
 @pytest.mark.parametrize("node", [TRUE, FALSE, Not(FALSE), Implies(And(P, TRUE), Not(FALSE)),
                                   Or(FALSE, Quantifier("∀", Variable("x"), Atom("R", [Variable("x")])))])
 def test_what_the_prover9_writer_writes_for_the_constants_reads_back(node):
-    from unicode_fol_kit.fol.prover9_input import parse_prover9
+    from unicode_logic_kit.fol.prover9_input import parse_prover9
     assert parse_prover9(node.to_prover9()) == node
 
 
 def test_the_glyph_atoms_are_written_as_the_constants_and_read_back_as_them():
-    from unicode_fol_kit.fol.prover9_input import parse_prover9
+    from unicode_logic_kit.fol.prover9_input import parse_prover9
     assert parse_prover9(TOP.to_prover9()) == TRUE
     assert parse_prover9(BOT.to_prover9()) == FALSE
 
 
 def test_a_prover9_problem_with_the_constants_reads_back():
-    from unicode_fol_kit.atp.prover9_entailment import generate_prover9_input_with_mapping
-    from unicode_fol_kit.fol.prover9_input import parse_prover9_problem
+    from unicode_logic_kit.atp.prover9_entailment import generate_prover9_input_with_mapping
+    from unicode_logic_kit.fol.prover9_input import parse_prover9_problem
     text = generate_prover9_input_with_mapping([FALSE, Implies(Q, TRUE)], Q)[0]
     read = [(item.role, item.formula) for item in parse_prover9_problem(text)]
     assert read == [("assumptions", FALSE), ("assumptions", Implies(Atom("q", ()), TRUE)),
@@ -110,7 +110,7 @@ def test_a_prover9_problem_with_the_constants_reads_back():
 
 @pytest.mark.parametrize("text", ["$Tx", "$T1", "P($T)", "$T = $T", "$t", "$X", "f($F) = a"])
 def test_a_dollar_word_that_is_not_one_of_the_two_constants_is_refused(text):
-    from unicode_fol_kit.fol.prover9_input import Prover9ParsingError, parse_prover9
+    from unicode_logic_kit.fol.prover9_input import Prover9ParsingError, parse_prover9
     with pytest.raises(Prover9ParsingError):
         parse_prover9(text)
 
@@ -124,8 +124,8 @@ def test_a_dollar_word_that_is_not_one_of_the_two_constants_is_refused(text):
     [Quantifier("∀", Variable("x"), And(TRUE, Atom("R", [Variable("x")])))],
 ], ids=["true", "false", "connectives", "under-a-quantifier"])
 def test_a_casl_spec_the_exporter_writes_for_the_constants_reads_back(formulas):
-    from unicode_fol_kit.fol.casl_export import to_casl_spec
-    from unicode_fol_kit.fol.casl_import import parse_casl_spec
+    from unicode_logic_kit.fol.casl_export import to_casl_spec
+    from unicode_logic_kit.fol.casl_import import parse_casl_spec
     spec = parse_casl_spec(to_casl_spec(formulas))
     assert list(spec.axioms) == formulas
     # the constants declare no predicate: only the vocabulary the formulas really use is declared
@@ -136,7 +136,7 @@ def test_a_casl_spec_the_exporter_writes_for_the_constants_reads_back(formulas):
 
 
 def test_a_casl_text_written_by_hand_reads_true_and_false_as_the_constants():
-    from unicode_fol_kit.fol.casl_import import parse_casl_spec
+    from unicode_logic_kit.fol.casl_import import parse_casl_spec
     text = "spec S =\n  preds P : ()\n  . true => P\n  . not false %implied\nend"
     spec = parse_casl_spec(text)
     assert spec.axioms == (Implies(TRUE, P),)
@@ -152,7 +152,7 @@ def test_a_casl_text_written_by_hand_reads_true_and_false_as_the_constants():
     ("spec S =\n  preds P : ()\n  . P => trueish\nend", "predicate 'trueish' is used but never declared"),
 ])
 def test_true_and_false_stay_refused_as_names_and_are_no_terms(text, reason):
-    from unicode_fol_kit.fol.casl_import import CaslImportError, parse_casl_spec
+    from unicode_logic_kit.fol.casl_import import CaslImportError, parse_casl_spec
     with pytest.raises(CaslImportError) as caught:
         parse_casl_spec(text)
     assert reason in str(caught.value)
@@ -171,19 +171,19 @@ def test_true_and_false_stay_refused_as_names_and_are_no_terms(text, reason):
     ("P -> Q -> ⊥", Implies(P, Implies(Q, FALSE)), "P → Q → ⊥"),    # the arrow is right-associative
 ])
 def test_a_truth_glyph_beside_an_ascii_arrow_is_repaired_like_the_arrow_alone(text, expected, rendered):
-    from unicode_fol_kit.fol.dialect_repair import repair_formula
+    from unicode_logic_kit.fol.dialect_repair import repair_formula
     result = repair_formula(text)
     assert result.ok and result.changed
     assert result.repaired_text == rendered
     assert result.formula == expected
     assert [issue.kind for issue in result.issues] == ["truth_glyph"]
     # the repaired text reads back to the repaired formula
-    from unicode_fol_kit import api
+    from unicode_logic_kit import api
     assert api.parse_any(result.repaired_text).formula == result.formula
 
 
 def test_the_repair_of_a_glyph_beside_an_arrow_matches_the_repair_of_a_letter_there():
-    from unicode_fol_kit.fol.dialect_repair import repair_formula
+    from unicode_logic_kit.fol.dialect_repair import repair_formula
     letter = repair_formula("P -> Q")
     glyph = repair_formula("P -> ⊥")
     assert (letter.ok, letter.changed, letter.dialect) == (glyph.ok, glyph.changed, glyph.dialect)
@@ -191,14 +191,14 @@ def test_the_repair_of_a_glyph_beside_an_arrow_matches_the_repair_of_a_letter_th
 
 
 def test_a_text_that_parses_is_not_touched_by_the_glyph_repair():
-    from unicode_fol_kit.fol.dialect_repair import repair_formula
+    from unicode_logic_kit.fol.dialect_repair import repair_formula
     for text in ("P → ⊥", "¬⊥", "⊥", "P ∧ ⊤"):
         result = repair_formula(text)
         assert result.ok and not result.changed and result.issues == (), text
 
 
 def test_the_glyph_repair_does_not_hide_a_mixed_connective_refusal_or_another_error():
-    from unicode_fol_kit.fol.dialect_repair import repair_formula
+    from unicode_logic_kit.fol.dialect_repair import repair_formula
     mixed = repair_formula("P ∧ Q ∨ ⊥")
     assert not mixed.ok and [i.kind for i in mixed.issues] == ["mixed_connectives"]
     # a glyph is not the only obstacle: the text does not parse with the glyph spelled as a constant either
@@ -209,7 +209,7 @@ def test_the_glyph_repair_does_not_hide_a_mixed_connective_refusal_or_another_er
 
 
 def test_a_pinned_dialect_is_respected_by_the_glyph_repair():
-    from unicode_fol_kit.fol.dialect_repair import repair_formula
+    from unicode_logic_kit.fol.dialect_repair import repair_formula
     # the unicode ladder does not read `->`, and a pinned dialect is not left for another
     assert not repair_formula("P -> ⊥", dialect="unicode").ok
     pinned = repair_formula("P -> ⊥", dialect="prover9")
@@ -236,12 +236,12 @@ def test_a_pinned_dialect_is_respected_by_the_glyph_repair():
      "for every x, if x is human, then falsity"),
 ])
 def test_the_english_verbaliser_says_truth_and_falsity(formula, sentence):
-    from unicode_fol_kit.fol import to_english
+    from unicode_logic_kit.fol import to_english
     assert to_english(formula) == sentence
 
 
 def test_a_proposition_that_is_no_constant_is_still_read_as_its_name():
-    from unicode_fol_kit.fol import to_english
+    from unicode_logic_kit.fol import to_english
     assert to_english(Atom("Rain", ())) == "Rain"
     assert to_english(Not(Atom("Rain", ()))) == "it is not the case that Rain"
     # the reserved words with an argument are predicates like any other
@@ -251,8 +251,8 @@ def test_a_proposition_that_is_no_constant_is_still_read_as_its_name():
 
 @pytest.mark.parametrize("constant", CONSTANTS, ids=CONSTANT_IDS)
 def test_the_ace_verbaliser_refuses_a_truth_constant_by_name(constant):
-    from unicode_fol_kit.ace.verbalize import formula_to_ace, modal_formula_to_ace
-    from unicode_fol_kit.drt.reverse import FolToDrsError
+    from unicode_logic_kit.ace.verbalize import formula_to_ace, modal_formula_to_ace
+    from unicode_logic_kit.drt.reverse import FolToDrsError
     man = Atom("Man", [Constant("john")])
     for formula in (constant, Not(constant), And(man, constant)):
         with pytest.raises(FolToDrsError) as caught:
@@ -267,8 +267,8 @@ def test_the_ace_verbaliser_refuses_a_truth_constant_by_name(constant):
 
 
 def test_the_ace_verbaliser_is_unchanged_for_a_formula_without_a_constant():
-    from unicode_fol_kit.ace.verbalize import formula_to_ace
-    from unicode_fol_kit.drt.reverse import FolToDrsError
+    from unicode_logic_kit.ace.verbalize import formula_to_ace
+    from unicode_logic_kit.drt.reverse import FolToDrsError
     with pytest.raises(FolToDrsError) as caught:
         formula_to_ace(Atom("P", ()))                  # a bare proposition: its own refusal
     assert "truth constant" not in str(caught.value)

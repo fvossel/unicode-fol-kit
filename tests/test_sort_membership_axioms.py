@@ -23,11 +23,11 @@ constant and a function value may be any element):
   under the negation still yields the POSITIVE fact ``Human(socrates)``.
 """
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import z3_models
-from unicode_fol_kit.fol import nonempty_sort_axioms, sort_axioms, sort_membership_axioms, to_fol
-from unicode_fol_kit.fol._msfl_nodes import SortedConstant, SortedQuantifier
-from unicode_fol_kit.fol.nodes import And, Atom, Constant, Function, Implies, Not, Quantifier, Variable
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import z3_models
+from unicode_logic_kit.fol import nonempty_sort_axioms, sort_axioms, sort_membership_axioms, to_fol
+from unicode_logic_kit.fol._msfl_nodes import SortedConstant, SortedQuantifier
+from unicode_logic_kit.fol.nodes import And, Atom, Constant, Function, Implies, Not, Quantifier, Variable
 
 X = Variable("x")
 SOCRATES = SortedConstant("socrates", "Human")

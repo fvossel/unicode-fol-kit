@@ -19,10 +19,10 @@ import random
 
 import pytest
 
-from unicode_fol_kit.semantics.kripke import (
+from unicode_logic_kit.semantics.kripke import (
     KripkeModel, satisfies_modal, ctl_ex, ctl_af, ctl_eg, ctl_au,
 )
-from unicode_fol_kit.fol.nodes import Atom, Not, And, Always, Next
+from unicode_logic_kit.fol.nodes import Atom, Not, And, Always, Next
 
 P = Atom("P", [])
 Q = Atom("Q", [])

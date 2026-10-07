@@ -29,15 +29,15 @@ import re
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Variable, Constant, Number, Function, Atom, Not, And, Or, Xor, Implies, Iff,
     Quantifier, SortedQuantifier, Box, Diamond, Knows,
 )
-from unicode_fol_kit.hol.classical import (
+from unicode_logic_kit.hol.classical import (
     to_thf_fol, _signature, _SymbolResolver, _CAT_PRED, _CAT_FUNC, _CAT_CONST,
 )
-from unicode_fol_kit.hol import lean
-from unicode_fol_kit.atp.tableau import is_valid_tableau
+from unicode_logic_kit.hol import lean
+from unicode_logic_kit.atp.tableau import is_valid_tableau
 
 X = Variable("x")
 Y = Variable("y")

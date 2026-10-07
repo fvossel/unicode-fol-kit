@@ -30,14 +30,14 @@ import threading
 
 import pytest
 
-from unicode_fol_kit.atp.prover9_entailment import _run_prover9, generate_prover9_input_with_mapping
-from unicode_fol_kit.atp.protocol import Prover9Backend
-from unicode_fol_kit.fol import _fol_nodes
-from unicode_fol_kit.fol._msfl_nodes import SortedConstant, SortedCount, SortedQuantifier
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.atp.prover9_entailment import _run_prover9, generate_prover9_input_with_mapping
+from unicode_logic_kit.atp.protocol import Prover9Backend
+from unicode_logic_kit.fol import _fol_nodes
+from unicode_logic_kit.fol._msfl_nodes import SortedConstant, SortedCount, SortedQuantifier
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Contrast, Count, Function, Iff, Implies, Not, Number, Or, Quantifier, Variable, Xor,
 )
-from unicode_fol_kit.fol.prover9_input import parse_prover9
+from unicode_logic_kit.fol.prover9_input import parse_prover9
 
 w, x, y, z = Variable("w"), Variable("x"), Variable("y"), Variable("z")
 alpha, beta = Constant("alpha"), Constant("beta")
@@ -361,8 +361,8 @@ def _renaming_by_substitution(node, avoid, scope=frozenset()):
     """The definition of the renaming, written the plain way: a binder inside the scope of a binder of its
     own name (names compared in upper case) is given a fresh variable and the body is renamed by substitution,
     then the body is read the same way. Recursive and eager, which is why it is the oracle and not the code."""
-    from unicode_fol_kit.fol._identifiers import fresh_variables
-    from unicode_fol_kit.fol._msfl_nodes import _rename
+    from unicode_logic_kit.fol._identifiers import fresh_variables
+    from unicode_logic_kit.fol._msfl_nodes import _rename
     if isinstance(node, Quantifier):
         variable, body = node.variable, node.formula
         if variable.name.upper() in scope:
@@ -378,8 +378,8 @@ def _renaming_by_substitution(node, avoid, scope=frozenset()):
 
 
 def test_the_renaming_of_the_code_is_the_renaming_by_substitution():
-    from unicode_fol_kit.atp.prover9_entailment import _rename_rebound_binders
-    from unicode_fol_kit.fol._identifiers import symbol_names
+    from unicode_logic_kit.atp.prover9_entailment import _rename_rebound_binders
+    from unicode_logic_kit.fol._identifiers import symbol_names
     rng = random.Random(20261106)
     names = ["x", "y", "w", "X", "W", "x0", "y1", "xa"]
 
@@ -410,8 +410,8 @@ def test_the_renaming_of_the_code_is_the_renaming_by_substitution():
 
 
 def test_a_chain_of_thousands_of_re_bound_binders_is_renamed_without_the_recursion_limit():
-    from unicode_fol_kit.atp.prover9_entailment import _rename_rebound_binders
-    from unicode_fol_kit.fol._identifiers import symbol_names
+    from unicode_logic_kit.atp.prover9_entailment import _rename_rebound_binders
+    from unicode_logic_kit.fol._identifiers import symbol_names
     node = P(w, _X0)
     for _ in range(3000):
         node = FA(w, And(Atom("Q", [w]), node))
@@ -428,7 +428,7 @@ def test_a_chain_of_thousands_of_re_bound_binders_is_renamed_without_the_recursi
 # --------------------------------------------------------------------------- #
 
 def test_the_mcp_render_tool_writes_a_re_bound_binder_under_a_fresh_variable():
-    from unicode_fol_kit.mcp import server
+    from unicode_logic_kit.mcp import server
     rendered = server.render("![W]: ![W]: p(W, x0)", to="prover9", dialect="tptp_bare")
     assert rendered["ok"] is True
     assert rendered["rendered"] == "(all W (all W0 P(W0, x0)))"

@@ -47,12 +47,12 @@ import pytest
 
 from lark import Lark
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.fol._fol_nodes import build_grammar
-from unicode_fol_kit.fol.msflparser import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.fol._fol_nodes import build_grammar
+from unicode_logic_kit.fol.msflparser import (
     _allow_single_letter_function_calls, _GRAMMARS_DIR,
     _HYBRID_MODES, _REGISTRY_MODE)
-from unicode_fol_kit.fol.naming import NamingError, ParsingError
+from unicode_logic_kit.fol.naming import NamingError, ParsingError
 
 MODES = {
     "fol": {}, "msfol": {"many_sorted": True},

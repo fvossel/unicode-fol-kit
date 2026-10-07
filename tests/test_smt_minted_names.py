@@ -26,11 +26,11 @@ import pytest
 import z3
 
 from _minted_name_problems import AT_MOST_TWO, has_countermodel, make_problem
-from unicode_fol_kit.atp.incremental import IncrementalSession
-from unicode_fol_kit.atp.protocol import PROVED, REFUTED, Z3Backend, z3_relevant_premises
-from unicode_fol_kit.atp.z3_input import to_smtlib
-from unicode_fol_kit.fol._msfl_nodes import sort_axioms
-from unicode_fol_kit.fol.nodes import Not
+from unicode_logic_kit.atp.incremental import IncrementalSession
+from unicode_logic_kit.atp.protocol import PROVED, REFUTED, Z3Backend, z3_relevant_premises
+from unicode_logic_kit.atp.z3_input import to_smtlib
+from unicode_logic_kit.fol._msfl_nodes import sort_axioms
+from unicode_logic_kit.fol.nodes import Not
 
 SEEDS = range(1, 241)
 CVC5_SEEDS = range(1, 121)
@@ -119,8 +119,8 @@ def test_the_smtlib_text_is_satisfiable_with_the_negated_goal_exactly_when_there
 # ---------------------------------------------------------------------------------------------------------
 _CHILD = r"""
 import json, sys
-from unicode_fol_kit.atp.cvc5_backend import Cvc5Backend
-from unicode_fol_kit.fol.nodes import Node
+from unicode_logic_kit.atp.cvc5_backend import Cvc5Backend
+from unicode_logic_kit.fol.nodes import Node
 
 for line in sys.stdin.read().splitlines():
     spec = json.loads(line)

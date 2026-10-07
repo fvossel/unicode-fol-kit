@@ -10,9 +10,9 @@ names the node and what to use instead. A plain category is decided exactly as b
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, get_backend
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, get_backend
+from unicode_logic_kit.fol.nodes import (
     Atom, Number, SortedCardinality, SortedConstant, SortedCount, SortedQuantifier, Variable,
 )
 

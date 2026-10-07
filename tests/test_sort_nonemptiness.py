@@ -1,10 +1,10 @@
 """Differential tests for roadmap item S1 (soundness): every classical
 decision route that reduces many-sorted (MSFOL) input through
 ``fol.nodes.to_fol`` must assume every sort is non-empty — the same
-convention :mod:`unicode_fol_kit.semantics.modelfinder` already enforces
+convention :mod:`unicode_logic_kit.semantics.modelfinder` already enforces
 (``_nonempty_subsets``: a sort's universe is always a NON-EMPTY subset of
 the domain) and TPTP TF0 guarantees natively (see
-:mod:`unicode_fol_kit.atp.tptp_tff`).
+:mod:`unicode_logic_kit.atp.tptp_tff`).
 
 Reproduction (observed 2026-09-16, the exact case S1 was opened against):
 with ``S = MSFLParser(many_sorted=True)`` and
@@ -18,7 +18,7 @@ falsifying the consequent — a "countermodel"
 ``semantics.modelfinder.find_countermodel`` never even considers a legal
 MSFOL structure.
 
-The fix: ``unicode_fol_kit.fol._msfl_nodes.nonempty_sort_axioms`` — one
+The fix: ``unicode_logic_kit.fol._msfl_nodes.nonempty_sort_axioms`` — one
 ``∃x (S(x))`` sentence per distinct sort name in a problem — added by every
 affected route as an extra, UNCONDITIONAL, never-negated sentence (premise
 side for validity/entailment, an extra asserted conjunct for satisfiability/
@@ -48,28 +48,28 @@ import subprocess
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import And, Implies, Not, SortedConstant
-from unicode_fol_kit.fol._msfl_nodes import nonempty_sort_axioms
-from unicode_fol_kit import api
-from unicode_fol_kit.semantics import modelfinder
-from unicode_fol_kit.atp.z3_models import is_valid, is_satisfiable, get_model
-from unicode_fol_kit.atp.z3_arith import is_valid_arith, is_satisfiable_arith, get_model_arith
-from unicode_fol_kit.atp.protocol import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import And, Implies, Not, SortedConstant
+from unicode_logic_kit.fol._msfl_nodes import nonempty_sort_axioms
+from unicode_logic_kit import api
+from unicode_logic_kit.semantics import modelfinder
+from unicode_logic_kit.atp.z3_models import is_valid, is_satisfiable, get_model
+from unicode_logic_kit.atp.z3_arith import is_valid_arith, is_satisfiable_arith, get_model_arith
+from unicode_logic_kit.atp.protocol import (
     PROVED, REFUTED, get_backend, z3_relevant_premises,
 )
-from unicode_fol_kit.atp.cvc5_backend import Cvc5Backend
-from unicode_fol_kit.atp.prover9_entailment import (
+from unicode_logic_kit.atp.cvc5_backend import Cvc5Backend
+from unicode_logic_kit.atp.prover9_entailment import (
     _generate_prover9_input, generate_prover9_input_with_mapping,
 )
-from unicode_fol_kit.atp._tptp_problem import (
+from unicode_logic_kit.atp._tptp_problem import (
     generate_tptp_problem, generate_tptp_problem_with_mapping,
 )
-from unicode_fol_kit.atp.vampire_entailment import check_logical_entailment_vampire
-from unicode_fol_kit.atp.eprover_backend import (
+from unicode_logic_kit.atp.vampire_entailment import check_logical_entailment_vampire
+from unicode_logic_kit.atp.eprover_backend import (
     check_entailment_eprover_detailed, eprover_available,
 )
-from unicode_fol_kit.eval.equivalence import equivalent
+from unicode_logic_kit.eval.equivalence import equivalent
 
 MSFOL = MSFLParser(many_sorted=True).parse
 FOL = MSFLParser().parse
@@ -268,7 +268,7 @@ def test_nonempty_sort_axioms_dedups_and_orders_by_first_occurrence():
 
 
 def test_nonempty_sort_axioms_covers_all_four_sorted_node_types():
-    from unicode_fol_kit.fol.nodes import SortedCount, SortedCardinality, Number, Variable
+    from unicode_logic_kit.fol.nodes import SortedCount, SortedCardinality, Number, Variable
 
     quantifier = MSFOL("∀x:Q1 P(x)")
     constant = SortedConstant("c", "Q2")
@@ -380,7 +380,7 @@ def test_z3_equivalence_assumes_non_empty_sorts():
     """Both formulas are tautologies under non-empty sorts (f1 is the
     reproduction case, f2 a propositional tautology), so they are equivalent.
     Without the non-emptiness assertion Z3 makes Human empty and says no."""
-    from unicode_fol_kit.atp.z3_equivalence import formulas_are_equivalent
+    from unicode_logic_kit.atp.z3_equivalence import formulas_are_equivalent
 
     f1 = MSFOL("(∀x:Human Mortal(x)) → ∃x:Human Mortal(x)")
     f2 = FOL("P ∨ ¬P")
@@ -402,7 +402,7 @@ def test_resolution_gets_the_non_emptiness_of_a_sort_as_a_premise():
     of every sort, membership of every sorted constant) as premise clauses,
     so the proof is found; the soundness side is pinned next to it.
     """
-    from unicode_fol_kit.atp.resolution import prove
+    from unicode_logic_kit.atp.resolution import prove
 
     premise = MSFOL("∀x:Ghost P(x)")
     conclusion = MSFOL("∃x:Ghost P(x)")

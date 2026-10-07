@@ -2,8 +2,8 @@
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol._fol_nodes import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol._fol_nodes import (
     Atom, Variable, And, Quantifier, Not, Implies,
 )
 

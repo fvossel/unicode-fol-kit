@@ -12,8 +12,8 @@ The expectations are the definition above, applied by hand to the text the write
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import And, Atom, Constant, Number
-from unicode_fol_kit.hol import free_theory, to_isabelle_free, to_thf_free
+from unicode_logic_kit.fol.nodes import And, Atom, Constant, Number
+from unicode_logic_kit.hol import free_theory, to_isabelle_free, to_thf_free
 
 
 def P(term):

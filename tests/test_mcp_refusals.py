@@ -30,7 +30,7 @@ import pytest
 
 pytest.importorskip("mcp", reason="optional [mcp] extra not installed")
 
-from unicode_fol_kit.mcp.server import (   # noqa: E402
+from unicode_logic_kit.mcp.server import (   # noqa: E402
     check_consistency, check_equivalence, check_formula, compare_formulas, create_server, detect_dialect,
     diagnose, dl_abox_consistent, dl_classify, dl_concept_satisfiable, dl_equivalent, dl_instance_check,
     dl_instance_retrieval, dl_parse_manchester, dl_subsumes, drs_to_fol, find_countermodel, get_signature,
@@ -74,7 +74,7 @@ OTHER_LOGICS = ["ill", "lambek", "intuitionistic", "relevant", "hybrid"]
 
 def _every_call(text):
     """``(label, zero-argument call)`` for every tool that takes formula text, sent ``text``."""
-    from unicode_fol_kit.comorphism import DEFAULT_REGISTRY
+    from unicode_logic_kit.comorphism import DEFAULT_REGISTRY
 
     yield "parse_formula", lambda: parse_formula(text)
     yield "check_formula", lambda: check_formula(text)
@@ -196,7 +196,7 @@ def test_every_misreading_name_is_refused_in_every_position_of_a_concept(text):
 def test_the_refusal_comes_before_the_reasoning(monkeypatch):
     # The text of the concept is needed for the answer, so a concept with no faithful text is refused before a
     # tableau is started on it.
-    import unicode_fol_kit.dl as dl
+    import unicode_logic_kit.dl as dl
 
     def must_not_run(*args, **kwargs):
         raise AssertionError("the tableau was started for a concept the tool cannot report")
@@ -230,8 +230,8 @@ def test_translate_answers_a_result_with_no_faithful_text_as_a_structured_error(
     # the tool raise when its result has no glyph text.
     from types import SimpleNamespace
 
-    from unicode_fol_kit.comorphism import DEFAULT_REGISTRY
-    from unicode_fol_kit.dl import Atomic
+    from unicode_logic_kit.comorphism import DEFAULT_REGISTRY
+    from unicode_logic_kit.dl import Atomic
 
     stub = SimpleNamespace(to_dict=lambda: {"result": "stub"}, result=Atomic("<A⊓B>"), axioms=[])
     monkeypatch.setattr(DEFAULT_REGISTRY, "translate", lambda *args, **kwargs: stub)

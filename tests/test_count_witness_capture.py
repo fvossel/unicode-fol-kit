@@ -18,10 +18,10 @@ import re
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit import api
-from unicode_fol_kit.fol import _identifiers
-from unicode_fol_kit.fol.nodes import (Atom, Constant, Count, Not, Number,
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit import api
+from unicode_logic_kit.fol import _identifiers
+from unicode_logic_kit.fol.nodes import (Atom, Constant, Count, Not, Number,
                                         Quantifier, Variable)
 
 # Not a shrunken budget: "unknown" is not a verdict, and a test built on one

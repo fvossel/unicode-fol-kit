@@ -2,15 +2,15 @@
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.normalforms import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.normalforms import (
     to_nnf, to_pnf, to_cnf, skolemize, is_horn,
     _prenex_split, _clauses, _cnf,
 )
-from unicode_fol_kit.fol._fol_nodes import (
+from unicode_logic_kit.fol._fol_nodes import (
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier, Function, Constant,
 )
-from unicode_fol_kit.atp import formulas_are_equivalent, is_satisfiable
+from unicode_logic_kit.atp import formulas_are_equivalent, is_satisfiable
 
 FOL = MSFLParser()
 MSFOL = MSFLParser(many_sorted=True)
@@ -153,7 +153,7 @@ class TestModeReduction:
             to_nnf(f)
 
     def test_fuzzy_explicit_collapse_still_works(self):
-        from unicode_fol_kit.fol import to_fol
+        from unicode_logic_kit.fol import to_fol
         f = MSFL.parse("P(x) → Q(x)")
         collapsed = to_fol(f)                # the explicit, documented opt-in
         assert formulas_are_equivalent(collapsed, to_cnf(collapsed))

@@ -21,19 +21,19 @@ from typing import List, Optional, Tuple
 
 import pytest
 
-from unicode_fol_kit.atp._tptp_problem import (
+from unicode_logic_kit.atp._tptp_problem import (
     TptpNameMap, generate_tptp_problem, generate_tptp_problem_for_prover,
     generate_tptp_problem_with_mapping,
 )
-from unicode_fol_kit.atp._tff_problem import generate_tff_arith_problem
-from unicode_fol_kit.atp.eprover_backend import (
+from unicode_logic_kit.atp._tff_problem import generate_tff_arith_problem
+from unicode_logic_kit.atp.eprover_backend import (
     EProverBackend, check_entailment_eprover_detailed, eprover_available,
     eprover_relevant_premises,
 )
-from unicode_fol_kit.atp.tptp_tff import Tf0Refusal, generate_tff_problem, generate_tff_problem_with_mapping
-from unicode_fol_kit.atp.tstp import relevant_premises_from_tstp
-from unicode_fol_kit.atp.vampire_entailment import check_entailment_vampire_detailed
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.atp.tptp_tff import Tf0Refusal, generate_tff_problem, generate_tff_problem_with_mapping
+from unicode_logic_kit.atp.tstp import relevant_premises_from_tstp
+from unicode_logic_kit.atp.vampire_entailment import check_entailment_vampire_detailed
+from unicode_logic_kit.fol.nodes import (
     Atom, Constant, Implies, Quantifier, SortedConstant, SortedQuantifier, Variable,
 )
 
@@ -89,7 +89,7 @@ def lines_of(text: str) -> List[str]:
     ("%percent", "'%percent'"),
 ])
 def test_a_premise_name_is_written_as_a_tptp_name(name, token):
-    from unicode_fol_kit.atp._writer_support import decode_tptp_name, tptp_name_token
+    from unicode_logic_kit.atp._writer_support import decode_tptp_name, tptp_name_token
     assert tptp_name_token(name) == token
     assert decode_tptp_name(token) == name           # and reads back to what it was
 
@@ -386,7 +386,7 @@ def test_a_premise_name_a_prover_uses_for_something_else_is_refused(name):
     statements ``f1``, ``f2``, ...; E calls the clauses it derives ``c_0_5`` (and ``i_0_5``). A
     premise with one of these names could be read back as another formula, so the writer refuses
     it, by name and in every dialect."""
-    from unicode_fol_kit.atp._tff_problem import generate_tff_arith_problem
+    from unicode_logic_kit.atp._tff_problem import generate_tff_arith_problem
     premises = [p("P", Constant("c1")), p("P", Constant("c2"))]
     for write in (generate_tptp_problem_with_mapping, generate_tff_problem_with_mapping,
                   lambda ps, c, premise_names: generate_tff_arith_problem(ps, c, "int",
@@ -446,12 +446,12 @@ def test_e_does_not_choose_between_two_names_it_prints_alike():
     ("missing", ["it's", "x"], None),
 ])
 def test_a_label_is_matched_to_the_premise_of_that_name(label, names, expected):
-    from unicode_fol_kit.atp._writer_support import match_premise_label
+    from unicode_logic_kit.atp._writer_support import match_premise_label
     assert match_premise_label(label, names) == expected
 
 
 def test_the_label_of_a_leaf_is_the_name_in_its_file_source_else_its_own_name():
-    from unicode_fol_kit.atp._writer_support import axiom_leaf_label
+    from unicode_logic_kit.atp._writer_support import axiom_leaf_label
     assert axiom_leaf_label("f3", "file('x.p','my premise')") == "my premise"
     assert axiom_leaf_label("f3", "file('x.p',my_premise)") == "my_premise"
     assert axiom_leaf_label("'my premise'", "file('x.p', 'my premise')") == "my premise"
@@ -478,7 +478,7 @@ def test_a_proof_that_uses_a_sort_fact_has_the_premises_among_its_leaves_and_nam
     # The fof text of SORTED_PREMISES has Human non-empty (nonempty_sort_1) and socrates in Human
     # (sort_member_1). A proof that rests on premise 2 and on socrates being a Human uses one premise
     # and one background fact; neither the unused premises nor the unused fact are reported.
-    from unicode_fol_kit.atp.tstp import _premise_use_from_tstp
+    from unicode_logic_kit.atp.tstp import _premise_use_from_tstp
     _text, name_map = generate_tptp_problem_with_mapping(SORTED_PREMISES, SORTED_GOAL, premise_names=["q", "rule", "r"])
     proof = ("fof(rule,axiom,![X]:(human(X)=>mortal(X)),file('x.p',rule)).\n"
              "fof(sort_member_1,axiom,human(socrates),file('x.p',sort_member_1)).\n"
@@ -493,7 +493,7 @@ def test_a_proof_that_uses_a_sort_fact_has_the_premises_among_its_leaves_and_nam
 
 
 def test_without_a_record_the_writers_own_background_names_are_recognised_by_their_shape():
-    from unicode_fol_kit.atp.tstp import _premise_use_from_tstp
+    from unicode_logic_kit.atp.tstp import _premise_use_from_tstp
     proof = ("fof(premise_2,axiom,p(a),file('x.p',premise_2)).\n"
              "fof(sort_member_3,axiom,human(a),file('x.p',sort_member_3)).\n"
              "fof(nonempty_sort_1,axiom,?[X]:human(X),file('x.p',nonempty_sort_1)).\n"

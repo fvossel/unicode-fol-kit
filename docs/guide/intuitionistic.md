@@ -1,6 +1,6 @@
 # Intuitionistic logic
 
-Intuitionistic propositional validity is **decided**, at every `max_worlds` including the default: a bounded Kripke-model search is tried first as a fast path, and whenever it comes up empty the verdict is handed to Dyckhoff's contraction-free **G4ip** calculus (`int_prove` / `int_decide`, `unicode_fol_kit.atp.lj`) for a definitive answer with no bound to exhaust. The first-order fragment (0.9.0) stays a sound, bounded counter-model search over increasing-domain Kripke models. The same (in)validities are confirmed by the **LJ** sequent-calculus checker and by the Gödel–McKinsey–Tarski embedding into S4.
+Intuitionistic propositional validity is **decided**, at every `max_worlds` including the default: a bounded Kripke-model search is tried first as a fast path, and whenever it comes up empty the verdict is handed to Dyckhoff's contraction-free **G4ip** calculus (`int_prove` / `int_decide`, `unicode_logic_kit.atp.lj`) for a definitive answer with no bound to exhaust. The first-order fragment (0.9.0) stays a sound, bounded counter-model search over increasing-domain Kripke models. The same (in)validities are confirmed by the **LJ** sequent-calculus checker and by the Gödel–McKinsey–Tarski embedding into S4.
 
 Intuitionistic logic drops the law of excluded middle and double-negation elimination. Its models are **Kripke models**: a partial order of *worlds* (stages of knowledge) with a monotone forcing relation (once an atom is forced at a world it stays forced at every later world). The connectives `→` and `¬` quantify over future worlds, which is exactly what makes `P ∨ ¬P` and `¬¬P → P` fail.
 
@@ -8,10 +8,10 @@ The toolkit gives you four independent, cross-checking views of the same logic:
 
 | View | Function(s) | Module |
 | --- | --- | --- |
-| Kripke-model search (`int_valid` decides propositional, with G4ip behind it; bounded FO) | `int_valid`, `int_countermodel`, `IntKripkeModel` | `unicode_fol_kit.semantics.intuitionistic` |
-| G4ip proof search — terminating decision procedure (propositional) | `int_prove`, `int_decide` | `unicode_fol_kit.atp.lj` |
-| LJ sequent-calculus proof checker | `check_lj_proof`, `verify_lj_proof` | `unicode_fol_kit.atp.lj` |
-| Gödel–McKinsey–Tarski embedding into S4 | `gmt_translate` | `unicode_fol_kit.hol` |
+| Kripke-model search (`int_valid` decides propositional, with G4ip behind it; bounded FO) | `int_valid`, `int_countermodel`, `IntKripkeModel` | `unicode_logic_kit.semantics.intuitionistic` |
+| G4ip proof search — terminating decision procedure (propositional) | `int_prove`, `int_decide` | `unicode_logic_kit.atp.lj` |
+| LJ sequent-calculus proof checker | `check_lj_proof`, `verify_lj_proof` | `unicode_logic_kit.atp.lj` |
+| Gödel–McKinsey–Tarski embedding into S4 | `gmt_translate` | `unicode_logic_kit.hol` |
 
 All four are exercised below against the same battery of formulas.
 
@@ -20,7 +20,7 @@ All four are exercised below against the same battery of formulas.
 `int_valid(formula)` returns a bool; `int_countermodel(formula)` returns either `None` (no countermodel with at most `max_worlds` worlds was found, which is not by itself a proof of validity) or a pair `(model, world)` — an `IntKripkeModel` and the index of a world that fails to force the formula, so a witness that the formula is not valid. For a propositional formula `int_valid` is a genuine **decision procedure**, full stop, regardless of `max_worlds`: the bounded Kripke search is tried first as a fast path (a countermodel it finds is a real witness, so a quick `False` short-circuits), but propositional IPL's finite-model-property bound *grows with the formula* — `(p→q)∨(q→r)∨(r→p)` needs 4 worlds, more than the `max_worlds=3` default — so "no countermodel within the bound" is not by itself proof of validity. When the bounded search comes up empty, `int_valid` hands the formula to `int_prove` (G4ip, no bound to exhaust) for the definitive verdict. Net effect: both `True` and `False` are exact for propositional input, at every `max_worlds`.
 
 ```python
-from unicode_fol_kit import MSFLParser, int_valid, int_countermodel, IntKripkeModel
+from unicode_logic_kit import MSFLParser, int_valid, int_countermodel, IntKripkeModel
 
 p = MSFLParser().parse  # parser uses Unicode operators: →  ¬  ∧  ∨  ∀  ∃
 
@@ -147,7 +147,7 @@ a genuine decision procedure, not a bounded search. `int_decide(formula)` is the
 `IntKripkeModel.forces` uses, so `int_prove` decides exactly what `int_valid` checks):
 
 ```python
-from unicode_fol_kit import int_prove, int_decide
+from unicode_logic_kit import int_prove, int_decide
 
 int_decide(p("P → P"))                              # → True
 int_decide(p("P ∨ ¬P"))                              # → False   excluded middle, again
@@ -175,7 +175,7 @@ or the propositional GMT/S4 route below.
 A propositional letter is named by the text its atom prints as, so two different atoms that print alike — the numeral `1` and a constant `'1'` in `P(1)`, or a free variable `x` and a constant `x` in `P(x)` — are refused by name with `NotImplementedError` by `int_valid`, `int_countermodel`, `int_prove` and `int_decide`, and `api.prove(f, logic="intuitionistic")` answers `unknown` with that sentence in its detail:
 
 ```python
-from unicode_fol_kit.fol.nodes import Atom, Implies, Variable, Constant
+from unicode_logic_kit.fol.nodes import Atom, Implies, Variable, Constant
 
 # the free variable x and the constant x are two atoms that both print as P(x)
 alike = Implies(Atom("P", [Variable("x")]), Atom("P", [Constant("x")]))
@@ -361,9 +361,9 @@ derivation tree with `sequent`, `derive` and `axiom`, then check it with `check_
 (bool) or `verify_lj_proof` (a `SequentResult` with `.ok`, `.endsequent`, `.error`).
 
 ```python
-from unicode_fol_kit.fol.nodes import Atom, Not, And, Or, Implies, Quantifier, Variable, Constant
-from unicode_fol_kit.atp.sequent import sequent, derive, axiom
-from unicode_fol_kit import check_lj_proof, verify_lj_proof, render_sequent_proof
+from unicode_logic_kit.fol.nodes import Atom, Not, And, Or, Implies, Quantifier, Variable, Constant
+from unicode_logic_kit.atp.sequent import sequent, derive, axiom
+from unicode_logic_kit import check_lj_proof, verify_lj_proof, render_sequent_proof
 
 P, Q = Atom("P", ()), Atom("Q", ())
 NP, NNP = Not(P), Not(Not(P))
@@ -465,11 +465,11 @@ proof is `int_valid`, and every `int_valid` propositional formula has an LJ proo
 
 The same (in)validities are mirrored by the GMT translation, which boxes every subformula
 and sends intuitionistic `φ` to a modal `S4` formula valid in `S4` iff `φ` is
-intuitionistically valid. `gmt_translate` (from `unicode_fol_kit.hol`) returns the modal AST;
+intuitionistically valid. `gmt_translate` (from `unicode_logic_kit.hol`) returns the modal AST;
 render it with `.to_unicode_str()`:
 
 ```python
-from unicode_fol_kit.hol import gmt_translate
+from unicode_logic_kit.hol import gmt_translate
 
 gmt_translate(p("P ∨ ¬P")).to_unicode_str()    # → '□P ∨ □¬□P'
 gmt_translate(p("¬¬P → P")).to_unicode_str()   # → '□(□¬□¬□P → □P)'

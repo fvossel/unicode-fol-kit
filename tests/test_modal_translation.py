@@ -12,16 +12,16 @@ import random
 
 import pytest
 
-from unicode_fol_kit.fol.modal_translation import standard_translation
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.modal_translation import standard_translation
+from unicode_logic_kit.fol.nodes import (
     Atom, Constant, Variable, Not, And, Or, Implies, Iff, Xor,
     Box, Diamond, Knows, Believes,
     Always, Eventually, Next, Until,
     Quantifier, SortedQuantifier,
     LukNegation, Lambda, LambdaVar,
 )
-from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
-from unicode_fol_kit.semantics.tarski import Structure, satisfies
+from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
+from unicode_logic_kit.semantics.tarski import Structure, satisfies
 
 P = Atom("P", [])
 Q = Atom("Q", [])
@@ -365,13 +365,13 @@ def test_lambda_rejected():
     ("□(N → N)", True),
 ])
 def test_atom_named_like_a_relation_is_decided_not_crashed(text, expected):
-    from unicode_fol_kit.fol.modal_translation import hybrid_is_valid
-    from unicode_fol_kit.fol.msflparser import MSFLParser
+    from unicode_logic_kit.fol.modal_translation import hybrid_is_valid
+    from unicode_logic_kit.fol.msflparser import MSFLParser
     assert hybrid_is_valid(MSFLParser(modal=True).parse(text)) is expected
 
 
 def test_only_colliding_atoms_are_renamed():
-    from unicode_fol_kit.fol.msflparser import MSFLParser
+    from unicode_logic_kit.fol.msflparser import MSFLParser
     parse = MSFLParser(modal=True).parse
     assert standard_translation(parse("R → ◇R"), world="w").to_unicode_str() == \
         "R·(w) → ∃w0 (R(w, w0) ∧ R·(w0))"

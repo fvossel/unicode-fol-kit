@@ -25,9 +25,9 @@ from itertools import product
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import Atom, And, Implies, Box, Diamond, Always, Next
-from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
-from unicode_fol_kit.hol.isabelle_runner import (
+from unicode_logic_kit.fol.nodes import Atom, And, Implies, Box, Diamond, Always, Next
+from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
+from unicode_logic_kit.hol.isabelle_runner import (
     isabelle_available, isabelle_decide_modal, VALID, INVALID,
 )
 

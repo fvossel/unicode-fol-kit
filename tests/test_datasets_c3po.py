@@ -1,4 +1,4 @@
-"""Tests for unicode_fol_kit.eval.datasets.c3po (C3PO adapter).
+"""Tests for unicode_logic_kit.eval.datasets.c3po (C3PO adapter).
 
 Fixture provenance (``tests/fixtures/c3po_mini.jsonl``): 8 hand-written
 SYNTHETIC classes in the verified upstream ``classes.csv`` field format (see
@@ -14,9 +14,9 @@ Chem.RemoveHs(...)`` exactly — none of it is copied from a first run of the
 code under test.
 
 Skipped entirely (module-level ``importorskip``) on a machine without
-RDKit — :func:`~unicode_fol_kit.eval.datasets.c3po.load_c3po` itself needs no
+RDKit — :func:`~unicode_logic_kit.eval.datasets.c3po.load_c3po` itself needs no
 chemistry at all (it only reads JSON), but essentially every meaningful test
-here exercises :func:`~unicode_fol_kit.eval.datasets.c3po.score_definition`,
+here exercises :func:`~unicode_logic_kit.eval.datasets.c3po.score_definition`,
 which does.
 """
 
@@ -28,8 +28,8 @@ rdkit = pytest.importorskip("rdkit")
 
 import json
 
-from unicode_fol_kit.eval.datasets import DatasetExample, DATASET_INFO, audit_examples
-from unicode_fol_kit.eval.datasets.c3po import load_c3po, score_definition, DefinitionScore
+from unicode_logic_kit.eval.datasets import DatasetExample, DATASET_INFO, audit_examples
+from unicode_logic_kit.eval.datasets.c3po import load_c3po, score_definition, DefinitionScore
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _C3PO_FIXTURE = _FIXTURES / "c3po_mini.jsonl"
@@ -117,7 +117,7 @@ def test_load_c3po_known_bad_flag():
 
 def test_load_c3po_positional_id_fallback_for_id_less_row():
     """A record with no 'id' field falls back to f"c3po:{line_no}"."""
-    from unicode_fol_kit.eval.datasets.c3po import _example_from_record
+    from unicode_logic_kit.eval.datasets.c3po import _example_from_record
     example = _example_from_record({"definition": "no id here"}, 42, frozenset())
     assert example.id == "c3po:42"
     assert example.meta["chebi_id"] is None
@@ -231,7 +231,7 @@ def test_score_definition_from_a_pre_parsed_node_gives_the_same_result():
     """Passing an already-parsed Node (as chem.parse_chemlog_tptp would
     produce) must be equivalent to passing the raw TPTP text -- dialect is
     then irrelevant (and ignored)."""
-    from unicode_fol_kit.chem import parse_chemlog_tptp
+    from unicode_logic_kit.chem import parse_chemlog_tptp
     node = parse_chemlog_tptp(_CARBOXY_FORMULA)
     score = score_definition(node, _POSITIVES, _NEGATIVES)
     assert (score.tp, score.fp, score.fn, score.tn) == (2, 0, 1, 3)

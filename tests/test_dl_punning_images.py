@@ -36,11 +36,11 @@ import subprocess
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit import api
-from unicode_fol_kit.dl.datatypes import Datatype, UnsupportedDatatypeError
-from unicode_fol_kit.fol.nodes import And as FAnd, Atom, Constant
-from unicode_fol_kit.semantics.tarski import Structure, satisfies
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit import api
+from unicode_logic_kit.dl.datatypes import Datatype, UnsupportedDatatypeError
+from unicode_logic_kit.fol.nodes import And as FAnd, Atom, Constant
+from unicode_logic_kit.semantics.tarski import Structure, satisfies
 
 A, B, C = dl.Atomic("A"), dl.Atomic("B"), dl.Atomic("C")
 INT = Datatype("xsd:integer")
@@ -198,7 +198,7 @@ _VAMPIRE = _vampire_route()
 
 
 def _eprover_ready():
-    from unicode_fol_kit.atp import eprover_available
+    from unicode_logic_kit.atp import eprover_available
     return eprover_available() is True
 
 

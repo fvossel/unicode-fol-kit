@@ -7,7 +7,7 @@ element of ``S`` (``c:A`` and ``c:B`` put it in both), and ``c:S`` here with a p
 valid, and a fof text that only guards the quantifier (``human(X) => mortal(X)``) has
 the countermodel in which ``socrates`` is no Human at all.
 
-:func:`~unicode_fol_kit.atp._tptp_problem.generate_tptp_problem_with_mapping` therefore
+:func:`~unicode_logic_kit.atp._tptp_problem.generate_tptp_problem_with_mapping` therefore
 writes, next to the non-emptiness line of every sort, one ``sort_member_<i>`` axiom
 line per sorted constant. The constant in that line must be THE TOKEN THE PREMISES USE,
 and the writer renames constants: ``human:Human`` is written ``human_term`` (the sort
@@ -24,13 +24,13 @@ import subprocess
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp._tptp_problem import generate_tptp_problem_with_mapping
-from unicode_fol_kit.atp.eprover_backend import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp._tptp_problem import generate_tptp_problem_with_mapping
+from unicode_logic_kit.atp.eprover_backend import (
     check_entailment_eprover_detailed, eprover_available,
 )
-from unicode_fol_kit.atp.tstp import extract_szs_status
-from unicode_fol_kit.atp.vampire_entailment import (
+from unicode_logic_kit.atp.tstp import extract_szs_status
+from unicode_logic_kit.atp.vampire_entailment import (
     _spawn_vampire, check_entailment_vampire_detailed,
 )
 

@@ -14,14 +14,14 @@ bound; the opposite verdict never.
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import tableau
-from unicode_fol_kit.atp.protocol import get_backend
-from unicode_fol_kit.atp.tableau import TableauProof
-from unicode_fol_kit.atp.tableau_check import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import tableau
+from unicode_logic_kit.atp.protocol import get_backend
+from unicode_logic_kit.atp.tableau import TableauProof
+from unicode_logic_kit.atp.tableau_check import (
     TableauCheckError, check_entailment_tableau_detailed, check_tableau_proof,
 )
-from unicode_fol_kit.fol.nodes import And, Atom, Constant, Implies, Not, Quantifier, Variable
+from unicode_logic_kit.fol.nodes import And, Atom, Constant, Implies, Not, Quantifier, Variable
 
 x = Variable("x")
 alpha = Constant("alpha")

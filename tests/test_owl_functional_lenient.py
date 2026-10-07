@@ -33,13 +33,13 @@ import json
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit import api
-from unicode_fol_kit.dl.owl_functional import (
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit import api
+from unicode_logic_kit.dl.owl_functional import (
     OwlFunctionalResult, OwlFunctionalSyntaxError, OwlFunctionalUnsupportedError,
     RefusedAxiom,
 )
-from unicode_fol_kit.fol.nodes import Not as FNot
+from unicode_logic_kit.fol.nodes import Not as FNot
 
 TIMEOUT_MS = 30000
 

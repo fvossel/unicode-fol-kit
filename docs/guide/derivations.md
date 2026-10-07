@@ -14,7 +14,7 @@ Leaves carry a real toolkit lambda-term; the composing builders reduce the appli
 term automatically:
 
 ```python
-from unicode_fol_kit import CCGDerivation as D, MSFLParser, Constant
+from unicode_logic_kit import CCGDerivation as D, MSFLParser, Constant
 
 p = MSFLParser()
 
@@ -86,7 +86,7 @@ lambda reduction can be drawn with the same renderers — the original term on t
 `β` step below, the normal form at the bottom:
 
 ```python
-from unicode_fol_kit import reduction_derivation, MSFLParser
+from unicode_logic_kit import reduction_derivation, MSFLParser
 
 print(reduction_derivation(MSFLParser().parse("(λx. Human(x))(alice)")).to_text())
 ```

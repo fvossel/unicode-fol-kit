@@ -1,5 +1,5 @@
-"""Tests for the seven-verb facade (unicode_fol_kit/api.py) and the
-comorphism registry (unicode_fol_kit/comorphism.py).
+"""Tests for the seven-verb facade (unicode_logic_kit/api.py) and the
+comorphism registry (unicode_logic_kit/comorphism.py).
 
 Hand-checked contracts:
 
@@ -17,9 +17,9 @@ import json
 
 import pytest
 
-from unicode_fol_kit import MSFLParser, api
-from unicode_fol_kit.atp.protocol import BackendUnavailable
-from unicode_fol_kit.comorphism import Comorphism, ComorphismRegistry
+from unicode_logic_kit import MSFLParser, api
+from unicode_logic_kit.atp.protocol import BackendUnavailable
+from unicode_logic_kit.comorphism import Comorphism, ComorphismRegistry
 
 _P = MSFLParser()
 
@@ -149,7 +149,7 @@ def test_prove_rejects_backend_logic_mismatch():
 
 def test_prove_unavailable_explicit_backend_raises():
     """An explicitly requested missing backend must raise, never skip."""
-    from unicode_fol_kit.atp.protocol import _REGISTRY, ProverBackend
+    from unicode_logic_kit.atp.protocol import _REGISTRY, ProverBackend
 
     class Ghost(ProverBackend):
         name = "ghost"
@@ -294,7 +294,7 @@ def test_translate_modal_to_fol_standard_translation():
 
 
 def test_translate_alc_reaches_fol_directly():
-    from unicode_fol_kit.dl import parse_concept
+    from unicode_logic_kit.dl import parse_concept
     concept = parse_concept("A ⊓ ∃r.B")
     t = api.translate(concept, "alc", "fol")
     assert t.path == ("concept_to_fol",)

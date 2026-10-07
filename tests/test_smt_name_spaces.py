@@ -22,14 +22,14 @@ import sys
 import pytest
 import z3
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import cvc5_backend
-from unicode_fol_kit.atp.cvc5_backend import _SMTLIB_THEORY_SYMBOLS, _sanitize_many_for_smtlib
-from unicode_fol_kit.atp.incremental import IncrementalSession
-from unicode_fol_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, Z3Backend, z3_relevant_premises
-from unicode_fol_kit.atp.z3_input import parse_smtlib, to_smtlib
-from unicode_fol_kit.atp.z3_models import is_satisfiable
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import cvc5_backend
+from unicode_logic_kit.atp.cvc5_backend import _SMTLIB_THEORY_SYMBOLS, _sanitize_many_for_smtlib
+from unicode_logic_kit.atp.incremental import IncrementalSession
+from unicode_logic_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, Z3Backend, z3_relevant_premises
+from unicode_logic_kit.atp.z3_input import parse_smtlib, to_smtlib
+from unicode_logic_kit.atp.z3_models import is_satisfiable
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Count, Function, Implies, Not, Number, Quantifier, SortedConstant, SortedCount,
     SortedQuantifier, Variable,
 )
@@ -92,7 +92,7 @@ def test_a_valid_problem_over_propositions_named_like_tags_is_proved_with_both_p
 
 def test_a_symbol_spelled_like_the_text_of_a_tag_is_still_no_tag():
     # Z3 prints an integer symbol as ``k!<number>``; a proposition that is spelled so is another symbol
-    from unicode_fol_kit.atp.protocol import _z3_tag
+    from unicode_logic_kit.atp.protocol import _z3_tag
     tag = _z3_tag(1)
     names = [str(tag), str(_z3_tag(0))]
     assert names[0] != names[1]
@@ -103,7 +103,7 @@ def test_a_symbol_spelled_like_the_text_of_a_tag_is_still_no_tag():
 
 
 def test_a_tag_is_recognised_by_its_symbol_and_nothing_else_is():
-    from unicode_fol_kit.atp.protocol import _z3_tag, _z3_tag_number
+    from unicode_logic_kit.atp.protocol import _z3_tag, _z3_tag_number
     assert _z3_tag_number(_z3_tag(0).decl()) == 0
     assert _z3_tag_number(_z3_tag(7).decl()) == 7
     assert _z3_tag_number(z3.Bool("goal").decl()) is None
@@ -166,8 +166,8 @@ _CASES.update({
 
 _CHILD = r"""
 import json, sys
-from unicode_fol_kit.atp.cvc5_backend import Cvc5Backend
-from unicode_fol_kit.fol.nodes import Node
+from unicode_logic_kit.atp.cvc5_backend import Cvc5Backend
+from unicode_logic_kit.fol.nodes import Node
 
 for line in sys.stdin.read().splitlines():
     spec = json.loads(line)
@@ -243,7 +243,7 @@ def test_the_text_of_a_counting_quantifier_over_a_nullary_function_x0_keeps_the_
 
 def test_the_text_of_a_sort_named_x0_is_read_by_z3():
     # sort axiom witnesses are asked for by the caller; the text of the axiom must be a sentence
-    from unicode_fol_kit.fol._msfl_nodes import sort_axioms
+    from unicode_logic_kit.fol._msfl_nodes import sort_axioms
     goal, premises = VALID["sort_x0"]
     text = to_smtlib(goal, list(sort_axioms(goal)))
     assert len(z3.parse_smt2_string(text)) == 2
@@ -319,7 +319,7 @@ def test_the_core_of_a_predicate_named_less_than_is_written_with_that_name(cvc5)
     ("(P a)", {"P": "P"}, "(P a)"),                                     # a name left as it is
 ])
 def test_reverse_mapping_of_smtlib_text_reads_whole_symbols(text, reverse, expected):
-    from unicode_fol_kit.atp.cvc5_backend import _reverse_map_smtlib_text
+    from unicode_logic_kit.atp.cvc5_backend import _reverse_map_smtlib_text
     assert _reverse_map_smtlib_text(text, reverse) == expected
 
 
@@ -376,7 +376,7 @@ def test_a_text_that_binds_a_name_and_its_marked_form_binds_two_variables():
 def test_a_marked_name_that_nothing_else_uses_is_read_as_the_variable_it_was_written_for():
     # to_z3 writes the variable x as the symbol x!v; the way back reads it as x
     f = Quantifier("∀", X, P(X))
-    from unicode_fol_kit.atp.z3_input import from_z3
+    from unicode_logic_kit.atp.z3_input import from_z3
     assert from_z3(f.to_z3()) == f
 
 
@@ -474,7 +474,7 @@ def test_the_text_of_a_lone_true_reads_back_as_true():
 # ---------------------------------------------------------------------------------------------------------
 @pytest.fixture(scope="module")
 def arith():
-    from unicode_fol_kit.atp import z3_arith
+    from unicode_logic_kit.atp import z3_arith
     return z3_arith
 
 

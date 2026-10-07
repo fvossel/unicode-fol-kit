@@ -23,7 +23,7 @@ Hand-checked contracts, each pinned to why the expected value is correct:
   ``Verdict`` unchanged — the strongest evidence this suite can offer,
   exactly like ``test_eprover_zipperposition.py``'s own live classes.
 * The HETS image is pinned by DIGEST, not a movable ``:latest`` tag — see
-  ``unicode_fol_kit/hets/docker.py`` for how the digest was verified to be
+  ``unicode_logic_kit/hets/docker.py`` for how the digest was verified to be
   the exact build (HETS 0.108.0) the module docstring already claims.
 """
 
@@ -31,14 +31,14 @@ import subprocess
 
 import pytest
 
-from unicode_fol_kit import MSFLParser, Verdict
-from unicode_fol_kit import hets as hets_pkg
-from unicode_fol_kit.atp import cvc5_backend as cvc5b
-from unicode_fol_kit.atp import eprover_backend as eb
-from unicode_fol_kit.atp import hets_backend as hb
-from unicode_fol_kit.atp import protocol as proto
-from unicode_fol_kit.atp.protocol import ProverBackend, get_backend
-from unicode_fol_kit.hets import docker as hets_docker
+from unicode_logic_kit import MSFLParser, Verdict
+from unicode_logic_kit import hets as hets_pkg
+from unicode_logic_kit.atp import cvc5_backend as cvc5b
+from unicode_logic_kit.atp import eprover_backend as eb
+from unicode_logic_kit.atp import hets_backend as hb
+from unicode_logic_kit.atp import protocol as proto
+from unicode_logic_kit.atp.protocol import ProverBackend, get_backend
+from unicode_logic_kit.hets import docker as hets_docker
 
 _PARSE = MSFLParser().parse
 _PREMISES = [_PARSE("P(alice)"), _PARSE("∀x (P(x) → Q(x))")]
@@ -255,7 +255,7 @@ def test_prover9_decide_carries_solver_version_into_the_verdict(fresh_version_ca
     monkeypatch.delenv("UFK_PROVER9_WSL", raising=False)
     fake = _FakeRun({("fake-prover9", "-h"): (_PROVER9_HELP, "")})
     monkeypatch.setattr(subprocess, "run", fake)
-    import unicode_fol_kit.atp.prover9_entailment as p9
+    import unicode_logic_kit.atp.prover9_entailment as p9
     monkeypatch.setattr(p9, "check_logical_entailment", lambda *a, **kw: True)
 
     v = get_backend("prover9").decide(_GOAL, _PREMISES)
@@ -275,7 +275,7 @@ def test_prover9_decide_survives_a_version_probe_decode_error(fresh_version_cach
                      UnicodeDecodeError("utf-8", b"\xff\xfe", 0, 1,
                                         "invalid start byte")})
     monkeypatch.setattr(subprocess, "run", fake)
-    import unicode_fol_kit.atp.prover9_entailment as p9
+    import unicode_logic_kit.atp.prover9_entailment as p9
     monkeypatch.setattr(p9, "check_logical_entailment", lambda *a, **kw: True)
 
     v = get_backend("prover9").decide(_GOAL, _PREMISES)   # must not raise
@@ -301,7 +301,7 @@ def test_vampire_decide_carries_solver_version_into_the_verdict(fresh_version_ca
     canned = {"status": "proved", "reason": None, "szs_status": "Theorem",
               "derivation": None}
     monkeypatch.setattr(
-        "unicode_fol_kit.atp.vampire_entailment.check_entailment_vampire_detailed",
+        "unicode_logic_kit.atp.vampire_entailment.check_entailment_vampire_detailed",
         lambda *a, **kw: canned)
 
     v = get_backend("vampire").decide(_GOAL, _PREMISES)
@@ -329,7 +329,7 @@ def test_vampire_decide_survives_a_version_probe_decode_error(
     canned = {"status": "proved", "reason": None, "szs_status": "Theorem",
               "derivation": None}
     monkeypatch.setattr(
-        "unicode_fol_kit.atp.vampire_entailment.check_entailment_vampire_detailed",
+        "unicode_logic_kit.atp.vampire_entailment.check_entailment_vampire_detailed",
         lambda *a, **kw: canned)
 
     v = get_backend("vampire").decide(_GOAL, _PREMISES)   # must not raise
@@ -696,7 +696,7 @@ def test_verdict_positional_fields_keep_their_0_27_order():
     # 0.27.0 used (status, backend, logic, reason, szs_status, wall_time,
     # countermodel, proof, detail, agreement).
     from dataclasses import fields
-    from unicode_fol_kit.atp.protocol import Verdict
+    from unicode_logic_kit.atp.protocol import Verdict
     names = [f.name for f in fields(Verdict)]
     assert names[:10] == ["status", "backend", "logic", "reason", "szs_status",
                           "wall_time", "countermodel", "proof", "detail", "agreement"]

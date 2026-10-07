@@ -23,13 +23,13 @@ import pathlib
 import pytest
 from lark import Lark
 
-from unicode_fol_kit.fol.msflparser import LambdaTransformer
-from unicode_fol_kit.fol._fol_nodes import (
+from unicode_logic_kit.fol.msflparser import LambdaTransformer
+from unicode_logic_kit.fol._fol_nodes import (
     Not, build_grammar, build_transform_handlers, register_parser_op, PARSER_OPS,
 )
 
 _GDIR = (pathlib.Path(__file__).parent.parent
-         / "unicode_fol_kit" / "fol" / "grammars").resolve()
+         / "unicode_logic_kit" / "fol" / "grammars").resolve()
 
 
 # Expected operator rule-aliases the assembled grammar/transformer must expose.
@@ -109,7 +109,7 @@ def test_down_inherited_by_modes_that_clone_modal_operators():
     (only the bound name's NAMESPACE — hybrid nominals — is unsorted/
     order-0), so inheriting it is the right default, the same one ``@``/bare
     nominals already established."""
-    from unicode_fol_kit.fol._fol_nodes import parser_ops_for_mode
+    from unicode_logic_kit.fol._fol_nodes import parser_ops_for_mode
     for mode in ("third_order_modal", "modal_sorted"):
         aliases = {op.rule_alias for op in parser_ops_for_mode(mode)}
         assert "down_" in aliases, (mode, sorted(aliases))

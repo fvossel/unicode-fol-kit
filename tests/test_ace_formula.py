@@ -15,13 +15,13 @@ from pathlib import Path
 
 import pytest
 
-from unicode_fol_kit import Box, Diamond, MSFLParser, Obligatory, Permitted
-from unicode_fol_kit.ace import (
+from unicode_logic_kit import Box, Diamond, MSFLParser, Obligatory, Permitted
+from unicode_logic_kit.ace import (
     AceUnsupportedError, ace_drs_to_formula, ace_to_formula, ape_available,
     map_ace_drs, parse_ape_drs,
 )
-from unicode_fol_kit.drt import drs_to_fol
-from unicode_fol_kit.eval.equivalence import equivalent
+from unicode_logic_kit.drt import drs_to_fol
+from unicode_logic_kit.eval.equivalence import equivalent
 
 live = pytest.mark.skipif(not ape_available(),
                           reason="no APE binary reachable")
@@ -84,7 +84,7 @@ def test_a_wh_question_is_an_open_formula():
     assert result.query_variables == (("x1", "who"),)
     # x1 stays FREE: answering is model finding, not proof.
     assert result.formula.to_unicode_str() == "∃e1 Wait(e1, x1)"
-    from unicode_fol_kit import free_variables
+    from unicode_logic_kit import free_variables
     assert {v.name for v in free_variables(result.formula)} == {"x1"}
 
 
@@ -92,7 +92,7 @@ def test_a_yesno_question_is_closed_but_keeps_its_force():
     result = _formula("question-yesno")
     assert result.kind == "yesno_question"
     assert result.query_variables == ()
-    from unicode_fol_kit import free_variables
+    from unicode_logic_kit import free_variables
     assert not free_variables(result.formula)
     # Same content as the assertion "John waits." — the difference lives
     # in kind, which is exactly the bit ace_to_fol could not carry.
@@ -145,7 +145,7 @@ def test_arithmetic_translates_and_the_arith_route_decides_it():
     # The DEFAULT z3 route reads + uninterpreted (measured; documented at
     # translate.arithmetic) — deciding the fragment is is_valid_arith's
     # job, and it must prove the truth and refute a falsehood.
-    from unicode_fol_kit.atp.z3_arith import is_valid_arith
+    from unicode_logic_kit.atp.z3_arith import is_valid_arith
     assert is_valid_arith(formula, sort="int") is True
     assert is_valid_arith(MSFLParser().parse("1 + 2 = 4"), sort="int") is False
 
@@ -202,12 +202,12 @@ def test_ace_to_formula_live_matches_the_recorded_route():
 
 @live
 def test_a_live_modal_formula_reaches_the_kits_modal_backends():
-    from unicode_fol_kit.fol.qml import qml_is_valid
+    from unicode_logic_kit.fol.qml import qml_is_valid
 
     # □φ → ◇φ holds on any SERIAL frame (D); "must wait" entails "can
     # wait" there. A smoke test that the produced nodes are first-class
     # citizens of the kit's modal machinery, not just printable.
-    from unicode_fol_kit import Implies
+    from unicode_logic_kit import Implies
     must = ace_to_formula("John must wait.").formula
     can = ace_to_formula("John can wait.").formula
     assert qml_is_valid(Implies(must, can), frame="KD") is True

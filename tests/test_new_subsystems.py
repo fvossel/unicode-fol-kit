@@ -10,18 +10,18 @@ import random
 
 import pytest
 
-from unicode_fol_kit import MSFLParser, is_valid, is_satisfiable
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import MSFLParser, is_valid, is_satisfiable
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Implies, Iff, Xor, Quantifier, Variable, Constant,
 )
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     truth_table, is_tautology, is_contradiction, is_satisfiable_tt,
     find_model, find_countermodel, is_satisfiable_finite, is_valid_finite,
     is_valid_tableau, prove_tableau, tableau_model, tableau_closed,
     int_valid, int_countermodel, to_english,
 )
-from unicode_fol_kit.semantics.tarski import models
-from unicode_fol_kit.semantics.modelfinder import (
+from unicode_logic_kit.semantics.tarski import models
+from unicode_logic_kit.semantics.modelfinder import (
     _universal_closure, _free_var_names, _Signature,
 )
 
@@ -269,7 +269,7 @@ def test_intuitionistic_subset_of_classical():
 # ---------------------------------------------------------------------------
 
 def test_exports():
-    import unicode_fol_kit as u
+    import unicode_logic_kit as u
     for name in ("truth_table", "TruthTable", "is_tautology", "is_contradiction",
                  "is_satisfiable_tt", "find_model", "find_countermodel",
                  "is_satisfiable_finite", "is_valid_finite", "is_valid_tableau",

@@ -17,11 +17,11 @@ import random
 
 import pytest
 
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser, is_valid,
     Atom, Not, And, Or, Implies, Iff, Box,
 )
-from unicode_fol_kit.semantics.relevant import (
+from unicode_logic_kit.semantics.relevant import (
     RelevantModel, rel_satisfies, rel_countermodel, rel_valid,
 )
 

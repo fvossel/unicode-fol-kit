@@ -10,10 +10,10 @@ suite: nanoCoP-M is opt-in ONLY under it.
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.atp import nanocop_backend as nb
-from unicode_fol_kit.atp.nanocop_backend import NanocopBackend, to_nanocop
-from unicode_fol_kit.atp.protocol import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.atp import nanocop_backend as nb
+from unicode_logic_kit.atp.nanocop_backend import NanocopBackend, to_nanocop
+from unicode_logic_kit.atp.protocol import (
     BackendUnavailable,
     default_chain,
     get_backend,
@@ -56,7 +56,7 @@ def test_name_collision_refused():
     """Kit predicates 'P' and 'p'... the kit's grammar cannot even parse a
     lowercase predicate, but direct AST construction can: both would render
     as Prolog 'p' — refuse, never alias (NXF discipline)."""
-    from unicode_fol_kit.fol.nodes import And as _And, Atom as _Atom
+    from unicode_logic_kit.fol.nodes import And as _And, Atom as _Atom
 
     clash = _And(_Atom("Px", ()), _Atom("px", ()))
     with pytest.raises(NotImplementedError, match="refusing to alias"):
@@ -64,7 +64,7 @@ def test_name_collision_refused():
 
 
 def test_equality_and_free_variables_refused():
-    from unicode_fol_kit.fol.nodes import Atom as _Atom, Variable as _Var
+    from unicode_logic_kit.fol.nodes import Atom as _Atom, Variable as _Var
 
     with pytest.raises(NotImplementedError, match="equality"):
         to_nanocop(_PARSE("□(x1 = x1)") if False else _Atom("=", (_Var("x"), _Var("x"))))

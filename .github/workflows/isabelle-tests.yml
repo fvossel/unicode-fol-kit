@@ -12,7 +12,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'unicode_fol_kit/hol/**'
+      - 'unicode_logic_kit/hol/**'
       - 'tests/test_isabelle_runner.py'
       - 'tests/test_isabelle_runner_live.py'
       - 'tests/test_hol_isabelle_nonmodal_live.py'
@@ -24,7 +24,7 @@ on:
       - '.github/workflows/isabelle-tests.yml'
   pull_request:
     paths:
-      - 'unicode_fol_kit/hol/**'
+      - 'unicode_logic_kit/hol/**'
       - 'tests/test_isabelle_runner.py'
       - 'tests/test_isabelle_runner_live.py'
       - 'tests/test_hol_isabelle_nonmodal_live.py'
@@ -114,7 +114,7 @@ jobs:
         run: |
           export PATH="$HOME/${ISABELLE_VERSION}/bin:$PATH"
           export UFK_ISABELLE_HOME="$HOME/${ISABELLE_VERSION}"
-          python -c "from unicode_fol_kit.hol.isabelle_runner import find_isabelle; print('discovered:', find_isabelle())"
+          python -c "from unicode_logic_kit.hol.isabelle_runner import find_isabelle; print('discovered:', find_isabelle())"
           # Runner unit tests first (fast, no Isabelle build), then EVERY
           # isabelle_live test in the suite — the marker selection means a new
           # live test file is covered without editing this list. SERIAL on

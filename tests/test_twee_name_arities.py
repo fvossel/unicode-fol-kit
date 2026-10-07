@@ -21,15 +21,15 @@ import re
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import twee_entailment as te
-from unicode_fol_kit.atp.protocol import get_backend
-from unicode_fol_kit.atp.twee_backend import TweeBackend
-from unicode_fol_kit.fol._identifiers import symbol_names
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import twee_entailment as te
+from unicode_logic_kit.atp.protocol import get_backend
+from unicode_logic_kit.atp.twee_backend import TweeBackend
+from unicode_logic_kit.fol._identifiers import symbol_names
+from unicode_logic_kit.fol.nodes import (
     Atom, Constant, Function, Measure, Quantifier, SortedConstant, Variable,
 )
-from unicode_fol_kit.fol.tptp_input import parse_tptp
+from unicode_logic_kit.fol.tptp_input import parse_tptp
 
 _X, _Y = Variable("x"), Variable("y")
 _AA, _BB, _CC, _FF = (Constant(name) for name in ("aa", "bb", "cc", "ff"))

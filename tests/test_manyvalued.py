@@ -12,14 +12,14 @@ are excluded middle (K3-invalid, LP-valid) and explosion (LP paraconsistent).
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import Constant
-from unicode_fol_kit.semantics.manyvalued import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import Constant
+from unicode_logic_kit.semantics.manyvalued import (
     kleene_value, is_valid, is_satisfiable, entails,
     DESIGNATED, TRUTH_VALUES, FALSE, UNDEFINED, TRUE,
 )
 try:  # the package __init__ re-exports are wired by the orchestrator
-    from unicode_fol_kit.semantics import (
+    from unicode_logic_kit.semantics import (
         kleene_value as kleene_value_pkg,
         is_valid as is_valid_pkg,
         entails as entails_pkg,

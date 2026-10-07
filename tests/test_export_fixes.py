@@ -15,9 +15,9 @@ These cover the previously untested export paths:
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol._fol_nodes import Atom, Function, Number, Variable, Xor, Constant
-from unicode_fol_kit.fol.tptp_input import parse_tptp_formula
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol._fol_nodes import Atom, Function, Number, Variable, Xor, Constant
+from unicode_logic_kit.fol.tptp_input import parse_tptp_formula
 
 FOL = MSFLParser()
 MSFOL = MSFLParser(many_sorted=True)
@@ -80,7 +80,7 @@ class TestProver9NullaryAtom:
         # Under set(prolog_style_variables) an upper-case arity-0 symbol is read as
         # a VARIABLE (LADR set_vars_recurse, applied to a bare atom too), so the file
         # the kit hands Prover9 spells the proposition lower-case-initial.
-        from unicode_fol_kit.atp.prover9_entailment import generate_prover9_input_with_mapping
+        from unicode_logic_kit.atp.prover9_entailment import generate_prover9_input_with_mapping
         text, _ = generate_prover9_input_with_mapping([Atom("Rain", [])], Atom("Wind", []))
         assert "  rain." in text and "  wind." in text
         assert "  Rain." not in text and "  Wind." not in text
@@ -116,7 +116,7 @@ class TestTptpNameFolding:
 
     def test_atom_predicate_already_lower_first_letter_is_unchanged(self):
         # A predicate whose first letter is already lower-case (reachable
-        # only via the Python API, e.g. unicode_fol_kit.chem.mol — the
+        # only via the Python API, e.g. unicode_logic_kit.chem.mol — the
         # PREDICATE grammar token always capitalises the first letter for a
         # parsed atom) is emitted byte-for-byte, not touched at all.
         assert Atom("bDOUBLE", []).to_tptp() == "bDOUBLE"

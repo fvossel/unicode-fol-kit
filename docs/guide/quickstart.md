@@ -13,7 +13,7 @@ logic**; the `.parse` method turns a Unicode (or LaTeX-decoded) string into an A
 that every reasoning function consumes.
 
 ```python
-from unicode_fol_kit import MSFLParser
+from unicode_logic_kit import MSFLParser
 
 parser = MSFLParser()
 parse = parser.parse          # a handy shorthand reused throughout this page
@@ -38,7 +38,7 @@ The most useful entry points for a newcomer, all importable straight from the pa
 | render back to text / LaTeX | `φ.to_unicode_str()`, `φ.to_latex()` | `str` |
 
 ```python
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser, is_valid, is_satisfiable, get_model,
     prove, find_model, find_countermodel, truth_table, to_english,
 )
@@ -484,7 +484,7 @@ converts a LaTeX string to the kit's Unicode syntax, and `parse_latex` parses La
 directly into an AST:
 
 ```python
-from unicode_fol_kit import latex_to_unicode, parse_latex
+from unicode_logic_kit import latex_to_unicode, parse_latex
 
 latex_to_unicode(r"\forall x (P(x) \rightarrow Q(x))")
 # → '∀ x (P(x) → Q(x))'
@@ -654,7 +654,7 @@ in-process over a chosen frame (K, T, D, B, K4, S4, S5, …), returning a Kripke
 counter-model internally where one exists.
 
 ```python
-from unicode_fol_kit import MSFLParser, is_modal_valid
+from unicode_logic_kit import MSFLParser, is_modal_valid
 
 mp = MSFLParser(modal=True).parse
 
@@ -711,7 +711,7 @@ classical tautology but *not* a K3 tautology — when `P` is undefined (½), `P 
 ½, which K3 does not designate:
 
 ```python
-from unicode_fol_kit import MSFLParser, truth_table
+from unicode_logic_kit import MSFLParser, truth_table
 
 parse = MSFLParser().parse
 
@@ -758,7 +758,7 @@ tt._repr_html_()
 For a single valuation, `kleene_value` evaluates directly over {0, ½, 1}:
 
 ```python
-from unicode_fol_kit import MSFLParser, kleene_value
+from unicode_logic_kit import MSFLParser, kleene_value
 
 kleene_value(MSFLParser().parse("P ∨ ¬P"), {"P": 0.5})   # → 0.5
 ```
@@ -846,7 +846,7 @@ print(f"Is satisfiable: {tt.is_satisfiable}")    # → Is satisfiable: True
 The kit includes functions to normalize formulas into standard forms:
 
 ```python
-from unicode_fol_kit import to_nnf, to_cnf, to_pnf, to_dnf
+from unicode_logic_kit import to_nnf, to_cnf, to_pnf, to_dnf
 
 parse = MSFLParser().parse
 
@@ -878,7 +878,7 @@ print(to_pnf(ast).to_unicode_str())        # → '∀v0 ∃v1 (¬P(v0) ∨ Q(v0,
 Get structural information about parsed formulas:
 
 ```python
-from unicode_fol_kit import free_variables
+from unicode_logic_kit import free_variables
 
 parse = MSFLParser().parse
 
@@ -904,7 +904,7 @@ A malformed formula raises a descriptive error rather than returning a bad AST, 
 catch and report it. Both `ParsingError` and `NamingError` are exported:
 
 ```python
-from unicode_fol_kit import MSFLParser, ParsingError, NamingError
+from unicode_logic_kit import MSFLParser, ParsingError, NamingError
 
 try:
     MSFLParser().parse("∀x (P(x)")     # raises ParsingError (missing ')')
@@ -917,7 +917,7 @@ except ParsingError as e:
 Common parsing mistakes:
 
 ```python
-from unicode_fol_kit import MSFLParser, ParsingError
+from unicode_logic_kit import MSFLParser, ParsingError
 
 parse = MSFLParser().parse
 

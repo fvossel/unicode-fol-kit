@@ -13,8 +13,8 @@ own stack and does not use the interpreter's recursion limit.
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Function, Implies, Node, Not, Number, Or, Quantifier, Variable,
 )
 

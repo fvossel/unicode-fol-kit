@@ -27,12 +27,12 @@ import tempfile
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.prover9_entailment import generate_prover9_input_with_mapping
-from unicode_fol_kit.atp.protocol import Prover9Backend, get_backend
-from unicode_fol_kit.atp.vampire_entailment import _to_wsl_path
-from unicode_fol_kit.fol.nodes import Atom, Constant, Function, Number, Variable
-from unicode_fol_kit.fol.prover9_input import Prover9ParsingError, parse_prover9, parse_prover9_problem
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.prover9_entailment import generate_prover9_input_with_mapping
+from unicode_logic_kit.atp.protocol import Prover9Backend, get_backend
+from unicode_logic_kit.atp.vampire_entailment import _to_wsl_path
+from unicode_logic_kit.fol.nodes import Atom, Constant, Function, Number, Variable
+from unicode_logic_kit.fol.prover9_input import Prover9ParsingError, parse_prover9, parse_prover9_problem
 
 
 def _formula(text):

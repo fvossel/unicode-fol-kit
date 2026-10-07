@@ -1,16 +1,16 @@
 # The kit as an MCP server
 
-`unicode_fol_kit.mcp` exposes the toolkit over the Model Context Protocol, so a
+`unicode_logic_kit.mcp` exposes the toolkit over the Model Context Protocol, so a
 language model can parse, check, prove, translate and score formulas by calling
 tools instead of by being told the grammar in its prompt. Install the extra and
 run it on stdio — the transport MCP clients spawn:
 
 ```bash
-pip install "unicode-fol-kit[mcp]"
+pip install "unicode-logic-kit[mcp]"
 ```
 
 ```bash
-python -m unicode_fol_kit.mcp
+python -m unicode_logic_kit.mcp
 ```
 
 The design goal is narrow and worth stating, because it shapes every tool's
@@ -50,7 +50,7 @@ larger stack. An answer nested more deeply than the MCP transport can write as J
 text form instead. A direct Python call of a tool function is not held to that limit.
 
 ```python
-from unicode_fol_kit.mcp.server import prove
+from unicode_logic_kit.mcp.server import prove
 
 r = prove("Human(socrates) → Mortal(socrates)",
           ["∀x (Human(x) → Mortal(x))"])
@@ -66,15 +66,15 @@ page do; under MCP the same functions are registered on the server.)
 Within a minor release line (0.N.x) a registered tool is never renamed or
 removed, and its input schema only ever gains new *optional* parameters — an
 existing parameter's name, type and required/optional flag are stable (see
-`unicode_fol_kit/mcp/server.py`'s module docstring for the exact wording, and
+`unicode_logic_kit/mcp/server.py`'s module docstring for the exact wording, and
 `tests/test_mcp_stability.py` for the pinned baseline that enforces it). A
-Python caller of {doc}`../api` can pin `unicode-fol-kit>=0.N,<0.N+1` and be
+Python caller of {doc}`../api` can pin `unicode-logic-kit>=0.N,<0.N+1` and be
 done; an MCP client talking JSON-RPC over stdio has no equivalent of a `pip`
 pin for the session it opens, so the 0.N line itself — checked once at
 connect time, e.g. against `list_tools()` — *is* its integration contract.
 The comorphism registry behind `translate`/`list_translations` carries the
 same guarantee: within a line, no edge is removed, renamed, or has its
-source/target/lossy changed, only added (`unicode_fol_kit/comorphism.py`'s
+source/target/lossy changed, only added (`unicode_logic_kit/comorphism.py`'s
 docstring).
 
 ## Rendering into another syntax
@@ -88,7 +88,7 @@ tool; see {doc}`interoperability` for the premises-taking free function) /
 refusal — for `smtlib` this is `to_z3`'s, naming the construct:
 
 ```python
-from unicode_fol_kit.mcp.server import render
+from unicode_logic_kit.mcp.server import render
 
 print(render("P(a)", to="smtlib")["rendered"])
 # → (set-logic ALL)
@@ -114,7 +114,7 @@ parser `errors`, and `spec_topic` — the section of the served grammar that
 explains this class of failure.
 
 ```python
-from unicode_fol_kit.mcp.server import prove
+from unicode_logic_kit.mcp.server import prove
 
 bad = prove("c(A1) ∧ o(A2)")      # TPTP naming inside unicode syntax
 print(bad["ok"], bad["spec_topic"])
@@ -124,7 +124,7 @@ print(bad["ok"], bad["spec_topic"])
 `get_syntax_spec` then serves that section:
 
 ```python
-from unicode_fol_kit.mcp.server import get_syntax_spec
+from unicode_logic_kit.mcp.server import get_syntax_spec
 
 spec = get_syntax_spec("naming")
 print(spec["ok"], len(spec["rules"]))       # → True 5
@@ -150,7 +150,7 @@ often the majority, so the topic is chosen by weighing how *far* each dialect
 read against how *many* agree:
 
 ```python
-from unicode_fol_kit.mcp.server import prove
+from unicode_logic_kit.mcp.server import prove
 
 print(prove("A ∧ B ∨ C")["spec_topic"])    # → operators
 print(prove("∀ P(x)")["spec_topic"])       # → quantifiers
@@ -168,7 +168,7 @@ predicate and fail in exactly the same place.
 the topic, and whether the text converged.
 
 ```python
-from unicode_fol_kit.mcp.server import diagnose
+from unicode_logic_kit.mcp.server import diagnose
 
 step = diagnose("A ∧ B ∨ C")
 print(step["ok"], step["spec_topic"])       # → False operators
@@ -177,7 +177,7 @@ print(step["suggestion"][:64])
 ```
 
 ```python
-from unicode_fol_kit.mcp.server import diagnose
+from unicode_logic_kit.mcp.server import diagnose
 
 step = diagnose("∀x (P(x) → Q(x))")
 print(step["ok"], step["converged"])        # → True True
@@ -206,7 +206,7 @@ generation attempt for nothing otherwise:
   universal closure.
 
 ```python
-from unicode_fol_kit.mcp.server import repair_formula
+from unicode_logic_kit.mcp.server import repair_formula
 
 fixed = repair_formula("∀x (1,2-diacyl(x) → Lipid(x))")
 print(fixed["repaired_text"])
@@ -219,7 +219,7 @@ Mixed connectives are not among them, and that is the point: `A ∧ B ∨ C` has
 two readings, so bracketing it would be a guess dressed as a repair.
 
 ```python
-from unicode_fol_kit.mcp.server import repair_formula
+from unicode_logic_kit.mcp.server import repair_formula
 
 refused = repair_formula("A(x) ∧ B(x) ∨ C(x)")
 print(refused["ok"], refused["issues"][0]["kind"], refused["spec_topic"])
@@ -237,7 +237,7 @@ parsers that demand it.)
 measures at once, which matters because they disagree in informative ways:
 
 ```python
-from unicode_fol_kit.mcp.server import score_batch
+from unicode_logic_kit.mcp.server import score_batch
 
 r = score_batch(["∀x (P(x) → Q(x))", "P(a) ∧ Q(a)"],
                 ["∀y (P(y) → Q(y))", "Q(a) ∧ P(a)"])
@@ -259,7 +259,7 @@ argument that bridges a declared argument-permutation relationship — e.g.
 `LovedBy(x, y) ↔ Loves(y, x)` — that no *automatic* alignment is allowed to
 guess (guessing converses from lexical similarity alone would just as
 happily "forgive" a genuine subject/object-swap translation error; see
-{mod}`unicode_fol_kit.eval.converses`'s module docstring for the full
+{mod}`unicode_logic_kit.eval.converses`'s module docstring for the full
 reasoning). Only the SOLVER level of `equivalence` ever honours it, and the
 result is tagged with its own `method_used` value,
 `"solver_modulo_converses"`, so it never gets silently merged into a plain
@@ -267,7 +267,7 @@ result is tagged with its own `method_used` value,
 `{"a": [name, arity], "b": [name, arity], "permutation": [...]}`:
 
 ```python
-from unicode_fol_kit.mcp.server import compare_formulas
+from unicode_logic_kit.mcp.server import compare_formulas
 
 r = compare_formulas(
     "Loves(alice, bob)", "LovedBy(bob, alice)",
@@ -321,7 +321,7 @@ materialises that many worlds, so it can go past `max_atoms` (its own brake
 is `max_columns`). Both land on the identical exact bounds:
 
 ```python
-from unicode_fol_kit.mcp.server import probability_bounds
+from unicode_logic_kit.mcp.server import probability_bounds
 
 constraints = [{"formula": "A", "probability": "7/10"},
                {"formula": "A → B", "probability": "4/5"}]
@@ -340,7 +340,7 @@ The chemistry group evaluates a definition against a real molecule; see
 {doc}`model-checking` for the layer underneath.
 
 ```python
-from unicode_fol_kit.mcp.chem_tools import check_molecule
+from unicode_logic_kit.mcp.chem_tools import check_molecule
 
 r = check_molecule("?[X,Y]: (c(X) & o(Y) & bond(X,Y))", "CCO")
 print(r["ok"], r["holds"], r["steps"])   # → True True 23
@@ -355,7 +355,7 @@ definition as a correct negative.
 Batch form, plus the failure explanation:
 
 ```python
-from unicode_fol_kit.mcp.chem_tools import check_molecules
+from unicode_logic_kit.mcp.chem_tools import check_molecules
 
 amide = "?[C,O,N]: (c(C) & o(O) & n(N) & bDOUBLE(C,O) & bSINGLE(C,N))"
 r = check_molecules(amide, ["NCC(=O)NCC(=O)O", "CCO"])
@@ -364,7 +364,7 @@ print([(e["smiles"], e["holds"]) for e in r["results"]])
 ```
 
 ```python
-from unicode_fol_kit.mcp.chem_tools import explain_molecule_failure
+from unicode_logic_kit.mcp.chem_tools import explain_molecule_failure
 
 e = explain_molecule_failure("?[X]: (n(X))", "CCO")
 print(e["domain"], e["atoms_by_type"]["n"])
@@ -378,7 +378,7 @@ is answered with the data rather than with a verdict.
 `simplify_definition` is the anti-bloat pass over MCP:
 
 ```python
-from unicode_fol_kit.mcp.chem_tools import simplify_definition
+from unicode_logic_kit.mcp.chem_tools import simplify_definition
 
 s = simplify_definition("?[A,B]: (c(A) & c(B) & A!=B)")
 print(s["before_unicode"])   # → ∃a ∃b (c(a) ∧ c(b) ∧ a ≠ b)
@@ -388,7 +388,7 @@ print(s["removed_count"])    # → 1
 
 ## Description logic tools
 
-The `dl_*` group wires up `unicode_fol_kit.dl`'s ALCHQ tableau (concept
+The `dl_*` group wires up `unicode_logic_kit.dl`'s ALCHQ tableau (concept
 satisfiability, subsumption, ABox consistency, instance/realization queries,
 TBox classification) — no new reasoning, purely MCP plumbing over what
 {doc}`description-logic` already implements. Every tool takes concept TEXT,
@@ -402,7 +402,7 @@ pairs), `roles` (`[a, b, role]` triples) and `distinct` (`[a, b]` pairs, for
 `ABox.assert_distinct`).
 
 ```python
-from unicode_fol_kit.mcp.server import dl_subsumes, dl_classify
+from unicode_logic_kit.mcp.server import dl_subsumes, dl_classify
 
 tbox = [
     {"equiv": ["Parent", "Person ⊓ ∃hasChild.Person"]},
@@ -421,7 +421,7 @@ tooling's own notation and reports the kit's unicode rendering alongside a
 `to_manchester` round-trip:
 
 ```python
-from unicode_fol_kit.mcp.server import dl_parse_manchester
+from unicode_logic_kit.mcp.server import dl_parse_manchester
 
 r = dl_parse_manchester("hasChild some (Doctor and not Rich)")
 print(r["concept_unicode"])
@@ -438,7 +438,7 @@ transitively-subsumed) role — is `NonSimpleRoleError`, a structured
 `{"error": {...}}`, since the concept text itself parsed fine:
 
 ```python
-from unicode_fol_kit.mcp.server import dl_concept_satisfiable
+from unicode_logic_kit.mcp.server import dl_concept_satisfiable
 
 r = dl_concept_satisfiable("≥2 hasChild.Person", tbox=[{"transitive": "hasChild"}])
 print(r["error"]["type"])

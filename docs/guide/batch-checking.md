@@ -4,9 +4,9 @@ Three questions, three entry points, and they are easy to confuse:
 
 | Question | Entry point |
 |---|---|
-| Does this formula hold in *this* structure? | {func}`~unicode_fol_kit.semantics.evaluate_detailed` — {doc}`model-checking` |
+| Does this formula hold in *this* structure? | {func}`~unicode_logic_kit.semantics.evaluate_detailed` — {doc}`model-checking` |
 | How good is *this* definition against a labelled split? | `eval.datasets.c3po.score_definition` — a confusion matrix |
-| Run *these* definitions over *these* molecules and write down everything that happened | {func}`~unicode_fol_kit.eval.check_definitions` — this page |
+| Run *these* definitions over *these* molecules and write down everything that happened | {func}`~unicode_logic_kit.eval.check_definitions` — this page |
 
 The third is what a campaign needs: thousands of checks, hours of wall clock, and
 a result that survives the run being interrupted. Its whole contract follows from
@@ -27,7 +27,7 @@ is built**, because reporting them as 200 000 identical error rows would bury th
 one thing worth fixing.
 
 ```python
-from unicode_fol_kit.eval import check_definitions
+from unicode_logic_kit.eval import check_definitions
 
 AMIDE = "?[C,O,N]: (c(C) & o(O) & n(N) & bDOUBLE(C,O) & bSINGLE(C,N))"
 
@@ -48,7 +48,7 @@ about the molecules.
 And the configuration side, before anything is built:
 
 ```python
-from unicode_fol_kit.eval import check_definitions
+from unicode_logic_kit.eval import check_definitions
 
 AMIDE = "?[C,O,N]: (c(C) & o(O) & n(N) & bDOUBLE(C,O) & bSINGLE(C,N))"
 try:
@@ -72,7 +72,7 @@ except ValueError as exc:
 as a negative is how an evaluation quietly flatters itself:
 
 ```python
-from unicode_fol_kit.eval import check_definitions
+from unicode_logic_kit.eval import check_definitions
 
 AMIDE = "?[C,O,N]: (c(C) & o(O) & n(N) & bDOUBLE(C,O) & bSINGLE(C,N))"
 row = check_definitions([{"id": "amide", "formula": AMIDE}],
@@ -89,7 +89,7 @@ reject most of a real corpus, so the unknown symbols are reported once per
 definition instead:
 
 ```python
-from unicode_fol_kit.eval import check_definitions
+from unicode_logic_kit.eval import check_definitions
 
 row = check_definitions([{"id": "delegating", "formula": "?[X]: (c(X) & lipid(X))"}],
                         ["CCO"]).rows[0]
@@ -106,12 +106,12 @@ predicate keeps the kit's spelling. The report names the symbol as the
 
 A structure does not depend on the formula. So K definitions over N molecules
 should build N structures, not K·N — and that is exactly what
-{class}`~unicode_fol_kit.chem.StructureCache` does. A call makes one if you pass none (the
+{class}`~unicode_logic_kit.chem.StructureCache` does. A call makes one if you pass none (the
 result's `cache_stats` reports it); pass your own to share it across calls:
 
 ```python
-from unicode_fol_kit.chem import StructureCache
-from unicode_fol_kit.eval import check_definitions
+from unicode_logic_kit.chem import StructureCache
+from unicode_logic_kit.eval import check_definitions
 
 AMIDE = "?[C,O,N]: (c(C) & o(O) & n(N) & bDOUBLE(C,O) & bSINGLE(C,N))"
 ACID = "?[C,O1,O2]: (c(C) & o(O1) & o(O2) & bDOUBLE(C,O1) & bSINGLE(C,O2))"
@@ -150,7 +150,7 @@ names the methylene carbon `c1`), so canonicalising would merge two structures
 whose individuals mean different atoms and mislabel every witness.
 
 ```python
-from unicode_fol_kit.chem import StructureCache
+from unicode_logic_kit.chem import StructureCache
 
 cache = StructureCache()
 full = cache.structure_for("CCO", computed=True)
@@ -169,7 +169,7 @@ Rows are flushed to JSONL after each **definition**, so a run killed at 90 % kee
 
 ```python
 import tempfile, os
-from unicode_fol_kit.eval import check_definitions
+from unicode_logic_kit.eval import check_definitions
 
 AMIDE = "?[C,O,N]: (c(C) & o(O) & n(N) & bDOUBLE(C,O) & bSINGLE(C,N))"
 path = os.path.join(tempfile.mkdtemp(), "rows.jsonl")
@@ -193,8 +193,8 @@ rather than raising: the pair it described simply gets redone.
 
 A real campaign is hundreds of thousands of rows — printing every one would be
 useless and, over a run that size, multi-hundred-megabyte output.
-{meth}`~unicode_fol_kit.eval.ChemBatchResult.to_markdown` /
-{meth}`~unicode_fol_kit.eval.ChemBatchResult.to_html` render a *summary*
+{meth}`~unicode_logic_kit.eval.ChemBatchResult.to_markdown` /
+{meth}`~unicode_logic_kit.eval.ChemBatchResult.to_html` render a *summary*
 instead: `counts` and the cache statistics as tables, then an explicit,
 capped sample of at most `max_rows` non-`ok` rows (their `error_msg` /
 `unknown_predicates` / `witness`, whichever apply) — and the sample section
@@ -202,7 +202,7 @@ always closes with an honest count of what it left out, never a silent
 truncation:
 
 ```python
-from unicode_fol_kit.eval import check_definitions
+from unicode_logic_kit.eval import check_definitions
 
 AMIDE = "?[C,O,N]: (c(C) & o(O) & n(N) & bDOUBLE(C,O) & bSINGLE(C,N))"
 result = check_definitions(
@@ -221,7 +221,7 @@ self-contained, theme-aware page; every SMILES/error message/witness value is
 escaped so a hostile string cannot corrupt the Markdown table or the HTML
 markup.
 
-{class}`~unicode_fol_kit.eval.TheoryReport` (see {doc}`verification`) has the
+{class}`~unicode_logic_kit.eval.TheoryReport` (see {doc}`verification`) has the
 same two methods for the other report this package produces, over cycles /
 satisfiability / subsumption findings rather than campaign rows.
 

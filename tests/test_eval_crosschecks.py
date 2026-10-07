@@ -19,11 +19,11 @@ in the right report field.
 
 import random
 
-from unicode_fol_kit import formulas_are_equivalent, MSFLParser, free_variables
-from unicode_fol_kit.eval import (
+from unicode_logic_kit import formulas_are_equivalent, MSFLParser, free_variables
+from unicode_logic_kit.eval import (
     canonicalize, exact_match, validate, is_wellformed, validate_text,
 )
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Variable, Constant,
     Not, And, Or, Xor, Iff, Implies, Quantifier,
 )

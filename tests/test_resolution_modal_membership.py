@@ -4,7 +4,7 @@ A sorted constant ``c:S`` denotes an element of ``S``, and a constant is a rigid
 atom ``S(c)`` holds at EVERY world of every legal model, with no existence condition. The standard
 translation's guard atom is world-relative (``S(c, w)``) and says nothing of the kind, so the lowered
 problem needs the rigid fact as a hypothesis, in the translation's own vocabulary
-(``∀v0 S(c, v0)``, :func:`~unicode_fol_kit.fol.modal_translation.frame_axioms`). The facts below are
+(``∀v0 S(c, v0)``, :func:`~unicode_logic_kit.fol.modal_translation.frame_axioms`). The facts below are
 derived by hand in the K frame (no condition on the accessibility relation), for ``carl:Human``:
 
 * ``□Human(carl:Human)`` is VALID: at every successor of any world ``carl`` is a ``Human``.
@@ -25,9 +25,9 @@ import time
 
 import pytest
 
-from unicode_fol_kit.atp.resolution import prove
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.atp.resolution import prove
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Box, Constant, Diamond, Implies, Not, Or, Quantifier, SortedConstant, SortedQuantifier,
     Variable,
 )

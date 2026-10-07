@@ -28,9 +28,9 @@ from concurrent.futures import Future
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.atp.portfolio import _verdict_from_dict, portfolio_prove
-from unicode_fol_kit.atp.protocol import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.atp.portfolio import _verdict_from_dict, portfolio_prove
+from unicode_logic_kit.atp.protocol import (
     BackendUnavailable, ProverBackend, Verdict, _REGISTRY, register_backend,
 )
 
@@ -180,7 +180,7 @@ def test_jobs_clamped_to_project_cap(monkeypatch):
         def shutdown(self, wait=True, cancel_futures=False):
             pass
 
-    monkeypatch.setattr("unicode_fol_kit.atp.portfolio.ProcessPoolExecutor", _FakeExecutor)
+    monkeypatch.setattr("unicode_logic_kit.atp.portfolio.ProcessPoolExecutor", _FakeExecutor)
 
     v = portfolio_prove(_MP, backends=list(_TRIO), jobs=100)
     assert seen_max_workers == [8]

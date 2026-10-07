@@ -29,9 +29,9 @@ pytest.importorskip("cvc5")
 
 import z3
 
-from unicode_fol_kit.atp.cvc5_backend import SmtNameMap, _sanitize_many_for_smtlib
-from unicode_fol_kit.atp.z3_input import to_smtlib
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.atp.cvc5_backend import SmtNameMap, _sanitize_many_for_smtlib
+from unicode_logic_kit.atp.z3_input import to_smtlib
+from unicode_logic_kit.fol.nodes import (
     Atom, Constant, Count, Function, Number, Quantifier, SortedCount, SortedQuantifier, Variable,
 )
 
@@ -43,8 +43,8 @@ X, Y = Variable("x"), Variable("y")
 
 _CHILD = r"""
 import json, sys
-from unicode_fol_kit.atp.cvc5_backend import Cvc5Backend
-from unicode_fol_kit.fol.nodes import Node
+from unicode_logic_kit.atp.cvc5_backend import Cvc5Backend
+from unicode_logic_kit.fol.nodes import Node
 
 spec = json.loads(sys.argv[1])
 out = []
@@ -61,7 +61,7 @@ _DIFFERENTIAL_CHILD = r"""
 import json, sys
 sys.path.insert(0, sys.argv[1])
 from _one_name_problems import AT_MOST_TWO, FAMILIES, make_problem
-from unicode_fol_kit.atp.cvc5_backend import Cvc5Backend
+from unicode_logic_kit.atp.cvc5_backend import Cvc5Backend
 
 def answer(goal, premises):
     verdict = Cvc5Backend().decide(goal, premises, timeout=10000)
@@ -319,7 +319,7 @@ def test_cvc5_proves_nearly_every_valid_problem_of_the_batch(differential):
 
 
 def test_without_the_bound_cvc5_and_z3_never_contradict_each_other(differential):
-    from unicode_fol_kit.atp.protocol import Z3Backend
+    from unicode_logic_kit.atp.protocol import Z3Backend
     refuted_by_cvc5 = 0
     for family, seed, premises, goal, answer, _ in differential:
         z3_status = Z3Backend().decide(goal, list(premises)).status

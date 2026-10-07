@@ -1,4 +1,4 @@
-"""Tests for the ALC description-logic reasoner (unicode_fol_kit.dl).
+"""Tests for the ALC description-logic reasoner (unicode_logic_kit.dl).
 
 Hand-checked against standard ALC reasoning (concept (un)satisfiability, subsumption,
 TBox entailment, cyclic-TBox termination via blocking, ABox consistency), and
@@ -19,13 +19,13 @@ import random
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit.fol.nodes import (
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit.fol.nodes import (
     Atom, Not as FNot, And as FAnd, Or as FOr, Box, Diamond, Constant, Variable,
 )
-from unicode_fol_kit.atp.modal_tableau import is_modal_valid
-from unicode_fol_kit.atp.z3_models import is_satisfiable
-from unicode_fol_kit.dl.translate import _translate, _fresh_var_factory
+from unicode_logic_kit.atp.modal_tableau import is_modal_valid
+from unicode_logic_kit.atp.z3_models import is_satisfiable
+from unicode_logic_kit.dl.translate import _translate, _fresh_var_factory
 
 A, B, C = dl.Atomic("A"), dl.Atomic("B"), dl.Atomic("C")
 r = "r"
@@ -316,7 +316,7 @@ def test_instance_and_realize_edge_cases():
     lambda: dl.instance_check(dl.ABox(), "x", dl.Nominal("a")),
 ])
 def test_inverse_role_and_nominal_refused_by_tableau(build):
-    from unicode_fol_kit.dl.tableau import UnsupportedConceptError
+    from unicode_logic_kit.dl.tableau import UnsupportedConceptError
     with pytest.raises(UnsupportedConceptError):
         build()
 

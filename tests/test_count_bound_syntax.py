@@ -26,11 +26,11 @@ Hand-derived expectations, one clause each:
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.__main__ import main
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.naming import ParsingError
-from unicode_fol_kit.fol.nodes import Count, Number, SortedCount
+from unicode_logic_kit import api
+from unicode_logic_kit.__main__ import main
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.naming import ParsingError
+from unicode_logic_kit.fol.nodes import Count, Number, SortedCount
 
 #: The parsers that read the UNSORTED counting quantifier (``Count``) ...
 _UNSORTED = {
@@ -134,7 +134,7 @@ def test_a_signed_zero_is_not_a_count_in_any_reader():
     # "∃=-0 x P(x)" is refused (it used to read as "∃=0 x P(x)", a count of zero), in
     # every grammar that reads a count: the three unsorted ones, the sorted one, and
     # through api.parse_any. The unsigned zero still reads.
-    from unicode_fol_kit.fol._fol_nodes import CountBoundError
+    from unicode_logic_kit.fol._fol_nodes import CountBoundError
     for kwargs in ({}, {"modal": True}, {"second_order": True}):
         with pytest.raises(CountBoundError, match="got '-0'"):
             MSFLParser(**kwargs).parse("∃=-0 x P(x)")
@@ -151,7 +151,7 @@ def test_a_plus_sign_is_refused_by_the_lexer_before_the_count_rule():
     # "+3" has never been a count bound: the NUMBER terminal has no "+", so the lexer stops
     # at it (no sign is accepted, which is the rule; only "-" reaches the count rule, as
     # part of the terminal that terms such as P(-3) need).
-    from unicode_fol_kit.fol.naming import NamingError
+    from unicode_logic_kit.fol.naming import NamingError
     for text in ("∃≤+3 x P(x)", "∃=+0 x P(x)"):
         with pytest.raises(NamingError) as caught:
             MSFLParser().parse(text)

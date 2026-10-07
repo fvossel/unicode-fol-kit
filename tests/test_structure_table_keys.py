@@ -9,10 +9,10 @@ is built, by an ``IllegalStructureError`` that names the key and the key to writ
 """
 import pytest
 
-from unicode_fol_kit import MSFLParser, Structure, holds, satisfies_so
-from unicode_fol_kit.fol.nodes import Atom, Constant, Function, Iff, Quantifier, Variable
-from unicode_fol_kit.semantics.tarski import IllegalStructureError
-from unicode_fol_kit.semantics.modelfinder import find_model
+from unicode_logic_kit import MSFLParser, Structure, holds, satisfies_so
+from unicode_logic_kit.fol.nodes import Atom, Constant, Function, Iff, Quantifier, Variable
+from unicode_logic_kit.semantics.tarski import IllegalStructureError
+from unicode_logic_kit.semantics.modelfinder import find_model
 
 _P = MSFLParser(second_order=True).parse
 _PS = MSFLParser(second_order=True, many_sorted=True).parse

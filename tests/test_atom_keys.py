@@ -8,10 +8,10 @@ as one letter and answer about another problem.
 
 import pytest
 
-from unicode_fol_kit.fol._atom_keys import (
+from unicode_logic_kit.fol._atom_keys import (
     AtomKeys, agent_key, atom_key, plain_atom, refuse_alike_agents, refuse_sorted_constant)
-from unicode_fol_kit.fol._msfl_nodes import SortedConstant
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol._msfl_nodes import SortedConstant
+from unicode_logic_kit.fol.nodes import (
     Atom, Believes, CommonKnowledge, Constant, Function, Implies, Knows, Number, Variable)
 
 

@@ -1,5 +1,5 @@
 """Tests for the single-block second-order ASP checker
-(unicode_fol_kit.semantics.asp_models.asp_holds_so — roadmap C24), and the
+(unicode_logic_kit.semantics.asp_models.asp_holds_so — roadmap C24), and the
 opt-in ``fast=`` wiring into secondorder.holds / so_find_model /
 so_find_countermodel / so_is_satisfiable_finite / so_is_valid_finite and
 team_translation.dependence_holds_eso.
@@ -43,20 +43,20 @@ import pytest
 # not installed.
 pytest.importorskip("clingo")
 
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser, Atom, Not, And, Or, Implies, Iff, Quantifier, Variable, Constant,
     Function, SecondOrderQuantifier, Dependence, SlashedExists,
 )
-from unicode_fol_kit.semantics.tarski import Structure, satisfies
-from unicode_fol_kit.semantics.secondorder import (
+from unicode_logic_kit.semantics.tarski import Structure, satisfies
+from unicode_logic_kit.semantics.secondorder import (
     satisfies_so, holds, MAX_RELATIONS,
     so_find_countermodel, so_is_satisfiable_finite, so_is_valid_finite,
 )
-from unicode_fol_kit.semantics.asp_models import asp_holds_so, _so_quantifier_chain
-from unicode_fol_kit.semantics.nonmonotonic import (
+from unicode_logic_kit.semantics.asp_models import asp_holds_so, _so_quantifier_chain
+from unicode_logic_kit.semantics.nonmonotonic import (
     minimal_entails, circumscription_formula, circumscription_entails_so,
 )
-from unicode_fol_kit.semantics.team_translation import dependence_to_eso, dependence_holds_eso
+from unicode_logic_kit.semantics.team_translation import dependence_to_eso, dependence_holds_eso
 
 X, Y = Variable("x"), Variable("y")
 A, B, C = Constant("a"), Constant("b"), Constant("c")

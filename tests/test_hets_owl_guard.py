@@ -19,10 +19,10 @@ most of them is exactly that nothing was.
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-import unicode_fol_kit.hets.owl_backend as owl_backend
-from unicode_fol_kit.atp.protocol import BackendUnavailable
-from unicode_fol_kit.dl import owl_reasoner
+import unicode_logic_kit.dl as dl
+import unicode_logic_kit.hets.owl_backend as owl_backend
+from unicode_logic_kit.atp.protocol import BackendUnavailable
+from unicode_logic_kit.dl import owl_reasoner
 
 A = dl.Atomic("A")
 INTEGER = dl.Datatype("xsd:integer")

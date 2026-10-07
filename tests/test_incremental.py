@@ -1,10 +1,10 @@
-"""Tests for ``unicode_fol_kit.atp.incremental`` (roadmap K2).
+"""Tests for ``unicode_logic_kit.atp.incremental`` (roadmap K2).
 
-:class:`~unicode_fol_kit.atp.incremental.IncrementalSession` keeps ONE
+:class:`~unicode_logic_kit.atp.incremental.IncrementalSession` keeps ONE
 persistent ``z3.Solver`` alive across many ``decide()`` calls against a
 premise set that only grows/shrinks via native Z3 push/pop, instead of
 rebuilding a fresh ``Solver`` (and re-asserting every premise) per call the
-way :class:`~unicode_fol_kit.atp.protocol.Z3Backend` does. Everything here is
+way :class:`~unicode_logic_kit.atp.protocol.Z3Backend` does. Everything here is
 checked against that STATELESS route — an independent second decision
 procedure, not a self-check — via :func:`_agrees_with_stateless`, which every
 test in the differential batteries below routes through.
@@ -39,12 +39,12 @@ import random as _random
 import pytest
 import z3
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.atp.incremental import IncrementalSession
-from unicode_fol_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, Z3Backend
-from unicode_fol_kit.atp.z3_models import get_model, is_satisfiable, is_valid
-from unicode_fol_kit.fol.nodes import And, Atom, Constant, Implies, Not, Or, Quantifier, Variable
-from unicode_fol_kit.semantics.tarski import Structure, satisfies
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.atp.incremental import IncrementalSession
+from unicode_logic_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, Z3Backend
+from unicode_logic_kit.atp.z3_models import get_model, is_satisfiable, is_valid
+from unicode_logic_kit.fol.nodes import And, Atom, Constant, Implies, Not, Or, Quantifier, Variable
+from unicode_logic_kit.semantics.tarski import Structure, satisfies
 
 FOL = MSFLParser()
 MSFOL = MSFLParser(many_sorted=True)

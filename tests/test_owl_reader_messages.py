@@ -27,10 +27,10 @@ from the tableau and from HermiT.
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit.dl import tableau as dl_tableau
-from unicode_fol_kit.dl.datatypes import Datatype
-from unicode_fol_kit.dl.owl_functional import parse_owl_functional, parse_owl_functional_axioms
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit.dl import tableau as dl_tableau
+from unicode_logic_kit.dl.datatypes import Datatype
+from unicode_logic_kit.dl.owl_functional import parse_owl_functional, parse_owl_functional_axioms
 
 A = dl.Atomic("A")
 INT = Datatype("xsd:integer")

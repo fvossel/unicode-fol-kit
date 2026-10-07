@@ -57,16 +57,16 @@ from pathlib import Path
 import pytest
 from lark import Lark, UnexpectedCharacters, UnexpectedEOF, UnexpectedToken
 
-from unicode_fol_kit.fol._fol_nodes import OPERATORS, build_grammar
-from unicode_fol_kit.fol._ho_nodes import analyse_signatures
-from unicode_fol_kit.fol._modal_nodes import resolve_agent_variables
-from unicode_fol_kit.fol._msfl_nodes import resolve_lambda_scope
-from unicode_fol_kit.fol.msflparser import (
+from unicode_logic_kit.fol._fol_nodes import OPERATORS, build_grammar
+from unicode_logic_kit.fol._ho_nodes import analyse_signatures
+from unicode_logic_kit.fol._modal_nodes import resolve_agent_variables
+from unicode_logic_kit.fol._msfl_nodes import resolve_lambda_scope
+from unicode_logic_kit.fol.msflparser import (
     MSFLParser, _AGENT_MODES, _THIRD_ORDER_MODES,
     _allow_single_letter_function_calls, _GRAMMARS_DIR, _REGISTRY_MODE)
-from unicode_fol_kit.fol.naming import NamingError, ParsingError
-from unicode_fol_kit.fol.nodes import Atom, Constant, Knows, Variable
-from unicode_fol_kit.fol._hybrid_nodes import Down, Nominal
+from unicode_logic_kit.fol.naming import NamingError, ParsingError
+from unicode_logic_kit.fol.nodes import Atom, Constant, Knows, Variable
+from unicode_logic_kit.fol._hybrid_nodes import Down, Nominal
 
 FORALL, EXISTS, LAMBDA = "∀", "∃", "λ"
 PAL_OPEN, PAL_CLOSE = "⟨", "⟩"          # <>, the diamond-PAL delimiters
@@ -223,7 +223,7 @@ def test_down_battery_hand_built_ast():
     of the Earley/LALR agreement check above (catches a shape both parsers
     could agree on yet still get wrong relative to the intended grammar)."""
     kit = MSFLParser(modal=True)
-    from unicode_fol_kit.fol.nodes import Box, Diamond, Not, And, At
+    from unicode_logic_kit.fol.nodes import Box, Diamond, Not, And, At
     x, y, i = Nominal("x"), Nominal("y"), Nominal("i")
     P, Q = Atom("P", []), Atom("Q", [])
     assert kit.parse("↓x.□¬x") == Down(x, Box(Not(x)))

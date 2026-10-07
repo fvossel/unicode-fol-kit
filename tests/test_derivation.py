@@ -1,4 +1,4 @@
-"""CCG-style derivation trees (unicode_fol_kit.fol.derivation).
+"""CCG-style derivation trees (unicode_logic_kit.fol.derivation).
 
 The correctness oracle for the SEMANTICS is the toolkit's own beta-reduction: a
 composed node's ``term`` must equal the beta-normal form of applying one child's term
@@ -13,7 +13,7 @@ import subprocess
 
 import pytest
 
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     CCGDerivation, reduction_derivation, MSFLParser, Constant,
 )
 

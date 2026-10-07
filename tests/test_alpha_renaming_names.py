@@ -29,22 +29,22 @@ import re
 
 import pytest
 
-from unicode_fol_kit import MSFLParser, api, to_fol
-from unicode_fol_kit.atp.fitch import Proof, line, premise, verify_proof, _subst_var
-from unicode_fol_kit.atp.sequent import _subst_pred, _subst_simultaneous
-from unicode_fol_kit.fol._identifiers import (
+from unicode_logic_kit import MSFLParser, api, to_fol
+from unicode_logic_kit.atp.fitch import Proof, line, premise, verify_proof, _subst_var
+from unicode_logic_kit.atp.sequent import _subst_pred, _subst_simultaneous
+from unicode_logic_kit.fol._identifiers import (
     fresh_variables, name_pattern, predicate_pattern, variable_names, variable_pattern,
 )
-from unicode_fol_kit.fol._msfl_nodes import beta_reduce, substitute
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol._msfl_nodes import beta_reduce, substitute
+from unicode_logic_kit.fol.nodes import (
     And, Application, Atom, Cardinality, Constant, Count, Implies, Lambda, LambdaVar,
     Not, Number, Or, Quantifier, SecondOrderQuantifier, SlashedExists, SortedCardinality,
     SortedCount, SortedQuantifier, Variable, free_variables,
 )
 
-# ``unicode_fol_kit.atp.sequent`` is also a function re-exported by the package, which
+# ``unicode_logic_kit.atp.sequent`` is also a function re-exported by the package, which
 # shadows the submodule on attribute access -- import the module by name.
-sequent_mod = importlib.import_module("unicode_fol_kit.atp.sequent")
+sequent_mod = importlib.import_module("unicode_logic_kit.atp.sequent")
 
 x, y, z = Variable("x"), Variable("y"), Variable("z")
 y0, y1 = Variable("y0"), Variable("y1")
@@ -603,21 +603,21 @@ class TestSequentRenaming:
 
 class TestIdentifierHelpers:
     def test_fresh_variable_like_keeps_the_letter_and_skips_taken_names(self):
-        from unicode_fol_kit.fol._identifiers import fresh_variable_like
+        from unicode_logic_kit.fol._identifiers import fresh_variable_like
         assert fresh_variable_like("y") == "y0"
         assert fresh_variable_like("y", {"y", "y0", "y1"}) == "y2"
         assert fresh_variable_like("y3", {"y0"}) == "y1"      # the digits do not carry over
         assert fresh_variable_like("ś") == "ś0"               # a Unicode letter is a letter
 
     def test_fresh_variable_like_repairs_a_letter_the_terminal_rejects(self):
-        from unicode_fol_kit.fol._identifiers import fresh_variable_like
+        from unicode_logic_kit.fol._identifiers import fresh_variable_like
         assert fresh_variable_like("Y") == "y0"               # lowercased
         assert fresh_variable_like("_tmp") == "x0"            # no usable letter
         assert fresh_variable_like("α") == "x0"               # Greek is a constant here
         assert fresh_variable_like("") == "x0"
 
     def test_fresh_like_follows_the_kind_of_the_name(self):
-        from unicode_fol_kit.fol._identifiers import fresh_like
+        from unicode_logic_kit.fol._identifiers import fresh_like
         assert fresh_like("y") == "y0"
         assert fresh_like("y1", {"y0", "y1"}) == "y2"
         assert fresh_like("P") == "P_0"
@@ -631,7 +631,7 @@ class TestIdentifierHelpers:
     @pytest.mark.parametrize("base", ["y", "y12", "ś", "P", "Q_3", "foo", "dani_Shapiro",
                                       "świątek", "c_alpha"])
     def test_the_minted_name_is_always_in_the_kind_it_replaces(self, base):
-        from unicode_fol_kit.fol._identifiers import fresh_like
+        from unicode_logic_kit.fol._identifiers import fresh_like
         pattern = (_VARIABLE if _VARIABLE.fullmatch(base)
                    else _PREDICATE if _PREDICATE.fullmatch(base) else _NAME)
         avoid = set()

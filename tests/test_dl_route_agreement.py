@@ -49,14 +49,14 @@ from typing import get_origin
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit import api
-from unicode_fol_kit.dl import owl_reasoner as _owl_reasoner
-from unicode_fol_kit.dl import tableau as _tableau
-from unicode_fol_kit.dl.tableau import _AXIOM_KINDS, _AxiomKind
-from unicode_fol_kit.fol.nodes import Not as FNot
-from unicode_fol_kit.hets import owl_backend as _hets_owl
-from unicode_fol_kit.mcp.server import _build_dl_abox, _build_dl_tbox
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit import api
+from unicode_logic_kit.dl import owl_reasoner as _owl_reasoner
+from unicode_logic_kit.dl import tableau as _tableau
+from unicode_logic_kit.dl.tableau import _AXIOM_KINDS, _AxiomKind
+from unicode_logic_kit.fol.nodes import Not as FNot
+from unicode_logic_kit.hets import owl_backend as _hets_owl
+from unicode_logic_kit.mcp.server import _build_dl_abox, _build_dl_tbox
 
 # A vocabulary whose every name reads back through api.parse_any: classes and
 # roles upper-case (the kit's PREDICATE terminal), individuals lower-case (its

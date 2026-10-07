@@ -15,8 +15,8 @@ The mirror image is a quantifier's variable against a free lambda parameter of t
 ``∀y R(x, y)`` under ``x := λ-parameter y`` is ``∀y0 R(y, y0)``.
 """
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     Atom, Lambda, LambdaVar, Quantifier, Variable, beta_reduce, free_variables, substitute,
 )
 

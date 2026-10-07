@@ -33,12 +33,12 @@ import os
 
 import pytest
 
-from unicode_fol_kit.fol.naming import ParsingError
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.naming import ParsingError
+from unicode_logic_kit.fol.nodes import (
     Atom, Box, Diamond, Implies, Not, Quantifier, Variable,
 )
-from unicode_fol_kit.fol.qml import qml_is_valid
-from unicode_fol_kit.fol.qmltp_input import (
+from unicode_logic_kit.fol.qml import qml_is_valid
+from unicode_logic_kit.fol.qmltp_input import (
     QmltpFormula, QmltpHeader, QmltpParsingError, QmltpProblem, QmltpStatus,
     load_qmltp, parse_qmltp, parse_qmltp_formula,
 )
@@ -97,7 +97,7 @@ def test_function_term_argument_parses_via_inherited_term_grammar():
     adds nothing of its own for terms, so this one check confirms the
     whole classical sub-grammar (already covered by fol.tptp_input's own
     test suite) is reached correctly through the QMLTP extension point."""
-    from unicode_fol_kit.fol.nodes import Function
+    from unicode_logic_kit.fol.nodes import Function
     parsed = parse_qmltp_formula("#box : ( p(f(X)) )")
     assert parsed == Box(Atom("P", [Function("f", [Variable("x")])]))
 
@@ -118,7 +118,7 @@ def test_header_fields_and_status_table_for_sym001():
     problem = load_qmltp(_fixture("barcan.p"))
     header = problem.header
 
-    assert header.file == "barcan : unicode-fol-kit fixture in QMLTP v1.1 syntax"
+    assert header.file == "barcan : unicode-logic-kit fixture in QMLTP v1.1 syntax"
     assert header.domain == "Syntactic (modal)"
     assert "Barcan scheme instance" in header.problem
     assert header.source == "[Brc46]"

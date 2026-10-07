@@ -7,8 +7,8 @@ the collision rule is derived from the one transformation the maps apply.
 """
 import re
 
-from unicode_fol_kit import chem
-from unicode_fol_kit.chem import interop
+from unicode_logic_kit import chem
+from unicode_logic_kit.chem import interop
 
 
 def test_the_docstring_names_the_size_of_the_vocabulary_it_maps():

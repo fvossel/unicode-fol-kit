@@ -41,14 +41,14 @@ import textwrap
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit.dl import owl_functional
-from unicode_fol_kit.dl.datatypes import BUILTIN_DATATYPES, canonical_datatype_name
-from unicode_fol_kit.dl.owl_functional import (
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit.dl import owl_functional
+from unicode_logic_kit.dl.datatypes import BUILTIN_DATATYPES, canonical_datatype_name
+from unicode_logic_kit.dl.owl_functional import (
     OwlFunctionalSyntaxError, parse_owl_functional, parse_owl_functional_class_expression,
     to_owl_functional, to_owl_functional_class_expression,
 )
-from unicode_fol_kit.dl.owl_manchester import ManchesterSyntaxError, parse_manchester, to_manchester
+from unicode_logic_kit.dl.owl_manchester import ManchesterSyntaxError, parse_manchester, to_manchester
 
 Z = dl.Atomic("Z")
 OWL = "http://www.w3.org/2002/07/owl#"

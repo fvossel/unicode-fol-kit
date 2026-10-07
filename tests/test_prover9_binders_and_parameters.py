@@ -34,17 +34,17 @@ import re
 
 import pytest
 
-from unicode_fol_kit.atp.prover9_entailment import generate_prover9_input_with_mapping
-from unicode_fol_kit.atp.protocol import Prover9Backend, get_backend
-from unicode_fol_kit.fol._msfl_nodes import (
+from unicode_logic_kit.atp.prover9_entailment import generate_prover9_input_with_mapping
+from unicode_logic_kit.atp.protocol import Prover9Backend, get_backend
+from unicode_logic_kit.fol._msfl_nodes import (
     LukEquivalence, LukImplication, LukNegation, SortedConstant, SortedCount, SortedQuantifier,
     StrongConjunction, StrongDisjunction, WeakConjunction, WeakDisjunction, free_variables, to_fol,
 )
-from unicode_fol_kit.fol._team_nodes import SlashedExists
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol._team_nodes import SlashedExists
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Count, Function, Implies, Not, Number, Quantifier, Variable,
 )
-from unicode_fol_kit.fol.prover9_input import parse_prover9
+from unicode_logic_kit.fol.prover9_input import parse_prover9
 
 x, y, z, w = Variable("x"), Variable("y"), Variable("z"), Variable("w")
 alpha = Constant("alpha")

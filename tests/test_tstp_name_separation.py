@@ -15,14 +15,14 @@ Every expected text below is derived by hand: a predicate ``Agent`` prints as
 resolve to the empty clause.
 """
 
-from unicode_fol_kit.atp._tptp_problem import generate_tptp_problem_with_mapping
-from unicode_fol_kit.atp.resolution_check import (
+from unicode_logic_kit.atp._tptp_problem import generate_tptp_problem_with_mapping
+from unicode_logic_kit.atp.resolution_check import (
     ResolutionDerivation, ResolutionStep, verify_resolution_proof,
 )
-from unicode_fol_kit.atp.tstp import (
+from unicode_logic_kit.atp.tstp import (
     parse_tstp_derivation, reverse_map_derivation, to_tstp,
 )
-from unicode_fol_kit.fol.nodes import Atom, Constant, Function, Not
+from unicode_logic_kit.fol.nodes import Atom, Constant, Function, Not
 
 a = Constant("a")
 
@@ -63,7 +63,7 @@ def test_the_map_less_text_is_the_text_the_fof_writers_map_gives():
 
 
 def test_reverse_map_derivation_restores_the_original_names():
-    from unicode_fol_kit.atp.tstp import _to_tstp_with_mapping
+    from unicode_logic_kit.atp.tstp import _to_tstp_with_mapping
 
     text, final_map = _to_tstp_with_mapping(_refutation(_CLASH))
     assert text == _SEPARATED
@@ -116,7 +116,7 @@ def test_the_clash_is_found_across_clauses_not_only_inside_one():
 
 
 def test_a_name_map_without_the_clash_is_extended_not_mutated():
-    from unicode_fol_kit.atp.tstp import _to_tstp_with_mapping
+    from unicode_logic_kit.atp.tstp import _to_tstp_with_mapping
 
     # A map built from an unrelated problem that has only the TERM agent.
     _, other = generate_tptp_problem_with_mapping(

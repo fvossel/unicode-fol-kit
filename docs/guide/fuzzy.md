@@ -5,7 +5,7 @@ The fuzzy layer interprets the Łukasiewicz / basic-logic (BL) connectives over 
 Everything on this page is imported from the top-level package:
 
 ```python
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser,
     fuzzy_evaluate, fuzzy_is_valid, fuzzy_is_satisfiable, fuzzy_get_model,
     get_tnorm, TNORMS, TNorm,
@@ -33,7 +33,7 @@ Parse with `MSFLParser(fuzzy=True)` for single-sorted FL (unsorted quantifiers, 
 Classical boolean nodes (`And`/`Or`/`Not`/…) are intentionally rejected by the evaluator: a formula meant for fuzzy evaluation must be parsed in FL/MSFL mode so its connectives are unambiguous. You can also build nodes directly — `StrongConjunction`, `LukNegation`, etc. — instead of parsing.
 
 ```python
-from unicode_fol_kit import MSFLParser
+from unicode_logic_kit import MSFLParser
 
 fl = MSFLParser(fuzzy=True)                       # single-sorted FL
 ms = MSFLParser(many_sorted=True, fuzzy=True)     # many-sorted MSFL
@@ -50,7 +50,7 @@ ms.parse("Tall(alice:Person)").to_unicode_str()   # → 'Tall(alice:Person)'
 Parsing a classical boolean formula in fuzzy mode (or feeding a classically parsed formula to the evaluator) is the one common mistake — the connective node carries no Łukasiewicz reading and the evaluator rejects it:
 
 ```python
-from unicode_fol_kit import MSFLParser, fuzzy_evaluate
+from unicode_logic_kit import MSFLParser, fuzzy_evaluate
 
 classical = MSFLParser()                            # default: classical FOL
 fuzzy_evaluate(classical.parse("P ∧ Q"), {"P": 0.5, "Q": 0.5})
@@ -62,7 +62,7 @@ fuzzy_evaluate(classical.parse("P ∧ Q"), {"P": 0.5, "Q": 0.5})
 `fuzzy_evaluate(node, valuation, domain=None, sort_universes=None, tnorm="lukasiewicz")` returns the degree in `[0, 1]`. The `valuation` maps each ground atom's canonical key — its `to_unicode_str()` rendering, with a sorted constant `c:S` written as `c`, e.g. `"P(alice)"` or just `"P"` — to a degree. A missing key raises `KeyError`. Two different atoms that print alike (the numeral `1` and a constant named `1`, a free variable `x` and a constant named `x`) would have one key and are refused with `NotImplementedError`, by the Z3 deciders below as by `fuzzy_evaluate`.
 
 ```python
-from unicode_fol_kit import MSFLParser, fuzzy_evaluate
+from unicode_logic_kit import MSFLParser, fuzzy_evaluate
 
 fl = MSFLParser(fuzzy=True)
 
@@ -172,7 +172,7 @@ A *t-norm* `T` fixes the **strong** connectives `⊗ ⊕ → ¬ ↔`; the weak `
 Pass `tnorm=` to `fuzzy_evaluate` and to the deciders. The strong conjunction `⊗` is the clearest discriminator — same inputs, three answers:
 
 ```python
-from unicode_fol_kit import MSFLParser, fuzzy_evaluate
+from unicode_logic_kit import MSFLParser, fuzzy_evaluate
 
 fl = MSFLParser(fuzzy=True)
 v = {"P": 0.5, "Q": 0.3}
@@ -212,7 +212,7 @@ fuzzy_evaluate(fl.parse("¬¬P"), {"P": 0.0}, tnorm="godel")   # → 0.0
 `get_tnorm(name)` returns the `TNorm` object and `TNORMS` is the registry dict. Each `TNorm` exposes the raw scalar operations `conj` / `disj` / `impl` / `neg` and the derived `equiv` — handy for plotting a connective or sanity-checking a hand calculation:
 
 ```python
-from unicode_fol_kit import get_tnorm, TNORMS
+from unicode_logic_kit import get_tnorm, TNORMS
 
 sorted(TNORMS)                       # → ['godel', 'lukasiewicz', 'product']
 get_tnorm("godel").name              # → 'godel'
@@ -247,7 +247,7 @@ Rather than fixing a valuation, you can ask the solver whether *some* (or *every
 - `fuzzy_get_model(formula, threshold=1.0)` — an atom→degree dict reaching the threshold (plus a `'degree'` entry), or `None`. An atom named `degree` (only a hand-built node can have one) is refused with `NotImplementedError`: the model reports the formula's own degree under that key.
 
 ```python
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser, fuzzy_is_valid, fuzzy_is_satisfiable, fuzzy_get_model,
 )
 
@@ -335,7 +335,7 @@ fuzzy_is_valid(fl.parse("P ⊕ ¬P"), tnorm="zadeh")
 Contraction `p → (p ⊗ p)` separates the two deciders. Under Gödel it is valid (`⊗` is idempotent `min`, so `p ⊗ p = p` and the implication is always `1`); under Łukasiewicz it fails (at `p = 0.5` the consequent `p ⊗ p = 0`, so the degree is only `0.5`):
 
 ```python
-from unicode_fol_kit import MSFLParser, fuzzy_is_valid, fuzzy_evaluate
+from unicode_logic_kit import MSFLParser, fuzzy_is_valid, fuzzy_evaluate
 
 fl = MSFLParser(fuzzy=True)
 contraction = fl.parse("P → (P ⊗ P)")
@@ -350,7 +350,7 @@ fuzzy_evaluate(contraction, {"P": 0.5}, tnorm="lukasiewicz")  # → 0.5  (the co
 The Z3 deciders are propositional, but passing `domain=` (and `sort_universes=` for sorted quantifiers) **grounds** each quantifier over the finite universe first — `∀` folds into a weak-conjunction (min), `∃` into a weak-disjunction (max) — so quantified fuzzy validity and satisfiability become decidable:
 
 ```python
-from unicode_fol_kit import MSFLParser, fuzzy_is_valid
+from unicode_logic_kit import MSFLParser, fuzzy_is_valid
 
 fl = MSFLParser(fuzzy=True)
 
@@ -363,7 +363,7 @@ fuzzy_is_valid(q, domain={"a", "b"}, tnorm="lukasiewicz")  # → False
 Grounded satisfiability and models work the same way — the model keys are the grounded ground atoms:
 
 ```python
-from unicode_fol_kit import fuzzy_is_satisfiable, fuzzy_get_model
+from unicode_logic_kit import fuzzy_is_satisfiable, fuzzy_get_model
 
 fl = MSFLParser(fuzzy=True)
 
@@ -410,7 +410,7 @@ fuzzy_is_valid(fl.parse("1 < 2"))
 Every connective has a node class — `WeakConjunction`, `WeakDisjunction`, `StrongConjunction`, `StrongDisjunction`, `LukNegation`, `LukImplication`, `LukEquivalence` — that the evaluator and deciders accept without parsing. Each binary class takes `(left, right)`; `LukNegation` takes one operand; an atom is `Atom(predicate, args)`:
 
 ```python
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     StrongConjunction, StrongDisjunction, LukNegation, LukImplication,
     Atom, fuzzy_evaluate, fuzzy_is_valid,
 )
@@ -462,9 +462,9 @@ this page's own discipline above) — there is no parser mode combining
 `modal=True` with `fuzzy=True`, so the AST is always built directly:
 
 ```python
-from unicode_fol_kit.semantics import FuzzyKripkeModel, satisfies_fuzzy_modal
-from unicode_fol_kit.semantics import LUKASIEWICZ, GODEL
-from unicode_fol_kit import Atom, Box, Diamond
+from unicode_logic_kit.semantics import FuzzyKripkeModel, satisfies_fuzzy_modal
+from unicode_logic_kit.semantics import LUKASIEWICZ, GODEL
+from unicode_logic_kit import Atom, Box, Diamond
 
 P = Atom("P", [])
 
@@ -515,7 +515,7 @@ than silently approximated — a graded fixpoint or model update over a
 continuous t-norm is an open research question in its own right:
 
 ```python
-from unicode_fol_kit import Next
+from unicode_logic_kit import Next
 
 satisfies_fuzzy_modal(Next(P), m, "w0")
 # raises NotImplementedError: satisfies_fuzzy_modal: Next (temporal) is not
@@ -527,7 +527,7 @@ satisfies_fuzzy_modal(Next(P), m, "w0")
 Parse → evaluate → solve, in one scenario. A diagnostic rule says that strong *fever* together with a *cough* implies elevated *risk*; we both score it under a fixed reading and ask whether the antecedent can reach a target degree.
 
 ```python
-from unicode_fol_kit import MSFLParser, fuzzy_evaluate, fuzzy_is_satisfiable, fuzzy_get_model
+from unicode_logic_kit import MSFLParser, fuzzy_evaluate, fuzzy_is_satisfiable, fuzzy_get_model
 
 fl = MSFLParser(fuzzy=True)
 rule = fl.parse("(Fever ⊗ Cough) → Risk")

@@ -24,10 +24,10 @@ Hand-derived tokens (the scheme above, applied to the reserved words ``all``,
 
 import pytest
 
-from unicode_fol_kit.atp import prover9_entailment as p9
-from unicode_fol_kit.atp.prover9_entailment import generate_prover9_input_with_mapping
-from unicode_fol_kit.fol import prover9_input
-from unicode_fol_kit.fol.nodes import And, Atom, Constant, Function
+from unicode_logic_kit.atp import prover9_entailment as p9
+from unicode_logic_kit.atp.prover9_entailment import generate_prover9_input_with_mapping
+from unicode_logic_kit.fol import prover9_input
+from unicode_logic_kit.fol.nodes import And, Atom, Constant, Function
 
 
 def _text(premise, conclusion=None):

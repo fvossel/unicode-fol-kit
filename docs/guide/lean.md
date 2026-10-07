@@ -1,6 +1,6 @@
 # Lean 4 export: classical FOL/MSFOL and propositional modal K
 
-`unicode_fol_kit.hol.lean` emits classical FOL / MSFOL and the propositional
+`unicode_logic_kit.hol.lean` emits classical FOL / MSFOL and the propositional
 **modal-K** fragment into **Lean 4** — a first vertical slice, structured
 exactly like {doc}`the THF / Isabelle pair <higher-order>` (`hol.classical`),
 and deliberately *not* parity with it yet (no relevant / substructural /
@@ -17,13 +17,13 @@ the file *always elaborates* without claiming a proof — Lean's analogue of
 Isabelle's `oops`. Classical FOL is semi-decidable only, so no tactic is
 guaranteed to close every valid goal.
 
-Import from `unicode_fol_kit.hol.lean` (these names are **not** re-exported
-from `unicode_fol_kit.hol` or top-level — see [Why a dedicated
+Import from `unicode_logic_kit.hol.lean` (these names are **not** re-exported
+from `unicode_logic_kit.hol` or top-level — see [Why a dedicated
 namespace](#why-a-dedicated-namespace) below):
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.hol import lean
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.hol import lean
 
 p = MSFLParser().parse
 syllogism = p("∀x (Human(x) → Mortal(x))")
@@ -76,7 +76,7 @@ Hand-checked (and live-tested against a real toolchain — see
 `tests/test_lean.py::TestLeanLive::test_nonempty_domain_witness_makes_all_implies_exists_provable`):
 
 ```python
-from unicode_fol_kit.fol.nodes import Variable, Atom, Quantifier, Implies
+from unicode_logic_kit.fol.nodes import Variable, Atom, Quantifier, Implies
 
 x = Variable("x")
 f = Implies(Quantifier("∀", x, Atom("P", [x])),
@@ -98,7 +98,7 @@ Lean's own `=` — matching the toolkit-wide HOL convention
 own built-in, axiom-free `=` / `≠` instead:
 
 ```python
-from unicode_fol_kit.fol.nodes import Constant, Atom
+from unicode_logic_kit.fol.nodes import Constant, Atom
 
 eq = Atom("=", [Constant("a"), Constant("b")])
 print(lean.to_lean_fol(eq, native_equality=True))
@@ -147,7 +147,7 @@ accessibility relation `R` — frame **K**, no frame conditions, since this
 slice covers only K:
 
 ```python
-from unicode_fol_kit.fol.nodes import Atom, Implies, Box
+from unicode_logic_kit.fol.nodes import Atom, Implies, Box
 
 p, q = Atom("p", ()), Atom("q", ())
 k_axiom = Implies(Box(Implies(p, q)), Implies(Box(p), Box(q)))
@@ -277,18 +277,18 @@ curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf 
 
 `to_lean_fol` / `to_lean_msfol` / `to_lean_modal_k` and the live-tier names
 (`find_lean`, `lean_available`, `check_theory`, `LeanInstall`, …) live in
-`unicode_fol_kit.hol.lean` only — not re-exported from `unicode_fol_kit.hol`
+`unicode_logic_kit.hol.lean` only — not re-exported from `unicode_logic_kit.hol`
 or top-level, the same treatment `hol.classical`'s own `to_thf_fol` /
 `to_isabelle_fol` get. One additional, concrete reason for `hol.lean`
 specifically: it needs its own `check_theory` / `DEFAULT_METHODS` (Lean's
 elaboration model is different enough from Isabelle's `isabelle build` that
 they cannot be the same function), and those names are already taken at the
-`unicode_fol_kit.hol` level by `hol.isabelle_runner`'s own `check_theory` /
+`unicode_logic_kit.hol` level by `hol.isabelle_runner`'s own `check_theory` /
 `DEFAULT_METHODS` — so a flat re-export would silently shadow one or the
 other. Import explicitly:
 
 ```python
-from unicode_fol_kit.hol import lean
+from unicode_logic_kit.hol import lean
 # or
-from unicode_fol_kit.hol.lean import to_lean_fol, to_lean_modal_k, check_theory
+from unicode_logic_kit.hol.lean import to_lean_fol, to_lean_modal_k, check_theory
 ```

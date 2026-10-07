@@ -2,7 +2,7 @@
 
 import pytest
 
-from unicode_fol_kit.fol._msfl_nodes import (
+from unicode_logic_kit.fol._msfl_nodes import (
     _resolve,
     resolve_lambda_scope,
     free_variables,
@@ -11,11 +11,11 @@ from unicode_fol_kit.fol._msfl_nodes import (
     SortedQuantifier,
     WeakConjunction,
 )
-from unicode_fol_kit.fol._fol_nodes import (
+from unicode_logic_kit.fol._fol_nodes import (
     Variable, Constant, Number, Function,
     Atom, Not, And, Or, Quantifier, Implies,
 )
-from unicode_fol_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.msflparser import MSFLParser
 
 
 # ---------------------------------------------------------------------------

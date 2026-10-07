@@ -27,12 +27,12 @@ import time
 
 import pytest
 
-import unicode_fol_kit
-from unicode_fol_kit.atp import prover9_entailment as p9
-from unicode_fol_kit.atp import protocol as proto
-from unicode_fol_kit.atp.prover9_entailment import Prover9Rejected, Prover9TimedOut
-from unicode_fol_kit.atp.protocol import Prover9Backend, get_backend
-from unicode_fol_kit.fol.nodes import Atom, Constant, Implies, Quantifier, Variable
+import unicode_logic_kit
+from unicode_logic_kit.atp import prover9_entailment as p9
+from unicode_logic_kit.atp import protocol as proto
+from unicode_logic_kit.atp.prover9_entailment import Prover9Rejected, Prover9TimedOut
+from unicode_logic_kit.atp.protocol import Prover9Backend, get_backend
+from unicode_logic_kit.fol.nodes import Atom, Constant, Implies, Quantifier, Variable
 
 x = Variable("x")
 _GOAL = Atom("Q", [Constant("a")])
@@ -287,12 +287,12 @@ def test_the_version_probe_does_not_wait_for_an_idle_inherited_stdin():
     # stays open and silent, the situation of an MCP server whose stdin is its protocol
     # stream. Before, the tool inherited it and the probe sat out its 10 s limit, then said
     # "no version".
-    package_root = os.path.dirname(os.path.dirname(os.path.abspath(unicode_fol_kit.__file__)))
+    package_root = os.path.dirname(os.path.dirname(os.path.abspath(unicode_logic_kit.__file__)))
     env = dict(os.environ, PYTHONPATH=os.pathsep.join(
         [package_root] + ([os.environ["PYTHONPATH"]] if os.environ.get("PYTHONPATH") else [])))
     child_code = (
         "import sys, time\n"
-        "from unicode_fol_kit.atp import protocol\n"
+        "from unicode_logic_kit.atp import protocol\n"
         "tool = ('-c', \"import sys; sys.stdin.read(); print('tool 1.0')\")\n"
         "started = time.perf_counter()\n"
         "version = protocol._binary_version(sys.executable, False, args=tool)\n"

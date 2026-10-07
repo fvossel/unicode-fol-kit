@@ -9,10 +9,10 @@ are IRIs with underscores, then rendering round-trippable Unicode.
 
 import pytest
 
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser, sanitize_names, sanitize_all, NameMapping, parse_tptp, parse_tptp_formula,
 )
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Constant, Variable, Function, Quantifier, Implies, Number,
 )
 
@@ -161,6 +161,6 @@ def test_tptp_single_quoted_escaped_quote():
 # ---------------------------------------------------------------------------
 
 def test_sanitize_exports():
-    import unicode_fol_kit as u
+    import unicode_logic_kit as u
     for name in ("sanitize_names", "sanitize_all", "NameMapping"):
         assert hasattr(u, name) and name in u.__all__, name

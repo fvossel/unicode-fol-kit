@@ -1,6 +1,6 @@
 """``docs/api.md`` claims to be complete. This is the claim, enforced.
 
-The page says "every name in ``unicode_fol_kit.__all__`` and in each
+The page says "every name in ``unicode_logic_kit.__all__`` and in each
 subpackage's ``__all__`` appears in exactly one table below". A hand-maintained
 page drifts the moment someone exports something new, and the drift is
 invisible — nothing fails, a name is simply undocumented. So the claim is a
@@ -19,17 +19,17 @@ import re
 
 import pytest
 
-import unicode_fol_kit
+import unicode_logic_kit
 
 DOCS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                     "docs", "api.md")
 
 #: Subpackages whose ``__all__`` is part of the public surface. Anything a
-#: caller can import from ``unicode_fol_kit.<name>`` belongs in the reference.
+#: caller can import from ``unicode_logic_kit.<name>`` belongs in the reference.
 SUBPACKAGES = ["semantics", "eval", "prob", "chem", "ilp", "dl", "hets",
                "drt", "ace", "hol", "atp", "fol", "comorphism", "logic"]
 
-#: Names in ``unicode_fol_kit.__all__`` that ARE subpackages. They are covered
+#: Names in ``unicode_logic_kit.__all__`` that ARE subpackages. They are covered
 #: by the module section at the end of the page rather than by a name table.
 SUBPACKAGE_NAMES = {"dl", "prob", "chem", "ilp"}
 
@@ -48,9 +48,9 @@ def listed_names():
 
 
 def required_names():
-    names = set(unicode_fol_kit.__all__) - SUBPACKAGE_NAMES
+    names = set(unicode_logic_kit.__all__) - SUBPACKAGE_NAMES
     for subpackage in SUBPACKAGES:
-        module = importlib.import_module("unicode_fol_kit." + subpackage)
+        module = importlib.import_module("unicode_logic_kit." + subpackage)
         names |= set(getattr(module, "__all__", ()))
     return names
 
@@ -70,9 +70,9 @@ def test_the_reference_lists_nothing_that_no_longer_exists():
     known = required_names() | SUBPACKAGE_NAMES
     for subpackage in SUBPACKAGES:
         known.add(subpackage.split(".")[0])
-        module = importlib.import_module("unicode_fol_kit." + subpackage)
+        module = importlib.import_module("unicode_logic_kit." + subpackage)
         known |= {n for n in dir(module) if not n.startswith("_")}
-    known |= {n for n in dir(unicode_fol_kit) if not n.startswith("_")}
+    known |= {n for n in dir(unicode_logic_kit) if not n.startswith("_")}
 
     stale = sorted(listed_names() - known)
     assert not stale, f"docs/api.md lists names that do not exist: {stale}"
@@ -84,7 +84,7 @@ def test_every_module_the_reference_lists_can_be_imported():
     broken = []
     for entry in sorted(e for e in listed_entries() if "." in e):
         try:
-            importlib.import_module("unicode_fol_kit." + entry)
+            importlib.import_module("unicode_logic_kit." + entry)
         except ImportError as exc:                       # pragma: no cover
             broken.append(f"{entry}: {exc}")
     assert not broken, f"docs/api.md lists unimportable modules: {broken}"
@@ -94,8 +94,8 @@ def test_every_module_the_reference_lists_can_be_imported():
 def test_each_subpackage_declares_what_it_exports(subpackage):
     """The completeness check reads ``__all__``; a subpackage without one
     would silently contribute nothing and the page would look complete."""
-    module = importlib.import_module("unicode_fol_kit." + subpackage)
+    module = importlib.import_module("unicode_logic_kit." + subpackage)
 
     assert getattr(module, "__all__", None), (
-        f"unicode_fol_kit.{subpackage} has no __all__, so nothing enforces "
+        f"unicode_logic_kit.{subpackage} has no __all__, so nothing enforces "
         "that its public names reach the API reference")

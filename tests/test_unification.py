@@ -1,7 +1,7 @@
-"""Tests for Robinson first-order unification (unicode_fol_kit.fol.unification)."""
+"""Tests for Robinson first-order unification (unicode_logic_kit.fol.unification)."""
 
-from unicode_fol_kit.fol.nodes import Variable, Constant, Number, Function, Atom
-from unicode_fol_kit.fol.unification import unify, apply_subst
+from unicode_logic_kit.fol.nodes import Variable, Constant, Number, Function, Atom
+from unicode_logic_kit.fol.unification import unify, apply_subst
 
 
 def test_unify_function_two_vars():
@@ -138,7 +138,7 @@ def test_input_subst_not_mutated():
 
 def test_atoms_via_parser():
     """Atoms produced by the parser unify identically to hand-built ones."""
-    from unicode_fol_kit.fol.msflparser import MSFLParser
+    from unicode_logic_kit.fol.msflparser import MSFLParser
 
     parser = MSFLParser()
     a1 = parser.parse("P(x, a)")

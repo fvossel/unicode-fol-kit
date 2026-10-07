@@ -1,4 +1,4 @@
-"""Tests for the machine-readable syntax spec (unicode_fol_kit.mcp.syntax_spec).
+"""Tests for the machine-readable syntax spec (unicode_logic_kit.mcp.syntax_spec).
 
 The point of this module is that the spec CANNOT LIE: every example it hands
 to a model is parsed here with the dialect the spec claims for it, and its
@@ -13,11 +13,11 @@ against the real parser, for the same reason.
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.fol.nodes import (
     Constant, Count, Function, Quantifier, Variable,
 )
-from unicode_fol_kit.mcp.syntax_spec import EXAMPLES, SPEC_TOPICS, syntax_spec
+from unicode_logic_kit.mcp.syntax_spec import EXAMPLES, SPEC_TOPICS, syntax_spec
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +170,7 @@ def test_errors_topic_points_at_real_topics():
 def test_overview_lists_the_live_dialect_order():
     """The overview reads its dialect order from the live detection table, so
     it cannot drift from parse_any's behaviour."""
-    from unicode_fol_kit.fol.dialect_detect import detect_dialects
+    from unicode_logic_kit.fol.dialect_detect import detect_dialects
 
     order = syntax_spec("overview")["dialects_in_detection_order"]
     assert order[-1] == "unicode"

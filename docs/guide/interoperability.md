@@ -17,21 +17,21 @@ One rule governs all of them, and it is worth stating before the details:
 
 | Source | Entry point | Notes |
 |---|---|---|
-| TPTP (FOF/CNF) | {func}`~unicode_fol_kit.parse_tptp_formula`, {func}`~unicode_fol_kit.parse_tptp`, {func}`~unicode_fol_kit.load_tptp` | single-quoted atoms supported; `parse_tptp_problem` also keeps SZS header metadata; `load_tptp`/`load_tptp_problem`/`load_tff_problem` resolve `include(...)` directives — see below |
-| **TPTP TF0 (typed)** | {func}`~unicode_fol_kit.fol.tptp_input.parse_tff_problem` | **new**; many-sorted `tff` — see below |
-| Prover9 / LADR | {func}`~unicode_fol_kit.parse_prover9`, {func}`~unicode_fol_kit.load_prover9` | statement scanner, not a lenient grammar — a missing `end_of_list` is an error, not a silent degradation; a genuinely new `op(...)` operator declaration is applied to later formulas; a name that no quantifier binds is read by the file's own `set(prolog_style_variables)` (or Prover9's default); a double-quoted symbol is a name that is never a variable, and a free variable stays free — see below |
-| SMT-LIB 2 | {func}`~unicode_fol_kit.parse_smtlib`, {func}`~unicode_fol_kit.load_smtlib` | one `Node` per assertion (`parse_any` folds several into their conjunction); **writing** is new — see below |
-| Z3 expressions | {func}`~unicode_fol_kit.from_z3` | in memory, no text round trip; a free `Variable` that `to_z3` wrote (the symbol `x!v`) reads back as that `Variable` |
-| LaTeX | {func}`~unicode_fol_kit.parse_latex` | |
-| CASL | {func}`~unicode_fol_kit.parse_casl_spec` | sorted; see below |
-| **Prolog / Datalog** | {func}`~unicode_fol_kit.parse_prolog_clause`, {func}`~unicode_fol_kit.parse_prolog_program`, {func}`~unicode_fol_kit.load_prolog` | **new**; see below |
-| **ACE (controlled English)** | {func}`~unicode_fol_kit.ace.ace_to_fol` | **new**; needs the external APE binary; see below |
+| TPTP (FOF/CNF) | {func}`~unicode_logic_kit.parse_tptp_formula`, {func}`~unicode_logic_kit.parse_tptp`, {func}`~unicode_logic_kit.load_tptp` | single-quoted atoms supported; `parse_tptp_problem` also keeps SZS header metadata; `load_tptp`/`load_tptp_problem`/`load_tff_problem` resolve `include(...)` directives — see below |
+| **TPTP TF0 (typed)** | {func}`~unicode_logic_kit.fol.tptp_input.parse_tff_problem` | **new**; many-sorted `tff` — see below |
+| Prover9 / LADR | {func}`~unicode_logic_kit.parse_prover9`, {func}`~unicode_logic_kit.load_prover9` | statement scanner, not a lenient grammar — a missing `end_of_list` is an error, not a silent degradation; a genuinely new `op(...)` operator declaration is applied to later formulas; a name that no quantifier binds is read by the file's own `set(prolog_style_variables)` (or Prover9's default); a double-quoted symbol is a name that is never a variable, and a free variable stays free — see below |
+| SMT-LIB 2 | {func}`~unicode_logic_kit.parse_smtlib`, {func}`~unicode_logic_kit.load_smtlib` | one `Node` per assertion (`parse_any` folds several into their conjunction); **writing** is new — see below |
+| Z3 expressions | {func}`~unicode_logic_kit.from_z3` | in memory, no text round trip; a free `Variable` that `to_z3` wrote (the symbol `x!v`) reads back as that `Variable` |
+| LaTeX | {func}`~unicode_logic_kit.parse_latex` | |
+| CASL | {func}`~unicode_logic_kit.parse_casl_spec` | sorted; see below |
+| **Prolog / Datalog** | {func}`~unicode_logic_kit.parse_prolog_clause`, {func}`~unicode_logic_kit.parse_prolog_program`, {func}`~unicode_logic_kit.load_prolog` | **new**; see below |
+| **ACE (controlled English)** | {func}`~unicode_logic_kit.ace.ace_to_fol` | **new**; needs the external APE binary; see below |
 
-{func}`~unicode_fol_kit.api.parse_any` detects the dialect for you, and
-{func}`~unicode_fol_kit.detect_dialects` shows what it is considering:
+{func}`~unicode_logic_kit.api.parse_any` detects the dialect for you, and
+{func}`~unicode_logic_kit.detect_dialects` shows what it is considering:
 
 ```python
-from unicode_fol_kit import detect_dialects
+from unicode_logic_kit import detect_dialects
 
 print(detect_dialects("fof(a, axiom, p(X))."))
 # → ('tptp', 'unicode')
@@ -49,12 +49,12 @@ Prover9's `op(precedence, type, symbol)` directive declares a new operator —
 Prover9's own manual documents the default table and the eight type keywords
 (`infix`, `infix_left`, `infix_right`, `prefix`, `prefix_paren`, `postfix`,
 `postfix_paren`, `ordinary`; the Prolog reader's `xfx`/`yfx`/`xfy`/`fy`/`fx`
-under different names). {func}`~unicode_fol_kit.parse_prover9_problem` /
-{func}`~unicode_fol_kit.load_prover9` apply a genuinely *new* declaration to
+under different names). {func}`~unicode_logic_kit.parse_prover9_problem` /
+{func}`~unicode_logic_kit.load_prover9` apply a genuinely *new* declaration to
 every formula parsed after it in the same file:
 
 ```python
-from unicode_fol_kit import parse_prover9_problem
+from unicode_logic_kit import parse_prover9_problem
 
 text = """
 op(650, infix, before).
@@ -77,7 +77,7 @@ for rec in parse_prover9_problem(text):
 because 650 sits between Prover9's arithmetic tier (500) and its comparison
 tier (700); a declaration below 500 instead becomes a `Function`-producing
 term operator. Two things are refused — by name, as a
-`unicode_fol_kit.fol.prover9_input.Prover9ParsingError` — regardless of
+`unicode_logic_kit.fol.prover9_input.Prover9ParsingError` — regardless of
 whether the operator is ever used: **redeclaring an existing built-in**
 (`op(500, infix, "+")`, say) and **redeclaring a symbol the same file already
 declared**; a malformed directive (wrong arity, a non-integer precedence, an
@@ -96,7 +96,7 @@ the file as Prover9 does: the last `set(prolog_style_variables)` or
 flag a name that starts with an upper-case letter is a variable (an underscore
 makes none: Prover9 reads `_x` as a constant), without it a name that starts with
 `u` to `z` is, and every other name is a constant.
-{func}`~unicode_fol_kit.parse_prover9`, which has no file around its formula,
+{func}`~unicode_logic_kit.parse_prover9`, which has no file around its formula,
 reads under the flag unless it is given `prolog_style_variables=False`. The
 example above reads alike under either convention, because the capitals in it are
 bound.
@@ -158,7 +158,7 @@ A definite clause says two different things, and the kit will not choose for
 you:
 
 ```python
-from unicode_fol_kit import parse_prolog_clause
+from unicode_logic_kit import parse_prolog_clause
 
 clause = "amide(A) :- carbon(C), nitrogen(N), bond(C, N), in(A, C)."
 
@@ -187,8 +187,8 @@ under the closed world assumption on a stratified program, so reading it
 silently would turn "not derivable here" into "false everywhere":
 
 ```python
-from unicode_fol_kit import parse_prolog_clause
-from unicode_fol_kit.fol.prolog_input import PrologParsingError
+from unicode_logic_kit import parse_prolog_clause
+from unicode_logic_kit.fol.prolog_input import PrologParsingError
 
 try:
     parse_prolog_clause("p(A) :- q(A), \\+ r(A).", mode="body")
@@ -210,8 +210,8 @@ holds for your program.
 The cut, if-then, `is`, `=..` and list terms are refused **by name**:
 
 ```python
-from unicode_fol_kit import parse_prolog_clause
-from unicode_fol_kit.fol.prolog_input import PrologParsingError
+from unicode_logic_kit import parse_prolog_clause
+from unicode_logic_kit.fol.prolog_input import PrologParsingError
 
 for text in ("p(A) :- q(A), !.", "p(A) :- q(A) -> r(A).", "p(A) :- foo is 1."):
     try:
@@ -229,7 +229,7 @@ the reader would go looking for a typo instead.
 ### Whole programs
 
 ```python
-from unicode_fol_kit import parse_prolog_program
+from unicode_logic_kit import parse_prolog_program
 
 program = """
 % a comment with a period.
@@ -257,8 +257,8 @@ reverse. It is not a general `to_prolog()` — Prolog can only hold a narrow
 shape, so most formulas are refused by name rather than approximated.
 
 ```python
-from unicode_fol_kit import parse_prolog_clause
-from unicode_fol_kit.fol.prolog_export import formula_to_prolog_clause
+from unicode_logic_kit import parse_prolog_clause
+from unicode_logic_kit.fol.prolog_export import formula_to_prolog_clause
 
 clause = "amide(A) :- carbon(C), nitrogen(N), bond(C, N), in(A, C)."
 node = parse_prolog_clause(clause)
@@ -285,8 +285,8 @@ range-restricted), a nested quantifier, or anything outside classical FOL is
 refused **by name**:
 
 ```python
-from unicode_fol_kit.fol.nodes import Atom, Implies, Or, Quantifier, Variable
-from unicode_fol_kit.fol.prolog_export import PrologExportError
+from unicode_logic_kit.fol.nodes import Atom, Implies, Or, Quantifier, Variable
+from unicode_logic_kit.fol.prolog_export import PrologExportError
 
 x = Variable("x")
 bad = Quantifier("∀", x, Implies(Atom("Q", [x]),
@@ -302,7 +302,7 @@ except PrologExportError as exc:
 same warning applies in reverse: passing it makes the round trip
 syntactically faithful, but `\+ G` still only agrees with `¬G` when the
 Prolog program is complete for `G` — see
-{func}`~unicode_fol_kit.fol.prolog_export.formula_to_prolog_clause`'s module
+{func}`~unicode_logic_kit.fol.prolog_export.formula_to_prolog_clause`'s module
 docstring for exactly when that holds, and when it does not.
 
 ```python
@@ -333,7 +333,7 @@ NLP gamble. The kit drives the reference parser APE as an external subprocess
 automatically, and `$UFK_APE_CMD` overrides discovery):
 
 ```python
-from unicode_fol_kit.ace import ace_to_fol
+from unicode_logic_kit.ace import ace_to_fol
 
 for f in ace_to_fol("Every farmer who owns a donkey beats it."):
     print(f.to_unicode_str())
@@ -360,11 +360,11 @@ Three outcomes, none silent — this route refuses rather than mistranslates:
 - **ACE, but the counting is inert** → *on this route* the formula comes back
   with a reified `Object(b, man, countable, na, geq, 3)` atom instead of
   counting force — that is Attempto's own TPTP export, kept verbatim;
-  {func}`~unicode_fol_kit.ace.ace_coverage` flags such sentences
+  {func}`~unicode_logic_kit.ace.ace_coverage` flags such sentences
   (`reified_cardinality`). The DRS and formula routes below DO carry the
   counting force since ACE-4/5.
 
-{func}`~unicode_fol_kit.ace.ace_coverage` runs any sentence list through the
+{func}`~unicode_logic_kit.ace.ace_coverage` runs any sentence list through the
 route and reports each sentence's fate (`ok` / `tptp_unsupported` /
 `tptp_unread` / `not_ace` / `infra`) — the kit's own 55-sentence corpus and
 its recorded per-sentence outcomes live in `tests/fixtures/ace_corpus_v1.tsv`
@@ -374,13 +374,13 @@ and `tests/fixtures/ape_5f4d535_corpus_v1.json`.
 
 APE's own representation is a Discourse Representation Structure, and the kit
 has a DRS core — so since 0.24.0 the DRS itself is first-class.
-{func}`~unicode_fol_kit.ace.parse_ape_drs` reads APE's printed term 1:1
+{func}`~unicode_logic_kit.ace.parse_ape_drs` reads APE's printed term 1:1
 (pinned by a byte-identical round-trip over the whole corpus), and
-{func}`~unicode_fol_kit.ace.ace_to_drs` maps it onto {mod}`unicode_fol_kit.drt`:
+{func}`~unicode_logic_kit.ace.ace_to_drs` maps it onto {mod}`unicode_logic_kit.drt`:
 
 ```python
-from unicode_fol_kit.ace import ace_to_drs
-from unicode_fol_kit.drt import drs_to_fol
+from unicode_logic_kit.ace import ace_to_drs
+from unicode_logic_kit.drt import drs_to_fol
 
 drs = ace_to_drs("Every farmer who owns a donkey beats it.")
 print(drs_to_fol(drs).to_unicode_str())
@@ -391,9 +391,9 @@ Verbs, nouns, adjectives and prepositions become kit predicates (`See(e1,
 x1, x2)` — events stay, neo-Davidsonian), the copula becomes equality with
 the be-event dropped (Attempto's own reference reading), proper names become
 constants. A sentence maps **completely or not at all**:
-{func}`~unicode_fol_kit.ace.map_ace_drs` returns a per-condition report
+{func}`~unicode_logic_kit.ace.map_ace_drs` returns a per-condition report
 (`DrsMapping.rows`) naming every condition's verdict, and
-{func}`~unicode_fol_kit.ace.condition_statistics` aggregates those verdicts
+{func}`~unicode_logic_kit.ace.condition_statistics` aggregates those verdicts
 over a corpus — on the kit's own corpus, 38 of 50 ACE sentences map
 completely, and every refusal names its reason and, where one exists, its
 carrier (modality, questions, the `exactly`/`at most` maximality and
@@ -408,13 +408,13 @@ standard translation, agreeing formula by formula.
 ### The formula route: `ace_to_formula`
 
 What a classical DRS cannot hold, a kit formula can.
-{func}`~unicode_fol_kit.ace.ace_to_formula` translates straight to one
+{func}`~unicode_logic_kit.ace.ace_to_formula` translates straight to one
 formula, routing ACE's four modal boxes onto the kit's modal family —
 `must` → `□`, `can` → `◇` (alethic), `should` → `Ⓞ`, `may` → `Ⓟ` (deontic, a
 documented choice matching Attempto's recommendation/admissibility gloss):
 
 ```python
-from unicode_fol_kit.ace import ace_to_formula
+from unicode_logic_kit.ace import ace_to_formula
 
 print(ace_to_formula("Every man must wait.").formula.to_unicode_str())
 # → ∀x1 (Man(x1) → □∃e1 Wait(e1, x1))
@@ -439,8 +439,8 @@ exported as the binary `Part_of`), and `Card` lowers to the kit's counting
 quantifier on export:
 
 ```python
-from unicode_fol_kit.ace import ace_to_drs
-from unicode_fol_kit.drt import drs_to_fol
+from unicode_logic_kit.ace import ace_to_drs
+from unicode_logic_kit.drt import drs_to_fol
 
 drs = ace_to_drs("At least 3 men wait.")
 print(drs.to_box_notation())
@@ -463,21 +463,21 @@ two individual barkers; collective maximality is not first-order
 expressible, a documented choice at `translate.box_with_lists`). And
 arithmetic translates to kit terms — `"1 + 2 = 3."` → `1 + 2 = 3` — where
 the default backend deliberately reads `+` uninterpreted;
-{func}`~unicode_fol_kit.atp.z3_arith.is_valid_arith` decides the
+{func}`~unicode_logic_kit.atp.z3_arith.is_valid_arith` decides the
 arithmetic fragment (proves `1 + 2 = 3`, refutes `1 + 2 = 4`).
 
 ### The reverse direction: `drs_to_ace` (ACE-6)
 
-The pipeline also runs backwards. {func}`~unicode_fol_kit.ace.drs_to_ace`
+The pipeline also runs backwards. {func}`~unicode_logic_kit.ace.drs_to_ace`
 verbalizes a kit DRS as ACE text plus the APE user-lexicon entries that
-carry its content words, and {func}`~unicode_fol_kit.ace.ace_round_trip`
+carry its content words, and {func}`~unicode_logic_kit.ace.ace_round_trip`
 is the machine self-check: the text goes back through APE and the mapping,
 and Z3 judges the result against the input — over the kit's corpus, every
 mappable sentence closes that loop.
 
 ```python
-from unicode_fol_kit.ace import drs_to_ace, ace_round_trip
-from unicode_fol_kit.drt import parse_drs
+from unicode_logic_kit.ace import drs_to_ace, ace_round_trip
+from unicode_logic_kit.drt import parse_drs
 
 drs = parse_drs("[ | [x1 | Farmer(x1)] -> [e1 | Wait(e1, x1)]]")
 print(drs_to_ace(drs).text)
@@ -494,24 +494,24 @@ lexicon-defined: the third-person singular and the plural add
 `noun_pl(mans, man, neutr)` entry defines that surface, APE parses it, and
 the logical symbol underneath is exactly `man`. Everything the probed ACE
 fragment cannot carry back refuses by name
-({class}`~unicode_fol_kit.ace.AceVerbalizationError`): upper-bound
+({class}`~unicode_logic_kit.ace.AceVerbalizationError`): upper-bound
 cardinalities (`Card(g, <=, n)` — APE reads "at most" as the maximality
 list), values outside equalities, binary predicates over individuals
 (an ACE verb always carries an event), non-invertible names.
 
 Since 0.25.0 the reverse direction also takes FORMULAS.
-{func}`~unicode_fol_kit.drt.fol_to_drs` runs the standard translation
+{func}`~unicode_logic_kit.drt.fol_to_drs` runs the standard translation
 backwards — it recognizes exactly the shape `drs_to_fol` emits and
 rebuilds the box structure, refusing everything outside that image by
-name ({class}`~unicode_fol_kit.drt.FolToDrsError`: modality,
+name ({class}`~unicode_logic_kit.drt.FolToDrsError`: modality,
 biconditionals, bare universals, formula-level counting, function terms,
-free variables). {func}`~unicode_fol_kit.ace.formula_to_ace` chains the
+free variables). {func}`~unicode_logic_kit.ace.formula_to_ace` chains the
 two: "is this formula expressible as ACE?" becomes two refusal-checked
 steps, and a positive answer is a sentence:
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.ace import formula_to_ace
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.ace import formula_to_ace
 
 donkey = MSFLParser().parse(
     "∀x1 ∀x2 ∀e1 (Farmer(x1) ∧ Donkey(x2) ∧ Own(e1, x1, x2)"
@@ -520,12 +520,12 @@ print(formula_to_ace(donkey).text)
 # → If a farmer X1 owns a donkey X2 then X1 beats X2.
 ```
 
-{func}`~unicode_fol_kit.ace.chem_ulex` renders the ChemLog signature
-(`unicode_fol_kit.chem`) as such a user lexicon, so ACE can talk about
+{func}`~unicode_logic_kit.ace.chem_ulex` renders the ChemLog signature
+(`unicode_logic_kit.chem`) as such a user lexicon, so ACE can talk about
 molecules — "There is a carbon X1. X1 bonds an oxygen X2. X1 is
 aromatic." parses with the DRS carrying `c`, `bond`, `aromatic`. Two
 shape facts are documented rather than hidden: kit-side the symbols
-arrive capitalized ({func}`~unicode_fol_kit.ace.ace_kit_name` computes
+arrive capitalized ({func}`~unicode_logic_kit.ace.ace_kit_name` computes
 the spelling), and ACE verbs are neo-Davidsonian, so binary ChemLog
 relations arrive with an event argument (`Bond(e1, x1, x2)`); the three
 nullary net-charge predicates are unspeakable in ACE (a sentence needs a
@@ -533,9 +533,9 @@ subject) and excluded by name.
 
 ## SMT-LIB2 writing
 
-Reading (the table above) returns one {class}`~unicode_fol_kit.Node` per assertion.
+Reading (the table above) returns one {class}`~unicode_logic_kit.Node` per assertion.
 Writing is the inverse, one formula — or several — per `(assert ...)`:
-{func}`~unicode_fol_kit.atp.z3_input.to_smtlib` (premises plus a goal) and its
+{func}`~unicode_logic_kit.atp.z3_input.to_smtlib` (premises plus a goal) and its
 single-formula convenience form `Node.to_smtlib()` (no premises).
 
 A naive `Node.to_z3()` + `z3.Solver.to_smt2()` combination is not sound enough
@@ -552,7 +552,7 @@ solver reads as something else: one that begins with `.` or `@`, one that holds
 shared sub-term as `(let (($x24 ...)) ...)` or `(let ((?x10 ...)) ...)`, under
 names of its own and without looking at the symbols the text declares, so a
 declared symbol spelled `$x24` or `?x10` would be shadowed inside the `let`.
-`to_smtlib` reuses the sanitiser {class}`~unicode_fol_kit.Cvc5Backend` already
+`to_smtlib` reuses the sanitiser {class}`~unicode_logic_kit.Cvc5Backend` already
 proves against Z3's own parser (one shared name map across every premise and the
 goal, so a symbol renames consistently everywhere it occurs) instead of solving
 this a second time, and it renames every one of these names (a symbol spelled
@@ -561,8 +561,8 @@ reads back under the new name), so the text is the same whatever logic the
 reading solver is set to:
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.atp.z3_input import to_smtlib
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.atp.z3_input import to_smtlib
 
 p = MSFLParser()
 premises = [p.parse("∀x (P(x) → Q(x))"), p.parse("P(alice)")]
@@ -592,7 +592,7 @@ print(to_smtlib(goal, premises))
 
 Every premise gets its own assertion ahead of the goal's — more useful as a
 standalone problem than one folded `(∧ premises) → goal` implication, and
-what `parse_smtlib` reads back: one {class}`~unicode_fol_kit.Node` per
+what `parse_smtlib` reads back: one {class}`~unicode_logic_kit.Node` per
 top-level `assert`. Refusal is inherited, not reimplemented: a construct that
 `to_z3()` itself has no encoding for (second-order quantification, a modal
 operator, ...) raises the exact same `NotImplementedError` from `to_smtlib`
@@ -652,7 +652,7 @@ this text does not say that `1 + 2` is `3`. A numeral made of digits, or of
 digits and an exponent, is written between bars (`|1|`, `|1e-07|`); a decimal or
 a negative number gets a token (`n2.5`, `n-3`).
 
-{func}`~unicode_fol_kit.parse_smtlib` reads a declared symbol as a number only
+{func}`~unicode_logic_kit.parse_smtlib` reads a declared symbol as a number only
 when its sort is uninterpreted, which is where the writer puts a numeral (`P(1)`
 is written with a symbol `|1|` of the sort `S`; a decimal or a negative number
 gets a token and is read back as the constant of that token). A symbol of sort
@@ -663,7 +663,7 @@ satisfiable, and `to_z3` and `to_smtlib`, which write both as one symbol, refuse
 the pair by name. A Z3 rational numeral is read through the exact decimal text it
 spells (its denominator has no prime factor but 2 and 5), by the 15-digit rule of
 the Prover9 section above; a numeral with more digits, or with no decimal text
-(the quotient `1/3` handed to {func}`~unicode_fol_kit.from_z3`), is refused with a
+(the quotient `1/3` handed to {func}`~unicode_logic_kit.from_z3`), is refused with a
 `ValueError` that names the numeral. `(/ 1 3)` in a text is an application of `/`,
 not a numeral.
 
@@ -692,7 +692,7 @@ format HETS speaks. Export produces a whole spec, sorts and predicate
 declarations included:
 
 ```python
-from unicode_fol_kit import MSFLParser, to_casl_spec
+from unicode_logic_kit import MSFLParser, to_casl_spec
 
 phi = MSFLParser().parse("∀x (Human(x) → Mortal(x))")
 print(to_casl_spec([phi], spec_name="Ontology"))
@@ -710,7 +710,7 @@ end
 And it reads back:
 
 ```python
-from unicode_fol_kit import MSFLParser, to_casl_spec, parse_casl_spec
+from unicode_logic_kit import MSFLParser, to_casl_spec, parse_casl_spec
 
 phi = MSFLParser().parse("∀x (Human(x) → Mortal(x))")
 spec = parse_casl_spec(to_casl_spec([phi], spec_name="Ontology"))
@@ -727,7 +727,7 @@ the refusal names `default_sort=`. The export is a typed text: CASL's sorts are
 disjoint, and an unannotated constant or a function value is declared at the sort
 of the position it is used in. That is stronger than the kit's own reading of a
 sort (see the TF0 section below), so a decision about the exported text can differ
-from the kit's; {class}`~unicode_fol_kit.atp.HetsBackend` refuses the problems on
+from the kit's; {class}`~unicode_logic_kit.atp.HetsBackend` refuses the problems on
 which it does (see HETS below).
 
 CASL writes a bound variable, a constant and a predicate as one identifier, and
@@ -738,8 +738,8 @@ every occurrence it binds. Names are compared exactly (`W` and `w` are two), and
 text without a clash is unchanged:
 
 ```python
-from unicode_fol_kit import to_casl_spec
-from unicode_fol_kit.fol.nodes import And, Atom, Constant, Quantifier, Variable
+from unicode_logic_kit import to_casl_spec
+from unicode_logic_kit.fol.nodes import And, Atom, Constant, Quantifier, Variable
 
 w = Variable("w")
 clash = And(Quantifier("∀", w, Atom("P", [w])), Atom("Q", [Constant("w")]))
@@ -773,7 +773,7 @@ declarations — including the list form `sort S1, S2 < T` — back into the
 identical `subsorts` mapping on the parsed spec's `Signature`:
 
 ```python
-from unicode_fol_kit import MSFLParser, to_casl_spec, parse_casl_spec, Signature
+from unicode_logic_kit import MSFLParser, to_casl_spec, parse_casl_spec, Signature
 
 msfol = MSFLParser(many_sorted=True)
 phi = msfol.parse("∀x:Animal Mortal(x)")
@@ -809,13 +809,13 @@ CASL fragment.
 
 TPTP's classical `fof` dialect has no notion of sorts: exporting a many-sorted
 formula through `Node.to_tptp` turns each sort into an ordinary guard predicate
-(`∀x:Human φ` becomes `![X]: (human(X) => φ)`). {mod}`unicode_fol_kit.atp.tptp_tff`
+(`∀x:Human φ` becomes `![X]: (human(X) => φ)`). {mod}`unicode_logic_kit.atp.tptp_tff`
 writes the OTHER TPTP dialect instead — **TF0**, monomorphic typed first-order
 TPTP — where a sort is a genuine `tff` type, not a predicate:
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.atp.tptp_tff import generate_tff_problem
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.atp.tptp_tff import generate_tff_problem
 
 MSFOL = MSFLParser(many_sorted=True)
 premises = [MSFOL.parse("∀x:Human Mortal(x)"), MSFOL.parse("Philosopher(socrates:Human)")]
@@ -833,14 +833,14 @@ tff(premise_2, axiom, philosopher(socrates) ).
 tff(goal, conjecture, mortal(socrates) ).
 ```
 
-And it reads back, recovering the declared {class}`~unicode_fol_kit.fol.signature.Signature`
+And it reads back, recovering the declared {class}`~unicode_logic_kit.fol.signature.Signature`
 alongside the formulas — a sort name round-trips exactly, and a bare constant
 occurrence is promoted back to a `SortedConstant` wherever its own separate
 `type` declaration gave it a concrete sort (a formula body has no room to say
 that inline; only a bound variable does):
 
 ```python
-from unicode_fol_kit.fol.tptp_input import parse_tff_problem
+from unicode_logic_kit.fol.tptp_input import parse_tff_problem
 
 sig, formulas = parse_tff_problem(generate_tff_problem(premises, conclusion))
 print(sig.predicates["Mortal"])
@@ -868,17 +868,17 @@ THF, and the type binder `!>` or a quantifier variable of type `$tType`
 numeral is an ordinary constant here: the writer declares it as a constant of
 `$i` named after its value (`1` and `1.0` are one constant, `n1`; `2.5` is
 `n2u002e5`), `+ - * /` as uninterpreted functions and `< > ≤ ≥` as uninterpreted
-predicates. The {class}`~unicode_fol_kit.atp.TptpNameMap` that
-{func}`~unicode_fol_kit.atp.generate_tff_problem_with_mapping` returns lists the
+predicates. The {class}`~unicode_logic_kit.atp.TptpNameMap` that
+{func}`~unicode_logic_kit.atp.generate_tff_problem_with_mapping` returns lists the
 numerals (its `numerals` set; `reverse_numerals()` gives each word back as its
 value). A numeral that the sort inference would put into a user sort, and a
 `Constant` spelled like a numeral of the problem (`Number(1)` next to
 `Constant('1')`), are refused. TPTP's own arithmetic is the TFA writer's
-({func}`~unicode_fol_kit.generate_tff_arith_problem`, the `sort="int"` /
+({func}`~unicode_logic_kit.generate_tff_arith_problem`, the `sort="int"` /
 `sort="real"` option of the backends).
 
-{mod}`~unicode_fol_kit.atp.vampire_entailment` and
-{mod}`~unicode_fol_kit.atp.eprover_backend` (E, Zipperposition) try this route
+{mod}`~unicode_logic_kit.atp.vampire_entailment` and
+{mod}`~unicode_logic_kit.atp.eprover_backend` (E, Zipperposition) try this route
 the moment a sorted node shows up anywhere in the premises or the conclusion, and
 write `fof` instead when the TF0 writer refuses the problem (the two refusals
 below). The result says which text was written (`dialect`, `"tff"` or `"fof"`)
@@ -891,8 +891,8 @@ TF0 declares every symbol once, in one flat table, so a predicate and a
 function/constant that render as the same word (the class `Agent` and the role
 function `agent`) are never declared under one name: the function or constant is
 written `agent_term` instead, and
-{func}`~unicode_fol_kit.atp.generate_tff_problem_with_mapping` returns the
-{class}`~unicode_fol_kit.atp.TptpNameMap` that records the rename. See
+{func}`~unicode_logic_kit.atp.generate_tff_problem_with_mapping` returns the
+{class}`~unicode_logic_kit.atp.TptpNameMap` that records the rename. See
 "Building a TPTP problem for a prover" in {doc}`classical-reasoning`.
 
 A **sort** and a **predicate** that render as the same word are refused, naming
@@ -942,8 +942,8 @@ finder already assumes the same — every sort gets a non-empty universe), so
 anywhere in the problem. There the type declaration carries the assumption, and
 the TF0 writer emits nothing extra for it. The classical guard-atom `fof` route
 has no types, so it states the same assumption as an axiom:
-{func}`~unicode_fol_kit.atp.generate_tptp_problem` and
-{func}`~unicode_fol_kit.atp.generate_tptp_problem_with_mapping` add one
+{func}`~unicode_logic_kit.atp.generate_tptp_problem` and
+{func}`~unicode_logic_kit.atp.generate_tptp_problem_with_mapping` add one
 `fof(nonempty_sort_<i>, axiom, (?[X0]: s(X0)))` per distinct sort the problem
 mentions (numbered from 1, written between the premises and the `conjecture`; an
 extra, never-negated axiom, not folded into any formula's own translation), and
@@ -975,10 +975,10 @@ background line).
 A TPTP problem often pulls its shared axioms in from a separate file rather
 than repeating them: `include('animals.ax').` — or, TPTP-library style,
 `include('Axioms/SET001+0.ax')`, a path relative to a *library root*, not
-to the referring problem file. {func}`~unicode_fol_kit.load_tptp` (and
-{func}`~unicode_fol_kit.load_tptp_problem`,
-{func}`~unicode_fol_kit.fol.tptp_input.load_tff_problem`) resolve these —
-{func}`~unicode_fol_kit.parse_tptp_formula` never does, since a single bare
+to the referring problem file. {func}`~unicode_logic_kit.load_tptp` (and
+{func}`~unicode_logic_kit.load_tptp_problem`,
+{func}`~unicode_logic_kit.fol.tptp_input.load_tff_problem`) resolve these —
+{func}`~unicode_logic_kit.parse_tptp_formula` never does, since a single bare
 formula has no "including file" to resolve one relative to:
 
 ```python
@@ -996,7 +996,7 @@ with open(os.path.join(root, "problem.p"), "w") as f:
         "fof(goal, conjecture, animal(rex)).\n"
     )
 
-from unicode_fol_kit import load_tptp
+from unicode_logic_kit import load_tptp
 
 for record in load_tptp(os.path.join(root, "problem.p")):
     print(record.name, record.role, record.formula.to_unicode_str())
@@ -1016,7 +1016,7 @@ itself uses for the library root. `include('path', [name1, name2])`
 imports only those formulas, by their own TPTP statement name. A missing
 file, an unresolvable name, or a circular include chain (`A` includes `B`
 includes `A`) each raise `TptpParsingError` naming the path or chain, never
-silently drop or loop; {func}`~unicode_fol_kit.fol.tptp_input.parse_tff_problem`
+silently drop or loop; {func}`~unicode_logic_kit.fol.tptp_input.parse_tff_problem`
 and `load_tff_problem` resolve them too, except a
 selection list cannot be applied to an included file that itself declares
 TFF vocabulary (a `tff(name, type, ...).` statement) — its own statement
@@ -1042,7 +1042,7 @@ image for you — so the examples are not executed in the docs.
 
 ```python
 # doctest: +SKIP  — needs Docker
-from unicode_fol_kit.hets import hets_available, discover_hets_url
+from unicode_logic_kit.hets import hets_available, discover_hets_url
 
 print(hets_available())                       # already running on :8000?
 url, container = discover_hets_url(start_container=True)
@@ -1056,8 +1056,8 @@ stop what you started. Without `start_container=True` it only looks.
 
 ```python
 # doctest: +SKIP  — needs Docker
-from unicode_fol_kit import MSFLParser, to_casl_spec
-from unicode_fol_kit.hets import HetsClient
+from unicode_logic_kit import MSFLParser, to_casl_spec
+from unicode_logic_kit.hets import HetsClient
 
 client = HetsClient("http://localhost:8000")
 print(client.version())
@@ -1075,16 +1075,16 @@ print(client.consistency_check(handle))
 ### As a backend, and as translations
 
 Two integrations sit on top of the client. `HetsBackend` implements the kit's
-own {class}`~unicode_fol_kit.ProverBackend` protocol, so HETS joins the prover
+own {class}`~unicode_logic_kit.ProverBackend` protocol, so HETS joins the prover
 chain like any other backend. And
-{func}`~unicode_fol_kit.hets.register_hets_comorphisms` asks the running server
+{func}`~unicode_logic_kit.hets.register_hets_comorphisms` asks the running server
 which translations it knows and registers each as a `hets:<Name>` edge in the
 kit's comorphism registry — so `translate` can follow a path the kit does not
 implement itself:
 
 ```python
 # doctest: +SKIP  — needs Docker
-from unicode_fol_kit.hets import register_hets_comorphisms
+from unicode_logic_kit.hets import register_hets_comorphisms
 
 edges = register_hets_comorphisms()
 print(len(edges), edges[:3])
@@ -1106,14 +1106,14 @@ spelled like.
 
 ### Quantified modal logic, via `fol.qml`
 
-CASL/DOL have no modal operators of their own — {mod}`unicode_fol_kit.fol.casl_export`
+CASL/DOL have no modal operators of their own — {mod}`unicode_logic_kit.fol.casl_export`
 refuses `Box`/`Diamond`/… by name, on purpose (see that module's own
-docstring). But {mod}`unicode_fol_kit.fol.qml` already translates the kit's
+docstring). But {mod}`unicode_logic_kit.fol.qml` already translates the kit's
 full first-order modal fragment (alethic/temporal/deontic/per-agent
 epistemic-doxastic/PAL) down to plain classical FOL — the *standard
-translation* Z3 already decides for {func}`~unicode_fol_kit.fol.qml.qml_is_valid`
+translation* Z3 already decides for {func}`~unicode_logic_kit.fol.qml.qml_is_valid`
 — so a modal formula CAN reach HETS, by translating it first:
-{func}`unicode_fol_kit.hets.dol.to_dol_library_from_modal` composes that
+{func}`unicode_logic_kit.hets.dol.to_dol_library_from_modal` composes that
 translation, an identifier-sanitising rename (injective, and nothing else —
 `qml` renames a user predicate spelled like one of its own relations by
 appending U+00B7, `R` → `R·`, and that is no CASL identifier; the world
@@ -1121,9 +1121,9 @@ variables it mints are CASL identifiers as they are), and the
 plain CASL exporter above into one uploadable `.dol` library:
 
 ```python
-from unicode_fol_kit.fol.nodes import Atom, Box, Implies
-from unicode_fol_kit.fol.qml import qml_is_valid
-from unicode_fol_kit.hets.dol import to_dol_library_from_modal
+from unicode_logic_kit.fol.nodes import Atom, Box, Implies
+from unicode_logic_kit.fol.qml import qml_is_valid
+from unicode_logic_kit.hets.dol import to_dol_library_from_modal
 
 P = Atom("P", ())
 t_axiom = Implies(Box(P), P)                  # □P → P, valid on a REFLEXIVE frame
@@ -1154,8 +1154,8 @@ does:
 
 ```python
 # doctest: +SKIP  — needs Docker
-from unicode_fol_kit.hets.docker import discover_hets_url
-from unicode_fol_kit.hets.client import HetsClient
+from unicode_logic_kit.hets.docker import discover_hets_url
+from unicode_logic_kit.hets.client import HetsClient
 
 url, container = discover_hets_url(start_container=True)
 client = HetsClient(url)
@@ -1170,7 +1170,7 @@ Proved
 ```
 
 `mode=`/`frame=`/`systems=`/`bridges=`/`temporal_closure=` all forward
-straight through to {func}`~unicode_fol_kit.fol.qml.qml_validity_formula`, so
+straight through to {func}`~unicode_logic_kit.fol.qml.qml_validity_formula`, so
 Barcan/converse-Barcan under a domain regime, an S5 knowledge system, a
 Geach frame, or a cross-family bridge each reach HETS exactly like the plain
 alethic case above. Scoped to exactly what `fol.qml` already translates — no
@@ -1191,12 +1191,12 @@ binary* `a = b` over the object terms, with **no world argument** (and
 `a ≠ b` to `¬(a = b)`), so identity is rigid: it does not vary from world to
 world. That is exactly CASL's own fixed, built-in `=` — always two terms,
 never declared in `preds` — so `to_dol_library_from_modal` renders it infix
-and renames nothing, and {func}`~unicode_fol_kit.fol.casl_import.parse_casl_spec`
+and renames nothing, and {func}`~unicode_logic_kit.fol.casl_import.parse_casl_spec`
 reads the identical atom back. CASL has no disequality connective and needs
 none: `a ≠ b` arrives as `not a = b`.
 
 ```python
-from unicode_fol_kit.fol.nodes import Atom, Box, Constant, Implies
+from unicode_logic_kit.fol.nodes import Atom, Box, Constant, Implies
 
 a, b = Constant("a"), Constant("b")
 eq_axiom = Implies(Box(Atom("=", [a, b])), Atom("=", [a, b]))   # □(a=b) → a=b
@@ -1255,8 +1255,8 @@ bypassed `to_dol_library_from_modal`/`qml_validity_formula`. Write
 `Not(Atom("=", [a, b]))` there, which is what `fol.qml` writes itself:
 
 ```python
-from unicode_fol_kit.fol.nodes import Atom, Constant
-from unicode_fol_kit.hets.dol import sanitize_modal_identifiers
+from unicode_logic_kit.fol.nodes import Atom, Constant
+from unicode_logic_kit.hets.dol import sanitize_modal_identifiers
 
 a, b = Constant("a"), Constant("b")
 sanitize_modal_identifiers(Atom("≠", [a, b]))   # raises NotImplementedError
@@ -1287,11 +1287,11 @@ UTF-8 *bytes* of the intended text, and `show` emits a DECIMAL escape for
 every code point above 127. `\226` is not a JSON escape, so one non-ASCII
 annotation anywhere makes `GET /dg` unreadable for the whole library — and
 with it every `hets:` comorphism edge, which resolves its node through
-`dg()`. {func}`~unicode_fol_kit.hets.repair_haskell_json` recovers it:
+`dg()`. {func}`~unicode_logic_kit.hets.repair_haskell_json` recovers it:
 
 ```python
 import json
-from unicode_fol_kit.hets import repair_haskell_json
+from unicode_logic_kit.hets import repair_haskell_json
 
 body = (
     '{"DGraph": {"DGNode": [{"name": "oeo", "Declarations": [], "Axioms": ['
@@ -1326,9 +1326,9 @@ the repaired body loads as 13032 axioms over 2099 declarations.
 Two things it deliberately does NOT do. It never makes invalid JSON valid by
 guessing — a backslash outside a string literal, or an escape it does not
 recognise, is copied verbatim so `json.loads` raises as before — and
-{meth}`~unicode_fol_kit.hets.HetsClient.dg` calls it only AFTER `json.loads`
+{meth}`~unicode_logic_kit.hets.HetsClient.dg` calls it only AFTER `json.loads`
 has already failed, so a body the standard library accepts is never touched
-at all. {meth}`~unicode_fol_kit.hets.HetsClient.dg_raw` gives you the body
+at all. {meth}`~unicode_logic_kit.hets.HetsClient.dg_raw` gives you the body
 untouched when you want to look yourself.
 
 **`GET /theory` does not return a TPTP problem.** For a TPTP comorphism HETS
@@ -1341,8 +1341,8 @@ a CASL theory, treat its entire body as a comment, and answer with an EMPTY
 formula list.
 
 ```python
-from unicode_fol_kit.fol.tptp_input import parse_tptp
-from unicode_fol_kit.hets import strip_hets_theory_header
+from unicode_logic_kit.fol.tptp_input import parse_tptp
+from unicode_logic_kit.hets import strip_hets_theory_header
 
 theory = """logic TPTP.FOF
 
@@ -1377,7 +1377,7 @@ the signature block would move the cut point. Measured on the real
 1,554,903-character rendering, the header is 187,689 characters (2267 lines)
 and the remainder is byte-identical to the file `hets-server -o tptp` writes
 — so the REST route and the command-line route deliver the same text.
-{meth}`~unicode_fol_kit.hets.HetsClient.theory_tptp` does the fetch and the
+{meth}`~unicode_logic_kit.hets.HetsClient.theory_tptp` does the fetch and the
 strip in one call and refuses a CASL body by name.
 
 Note one limit of reading TPTP back as kit formulas, whatever the source:
@@ -1392,13 +1392,13 @@ siblings in `tests/test_printed_text_reads_back.py`.
 printed name into `pred_`/`op_`/`sort_` plus `_u` for every character outside
 `[A-Za-z0-9_]`, so a real class arrives as
 `pred_https_u_u_uopenenergyplatform_uorg_uontology_uoeo_uOEO_00000072`.
-{func}`~unicode_fol_kit.hets.hets_symbol_table` joins that back onto the IRI
-and the `rdfs:label`, and {func}`~unicode_fol_kit.hets.untranslated_axioms`
+{func}`~unicode_logic_kit.hets.hets_symbol_table` joins that back onto the IRI
+and the `rdfs:label`, and {func}`~unicode_logic_kit.hets.untranslated_axioms`
 names the axioms the translation dropped. Both are pure functions over a
 `/dg` dict and a TPTP string — no server needed:
 
 ```python
-from unicode_fol_kit.hets import (
+from unicode_logic_kit.hets import (
     hets_prefixes, hets_symbol_table, untranslated_axioms)
 
 dg = {"DGraph": {"DGNode": [{
@@ -1454,25 +1454,25 @@ independent derivations agreeing is what makes the number trustworthy.
 
 HETS refuses a comorphism whose source sublogic does not cover the theory,
 and `GET /theory` then answers HTTP 422 — now a typed, branchable
-{class}`~unicode_fol_kit.hets.HetsSublogicError` carrying HETS' three
+{class}`~unicode_logic_kit.hets.HetsSublogicError` carrying HETS' three
 strings (`comorphism`, `expected`, `found`) instead of prose to grep. On a
 real ontology that refusal can hang on very little: two
 `DataPropertyRange(d rdfs:Literal)` axioms out of 4041 push all of OEO
 2.13.0 out of `OWL22CASL`'s sublogic. `GET /translations` is no help — for
 the same library it answers a well-formed list with ZERO entries, HTTP 200,
 no reason at all, which is why that method now raises
-{class}`~unicode_fol_kit.hets.HetsNoTranslationsError` naming the endpoint
+{class}`~unicode_logic_kit.hets.HetsNoTranslationsError` naming the endpoint
 where the reason does live rather than returning `[]`.
 
 `hets-server`'s `-Y` flag translates anyway and drops what it cannot
 express. It exists ONLY on the command line, so
-{func}`~unicode_fol_kit.hets.owl_to_tptp` is the one part of this subpackage
+{func}`~unicode_logic_kit.hets.owl_to_tptp` is the one part of this subpackage
 that `docker exec`s instead of speaking HTTP:
 
 ```python
 # doctest: +SKIP  — needs Docker and a running spechub2/hets container
-from unicode_fol_kit.hets import HetsClient, owl_to_tptp
-from unicode_fol_kit.fol.tptp_input import parse_tptp
+from unicode_logic_kit.hets import HetsClient, owl_to_tptp
+from unicode_logic_kit.fol.tptp_input import parse_tptp
 
 result = owl_to_tptp("oeo.owl", container="ufk-hets-oeo",
                      client=HetsClient("http://localhost:8000"))
@@ -1525,15 +1525,15 @@ require; repairing that would mean choosing an entity KIND for an
 annotation-only IRI (a guess that puts a symbol into the logical signature),
 growing an RDF/XML writer this kit does not have, and deleting annotations.
 So it detects the pattern, collects every undeclared IRI and raises
-{class}`~unicode_fol_kit.hets.HetsOwlNormalizationError` listing them with
+{class}`~unicode_logic_kit.hets.HetsOwlNormalizationError` listing them with
 both remedies — the semantic choice stays with the ontology's owner.
 
 Finally, the reason all of this reports so carefully: a HETS translation is
 the SECOND FOL image of an ontology, to be compared against
-{func}`~unicode_fol_kit.dl.tbox_to_fol` / {func}`~unicode_fol_kit.dl.kb_to_fol`
+{func}`~unicode_logic_kit.dl.tbox_to_fol` / {func}`~unicode_logic_kit.dl.kb_to_fol`
 and `api.prove`. A comparison is worth nothing if either side is presented as
 more complete than it is. HETS' own translation defects are listed in
-{mod}`unicode_fol_kit.hets.symbols`' docstring so a disagreement is
+{mod}`unicode_logic_kit.hets.symbols`' docstring so a disagreement is
 attributable rather than blamed on this kit — among them an n-ary
 `DifferentIndividuals` expanded to fewer than all pairs, a
 `DataPropertyRange` rendered with its existential over the implication, both
@@ -1542,10 +1542,10 @@ duplicated formula names (so never key formulas by name).
 
 ## Inductive logic programming: the other direction
 
-Reading a learner's answer is half the loop. {mod}`unicode_fol_kit.ilp` writes
+Reading a learner's answer is half the loop. {mod}`unicode_logic_kit.ilp` writes
 the learner's *question* — the background knowledge, examples and language bias
 an ILP system (Popper, Aleph, Metagol) reads — from the very same
-{class}`~unicode_fol_kit.semantics.structures.FiniteStructure` objects the model
+{class}`~unicode_logic_kit.semantics.structures.FiniteStructure` objects the model
 checker evaluates against:
 
 ```text
@@ -1558,8 +1558,8 @@ is not a dependency the kit takes on for a file format. It writes `bk.pl`,
 `exs.pl` and `bias.pl`, and reads the text a learner prints.
 
 ```python
-from unicode_fol_kit.semantics import FiniteStructure
-from unicode_fol_kit.ilp import IlpTask, Example
+from unicode_logic_kit.semantics import FiniteStructure
+from unicode_logic_kit.ilp import IlpTask, Example
 
 amide = FiniteStructure(
     domain=("c1", "o1", "n1"),
@@ -1669,7 +1669,7 @@ that check as a test, skip-gated on Aleph being installed.
 ### Reading the clause back
 
 ```python
-from unicode_fol_kit.ilp import clause_to_formula
+from unicode_logic_kit.ilp import clause_to_formula
 
 learned = "amide(A) :- bSINGLE(C, D), bDOUBLE(D, B), n(C), atom_in(A, B)."
 print(clause_to_formula(learned).to_unicode_str())
@@ -1687,7 +1687,7 @@ refused instead of translated, each because no formula about a single structure
 means the same thing:
 
 ```python
-from unicode_fol_kit.ilp import clause_to_formula, IlpEncodingError
+from unicode_logic_kit.ilp import clause_to_formula, IlpEncodingError
 
 for clause, why in [
     ("amide(A) :- n(C), atom_in(B, C).",          "names a second example"),
@@ -1719,8 +1719,8 @@ in does not separate the two example sets under the kit's own model checker,
 the task is broken and no answer from any learner would have meant anything:
 
 ```python
-from unicode_fol_kit.semantics import FiniteStructure
-from unicode_fol_kit.ilp import Example, IlpTask, check_separation
+from unicode_logic_kit.semantics import FiniteStructure
+from unicode_logic_kit.ilp import Example, IlpTask, check_separation
 
 amide = FiniteStructure(
     domain=("c1", "o1", "n1"),

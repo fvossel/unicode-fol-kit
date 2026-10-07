@@ -16,17 +16,17 @@ from pathlib import Path
 
 import pytest
 
-from unicode_fol_kit.ace import (
+from unicode_logic_kit.ace import (
     AceUnsupportedError, ace_to_drs, ape_available, condition_statistics,
     map_ace_drs, parse_ape_drs,
 )
-from unicode_fol_kit.ace._align import align_ape_tptp_formula, conjoin
-from unicode_fol_kit.ace.mapping import _named_constant
-from unicode_fol_kit.ace.runner import _repair_ape_tptp
-from unicode_fol_kit.drt import drs_to_fol, is_predicate_name, parse_drs
-from unicode_fol_kit.drt.nodes import Card, Eq, Part, Pred
-from unicode_fol_kit.eval.equivalence import equivalent
-from unicode_fol_kit.fol.tptp_input import parse_tptp
+from unicode_logic_kit.ace._align import align_ape_tptp_formula, conjoin
+from unicode_logic_kit.ace.mapping import _named_constant
+from unicode_logic_kit.ace.runner import _repair_ape_tptp
+from unicode_logic_kit.drt import drs_to_fol, is_predicate_name, parse_drs
+from unicode_logic_kit.drt.nodes import Card, Eq, Part, Pred
+from unicode_logic_kit.eval.equivalence import equivalent
+from unicode_logic_kit.fol.tptp_input import parse_tptp
 
 live = pytest.mark.skipif(not ape_available(),
                           reason="no APE binary reachable")
@@ -218,7 +218,7 @@ def test_each_of_distributes_through_the_duplex_not_an_operator():
                        ).conditions[0]
     assert duplex in drs.conditions
     # And z3 draws the distributed consequence: John himself waits.
-    from unicode_fol_kit import MSFLParser, api
+    from unicode_logic_kit import MSFLParser, api
     verdict = api.prove(MSFLParser().parse("∃e1 Wait(e1, john)"),
                         premises=[drs_to_fol(drs)])
     assert verdict.status == "proved"
@@ -313,7 +313,7 @@ def test_underscore_predicates_now_enter_the_drs_core():
 
 
 def test_comparative_maps_and_survives_the_fol_parser():
-    from unicode_fol_kit import MSFLParser
+    from unicode_logic_kit import MSFLParser
     formula = drs_to_fol(_mapping("comparative").drs)
     assert MSFLParser().parse(formula.to_unicode_str()) == formula
 

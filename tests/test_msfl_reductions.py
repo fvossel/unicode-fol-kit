@@ -1,7 +1,7 @@
 """Tests for MSFL → FOL reductions: to_msfol, to_fol, and auto-reduce exporters."""
 import pytest
 from dataclasses import fields
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Node, Variable, Constant, Atom, And, Or, Not, Implies, Iff, Quantifier,
     SortedQuantifier, SortedConstant,
     WeakConjunction, WeakDisjunction,
@@ -9,7 +9,7 @@ from unicode_fol_kit.fol.nodes import (
     LukNegation, LukImplication, LukEquivalence,
     to_fol,
 )
-from unicode_fol_kit import formulas_are_equivalent
+from unicode_logic_kit import formulas_are_equivalent
 
 _X = Variable("x")
 _P = Atom("P", [Variable("x")])

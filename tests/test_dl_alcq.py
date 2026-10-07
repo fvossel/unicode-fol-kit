@@ -1,6 +1,6 @@
 """Tests for **ALCQ** (qualified number restrictions on top of ALC(H+S)):
 ``dl.AtLeast``/``dl.AtMost`` and the tableau's ≥/≤/choose completion rules — see
-the "Qualified number restrictions" section of ``unicode_fol_kit.dl.tableau``'s
+the "Qualified number restrictions" section of ``unicode_logic_kit.dl.tableau``'s
 module docstring for the algorithm and its soundness/termination argument.
 
 Four independent lines, matching the item's test oracle:
@@ -12,7 +12,7 @@ Four independent lines, matching the item's test oracle:
 2. A differential oracle against the kit's OWN independent route: the NEW
    ``concept_to_fol``/``abox_to_fol`` translation, which routes AtLeast/AtMost
    through the already-tested ``fol.nodes.Count`` node and is decided by Z3
-   (``unicode_fol_kit.atp.z3_models.is_satisfiable``) — a genuinely independent
+   (``unicode_logic_kit.atp.z3_models.is_satisfiable``) — a genuinely independent
    algorithm (SMT solving on the distinct-witnesses expansion) checking the
    hand-written tableau, exactly the pattern the project already uses for plain
    ALC and for the RBox extension. Both a random battery of small concepts
@@ -20,8 +20,8 @@ Four independent lines, matching the item's test oracle:
    (``dl.abox_consistent``, exercising the merge/choose rules against named
    individuals and distinctness assertions) are checked.
 3. Round-trip parse/render tests, both for the glyph syntax
-   (``unicode_fol_kit.dl.parser``) and for OWL Manchester Syntax's ``min``/
-   ``max``/``exactly`` (``unicode_fol_kit.dl.owl_manchester``), following the
+   (``unicode_logic_kit.dl.parser``) and for OWL Manchester Syntax's ``min``/
+   ``max``/``exactly`` (``unicode_logic_kit.dl.owl_manchester``), following the
    existing ``tests/test_dl_parser.py``/``tests/test_owl_manchester.py`` pattern.
 4. Regression: ``instance_check``/``classify`` (pure reductions to
    ``abox_consistent``/``subsumes``) correctly inherit ALCQ support with no
@@ -39,17 +39,17 @@ import time
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit import api
-from unicode_fol_kit.dl.parser import parse_concept, ConceptSyntaxError
-from unicode_fol_kit.dl.owl_manchester import parse_manchester, to_manchester, ManchesterSyntaxError
-from unicode_fol_kit.dl.translate import (
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit import api
+from unicode_logic_kit.dl.parser import parse_concept, ConceptSyntaxError
+from unicode_logic_kit.dl.owl_manchester import parse_manchester, to_manchester, ManchesterSyntaxError
+from unicode_logic_kit.dl.translate import (
     concept_to_fol, abox_to_fol, subsumption_to_fol, kb_to_fol,
 )
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Quantifier, Variable, Constant, Count, Number, Atom, And as FAnd, Not as FNot,
 )
-from unicode_fol_kit.atp.z3_models import is_satisfiable
+from unicode_logic_kit.atp.z3_models import is_satisfiable
 
 A, B, C, D = dl.Atomic("A"), dl.Atomic("B"), dl.Atomic("C"), dl.Atomic("D")
 r, s = "r", "s"
@@ -113,7 +113,7 @@ def test_nnf_duals():
 
 
 # --------------------------------------------------------------------------- #
-# Round-trip: glyph syntax (unicode_fol_kit.dl.parser).
+# Round-trip: glyph syntax (unicode_logic_kit.dl.parser).
 # --------------------------------------------------------------------------- #
 
 @pytest.mark.parametrize("concept", [

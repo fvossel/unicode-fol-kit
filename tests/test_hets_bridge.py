@@ -1,4 +1,4 @@
-"""Tests for the Hets comorphism bridge (unicode_fol_kit.hets.bridge).
+"""Tests for the Hets comorphism bridge (unicode_logic_kit.hets.bridge).
 
 The bridge turns a running hets-server's ``GET /translations`` list into
 ``hets:<Name>`` edges in the kit's comorphism registry. Offline tests stub
@@ -22,14 +22,14 @@ which is exactly what a user would do, and is restored the same way.
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.comorphism import DEFAULT_REGISTRY
-from unicode_fol_kit.hets import bridge
-from unicode_fol_kit.hets.bridge import (
+from unicode_logic_kit import api
+from unicode_logic_kit.comorphism import DEFAULT_REGISTRY
+from unicode_logic_kit.hets import bridge
+from unicode_logic_kit.hets.bridge import (
     HETS_EDGE_PREFIX,
     register_hets_comorphisms,
 )
-from unicode_fol_kit.hets.docker import hets_available
+from unicode_logic_kit.hets.docker import hets_available
 
 
 @pytest.fixture(autouse=True)

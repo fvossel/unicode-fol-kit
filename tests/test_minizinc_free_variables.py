@@ -23,12 +23,12 @@ Closing every premise universally would call the first and the last row valid.
 """
 import pytest
 
-from unicode_fol_kit.atp.finite_domain import FiniteDomainProblem, free_variable_reason
-from unicode_fol_kit.atp.minizinc_backend import MinizincBackend, minizinc_available, to_minizinc
-from unicode_fol_kit.atp.protocol import REFUTED, UNKNOWN
-from unicode_fol_kit.fol._free_parameters import free_parameter_names, parameterize
-from unicode_fol_kit.fol.nodes import And, Atom, Constant, Implies, Not, Quantifier, Variable
-from unicode_fol_kit.semantics import evaluate_in_structure, structure_from_dict
+from unicode_logic_kit.atp.finite_domain import FiniteDomainProblem, free_variable_reason
+from unicode_logic_kit.atp.minizinc_backend import MinizincBackend, minizinc_available, to_minizinc
+from unicode_logic_kit.atp.protocol import REFUTED, UNKNOWN
+from unicode_logic_kit.fol._free_parameters import free_parameter_names, parameterize
+from unicode_logic_kit.fol.nodes import And, Atom, Constant, Implies, Not, Quantifier, Variable
+from unicode_logic_kit.semantics import evaluate_in_structure, structure_from_dict
 
 live = pytest.mark.skipif(not minizinc_available(), reason="no minizinc binary reachable")
 

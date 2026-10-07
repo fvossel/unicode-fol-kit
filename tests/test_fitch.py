@@ -1,4 +1,4 @@
-"""Tests for the Fitch-style natural-deduction checker (unicode_fol_kit.atp.fitch).
+"""Tests for the Fitch-style natural-deduction checker (unicode_logic_kit.atp.fitch).
 
 The soundness backbone mirrors the resolution suite: every proof the checker
 ACCEPTS is cross-checked against an independent oracle, and the critical invariant
@@ -22,18 +22,18 @@ import random
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier, Variable, Constant,
     Box, Diamond, Knows, Believes, Obligatory, Permitted,
 )
-from unicode_fol_kit.atp.fitch import (
+from unicode_logic_kit.atp.fitch import (
     Proof, Subproof, Justification, Line, ProofResult,
     premise, assume, line, flag, FALSUM,
     check_proof, verify_proof, render_fitch, render_latex_fitch,
     _classical_valid, _index, _open_assumptions, _subst_var, _free_vars,
 )
-from unicode_fol_kit.atp.resolution import prove as res_prove
+from unicode_logic_kit.atp.resolution import prove as res_prove
 
 P = Atom("P", [])
 Q = Atom("Q", [])
@@ -339,7 +339,7 @@ def test_subst_var_rewrites_slashed_existential_like_the_core():
     # Regression: the IF-logic ∃x/{y} binds x AND carries a slash set naming ENCLOSING
     # binders. The core substitution in fol._msfl_nodes already specifies the three
     # cases; it is the oracle here, so the two implementations cannot drift apart.
-    from unicode_fol_kit.fol._msfl_nodes import _subst
+    from unicode_logic_kit.fol._msfl_nodes import _subst
     f = MSFLParser(dependence=True).parse("∃x/{y} (R(x, y, z))")
     cases = [
         (Variable("y"), Variable("w")),      # slash name → variable: entry renamed
@@ -472,7 +472,7 @@ def test_reject_forall_intro_box_that_discharges_hypothesis():
     assert r.ok is False
     assert "pure eigenvariable box" in r.error
     # And the "conclusion" really is invalid, so accepting it would be unsound.
-    from unicode_fol_kit import is_valid
+    from unicode_logic_kit import is_valid
     assert is_valid(ALL(x, Atom("P", [x]))) is False
 
 
@@ -805,7 +805,7 @@ def test_modal_predicate_name_collision_rejected():
 
 
 def test_modal_rejects_temporal_operators():
-    from unicode_fol_kit.fol.nodes import Always
+    from unicode_logic_kit.fol.nodes import Always
     proof = Proof(steps=[line(1, Implies(Always(P), P), "?")], logic="S4")
     r = verify_proof(proof)
     assert r.ok is False
@@ -863,7 +863,7 @@ def test_render_latex_fitch_exact():
 # ---------------------------------------------------------------------------
 
 def test_top_level_exports():
-    import unicode_fol_kit as u
+    import unicode_logic_kit as u
     for name in ("Proof", "Line", "Subproof", "Justification", "ProofResult",
                  "premise", "assume", "line", "flag", "FALSUM",
                  "check_proof", "verify_proof", "render_fitch", "render_latex_fitch"):

@@ -14,14 +14,14 @@ caller's and nothing is refused.
 
 import pytest
 
-from unicode_fol_kit import hets as hets_pkg
-from unicode_fol_kit.atp.hets_backend import HetsBackend
-from unicode_fol_kit.atp.protocol import get_backend
-from unicode_fol_kit.fol.casl_export import formula_to_casl, to_casl_spec
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import hets as hets_pkg
+from unicode_logic_kit.atp.hets_backend import HetsBackend
+from unicode_logic_kit.atp.protocol import get_backend
+from unicode_logic_kit.fol.casl_export import formula_to_casl, to_casl_spec
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Function, Quantifier, SortedConstant, SortedQuantifier, Variable,
 )
-from unicode_fol_kit.hets.docker import hets_available
+from unicode_logic_kit.hets.docker import hets_available
 
 _X, _Y, _Z = Variable("x"), Variable("y"), Variable("z")
 
@@ -153,7 +153,7 @@ def test_a_subsort_declaration_with_the_default_sorts_name_is_the_callers_when_t
 # ---------------------------------------------------------------------------
 
 def test_the_default_sort_is_thing_unless_a_sort_of_the_problem_is_called_thing():
-    from unicode_fol_kit.atp.hets_backend import _default_sort_for
+    from unicode_logic_kit.atp.hets_backend import _default_sort_for
     assert _default_sort_for([]) == "Thing"
     assert _default_sort_for([_EX_Q]) == "Thing"
     assert _default_sort_for([_all_in("Entity", _X, _p(_X))]) == "Thing"
@@ -162,7 +162,7 @@ def test_the_default_sort_is_thing_unless_a_sort_of_the_problem_is_called_thing(
 
 
 def test_the_first_free_numbered_default_sort_is_taken():
-    from unicode_fol_kit.atp.hets_backend import _default_sort_for
+    from unicode_logic_kit.atp.hets_backend import _default_sort_for
     thing, thing1 = _all_in("Thing", _X, _p(_X)), _all_in("Thing1", _X, _p(_X))
     assert _default_sort_for([thing, thing1]) == "Thing2"
     assert _default_sort_for([thing1]) == "Thing"

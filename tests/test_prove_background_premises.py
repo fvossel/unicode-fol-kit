@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """The premises ``api.prove`` reports as relevant are the caller's own: side axioms are background.
 
-A :class:`~unicode_fol_kit.logic.Sentence` that is handed to ``api.prove`` brings its side axioms with it
+A :class:`~unicode_logic_kit.logic.Sentence` that is handed to ``api.prove`` brings its side axioms with it
 (the non-emptiness of a sort, the membership atom of a sorted constant, a frame condition); they are
 appended to the premises of every backend, after the caller's own. Like the sentences of ``signature=``
 they are background, not premises the caller gave, and an index that comes back is an index into the
@@ -15,10 +15,10 @@ irrelevant. The relevant premises are ``(1,)`` -- the side axiom is needed, and 
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.protocol import PROVED, get_backend
-from unicode_fol_kit.fol.signature import Signature
-from unicode_fol_kit.logic import Sentence
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.protocol import PROVED, get_backend
+from unicode_logic_kit.fol.signature import Signature
+from unicode_logic_kit.logic import Sentence
 
 
 def F(text):

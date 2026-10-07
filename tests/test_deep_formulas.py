@@ -24,9 +24,9 @@ import threading
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.protocol import ERROR, PROVED, REFUTED, UNKNOWN, Verdict
-from unicode_fol_kit.fol.nodes import And, Atom, Box, Constant, Not, Quantifier, Variable
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.protocol import ERROR, PROVED, REFUTED, UNKNOWN, Verdict
+from unicode_logic_kit.fol.nodes import And, Atom, Box, Constant, Not, Quantifier, Variable
 
 P = Atom("P", [])
 

@@ -21,19 +21,19 @@ from itertools import product
 import pytest
 import z3
 
-from unicode_fol_kit.fol.nodes import Atom, And, Constant, Implies, Not, Or
-from unicode_fol_kit.fol._truth_constants import (
+from unicode_logic_kit.fol.nodes import Atom, And, Constant, Implies, Not, Or
+from unicode_logic_kit.fol._truth_constants import (
     is_false_constant, is_true_constant, is_truth_constant, refuse_truth_constants,
     truth_constants_in, truth_value,
 )
-from unicode_fol_kit.api import prove
-from unicode_fol_kit.atp.protocol import _REGISTRY
-from unicode_fol_kit.atp.sequent import axiom, check_sequent_proof, derive, sequent
-from unicode_fol_kit.atp.lj import check_lj_proof
-from unicode_fol_kit.atp.fitch import Proof, check_proof, line, premise, verify_proof
-from unicode_fol_kit.atp.tableau import prove_tableau_detailed
-from unicode_fol_kit.atp.tableau_check import check_tableau_proof
-from unicode_fol_kit.atp.resolution_check import (
+from unicode_logic_kit.api import prove
+from unicode_logic_kit.atp.protocol import _REGISTRY
+from unicode_logic_kit.atp.sequent import axiom, check_sequent_proof, derive, sequent
+from unicode_logic_kit.atp.lj import check_lj_proof
+from unicode_logic_kit.atp.fitch import Proof, check_proof, line, premise, verify_proof
+from unicode_logic_kit.atp.tableau import prove_tableau_detailed
+from unicode_logic_kit.atp.tableau_check import check_tableau_proof
+from unicode_logic_kit.atp.resolution_check import (
     ResolutionDerivation, ResolutionStep, verify_resolution_proof,
 )
 from test_truth_constants_routes import BACKENDS, DIRECT_ROUTES
@@ -60,12 +60,12 @@ PROBLEMS = {
 
 def truth_constant_word(atom):
     """The TPTP word of a truth constant (``$true`` / ``$false``), or ``None``."""
-    from unicode_fol_kit.fol._tptp_symbols import truth_constant_word as word
+    from unicode_logic_kit.fol._tptp_symbols import truth_constant_word as word
     return word(atom)
 
 
 def is_tptp_boolean_atom(atom):
-    from unicode_fol_kit.fol._tptp_symbols import is_tptp_boolean_atom as is_boolean
+    from unicode_logic_kit.fol._tptp_symbols import is_tptp_boolean_atom as is_boolean
     return is_boolean(atom)
 
 
@@ -136,7 +136,7 @@ def test_four_problems_in_every_registered_backend(name, problem):
 
 def test_a_countermodel_of_top_entails_q_reads_no_symbol_for_the_glyph():
     # ⊤ ⊢ Q has the countermodel with Q false; the constant is no entry of it
-    from unicode_fol_kit.semantics.modelfinder import find_countermodel
+    from unicode_logic_kit.semantics.modelfinder import find_countermodel
     model = find_countermodel([TOP], Q)
     assert model is not None
     assert "⊤" not in str(model)
@@ -174,7 +174,7 @@ def truth_word_atom(glyph_atom):
 CLASSICAL = Implies(And(P, TOP), Not(BOT))
 #: □⊤ → ◇¬⊥
 def _modal():
-    from unicode_fol_kit.fol.nodes import Box, Diamond
+    from unicode_logic_kit.fol.nodes import Box, Diamond
     return Implies(Box(TOP), Diamond(Not(BOT)))
 
 
@@ -189,16 +189,16 @@ def test_the_single_formula_renderers_write_the_constants_words():
 
 
 def test_the_smtlib_and_casl_writers_write_the_constants_words():
-    from unicode_fol_kit.atp.z3_input import to_smtlib
-    from unicode_fol_kit.fol.casl_export import formula_to_casl
+    from unicode_logic_kit.atp.z3_input import to_smtlib
+    from unicode_logic_kit.fol.casl_export import formula_to_casl
     assert "(=> (and P true) (not false))" in to_smtlib(CLASSICAL)
     assert formula_to_casl(CLASSICAL) == "(P /\\ true) => not false"
     assert formula_to_casl(TOP) == "true" and formula_to_casl(BOT) == "false"
 
 
 def test_the_higher_order_writers_write_the_constants_and_declare_nothing_for_them():
-    from unicode_fol_kit.hol.classical import to_isabelle_fol, to_thf_fol
-    from unicode_fol_kit.hol.lean import to_lean_fol
+    from unicode_logic_kit.hol.classical import to_isabelle_fol, to_thf_fol
+    from unicode_logic_kit.hol.lean import to_lean_fol
     thf = to_thf_fol(CLASSICAL)
     assert "( ( p & $true ) => ( ~ $false ) )" in thf
     assert [ln for ln in thf.splitlines() if "_decl" in ln] == [ln for ln in thf.splitlines() if "p_decl" in ln]
@@ -212,7 +212,7 @@ def test_the_higher_order_writers_write_the_constants_and_declare_nothing_for_th
 
 
 def test_the_modal_writers_lift_the_constants_to_world_independent_propositions():
-    from unicode_fol_kit.fol.qml import to_isabelle_modal, to_thf_modal
+    from unicode_logic_kit.fol.qml import to_isabelle_modal, to_thf_modal
     thf = to_thf_modal(_modal())
     assert "( ^ [W: mu] : $true )" in thf and "( ^ [W: mu] : $false )" in thf
     assert "⊤" not in thf and "⊥" not in thf
@@ -221,7 +221,7 @@ def test_the_modal_writers_lift_the_constants_to_world_independent_propositions(
 
 
 def test_the_nxf_writer_declares_no_symbol_for_the_glyph_atoms():
-    from unicode_fol_kit.atp.tptp_ncl import to_tptp_ncl
+    from unicode_logic_kit.atp.tptp_ncl import to_tptp_ncl
     text = to_tptp_ncl(_modal())
     assert "([.] $true => <.> ~($false))" in text
     assert "_decl" not in text and "⊤" not in text and "⊥" not in text
@@ -229,9 +229,9 @@ def test_the_nxf_writer_declares_no_symbol_for_the_glyph_atoms():
 
 @pytest.mark.parametrize("name", ["fof", "tff", "tfa"])
 def test_the_problem_writers_write_the_constants_words(name):
-    from unicode_fol_kit.atp._tff_problem import generate_tff_arith_problem
-    from unicode_fol_kit.atp._tptp_problem import generate_tptp_problem
-    from unicode_fol_kit.atp.tptp_tff import generate_tff_problem
+    from unicode_logic_kit.atp._tff_problem import generate_tff_arith_problem
+    from unicode_logic_kit.atp._tptp_problem import generate_tptp_problem
+    from unicode_logic_kit.atp.tptp_tff import generate_tff_problem
     writer = {"fof": generate_tptp_problem, "tff": generate_tff_problem,
               "tfa": lambda prem, goal: generate_tff_arith_problem(prem, goal, sort="int")[0]}[name]
     text = writer([BOT, P], And(P, TOP))
@@ -244,7 +244,7 @@ def test_the_problem_writers_write_the_constants_words(name):
 
 
 def test_the_prover9_problem_writer_writes_the_constants_words():
-    from unicode_fol_kit.atp.prover9_entailment import generate_prover9_input_with_mapping
+    from unicode_logic_kit.atp.prover9_entailment import generate_prover9_input_with_mapping
     text = generate_prover9_input_with_mapping([BOT], Q)[0]
     assert "$F." in text and "⊥" not in text
     assert text == generate_prover9_input_with_mapping([FALSE], Q)[0]

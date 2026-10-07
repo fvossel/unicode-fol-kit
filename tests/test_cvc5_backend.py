@@ -26,9 +26,9 @@ import pytest
 
 cvc5 = pytest.importorskip("cvc5")
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.atp.cvc5_backend import Cvc5Backend
-from unicode_fol_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, ERROR
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.atp.cvc5_backend import Cvc5Backend
+from unicode_logic_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, ERROR
 
 _P = MSFLParser()
 _LIN = MSFLParser(linear=True)
@@ -311,9 +311,9 @@ def test_alethe_proof_checks_with_carcara_when_installed():
 # ground truth for "is this SMT-LIB2 text actually legal".
 # ---------------------------------------------------------------------------
 
-from unicode_fol_kit.fol.msflparser import MSFLParser as _MSFLParser
-from unicode_fol_kit.fol.nodes import Constant as _Constant
-from unicode_fol_kit.atp.cvc5_backend import _sanitize_for_smtlib, _implication
+from unicode_logic_kit.fol.msflparser import MSFLParser as _MSFLParser
+from unicode_logic_kit.fol.nodes import Constant as _Constant
+from unicode_logic_kit.atp.cvc5_backend import _sanitize_for_smtlib, _implication
 
 _UPARSE = _MSFLParser().parse
 
@@ -341,7 +341,7 @@ class TestDigitLeadingNamesNoLongerCrash:
         # so this is reachable only via a programmatically built node, not
         # through the parser — exactly the pre-existing reachability path
         # the task's STAND note describes for every one of these gaps.
-        from unicode_fol_kit.fol.nodes import Atom, Constant
+        from unicode_logic_kit.fol.nodes import Atom, Constant
         f = Atom("2008Wins", [Constant("alice")])
         v = _backend.decide(f)
         assert v.status in ("proved", "refuted", "unknown", "error")
@@ -389,7 +389,7 @@ class TestReservedWordNamesAreAlsoSanitised:
 
     def test_reserved_word_predicate_name_smt2_text_parses(self):
         import z3
-        from unicode_fol_kit.fol.nodes import Atom, Constant
+        from unicode_logic_kit.fol.nodes import Atom, Constant
 
         # "let" is a legal lower-case-initial NAME in the kit's own grammar
         # (predicate-hood needs an UPPER-case initial) but an SMT-LIB2
@@ -412,7 +412,7 @@ class TestReservedWordNamesAreAlsoSanitised:
         # prints as the undecorated head of "(let x)", which Z3's OWN
         # parser then reads as the let-BINDING form and rejects.
         import z3
-        from unicode_fol_kit.fol.nodes import Atom, Constant
+        from unicode_logic_kit.fol.nodes import Atom, Constant
 
         f = Atom("let", [Constant("x")])
         goal = _implication(f, [])          # UNSANITISED goal
@@ -424,7 +424,7 @@ class TestReservedWordNamesAreAlsoSanitised:
             z3.parse_smt2_string(text)
 
     def test_reserved_word_predicate_name_decides_through_cvc5_too(self):
-        from unicode_fol_kit.fol.nodes import Atom, Constant
+        from unicode_logic_kit.fol.nodes import Atom, Constant
 
         f = Atom("let", [Constant("x")])
         v = _backend.decide(f)
@@ -455,7 +455,7 @@ class TestSixReservedGrammarWordsZ3DoesNotSpecialCase:
 
     @pytest.mark.parametrize("word", [w for w in _WORDS if w != "par"])
     def test_identity_mapped_by_the_sanitiser(self, word):
-        from unicode_fol_kit.fol.nodes import Atom, Constant
+        from unicode_logic_kit.fol.nodes import Atom, Constant
 
         f = Atom("P", [Constant(word)])
         goal = _implication(f, [])
@@ -463,7 +463,7 @@ class TestSixReservedGrammarWordsZ3DoesNotSpecialCase:
         assert mapping.mapping[word] == word
 
     def test_par_is_renamed_by_the_sanitiser_because_cvc5_reads_it_as_a_keyword(self):
-        from unicode_fol_kit.fol.nodes import Atom, Constant
+        from unicode_logic_kit.fol.nodes import Atom, Constant
 
         f = Atom("P", [Constant("par")])
         sanitised, mapping = _sanitize_for_smtlib(_implication(f, []))
@@ -479,7 +479,7 @@ class TestSixReservedGrammarWordsZ3DoesNotSpecialCase:
         # confirms sanitising them would be pure unforced renaming, not a
         # fix for anything.
         import z3
-        from unicode_fol_kit.fol.nodes import Atom, Constant
+        from unicode_logic_kit.fol.nodes import Atom, Constant
 
         f = Atom(word, [Constant("x")])
         z3_goal = f.to_z3()
@@ -515,14 +515,14 @@ class TestNonAsciiNamesAlreadyWorkedAndStayUntouched:
 
 class TestR2CollisionAvoidance:
     def test_two_different_digit_leading_names_get_distinct_tokens(self):
-        from unicode_fol_kit.fol.nodes import Atom
+        from unicode_logic_kit.fol.nodes import Atom
         goal = _implication(
             Atom("=", [_Constant("2008SummerOlympics"), _Constant("2012London")]), [])
         _, mapping = _sanitize_for_smtlib(goal)
         assert mapping.mapping["2008SummerOlympics"] != mapping.mapping["2012London"]
 
     def test_synthesised_token_never_collides_with_an_already_legal_name(self):
-        from unicode_fol_kit.fol.nodes import Atom
+        from unicode_logic_kit.fol.nodes import Atom
         # "n2008x" is what a naive synthesis of "2008x" would target; a
         # literal constant ALREADY named "n2008x" must not be clobbered,
         # regardless of which one this walk reaches first.

@@ -36,21 +36,21 @@ item's batch notes):
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import Atom, Constant, Function, Not, Variable
-from unicode_fol_kit.fol.tptp_input import parse_tptp_formula
-from unicode_fol_kit.atp._tptp_problem import (
+from unicode_logic_kit.fol.nodes import Atom, Constant, Function, Not, Variable
+from unicode_logic_kit.fol.tptp_input import parse_tptp_formula
+from unicode_logic_kit.atp._tptp_problem import (
     generate_tptp_problem_with_mapping, _sanitize_for_tptp,
 )
-from unicode_fol_kit.atp.resolution_check import (
+from unicode_logic_kit.atp.resolution_check import (
     ResolutionStep, ResolutionDerivation, _RULE_ARITY, _is_variant,
     verify_resolution_proof,
 )
-from unicode_fol_kit.atp.tstp import (
+from unicode_logic_kit.atp.tstp import (
     TptpNameMap, _KIT_RULE_TO_TSTP, _render_clause_tptp,
     _extend_name_map_for_derivation,
     apply_reverse_tptp, parse_tstp_derivation, to_tstp,
 )
-from unicode_fol_kit.atp.tstp_check import (
+from unicode_logic_kit.atp.tstp_check import (
     EPROVER_CHECKED_RULES, VAMPIRE_CHECKED_RULES,
     _node_to_clause, check_tstp_derivation,
 )

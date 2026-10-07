@@ -21,19 +21,19 @@ import unicodedata
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.naming import NamingError, ParsingError
-from unicode_fol_kit.fol._fol_nodes import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.naming import NamingError, ParsingError
+from unicode_logic_kit.fol._fol_nodes import (
     Atom, Variable, Constant, Number, Function, Measure,
     And, Or, Not, Implies, Quantifier,
 )
-from unicode_fol_kit.fol._msfl_nodes import (
+from unicode_logic_kit.fol._msfl_nodes import (
     SortedQuantifier, SortedConstant, Lambda, LambdaVar, Application,
 )
-from unicode_fol_kit.fol._modal_nodes import Box
-from unicode_fol_kit.fol._so_nodes import SecondOrderQuantifier
-from unicode_fol_kit.fol import _identifiers
-from unicode_fol_kit.fol.naming import lex_for_message
+from unicode_logic_kit.fol._modal_nodes import Box
+from unicode_logic_kit.fol._so_nodes import SecondOrderQuantifier
+from unicode_logic_kit.fol import _identifiers
+from unicode_logic_kit.fol.naming import lex_for_message
 
 FOL = MSFLParser()
 
@@ -441,7 +441,7 @@ class TestChemSignatureIsWritable:
     """
 
     def test_chem_signature_kit_spellings_parse(self):
-        from unicode_fol_kit.chem.interop import KIT_TO_CHEMLOG
+        from unicode_logic_kit.chem.interop import KIT_TO_CHEMLOG
 
         assert KIT_TO_CHEMLOG, "the bridge is empty — the test proves nothing"
         failures = []
@@ -474,7 +474,7 @@ class TestChemSignatureIsWritable:
         """The parser accepting ``Has_bond_to`` is only useful if the bridge
         then renames it to the structure's own ``has_bond_to``; otherwise the
         formula parses and still fails to evaluate."""
-        from unicode_fol_kit.chem.interop import to_chemlog_names
+        from unicode_logic_kit.chem.interop import to_chemlog_names
 
         parsed = FOL.parse("Has_bond_to(x, y)")
         assert to_chemlog_names(parsed) == Atom(

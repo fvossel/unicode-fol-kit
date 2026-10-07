@@ -7,12 +7,12 @@ the non-trivial CondD (counterfactual) case.
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import Atom, Not, And, Implies, Box
-from unicode_fol_kit.hol import (
+from unicode_logic_kit.fol.nodes import Atom, Not, And, Implies, Box
+from unicode_logic_kit.hol import (
     conditional_faithfulness_theory, counterfactual_to_deep,
 )
-from unicode_fol_kit.hol.deepshallow._common import AtomConsts
-from unicode_fol_kit.hol.isabelle_runner import isabelle_available, check_theory
+from unicode_logic_kit.hol.deepshallow._common import AtomConsts
+from unicode_logic_kit.hol.isabelle_runner import isabelle_available, check_theory
 
 p, q = Atom("p", ()), Atom("q", ())
 

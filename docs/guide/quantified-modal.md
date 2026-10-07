@@ -1,6 +1,6 @@
 # Quantified Modal Logic
 
-Combining the modalities with `∀x` / `∃x` gives **quantified modal logic** (QML), where validity turns on how the individual domain varies between worlds. `unicode-fol-kit` handles QML both *semantically* (a `KripkeModel` with per-world domains and an actualist `satisfies_modal`) and via two **shallow embeddings** in the Benzmüller style — a first-order one decided by Z3, and a higher-order one exported as TPTP THF.
+Combining the modalities with `∀x` / `∃x` gives **quantified modal logic** (QML), where validity turns on how the individual domain varies between worlds. `unicode-logic-kit` handles QML both *semantically* (a `KripkeModel` with per-world domains and an actualist `satisfies_modal`) and via two **shallow embeddings** in the Benzmüller style — a first-order one decided by Z3, and a higher-order one exported as TPTP THF.
 
 The kit gives you four views of the same logic, and they are designed to agree:
 
@@ -13,10 +13,10 @@ The kit gives you four views of the same logic, and they are designed to agree:
 
 ## Building modal formulas as nodes
 
-Every example below builds the AST directly from `unicode_fol_kit`, so no parser is involved. A modal formula mixes the modal nodes `Box` / `Diamond` with the ordinary first-order nodes `Quantifier` / `Atom` / `Variable`. The Barcan formula `◇∃x A(x) → ∃x ◇A(x)` and its converse are the standard litmus tests for the domain regime, and the kit exports them ready-made as `BARCAN` / `CONVERSE_BARCAN`:
+Every example below builds the AST directly from `unicode_logic_kit`, so no parser is involved. A modal formula mixes the modal nodes `Box` / `Diamond` with the ordinary first-order nodes `Quantifier` / `Atom` / `Variable`. The Barcan formula `◇∃x A(x) → ∃x ◇A(x)` and its converse are the standard litmus tests for the domain regime, and the kit exports them ready-made as `BARCAN` / `CONVERSE_BARCAN`:
 
 ```python
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     Box, Diamond, Quantifier, Atom, Variable, Implies,
     BARCAN, CONVERSE_BARCAN,
 )
@@ -40,7 +40,7 @@ cbf == CONVERSE_BARCAN  # → True
 You rarely have to spell the AST out by hand: `MSFLParser(modal=True)` parses the Unicode surface form, quantifiers and modalities together, and produces exactly the same node. Parse it and feed it straight into the validity checker:
 
 ```python
-from unicode_fol_kit import MSFLParser, qml_is_valid
+from unicode_logic_kit import MSFLParser, qml_is_valid
 
 mp = MSFLParser(modal=True)
 parsed = mp.parse("◇∃x A(x) → ∃x ◇A(x)")
@@ -80,7 +80,7 @@ f5.to_unicode_str()  # → '∃x (∃y Loves(x, y) ∧ ◇Happy(x))'
 The **order** of quantifiers matters crucially. Swapping `∃x` and `□` gives two formulas that are not equivalent under any domain regime (frame `K`, the default), and whether the first implies the second depends on the regime:
 
 ```python
-from unicode_fol_kit import qml_is_valid, qml_equivalent
+from unicode_logic_kit import qml_is_valid, qml_equivalent
 
 # Existential outside the box: some specific thing is necessarily A
 ex_box = Quantifier("∃", x, Box(A(x)))
@@ -103,7 +103,7 @@ qml_equivalent(ex_box, box_ex, mode="increasing")  # → False
 There is a *second* Barcan pair phrased with `□`/`∀` rather than `◇`/`∃` — the **box Barcan** `∀x □A(x) → □∀x A(x)` and **box Converse Barcan** `□∀x A(x) → ∀x □A(x)`. They are the contrapositive duals of `BARCAN` / `CONVERSE_BARCAN`, so the regime correspondence is mirrored (box-BF ⇔ decreasing, box-CBF ⇔ increasing). You build them the same way:
 
 ```python
-from unicode_fol_kit import qml_is_valid
+from unicode_logic_kit import qml_is_valid
 
 box_bf  = Implies(Quantifier("∀", x, Box(A(x))),
                   Box(Quantifier("∀", x, A(x))))   # ∀x □A(x) → □∀x A(x)
@@ -125,7 +125,7 @@ Build a `KripkeModel` with per-world object domains — `domains={w: {...}}` for
 `model.domain_at(w)` shows the live domain of a world; the constant-domain shorthand `domain={...}` simply assigns that same set to every world:
 
 ```python
-from unicode_fol_kit.semantics.kripke import KripkeModel
+from unicode_logic_kit.semantics.kripke import KripkeModel
 
 varying  = KripkeModel(worlds={0, 1}, domains={0: {"a"}, 1: {"a", "b"}})
 constant = KripkeModel(worlds={0, 1}, domain={"a", "b"})
@@ -141,8 +141,8 @@ sorted(constant.domain_at(1))   # → ['a', 'b']
 Attach a valuation (truth assignment for atoms) to make concrete evaluations:
 
 ```python
-from unicode_fol_kit import satisfies_modal, Variable, Atom, Quantifier
-from unicode_fol_kit.semantics.kripke import KripkeModel
+from unicode_logic_kit import satisfies_modal, Variable, Atom, Quantifier
+from unicode_logic_kit.semantics.kripke import KripkeModel
 
 x = Variable("x")
 A = lambda t: Atom("A", [t])
@@ -156,7 +156,7 @@ m = KripkeModel(
 )
 
 # Check what's true at each world
-from unicode_fol_kit import Constant
+from unicode_logic_kit import Constant
 a = Constant("a")
 b = Constant("b")
 satisfies_modal(A(a), m, 0)  # → True   (A(a) holds at world 0)
@@ -216,7 +216,7 @@ satisfies_modal(
 A model built **without** domains is the purely propositional fragment of {doc}`modal`; asking it to evaluate an object quantifier is an error rather than a silent default:
 
 ```python
-from unicode_fol_kit import satisfies_modal, Quantifier, Variable, Atom
+from unicode_logic_kit import satisfies_modal, Quantifier, Variable, Atom
 
 x = Variable("x")
 prop_only = KripkeModel(worlds={0}, valuation={0: {"A(a)"}})
@@ -229,8 +229,8 @@ satisfies_modal(Quantifier("∃", x, Atom("A", [x])), prop_only, 0)
 The Barcan formula is valid under constant domains but **fails when domains grow**, because an object can appear only in a successor world:
 
 ```python
-from unicode_fol_kit import BARCAN, satisfies_modal
-from unicode_fol_kit.semantics.kripke import KripkeModel
+from unicode_logic_kit import BARCAN, satisfies_modal
+from unicode_logic_kit.semantics.kripke import KripkeModel
 
 rel = {"alethic": {(0, 1)}}   # world 0 sees world 1
 
@@ -266,7 +266,7 @@ This asymmetry shows why Barcan breaks: the antecedent escapes the domain restri
 The Converse Barcan is the mirror image: it holds under constant domains but **fails when domains shrink** along the accessibility relation. Put `b` in `D_0` with `A(b)` true at the successor world 1, but drop `b` from `D_1`:
 
 ```python
-from unicode_fol_kit import CONVERSE_BARCAN
+from unicode_logic_kit import CONVERSE_BARCAN
 
 decreasing = KripkeModel(
     worlds={0, 1}, relations=rel,
@@ -314,7 +314,7 @@ satisfies_modal(CONVERSE_BARCAN, oscillating, 1)  # → False  (b is gone at wor
 `qml_translate(φ, mode, world="w")` is the rewrite itself — a plain classical-FOL `Node` you can render. Each atom gets the current world appended as a last argument, `◇` becomes a guarded `∃` over accessible worlds, and `□` a guarded `∀`:
 
 ```python
-from unicode_fol_kit.fol.qml import qml_translate
+from unicode_logic_kit.fol.qml import qml_translate
 
 qml_translate(Box(A(x)), mode="constant").to_unicode_str()
 # → '∀w0 (World(w0) ∧ R(w, w0) → A(x, w0))'
@@ -364,7 +364,7 @@ qml_translate(exists, mode="increasing").to_unicode_str()
 The background axioms (sort typing, frame conditions, the existence-axiom that *defines* the regime) are exposed separately as `qml_axioms(mode, frame)`; `qml_is_valid` checks `⋀axioms → ∀w (World(w) → ST(φ, w))`:
 
 ```python
-from unicode_fol_kit.fol.qml import qml_axioms
+from unicode_logic_kit.fol.qml import qml_axioms
 
 ax = qml_axioms(mode="increasing", frame="S4")
 len(ax)                       # → 17
@@ -388,7 +388,7 @@ ax_decr[-1].to_unicode_str()
 Called with no `formula=`, that is the *whole* background theory: one relation per modal family (alethic `R`, temporal `T`, one-step `N`, deontic `D`) plus their default frame conditions. Pass the formula and only the relations it actually mentions are typed and constrained — for a `□`-only formula the list is exactly what it was before the temporal/deontic conditions existed:
 
 ```python
-from unicode_fol_kit import MSFLParser
+from unicode_logic_kit import MSFLParser
 
 pm = MSFLParser(modal=True).parse
 len(qml_axioms(formula=pm("□P → P")))          # → 7   (nothing temporal or deontic in scope)
@@ -400,7 +400,7 @@ len(qml_axioms())                              # → 15  (every family's relatio
 The temporal relation `T` is reflexive + transitive (it *is* the henceforth relation), `N ⊆ T` links the one-step relation to it, and the deontic relation `D` is serial. These are on by default because that is what makes this route agree with `satisfies_modal` and with the Isabelle / THF exporters — before, a temporal or deontic formula was judged with *no* condition on its relation at all, so plainly valid principles came back `False`:
 
 ```python
-from unicode_fol_kit import qml_is_valid
+from unicode_logic_kit import qml_is_valid
 
 qml_is_valid(pm("Ⓖ P → P"))          # → True   (T reflexive)
 qml_is_valid(pm("Ⓖ P → Ⓖ Ⓖ P"))      # → True   (T transitive)
@@ -432,7 +432,7 @@ So `True` for a deontic formula means "valid over every **serial-deontic** model
 | `"ought_implies_can"` | `Ⓞ φ → ◇φ` | `∀w ∃v (D(w,v) ∧ R(w,v))` |
 
 ```python
-from unicode_fol_kit import QML_BRIDGES, qml_is_valid
+from unicode_logic_kit import QML_BRIDGES, qml_is_valid
 
 sorted(QML_BRIDGES)   # → ['knowledge_implies_belief', 'ought_implies_can', 'sincerity']
 
@@ -452,7 +452,7 @@ A bridge relates two relations, so requesting one while the formula mentions onl
 The core decision procedure: test a formula under all domain regimes:
 
 ```python
-from unicode_fol_kit import qml_is_valid, qml_equivalent, BARCAN, CONVERSE_BARCAN
+from unicode_logic_kit import qml_is_valid, qml_equivalent, BARCAN, CONVERSE_BARCAN
 
 qml_is_valid(BARCAN, mode="constant")           # → True
 qml_is_valid(BARCAN, mode="increasing")         # → False
@@ -543,7 +543,7 @@ qml_is_valid(Implies(Diamond(p), Box(Diamond(p))), frame="S4")  # → False
 Test the deontic frame (seriality):
 
 ```python
-from unicode_fol_kit import Not
+from unicode_logic_kit import Not
 
 # KD: serial frame (every world has a successor)
 qml_is_valid(Implies(Diamond(p), Implies(Box(Not(p)), Diamond(p))), frame="KD")  # → True
@@ -571,7 +571,7 @@ f2 = Diamond(A(x))
 qml_equivalent(f1, f2, mode="constant")    # → False
 
 # A simpler test: are quantifiers commutative under all regimes?
-from unicode_fol_kit import And
+from unicode_logic_kit import And
 
 y = Variable("y")
 B = lambda t: Atom("B", [t])
@@ -599,7 +599,7 @@ qml_is_valid(BARCAN, frame="GL")     # raises NotImplementedError: the frame 'GL
 Inspect error messages closely:
 
 ```python
-from unicode_fol_kit import qml_is_valid
+from unicode_logic_kit import qml_is_valid
 
 try:
     qml_is_valid(BARCAN, mode="unknown_mode")
@@ -612,7 +612,7 @@ except ValueError as e:
 `resolution.prove(premises, conclusion)` also accepts quantified-modal input directly: it lowers the folded consequence `premises ⊢ conclusion` through the same first-order embedding `qml_is_valid` uses (constant domains, frame **K**), scales the saturation step budget to the larger translated clause set, and runs the resolution loop in-process — no Z3 dependency for this path. Both Barcan directions are provable:
 
 ```python
-from unicode_fol_kit.atp import resolution
+from unicode_logic_kit.atp import resolution
 
 resolution.prove([], BARCAN)              # → True
 resolution.prove([], CONVERSE_BARCAN)     # → True
@@ -627,7 +627,7 @@ One route difference is worth knowing before you compare verdicts on a **tempora
 `to_thf_modal(φ, mode, frame)` emits a complete Benzmüller-style **TPTP THF** problem for an external higher-order prover (Leo-III, Satallax). A modal proposition is a function `mu > $o` (world → bool); the modalities are λ-lifted quantifiers over the accessibility relation `r`, and object quantifiers are `existsAt`-guarded (actualist). The frame and domain regime are encoded as axioms.
 
 ```python
-from unicode_fol_kit import to_thf_modal, BARCAN
+from unicode_logic_kit import to_thf_modal, BARCAN
 
 thf = to_thf_modal(BARCAN, mode="constant", frame="S5")
 type(thf)                  # → <class 'str'>
@@ -705,7 +705,7 @@ The function **emits** the problem (like the other `to_*` exporters); it does no
 THF has no free variable, so `to_thf_modal` binds a parameter in front of the conjecture and, under an actualist mode, guards it with `existsAt` inside the conjecture, which is the reading `qml_is_valid` has. `hol.thf_modal.to_thf_modal_full` binds it the same way, so the two writers emit the same conjecture on the alethic fragment, also for a formula with a free variable:
 
 ```python
-from unicode_fol_kit.hol.thf_modal import to_thf_modal_full
+from unicode_logic_kit.hol.thf_modal import to_thf_modal_full
 
 goal_of = lambda text: [l for l in text.splitlines() if l.startswith("thf(goal")][0]
 box_y = pm("□P(y)")
@@ -717,7 +717,7 @@ goal_of(to_thf_modal_full(box_y, mode="varying", frame="K")) == goal_of(to_thf_m
 Object identity is **rigid** here, the same reading `qml_is_valid` has: `=` becomes THF's own `=` over the individual sort `$i`, with no world argument, through one extra macro that is emitted only when the formula mentions identity, and `t₁ ≠ t₂` is lowered to `¬(t₁ = t₂)`. So the prover answers the question `qml_is_valid` answers — `a = b → □(a = b)` is a theorem even in `K`, while `□(a = b) → a = b` needs a reflexive or serial frame. Until 0.30.0 the exporters rendered identity as an uninterpreted world-relativised predicate `feq`, which made `∀x (x = x)` unprovable from the THF problem while `qml_is_valid` called it valid; `feq` is gone.
 
 ```python
-from unicode_fol_kit.fol.nodes import Constant
+from unicode_logic_kit.fol.nodes import Constant
 
 thf_eq = to_thf_modal(Atom("=", [Constant("a"), Constant("b")]), frame="K")
 "feq" in thf_eq                                                    # → False
@@ -739,7 +739,7 @@ box_top.splitlines()[-1]
 `to_isabelle_modal(φ, mode, frame)` is the Isabelle counterpart — a complete, loadable `theory … begin … end` with every lifted operator defined and a genuine `lemma` to discharge:
 
 ```python
-from unicode_fol_kit import to_isabelle_modal
+from unicode_logic_kit import to_isabelle_modal
 
 iz = to_isabelle_modal(BARCAN, mode="constant", frame="S5")
 iz.splitlines()[0]          # → 'theory ModalEmbedding'
@@ -762,8 +762,8 @@ This covers the alethic □/◇ fragment; for the full modal family (epistemic /
 A complete pass over one formula, exercising all three views. Take the box Converse Barcan `□∀x A(x) → ∀x □A(x)`, decide it under each regime with Z3, confirm the increasing-domain verdict on an explicit model, then export a prover problem:
 
 ```python
-from unicode_fol_kit import MSFLParser, qml_is_valid, to_thf_modal, satisfies_modal
-from unicode_fol_kit.semantics.kripke import KripkeModel
+from unicode_logic_kit import MSFLParser, qml_is_valid, to_thf_modal, satisfies_modal
+from unicode_logic_kit.semantics.kripke import KripkeModel
 
 mp = MSFLParser(modal=True)
 phi = mp.parse("□∀x A(x) → ∀x □A(x)")     # box Converse Barcan ⇔ increasing domains
@@ -833,7 +833,7 @@ len(thf_custom.splitlines())  # → 22  (comments, declarations, lifted operator
 Besides the THF/Isabelle shallow embeddings above, `to_tptp_ncl` (in `atp.tptp_ncl`) exports a QUANTIFIED modal formula as **NXF** ("Non-Classical TFF"), the TPTP World's own native syntax for non-classical logics — a `logic` role statement naming the frame (`K`/`T`/`S4`/`S5`/`D`) and domain regime, native `!`/`?` quantifiers, and one `tff(...,type,...)` declaration per sort/constant/predicate the formula actually uses:
 
 ```python
-from unicode_fol_kit import BARCAN, to_tptp_ncl
+from unicode_logic_kit import BARCAN, to_tptp_ncl
 
 nxf = to_tptp_ncl(BARCAN, frame="S4", conjecture_name="bf")
 print(nxf)
@@ -854,8 +854,8 @@ print(nxf)
 The companion reader, `fol.qmltp_input`, goes the other way for a DIFFERENT (older, QMLTP-native) surface syntax: it reads the 600-problem [QMLTP library](https://www.iltp.de/qmltp/)'s own `qmf(name, role, formula).` statements and `#box`/`#dia` connectives, plus the structured comment header recording that problem's status (`Theorem`/`Non-Theorem`) per logic and per domain regime — exactly the litmus-test table this page has been building by hand all along:
 
 ```python
-from unicode_fol_kit.fol.qmltp_input import load_qmltp
-from unicode_fol_kit.fol.qml import qml_is_valid
+from unicode_logic_kit.fol.qmltp_input import load_qmltp
+from unicode_logic_kit.fol.qml import qml_is_valid
 
 problem = load_qmltp("tests/fixtures/qmltp/barcan.p")   # the test suite's own stand-in, in QMLTP syntax
 problem.header.problem

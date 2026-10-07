@@ -1,4 +1,4 @@
-"""Tests for classical Tarskian model theory (unicode_fol_kit.semantics.tarski).
+"""Tests for classical Tarskian model theory (unicode_logic_kit.semantics.tarski).
 
 Each test fixes a concrete world (domain + symbol interpretations) and asserts
 hand-checked truth values, exercising both the True and False branches.
@@ -6,14 +6,14 @@ hand-checked truth values, exercising both the True and False branches.
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     Variable, Constant, Number, Function,
     Atom, Not, And, Or, Implies, Quantifier,
     SortedQuantifier, SortedConstant, Lambda, LambdaVar,
     WeakConjunction,
 )
-from unicode_fol_kit.semantics.tarski import (
+from unicode_logic_kit.semantics.tarski import (
     IllegalStructureError, Structure, term_value, satisfies, models,
 )
 

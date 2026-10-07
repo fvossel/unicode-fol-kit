@@ -13,9 +13,9 @@
 
 import pytest
 
-from unicode_fol_kit import MSFLParser, fuzzy_evaluate, fuzzy_get_model, fuzzy_is_satisfiable, fuzzy_is_valid
-from unicode_fol_kit.atp.z3_fuzzy import degree_expr
-from unicode_fol_kit.fol.nodes import Atom, LukImplication, WeakConjunction, LukNegation
+from unicode_logic_kit import MSFLParser, fuzzy_evaluate, fuzzy_get_model, fuzzy_is_satisfiable, fuzzy_is_valid
+from unicode_logic_kit.atp.z3_fuzzy import degree_expr
+from unicode_logic_kit.fol.nodes import Atom, LukImplication, WeakConjunction, LukNegation
 
 FL = MSFLParser(fuzzy=True)
 DOMAIN = {"a", "b"}

@@ -16,7 +16,7 @@ import json
 
 import pytest
 
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser, Node, SCHEMA_VERSION, serialize, deserialize,
 )
 

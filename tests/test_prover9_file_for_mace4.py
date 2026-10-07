@@ -19,9 +19,9 @@ import tempfile
 
 import pytest
 
-from unicode_fol_kit.atp.prover9_entailment import _prover9_command, generate_prover9_input_with_mapping
-from unicode_fol_kit.atp.protocol import Prover9Backend
-from unicode_fol_kit.fol.nodes import Atom, Constant
+from unicode_logic_kit.atp.prover9_entailment import _prover9_command, generate_prover9_input_with_mapping
+from unicode_logic_kit.atp.protocol import Prover9Backend
+from unicode_logic_kit.fol.nodes import Atom, Constant
 
 
 def _mace4_path():
@@ -69,7 +69,7 @@ _ALPHA, _BETA = Constant("alpha"), Constant("beta")
 
 
 def test_the_documentation_of_the_writer_says_that_mace4_reads_the_lists_and_not_the_flags():
-    from unicode_fol_kit.atp import prover9_entailment
+    from unicode_logic_kit.atp import prover9_entailment
     documentation = " ".join(prover9_entailment.__doc__.split())
     assert "Mace4, which reads the same file" not in documentation
     assert "Mace4 does not read the whole file this writer writes" in documentation

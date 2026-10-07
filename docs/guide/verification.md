@@ -19,7 +19,7 @@ them are mechanical. `repair_tptp_formula` fixes what can be fixed
 meaning-preservingly and *reports* what cannot.
 
 ```python
-from unicode_fol_kit import repair_tptp_formula
+from unicode_logic_kit import repair_tptp_formula
 
 r = repair_tptp_formula("p <=> q & r")
 print(r.ok, r.changed)             # → True True
@@ -37,7 +37,7 @@ A chemical name that is not a legal unquoted TPTP functor gets **quoted**, not
 sanitised:
 
 ```python
-from unicode_fol_kit import repair_tptp_formula
+from unicode_logic_kit import repair_tptp_formula
 
 r = repair_tptp_formula("1,2-diacyl-sn-glycero(X)")
 print(r.repaired_text)             # → '1,2-diacyl-sn-glycero'(X)
@@ -54,7 +54,7 @@ change what the author claimed, so it happens only on explicit opt-in
 (`close_free_variables=True`):
 
 ```python
-from unicode_fol_kit import repair_tptp_formula
+from unicode_logic_kit import repair_tptp_formula
 
 r = repair_tptp_formula("threeOxoSteroid(X) <=> (?[A]: c(A))")
 print(r.ok)                                     # → True
@@ -66,7 +66,7 @@ print([i.kind for i in r.issues])
 entry:
 
 ```python
-from unicode_fol_kit import repair_tptp_problem
+from unicode_logic_kit import repair_tptp_problem
 
 p = repair_tptp_problem("fof(a, axiom, p <=> q & r).\n"
                         "fof(b, axiom, s <=> t | u).")
@@ -83,7 +83,7 @@ A definition is a **named 0-ary predicate with a defining body** — the
 as a plain mapping from name to body:
 
 ```python
-from unicode_fol_kit import chem
+from unicode_logic_kit import chem
 
 definitions = {
     "Molecule":               chem.parse_chemlog_tptp("net_charge_neutral"),
@@ -111,8 +111,8 @@ legitimate primitive (`net_charge_neutral` above is one).
 `find_cycles` reports definitional cycles as paths, before any prover runs:
 
 ```python
-from unicode_fol_kit import chem
-from unicode_fol_kit.eval import find_cycles, check_satisfiable
+from unicode_logic_kit import chem
+from unicode_logic_kit.eval import find_cycles, check_satisfiable
 
 cyclic = {"A": chem.parse_chemlog_tptp("b & ?[X]: c(X)"),
           "B": chem.parse_chemlog_tptp("a")}
@@ -128,8 +128,8 @@ inconclusive result would hide it among the genuine timeouts.
 satisfy it:
 
 ```python
-from unicode_fol_kit import chem
-from unicode_fol_kit.eval import check_satisfiable
+from unicode_logic_kit import chem
+from unicode_logic_kit.eval import check_satisfiable
 
 impossible = {"Impossible": chem.parse_chemlog_tptp("?[X]: (c(X) & ~c(X))")}
 r = check_satisfiable("Impossible", impossible)
@@ -140,8 +140,8 @@ print(r.status, r.backend)   # → unsatisfiable z3
 it does not, it returns the countermodel rather than a bare "not proved":
 
 ```python
-from unicode_fol_kit import chem
-from unicode_fol_kit.eval import check_subsumption
+from unicode_logic_kit import chem
+from unicode_logic_kit.eval import check_subsumption
 
 definitions = {
     "Molecule":               chem.parse_chemlog_tptp("net_charge_neutral"),
@@ -164,8 +164,8 @@ gave up", and those call for opposite reactions.
 `check_theory` runs all three checks over the whole set in one call:
 
 ```python
-from unicode_fol_kit import chem
-from unicode_fol_kit.eval import check_theory
+from unicode_logic_kit import chem
+from unicode_logic_kit.eval import check_theory
 
 definitions = {
     "Molecule":               chem.parse_chemlog_tptp("net_charge_neutral"),
@@ -190,8 +190,8 @@ is the opposite one: it is satisfied by almost anything. `minimal_model_size`
 measures that directly — the smallest structure in which the body holds.
 
 ```python
-from unicode_fol_kit import chem
-from unicode_fol_kit.eval import minimal_model_size
+from unicode_logic_kit import chem
+from unicode_logic_kit.eval import minimal_model_size
 
 phi = chem.parse_chemlog_tptp("?[A1]: (c(A1) & ?[A2]: (o(A2) & bond(A1,A2)))")
 m = minimal_model_size(phi)
@@ -207,8 +207,8 @@ chemical class* that is hopeless; as a *formula* it is exactly what was written.
 witness spelled out:
 
 ```python
-from unicode_fol_kit import chem
-from unicode_fol_kit.eval import generality_report
+from unicode_logic_kit import chem
+from unicode_logic_kit.eval import generality_report
 
 phi = chem.parse_chemlog_tptp("?[A1]: (c(A1) & ?[A2]: (o(A2) & bond(A1,A2)))")
 rep = generality_report("HydroxyCompound", phi, expected_min_size=20)
@@ -227,8 +227,8 @@ The related question — does the subclass definition add anything at all over i
 superclass? — is `is_vacuous_specialisation`:
 
 ```python
-from unicode_fol_kit import chem
-from unicode_fol_kit.eval import is_vacuous_specialisation
+from unicode_logic_kit import chem
+from unicode_logic_kit.eval import is_vacuous_specialisation
 
 sup   = chem.parse_chemlog_tptp("?[A1]: c(A1)")
 vac   = chem.parse_chemlog_tptp("?[A1]: (c(A1) & ?[A2]: (c(A2) & c(A2)))")

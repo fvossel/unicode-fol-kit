@@ -23,10 +23,10 @@ import random
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit.dl import datatypes as dt
-from unicode_fol_kit.dl.concepts import Concept
-from unicode_fol_kit.dl.owl_manchester import (
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit.dl import datatypes as dt
+from unicode_logic_kit.dl.concepts import Concept
+from unicode_logic_kit.dl.owl_manchester import (
     ManchesterSyntaxError, parse_manchester, to_manchester,
 )
 

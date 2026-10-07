@@ -11,15 +11,15 @@ import itertools
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.fol._ho_nodes import INDIVIDUAL
-from unicode_fol_kit.semantics.secondorder import satisfies_so
-from unicode_fol_kit.semantics.tarski import Structure
-from unicode_fol_kit.semantics.thirdorder import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.fol._ho_nodes import INDIVIDUAL
+from unicode_logic_kit.semantics.secondorder import satisfies_so
+from unicode_logic_kit.semantics.tarski import Structure
+from unicode_logic_kit.semantics.thirdorder import (
     MAX_INTERPRETATIONS, all_interpretations, argument_value, holds_to,
     interpretation_count, satisfies_to, slot_values,
 )
-import unicode_fol_kit.semantics.thirdorder as thirdorder
+import unicode_logic_kit.semantics.thirdorder as thirdorder
 
 SO = MSFLParser(second_order=True)
 TO = MSFLParser(third_order=True)
@@ -176,7 +176,7 @@ def test_a_modal_node_is_refused_by_name():
 
 
 def test_a_lambda_outside_argument_position_is_refused_by_name():
-    from unicode_fol_kit.fol.nodes import Lambda, LambdaVar, Atom, Variable
+    from unicode_logic_kit.fol.nodes import Lambda, LambdaVar, Atom, Variable
     stray = Lambda(LambdaVar("x"), Atom("G", [Variable("x")]))
     with pytest.raises(NotImplementedError, match="argument position"):
         holds_to(stray, S)

@@ -1,20 +1,20 @@
 """Cross-cutting differential tests for the subsort relation (roadmap C4).
 
-A subsort edge ``S < T`` declared on a :class:`~unicode_fol_kit.fol.signature.Signature`
+A subsort edge ``S < T`` declared on a :class:`~unicode_logic_kit.fol.signature.Signature`
 means the plain SUBSET reading: ``ext(S) ⊆ ext(T)``. Four independent routes are
 GIVEN a ``Signature`` with subsorts and must honour that reading IDENTICALLY:
 
 * :meth:`Signature.validate` (unit-tested per-route in ``tests/test_signature.py``;
   this file only re-derives the same example through the OTHER routes for the
   cross-check).
-* :func:`unicode_fol_kit.fol.nodes.to_fol` plus
-  :func:`~unicode_fol_kit.fol.nodes.subsort_axioms` as separate premises, decided
+* :func:`unicode_logic_kit.fol.nodes.to_fol` plus
+  :func:`~unicode_logic_kit.fol.nodes.subsort_axioms` as separate premises, decided
   by the existing, independent Z3 backend -- and the same through ``api.prove``.
-* :func:`unicode_fol_kit.semantics.modelfinder.find_model` /
-  :func:`~unicode_fol_kit.semantics.modelfinder.find_countermodel` (with
+* :func:`unicode_logic_kit.semantics.modelfinder.find_model` /
+  :func:`~unicode_logic_kit.semantics.modelfinder.find_countermodel` (with
   ``subsorts=``), the kit's own from-scratch finite-structure search.
-* :func:`unicode_fol_kit.fol.casl_import.parse_casl_spec` /
-  :func:`~unicode_fol_kit.fol.casl_export.to_casl_spec` (the CASL round trip).
+* :func:`unicode_logic_kit.fol.casl_import.parse_casl_spec` /
+  :func:`~unicode_logic_kit.fol.casl_export.to_casl_spec` (the CASL round trip).
 
 No snapshot tests: every expected verdict below (valid/invalid, sat/unsat) is
 worked out BY HAND in each test's own comment from the textbook subset-semantics
@@ -22,7 +22,7 @@ reading, never captured from a run of the code under test.
 
 A REAL, review-confirmed bug this file's differential methodology caught while
 being written (see ``test_transitive_chain_through_an_unmentioned_intermediate_sort``
-and :func:`unicode_fol_kit.semantics.modelfinder._subsort_closure`'s own
+and :func:`unicode_logic_kit.semantics.modelfinder._subsort_closure`'s own
 docstring): the finite model finder's signature scan only gives a sort its own
 universe when that sort is actually USED by a sorted binder somewhere in the
 theory, so a naive "check only DIRECT edges" filter silently missed the
@@ -44,15 +44,15 @@ its agreement with the model finder).
 
 import z3
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     Atom, Constant, Not, to_fol, nonempty_sort_axioms, subsort_axioms,
 )
-from unicode_fol_kit.fol.signature import Signature
-from unicode_fol_kit.fol.casl_export import to_casl_spec
-from unicode_fol_kit.fol.casl_import import parse_casl_spec
-from unicode_fol_kit.semantics.modelfinder import find_model, find_countermodel
-from unicode_fol_kit.semantics.tarski import models
+from unicode_logic_kit.fol.signature import Signature
+from unicode_logic_kit.fol.casl_export import to_casl_spec
+from unicode_logic_kit.fol.casl_import import parse_casl_spec
+from unicode_logic_kit.semantics.modelfinder import find_model, find_countermodel
+from unicode_logic_kit.semantics.tarski import models
 
 MSFOL = MSFLParser(many_sorted=True)
 
@@ -88,7 +88,7 @@ def _assert_structure_honours_signature(structure, formulas, sig: Signature) -> 
     """(test_oracle a/batch-note (1)) A structure :func:`find_model` returns
     must, RE-CHECKED independently:
 
-    1. actually satisfy every formula, per :mod:`~unicode_fol_kit.semantics.tarski`'s
+    1. actually satisfy every formula, per :mod:`~unicode_logic_kit.semantics.tarski`'s
        OWN evaluator (:func:`models`) — a second pass over the same
        structure, not just trusting the search loop that built it;
     2. satisfy every declared subsort inclusion STRUCTURALLY — for every
@@ -377,7 +377,7 @@ def test_validate_agrees_with_the_decision_routes_on_the_same_example():
     term, Human < Animal declared: validate() reports nothing, exactly
     because (per test_valid_iff_human_subsort_of_animal above) every model
     honouring the edge makes that substitution safe."""
-    from unicode_fol_kit.fol.signature import PredicateDecl
+    from unicode_logic_kit.fol.signature import PredicateDecl
     sig = Signature(predicates={"P": PredicateDecl("P", 1, ("Animal",))},
                     sorts=frozenset({"Human", "Animal"}),
                     subsorts={"Human": frozenset({"Animal"})})
@@ -413,8 +413,8 @@ def test_api_prove_with_subsort_axioms_as_premises():
     - with Human non-empty and inside Animal, a universal fact about Humans
       yields an Animal witness -- valid.
     """
-    from unicode_fol_kit import api
-    from unicode_fol_kit.semantics.modelfinder import is_valid_finite
+    from unicode_logic_kit import api
+    from unicode_logic_kit.semantics.modelfinder import is_valid_finite
     cases = [
         ("(∀x:Animal P(x)) → ∀y:Human P(y)", {"Human": {"Animal"}}, "proved"),
         ("(∀x:Animal P(x)) → ∀y:Human P(y)", {}, "refuted"),

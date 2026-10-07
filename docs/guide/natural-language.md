@@ -28,8 +28,8 @@ never expanded into single-letter variables, so an arbitrarily large `n` is repr
 exactly — `over 500 pages`, `a million`, `180 degrees` all work.
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.fol.nodes import Count
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.fol.nodes import Count
 
 p = MSFLParser()
 p.parse("∃≥3 x (R(x) ∧ Q(x))")   # Count(op='ge', n=Number(3), variable=x, formula=…)
@@ -44,7 +44,7 @@ The bound variable is read off the node, and the count itself binds it — `free
 excludes it but keeps any free variable of the matrix:
 
 ```python
-from unicode_fol_kit.fol.nodes import free_variables
+from unicode_logic_kit.fol.nodes import free_variables
 
 c = p.parse("∃≥3 x R(x, y)")
 c.op, c.n.value, c.variable.name        # → ('ge', 3, 'x')
@@ -56,7 +56,7 @@ vacuously true on a non-empty domain — both stay symbolic `Count` nodes, not c
 forms:
 
 ```python
-from unicode_fol_kit import is_valid
+from unicode_logic_kit import is_valid
 
 p.parse("∃=0 x P(x)").op            # → 'eq'   (a genuine Count, n=0)
 is_valid(p.parse("(∃=0 x P(x)) ↔ ¬∃x P(x)"))     # True
@@ -78,7 +78,7 @@ capture-avoiding:
 
 ```python
 import json
-from unicode_fol_kit.fol.nodes import Node
+from unicode_logic_kit.fol.nodes import Node
 
 c.to_unicode_str()                       # → '∃≥3 x R(x, y)'
 p.parse(c.to_unicode_str()) == c         # True   (Unicode round-trip)
@@ -89,7 +89,7 @@ It is first-order expressible, so the exporters lower it to the standard
 distinct-witnesses encoding, and the usual cardinality entailments all check out:
 
 ```python
-from unicode_fol_kit import is_valid
+from unicode_logic_kit import is_valid
 
 # ∃≥1 x P(x) is just ∃x P(x); ∃≥2 entails ∃≥1; ∃=1 is the classic "exactly one".
 is_valid(p.parse("∃≥2 x P(x) → ∃≥1 x P(x)"))                       # True
@@ -105,7 +105,7 @@ p.parse("∃≤1 x P(x)").to_tptp()   # ∃≤n lowers to ¬(∃≥n+1)
 `Count` also verbalizes with `to_english`:
 
 ```python
-from unicode_fol_kit import to_english
+from unicode_logic_kit import to_english
 
 to_english(p.parse("∃≥3 x (R(x) ∧ Q(x))"))
 # → 'there are at least 3 x such that x is r and x is q'
@@ -118,7 +118,7 @@ entity has a gradable property — so a bare comparative gets a determinate argu
 instead of a thin relational paraphrase. Compare degrees with `>` / `<`:
 
 ```python
-from unicode_fol_kit.fol.nodes import Measure
+from unicode_logic_kit.fol.nodes import Measure
 
 cmp = p.parse("μ(x, height) > μ(y, height)")   # Atom('>', [Measure(x, height), Measure(y, height)])
 isinstance(cmp.args[0], Measure)               # True
@@ -130,7 +130,7 @@ exports emit — in a `Structure`. When the measure values are numbers and the
 structure declares no extension for the comparison, the comparison is arithmetic:
 
 ```python
-from unicode_fol_kit.semantics.tarski import Structure, models
+from unicode_logic_kit.semantics.tarski import Structure, models
 
 world = Structure(
     domain=["rex", "fido", "height", 5, 10],
@@ -152,7 +152,7 @@ given.
 that satisfy `φ` — for faithful counting comparisons:
 
 ```python
-from unicode_fol_kit.fol.nodes import Cardinality
+from unicode_logic_kit.fol.nodes import Cardinality
 
 votes = p.parse("|{v : Votes(x, v)}| > |{v : Votes(y, v)}|")   # "x got more votes than y"
 isinstance(votes.args[0], Cardinality)                          # True
@@ -190,7 +190,7 @@ relation, not a truth-functional one, so `Contrast` is truth-functionally identi
 `∧` — but kept as a distinct node so the contrast survives translation:
 
 ```python
-from unicode_fol_kit.fol.nodes import Contrast
+from unicode_logic_kit.fol.nodes import Contrast
 
 c = p.parse("Sunny(today) Ⓒ Cold(today)")   # Contrast(...)
 is_valid(p.parse("(P Ⓒ Q) ↔ (P ∧ Q)"))      # True — same truth conditions as ∧
@@ -221,7 +221,7 @@ them from `Knows`/`Believes` is exactly what that buys:
 - `Wants` is **non-veridical** (`Want_a φ ⊭ φ` — wanting does not make it so).
 
 ```python
-from unicode_fol_kit import is_modal_valid
+from unicode_logic_kit import is_modal_valid
 
 is_modal_valid(m.parse("(Say_a P) → P"))    # False  (non-factive)
 is_modal_valid(m.parse("(Want_a P) → P"))   # False  (non-veridical)
@@ -236,7 +236,7 @@ are honest* is a single closed formula with a bound `Say_x`, and it round-trips 
 verbalizes:
 
 ```python
-from unicode_fol_kit import to_english
+from unicode_logic_kit import to_english
 
 ba = m.parse("∀x (Speaker(x) → Say_x Honest(x))")     # bound agent x under ∀
 m.parse(ba.to_unicode_str()) == ba                    # True
@@ -256,8 +256,8 @@ JSON, as with the other modal operators.
 `standard_translation` lowers `Say_a` / `Want_a` to per-agent box relations `Rs_a` / `Rw_a`, mirroring how `Knows`/`Believes` become `Rk_a`/`Rb_a` — so `resolution.prove` decides the propositional Say/Want fragment the same way it decides `Knows`/`Believes`:
 
 ```python
-from unicode_fol_kit import standard_translation
-from unicode_fol_kit.atp import resolution
+from unicode_logic_kit import standard_translation
+from unicode_logic_kit.atp import resolution
 
 k_axiom = m.parse("(Say_a (P → Q)) → ((Say_a P) → (Say_a Q))")
 standard_translation(k_axiom).to_unicode_str()
@@ -268,7 +268,7 @@ resolution.prove([], k_axiom)          # → True   (the K axiom, sound + comple
 Both `Says` and `Wants` are non-factive/non-veridical *by default*, but `qml`'s `systems=` (the same mechanism {doc}`quantified-modal` uses for the alethic/epistemic families) gained `assertive` / `bouletic` entries, so factiveness can be turned on **for the purposes of a specific check** without changing what the operators mean elsewhere:
 
 ```python
-from unicode_fol_kit import qml_is_valid
+from unicode_logic_kit import qml_is_valid
 
 factive_claim = m.parse("Say_a P → P")
 qml_is_valid(factive_claim)                                   # → False  (non-factive by default)
@@ -292,7 +292,7 @@ directive is applied to the formulas after it, see {doc}`interoperability`), `%`
 are ignored, and each formula's `role` is the name of the `formulas(...)` list it came from:
 
 ```python
-from unicode_fol_kit import parse_prover9_problem
+from unicode_logic_kit import parse_prover9_problem
 
 src = """
 set(prolog_style_variables).
@@ -317,7 +317,7 @@ A quantifier binds the symbol it names, whatever its case, so the three `x` of t
 assumption are one bound variable and the assumptions prove the goal:
 
 ```python
-from unicode_fol_kit import api
+from unicode_logic_kit import api
 
 assumptions = [f.formula for f in problem if f.role == "assumptions"]
 goal = [f.formula for f in problem if f.role == "goals"][0]
@@ -347,7 +347,7 @@ fd, path = tempfile.mkstemp(suffix=".p9")
 os.write(fd, b"formulas(sos).\n  all x (P(x) -> Q(x)).\n  P(a).\nend_of_list.\n")
 os.close(fd)
 
-from unicode_fol_kit import load_prover9
+from unicode_logic_kit import load_prover9
 [(f.role, f.formula.to_unicode_str()) for f in load_prover9(path)]
 # → [('sos', '∀x (P(x) → Q(x))'), ('sos', 'P(a)')]
 os.remove(path)
@@ -358,7 +358,7 @@ letter (`"Rain"` is the proposition `Rain`, `P("Gaseous")` has the constant `Gas
 quoted numeral in its canonical spelling reads as a `Number` (`"2.5"`, but `"1.0"` is refused,
 because Prover9 keeps it apart from `"1"`); and `-(a, b)` reads as the binary function `-`.
 A file that writes one symbol both quoted and bare (`P("rain")` next to `Q(rain)`) is refused
-by name with a `Prover9ParsingError` (in `unicode_fol_kit.fol.prover9_input`), because
+by name with a `Prover9ParsingError` (in `unicode_logic_kit.fol.prover9_input`), because
 Prover9 keeps `"rain"` and `rain` apart and the kit has one name for both:
 
 ```python
@@ -381,8 +381,8 @@ yields a string that does **not** re-parse. `sanitize_names(node)` rewrites ever
 a token that re-parses to its intended class, returning `(clean_node, mapping)`:
 
 ```python
-from unicode_fol_kit import sanitize_names
-from unicode_fol_kit.fol.nodes import Atom, Constant
+from unicode_logic_kit import sanitize_names
+from unicode_logic_kit.fol.nodes import Atom, Constant
 
 # an OWL→FOL import: an IRI predicate over a single-letter constant
 raw = Atom("http___example_org_Thing", [Constant("a")])
@@ -414,7 +414,7 @@ Across a whole problem, reuse one mapping so the same original symbol maps to th
 token in every formula — `sanitize_all` does exactly that with one shared `NameMapping`:
 
 ```python
-from unicode_fol_kit import sanitize_all
+from unicode_logic_kit import sanitize_all
 
 n1 = Atom("http___ex_A", [Constant("x")])
 n2 = Atom("http___ex_A", [Constant("y")])      # same IRI predicate, different constant
@@ -433,7 +433,7 @@ which nests one of them under a modal or second-order operator parses, and *roun
 a single string:
 
 ```python
-from unicode_fol_kit import MSFLParser
+from unicode_logic_kit import MSFLParser
 
 modal = MSFLParser(modal=True)
 so = MSFLParser(second_order=True)
@@ -459,8 +459,8 @@ set-cardinality term take **sort-annotated** forms — `∃≥n x:S φ` (`Sorted
 `Measure` term, and `Xor` (`⊕`) are available in many-sorted mode as well.
 
 ```python
-from unicode_fol_kit import MSFLParser, is_valid, to_english
-from unicode_fol_kit.fol.nodes import SortedCount, SortedCardinality
+from unicode_logic_kit import MSFLParser, is_valid, to_english
+from unicode_logic_kit.fol.nodes import SortedCount, SortedCardinality
 
 ms = MSFLParser(many_sorted=True)
 
@@ -498,12 +498,12 @@ parse-only nodes with no truth semantics, so a clean rejection is the honest bou
 ## ACE: verbalizing modal/deontic formulas as controlled English (ACE-7)
 
 {doc}`interoperability` covers the full Attempto Controlled English (ACE) pipeline —
-`unicode_fol_kit.ace`, driven through the external APE parser. This section covers just
+`unicode_logic_kit.ace`, driven through the external APE parser. This section covers just
 its modal/deontic REVERSE direction: turning a `Box`/`Diamond`/`Obligatory`/`Permitted`
 formula back into ACE text, on top of the classical `formula_to_ace`/`drs_to_ace`
 machinery ACE-6 already provides.
 
-`unicode_fol_kit.ace.reverse_modal.fol_to_modal_drs` recognizes exactly the two shapes
+`unicode_logic_kit.ace.reverse_modal.fol_to_modal_drs` recognizes exactly the two shapes
 ACE's modal surface can carry — Attempto's own reading puts the modal auxiliary INSIDE
 the verb phrase ("John **must** wait."), never as a sentence-level paraphrase:
 
@@ -513,8 +513,8 @@ the verb phrase ("John **must** wait."), never as a sentence-level paraphrase:
   classical ACE-6 duplexes already have between Attempto's own phrasing and the kit's:
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.ace import modal_formula_to_ace, modal_ace_round_trip
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.ace import modal_formula_to_ace, modal_ace_round_trip
 
 modal = MSFLParser(modal=True)
 
@@ -531,7 +531,7 @@ trip.equivalent                    # → True
 ```
 
 `modal_ace_round_trip` judges the loop with
-{func}`~unicode_fol_kit.eval.equivalence.equivalent` rather than raw Z3: a modal `Node`
+{func}`~unicode_logic_kit.eval.equivalence.equivalent` rather than raw Z3: a modal `Node`
 has no direct Z3 export, and `equivalent` already routes a modal pair through the modal
 tableau (propositional fragment) or the QML embedding (quantified, as here) — see
 {doc}`quantified-modal` for that machinery. Every OTHER modal placement — mixed with a

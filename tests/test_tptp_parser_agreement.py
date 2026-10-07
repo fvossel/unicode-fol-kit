@@ -1,6 +1,6 @@
 r"""B6: the LALR fast path, and the permanent proof that it agrees with Earley.
 
-``unicode_fol_kit.fol.tptp_input`` now parses with an LALR(1) parser first and
+``unicode_logic_kit.fol.tptp_input`` now parses with an LALR(1) parser first and
 falls back to the original Earley one on ``UnexpectedInput``. The win is
 measured: on a real 1,367,212-byte, 4291-formula TPTP translation of an
 ontology, ``load_tptp_problem`` takes 68.3 s through Earley and 1.7 s through
@@ -24,8 +24,8 @@ import pytest
 from lark import Lark
 from lark.exceptions import UnexpectedToken
 
-from unicode_fol_kit.fol import tptp_input
-from unicode_fol_kit.fol.tptp_input import (
+from unicode_logic_kit.fol import tptp_input
+from unicode_logic_kit.fol.tptp_input import (
     _FILE_PARSER,
     _FILE_PARSER_FAST,
     _FORMULA_PARSER,

@@ -1,5 +1,5 @@
-"""``to_markdown()``/``to_html()`` on :class:`~unicode_fol_kit.eval.theory_check.TheoryReport`
-and :class:`~unicode_fol_kit.eval.chem_batch.ChemBatchResult` — a pure display layer over
+"""``to_markdown()``/``to_html()`` on :class:`~unicode_logic_kit.eval.theory_check.TheoryReport`
+and :class:`~unicode_logic_kit.eval.chem_batch.ChemBatchResult` — a pure display layer over
 already-verified data (no new proof/model-finding logic, so no soundness risk).
 
 Every fixture below is HAND-BUILT (the dataclasses constructed directly, no live
@@ -24,21 +24,21 @@ import html.parser
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import Atom, And, Not
-from unicode_fol_kit.eval.explain import explain_countermodel
-from unicode_fol_kit.eval.theory_check import (
+from unicode_logic_kit.fol.nodes import Atom, And, Not
+from unicode_logic_kit.eval.explain import explain_countermodel
+from unicode_logic_kit.eval.theory_check import (
     SatisfiabilityResult, SubsumptionResult, TheoryReport,
 )
-from unicode_fol_kit.eval.chem_batch import (
+from unicode_logic_kit.eval.chem_batch import (
     ChemBatchResult, check_definitions, _md_cell as _chem_md_cell,
     _gloss_chem_witness, _cell as _chem_cell,
 )
-from unicode_fol_kit.eval.theory_check import _md_cell as _theory_md_cell
-from unicode_fol_kit.eval.theory_check import (
+from unicode_logic_kit.eval.theory_check import _md_cell as _theory_md_cell
+from unicode_logic_kit.eval.theory_check import (
     _witness_gloss, _z3_satisfiability_gloss, _generic_satisfiability_gloss,
     _subsumption_explanation,
 )
-from unicode_fol_kit.eval.chem_batch import _sample_rows
+from unicode_logic_kit.eval.chem_batch import _sample_rows
 
 
 def P(name="p"):
@@ -223,8 +223,8 @@ class TestTheoryReportMarkdown:
         """Regression for the adversarial-review blocker: any backend's
         ``{"kind": ..., "assignment": {...}}`` witness must be glossed
         honestly, not just ``"z3_model"``. cvc5 is a real, installed member
-        of :func:`unicode_fol_kit.atp.protocol.default_chain` and
-        :mod:`unicode_fol_kit.atp.cvc5_backend` emits exactly this shape
+        of :func:`unicode_logic_kit.atp.protocol.default_chain` and
+        :mod:`unicode_logic_kit.atp.cvc5_backend` emits exactly this shape
         (``countermodel={"kind": "cvc5_model", "assignment": ...}``) -- it
         must NOT be routed to :func:`explain_countermodel`, which only
         special-cases ``kind == "z3_model"`` and would raise ``ValueError``

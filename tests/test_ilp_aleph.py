@@ -1,4 +1,4 @@
-"""Aleph-specific tests for :mod:`unicode_fol_kit.ilp`.
+"""Aleph-specific tests for :mod:`unicode_logic_kit.ilp`.
 
 Two kinds of check, kept separate from ``tests/test_ilp.py`` because they are
 about the SECOND emission path (:meth:`IlpTask.aleph_bias_text`,
@@ -7,7 +7,7 @@ the encoding checks both paths share:
 
 * an independent-route differential check — re-parse the ``.f``/``.n`` bare
   atoms with the kit's own
-  :func:`~unicode_fol_kit.fol.prolog_input.parse_prolog_program` and confirm
+  :func:`~unicode_logic_kit.fol.prolog_input.parse_prolog_program` and confirm
   the ``(example, label)`` set it reads back matches ``examples_text()``'s
   ``pos``/``neg`` content exactly. Fast, network-free, needs no Aleph
   installation. The golden-string tests for the exact bias/example TEXT
@@ -34,10 +34,10 @@ import subprocess
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import Atom, Constant, Function
-from unicode_fol_kit.fol.prolog_input import parse_prolog_program
-from unicode_fol_kit.ilp import Example, IlpTask, to_prolog_atom
-from unicode_fol_kit.semantics import FiniteStructure
+from unicode_logic_kit.fol.nodes import Atom, Constant, Function
+from unicode_logic_kit.fol.prolog_input import parse_prolog_program
+from unicode_logic_kit.ilp import Example, IlpTask, to_prolog_atom
+from unicode_logic_kit.semantics import FiniteStructure
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +123,7 @@ def _term_name(node):
 def _aleph_pairs(task):
     """``{(example atom, label), ...}`` read back from
     :meth:`IlpTask.aleph_examples_text` by PARSING it with
-    :func:`~unicode_fol_kit.fol.parse_prolog_program` — comment-aware, so the
+    :func:`~unicode_logic_kit.fol.parse_prolog_program` — comment-aware, so the
     trailing ``% note`` this method may append is dropped exactly as a real
     Prolog reader would drop it, never string-matched against."""
     pairs = set()

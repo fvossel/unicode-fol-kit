@@ -1,4 +1,4 @@
-"""Tests for :mod:`unicode_fol_kit.chem` (SMILES/RDKit -> FiniteStructure).
+"""Tests for :mod:`unicode_logic_kit.chem` (SMILES/RDKit -> FiniteStructure).
 
 Every structural assertion below is hand-derived from the input SMILES's
 atom/bond list (worked out against RDKit's documented, deterministic parse
@@ -8,7 +8,7 @@ own notation), not copied from a first run of the code. Where a derivation
 is non-trivial it is spelled out in the test's own docstring.
 
 Skipped entirely (module-level ``importorskip``) on a machine without RDKit
-— :mod:`unicode_fol_kit.chem.mol` and :mod:`unicode_fol_kit.chem.signature`
+— :mod:`unicode_logic_kit.chem.mol` and :mod:`unicode_logic_kit.chem.signature`
 themselves stay importable without it (``test_importable_without_rdkit``
 below checks this directly, bypassing the module-level skip), but
 exercising real molecule translation needs a working RDKit installation.
@@ -20,10 +20,10 @@ import pytest
 
 rdkit = pytest.importorskip("rdkit")
 
-from unicode_fol_kit import api
-from unicode_fol_kit.fol.nodes import Atom, Variable, Quantifier, Implies
-from unicode_fol_kit.semantics.structures import FiniteStructure
-import unicode_fol_kit.chem as chem
+from unicode_logic_kit import api
+from unicode_logic_kit.fol.nodes import Atom, Variable, Quantifier, Implies
+from unicode_logic_kit.semantics.structures import FiniteStructure
+import unicode_logic_kit.chem as chem
 
 
 # ---------------------------------------------------------------------------
@@ -467,7 +467,7 @@ def test_accepts_an_already_parsed_rdkit_mol_object():
 # NOTE: these formulas are built as AST Nodes directly (Atom/Quantifier/...)
 # rather than parsed from unicode-glyph TEXT, because this kit's own concrete
 # TEXT syntax has an unrelated, pre-existing convention (hand-verified
-# against unicode_fol_kit.api.parse_any directly: "atom(x)" / "c(x)" /
+# against unicode_logic_kit.api.parse_any directly: "atom(x)" / "c(x)" /
 # "foo(x)" — any all-lowercase predicate NAME, regardless of length — fails
 # to parse as a predicate application in the "fol" dialect grammar; only
 # "Human(x)"-style capitalised names do) that has nothing to do with this
@@ -539,7 +539,7 @@ def test_chemlog_signature_declares_every_predicate_mol_to_structure_can_use():
 # ---------------------------------------------------------------------------
 
 def test_importable_without_rdkit(monkeypatch):
-    """``unicode_fol_kit.chem`` and its ``signature``/``_naming`` modules
+    """``unicode_logic_kit.chem`` and its ``signature``/``_naming`` modules
     must import cleanly with RDKit absent — only actually CALLING
     ``mol_to_structure`` needs it (checked above). Re-imports fresh copies
     of the already-imported modules under a simulated RDKit-less
@@ -547,10 +547,10 @@ def test_importable_without_rdkit(monkeypatch):
     """
     import importlib
     monkeypatch.setitem(sys.modules, "rdkit", None)
-    for name in ("unicode_fol_kit.chem", "unicode_fol_kit.chem.mol",
-                 "unicode_fol_kit.chem.signature", "unicode_fol_kit.chem._naming"):
+    for name in ("unicode_logic_kit.chem", "unicode_logic_kit.chem.mol",
+                 "unicode_logic_kit.chem.signature", "unicode_logic_kit.chem._naming"):
         monkeypatch.delitem(sys.modules, name, raising=False)
-    fresh = importlib.import_module("unicode_fol_kit.chem")
+    fresh = importlib.import_module("unicode_logic_kit.chem")
     assert fresh.CHEMLOG_SIGNATURE.predicates["atom"].arity == 1
     with pytest.raises(ImportError, match="pip install rdkit"):
         fresh.mol_to_structure("CCO")
@@ -563,8 +563,8 @@ def test_atom_letters_published_by_mcp_match_the_vocabulary():
     silent: an element the vocabulary types but the MCP list omits would
     simply never be reported in a molecule summary.
     """
-    from unicode_fol_kit.chem import _naming
-    from unicode_fol_kit.mcp import chem_tools
+    from unicode_logic_kit.chem import _naming
+    from unicode_logic_kit.mcp import chem_tools
 
     assert set(chem_tools._ATOM_LETTERS) == set(_naming.ELEMENT_LETTERS.values())
 
@@ -575,7 +575,7 @@ def test_halogen_letters_are_declared_in_the_signature():
     letter present in one and absent from the other gives a molecule that
     checks fine against a formula the signature validator rejects.
     """
-    from unicode_fol_kit.chem import CHEMLOG_SIGNATURE
+    from unicode_logic_kit.chem import CHEMLOG_SIGNATURE
 
     for letter in ("f", "cl", "br", "i", "at"):
         decl = CHEMLOG_SIGNATURE.predicates.get(letter)

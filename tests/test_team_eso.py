@@ -1,5 +1,5 @@
 """Tests for the dependence-logic -> ESO translation
-(unicode_fol_kit.semantics.team_translation.dependence_to_eso).
+(unicode_logic_kit.semantics.team_translation.dependence_to_eso).
 
 The formal anchor is DIFFERENTIAL: for each hand-picked sentence of the
 supported fragment, ``team_models(structure, sentence)`` (the independent
@@ -25,13 +25,13 @@ import random
 
 import pytest
 
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser, Structure, Atom, Not, And, Or, Implies, Iff, Xor,
     Quantifier, Variable, Dependence, SlashedExists,
 )
-from unicode_fol_kit.semantics.team import team_models
-from unicode_fol_kit.semantics.secondorder import holds
-from unicode_fol_kit.semantics.team_translation import dependence_to_eso
+from unicode_logic_kit.semantics.team import team_models
+from unicode_logic_kit.semantics.secondorder import holds
+from unicode_logic_kit.semantics.team_translation import dependence_to_eso
 
 DEP = MSFLParser(dependence=True)
 p = DEP.parse
@@ -480,12 +480,12 @@ class TestRejections:
 
 class TestResultShape:
     def test_headed_by_second_order_quantifier_when_existentials_present(self):
-        from unicode_fol_kit.fol.nodes import SecondOrderQuantifier
+        from unicode_logic_kit.fol.nodes import SecondOrderQuantifier
         f = p("∀x ∃y (=(y) ∧ y = x)")
         assert isinstance(dependence_to_eso(f), SecondOrderQuantifier)
 
     def test_no_second_order_wrapper_without_any_existential(self):
-        from unicode_fol_kit.fol.nodes import SecondOrderQuantifier
+        from unicode_logic_kit.fol.nodes import SecondOrderQuantifier
         f = p("∀x (P(x) ∨ ¬P(x))")
         assert not isinstance(dependence_to_eso(f), SecondOrderQuantifier)
 

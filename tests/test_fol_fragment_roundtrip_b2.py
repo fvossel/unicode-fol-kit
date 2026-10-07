@@ -38,7 +38,7 @@ import random
 
 import pytest
 
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser,
     Variable, Constant, Atom,
     Not, And, Or, Xor, Implies, Iff, Quantifier,

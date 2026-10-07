@@ -14,9 +14,9 @@ import types
 
 import pytest
 
-from unicode_fol_kit.atp.portfolio import _as_plain_data, portfolio_prove
-from unicode_fol_kit.fol.nodes import Atom, Constant
-from unicode_fol_kit.fol.signature import Signature
+from unicode_logic_kit.atp.portfolio import _as_plain_data, portfolio_prove
+from unicode_logic_kit.fol.nodes import Atom, Constant
+from unicode_logic_kit.fol.signature import Signature
 
 PREMISE = Atom("Human", [Constant("soc")])
 GOAL = Atom("Animal", [Constant("soc")])

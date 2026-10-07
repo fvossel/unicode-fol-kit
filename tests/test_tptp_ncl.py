@@ -19,14 +19,14 @@ import subprocess
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Implies, Iff, Box, Diamond, Knows, Quantifier, Variable,
 )
-from unicode_fol_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, BackendUnavailable
-from unicode_fol_kit.atp.tptp_ncl import to_tptp_ncl
-from unicode_fol_kit.atp.leo3_backend import Leo3Backend
-from unicode_fol_kit.atp.kripke_enum import kripke_model_from_dict
-from unicode_fol_kit.semantics.kripke import satisfies_modal
+from unicode_logic_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, BackendUnavailable
+from unicode_logic_kit.atp.tptp_ncl import to_tptp_ncl
+from unicode_logic_kit.atp.leo3_backend import Leo3Backend
+from unicode_logic_kit.atp.kripke_enum import kripke_model_from_dict
+from unicode_logic_kit.semantics.kripke import satisfies_modal
 
 p, q = Atom("p", ()), Atom("q", ())
 
@@ -217,7 +217,7 @@ def test_function_term_argument_raises_not_implemented():
     """P(f(x)) is out of scope: a genuine NXF function-SYMBOL type
     declaration was never confirmed against a real file (see module
     docstring 'Scope') -- refused by name rather than guessed."""
-    from unicode_fol_kit.fol.nodes import Function
+    from unicode_logic_kit.fol.nodes import Function
     formula = Box(Atom("P", (Function("f", (Variable("x"),)),)))
     with pytest.raises(NotImplementedError, match="function"):
         to_tptp_ncl(Quantifier("∀", Variable("x"), formula))
@@ -257,7 +257,7 @@ def test_barcan_scheme_export_matches_real_qmltp_translation():
     ``to_tptp_ncl``'s own docstring point 1), unrelated to the quantifier
     work here.
     """
-    from unicode_fol_kit.fol.nodes import Quantifier as Q
+    from unicode_logic_kit.fol.nodes import Quantifier as Q
     x = Variable("x")
     f = lambda t: Atom("F", [t])
     formula = Implies(Q("∀", x, Box(f(x))), Box(Q("∀", x, f(x))))
@@ -284,7 +284,7 @@ def test_barcan_scheme_export_matches_real_qmltp_translation():
 def test_existential_quantifier_renders_question_mark():
     """? [X: $i] : (...) for ∃ -- the dual of the ! [X: $i] case above,
     hand-checked the same way (SYM003+1.p's own shape: ◇∃x f(x) → ∃x ◇f(x))."""
-    from unicode_fol_kit.fol.nodes import Quantifier as Q
+    from unicode_logic_kit.fol.nodes import Quantifier as Q
     x = Variable("x")
     f = lambda t: Atom("F", [t])
     formula = Implies(Diamond(Q("∃", x, f(x))), Q("∃", x, Diamond(f(x))))
@@ -301,7 +301,7 @@ def test_sorted_quantifier_declares_custom_tType_and_default_i_gets_none():
     formula's untyped quantifier still uses $i with NO declaration for it
     (confirmed: TPTP's own built-in type, never user-declared -- see
     module docstring / _DEFAULT_SORT)."""
-    from unicode_fol_kit.fol.nodes import SortedQuantifier
+    from unicode_logic_kit.fol.nodes import SortedQuantifier
     x, y = Variable("x"), Variable("y")
     human_p = SortedQuantifier("∀", x, "Human", Atom("P", [x]))
     plain_q = Quantifier("∃", y, Atom("Q", [y]))
@@ -325,7 +325,7 @@ def test_free_constant_gets_explicit_declaration():
     genuinely surprising if you only look at variables (which need no such
     separate declaration, the sort is inline in the quantifier) -- hence a
     dedicated hand-checked test rather than folding it into another one."""
-    from unicode_fol_kit.fol.nodes import Constant
+    from unicode_logic_kit.fol.nodes import Constant
     a = Constant("a")
     formula = Box(Atom("P", [a]))
 
@@ -341,7 +341,7 @@ def test_sorted_constant_gets_its_own_sort_declaration():
     gets a $tType declaration -- the term-level counterpart of
     test_sorted_quantifier_declares_custom_tType_and_default_i_gets_none,
     mirroring PUZ087_1.p's ``a: wiseman`` (a constant of a user sort)."""
-    from unicode_fol_kit.fol.nodes import SortedConstant
+    from unicode_logic_kit.fol.nodes import SortedConstant
     alice = SortedConstant("alice", "Human")
     formula = Box(Atom("P", [alice]))
 
@@ -356,7 +356,7 @@ def test_two_ary_predicate_declares_star_product_domain():
     """A 2-ary predicate's type is ``(s1 * s2) > $o`` -- the TFF product-type
     shape (fol/tptp_input.py's own ``tff_xprod`` grammar rule), hand-checked
     against a genuinely 2-ary atom over two DIFFERENT sorts."""
-    from unicode_fol_kit.fol.nodes import SortedQuantifier
+    from unicode_logic_kit.fol.nodes import SortedQuantifier
     x, y = Variable("x"), Variable("y")
     formula = Box(SortedQuantifier(
         "∀", x, "Person",
@@ -372,7 +372,7 @@ def test_predicate_used_at_two_sorts_is_refused():
     under sort Animal is a genuine TPTP type conflict (one symbol, two
     incompatible declarations) -- refused rather than emitting two
     colliding tff(p_decl,...) statements."""
-    from unicode_fol_kit.fol.nodes import SortedQuantifier
+    from unicode_logic_kit.fol.nodes import SortedQuantifier
     x = Variable("x")
     formula = And(
         SortedQuantifier("∀", x, "Human", Atom("P", [x])),
@@ -385,7 +385,7 @@ def test_sort_name_colliding_with_predicate_name_is_refused():
     """A sort and a predicate that fold to the SAME NXF identifier (TPTP's
     single flat lower_word namespace) would need the same name declared
     twice, at two different meanings ($tType vs. > $o) -- refused."""
-    from unicode_fol_kit.fol.nodes import SortedQuantifier
+    from unicode_logic_kit.fol.nodes import SortedQuantifier
     x = Variable("x")
     formula = SortedQuantifier("∀", x, "Foo", Atom("Foo", []))
     with pytest.raises(NotImplementedError, match="namespace"):
@@ -405,7 +405,7 @@ def test_distinct_sort_names_folding_to_same_token_are_refused():
     (both of the kit's own parsers always capitalise a sort's first letter
     on import), the same reachability bar as the already-fixed atom case.
     """
-    from unicode_fol_kit.fol.nodes import SortedQuantifier
+    from unicode_logic_kit.fol.nodes import SortedQuantifier
     x, y = Variable("x"), Variable("y")
     formula = Box(And(
         SortedQuantifier("∀", x, "Human", Atom("P", [x])),
@@ -432,7 +432,7 @@ def test_cross_sort_equality_is_refused():
     NO subtyping/coercion between 'human' and '$i': a TFF-conformant type
     checker must reject 'alice = bob' if 'alice: human' and 'bob: $i'.
     Refused rather than emitting the type-incorrect problem."""
-    from unicode_fol_kit.fol.nodes import Constant, SortedConstant
+    from unicode_logic_kit.fol.nodes import Constant, SortedConstant
     formula = Box(Atom("=", [SortedConstant("alice", "Human"), Constant("bob")]))
     with pytest.raises(NotImplementedError, match="human.*\\$i|\\$i.*human"):
         to_tptp_ncl(formula)
@@ -445,7 +445,7 @@ def test_same_sort_equality_is_accepted():
     constants declared at their shared sort 'human'. Hand-checked: this is
     a perfectly well-typed TFF equality (one shared declared type on both
     sides), so it must NOT be refused."""
-    from unicode_fol_kit.fol.nodes import SortedConstant
+    from unicode_logic_kit.fol.nodes import SortedConstant
     formula = Box(Atom("=", [SortedConstant("alice", "Human"), SortedConstant("bob", "Human")]))
     text = to_tptp_ncl(formula, conjecture_name="eq")
     assert "tff(human_type,type,\n    human: $tType ).\n" in text
@@ -476,7 +476,7 @@ def test_number_argument_is_refused():
     previous version of this exporter defaulted a Number argument to $i
     unconditionally, which is type-incorrect (a numeral is not an
     individual of the untyped sort). Refused rather than mistyped."""
-    from unicode_fol_kit.fol.nodes import Number
+    from unicode_logic_kit.fol.nodes import Number
     formula = Box(Atom("P", [Number(42)]))
     with pytest.raises(NotImplementedError, match="numeral"):
         to_tptp_ncl(formula)
@@ -521,7 +521,7 @@ def test_free_variable_as_equality_operand_is_refused():
     predicate-argument path -- otherwise 'x = a' with an unbound x would
     slip through as a same-sort ($i = $i) equality with a free variable
     still left in the emitted text."""
-    from unicode_fol_kit.fol.nodes import Constant
+    from unicode_logic_kit.fol.nodes import Constant
     formula = Box(Atom("=", [Variable("x"), Constant("a")]))
     with pytest.raises(NotImplementedError, match="x"):
         to_tptp_ncl(formula)
@@ -539,8 +539,8 @@ def test_quantified_round_trips_through_tptp_input_formula_reader():
     $modal logic-spec) exists anywhere in the kit, so this checks the
     quantifier/typed-atom half, which does have one.
     """
-    from unicode_fol_kit.fol.nodes import SortedQuantifier
-    from unicode_fol_kit.fol.tptp_input import parse_tptp_formula
+    from unicode_logic_kit.fol.nodes import SortedQuantifier
+    from unicode_logic_kit.fol.tptp_input import parse_tptp_formula
 
     x, y = Variable("x"), Variable("y")
     original = SortedQuantifier(
@@ -566,8 +566,8 @@ def test_function_free_equality_round_trips_and_excludes_from_decls():
     still get theirs, and equality's own inherited fol.tptp_input round
     trip (both are '=' -- the exact mirror of _fol_nodes.Atom's own
     to_tptp() equality handling) still works end to end."""
-    from unicode_fol_kit.fol.nodes import Constant
-    from unicode_fol_kit.fol.tptp_input import parse_tptp_formula
+    from unicode_logic_kit.fol.nodes import Constant
+    from unicode_logic_kit.fol.tptp_input import parse_tptp_formula
 
     a, b = Constant("a"), Constant("b")
     original = Box(Atom("=", [a, b]))
@@ -847,7 +847,7 @@ def test_cross_check_infra_failure_does_not_mask_theorem(leo3_stub, monkeypatch)
     _cross_check docstring): if modal-tableau's OWN lookup blows up, that
     must not mask Leo-III's answer — only a genuine tableau DISAGREEMENT
     may. PROVED is kept, with 'inconclusive' (not 'confirmed') recorded."""
-    import unicode_fol_kit.atp.protocol as protocol
+    import unicode_logic_kit.atp.protocol as protocol
 
     def _boom(name):
         raise RuntimeError("modal-tableau backend exploded")
@@ -900,11 +900,11 @@ def test_to_tptp_ncl_refuses_case_colliding_letters():
     forces every parsed atom name to start upper-case
     (``[A-Z][a-zA-Z0-9]*``), so two parser-produced atoms can never collide
     under a first-letter-only fold — only a directly-constructed atom name
-    (as e.g. :mod:`unicode_fol_kit.chem.mol` builds, bypassing the grammar)
+    (as e.g. :mod:`unicode_logic_kit.chem.mol` builds, bypassing the grammar)
     can start lower-case and reproduce the collision.
     """
-    from unicode_fol_kit.atp.tptp_ncl import to_tptp_ncl
-    from unicode_fol_kit.fol.nodes import Atom as _Atom, Implies as _Implies
+    from unicode_logic_kit.atp.tptp_ncl import to_tptp_ncl
+    from unicode_logic_kit.fol.nodes import Atom as _Atom, Implies as _Implies
 
     px_upper = _Atom("Px", ())
     px_lower = _Atom("px", ())

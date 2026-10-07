@@ -1,4 +1,4 @@
-"""Tests for unicode_fol_kit.dl.classify (dl/classification.py): TBox classification as a pure reduction to
+"""Tests for unicode_logic_kit.dl.classify (dl/classification.py): TBox classification as a pure reduction to
 `subsumes`.
 
 Hand-checked against small taxonomies worked out by hand (including the family
@@ -8,7 +8,7 @@ back to the already-trusted `dl.subsumes` primitive, rather than trusting the ne
 union-find / transitive-reduction code in isolation.
 """
 
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 
 def _chain_taxonomy():

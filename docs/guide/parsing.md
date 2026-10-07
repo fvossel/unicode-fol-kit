@@ -7,7 +7,7 @@
 The four core modes form the `many_sorted` × `fuzzy` matrix; five further modes — modal, second-order, dependence, linear and Lambek — are each enabled by their own flag. `modal` and `second_order` each additionally combine with `many_sorted` (sorted quantifiers/constants under modal operators, or under second-order predicate quantification); `dependence`, `linear` and `lambek` are standalone and combine with nothing.
 
 ```python
-from unicode_fol_kit import MSFLParser
+from unicode_logic_kit import MSFLParser
 
 MSFLParser(many_sorted=False, fuzzy=False)   # FOL   (default)
 MSFLParser(many_sorted=True,  fuzzy=False)   # MSFOL
@@ -38,7 +38,7 @@ The modal and second-order extension modes are FOL plus their own operators, ove
 The constructor rejects an unsupported combination with a clear `ValueError`. `fuzzy` never combines with `modal`/`second_order`; `modal` and `second_order` never combine with EACH OTHER (use `third_order=True` for that — it already contains second-order syntax and adds `modal=True` on top); and `many_sorted` still refuses `third_order=True` (how a sort interacts with third-order's individual-vs-property "slot" inference is a separate, open question):
 
 ```python
-from unicode_fol_kit import MSFLParser
+from unicode_logic_kit import MSFLParser
 
 for kwargs in [dict(modal=True, fuzzy=True),
                dict(second_order=True, fuzzy=True),
@@ -212,7 +212,7 @@ parser.parse("P(0.10)") == parser.parse("P(0.1)")   # → True
 parser.parse("P(100000000000000000000000.0)")   # → Atom(predicate='P', args=(Number(value=100000000000000000000000),))
 parser.parse("P(1e3)")     # → Atom(predicate='P', args=(Constant(name='1e3'),))
 
-from unicode_fol_kit import ParsingError
+from unicode_logic_kit import ParsingError
 try:
     parser.parse("P(0.30000000000000004)")    # raises
 except ParsingError as e:
@@ -265,7 +265,7 @@ parser.parse("P(alice:Human)")
 `to_fol` *relativises* a sorted formula to plain FOL: a `∀x:S` becomes a guarded `∀x (S(x) → …)`, a `∃x:S` becomes `∃x (S(x) ∧ …)`, and a `SortedConstant` drops to a plain `Constant`.
 
 ```python
-from unicode_fol_kit import MSFLParser, to_fol
+from unicode_logic_kit import MSFLParser, to_fol
 
 m = MSFLParser(many_sorted=True)
 
@@ -294,7 +294,7 @@ to_fol(m.parse("Mortal(socrates:Human)"), include_sort_facts=True)
 The conjunct form is right for a formula that is asserted and wrong for a goal: `Human(socrates) ∧ φ` cannot be proved from nothing, even when φ is a tautology. For a goal the facts go in as premises. `sort_axioms(...)` returns the membership atoms together with one non-emptiness statement per sort (`to_fol` itself never states non-emptiness):
 
 ```python
-from unicode_fol_kit import api, sort_axioms
+from unicode_logic_kit import api, sort_axioms
 
 phi = m.parse("Mortal(socrates:Human) → Mortal(socrates:Human)")
 api.prove(to_fol(phi, include_sort_facts=True)).status   # → 'refuted'
@@ -393,8 +393,8 @@ so.parse("∀P (P ∨ ¬P)")
 If the same bound predicate is applied at two different arities the inference fails with `ConflictingArityError` (a subclass of `ParsingError`, so a caller catching the parser's error type also catches this):
 
 ```python
-from unicode_fol_kit import MSFLParser, ParsingError
-from unicode_fol_kit.fol.msflparser import ConflictingArityError
+from unicode_logic_kit import MSFLParser, ParsingError
+from unicode_logic_kit.fol.msflparser import ConflictingArityError
 
 so = MSFLParser(second_order=True)
 try:
@@ -583,7 +583,7 @@ print(MSFLParser().parse("P(x) ∧ Q(x)").to_dot())
 Every node exposes a small structural-inspection API. `walk()` yields the node and every descendant in pre-order; `subformulas()` is the same but excludes atomic terms; `atoms()` / `variables()` collect those leaf families; `count()` and `depth()` give size and height; a leaf has depth 1.
 
 ```python
-from unicode_fol_kit import Atom
+from unicode_logic_kit import Atom
 
 phi = MSFLParser().parse("∀x (Human(x) → Mortal(x))")
 
@@ -600,7 +600,7 @@ sorted(v.name for v in phi.variables())        # → ['x']
 `count` takes an optional class to filter by, and `Atom` is importable from the top level:
 
 ```python
-from unicode_fol_kit import MSFLParser, Atom, Variable
+from unicode_logic_kit import MSFLParser, Atom, Variable
 
 phi = MSFLParser().parse("∀x (Human(x) → Mortal(x))")
 phi.count(Variable)   # → 3   (one bound + two occurrences)
@@ -647,7 +647,7 @@ parser.parse("|{v : Votes(x, v)}| > |{v : Votes(y, v)}|").to_unicode_str()
 A node that mixes sorted and unsorted occurrences has no text form: a sorted quantifier over an unsorted one, a constant written `carl:A` in one place and plain `carl` in another, or an unsorted quantifier around a sorted constant. A many-sorted grammar needs a sort on every binder and constant and a classical one allows none, so the printed text is refused with `NamingError` in every parser mode and is never read back as a different formula. State the sort on every occurrence, or on none, before printing.
 
 ```python
-from unicode_fol_kit import And, Atom, Constant, SortedConstant, NamingError
+from unicode_logic_kit import And, Atom, Constant, SortedConstant, NamingError
 
 mixed = And(Atom("P", (SortedConstant("carl", "A"),)), Atom("Q", (Constant("carl"),)))
 mixed.to_unicode_str()                            # → 'P(carl:A) ∧ Q(carl)'
@@ -673,7 +673,7 @@ phi.formula.to_unicode_str()    # → 'Human(x) → Mortal(x)'  (the body subfor
 `to_dict()` produces a JSON-serialisable dict keyed by a `_type` discriminator; `Node.from_dict()` rebuilds the AST. The round-trip is structure-preserving across all node families (including modal and second-order nodes that the TPTP/Prover9 exporters cannot represent).
 
 ```python
-from unicode_fol_kit import MSFLParser, Node
+from unicode_logic_kit import MSFLParser, Node
 import json
 
 formula = MSFLParser().parse("P(x) ∧ Q(x)")
@@ -689,7 +689,7 @@ Node.from_dict(json.loads(json.dumps(d))) == formula   # → True  (survives a J
 It holds for the extension and natural-language nodes too — including the inferred arity on a second-order quantifier and the symbolic `n` on a counting quantifier:
 
 ```python
-from unicode_fol_kit import MSFLParser, Node
+from unicode_logic_kit import MSFLParser, Node
 
 m = MSFLParser(modal=True).parse("□P → ◇Q")
 Node.from_dict(m.to_dict()) == m                   # → True
@@ -707,7 +707,7 @@ Node.from_dict(cnt.to_dict()) == cnt               # → True
 `parse()` raises one of two errors. `NamingError` is a **lexer-level** failure — an unrecognised character, a malformed identifier, or a token that cannot start where it appears. `ParsingError` is a **parser-level** failure — a structurally incomplete formula (unexpected token or end of input). They are distinct classes (`NamingError` is *not* a subclass of `ParsingError`), so catch both if you want to handle any malformed input.
 
 ```python
-from unicode_fol_kit import MSFLParser, NamingError, ParsingError
+from unicode_logic_kit import MSFLParser, NamingError, ParsingError
 
 parser = MSFLParser()
 
@@ -727,7 +727,7 @@ except ParsingError as e:
 The **no-mixing rule** — same-level connectives `∧ ∨ ⊕` cannot be combined without explicit parentheses — surfaces as a `NamingError`, because the offending connective is rejected by the lexer at the point where mixing would begin. The message carries a hint naming the rule:
 
 ```python
-from unicode_fol_kit import MSFLParser, NamingError
+from unicode_logic_kit import MSFLParser, NamingError
 
 parser = MSFLParser()
 try:
@@ -808,7 +808,7 @@ onto one span. `spans.get(path)` is the primary lookup; `spans.for_node(node)`
 above is the convenience form for when you already have a node object in
 hand (resolved by identity against whichever tree the map is currently bound
 to — `parse_with_spans`'s own result is already bound to `spanned.formula`).
-Walk every `(path, node)` pair with `unicode_fol_kit.traverse(spanned.formula)`.
+Walk every `(path, node)` pair with `unicode_logic_kit.traverse(spanned.formula)`.
 
 Either half of a `NodeSpans` may independently report `UNKNOWN` — a sentinel
 distinct from every real `Span`, and falsy, so `if span:` and `if span is
@@ -822,7 +822,7 @@ combined `K_a`-style token in modal mode — the enclosing `Knows`/`Believes`/�
 node itself still has an exact EXTENT, only its bare agent sub-node does not:
 
 ```python
-from unicode_fol_kit import UNKNOWN
+from unicode_logic_kit import UNKNOWN
 
 modal = MSFLParser(modal=True)
 ms = modal.parse_with_spans("K_alice P(alice)")
@@ -832,7 +832,7 @@ ms.spans.get(()).extent                  # the whole Knows node — known
 ms.spans.get((0,)).extent is UNKNOWN     # → True — the agent, sliced out of one combined token
 ```
 
-`unicode_fol_kit.replace_at(root, path, new_node)` is the matching
+`unicode_logic_kit.replace_at(root, path, new_node)` is the matching
 path-addressed edit: it rebuilds only the spine from `root` down to `path`,
 so every node reachable via a path that does not run through the edit is the
 exact same object in the result — including under a span table built before

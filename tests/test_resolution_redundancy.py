@@ -1,5 +1,5 @@
 """Tests for redundancy elimination in the resolution prover
-(unicode_fol_kit.atp.resolution): tautology deletion and forward/backward
+(unicode_logic_kit.atp.resolution): tautology deletion and forward/backward
 clause subsumption.
 
 Every expected value is hand-derived (see the comment above each assertion for
@@ -26,8 +26,8 @@ green, since neither tautology deletion nor subsumption may change what
 need to get there.
 """
 
-from unicode_fol_kit.fol.nodes import Atom, Not, Variable, Constant
-from unicode_fol_kit.atp.resolution import (
+from unicode_logic_kit.fol.nodes import Atom, Not, Variable, Constant
+from unicode_logic_kit.atp.resolution import (
     refute, _match, _subsumes, _is_tautology,
 )
 

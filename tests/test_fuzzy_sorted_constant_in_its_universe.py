@@ -10,9 +10,9 @@ formula comes out not valid. The routes refuse the input by name instead.
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.atp.z3_fuzzy import fuzzy_get_model, fuzzy_is_satisfiable, fuzzy_is_valid
-from unicode_fol_kit.semantics.fuzzy import check_sorted_constants, evaluate
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.atp.z3_fuzzy import fuzzy_get_model, fuzzy_is_satisfiable, fuzzy_is_valid
+from unicode_logic_kit.semantics.fuzzy import check_sorted_constants, evaluate
 
 PARSER = MSFLParser(many_sorted=True, fuzzy=True)
 FORMULA = PARSER.parse("(∀x:Person Tall(x)) → Tall(alice:Person)")

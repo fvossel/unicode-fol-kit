@@ -12,11 +12,11 @@ import subprocess
 
 import pytest
 
-from unicode_fol_kit import MSFLParser, check_logical_entailment_vampire
-from unicode_fol_kit.atp.vampire_entailment import (
+from unicode_logic_kit import MSFLParser, check_logical_entailment_vampire
+from unicode_logic_kit.atp.vampire_entailment import (
     _generate_vampire_input, _is_entailed_output, check_entailment_vampire_detailed,
 )
-from unicode_fol_kit.atp import vampire_entailment as _ve
+from unicode_logic_kit.atp import vampire_entailment as _ve
 
 _FOL = MSFLParser()
 _MODUS_PONENS_PREMISES = [
@@ -241,8 +241,8 @@ def test_tf0_route_excerpt_is_reverse_mapped_for_a_non_ascii_constant(monkeypatc
                 "% SZS status Theorem for problem\n"), False
 
     monkeypatch.setattr(_ve, "_spawn_vampire", fake_spawn)
-    from unicode_fol_kit.fol._msfl_nodes import SortedConstant
-    from unicode_fol_kit.fol.nodes import Atom
+    from unicode_logic_kit.fol._msfl_nodes import SortedConstant
+    from unicode_logic_kit.fol.nodes import Atom
     result = check_entailment_vampire_detailed(
         [_MSFOL.parse("∀x:Human Mortal(x)")], Atom("Mortal", [SortedConstant("θ", "Human")]),
         vampire_path="unused")
@@ -253,7 +253,7 @@ def test_tf0_route_excerpt_is_reverse_mapped_for_a_non_ascii_constant(monkeypatc
 
 def test_tf0_route_refusal_text_is_reverse_mapped_in_the_backend_detail(monkeypatch):
     # A rejection quotes the prover's words; they must name the caller's symbols.
-    from unicode_fol_kit.atp.protocol import get_backend
+    from unicode_logic_kit.atp.protocol import get_backend
 
     seen = {}
 
@@ -356,7 +356,7 @@ def test_vampire_via_wsl_tf0_proof_text_names_the_callers_symbols():
 def _recording_runner(monkeypatch):
     """Replace the runner decide() calls with one that records its keyword
     arguments and answers with a canned PROVED result."""
-    from unicode_fol_kit.atp import protocol as _protocol
+    from unicode_logic_kit.atp import protocol as _protocol
 
     calls = []
 
@@ -376,7 +376,7 @@ def _recording_runner(monkeypatch):
 
 
 def test_vampire_backend_forwards_tff_and_sort_to_the_runner(monkeypatch):
-    from unicode_fol_kit.atp.protocol import get_backend
+    from unicode_logic_kit.atp.protocol import get_backend
     calls = _recording_runner(monkeypatch)
     verdict = get_backend("vampire").decide(
         _MORTAL, _MODUS_PONENS_PREMISES, timeout=7000, vampire_path="v", use_wsl=False,
@@ -387,7 +387,7 @@ def test_vampire_backend_forwards_tff_and_sort_to_the_runner(monkeypatch):
 
 
 def test_vampire_backend_forwards_each_value_it_is_given(monkeypatch):
-    from unicode_fol_kit.atp.protocol import get_backend
+    from unicode_logic_kit.atp.protocol import get_backend
     calls = _recording_runner(monkeypatch)
     backend = get_backend("vampire")
     for tff, sort in [(True, None), (False, None), (None, "real"), (None, "int"),
@@ -400,7 +400,7 @@ def test_vampire_backend_forwards_each_value_it_is_given(monkeypatch):
 
 def test_vampire_backend_without_the_options_leaves_the_routing_to_the_runner(monkeypatch):
     # The default is unchanged: ``None`` for both, which is "auto-select".
-    from unicode_fol_kit.atp.protocol import get_backend
+    from unicode_logic_kit.atp.protocol import get_backend
     calls = _recording_runner(monkeypatch)
     get_backend("vampire").decide(_MORTAL, _MODUS_PONENS_PREMISES, vampire_path="v",
                                   use_wsl=False)
@@ -410,7 +410,7 @@ def test_vampire_backend_without_the_options_leaves_the_routing_to_the_runner(mo
 def test_api_prove_with_the_vampire_backend_carries_sort_to_the_runner(monkeypatch):
     # The public entry: options given to api.prove reach the backend, which
     # reaches the runner.
-    from unicode_fol_kit import api
+    from unicode_logic_kit import api
     calls = _recording_runner(monkeypatch)
     monkeypatch.setenv("UFK_VAMPIRE", "a-vampire-that-is-never-run")
     verdict = api.prove(_MORTAL, _MODUS_PONENS_PREMISES, backends=["vampire"],
@@ -435,7 +435,7 @@ def test_live_vampire_backend_sort_int_changes_the_verdict_of_an_arithmetic_prob
     This test used to expect Vampire's own type error for the untyped route (the
     ``fof`` text carried the interpreted ``$greater`` applied to an individual); the
     problem writers no longer write ``$greater`` unless arithmetic is asked for."""
-    from unicode_fol_kit.atp.protocol import get_backend, PROVED
+    from unicode_logic_kit.atp.protocol import get_backend, PROVED
     goal = _FOL.parse("∀x (x > 0 → x ≥ 1)")
     backend = get_backend("vampire")
     typed = backend.decide(goal, [], timeout=60000, vampire_path="vampire",

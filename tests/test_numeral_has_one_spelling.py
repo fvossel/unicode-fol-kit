@@ -1,6 +1,6 @@
 r"""A numeral has ONE spelling per value: ``Number(1.0)`` IS ``Number(1)``.
 
-A :class:`~unicode_fol_kit.fol.nodes.Number` is a constant identified by its value, and
+A :class:`~unicode_logic_kit.fol.nodes.Number` is a constant identified by its value, and
 ``Number(1) == Number(1.0)`` (equal, equal hash). The node stores a float with a whole value as
 the integer it equals, so that equal numerals are the same node, with the same ``repr``, the same
 ``to_dict`` and the same printed text in every syntax. A route that keys an atom by its printed
@@ -17,23 +17,23 @@ import json
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp._tff_problem import generate_tff_arith_problem
-from unicode_fol_kit.atp.kripke_enum import modal_enum_search
-from unicode_fol_kit.atp.lj import int_prove
-from unicode_fol_kit.atp.z3_arith import is_valid_arith, to_z3_arith
-from unicode_fol_kit.fol._fol_nodes import numeral_key
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp._tff_problem import generate_tff_arith_problem
+from unicode_logic_kit.atp.kripke_enum import modal_enum_search
+from unicode_logic_kit.atp.lj import int_prove
+from unicode_logic_kit.atp.z3_arith import is_valid_arith, to_z3_arith
+from unicode_logic_kit.fol._fol_nodes import numeral_key
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Box, Constant, Count, Function, Iff, Implies, Node, Not, Number, Or, Variable,
 )
-from unicode_fol_kit.fol.prolog_export import formula_to_prolog_clause
-from unicode_fol_kit.fol.prolog_input import parse_prolog_clause
-from unicode_fol_kit.fol.prover9_input import parse_prover9
-from unicode_fol_kit.fol.tptp_input import parse_tptp
-from unicode_fol_kit.semantics import truthtable
-from unicode_fol_kit.semantics.conditional import cf_valid
-from unicode_fol_kit.semantics.intuitionistic import int_valid
-from unicode_fol_kit.semantics.kripke import satisfies_modal
+from unicode_logic_kit.fol.prolog_export import formula_to_prolog_clause
+from unicode_logic_kit.fol.prolog_input import parse_prolog_clause
+from unicode_logic_kit.fol.prover9_input import parse_prover9
+from unicode_logic_kit.fol.tptp_input import parse_tptp
+from unicode_logic_kit.semantics import truthtable
+from unicode_logic_kit.semantics.conditional import cf_valid
+from unicode_logic_kit.semantics.intuitionistic import int_valid
+from unicode_logic_kit.semantics.kripke import satisfies_modal
 
 x = Variable("x")
 

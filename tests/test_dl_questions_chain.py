@@ -17,7 +17,7 @@ Anything else iterable is read in order and stored as a ``tuple``; the length
 
 import pytest
 
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 
 def _generator():

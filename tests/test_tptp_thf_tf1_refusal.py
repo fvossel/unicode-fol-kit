@@ -10,7 +10,7 @@ grammar is tried, in the text with its comments and quoted atoms taken out.
 """
 import pytest
 
-from unicode_fol_kit.fol.tptp_input import (
+from unicode_logic_kit.fol.tptp_input import (
     TptpParsingError, load_tff_problem, load_tptp, parse_tff_problem, parse_tptp,
     parse_tptp_formula, parse_tptp_problem,
 )

@@ -21,20 +21,20 @@ model does not denote, an atom with a non-denoting term is false, so ``∀x P(x)
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.clingo_backend import clingo_available
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.clingo_backend import clingo_available
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Cardinality, Constant, Count, Function, Iff, Implies, Not, Number, Or, Quantifier,
     SortedConstant, Variable,
 )
-from unicode_fol_kit.semantics.asp_models import asp_find_model
-from unicode_fol_kit.semantics.free_logic import (
+from unicode_logic_kit.semantics.asp_models import asp_find_model
+from unicode_logic_kit.semantics.free_logic import (
     FreeModel, free_countermodel, free_entails, free_find_model, free_holds, free_is_valid, free_satisfies,
 )
-from unicode_fol_kit.semantics.modelfinder import (
+from unicode_logic_kit.semantics.modelfinder import (
     find_countermodel, find_model, is_size_exhaustive, is_valid_finite, search_model,
 )
-from unicode_fol_kit.semantics.tarski import Structure, models, satisfies
+from unicode_logic_kit.semantics.tarski import Structure, models, satisfies
 
 x, y = Variable("x"), Variable("y")
 

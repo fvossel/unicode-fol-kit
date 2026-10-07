@@ -14,7 +14,7 @@ of ``S``).
 import itertools
 import random
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Function, Implies, Not, Or, Quantifier, SortedConstant, SortedQuantifier,
     Variable,
 )

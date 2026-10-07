@@ -12,14 +12,14 @@ the variables it binds), not read off the function's output.
 
 import pytest
 
-import unicode_fol_kit
-from unicode_fol_kit import api
-from unicode_fol_kit import fol as fol_package
-from unicode_fol_kit.fol import _msfl_nodes, nodes as fol_nodes
-from unicode_fol_kit.fol.nodes import (
+import unicode_logic_kit
+from unicode_logic_kit import api
+from unicode_logic_kit import fol as fol_package
+from unicode_logic_kit.fol import _msfl_nodes, nodes as fol_nodes
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Function, Implies, Quantifier, Variable, signature_axioms, subsort_axioms,
 )
-from unicode_fol_kit.fol.signature import ConstantDecl, FunctionDecl, PredicateDecl, Signature
+from unicode_logic_kit.fol.signature import ConstantDecl, FunctionDecl, PredicateDecl, Signature
 
 
 def var(name):
@@ -181,7 +181,7 @@ def test_the_function_works_on_anything_that_has_the_five_attributes():
 
 # ---- the export lists ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("module", [unicode_fol_kit, fol_package, fol_nodes])
+@pytest.mark.parametrize("module", [unicode_logic_kit, fol_package, fol_nodes])
 def test_the_function_is_exported_next_to_subsort_axioms(module):
     assert module.signature_axioms is _msfl_nodes.signature_axioms
     assert "signature_axioms" in module.__all__ and "subsort_axioms" in module.__all__

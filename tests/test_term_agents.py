@@ -16,13 +16,13 @@ substitution / β-reduction) rather than a baked-in relation-name suffix. These 
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Knows, Believes, Variable, Constant, Atom, And, Not, Implies, Quantifier, Node,
     free_variables, substitute,
 )
-from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
-from unicode_fol_kit.fol.qml import qml_is_valid, qml_translate
-from unicode_fol_kit import MSFLParser
+from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
+from unicode_logic_kit.fol.qml import qml_is_valid, qml_translate
+from unicode_logic_kit import MSFLParser
 
 x = Variable("x")
 A = lambda t: Atom("A", [t])

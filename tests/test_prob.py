@@ -1,11 +1,11 @@
-"""Tests for unicode_fol_kit.prob — exact probabilistic logic (no sampling).
+"""Tests for unicode_logic_kit.prob — exact probabilistic logic (no sampling).
 
 Two independent formal anchors, one per module:
 
 * nilsson.entailment_bounds — every expected bound below is derived BY HAND in
   a comment before the code is run (the world-by-world LP, worked out on
   paper), and the classical-boundary case is additionally cross-checked
-  DIFFERENTIALLY against unicode_fol_kit.api.prove.
+  DIFFERENTIALLY against unicode_logic_kit.api.prove.
 * distribution.query — every expected probability is derived BY HAND in a
   comment (the finite total-choice sum, worked out on paper), and pruned vs.
   unpruned enumeration is checked to agree on every program below.
@@ -15,12 +15,12 @@ from fractions import Fraction as F
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Implies, Quantifier, Variable, Constant,
 )
-from unicode_fol_kit.prob.nilsson import ProbConstraint, ProbBounds, entailment_bounds
-from unicode_fol_kit.prob.distribution import ProbFact, ProbProgram, query
+from unicode_logic_kit.prob.nilsson import ProbConstraint, ProbBounds, entailment_bounds
+from unicode_logic_kit.prob.distribution import ProbFact, ProbProgram, query
 
 P = api.parse_any
 

@@ -33,11 +33,11 @@ import dataclasses
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit.dl import tableau as dl_tableau
-from unicode_fol_kit.dl.datatypes import Literal
-from unicode_fol_kit.hets import owl_backend
-from unicode_fol_kit.hets.owl_backend import (
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit.dl import tableau as dl_tableau
+from unicode_logic_kit.dl.datatypes import Literal
+from unicode_logic_kit.hets import owl_backend
+from unicode_logic_kit.hets.owl_backend import (
     _abox_with, _all_individuals, _render_document,
     external_instance_check, external_instance_retrieval, external_realize_all,
 )
@@ -281,7 +281,7 @@ def test_the_sweep_is_the_table_driven_scan_of_the_other_routes():
     HermiT route's and the FOL image's ``KnowledgeBaseFOL.individuals`` cannot
     drift apart -- for one stored assertion of EVERY ABox row of the table (the
     data rows included), and for the ABox that names nobody."""
-    from unicode_fol_kit.dl import owl_reasoner
+    from unicode_logic_kit.dl import owl_reasoner
 
     abox, expected = _abox_with_one_item_per_kind(object_layer_only=False)
     assert expected, "the table has no ABox row with individual positions?"
@@ -298,7 +298,7 @@ def test_the_sweep_is_the_table_driven_scan_of_the_other_routes():
 
 
 def test_the_sweep_agrees_with_the_hermit_route_on_the_object_layer():
-    from unicode_fol_kit.dl import owl_reasoner
+    from unicode_logic_kit.dl import owl_reasoner
 
     abox, expected = _abox_with_one_item_per_kind(object_layer_only=True)
     assert _all_individuals(abox) == owl_reasoner._all_individuals(abox) == expected

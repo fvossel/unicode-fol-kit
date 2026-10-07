@@ -1,6 +1,6 @@
 """Tests for beta_reduce, substitute, and ReductionLimitError."""
 import pytest
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Variable, Constant, Function,
     Atom, Not, And, Or, Quantifier, SortedQuantifier,
     LambdaVar, Lambda, Application,

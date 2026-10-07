@@ -11,23 +11,23 @@ The proof-level checks live in ``test_goedel.py``; here nothing runs a prover.
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.fol.frames import UnsupportedFrameCondition
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.fol.frames import UnsupportedFrameCondition
+from unicode_logic_kit.fol.nodes import (
     Atom, Box, Constant, Diamond, Implies, Lambda, LambdaVar, Not, PredicateTerm,
 )
-from unicode_fol_kit.hol.ho_modal import (
+from unicode_logic_kit.hol.ho_modal import (
     HoAxiom, HoGoal, ho_modal_definitions, isabelle_ho_modal_theory,
     to_isabelle_ho_modal, to_thf_ho_modal, _isa_sigma, _rigid_identity, _thf,
 )
-from unicode_fol_kit.hol._ho_common import (
+from unicode_logic_kit.hol._ho_common import (
     ThfNames, UnsupportedHigherOrderNode, rename_apart,
 )
-from unicode_fol_kit.hol import isabelle_runner as _runner
-from unicode_fol_kit.hol.isabelle_modal import isabelle_modal_theory
-from unicode_fol_kit.hol.isabelle_runner import INVALID, VALID, IsabelleInstall
-from unicode_fol_kit.hol.thf_modal import to_thf_modal_full
-from unicode_fol_kit.hol.thirdorder import to_isabelle_to, to_thf_to
+from unicode_logic_kit.hol import isabelle_runner as _runner
+from unicode_logic_kit.hol.isabelle_modal import isabelle_modal_theory
+from unicode_logic_kit.hol.isabelle_runner import INVALID, VALID, IsabelleInstall
+from unicode_logic_kit.hol.thf_modal import to_thf_modal_full
+from unicode_logic_kit.hol.thirdorder import to_isabelle_to, to_thf_to
 
 TO = MSFLParser(third_order=True)
 TOM = MSFLParser(third_order=True, modal=True)
@@ -232,7 +232,7 @@ def test_a_frame_condition_missing_from_frame_axioms_is_still_refused(monkeypatc
     against ``_FRAME_AXIOMS``/``fol.frames.FRAME_CONDITIONS`` drifting apart,
     not dead code, which this pins by simulating exactly that drift.
     """
-    import unicode_fol_kit.hol.ho_modal as ho_modal
+    import unicode_logic_kit.hol.ho_modal as ho_modal
     monkeypatch.delitem(ho_modal._FRAME_AXIOMS, "loeb")
     with pytest.raises(UnsupportedFrameCondition, match="loeb"):
         isabelle_ho_modal_theory("T", (), [HoGoal("g", TOM.parse("Pos(G)"))],

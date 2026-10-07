@@ -14,12 +14,12 @@ out in the test that states it.
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Implies, Not, Number, Quantifier, SortedConstant, SortedCount,
     SortedQuantifier, Variable,
 )
-from unicode_fol_kit.semantics import tarski
-from unicode_fol_kit.semantics.tarski import IllegalStructureError, Structure, models, satisfies
+from unicode_logic_kit.semantics import tarski
+from unicode_logic_kit.semantics.tarski import IllegalStructureError, Structure, models, satisfies
 
 X = Variable("x")
 

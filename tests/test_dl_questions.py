@@ -23,9 +23,9 @@ the refusal not being raised.
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit import api
-from unicode_fol_kit.fol.nodes import Not as FNot, Quantifier, Variable
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit import api
+from unicode_logic_kit.fol.nodes import Not as FNot, Quantifier, Variable
 
 TIMEOUT_MS = 30000
 
@@ -490,7 +490,7 @@ def test_the_tableaus_refusal_of_a_data_axiom_names_the_methods():
 
 def test_the_mcp_dl_tools_carry_the_refusals_that_name_the_methods():
     pytest.importorskip("mcp", reason="optional [mcp] extra not installed")
-    from unicode_fol_kit.mcp.server import dl_classify, dl_concept_satisfiable, translate
+    from unicode_logic_kit.mcp.server import dl_classify, dl_concept_satisfiable, translate
 
     concept = dl_concept_satisfiable("d some xsd:integer", syntax="manchester")
     assert concept["error"]["type"] == "UnsupportedConceptError"
@@ -620,7 +620,7 @@ def test_the_renderers_still_render_what_has_no_pun():
 # --------------------------------------------------------------------------- #
 
 def _assert_reads_back(node, what):
-    from unicode_fol_kit.atp.tstp_check import _formula_alpha_equal
+    from unicode_logic_kit.atp.tstp_check import _formula_alpha_equal
 
     text = node.to_unicode_str()
     result = api.parse_any(text)

@@ -11,12 +11,12 @@ from functools import reduce
 
 import pytest
 
-from unicode_fol_kit import int_valid, is_valid
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import int_valid, is_valid
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Implies, Iff, Quantifier, Variable, Constant,
 )
-from unicode_fol_kit.atp.sequent import sequent, derive, axiom
-from unicode_fol_kit.atp.lj import check_lj_proof, verify_lj_proof
+from unicode_logic_kit.atp.sequent import sequent, derive, axiom
+from unicode_logic_kit.atp.lj import check_lj_proof, verify_lj_proof
 
 P, Q = Atom("P", ()), Atom("Q", ())
 NP, NNP = Not(P), Not(Not(P))
@@ -112,6 +112,6 @@ def test_reject_bad_axiom():
 
 
 def test_lj_exports():
-    import unicode_fol_kit as u
+    import unicode_logic_kit as u
     for name in ("check_lj_proof", "verify_lj_proof"):
         assert hasattr(u, name) and name in u.__all__, name

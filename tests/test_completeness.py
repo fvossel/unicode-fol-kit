@@ -10,27 +10,27 @@ the inventory are used wherever possible.
 
 import pytest
 
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser, to_fol, is_valid, free_variables,
     is_valid_tableau, prove_tableau,
     cf_valid, cf_countermodel, cf_satisfies,
 )
-from unicode_fol_kit.atp.resolution import is_valid_resolution, prove
-from unicode_fol_kit.atp.fitch_search import (
+from unicode_logic_kit.atp.resolution import is_valid_resolution, prove
+from unicode_logic_kit.atp.fitch_search import (
     fitch_prove, is_valid_fitch, find_fitch_proof,
 )
-from unicode_fol_kit.atp.modal_tableau import (
+from unicode_logic_kit.atp.modal_tableau import (
     is_modal_valid, modal_decide, modal_countermodel, has_modal,
 )
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, Constant, Variable, Measure, Would, Might,
 )
-from unicode_fol_kit.fol.normalforms import to_nnf
-from unicode_fol_kit.fol.unification import unify, apply_subst
-from unicode_fol_kit.hol.isabelle_modal import isabelle_modal_theory
-from unicode_fol_kit.hol.thf_modal import to_thf_modal_full
-from unicode_fol_kit.hol.classical import to_thf_fol, to_isabelle_fol
-from unicode_fol_kit.hol.secondorder import to_isabelle_so, to_thf_so
+from unicode_logic_kit.fol.normalforms import to_nnf
+from unicode_logic_kit.fol.unification import unify, apply_subst
+from unicode_logic_kit.hol.isabelle_modal import isabelle_modal_theory
+from unicode_logic_kit.hol.thf_modal import to_thf_modal_full
+from unicode_logic_kit.hol.classical import to_thf_fol, to_isabelle_fol
+from unicode_logic_kit.hol.secondorder import to_isabelle_so, to_thf_so
 
 FOL = MSFLParser()
 MODAL = MSFLParser(modal=True)
@@ -88,7 +88,7 @@ class TestEngineAgreement:
         assert subst is not None
         assert apply_subst(m1, subst) == m2
         # Never unifies with a Function spelled "measure" — export convention only.
-        from unicode_fol_kit.fol.nodes import Function
+        from unicode_logic_kit.fol.nodes import Function
         assert unify(m1, Function("measure",
                                   [Constant("tom"), Constant("height")])) is None
 
@@ -235,7 +235,7 @@ class TestExporterCompleteness:
                 exporter(MODAL.parse("P □→ Q"))
 
     def test_qml_since_names_its_reason_and_alternatives(self):
-        from unicode_fol_kit.fol.qml import qml_translate
+        from unicode_logic_kit.fol.qml import qml_translate
         with pytest.raises(NotImplementedError, match="msince"):
             qml_translate(MODAL.parse("P ⒮ Q"))
 
@@ -244,7 +244,7 @@ class TestExporterCompleteness:
 # Live Isabelle differential for the completed operators (isabelle_live).
 # --------------------------------------------------------------------------- #
 
-from unicode_fol_kit.hol.isabelle_runner import (          # noqa: E402
+from unicode_logic_kit.hol.isabelle_runner import (          # noqa: E402
     isabelle_available, isabelle_decide_modal,
 )
 

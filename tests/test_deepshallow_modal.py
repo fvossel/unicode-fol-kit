@@ -9,12 +9,12 @@ faithfulness the module exists to provide.
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Xor, Implies, Iff, Box, Diamond, Variable, Quantifier,
 )
-from unicode_fol_kit.hol import modal_faithfulness_theory, modal_to_deep
-from unicode_fol_kit.hol.deepshallow._common import AtomConsts, sanitize_atom
-from unicode_fol_kit.hol.isabelle_runner import isabelle_available, check_theory
+from unicode_logic_kit.hol import modal_faithfulness_theory, modal_to_deep
+from unicode_logic_kit.hol.deepshallow._common import AtomConsts, sanitize_atom
+from unicode_logic_kit.hol.isabelle_runner import isabelle_available, check_theory
 
 p, q = Atom("p", ()), Atom("q", ())
 K_AX = Implies(Box(Implies(p, q)), Implies(Box(p), Box(q)))

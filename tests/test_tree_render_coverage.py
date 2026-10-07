@@ -14,8 +14,8 @@ parsed/built formulas and asserts:
   coverage claim is enforced, not assumed.
 """
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     Atom, Variable, Constant, Number, Function,
     Not, And, Or, Xor, Implies, Iff, Quantifier,
     Count, Measure, Cardinality, Contrast,

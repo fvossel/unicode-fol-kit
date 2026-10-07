@@ -9,14 +9,14 @@ Isabelle is in ``test_isabelle_runner_live.py`` (skipped when none is present).
 import os
 import pytest
 
-from unicode_fol_kit.fol.nodes import Atom, Implies, Box, Diamond
-from unicode_fol_kit.hol import isabelle_runner as R
-from unicode_fol_kit.hol.isabelle_runner import (
+from unicode_logic_kit.fol.nodes import Atom, Implies, Box, Diamond
+from unicode_logic_kit.hol import isabelle_runner as R
+from unicode_logic_kit.hol.isabelle_runner import (
     ModalVerdict, FolVerdict, IsabelleInstall, IsabelleNotAvailable,
     isabelle_decide_modal, isabelle_decide_fol, check_theory,
     DEFAULT_METHODS, VALID, INVALID, UNKNOWN,
 )
-from unicode_fol_kit.hol.isabelle_modal import isabelle_modal_theory, modal_axiom_names
+from unicode_logic_kit.hol.isabelle_modal import isabelle_modal_theory, modal_axiom_names
 
 p, q = Atom("p", ()), Atom("q", ())
 
@@ -74,7 +74,7 @@ def test_infra_error_detection():
 def test_alethic_countermodel_search():
     # Needs no Isabelle: a bounded Kripke enumeration that exhibits a witness for an
     # INVALID propositional alethic formula, and declines outside the fragment.
-    from unicode_fol_kit.fol.nodes import Box, Quantifier, Variable, Knows, Constant
+    from unicode_logic_kit.fol.nodes import Box, Quantifier, Variable, Knows, Constant
     cm = R._find_alethic_countermodel(Implies(Box(p), p), "K")        # T axiom, invalid in K
     assert cm and "Kripke counter-model" in cm and "false at world" in cm
     assert R._find_alethic_countermodel(Implies(Box(p), p), "T") is None     # valid -> no model
@@ -199,7 +199,7 @@ _DUMMY_INSTALL = IsabelleInstall(home="X", is_windows=False, isabelle_exe="X/bin
 
 
 def test_decide_fol_native_equality_reaches_both_theories(monkeypatch):
-    from unicode_fol_kit.fol.nodes import Quantifier, Variable
+    from unicode_logic_kit.fol.nodes import Quantifier, Variable
     x = Variable("x")
     refl = Quantifier("∀", x, Atom("=", [x, x]))
     seen = _capture_theories(monkeypatch, prove_ok=False)
@@ -211,7 +211,7 @@ def test_decide_fol_native_equality_reaches_both_theories(monkeypatch):
 
 
 def test_decide_fol_default_keeps_uninterpreted_equality(monkeypatch):
-    from unicode_fol_kit.fol.nodes import Quantifier, Variable
+    from unicode_logic_kit.fol.nodes import Quantifier, Variable
     x = Variable("x")
     seen = _capture_theories(monkeypatch, prove_ok=True)
     isabelle_decide_fol(Quantifier("∀", x, Atom("=", [x, x])), install=_DUMMY_INSTALL)
@@ -221,8 +221,8 @@ def test_decide_fol_default_keeps_uninterpreted_equality(monkeypatch):
 def test_isabelle_backend_decides_fol_with_native_equality(monkeypatch):
     # api.prove(backends=["isabelle"]) promises the kit's semantics, where "=" is
     # identity; with uninterpreted feq, "∀x (x = x)" came back REFUTED.
-    from unicode_fol_kit.atp.protocol import get_backend, REFUTED
-    from unicode_fol_kit.fol.nodes import Quantifier, Variable
+    from unicode_logic_kit.atp.protocol import get_backend, REFUTED
+    from unicode_logic_kit.fol.nodes import Quantifier, Variable
     calls = []
 
     def fake_decide_fol(goal, **options):

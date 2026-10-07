@@ -1,4 +1,4 @@
-"""Tests for the MCP server layer (unicode_fol_kit.mcp).
+"""Tests for the MCP server layer (unicode_logic_kit.mcp).
 
 The tool implementations are plain functions, so most tests call them
 directly and assert against hand-derived expectations; two tests go through
@@ -13,7 +13,7 @@ import pytest
 
 pytest.importorskip("mcp", reason="optional [mcp] extra not installed")
 
-from unicode_fol_kit.mcp.server import (   # noqa: E402
+from unicode_logic_kit.mcp.server import (   # noqa: E402
     check_consistency,
     check_equivalence,
     check_formula,
@@ -192,8 +192,8 @@ def _canon(text):
     """Alpha/commutativity-quotiented form of formula TEXT — compares a
     rendering with a hand-written formula without caring which bound-variable
     names the translation happened to mint."""
-    from unicode_fol_kit import api
-    from unicode_fol_kit.eval import canonicalize
+    from unicode_logic_kit import api
+    from unicode_logic_kit.eval import canonicalize
 
     parsed = api.parse_any(text)
     assert parsed.ok, (text, parsed.errors[:1])
@@ -223,7 +223,7 @@ def test_translate_description_tells_the_client_to_pass_the_axioms_as_premises()
 
 
 def test_server_instructions_carry_the_same_warning():
-    from unicode_fol_kit.mcp.server import _INSTRUCTIONS
+    from unicode_logic_kit.mcp.server import _INSTRUCTIONS
 
     assert "SEPARATE premises" in _INSTRUCTIONS
 
@@ -286,7 +286,7 @@ def test_translate_modal_frames_decide_like_the_hand_table_and_the_tableau():
     """Three routes must agree on every (frame, schema): the tool's
     translate -> prove, the hand table above, and the modal tableau (a
     different decision procedure that never sees a first-order image)."""
-    from unicode_fol_kit import api
+    from unicode_logic_kit import api
 
     disagreements = []
     for frame, valid in _VALID_ON.items():
@@ -333,7 +333,7 @@ def test_translate_msfol_nonempty_sorts_decide_the_verdict():
     because sorts are non-empty, and its unsorted image is not valid on its
     own — the sort's non-emptiness is a side condition. The kit's native
     many-sorted prover is the second route."""
-    from unicode_fol_kit import api
+    from unicode_logic_kit import api
 
     formula = "(∀x:Human Mortal(x)) → ∃x:Human Mortal(x)"
     result = translate(formula, "msfol", "fol")
@@ -437,8 +437,8 @@ def test_translate_option_names_are_exactly_the_edges_options():
     through here (and an option here must exist on some edge)."""
     import inspect
 
-    from unicode_fol_kit.comorphism import DEFAULT_REGISTRY
-    from unicode_fol_kit.mcp.server import _TRANSLATE_OPTIONS
+    from unicode_logic_kit.comorphism import DEFAULT_REGISTRY
+    from unicode_logic_kit.mcp.server import _TRANSLATE_OPTIONS
 
     declared = set().union(*(e.options for e in DEFAULT_REGISTRY.edges()))
     parameters = set(inspect.signature(translate).parameters)
@@ -551,8 +551,8 @@ def test_translate_texts_read_back_as_what_the_ast_says():
     parses, and it is the same formula as its JSON AST up to the names of
     bound variables. The translations mint names the text grammar rejects
     (_hw0, _msfol_Human_witness), which the rendering must not leak."""
-    from unicode_fol_kit.eval import canonicalize
-    from unicode_fol_kit.fol.nodes import Node
+    from unicode_logic_kit.eval import canonicalize
+    from unicode_logic_kit.fol.nodes import Node
 
     battery = [
         ("□P → □□P", "modal", "fol", {"frame": "S4"}),
@@ -805,8 +805,8 @@ def test_compare_formulas_converses_json_form_matches_python_tuple_form():
     """The JSON-dict declaration round-trips to the SAME verdict the
     Python-tuple form gives directly through eval.equivalent — the wire
     shape is just a re-spelling, not a different code path."""
-    from unicode_fol_kit import equivalent as _equivalent
-    from unicode_fol_kit.mcp.server import _parse
+    from unicode_logic_kit import equivalent as _equivalent
+    from unicode_logic_kit.mcp.server import _parse
 
     result = compare_formulas("Loves(a, b)", "LovedBy(b, a)",
                               converses=_LOVED_BY_JSON)
@@ -1170,7 +1170,7 @@ def test_dl_concept_satisfiable_hand_checked_contradiction():
     is trivially satisfiable. Differential-checked against calling
     dl.concept_satisfiable directly on the identically-parsed Concept, per
     this item's own test_oracle."""
-    import unicode_fol_kit.dl as dl
+    import unicode_logic_kit.dl as dl
 
     contradiction = dl_concept_satisfiable("A ⊓ ¬A")
     assert contradiction == {"ok": True, "satisfiable": False,
@@ -1206,7 +1206,7 @@ def test_dl_subsumes_differential_against_the_dl_module_directly():
     """The MCP wrapper's verdict must agree with calling dl.subsumes on the
     identically-built TBox/Concepts (the differential half of this item's
     test_oracle)."""
-    import unicode_fol_kit.dl as dl
+    import unicode_logic_kit.dl as dl
 
     Person, Female, Male = dl.Atomic("Person"), dl.Atomic("Female"), dl.Atomic("Male")
     Parent, Mother, Father = dl.Atomic("Parent"), dl.Atomic("Mother"), dl.Atomic("Father")
@@ -1307,7 +1307,7 @@ def test_dl_classify_differential_against_the_dl_module_directly():
     """classify()'s tool payload must agree with calling dl.classify on the
     identically-built TBox (this item's differential test_oracle, applied to
     classify as well as the four core reasoning tools)."""
-    import unicode_fol_kit.dl as dl
+    import unicode_logic_kit.dl as dl
 
     Person, Female, Male = dl.Atomic("Person"), dl.Atomic("Female"), dl.Atomic("Male")
     Parent, Mother, Father = dl.Atomic("Parent"), dl.Atomic("Mother"), dl.Atomic("Father")
@@ -1328,7 +1328,7 @@ def test_dl_parse_manchester_concept_and_roundtrip():
     'manchester' text back through the same tool reproduces the identical
     concept_unicode (parse_manchester(to_manchester(c)) == c, checked
     structurally at the dl level too)."""
-    import unicode_fol_kit.dl as dl
+    import unicode_logic_kit.dl as dl
 
     first = dl_parse_manchester("hasChild some (Doctor and not Rich)")
     assert first == {"ok": True,
@@ -1391,8 +1391,8 @@ def test_the_role_axiom_payload_tags_come_from_the_readers_own_tables():
     """A shape the reader gains cannot be spelled differently by the tool: the
     payload's tags are derived from dl.owl_manchester's own frame tables, so
     this test is what notices a reader shape with no payload."""
-    from unicode_fol_kit.dl import owl_manchester as _manchester
-    from unicode_fol_kit.mcp.server import _role_axiom_payload
+    from unicode_logic_kit.dl import owl_manchester as _manchester
+    from unicode_logic_kit.mcp.server import _role_axiom_payload
 
     tags = ({tag for tag, _ in _manchester._BINARY_ROLE_FRAMES.values()}
             | {tag for tag, _ in _manchester._FILLER_ROLE_FRAMES.values()}
@@ -1533,7 +1533,7 @@ def test_get_syntax_spec_description_logic_topic():
     parsed via dl.parse_concept/dl.parse_manchester (NOT api.parse_any,
     which cannot read either grammar — see DL_EXAMPLES's own docstring in
     syntax_spec.py) so the spec cannot silently drift from the real parser."""
-    import unicode_fol_kit.dl as dl
+    import unicode_logic_kit.dl as dl
 
     spec = get_syntax_spec("description-logic")
     assert spec["ok"] is True
@@ -1558,7 +1558,7 @@ def test_get_syntax_spec_description_logic_dialect_filter():
 
 
 def test_dl_topic_is_a_valid_spec_topic_target():
-    from unicode_fol_kit.mcp.syntax_spec import SPEC_TOPICS
+    from unicode_logic_kit.mcp.syntax_spec import SPEC_TOPICS
 
     assert "description-logic" in SPEC_TOPICS
 
@@ -1589,7 +1589,7 @@ def test_server_registers_all_thirtyseven_tools():
 def test_parse_failures_point_at_a_syntax_spec_topic():
     """The self-correction loop: a rejection names the topic to look up, and
     the topic must be one get_syntax_spec actually serves."""
-    from unicode_fol_kit.mcp.syntax_spec import SPEC_TOPICS
+    from unicode_logic_kit.mcp.syntax_spec import SPEC_TOPICS
 
     result = prove("P(")
     assert result["ok"] is False
@@ -1706,7 +1706,7 @@ def test_every_routed_topic_is_one_the_spec_serves():
     """Whatever the weighting decides, it must name a topic get_syntax_spec
     can answer — an unroutable hint would break the correction loop harder
     than no hint at all."""
-    from unicode_fol_kit.mcp.syntax_spec import SPEC_TOPICS
+    from unicode_logic_kit.mcp.syntax_spec import SPEC_TOPICS
 
     # "P(1x)" used to be the naming-error example here (digit-leading names
     # were illegal), but a digit-leading identifier is now legal NAME syntax
@@ -1788,8 +1788,8 @@ _DATA_TBOX_ROWS = [
 
 
 def test_dl_tbox_data_row_shapes_build_the_data_box():
-    from unicode_fol_kit.mcp.server import _build_dl_tbox
-    import unicode_fol_kit.dl as dl
+    from unicode_logic_kit.mcp.server import _build_dl_tbox
+    import unicode_logic_kit.dl as dl
 
     tbox, err = _build_dl_tbox(_DATA_TBOX_ROWS, "alc")
     assert err is None
@@ -1808,8 +1808,8 @@ def test_dl_data_rows_are_checked_before_the_role_rows_that_share_a_key():
     # {"domaindata": p, "domain": text} carries the key "domain", which the
     # role-domain row claims too ({"domainrole": r, "domain": text}). The data
     # row must win, and a role row must still be a role row.
-    from unicode_fol_kit.mcp.server import _build_dl_tbox
-    import unicode_fol_kit.dl as dl
+    from unicode_logic_kit.mcp.server import _build_dl_tbox
+    import unicode_logic_kit.dl as dl
 
     tbox, err = _build_dl_tbox([{"domaindata": "D", "domain": "A"},
                                 {"domainrole": "r", "domain": "B"}], "alc")
@@ -1998,7 +1998,7 @@ _DL_REASONING_TOOLS = [
 def test_the_table_of_reasoning_tools_is_every_dl_tool_that_reasons():
     """So a ``dl_*`` tool added later cannot dodge the checks below: every
     public ``dl_*`` function of the server is either here or the one reader."""
-    from unicode_fol_kit.mcp import server
+    from unicode_logic_kit.mcp import server
 
     public = {name for name in dir(server) if name.startswith("dl_")}
     assert public == {tool for tool, _entry, _call in _DL_REASONING_TOOLS} | {
@@ -2025,7 +2025,7 @@ def _dl_exception_classes():
     import inspect
     import pkgutil
 
-    import unicode_fol_kit.dl as dl
+    import unicode_logic_kit.dl as dl
 
     found = {}
     for info in pkgutil.walk_packages(dl.__path__, dl.__name__ + "."):
@@ -2061,7 +2061,7 @@ def _dl_refusal_classes():
 def test_every_exception_class_of_the_dl_package_is_classified():
     """Every class the package defines is a text error, off the tool path, or a
     REFUSAL — and every refusal is in the one shared tuple the tools catch."""
-    from unicode_fol_kit.mcp.server import _dl_errors
+    from unicode_logic_kit.mcp.server import _dl_errors
 
     found = _dl_exception_classes()
     # the scan sees the classes it must (it is not vacuous) ...
@@ -2087,7 +2087,7 @@ def test_every_dl_tool_reports_every_refusal_class_the_package_raises(
     answers ``{"error": {"type": <class>, "message": <the message>}}`` —
     never an exception. Red before for ``RoleExpressionError``, which was not
     in the tuple."""
-    import unicode_fol_kit.dl as dl
+    import unicode_logic_kit.dl as dl
 
     classes = dict(_dl_refusal_classes())
     classes["RuntimeError"] = RuntimeError
@@ -2111,7 +2111,7 @@ def test_a_refusal_raised_by_an_abox_builder_is_a_structured_error(
     raises (a malformed or built-in role name, an ill-typed literal) must come
     back as ``{"error": ...}`` from every tool that builds an ABox, not escape
     from the row loop."""
-    import unicode_fol_kit.dl as dl
+    import unicode_logic_kit.dl as dl
 
     # the seven builders ARE the ABox's assertion methods, no more and no fewer
     assert {"assert_concept", "assert_role", "assert_distinct", "assert_same",

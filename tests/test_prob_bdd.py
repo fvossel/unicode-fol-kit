@@ -1,4 +1,4 @@
-"""Tests for unicode_fol_kit.prob._bdd and prob.distribution.query(method="compile").
+"""Tests for unicode_logic_kit.prob._bdd and prob.distribution.query(method="compile").
 
 Two independent anchors, per the module's own promise (see distribution.py's
 "A second evaluation route" docstring section):
@@ -29,11 +29,11 @@ from fractions import Fraction as F
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Implies, Quantifier, Variable, Constant,
 )
-from unicode_fol_kit.prob.distribution import ProbFact, ProbProgram, query
-from unicode_fol_kit.prob._bdd import BDDManager, weighted_model_count, FALSE, TRUE
+from unicode_logic_kit.prob.distribution import ProbFact, ProbProgram, query
+from unicode_logic_kit.prob._bdd import BDDManager, weighted_model_count, FALSE, TRUE
 
 
 # ===========================================================================

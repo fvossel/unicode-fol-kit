@@ -7,12 +7,12 @@ holds structurally. Each mode is exercised with its own parser instance.
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol._fol_nodes import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol._fol_nodes import (
     Variable, Constant, Number, Function, Atom,
     Not, And, Or, Xor, Implies, Iff, Quantifier,
 )
-from unicode_fol_kit.fol._msfl_nodes import (
+from unicode_logic_kit.fol._msfl_nodes import (
     SortedQuantifier, SortedConstant,
     WeakConjunction, WeakDisjunction,
     StrongConjunction, StrongDisjunction,
@@ -253,6 +253,6 @@ class TestHandBuiltRoundtrip:
 
 class TestUnicodeTypeError:
     def test_unknown_node_type_raises(self):
-        from unicode_fol_kit.fol._msfl_nodes import _uni
+        from unicode_logic_kit.fol._msfl_nodes import _uni
         with pytest.raises(TypeError, match="to_unicode_str"):
             _uni(object())

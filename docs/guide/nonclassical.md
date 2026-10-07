@@ -1,6 +1,6 @@
 # Further Non-Classical Logics
 
-New in 0.9.0: four small semantic evaluators for logics that sit just outside classical FOL — free logic, public-announcement (dynamic epistemic) logic, counterfactual conditionals, and circumscriptive non-monotonic entailment. Each builds an AST with the node constructors from `unicode_fol_kit.fol.nodes` and evaluates it against an explicit, hand-built model.
+New in 0.9.0: four small semantic evaluators for logics that sit just outside classical FOL — free logic, public-announcement (dynamic epistemic) logic, counterfactual conditionals, and circumscriptive non-monotonic entailment. Each builds an AST with the node constructors from `unicode_logic_kit.fol.nodes` and evaluates it against an explicit, hand-built model.
 
 ## Free logic
 
@@ -9,8 +9,8 @@ Classical FOL assumes every term denotes an existing individual, so universal in
 A `FreeModel` carries the `outer` tuple, the `existing` inner subset, a (possibly partial) constant/function interpretation — a name absent from `constants` is non-denoting — and predicate tables over `outer`. Two policies govern an atom containing a non-denoting term: `"negative"` (default) makes it simply false (so `t = t` also fails), while `"positive"` keeps self-identity `t = t` true for any term.
 
 ```python
-from unicode_fol_kit.fol.nodes import Atom, And, Or, Not, Implies, Quantifier, Variable, Constant
-from unicode_fol_kit.semantics.free_logic import FreeModel, free_holds
+from unicode_logic_kit.fol.nodes import Atom, And, Or, Not, Implies, Quantifier, Variable, Constant
+from unicode_logic_kit.semantics.free_logic import FreeModel, free_holds
 
 x, c = Variable("x"), Constant("c")
 Px = lambda t: Atom("P", [t])
@@ -38,7 +38,7 @@ free_holds(Atom("=", [c, c]), m2, policy="negative")   # → False  (a non-denot
 `free_satisfies(formula, model, assignment, policy)` is the open-formula form; `free_holds` is the convenience wrapper for a closed formula under the empty assignment. Pass an `assignment` to evaluate a formula with free variables — note that a variable can be bound to a *non-existing* outer element, since the assignment is not restricted to the inner domain:
 
 ```python
-from unicode_fol_kit.semantics.free_logic import free_satisfies
+from unicode_logic_kit.semantics.free_logic import free_satisfies
 
 m_open = FreeModel(outer=(0, 1), existing=frozenset({0}),
                    predicates={("P", 1): frozenset({(1,)})})
@@ -137,7 +137,7 @@ free_holds(Implies(Px(c), Quantifier("∃", x, Px(x))), m_ng)   # → False  (un
 A function term is non-denoting when any argument is non-denoting, or when the partial table has no entry for the argument tuple. A non-denoting function term then behaves exactly like a non-denoting constant — an ordinary predicate over it is false, and `E!` of it is false:
 
 ```python
-from unicode_fol_kit.fol.nodes import Function
+from unicode_logic_kit.fol.nodes import Function
 
 f_c = Function("f", [c])                          # f(c)
 # f maps the existing object 0 to the merely-possible object 1.
@@ -239,7 +239,7 @@ free_holds(Atom("=", [k, k]), m_k, policy="positive")    # → True   (self-iden
 Everything above evaluates a formula against one hand-built `FreeModel`. `free_is_valid` / `free_countermodel` / `free_find_model` / `free_entails` add the missing **decision-procedure** layer on top: a bounded exhaustive search over inner/outer-domain splits and partial denotations, with the same honest contract as `rel_valid` / `cf_valid` — `False` is *definitive*, backed by an explicit `free_satisfies`-verified countermodel; `True` means only "no countermodel with outer domain size ≤ `max_size`, among the sizes searched" (a size whose number of candidate models exceeds `max_candidates`, 1048576 by default, is skipped, and a call that would skip every size raises `ValueError`; free FOL is as undecidable as classical FOL, so raising `max_size` can turn a `True` into `False` but never the reverse).
 
 ```python
-from unicode_fol_kit import free_is_valid, free_countermodel, free_entails
+from unicode_logic_kit import free_is_valid, free_countermodel, free_entails
 
 Ec = Atom("E!", [c])
 
@@ -269,7 +269,7 @@ free_countermodel(Implies(Px(y), Atom("Q", [y]))).constants  # → {'y': 0}   th
 A free variable spelled like a constant of the formulas is refused by name (`NotImplementedError`). A cardinality term `|{x : φ}|` is not a term of free logic, and an evaluator or a search that meets one raises `TypeError`:
 
 ```python
-from unicode_fol_kit.fol.nodes import Cardinality
+from unicode_logic_kit.fol.nodes import Cardinality
 
 free_is_valid(Atom("Q", [Cardinality(x, Px(x))]))   # raises TypeError: free_logic: not a term: Cardinality
 ```
@@ -281,9 +281,9 @@ free_is_valid(Atom("Q", [Cardinality(x, Px(x))]))   # raises TypeError: free_log
 Static epistemic logic (`Knows` over a `KripkeModel`) describes what agents know; public announcement logic (PAL) adds the dynamics. A truthful public announcement of `φ` removes every world where `φ` is false, so knowledge changes. `announce(model, φ)` returns that updated model — `M|φ`, with relations and valuation cut down to the surviving worlds — and the box / diamond operators evaluate `[φ!]ψ` and `⟨φ!⟩ψ` at a world:
 
 ```python
-from unicode_fol_kit.fol.nodes import Atom, Not, And, Knows
-from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
-from unicode_fol_kit.semantics.dynamic_epistemic import announce, box_announce, diamond_announce
+from unicode_logic_kit.fol.nodes import Atom, Not, And, Knows
+from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
+from unicode_logic_kit.semantics.dynamic_epistemic import announce, box_announce, diamond_announce
 
 p = Atom("p", ())
 Kap = Knows("a", p)                              # K_a p
@@ -418,8 +418,8 @@ box_announce(M2, 1, Not(q), Knows("a", Not(q))) # → True (after dropping the q
 `[φ!]ψ` and `⟨φ!⟩ψ` also parse in **modal mode**, as the `Announce` / `AnnounceDiamond` nodes, so an announcement can be written as a formula string instead of assembled from `box_announce` / `diamond_announce` arguments — and `satisfies_modal` evaluates it directly, via the same restricted-model semantics as `announce`:
 
 ```python
-from unicode_fol_kit import MSFLParser, satisfies_modal
-from unicode_fol_kit.semantics.kripke import KripkeModel
+from unicode_logic_kit import MSFLParser, satisfies_modal
+from unicode_logic_kit.semantics.kripke import KripkeModel
 
 mp = MSFLParser(modal=True)
 M3 = KripkeModel([0, 1], {"K:a": {(0, 0), (0, 1), (1, 0), (1, 1)}}, {0: {"P"}})
@@ -431,7 +431,7 @@ satisfies_modal(mp.parse("⟨P!⟩P"), M3, 0)          # → True   (P is truthf
 `reduce_announcements(formula)` implements the standard PAL reduction axioms by syntactic relativization, rewriting an announcement-free-of-announcements formula that is classically/modally equivalent — which is what lets the **modal tableau** decide PAL: `modal_decide` / `is_modal_valid` / `modal_countermodel` run this reduction as a pre-pass, so the famous asymmetry between the two reduction directions for knowledge comes out correctly:
 
 ```python
-from unicode_fol_kit import reduce_announcements, modal_decide
+from unicode_logic_kit import reduce_announcements, modal_decide
 
 f = mp.parse("[P!]K_a P")
 reduce_announcements(f).to_unicode_str()          # → 'P → K_a (P → P)'   (atomic case: [φ!]p ↔ (φ → p))
@@ -448,7 +448,7 @@ modal_decide(mp.parse("[P!]K_a Q → K_a [P!]Q"))          # → 'invalid'
 reduce_announcements(mp.parse("[P!]ⒼQ"))
 # raises NotImplementedError: ... restriction of a CLOSURE relation is not the closure
 # of the restriction ... Evaluate the announcement directly instead:
-# unicode_fol_kit.semantics.kripke.satisfies_modal ...
+# unicode_logic_kit.semantics.kripke.satisfies_modal ...
 ```
 
 A **hybrid-logic nominal** under an announcement is refused for the same reason, in the other direction: a nominal names exactly one world, and the announcement might delete that very world — `satisfies_modal` again has no such restriction, since it evaluates the announcement against the model directly rather than rewriting the formula.
@@ -460,8 +460,8 @@ The material conditional gets counterfactuals wrong. `A □→ B` ("if A were th
 A `CounterfactualModel` takes the worlds, a `valuation` mapping each world to the set of atom keys (`atom.to_unicode_str()`) true there, and `spheres` mapping each world to its nested list of frozensets. A world omitted from `spheres` defaults to the single sphere `{w}`.
 
 ```python
-from unicode_fol_kit.fol.nodes import Atom, Not, And
-from unicode_fol_kit.semantics.conditional import CounterfactualModel, would, might
+from unicode_logic_kit.fol.nodes import Atom, Not, And
+from unicode_logic_kit.semantics.conditional import CounterfactualModel, would, might
 
 A, B, C = Atom("A", ()), Atom("B", ()), Atom("C", ())
 # World 0 is actual; the closest A-world is 1 (A, B); a farther A∧C-world 2 has no B.
@@ -481,7 +481,7 @@ might(CF, 0, A, C)                               # → False  (the closest A-wor
 Both connectives also parse in **modal mode**, as the `Would` and `Might` nodes, so a counterfactual can be written as a formula string instead of assembled from antecedent/consequent arguments. `cf_satisfies(formula, model, world)` evaluates a whole parsed formula — and counterfactuals may **nest**, which the `would` / `might` argument form cannot express:
 
 ```python
-from unicode_fol_kit import MSFLParser, cf_satisfies
+from unicode_logic_kit import MSFLParser, cf_satisfies
 
 p = MSFLParser(modal=True)
 
@@ -530,7 +530,7 @@ One consequence to keep in mind: because the levels are searched to different de
 The default is `"weak"` because it is what makes `□→` behave like a *conditional*. Under `"none"`, a world whose sphere system is **empty** makes `A □→ B` vacuously true even where `A` actually holds — so **modus ponens fails**:
 
 ```python
-from unicode_fol_kit import MSFLParser, cf_valid, cf_countermodel, CENTERING_LEVELS
+from unicode_logic_kit import MSFLParser, cf_valid, cf_countermodel, CENTERING_LEVELS
 
 mp = MSFLParser(modal=True)
 CENTERING_LEVELS                                       # → ('none', 'weak', 'strong')
@@ -673,7 +673,7 @@ would(CF_def, 0, A, B)                           # → True   (0 is its own clos
 Antecedents and consequents must be propositional (atoms and `¬ ∧ ∨ → ↔`); a quantifier or modal node raises `TypeError`:
 
 ```python
-from unicode_fol_kit.fol.nodes import Quantifier, Variable
+from unicode_logic_kit.fol.nodes import Quantifier, Variable
 would(CF, 0, Quantifier("∀", Variable("x"), A), B)   # raises TypeError: must be propositional
 ```
 
@@ -684,8 +684,8 @@ Classical entailment is monotonic: adding premises never retracts a conclusion. 
 The search reuses the finite model finder, so it is **bounded** (domains up to `max_size`): `True` means minimal-model entailment over models within the bound, not a proof over all models.
 
 ```python
-from unicode_fol_kit.fol.nodes import Atom, Not, Implies, Constant
-from unicode_fol_kit.semantics.nonmonotonic import minimal_entails
+from unicode_logic_kit.fol.nodes import Atom, Not, Implies, Constant
+from unicode_logic_kit.semantics.nonmonotonic import minimal_entails
 
 a = Constant("a")
 Pa, Qa = Atom("P", [a]), Atom("Q", [a])
@@ -710,7 +710,7 @@ minimal_entails([Implies(Pa, Qa), Pa], Not(Qa),
 `minimal_models(premises, circumscribed=…)` returns the underlying ≤-minimal `Structure`s so you can read off domains, constants and predicate extensions. For `{P(a) → Q(a)}` circumscribing both `P` and `Q`, the unique minimal model makes both predicates empty (vacuously satisfying the implication), which is exactly why `¬Q(a)` is entailed:
 
 ```python
-from unicode_fol_kit.semantics.nonmonotonic import minimal_models
+from unicode_logic_kit.semantics.nonmonotonic import minimal_models
 
 for struct in minimal_models([Implies(Pa, Qa)], circumscribed={"P", "Q"}, max_size=1):
     print(struct.domain, dict(struct.constants),
@@ -723,7 +723,7 @@ for struct in minimal_models([Implies(Pa, Qa)], circumscribed={"P", "Q"}, max_si
 Circumscribing a predicate makes it false of everything not forced true — the closed-world assumption. Assert `P(a)` and circumscribe `P`; then `P(a)` stays entailed but anything *not* asserted is minimally false. With `circumscribed=None` *every* predicate is minimised, so an empty theory entails `¬P(a)`:
 
 ```python
-from unicode_fol_kit.fol.nodes import Or
+from unicode_logic_kit.fol.nodes import Or
 
 minimal_entails([Pa], Pa, circumscribed={"P"}, max_size=2)           # → True   (asserted)
 minimal_entails([], Not(Pa), circumscribed=None, max_size=2)         # → True   (closed-world: nothing is P)
@@ -803,7 +803,7 @@ minimal_entails(rules_fact, Flies(ostrich), circumscribed={"Ab_flies"}, max_size
 The canonical use is an *abnormality* predicate `Ab`: circumscribe it to assume nothing is abnormal by default, and let new facts force exceptions. An empty theory assumes a fixed individual is normal; learning it is abnormal — directly, or via a rule like "penguins are abnormal" — retracts that conclusion:
 
 ```python
-from unicode_fol_kit.fol.nodes import Quantifier, Variable
+from unicode_logic_kit.fol.nodes import Quantifier, Variable
 
 x, tweety = Variable("x"), Constant("tweety")
 Ab = lambda t: Atom("Ab", [t])
@@ -829,8 +829,8 @@ This is **parallel** circumscription: every named predicate is minimised on an e
 `minimal_entails` decides circumscriptive entailment by *searching* bounded finite models; `circumscription_formula(premises, circumscribed)` instead *builds* McCarthy's second-order circumscription axiom itself — `T(P̄) ∧ ∀P̄'((T(P̄') ∧ P̄'⊆P̄) → P̄⊆P̄')`, "the premises hold, and no strictly-smaller `P̄'` also satisfies them" — as a plain `Node` headed by universal second-order quantifiers over fresh predicates. Every *other* predicate in `premises` is automatically held fixed, because it occurs as the same free symbol in both copies of the theory. `circumscription_entails_so(premises, circumscribed, conclusion)` wraps the axiom into the implication `axiom → conclusion`, universally closed — a genuine second-order *sentence* you can hand to any second-order route: `so_is_valid_finite` (the same bounded finite oracle `minimal_entails` uses internally, but now visible as an ordinary SO validity check) or `hol.secondorder`'s Isabelle/THF export, for an unbounded proof attempt.
 
 ```python
-from unicode_fol_kit import circumscription_entails_so
-from unicode_fol_kit.semantics.secondorder import so_is_valid_finite
+from unicode_logic_kit import circumscription_entails_so
+from unicode_logic_kit.semantics.secondorder import so_is_valid_finite
 
 # The same Pa → Qa example from above, now built as an SO sentence:
 ent = circumscription_entails_so([Implies(Pa, Qa)], {"P", "Q"}, Not(Qa))

@@ -37,15 +37,15 @@ import string
 
 import pytest
 
-from unicode_fol_kit import is_valid
-from unicode_fol_kit.atp import prover9_entailment as p9
-from unicode_fol_kit.atp.prover9_entailment import Prover9Rejected
-from unicode_fol_kit.atp.protocol import Prover9Backend
-from unicode_fol_kit.fol._msfl_nodes import SortedConstant
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import is_valid
+from unicode_logic_kit.atp import prover9_entailment as p9
+from unicode_logic_kit.atp.prover9_entailment import Prover9Rejected
+from unicode_logic_kit.atp.protocol import Prover9Backend
+from unicode_logic_kit.fol._msfl_nodes import SortedConstant
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Function, Iff, Implies, Not, Or, Quantifier, Variable,
 )
-from unicode_fol_kit.fol.prover9_input import (
+from unicode_logic_kit.fol.prover9_input import (
     Prover9ParsingError, parse_prover9, parse_prover9_problem,
 )
 

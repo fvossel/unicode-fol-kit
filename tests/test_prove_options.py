@@ -18,13 +18,13 @@ from typing import List
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import protocol
-from unicode_fol_kit.atp.protocol import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import protocol
+from unicode_logic_kit.atp.protocol import (
     ERROR, PROVED, REFUTED, UNKNOWN, BackendUnavailable, ProverBackend, Verdict, declared_options,
     get_backend, plan_options, run_backend,
 )
-from unicode_fol_kit.fol.nodes import Atom, Believes, Constant, Implies, Knows
+from unicode_logic_kit.fol.nodes import Atom, Believes, Constant, Implies, Knows
 
 
 def parse(text):
@@ -232,12 +232,12 @@ def test_each_stock_backend_declares_the_options_its_decide_reads(name):
 
 def test_every_registered_stock_backend_has_a_declaration():
     undeclared = [name for name, backend in protocol._REGISTRY.items()
-                  if type(backend).__module__.startswith("unicode_fol_kit.")
+                  if type(backend).__module__.startswith("unicode_logic_kit.")
                   and declared_options(backend, "fol") is None]
     assert undeclared == []
     assert set(EXPECTED) | {"isabelle"} == {
         name for name, backend in protocol._REGISTRY.items()
-        if type(backend).__module__.startswith("unicode_fol_kit.")}
+        if type(backend).__module__.startswith("unicode_logic_kit.")}
 
 
 def test_the_isabelle_backend_reads_the_keywords_of_the_runner_of_the_logic_of_the_call():

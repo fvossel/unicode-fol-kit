@@ -28,14 +28,14 @@ import random
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import z3_models
-from unicode_fol_kit.atp.incremental import IncrementalSession
-from unicode_fol_kit.atp.protocol import PROVED, REFUTED, Z3Backend
-from unicode_fol_kit.atp.resolution import prove as resolution_prove
-from unicode_fol_kit.atp.z3_equivalence import formulas_are_equivalent
-from unicode_fol_kit.eval.equivalence import equivalent
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import z3_models
+from unicode_logic_kit.atp.incremental import IncrementalSession
+from unicode_logic_kit.atp.protocol import PROVED, REFUTED, Z3Backend
+from unicode_logic_kit.atp.resolution import prove as resolution_prove
+from unicode_logic_kit.atp.z3_equivalence import formulas_are_equivalent
+from unicode_logic_kit.eval.equivalence import equivalent
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Function, Iff, Implies, Not, Or, Quantifier,
     SortedConstant, SortedQuantifier, Variable,
 )

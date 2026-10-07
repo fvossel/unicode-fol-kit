@@ -2,8 +2,8 @@
 """Tests for lambda_tools: has_lambdas, eliminate_lambdas, beta_reduce_step, reduce_trace."""
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     Variable, Constant, Function,
     Atom, Not, And, Quantifier,
     SortedQuantifier,
@@ -11,8 +11,8 @@ from unicode_fol_kit.fol.nodes import (
     LambdaVar, Lambda, Application,
     beta_reduce, ReductionLimitError,
 )
-from unicode_fol_kit.fol.normalforms import to_nnf
-from unicode_fol_kit.fol.lambda_tools import (
+from unicode_logic_kit.fol.normalforms import to_nnf
+from unicode_logic_kit.fol.lambda_tools import (
     has_lambdas, eliminate_lambdas, beta_reduce_step, reduce_trace,
 )
 

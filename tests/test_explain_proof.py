@@ -1,4 +1,4 @@
-"""Tests for unicode_fol_kit.eval.explain.explain_proof.
+"""Tests for unicode_logic_kit.eval.explain.explain_proof.
 
 Every expected string below is either hand-derived from the semantics of the
 proof it describes (see each test's docstring for the derivation), or
@@ -7,7 +7,7 @@ kit (``check_tableau_proof``, ``check_twee_proof``, the TSTP/Twee text
 parsers) — never a snapshot of whatever the function happened to produce.
 
 Covers all five proof shapes confirmed (by grepping every ``proof=``
-assignment in ``unicode_fol_kit/atp/``) to actually reach ``Verdict.proof``
+assignment in ``unicode_logic_kit/atp/``) to actually reach ``Verdict.proof``
 today: ``TableauProof`` (TableauBackend), ``TstpDerivation``
 (VampireBackend/EProverBackend), ``TweeProof`` (TweeBackend), the
 ``{"kind": "z3_unsat_core", ...}`` dict (Z3Backend), and the
@@ -16,17 +16,17 @@ today: ``TableauProof`` (TableauBackend), ``TstpDerivation``
 
 import pytest
 
-from unicode_fol_kit.eval.explain import explain_proof
-from unicode_fol_kit.fol.nodes import Atom, Not
+from unicode_logic_kit.eval.explain import explain_proof
+from unicode_logic_kit.fol.nodes import Atom, Not
 
-from unicode_fol_kit.atp.tableau import (
+from unicode_logic_kit.atp.tableau import (
     TableauClosure, TableauProof, prove_tableau_detailed,
 )
-from unicode_fol_kit.atp.tableau_check import check_tableau_proof
-from unicode_fol_kit.atp.tstp import TstpDerivation, TstpStep, parse_tstp_derivation
-from unicode_fol_kit.atp.twee_check import check_twee_proof
-from unicode_fol_kit.atp.twee_entailment import parse_twee_proof
-from unicode_fol_kit import MSFLParser
+from unicode_logic_kit.atp.tableau_check import check_tableau_proof
+from unicode_logic_kit.atp.tstp import TstpDerivation, TstpStep, parse_tstp_derivation
+from unicode_logic_kit.atp.twee_check import check_twee_proof
+from unicode_logic_kit.atp.twee_entailment import parse_twee_proof
+from unicode_logic_kit import MSFLParser
 
 _FOL = MSFLParser()
 
@@ -48,7 +48,7 @@ def _mp_premises_and_conclusion():
     (id 0) vs step 2's Q. Hence exactly 2 steps (both 'beta') and 2
     closures — hand-derived here, confirmed unchanged by check_tableau_proof
     in every test that uses it below."""
-    from unicode_fol_kit.fol.nodes import Implies
+    from unicode_logic_kit.fol.nodes import Implies
     return [Implies(P, Q), P], Q
 
 

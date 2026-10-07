@@ -5,9 +5,9 @@ SMT-LIB or Prover9 text) can meet any symbol of the problem there, not only a va
 avoid set has to hold all of them. The expected sets below are read off the formulas by hand.
 """
 
-from unicode_fol_kit.fol._identifiers import symbol_names, variable_names
-from unicode_fol_kit.fol._msfl_nodes import SortedConstant, SortedQuantifier
-from unicode_fol_kit.fol.nodes import And, Atom, Constant, Function, Not, Quantifier, Variable
+from unicode_logic_kit.fol._identifiers import symbol_names, variable_names
+from unicode_logic_kit.fol._msfl_nodes import SortedConstant, SortedQuantifier
+from unicode_logic_kit.fol.nodes import And, Atom, Constant, Function, Not, Quantifier, Variable
 
 X = Variable("x")
 

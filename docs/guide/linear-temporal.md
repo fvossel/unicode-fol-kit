@@ -1,6 +1,6 @@
 # Linear-time temporal logic (LTL + Past)
 
-`unicode_fol_kit.atp.ltl_tableau` is a **complete decision procedure** for the
+`unicode_logic_kit.atp.ltl_tableau` is a **complete decision procedure** for the
 propositional temporal-closure fragment — `Ⓝ Ⓖ Ⓕ Ⓤ` (Next / Always /
 Eventually / Until) and their past mirrors `⒴ ⒣ ⒫ ⒮` (Previous / Historically
 / Once / Since) — under the **standard linear-time reading**: the temporal
@@ -20,7 +20,7 @@ that was not reached.
 
 `Ⓖ`/`Ⓕ`/`Ⓝ`/`Ⓤ` and their past mirrors are already familiar from {doc}`modal`
 and {doc}`quantified-modal`: the kit's Kripke semantics for these operators
-({mod}`unicode_fol_kit.semantics.kripke`) is deliberately **not** standard
+({mod}`unicode_logic_kit.semantics.kripke`) is deliberately **not** standard
 LTL — `"temporal"` is an arbitrary (not necessarily linear, not necessarily
 total) accessibility relation there, and `Until`/`Since` are existential
 finite-path searches over it. `fol.qml`'s default axioms (reflexive +
@@ -77,8 +77,8 @@ They coincide on the past-operator-free fragment, but diverge as soon as a
 formula can tell "I have no predecessor" apart from "I do":
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.atp.ltl_tableau import ltl_valid
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.atp.ltl_tableau import ltl_valid
 
 mp = MSFLParser(modal=True)
 no_predecessor = mp.parse("⒴(P ∧ ¬P)")   # "there is no earlier position"
@@ -95,9 +95,9 @@ first-order embedding, because it needs induction over the closure that no
 first-order theory states:
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.atp.ltl_tableau import ltl_valid
-from unicode_fol_kit.fol.qml import qml_is_valid
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.atp.ltl_tableau import ltl_valid
+from unicode_logic_kit.fol.qml import qml_is_valid
 
 mp = MSFLParser(modal=True)
 ti = mp.parse("(P ∧ Ⓖ(P → Ⓝ P)) → Ⓖ P")
@@ -112,8 +112,8 @@ qml_is_valid(ti) # → False  -- the FO embedding cannot reach it
 on") is the standard non-theorem from Baier & Katoen, ch. 5:
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.atp.ltl_tableau import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.atp.ltl_tableau import (
     ltl_valid, ltl_decide, ltl_countermodel, ltl_trace_satisfies,
 )
 
@@ -128,11 +128,11 @@ cm.to_dict()
 # → {'kind': 'ltl_lasso', 'prefix': [[]], 'cycle': [['P'], []], 'witness_position': 0}
 ```
 
-`cm` is an {class}`~unicode_fol_kit.atp.ltl_tableau.LTLTrace`: an explicit
+`cm` is an {class}`~unicode_logic_kit.atp.ltl_tableau.LTLTrace`: an explicit
 finite prefix (`[]`, i.e. p false at position 0) plus an infinitely-repeating
 cycle (`['P'], []` — p alternates true/false forever). Every countermodel
 this module returns has already been checked against
-{func}`~unicode_fol_kit.atp.ltl_tableau.ltl_trace_satisfies` before you see
+{func}`~unicode_logic_kit.atp.ltl_tableau.ltl_trace_satisfies` before you see
 it — a direct, from-the-semantic-equations evaluator, independent of the
 tableau's own closure/graph machinery — so it never comes back spurious:
 
@@ -158,7 +158,7 @@ ltl_valid(sp.parse("Ⓖ Human(carl:Human)"))                      # → True   c
 ltl_valid(sp.parse("⒣ Human(carl:Human)"), mode="floating")     # → True   and at every position before
 ltl_countermodel(sp.parse("Ⓕ Mortal(carl:Human)")).to_dict()   # → {'kind': 'ltl_lasso', 'prefix': [['Human(carl)']], 'cycle': [['Human(carl)']], 'witness_position': 0}
 
-from unicode_fol_kit.atp.ltl_tableau import LTLTrace
+from unicode_logic_kit.atp.ltl_tableau import LTLTrace
 
 mortal_now = LTLTrace(prefix=(frozenset({"Mortal(carl)"}),), cycle=(frozenset(),))
 ltl_trace_satisfies(sp.parse("Mortal(carl:Human)"), mortal_now)   # → True   the key is 'Mortal(carl)'; 'Human(carl)' is not held, and not checked
@@ -167,11 +167,11 @@ ltl_trace_satisfies(sp.parse("Mortal(carl:Human)"), mortal_now)   # → True   t
 ## As a ProverBackend
 
 `ltl_tableau.LtlTableauBackend` is registered under `"ltl-tableau"`, so it
-joins {func}`~unicode_fol_kit.atp.protocol.get_backend` alongside
+joins {func}`~unicode_logic_kit.atp.protocol.get_backend` alongside
 `modal-tableau` / `qml` / `isabelle`:
 
 ```python
-from unicode_fol_kit.atp.protocol import get_backend
+from unicode_logic_kit.atp.protocol import get_backend
 
 backend = get_backend("ltl-tableau")
 backend.decide(ti).status      # → 'proved'
@@ -209,8 +209,8 @@ construct raises `NotImplementedError` naming it, rather than being
 approximated:
 
 ```python
-from unicode_fol_kit import Box, Atom
-from unicode_fol_kit.atp.ltl_tableau import ltl_valid
+from unicode_logic_kit import Box, Atom
+from unicode_logic_kit.atp.ltl_tableau import ltl_valid
 
 ltl_valid(Box(Atom("P", [])))
 # raises NotImplementedError: ltl_tableau: no rule for Box (...) — this module

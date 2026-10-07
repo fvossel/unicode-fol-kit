@@ -2,7 +2,7 @@
 
 ``MSFLParser(modal=True, many_sorted=True)`` ("modal_sorted") and
 ``MSFLParser(second_order=True, many_sorted=True)`` ("so_sorted") both delegate to
-:class:`~unicode_fol_kit.fol._msfl_nodes.SortedQuantifier`'s existing ``_relativize``
+:class:`~unicode_logic_kit.fol._msfl_nodes.SortedQuantifier`'s existing ``_relativize``
 reduction (``∀x:S φ`` -> ``∀x (S(x) -> φ)``, ``∃x:S φ`` -> ``∃x (S(x) ∧ φ)``) in every
 consumer -- the Kripke evaluator (``semantics.kripke.satisfies_modal``), the QML
 first-order shallow embedding (``fol.qml``), the HOL exporters
@@ -58,19 +58,19 @@ Four independent-route checks run through this file, matching the test_oracle:
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     Node, Atom, Implies, And, Or, Not, Quantifier, SortedQuantifier,
     Variable, Constant, SortedConstant, Box, Knows,
 )
-from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
-from unicode_fol_kit.semantics.intuitionistic import int_valid, int_countermodel
-from unicode_fol_kit.semantics.tarski import IllegalStructureError, Structure
-from unicode_fol_kit.semantics.secondorder import satisfies_so
-from unicode_fol_kit.fol.qml import qml_is_valid, qml_translate
-from unicode_fol_kit.hol.isabelle_modal import to_isabelle_modal, modal_axiom_names
-from unicode_fol_kit.hol.thf_modal import to_thf_modal_full
+from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
+from unicode_logic_kit.semantics.intuitionistic import int_valid, int_countermodel
+from unicode_logic_kit.semantics.tarski import IllegalStructureError, Structure
+from unicode_logic_kit.semantics.secondorder import satisfies_so
+from unicode_logic_kit.fol.qml import qml_is_valid, qml_translate
+from unicode_logic_kit.hol.isabelle_modal import to_isabelle_modal, modal_axiom_names
+from unicode_logic_kit.hol.thf_modal import to_thf_modal_full
 
 
 # =============================================================================

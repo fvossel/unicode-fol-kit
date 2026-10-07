@@ -16,10 +16,10 @@ import time
 
 import pytest
 
-from unicode_fol_kit.atp import ltl_tableau as lt
-from unicode_fol_kit.atp.ltl_tableau import ltl_decide, ltl_valid
-from unicode_fol_kit.atp.protocol import REFUTED, UNKNOWN, get_backend
-from unicode_fol_kit.fol.nodes import And, Always, Atom, Eventually, Next, Not, Or
+from unicode_logic_kit.atp import ltl_tableau as lt
+from unicode_logic_kit.atp.ltl_tableau import ltl_decide, ltl_valid
+from unicode_logic_kit.atp.protocol import REFUTED, UNKNOWN, get_backend
+from unicode_logic_kit.fol.nodes import And, Always, Atom, Eventually, Next, Not, Or
 
 SLACK = 5.0
 
@@ -27,7 +27,7 @@ SLACK = 5.0
 
 def _deadline():
     """The module of the shared limit, imported where it is used."""
-    from unicode_fol_kit import _deadline as module
+    from unicode_logic_kit import _deadline as module
     return module
 
 

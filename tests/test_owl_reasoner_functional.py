@@ -14,8 +14,8 @@ import shutil
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit.dl import owl_reasoner as owl
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit.dl import owl_reasoner as owl
 
 A, B = dl.Atomic("A"), dl.Atomic("B")
 SOME_R = dl.Exists("r", dl.Top())
@@ -46,7 +46,7 @@ class TestTheOntologyThatIsBuilt:
     def _built(tbox, abox):
         ow = owl._require_available()
         world = ow.World()
-        onto = world.get_ontology("http://unicode-fol-kit.invalid/kb#")
+        onto = world.get_ontology("http://unicode-logic-kit.invalid/kb#")
         ctx = owl._Ctx(ow, world, onto, owl._characteristics(tbox))
         with onto:
             owl._build_kb(ctx, tbox, abox)

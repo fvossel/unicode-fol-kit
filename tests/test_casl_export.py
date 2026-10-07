@@ -1,13 +1,13 @@
-"""Tests for :mod:`unicode_fol_kit.fol.casl_export` (CASL text emission for
+"""Tests for :mod:`unicode_logic_kit.fol.casl_export` (CASL text emission for
 classical FOL and many-sorted FOL).
 
 No snapshot tests: every expected string below is derived BY HAND against the
 module's stated emission rules (see its module docstring) in each test's own
 docstring/comment — not by running the code and copying its output. Where a
 formula is expressible in the kit's own Unicode syntax it is built with
-:class:`~unicode_fol_kit.MSFLParser` (plain ``MSFLParser()`` for
+:class:`~unicode_logic_kit.MSFLParser` (plain ``MSFLParser()`` for
 unsorted-classical FOL, ``MSFLParser(many_sorted=True)`` for MSFOL — a
-constant is UNSORTED (:class:`~unicode_fol_kit.fol.nodes.Constant`) only in
+constant is UNSORTED (:class:`~unicode_logic_kit.fol.nodes.Constant`) only in
 the former mode; the latter requires every constant to carry an explicit
 ``name:Sort`` annotation, producing :class:`SortedConstant`). Where no single
 parser mode can produce the exact tree needed (mixing a many-sorted quantifier
@@ -17,7 +17,7 @@ annotation, or building a node from an out-of-fragment class), the AST is
 built directly, per the task's own guidance.
 
 Grammar facts relied on below (checked directly against
-unicode_fol_kit/fol/grammars/terminals.lark and confirmed interactively):
+unicode_logic_kit/fol/grammars/terminals.lark and confirmed interactively):
   * VARIABLE is /[a-z][0-9]*/ — a single lowercase letter, optionally
     followed by digits (so 'a1' is a VARIABLE, not a constant name).
   * NAME (a bare constant/function identifier) needs at least two letters,
@@ -36,9 +36,9 @@ unicode_fol_kit/fol/grammars/terminals.lark and confirmed interactively):
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.fol.casl_export import to_casl_spec, formula_to_casl
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.fol.casl_export import to_casl_spec, formula_to_casl
+from unicode_logic_kit.fol.nodes import (
     Variable, Constant, SortedConstant, Function,
     Atom, Not, And, Or, Xor, Implies, Iff,
     Quantifier, SortedQuantifier,
@@ -416,7 +416,7 @@ def test_arity_and_dual_use_checks_are_genuinely_shared_with_signature():
     conflict-detection functions as Signature.from_formulas, not two
     independently-written local copies that merely happen to agree today.
     """
-    from unicode_fol_kit.fol import casl_export, signature
+    from unicode_logic_kit.fol import casl_export, signature
     assert casl_export._check_single_valued is signature._check_single_valued
     assert casl_export._check_not_dual_use is signature._check_not_dual_use
 
@@ -434,7 +434,7 @@ def test_function_three_way_arity_conflict_reports_only_first_pairwise_clash():
     from_formulas`` collects the full set across the batch before
     checking): the two modules share only the "more than one distinct
     value is a conflict" comparison itself
-    (``unicode_fol_kit.fol.signature._check_single_valued``), not the
+    (``unicode_logic_kit.fol.signature._check_single_valued``), not the
     accumulation policy around it — see ``signature.py``'s module
     docstring DESIGN NOTE and this module's own docstring for why the
     policies genuinely differ (an arity conflict here must short-circuit

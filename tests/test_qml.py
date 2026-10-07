@@ -15,13 +15,13 @@ from itertools import product, combinations
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Implies, Iff, Box, Diamond, Quantifier, Variable, Constant,
 )
-from unicode_fol_kit.fol.qml import qml_axioms
-from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
-from unicode_fol_kit import (
+from unicode_logic_kit.fol.qml import qml_axioms
+from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
+from unicode_logic_kit import (
     qml_is_valid, qml_equivalent, qml_translate, to_thf_modal, to_isabelle_modal,
     BARCAN, CONVERSE_BARCAN,
 )
@@ -331,7 +331,7 @@ def test_isabelle_export_smoke():
 
 
 def test_qml_exports():
-    import unicode_fol_kit as u
+    import unicode_logic_kit as u
     for name in ("qml_translate", "qml_is_valid", "qml_equivalent",
                  "to_thf_modal", "to_isabelle_modal", "BARCAN", "CONVERSE_BARCAN"):
         assert hasattr(u, name) and name in u.__all__, name
@@ -427,7 +427,7 @@ def test_user_predicate_named_like_an_internal_predicate(text, frame, expected):
 
 
 def test_reserved_user_predicate_is_renamed_only_when_it_collides():
-    from unicode_fol_kit.fol.qml import qml_translate
+    from unicode_logic_kit.fol.qml import qml_translate
     parse = MSFLParser(modal=True).parse
     assert (qml_translate(parse("R(alice) → ◇R(alice)")).to_unicode_str()
             == "R·(alice, w) → ∃w0 (World(w0) ∧ R(w, w0) ∧ R·(alice, w0))")
@@ -584,7 +584,7 @@ def test_non_binary_equality_atom_is_refused_not_read_as_a_predicate(atom):
 def test_no_translated_query_contains_a_world_relative_equality():
     """Every '=' in the validity query - formula AND axioms - is binary, and no '≠'
     survives: the old ternary ``=(a, b, w)`` can no longer be produced."""
-    from unicode_fol_kit.fol.qml import qml_validity_formula
+    from unicode_logic_kit.fol.qml import qml_validity_formula
     f = _MP("□(alice = bob) ∧ ◇(alice ≠ bob) ∧ ∀x □(x = x)")
     for mode, frame in (("constant", "K"), ("varying", "S5")):
         q = qml_validity_formula(f, mode=mode, frame=frame)
@@ -598,7 +598,7 @@ def test_no_equality_axiom_is_needed_or_emitted():
     """Reflexivity, symmetry, transitivity and congruence come from Z3's own identity
     (rows of the table above are PROVED with no equality axiom): ``qml_axioms`` has no
     '=' atom except the world-identities frame conditions state themselves."""
-    from unicode_fol_kit.fol.nodes import Always, Next
+    from unicode_logic_kit.fol.nodes import Always, Next
     f = _MP("alice = bob → f(alice) = f(bob)")
     for mode, frame in (("constant", "K"), ("varying", "S5"), ("increasing", "KD45")):
         axioms = qml_axioms(mode, frame, formula=f)

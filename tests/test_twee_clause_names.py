@@ -18,13 +18,13 @@ import dataclasses
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.twee_backend import TweeBackend
-from unicode_fol_kit.atp.twee_check import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.twee_backend import TweeBackend
+from unicode_logic_kit.atp.twee_check import (
     _expected_axiom_equations, check_twee_proof, goal_matches_conclusion,
 )
-from unicode_fol_kit.atp.twee_entailment import parse_twee_proof, twee_available
-from unicode_fol_kit.fol.nodes import And, Atom, Constant, Function, Quantifier, Variable
+from unicode_logic_kit.atp.twee_entailment import parse_twee_proof, twee_available
+from unicode_logic_kit.fol.nodes import And, Atom, Constant, Function, Quantifier, Variable
 
 _X, _Y = Variable("x"), Variable("y")
 _AA, _BB, _CC, _DD = (Constant(name) for name in ("aa", "bb", "cc", "dd"))
@@ -202,7 +202,7 @@ def test_a_genuine_proof_of_a_conjunctive_premise_is_checked_by_what_each_axiom_
 def test_the_backend_proves_what_the_checker_accepts(label, monkeypatch):
     """The two checks of the backend, with the runner returning the proof text above."""
     text, premises, conclusion = _CASES[label]
-    monkeypatch.setattr("unicode_fol_kit.atp.twee_entailment._spawn_twee",
+    monkeypatch.setattr("unicode_logic_kit.atp.twee_entailment._spawn_twee",
                         lambda *args, **kwargs: (text, "", False))
     verdict = TweeBackend().decide(conclusion, premises)
     assert verdict.status == "proved", (verdict.reason, verdict.detail)

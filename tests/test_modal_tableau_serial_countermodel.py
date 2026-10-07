@@ -25,14 +25,14 @@ import random
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import modal_tableau as MT
-from unicode_fol_kit.atp.modal_tableau import modal_countermodel, modal_decide
-from unicode_fol_kit.fol.frames import FRAMES, holds_on_finite_frame, resolve_frame
-from unicode_fol_kit.fol.nodes import (And, Atom, Believes, Box, Constant, Diamond, DistributedKnowledge,
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import modal_tableau as MT
+from unicode_logic_kit.atp.modal_tableau import modal_countermodel, modal_decide
+from unicode_logic_kit.fol.frames import FRAMES, holds_on_finite_frame, resolve_frame
+from unicode_logic_kit.fol.nodes import (And, Atom, Believes, Box, Constant, Diamond, DistributedKnowledge,
                                        EverybodyKnows, Iff, Implies, Knows, Next, Not, Obligatory, Or,
                                        Permitted)
-from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
+from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
 
 Q_DORA = Atom("Q", [Constant("dora")])
 

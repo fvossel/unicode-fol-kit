@@ -46,7 +46,7 @@ HARD_CAP_S = 120
 
 _CHILD_PRELUDE = f"""
 import json
-from unicode_fol_kit.atp.protocol import get_backend
+from unicode_logic_kit.atp.protocol import get_backend
 
 def report(goal, premises):
     verdict = get_backend("cvc5").decide(goal, premises, timeout={BUDGET_MS})
@@ -56,7 +56,7 @@ def report(goal, premises):
 """
 
 _HAND_WRITTEN = _CHILD_PRELUDE + textwrap.dedent("""
-    from unicode_fol_kit import MSFLParser
+    from unicode_logic_kit import MSFLParser
     parse = MSFLParser().parse
     report(
         parse("∀x (OwlThing(x) → ¬x = x)"),
@@ -67,7 +67,7 @@ _HAND_WRITTEN = _CHILD_PRELUDE + textwrap.dedent("""
 #: The same problem as it arises through the DL layer: the data layer makes the
 #: image two-sorted, ``Top ⊔ Top ⊑ ∃r.C`` is the one GCI.
 _THROUGH_THE_DL_LAYER = _CHILD_PRELUDE + textwrap.dedent("""
-    import unicode_fol_kit.dl as dl
+    import unicode_logic_kit.dl as dl
     tbox = dl.TBox().add(dl.Or(dl.Top(), dl.Top()), dl.Exists("r", dl.Atomic("C")))
     tbox.add_data_property_range("Z", dl.Datatype("xsd:integer"))
     kb = dl.kb_to_fol(tbox)
@@ -105,8 +105,8 @@ def test_cvc5_returns_within_about_twice_its_budget_on_a_non_terminating_instant
 def test_cvc5_still_decides_an_ordinary_problem_with_the_per_query_limit_set():
     # The control: the budget is a limit, not a verdict. A problem cvc5 settles
     # at once is settled -- proved, with the budget never reached.
-    from unicode_fol_kit import MSFLParser
-    from unicode_fol_kit.atp.protocol import get_backend
+    from unicode_logic_kit import MSFLParser
+    from unicode_logic_kit.atp.protocol import get_backend
     parse = MSFLParser().parse
     modus_ponens = get_backend("cvc5").decide(
         parse("Mortal(socrates)"),

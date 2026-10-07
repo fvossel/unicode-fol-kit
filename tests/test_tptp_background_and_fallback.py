@@ -21,23 +21,23 @@ import shutil
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp._tff_problem import TfaRefusal, generate_tff_arith_problem
-from unicode_fol_kit.atp._tptp_problem import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp._tff_problem import TfaRefusal, generate_tff_arith_problem
+from unicode_logic_kit.atp._tptp_problem import (
     generate_tptp_problem, generate_tptp_problem_for_prover, generate_tptp_problem_with_mapping,
 )
-from unicode_fol_kit.atp._writer_support import name_background_premises
-from unicode_fol_kit.atp.eprover_backend import eprover_available
-from unicode_fol_kit.atp.protocol import get_backend
-from unicode_fol_kit.atp.vampire_entailment import check_logical_entailment_vampire
-from unicode_fol_kit.fol._msfl_nodes import signature_axioms
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.atp._writer_support import name_background_premises
+from unicode_logic_kit.atp.eprover_backend import eprover_available
+from unicode_logic_kit.atp.protocol import get_backend
+from unicode_logic_kit.atp.vampire_entailment import check_logical_entailment_vampire
+from unicode_logic_kit.fol._msfl_nodes import signature_axioms
+from unicode_logic_kit.fol.nodes import (
     Atom, Box, Constant, Contrast, Count, Function, Measure, Number, SortedConstant,
     SortedCount, SortedQuantifier, Variable,
 )
-from unicode_fol_kit.fol.signature import Signature
-from unicode_fol_kit.fol.tptp_repair import repair_tptp_formula, repair_tptp_problem
-from unicode_fol_kit.logic import Sentence
+from unicode_logic_kit.fol.signature import Signature
+from unicode_logic_kit.fol.tptp_repair import repair_tptp_formula, repair_tptp_problem
+from unicode_logic_kit.logic import Sentence
 
 _X = Variable("x")
 
@@ -191,7 +191,7 @@ def test_the_names_are_checked_against_the_premises_the_caller_passed(names, err
 
 def test_the_problem_written_for_the_padded_names_names_every_line():
     options = {"premise_names": ["allmortal", "rain"]}
-    from unicode_fol_kit.api import _name_background
+    from unicode_logic_kit.api import _name_background
     padded = _name_background(options, 2, 4, "prove")["premise_names"]
     premises = [ALL_MORTAL, RAIN] + list(signature_axioms(SIGNATURE))
     text, record = generate_tptp_problem_with_mapping(premises, SOCRATES_IS_MORTAL, premise_names=padded)
@@ -201,7 +201,7 @@ def test_the_problem_written_for_the_padded_names_names_every_line():
 
 
 def test_nothing_is_padded_without_names_or_without_background():
-    from unicode_fol_kit.api import _name_background
+    from unicode_logic_kit.api import _name_background
     assert _name_background({}, 2, 4, "prove") == {}
     assert _name_background({"premise_names": None}, 2, 4, "prove") == {"premise_names": None}
     names = ["a", "b"]

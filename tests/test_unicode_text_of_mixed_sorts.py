@@ -15,9 +15,9 @@ import itertools
 
 import pytest
 
-from unicode_fol_kit import MSFLParser, NamingError, api
-from unicode_fol_kit.fol._msfl_nodes import SortedConstant, SortedQuantifier
-from unicode_fol_kit.fol.nodes import And, Atom, Constant, Node, Quantifier, Variable
+from unicode_logic_kit import MSFLParser, NamingError, api
+from unicode_logic_kit.fol._msfl_nodes import SortedConstant, SortedQuantifier
+from unicode_logic_kit.fol.nodes import And, Atom, Constant, Node, Quantifier, Variable
 
 X, Y = Variable("x"), Variable("y")
 

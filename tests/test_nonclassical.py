@@ -10,19 +10,19 @@ conclusion when premises are strengthened.
 
 import pytest
 
-from unicode_fol_kit import is_modal_valid, is_valid_tableau, to_english
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import is_modal_valid, is_valid_tableau, to_english
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     Node, Atom, Not, And, Or, Implies, Quantifier, Variable, Constant, Knows,
     Would, Might, Contrast,
 )
-from unicode_fol_kit.semantics.free_logic import FreeModel, free_holds
-from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
-from unicode_fol_kit.semantics.dynamic_epistemic import announce, box_announce, diamond_announce
-from unicode_fol_kit.semantics.conditional import (
+from unicode_logic_kit.semantics.free_logic import FreeModel, free_holds
+from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
+from unicode_logic_kit.semantics.dynamic_epistemic import announce, box_announce, diamond_announce
+from unicode_logic_kit.semantics.conditional import (
     CounterfactualModel, cf_satisfies, would, might,
 )
-from unicode_fol_kit.semantics.nonmonotonic import minimal_entails, minimal_models
+from unicode_logic_kit.semantics.nonmonotonic import minimal_entails, minimal_models
 
 
 # --------------------------------------------------------------------------- #

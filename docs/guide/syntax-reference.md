@@ -20,12 +20,12 @@ The lexer distinguishes the following token kinds. Because the patterns are mutu
 
 The `c_` form exists so that **single-letter constants** can be written without colliding with variables. A bare `a` is always a variable; if you need the constant *a*, write `c_a`.
 
-Greek letters (except the reserved operators `λ` Lambda and `μ` Measure) name constants directly — handy for symbolic thresholds and parameters, e.g. `μ(x, volume) > θ` (“too much”). This is **constants only**: predicates, function names, and variables never draw from this Greek-letter Constant form, though they do accept non-Greek Unicode letters as described above. The Kripke evaluator and Z3 carry the raw unicode name; `Constant.to_prover9`/`to_tptp` transliterate a constant's own name deterministically and reversibly (`θ` → `theta`, other non-ASCII → a `uXXXX` codepoint escape) on their own, node by node. A non-ASCII predicate or function name, and any digit-leading term, need a wider fix a single node cannot do by itself — an injective rewrite across a whole problem, with the original names translated back out of a prover's answer — which every ASCII-only export route (TPTP, Prover9, SMT-LIB2, THF, Isabelle, MiniZinc) now applies before rendering; see {doc}`transforms` for how. `unicode_fol_kit.fol.sanitize` is a different mechanism for a different problem: it rewrites a name to a token THIS PARSER's own grammar can re-parse (an import from outside the kit, not a name this parser already accepts), and is unrelated to what any export format accepts.
+Greek letters (except the reserved operators `λ` Lambda and `μ` Measure) name constants directly — handy for symbolic thresholds and parameters, e.g. `μ(x, volume) > θ` (“too much”). This is **constants only**: predicates, function names, and variables never draw from this Greek-letter Constant form, though they do accept non-Greek Unicode letters as described above. The Kripke evaluator and Z3 carry the raw unicode name; `Constant.to_prover9`/`to_tptp` transliterate a constant's own name deterministically and reversibly (`θ` → `theta`, other non-ASCII → a `uXXXX` codepoint escape) on their own, node by node. A non-ASCII predicate or function name, and any digit-leading term, need a wider fix a single node cannot do by itself — an injective rewrite across a whole problem, with the original names translated back out of a prover's answer — which every ASCII-only export route (TPTP, Prover9, SMT-LIB2, THF, Isabelle, MiniZinc) now applies before rendering; see {doc}`transforms` for how. `unicode_logic_kit.fol.sanitize` is a different mechanism for a different problem: it rewrites a name to a token THIS PARSER's own grammar can re-parse (an import from outside the kit, not a name this parser already accepts), and is unrelated to what any export format accepts.
 
 A function or predicate is recognised by being immediately followed by a parenthesised argument list, e.g. `distance(x, y)` or `Human(socrates)`. The same token class (Name) serves both as a bare constant and, when applied, as a function symbol. **A single term-valued letter is the one exception to "Variable, always"**: standing alone it is a variable (`f` in `∀f P(f)`), but immediately followed by `(` it is read as a one-letter function symbol instead — `f(x)` is `Function("f", [x])`, not a variable applied to something:
 
 ```python
-from unicode_fol_kit import MSFLParser
+from unicode_logic_kit import MSFLParser
 
 p = MSFLParser()
 p.parse("P(x)")        # → Atom(predicate='P', args=(Variable(name='x'),))   bare x: a variable
@@ -60,7 +60,7 @@ An atomic formula is one of:
 Every unicode mode except `linear` and `lambek` reads `⊤` and `⊥` as these two atoms, as does LaTeX `\top` / `\bot`, and they print back as `⊤` / `⊥`. In `linear=True` mode `⊤` is instead the additive truth `Top` and there is no `⊥` (the units are `𝟙 ⊤ 𝟘`); in `lambek=True` mode there are no truth constants.
 
 ```python
-from unicode_fol_kit import api
+from unicode_logic_kit import api
 
 p.parse("⊤")                    # → Atom(predicate='$true', args=())
 p.parse("P → ⊥")                # → Implies(left=Atom(predicate='P', args=()), right=Atom(predicate='$false', args=()))
@@ -156,7 +156,7 @@ Worked examples (parenthesised to show how the parser groups them):
 These verdicts are exactly what the parser produces, e.g.:
 
 ```python
-from unicode_fol_kit import MSFLParser
+from unicode_logic_kit import MSFLParser
 
 p = MSFLParser()
 p.parse("¬P(x) ∧ Q(x)")
@@ -234,7 +234,7 @@ The **modal mode** (`MSFLParser(modal=True)`) adds `□` `◇` (alethic), `K_a` 
 The four past-tense duals `⒣` / `⒫` / `⒴` / `⒮` (Prior tense logic) run over the **converse** of the one-step `"temporal"` relation: `⒣`/`⒫`/`⒴` are the backward mirrors of `Ⓖ`/`Ⓕ`/`Ⓝ`, and `⒮` is the backward mirror of `Ⓤ`. They are recognised throughout the toolkit — parser, `satisfies_modal`, `standard_translation`, and the QML embedding. The prefix temporal operators (`Ⓖ Ⓕ Ⓝ ⒣ ⒫ ⒴`) bind as tightly as `¬`; the binary `Ⓤ` and `⒮` bind looser than `∧`/`∨` but tighter than `→`, right-associative.
 
 ```python
-from unicode_fol_kit import MSFLParser
+from unicode_logic_kit import MSFLParser
 
 p = MSFLParser(modal=True)
 p.parse("⒣P").to_unicode_str()              # → '⒣P'         (Historically)
@@ -364,7 +364,7 @@ parser.parse("(λP. P(x))(Q)")
 
 ## AST nodes
 
-All nodes are **frozen** Python dataclasses and can be imported from `unicode_fol_kit`. Being frozen, every node is immutable and **hashable**, so nodes can be put in sets, used as dict keys, and deduplicated. `Function` and `Atom` store their `args` as a `tuple` (a list passed to the constructor is accepted and coerced), which is what makes them hashable.
+All nodes are **frozen** Python dataclasses and can be imported from `unicode_logic_kit`. Being frozen, every node is immutable and **hashable**, so nodes can be put in sets, used as dict keys, and deduplicated. `Function` and `Atom` store their `args` as a `tuple` (a list passed to the constructor is accepted and coerced), which is what makes them hashable.
 
 ### Shared term and atom nodes (all modes)
 
@@ -466,7 +466,7 @@ The top-level helper `to_fol(node, include_sort_facts=False)` chains both steps 
 Parse errors are reported with human-readable messages rather than raw parser internals. Lexer-level problems (an invalid character, a malformed name or number, or an attempt to mix same-level connectives without parentheses) raise `NamingError`; structural problems (an incomplete formula or a misplaced operator) raise `ParsingError`. Both report the offending position and, where useful, a hint. The hint text is **mode-aware**:
 
 ```python
-from unicode_fol_kit import MSFLParser  # these snippets intentionally raise
+from unicode_logic_kit import MSFLParser  # these snippets intentionally raise
 
 # FOL mode — hint names ∧, ∨, and ⊕
 MSFLParser().parse("P(x) ∧ Q(x) ∨ R(x)")    # raises NamingError

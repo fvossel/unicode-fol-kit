@@ -17,14 +17,14 @@ goal, and has no asserted role.
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Implies, Quantifier, SortedQuantifier, Variable,
 )
-from unicode_fol_kit.hol.classical import (
+from unicode_logic_kit.hol.classical import (
     to_isabelle_fol, to_isabelle_msfol, to_thf_fol, to_thf_msfol,
 )
-from unicode_fol_kit.hol.lean import to_lean_fol, to_lean_msfol
+from unicode_logic_kit.hol.lean import to_lean_fol, to_lean_msfol
 
 x, y = Variable("x"), Variable("y")
 alpha = Constant("alpha")

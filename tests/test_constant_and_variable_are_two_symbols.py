@@ -26,19 +26,19 @@ import sys
 import pytest
 import z3
 
-from unicode_fol_kit.atp.incremental import IncrementalSession
-from unicode_fol_kit.atp.protocol import PROVED, REFUTED, Z3Backend, z3_relevant_premises
-from unicode_fol_kit.atp.z3_equivalence import formulas_are_equivalent
-from unicode_fol_kit.atp.z3_input import from_z3, parse_smtlib, to_smtlib
-from unicode_fol_kit.atp.z3_models import get_model, is_valid
-from unicode_fol_kit.eval.equivalence import equivalent
-from unicode_fol_kit.fol.modal_translation import hybrid_is_valid
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.atp.incremental import IncrementalSession
+from unicode_logic_kit.atp.protocol import PROVED, REFUTED, Z3Backend, z3_relevant_premises
+from unicode_logic_kit.atp.z3_equivalence import formulas_are_equivalent
+from unicode_logic_kit.atp.z3_input import from_z3, parse_smtlib, to_smtlib
+from unicode_logic_kit.atp.z3_models import get_model, is_valid
+from unicode_logic_kit.eval.equivalence import equivalent
+from unicode_logic_kit.fol.modal_translation import hybrid_is_valid
+from unicode_logic_kit.fol.nodes import (
     Atom, Box, Constant, Count, Diamond, Implies, Not, Number, Quantifier, SortedConstant, SortedQuantifier,
     Variable, Z3Env,
 )
-from unicode_fol_kit.fol.qml import qml_is_valid
-from unicode_fol_kit.semantics.tarski import Structure, satisfies
+from unicode_logic_kit.fol.qml import qml_is_valid
+from unicode_logic_kit.semantics.tarski import Structure, satisfies
 
 X, Y = Variable("x"), Variable("y")
 C = Constant("x")                  # spelled like the bound variable
@@ -99,7 +99,7 @@ NAMES = ["x", "", "x!v", "x!c", "!v", "!c", "a!v!c", "a!c!v", "x!v!v", "é", "x0
 
 
 def test_the_names_of_the_symbols_of_constants_and_variables_never_meet_and_read_back():
-    from unicode_fol_kit.fol._fol_nodes import kit_name_of_z3_symbol, z3_constant_name, z3_variable_name
+    from unicode_logic_kit.fol._fol_nodes import kit_name_of_z3_symbol, z3_constant_name, z3_variable_name
     constants = {z3_constant_name(name) for name in NAMES}
     variables = {z3_variable_name(name) for name in NAMES}
     assert len(constants) == len(variables) == len(NAMES)           # each map is injective
@@ -227,8 +227,8 @@ def test_from_z3_reads_the_symbols_to_z3_writes_back_as_what_they_were():
 # ---------------------------------------------------------------------------------------------
 _CHILD = r"""
 import json, sys
-from unicode_fol_kit.atp.cvc5_backend import Cvc5Backend
-from unicode_fol_kit.fol.nodes import Node
+from unicode_logic_kit.atp.cvc5_backend import Cvc5Backend
+from unicode_logic_kit.fol.nodes import Node
 
 out = []
 for spec in json.loads(sys.argv[1]):
@@ -277,7 +277,7 @@ def test_cvc5_keeps_a_variable_and_a_constant_spelled_like_a_theory_symbol_apart
 
 
 def test_the_sanitiser_gives_a_variable_and_a_constant_of_one_name_two_tokens():
-    from unicode_fol_kit.atp.cvc5_backend import _sanitize_many_for_smtlib
+    from unicode_logic_kit.atp.cvc5_backend import _sanitize_many_for_smtlib
     (quantified, goal), names = _sanitize_many_for_smtlib([PREMISE, INSTANCE])
     variable_token = quantified.variable.name
     constant_token = quantified.formula.args[1].name
@@ -339,8 +339,8 @@ def test_the_quantified_modal_route_does_not_capture_a_constant_spelled_like_a_w
 
 @pytest.mark.parametrize("name", ["w", "w0"])
 def test_the_hybrid_backend_does_not_refute_what_holds_for_a_constant_spelled_like_its_world_variable(name):
-    from unicode_fol_kit import api
-    from unicode_fol_kit.fol.nodes import At, Nominal
+    from unicode_logic_kit import api
+    from unicode_logic_kit.fol.nodes import At, Nominal
     here = Nominal("here")
     member = SortedConstant(name, "Human")
     assert api.prove(At(here, Box(Atom("Human", [member]))), [], backends=["hybrid"], timeout=20000).status == PROVED

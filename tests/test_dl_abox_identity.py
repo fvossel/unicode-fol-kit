@@ -44,11 +44,11 @@ import itertools
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit import api
-from unicode_fol_kit.dl import owl_reasoner as _owl_reasoner
-from unicode_fol_kit.dl.tableau import _Branch, _merge
-from unicode_fol_kit.fol.nodes import Not as FNot
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit import api
+from unicode_logic_kit.dl import owl_reasoner as _owl_reasoner
+from unicode_logic_kit.dl.tableau import _Branch, _merge
+from unicode_logic_kit.fol.nodes import Not as FNot
 
 TIMEOUT_MS = 20000
 
@@ -533,7 +533,7 @@ def test_a_negative_role_assertion_with_a_missing_argument_is_a_syntax_error():
 
 
 def test_the_mcp_row_shapes_build_both_kinds():
-    from unicode_fol_kit.mcp.server import _build_dl_abox, dl_abox_consistent
+    from unicode_logic_kit.mcp.server import _build_dl_abox, dl_abox_consistent
 
     abox, err = _build_dl_abox(None, None, None, "alc",
                                same=[["a", "b"]],

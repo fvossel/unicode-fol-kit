@@ -15,12 +15,12 @@ turns that into ``unknown`` with the reason ``unsupported``. The rest of the fra
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.ltl_tableau import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.ltl_tableau import (
     LTLTrace, LtlTableauBackend, ltl_countermodel, ltl_decide, ltl_trace_satisfies, ltl_tableau_closed,
     ltl_valid,
 )
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     And, Always, Atom, Constant, Eventually, Implies, Next, Not, Or, SortedConstant, Until,
 )
 

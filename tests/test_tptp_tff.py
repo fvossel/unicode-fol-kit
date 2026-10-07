@@ -1,4 +1,4 @@
-"""Tests for :mod:`unicode_fol_kit.atp.tptp_tff` (the native TF0 writer) and
+"""Tests for :mod:`unicode_logic_kit.atp.tptp_tff` (the native TF0 writer) and
 its opt-in integration into the Vampire/E backends.
 
 Test groups:
@@ -30,7 +30,7 @@ Test groups:
   provably DISAGREED there — a known gap this file's C2 module explicitly
   left unfixed (``SortedQuantifier._relativize``/``to_fol`` core behaviour
   shared by ~29 call sites, out of that item's scope). Roadmap item S1
-  closed that gap kit-wide (``unicode_fol_kit.fol._msfl_nodes
+  closed that gap kit-wide (``unicode_logic_kit.fol._msfl_nodes
   .nonempty_sort_axioms``, added by :func:`atp._tptp_problem
   .generate_tptp_problem_with_mapping` — the shared builder both
   ``vampire_entailment``'s and ``eprover_backend``'s ``fof`` route already
@@ -43,25 +43,25 @@ import subprocess
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     Atom, And, Constant, Function, Iff, Implies, Not, Number, Or, Quantifier,
     SortedCardinality, SortedConstant, SortedCount, SortedQuantifier, Variable,
     Box,
 )
-from unicode_fol_kit.fol.signature import Signature, PredicateDecl, FunctionDecl, ConstantDecl
-from unicode_fol_kit.fol.tptp_input import parse_tff_problem
-from unicode_fol_kit.atp.tptp_tff import (
+from unicode_logic_kit.fol.signature import Signature, PredicateDecl, FunctionDecl, ConstantDecl
+from unicode_logic_kit.fol.tptp_input import parse_tff_problem
+from unicode_logic_kit.atp.tptp_tff import (
     generate_tff_problem, formula_to_tff, infer_tff_signature,
     problem_needs_tff, TFF_INDIVIDUAL_SORT,
 )
-from unicode_fol_kit.atp import vampire_entailment as _ve
-from unicode_fol_kit.atp import eprover_backend as _eb
-from unicode_fol_kit.atp.vampire_entailment import (
+from unicode_logic_kit.atp import vampire_entailment as _ve
+from unicode_logic_kit.atp import eprover_backend as _eb
+from unicode_logic_kit.atp.vampire_entailment import (
     _generate_vampire_input, check_logical_entailment_vampire,
     check_entailment_vampire_detailed,
 )
-from unicode_fol_kit.atp.eprover_backend import (
+from unicode_logic_kit.atp.eprover_backend import (
     _generate_tptp_problem as _eprover_generate_input,
     check_entailment_eprover_detailed, eprover_available,
 )
@@ -295,7 +295,7 @@ def test_writer_reader_round_trip(premises_txt, conclusion_txt):
     # EXPANDED typed form, not the original SortedCount node -- expand the
     # expected side identically via the same writer-side helper so the
     # comparison is apples to apples.
-    from unicode_fol_kit.atp.tptp_tff import _expand_all_sorted_counts
+    from unicode_logic_kit.atp.tptp_tff import _expand_all_sorted_counts
     expected = [_expand_all_sorted_counts(p) for p in premises] + \
                [_expand_all_sorted_counts(conclusion)]
     assert [f.formula for f in formulas] == expected
@@ -549,7 +549,7 @@ def test_tff_and_fof_routes_agree_on_non_emptiness_via_vampire():
     scope; ``SortedQuantifier._relativize``/``to_fol`` core behaviour shared
     by ~29 call sites across the kit).
 
-    S1 (see ``unicode_fol_kit.fol._msfl_nodes.nonempty_sort_axioms`` and
+    S1 (see ``unicode_logic_kit.fol._msfl_nodes.nonempty_sort_axioms`` and
     ``atp._tptp_problem``'s module docstring) adds exactly that missing
     ``∃x Ghost(x)`` axiom to the fof export too, so Vampire now proves the
     fof route's Theorem as well — both routes agree, live-verified again

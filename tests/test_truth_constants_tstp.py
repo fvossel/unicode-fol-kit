@@ -5,7 +5,7 @@ without some literals that hold in no interpretation, ``$false`` and ``¬$true``
 rule for exactly that: Vampire 5.0.1 prints ``true_and_false_elimination`` (captured live in
 ``tests/fixtures/tstp_check/vampire_true_and_false_elimination.txt``: ``p | $false`` gives
 ``p`` and ``~p | q | ~$true`` gives ``~p | q``). The writer gives the kit's rule that name, and
-:func:`~unicode_fol_kit.atp.tstp_check.check_tstp_derivation` re-derives it from the parent.
+:func:`~unicode_logic_kit.atp.tstp_check.check_tstp_derivation` re-derives it from the parent.
 
 Every accept and every reject below is worked by hand from the rule: a literal that holds in
 no interpretation may be dropped, and nothing else may be dropped or added.
@@ -16,13 +16,13 @@ from pathlib import Path
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import Atom, Not, Or
-from unicode_fol_kit.fol.tptp_input import parse_tptp_formula
-from unicode_fol_kit.atp.resolution_check import (
+from unicode_logic_kit.fol.nodes import Atom, Not, Or
+from unicode_logic_kit.fol.tptp_input import parse_tptp_formula
+from unicode_logic_kit.atp.resolution_check import (
     _RULE_ARITY, ResolutionDerivation, ResolutionStep, verify_resolution_proof,
 )
-from unicode_fol_kit.atp.tstp import _KIT_RULE_TO_TSTP, parse_tstp_derivation, to_tstp
-from unicode_fol_kit.atp.tstp_check import (
+from unicode_logic_kit.atp.tstp import _KIT_RULE_TO_TSTP, parse_tstp_derivation, to_tstp
+from unicode_logic_kit.atp.tstp_check import (
     EPROVER_CHECKED_RULES, VAMPIRE_CHECKED_RULES, _CHECKED_DISPATCH, _node_to_clause,
     check_tstp_derivation,
 )
@@ -244,9 +244,9 @@ def _vampire_path():
 
 
 def test_live_vampire_eliminates_the_constants_and_the_checker_agrees():
-    from unicode_fol_kit.atp._tptp_problem import generate_tptp_problem
-    from unicode_fol_kit.atp.protocol import VampireBackend
-    from unicode_fol_kit.atp.vampire_entailment import _spawn_vampire
+    from unicode_logic_kit.atp._tptp_problem import generate_tptp_problem
+    from unicode_logic_kit.atp.protocol import VampireBackend
+    from unicode_logic_kit.atp.vampire_entailment import _spawn_vampire
     path, use_wsl = _vampire_path()
     if path is None or not VampireBackend().available_for({"vampire_path": path, "use_wsl": use_wsl}):
         pytest.skip("no Vampire reachable here")

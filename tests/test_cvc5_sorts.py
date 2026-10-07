@@ -34,16 +34,16 @@ import pytest
 
 pytest.importorskip("cvc5")
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.cvc5_backend import _sanitize_many_for_smtlib
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.cvc5_backend import _sanitize_many_for_smtlib
+from unicode_logic_kit.fol.nodes import (
     Atom, Constant, Node, SortedConstant, SortedQuantifier, Variable,
 )
 
 _CHILD = r"""
 import json, sys
-from unicode_fol_kit.atp.cvc5_backend import Cvc5Backend
-from unicode_fol_kit.fol.nodes import Node
+from unicode_logic_kit.atp.cvc5_backend import Cvc5Backend
+from unicode_logic_kit.fol.nodes import Node
 
 spec = json.loads(sys.argv[1])
 premises = [Node.from_dict(d) for d in spec["premises"]]

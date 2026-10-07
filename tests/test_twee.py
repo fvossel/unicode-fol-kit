@@ -32,21 +32,21 @@ import dataclasses
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.atp.protocol import ERROR, PROVED, REFUTED, UNKNOWN
-from unicode_fol_kit.atp.twee_backend import TweeBackend
-from unicode_fol_kit.atp.twee_check import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.atp.protocol import ERROR, PROVED, REFUTED, UNKNOWN
+from unicode_logic_kit.atp.twee_backend import TweeBackend
+from unicode_logic_kit.atp.twee_check import (
     TweeCheckResult, _equation_is_variant, _expected_axiom_equations,
     _flatten_equations, _freshen, _match, _verify_rewrite,
     check_twee_proof, goal_matches_conclusion,
 )
-from unicode_fol_kit.atp.twee_entailment import (
+from unicode_logic_kit.atp.twee_entailment import (
     TweeChain, TweeCitation, TweeEquation, TweeGoal, TweeLemma, TweeProof,
     _extract_result_status, _generate_twee_input, _is_equational,
     _parse_term, _split_equation, check_entailment_twee_detailed,
     parse_twee_proof, twee_available,
 )
-from unicode_fol_kit.fol.nodes import Atom, Constant, Function, Number, Variable
+from unicode_logic_kit.fol.nodes import Atom, Constant, Function, Number, Variable
 
 _P = MSFLParser()
 
@@ -674,7 +674,7 @@ def test_backend_unsupported_fragment(monkeypatch):
 
 def test_backend_proved_when_status_theorem_and_verified(monkeypatch):
     backend = TweeBackend()
-    monkeypatch.setattr("unicode_fol_kit.atp.twee_entailment.check_entailment_twee_detailed",
+    monkeypatch.setattr("unicode_logic_kit.atp.twee_entailment.check_entailment_twee_detailed",
                         lambda *a, **k: _trivial_verified_result())
     v = backend.decide(Atom("=", [Constant("a"), Constant("a")]), [])
     assert v.status == PROVED
@@ -684,9 +684,9 @@ def test_backend_proved_when_status_theorem_and_verified(monkeypatch):
 
 def test_backend_error_when_theorem_but_check_twee_proof_fails(monkeypatch):
     backend = TweeBackend()
-    monkeypatch.setattr("unicode_fol_kit.atp.twee_entailment.check_entailment_twee_detailed",
+    monkeypatch.setattr("unicode_logic_kit.atp.twee_entailment.check_entailment_twee_detailed",
                         lambda *a, **k: _trivial_verified_result())
-    monkeypatch.setattr("unicode_fol_kit.atp.twee_check.check_twee_proof",
+    monkeypatch.setattr("unicode_logic_kit.atp.twee_check.check_twee_proof",
                         lambda proof, axioms: TweeCheckResult(False, "fabricated failure"))
     v = backend.decide(Atom("=", [Constant("a"), Constant("a")]), [])
     assert v.status == ERROR
@@ -696,7 +696,7 @@ def test_backend_error_when_theorem_but_check_twee_proof_fails(monkeypatch):
 
 def test_backend_error_when_theorem_but_goal_does_not_match_conclusion(monkeypatch):
     backend = TweeBackend()
-    monkeypatch.setattr("unicode_fol_kit.atp.twee_entailment.check_entailment_twee_detailed",
+    monkeypatch.setattr("unicode_logic_kit.atp.twee_entailment.check_entailment_twee_detailed",
                         lambda *a, **k: _trivial_verified_result())
     # Ask for a DIFFERENT conclusion than the stubbed proof's goal (a=a).
     v = backend.decide(Atom("=", [Constant("b"), Constant("b")]), [])
@@ -707,7 +707,7 @@ def test_backend_error_when_theorem_but_goal_does_not_match_conclusion(monkeypat
 
 def test_backend_refuted_on_countersatisfiable(monkeypatch):
     backend = TweeBackend()
-    monkeypatch.setattr("unicode_fol_kit.atp.twee_entailment.check_entailment_twee_detailed",
+    monkeypatch.setattr("unicode_logic_kit.atp.twee_entailment.check_entailment_twee_detailed",
                         lambda *a, **k: {"status": "CounterSatisfiable", "raw_output": "stub",
                                          "proof": None, "timed_out": False})
     v = backend.decide(Atom("=", [Constant("a"), Constant("b")]), [])
@@ -716,7 +716,7 @@ def test_backend_refuted_on_countersatisfiable(monkeypatch):
 
 def test_backend_unknown_timeout(monkeypatch):
     backend = TweeBackend()
-    monkeypatch.setattr("unicode_fol_kit.atp.twee_entailment.check_entailment_twee_detailed",
+    monkeypatch.setattr("unicode_logic_kit.atp.twee_entailment.check_entailment_twee_detailed",
                         lambda *a, **k: {"status": "Unknown", "raw_output": "", "proof": None,
                                          "timed_out": True})
     v = backend.decide(Atom("=", [Constant("a"), Constant("b")]), [])
@@ -726,7 +726,7 @@ def test_backend_unknown_timeout(monkeypatch):
 
 def test_backend_unknown_incomplete_for_gaveup(monkeypatch):
     backend = TweeBackend()
-    monkeypatch.setattr("unicode_fol_kit.atp.twee_entailment.check_entailment_twee_detailed",
+    monkeypatch.setattr("unicode_logic_kit.atp.twee_entailment.check_entailment_twee_detailed",
                         lambda *a, **k: {"status": "GaveUp", "raw_output": _FIXTURE_GAVEUP,
                                          "proof": None, "timed_out": False})
     v = backend.decide(Atom("=", [Constant("a"), Constant("b")]), [])
@@ -743,7 +743,7 @@ def test_backend_wraps_notimplementederror_from_runner(monkeypatch):
 
     def _raise(*a, **k):
         raise NotImplementedError("fake unsupported node")
-    monkeypatch.setattr("unicode_fol_kit.atp.twee_entailment.check_entailment_twee_detailed", _raise)
+    monkeypatch.setattr("unicode_logic_kit.atp.twee_entailment.check_entailment_twee_detailed", _raise)
     v = backend.decide(Atom("=", [Constant("a"), Constant("a")]), [])
     assert v.status == UNKNOWN
     assert v.reason == "unsupported"
@@ -850,11 +850,11 @@ def test_goal_match_rejects_non_injective_variable_collapse():
     non-injective binding, which Skolemization of distinct universals can
     never produce. The internal chain is genuinely valid (so
     check_twee_proof accepts it); goal_matches_conclusion must refuse."""
-    from unicode_fol_kit import MSFLParser
-    from unicode_fol_kit.fol.nodes import Atom, Constant, Function
-    from unicode_fol_kit.atp.twee_check import (
+    from unicode_logic_kit import MSFLParser
+    from unicode_logic_kit.fol.nodes import Atom, Constant, Function
+    from unicode_logic_kit.atp.twee_check import (
         check_twee_proof, goal_matches_conclusion)
-    from unicode_fol_kit.atp.twee_entailment import (
+    from unicode_logic_kit.atp.twee_entailment import (
         TweeAxiom, TweeChain, TweeCitation, TweeEquation, TweeGoal, TweeProof)
 
     a = Constant("alpha")

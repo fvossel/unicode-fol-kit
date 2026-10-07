@@ -27,15 +27,15 @@ from pathlib import Path
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.atp import eprover_backend as eb
-from unicode_fol_kit.atp.eprover_backend import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.atp import eprover_backend as eb
+from unicode_logic_kit.atp.eprover_backend import (
     EProverBackend,
     ZipperpositionBackend,
     _generate_tptp_problem,
     eprover_available,
 )
-from unicode_fol_kit.atp.protocol import (
+from unicode_logic_kit.atp.protocol import (
     BackendUnavailable,
     default_chain,
     get_backend,

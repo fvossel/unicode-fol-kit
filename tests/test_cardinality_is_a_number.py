@@ -13,14 +13,14 @@ Every expectation is derived by hand.
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.clingo_backend import ClingoBackend
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.clingo_backend import ClingoBackend
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Cardinality, Constant, Function, Implies, Number, Quantifier, SortedCardinality,
     Variable,
 )
-from unicode_fol_kit.semantics import modelfinder, nonmonotonic, secondorder
-from unicode_fol_kit.semantics.tarski import Structure, models, satisfies, term_value
+from unicode_logic_kit.semantics import modelfinder, nonmonotonic, secondorder
+from unicode_logic_kit.semantics.tarski import Structure, models, satisfies, term_value
 
 x, y = Variable("x"), Variable("y")
 alice = Constant("alice")

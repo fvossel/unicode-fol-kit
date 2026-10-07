@@ -1,4 +1,4 @@
-"""Tests for unicode_fol_kit/semantics/action_models.py — common knowledge and
+"""Tests for unicode_logic_kit/semantics/action_models.py — common knowledge and
 BMS action models (Dynamic Epistemic Logic).
 
 Every truth value asserted here is either computed by hand in the docstring
@@ -26,13 +26,13 @@ import random
 
 import pytest
 
-from unicode_fol_kit.semantics.action_models import (
+from unicode_logic_kit.semantics.action_models import (
     everybody_knows, common_knowledge_holds, distributed_knowledge_holds,
     ActionModel, product_update, public_announcement_action,
 )
-from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
-from unicode_fol_kit.semantics.dynamic_epistemic import announce
-from unicode_fol_kit.fol.nodes import Atom, Constant, Not, And, Or, Knows
+from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
+from unicode_logic_kit.semantics.dynamic_epistemic import announce
+from unicode_logic_kit.fol.nodes import Atom, Constant, Not, And, Or, Knows
 
 P = Atom("P", [])
 Q = Atom("Q", [])
@@ -912,7 +912,7 @@ def test_product_update_refuses_an_action_that_omits_a_model_agent():
     announcement previously EMPTIED K:c in the product (K_c φ vacuously
     true for every φ — factivity gone). product_update now refuses the
     omission loudly instead of manufacturing an omniscient agent."""
-    from unicode_fol_kit.fol.nodes import Atom
+    from unicode_logic_kit.fol.nodes import Atom
 
     p = Atom("P", ())
     model = KripkeModel(

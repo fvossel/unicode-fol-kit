@@ -24,10 +24,10 @@ A double-quoted symbol is a symbol of its own, never one of these. A single rend
 
 import pytest
 
-from unicode_fol_kit.atp.prover9_entailment import generate_prover9_input_with_mapping
-from unicode_fol_kit.atp.protocol import Prover9Backend, get_backend
-from unicode_fol_kit.fol.nodes import Atom, Constant, Function, Quantifier, Variable
-from unicode_fol_kit.fol.prover9_input import Prover9ParsingError, parse_prover9, parse_prover9_problem
+from unicode_logic_kit.atp.prover9_entailment import generate_prover9_input_with_mapping
+from unicode_logic_kit.atp.protocol import Prover9Backend, get_backend
+from unicode_logic_kit.fol.nodes import Atom, Constant, Function, Quantifier, Variable
+from unicode_logic_kit.fol.prover9_input import Prover9ParsingError, parse_prover9, parse_prover9_problem
 
 x, w = Variable("x"), Variable("w")
 a, b, c, alpha = Constant("a"), Constant("b"), Constant("c"), Constant("alpha")
@@ -172,7 +172,7 @@ def test_live_prover9_reads_a_reserved_word_as_the_symbol_it_is(name, premises, 
 def test_live_prover9_reads_a_single_renderers_quoted_word_as_a_symbol_of_its_own():
     # "if"(a, b, c) is a symbol with its quotes, no conditional: the file is read and a plain proof is found.
     import os
-    from unicode_fol_kit.atp.prover9_entailment import _run_prover9
+    from unicode_logic_kit.atp.prover9_entailment import _run_prover9
     text = "\n".join([
         "set(prolog_style_variables).",
         "formulas(assumptions).",

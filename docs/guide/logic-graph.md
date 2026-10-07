@@ -1,14 +1,14 @@
 # Translating between logics
 
-The kit moves a formula from one logic to another along a **graph of nine one-way translations** ({mod}`unicode_fol_kit.comorphism`). You reach the graph through logic *values* ({mod}`unicode_fol_kit.logic`: `FOL`, `MODAL`, `MSFOL`, …) or through `api.translate`. What comes back is never just a term. It is a term, the **side axioms** that term needs before it answers anything, and a statement of what the translation **guarantees**. This page is about that triple and why it exists.
+The kit moves a formula from one logic to another along a **graph of nine one-way translations** ({mod}`unicode_logic_kit.comorphism`). You reach the graph through logic *values* ({mod}`unicode_logic_kit.logic`: `FOL`, `MODAL`, `MSFOL`, …) or through `api.translate`. What comes back is never just a term. It is a term, the **side axioms** that term needs before it answers anything, and a statement of what the translation **guarantees**. This page is about that triple and why it exists.
 
 ## A translation is not a subtype
 
 The tempting design is a hierarchy: many-sorted logic "is a" first-order logic, modal logic "is a" first-order logic, and a value may flow upward wherever the target is expected. The kit does not do that, because the image of a translation usually does not answer a question by itself. The smallest case is a formula that is valid in the kit's many-sorted semantics:
 
 ```python
-from unicode_fol_kit import MSFLParser, api
-from unicode_fol_kit.logic import FOL, MSFOL
+from unicode_logic_kit import MSFLParser, api
+from unicode_logic_kit.logic import FOL, MSFOL
 
 f = MSFLParser(many_sorted=True).parse("(∀x:Human M(x)) → ∃x:Human M(x)")
 api.prove(f).status  # → 'proved'
@@ -44,7 +44,7 @@ A subtype relation would make that call the normal one. A translation differs fr
 There are two obvious ways to keep an axiom with its formula: conjoin it onto the formula, or put it in front as a conditional. Both give wrong answers, in opposite directions.
 
 ```python
-from unicode_fol_kit import And, Implies, Not
+from unicode_logic_kit import And, Implies, Not
 
 (axiom,) = image.axioms
 api.prove(And(axiom, image.term)).status  # → 'refuted'
@@ -98,8 +98,8 @@ The refusals in the last column are real exceptions, each naming what it refused
 
 ```python
 from textwrap import fill
-from unicode_fol_kit.comorphism import DEFAULT_REGISTRY
-from unicode_fol_kit.dl import parse_concept
+from unicode_logic_kit.comorphism import DEFAULT_REGISTRY
+from unicode_logic_kit.dl import parse_concept
 
 m = MSFLParser(modal=True)
 cases = [("quantifier", m.parse("∀x □P(x)"), {}),
@@ -113,7 +113,7 @@ for label, term, options in cases:
 # → quantifier: NotImplementedError
 # →   standard_translation: Quantifier is not supported — the standard translation here
 # →   covers the propositional modal fragment only. For quantified (first-order) modal logic
-# →   with object domains use unicode_fol_kit.fol.qml (qml_translate / qml_is_valid, the FO
+# →   with object domains use unicode_logic_kit.fol.qml (qml_translate / qml_is_valid, the FO
 # →   shallow embedding with explicit constant/varying/increasing/decreasing domain
 # →   regimes).
 # → Löb frame: UnsupportedFrameCondition
@@ -140,7 +140,7 @@ except NotImplementedError as exc:
 A logic value is callable. Called on a **bare term** it wraps it as a `Sentence` of that logic and does nothing else. Called on a **`Sentence`** it converts, through the registry:
 
 ```python
-from unicode_fol_kit.logic import MODAL
+from unicode_logic_kit.logic import MODAL
 
 s = MODAL(m.parse("□P → P"))
 s  # → Sentence[modal](□P → P, guarantee=faithful)
@@ -189,8 +189,8 @@ except TypeError as exc:
 `frame` and `systems` change the axioms but not the translation. `frame` is the system of the alethic relation `R`, and `systems` maps an agent-indexed family (`"epistemic"`, `"doxastic"`, `"assertive"`, `"bouletic"`) to a system for it. `signature` supplies the subsort hierarchy, which is not in the term at all. `mode` and `bridges` belong to the quantified modal edge.
 
 ```python
-from unicode_fol_kit import Signature
-from unicode_fol_kit.logic import QML
+from unicode_logic_kit import Signature
+from unicode_logic_kit.logic import QML
 
 q = m.parse("◇∃x A(x) → ∃x ◇A(x)")
 [(mode, api.prove(FOL(QML(q), mode=mode)).status) for mode in ("constant", "varying")]  # → [('constant', 'proved'), ('varying', 'refuted')]
@@ -251,7 +251,7 @@ try:
 except ValueError as exc:
     print(fill(str(exc), 88))
 # → prove: the goal is a Sentence in logic 'modal', which these routes do not decide —
-# → convert it first, e.g. FOL(sentence) (unicode_fol_kit.logic), and pass that
+# → convert it first, e.g. FOL(sentence) (unicode_logic_kit.logic), and pass that
 ```
 
 ## Reading the guarantee
@@ -268,8 +268,8 @@ An edge declares what it preserves. The vocabulary, strongest first, is `GUARANT
 A path has the **weakest** guarantee on it, because a faithful edge after a lossy one repairs nothing. `None` means some edge on the path declares no guarantee at all. That is **not** a synonym for faithful: an undeclared edge makes no promise.
 
 ```python
-from unicode_fol_kit.comorphism import GUARANTEES, weakest_guarantee
-from unicode_fol_kit.logic import FUZZY
+from unicode_logic_kit.comorphism import GUARANTEES, weakest_guarantee
+from unicode_logic_kit.logic import FUZZY
 
 GUARANTEES  # → ('faithful', 'validity', 'satisfiability', 'lossy')
 weakest_guarantee(["faithful", "validity"])  # → 'validity'
@@ -282,7 +282,7 @@ projected = FOL(fuzzy)
 The fuzzy path is `lossy` because `to_msfol` is a two-valued projection. For the real-valued Łukasiewicz degree use the fuzzy evaluator ({doc}`fuzzy`), not this route. The default edges all declare a guarantee. An edge registered by a third party, such as the dynamic `hets:<Name>` edges from `register_hets_comorphisms`, may not, and a path through one reports `None`:
 
 ```python
-from unicode_fol_kit.comorphism import Comorphism, ComorphismRegistry
+from unicode_logic_kit.comorphism import Comorphism, ComorphismRegistry
 
 registry = ComorphismRegistry()     # a private registry; register_comorphism adds to the default one
 registry.register(Comorphism(name="first", source="a", target="b",
@@ -313,8 +313,8 @@ The standard translation emits more than one accessibility relation. `□` and `
 | `□P → P` | K | False | False | False |
 
 ```python
-from unicode_fol_kit.fol.modal_translation import frame_axioms, hybrid_is_valid, relations_used
-from unicode_fol_kit.fol.qml import qml_is_valid
+from unicode_logic_kit.fol.modal_translation import frame_axioms, hybrid_is_valid, relations_used
+from unicode_logic_kit.fol.qml import qml_is_valid
 
 for text in ("Ⓖ(P) → P", "Ⓞ(P) → Ⓟ(P)"):
     formula = m.parse(text)
@@ -346,7 +346,7 @@ hybrid_is_valid(henceforth, "S5", temporal_closure=False)  # → False
 The same rule applies to any route that is handed the bare image. The in-process resolution prover, given the image of `Ⓖ(P) → P` alone, answers `False`, which {doc}`quantified-modal` explains as a route difference; given the frame axioms as premises it agrees with the others:
 
 ```python
-from unicode_fol_kit import prove, standard_translation
+from unicode_logic_kit import prove, standard_translation
 
 image = standard_translation(henceforth)
 prove([], image)  # → False
@@ -369,7 +369,7 @@ except NotImplementedError as exc:
 # → not interpreted by the propositional standard translation. It has no term semantics (an
 # → atom becomes a predicate with the world appended, so '=' would become a world-varying
 # → uninterpreted relation), so it would read the identity as an uninterpreted proposition
-# → and answer wrongly, e.g. 'a = a' false. Use unicode_fol_kit.fol.qml (quantified modal
+# → and answer wrongly, e.g. 'a = a' false. Use unicode_logic_kit.fol.qml (quantified modal
 # → logic, where '=' is rigid identity over the object domain) for a formula with identity.
 api.prove(FOL(QML(equality))).status  # → 'proved'
 ```
@@ -384,7 +384,7 @@ The edge declares `faithful` with no axioms, and that is true of a concept witho
 
 ```python
 from textwrap import fill
-from unicode_fol_kit import dl
+from unicode_logic_kit import dl
 
 clash = dl.And(dl.DataExists("hasAge", dl.Datatype("xsd:integer")),
                dl.DataForAll("hasAge", dl.Datatype("xsd:string")))
@@ -405,7 +405,7 @@ A `TBox` holds both the concept inclusions and the role box, but `tbox_to_fol` r
 
 ```python
 from textwrap import fill
-from unicode_fol_kit import dl
+from unicode_logic_kit import dl
 
 tbox = dl.TBox().add_role_inclusion("hasChild", "hasDescendant")
 child, descendant = dl.parse_concept("∃hasChild.⊤"), dl.parse_concept("∃hasDescendant.⊤")

@@ -14,12 +14,12 @@ import random
 
 import pytest
 
-from unicode_fol_kit.atp.lj import int_prove
-from unicode_fol_kit.fol.nodes import And, Atom, Constant, Implies, Not, Number, Or, Variable
-from unicode_fol_kit.semantics import manyvalued as mv
-from unicode_fol_kit.semantics import matrix as mx
-from unicode_fol_kit.semantics.intuitionistic import int_valid
-from unicode_fol_kit.semantics.truthtable import is_tautology
+from unicode_logic_kit.atp.lj import int_prove
+from unicode_logic_kit.fol.nodes import And, Atom, Constant, Implies, Not, Number, Or, Variable
+from unicode_logic_kit.semantics import manyvalued as mv
+from unicode_logic_kit.semantics import matrix as mx
+from unicode_logic_kit.semantics.intuitionistic import int_valid
+from unicode_logic_kit.semantics.truthtable import is_tautology
 
 POOL = [Number(1), Constant("1"), Constant("a"), Variable("x"), Constant("x"), Number(1.0)]
 #: the two pairs of the pool that print alike, by position in POOL (Number(1.0) is Number(1))

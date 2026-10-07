@@ -56,7 +56,7 @@ def test_readme_examples_execute():
     import correctness for the public API is exercised too.
     """
     shared: dict = {"__name__": "__readme__"}
-    exec("from unicode_fol_kit import *", shared)
+    exec("from unicode_logic_kit import *", shared)
     failures = []
     for index, src in _BLOCKS:
         try:

@@ -1,4 +1,4 @@
-"""Tests for the free-logic -> THF/Isabelle exporter (unicode_fol_kit/hol/free.py).
+"""Tests for the free-logic -> THF/Isabelle exporter (unicode_logic_kit/hol/free.py).
 
 Three tiers, mirroring tests/test_hol_isabelle_modal.py's pattern:
 
@@ -26,19 +26,19 @@ Three tiers, mirroring tests/test_hol_isabelle_modal.py's pattern:
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier, Variable, Constant, Function,
 )
-from unicode_fol_kit.hol.free import (
+from unicode_logic_kit.hol.free import (
     to_thf_free, to_isabelle_free, free_theory,
     _guard, _close, _DENOTES_PRED, _EXISTS_PRED,
 )
-from unicode_fol_kit.hol.isabelle_runner import (
+from unicode_logic_kit.hol.isabelle_runner import (
     isabelle_available, check_theory, isabelle_decide_free, VALID, INVALID,
 )
-from unicode_fol_kit.semantics.free_logic import FreeModel, free_holds, free_is_valid
-from unicode_fol_kit.semantics.modelfinder import is_valid_finite
-from unicode_fol_kit.semantics.tarski import Structure, satisfies
+from unicode_logic_kit.semantics.free_logic import FreeModel, free_holds, free_is_valid
+from unicode_logic_kit.semantics.modelfinder import is_valid_finite
+from unicode_logic_kit.semantics.tarski import Structure, satisfies
 
 
 # ---------------------------------------------------------------------------

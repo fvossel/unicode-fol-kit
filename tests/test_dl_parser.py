@@ -1,4 +1,4 @@
-"""Tests for the ALC concept string parser (unicode_fol_kit.dl.parser).
+"""Tests for the ALC concept string parser (unicode_logic_kit.dl.parser).
 
 Round-trip is the primary correctness property: `parse_concept(c.to_unicode())
 == c` must hold for every constructor, deeply nested, and with multi-char /
@@ -12,8 +12,8 @@ import random
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit.dl.parser import parse_concept, parse_gci, ConceptSyntaxError
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit.dl.parser import parse_concept, parse_gci, ConceptSyntaxError
 
 A, B, C = dl.Atomic("A"), dl.Atomic("B"), dl.Atomic("C")
 

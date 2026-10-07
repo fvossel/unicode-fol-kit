@@ -8,7 +8,7 @@ Two things are being pinned here.
    and the difference is the sort-non-emptiness axiom. An edge now produces that
    axiom (never conjoined onto the image — that would ask a prover to prove the
    axiom too), ``TranslationResult.axioms`` carries it, and a
-   :class:`~unicode_fol_kit.logic.Sentence` keeps the two together so
+   :class:`~unicode_logic_kit.logic.Sentence` keeps the two together so
    ``api.prove`` cannot be handed the term without them by accident.
 
 2. Two routes of the kit must not contradict each other. Until 0.28.1 the
@@ -25,22 +25,22 @@ test.
 
 import pytest
 
-from unicode_fol_kit import MSFLParser, api
-from unicode_fol_kit.comorphism import (
+from unicode_logic_kit import MSFLParser, api
+from unicode_logic_kit.comorphism import (
     Comorphism, ComorphismRegistry, DEFAULT_REGISTRY, GUARANTEES,
     weakest_guarantee,
 )
-from unicode_fol_kit.fol.frames import UnsupportedFrameCondition
-from unicode_fol_kit.fol.modal_translation import (
+from unicode_logic_kit.fol.frames import UnsupportedFrameCondition
+from unicode_logic_kit.fol.modal_translation import (
     frame_axioms, hybrid_is_valid, relations_used, standard_translation,
 )
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Always, Atom, Believes, Box, Constant, Diamond, Eventually, Historically,
     Implies, Knows, Next, Obligatory, Once, Or, Permitted, Previous, Says,
     Wants,
 )
-from unicode_fol_kit.fol.qml import qml_is_valid
-from unicode_fol_kit.logic import ALC, FOL, MODAL, MSFOL, Logic, Sentence
+from unicode_logic_kit.fol.qml import qml_is_valid
+from unicode_logic_kit.logic import ALC, FOL, MODAL, MSFOL, Logic, Sentence
 
 FOLP = MSFLParser()
 MODALP = MSFLParser(modal=True)
@@ -153,7 +153,7 @@ def test_the_axioms_are_not_conjoined_onto_the_image():
 
 
 def test_a_subsort_hierarchy_comes_from_the_signature_option():
-    from unicode_fol_kit.fol.signature import Signature
+    from unicode_logic_kit.fol.signature import Signature
     signature = Signature(sorts=("Animal", "Human"),
                           subsorts={"Human": frozenset({"Animal"})})
     goal = SORTED.parse("(∀x:Animal P(x)) → ∀y:Human P(y)")
@@ -366,10 +366,10 @@ def test_the_propositional_routes_all_refuse_from_one_shared_check():
     # Kripke evaluator, the modal tableau and the GMT embedding. They used to
     # keep their own copies of the refusal (or none at all); the wording now
     # comes from semantics._modal_reject, so they cannot drift apart.
-    from unicode_fol_kit.semantics import _modal_reject
-    from unicode_fol_kit.semantics import kripke
-    from unicode_fol_kit.atp import modal_tableau
-    from unicode_fol_kit.hol import intuitionistic
+    from unicode_logic_kit.semantics import _modal_reject
+    from unicode_logic_kit.semantics import kripke
+    from unicode_logic_kit.atp import modal_tableau
+    from unicode_logic_kit.hol import intuitionistic
     assert kripke.reject_equality is _modal_reject.reject_equality
     assert kripke.reject_equality_in is _modal_reject.reject_equality_in
     assert modal_tableau.reject_equality_in is _modal_reject.reject_equality_in
@@ -429,7 +429,7 @@ def test_a_lossy_edge_says_so_on_the_result():
 
 
 def test_a_concept_reaches_fol_and_the_path_is_named():
-    from unicode_fol_kit.dl import Atomic, Exists, And as CAnd
+    from unicode_logic_kit.dl import Atomic, Exists, And as CAnd
     concept = CAnd(Atomic("Human"), Exists("hasChild", Atomic("Doctor")))
     sentence = FOL(ALC(concept))
     assert sentence.path == ("concept_to_fol",)
@@ -454,7 +454,7 @@ def test_a_concept_with_a_data_restriction_is_refused_by_the_alc_edge():
     # it), where OWL 2 makes it unsatisfiable (the two datatypes are disjoint).
     # So the edge refuses it by name and points at kb_to_fol(..., query=[concept]);
     # RED before: it translated it and declared the result faithful.
-    from unicode_fol_kit import dl
+    from unicode_logic_kit import dl
     integer, string = dl.Datatype("xsd:integer"), dl.Datatype("xsd:string")
     refused = [
         dl.DataExists("HasV", integer), dl.DataForAll("HasV", string),

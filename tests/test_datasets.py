@@ -1,4 +1,4 @@
-"""Tests for unicode_fol_kit.eval.datasets (FOLIO / MALLS adapters).
+"""Tests for unicode_logic_kit.eval.datasets (FOLIO / MALLS adapters).
 
 Fixtures used here (``tests/fixtures/folio_mini.jsonl``,
 ``tests/fixtures/malls_mini.jsonl``) are hand-written SYNTHETIC examples in
@@ -18,7 +18,7 @@ a different defect class per dataset:
 
 Together the two fixtures cover both defect classes ``audit_examples`` must
 distinguish, each hand-verified below by reasoning through
-``unicode_fol_kit.api.parse_any``/``check`` directly (not just re-asserting
+``unicode_logic_kit.api.parse_any``/``check`` directly (not just re-asserting
 whatever the code under test happens to compute).
 """
 
@@ -27,7 +27,7 @@ from pathlib import Path
 
 import pytest
 
-from unicode_fol_kit.eval.datasets import (
+from unicode_logic_kit.eval.datasets import (
     DatasetExample,
     DATASET_INFO,
     audit_examples,
@@ -120,7 +120,7 @@ def test_folio_parse_premises_broken_example_parses_but_is_not_closed():
     assert premise_results[0].ok is True
     assert premise_results[1].ok is True                # 'Cat(tom)' is fine
 
-    from unicode_fol_kit import api
+    from unicode_logic_kit import api
     checked = api.check(premise_results[0].formula)
     assert checked.ok is False
     assert checked.is_closed is False

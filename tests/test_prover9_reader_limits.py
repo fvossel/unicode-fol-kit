@@ -16,9 +16,9 @@ bare ``RecursionError``.
 
 import pytest
 
-from unicode_fol_kit.fol import prover9_input as reader
-from unicode_fol_kit.fol.nodes import Atom, Constant, Not, Number, Or, Quantifier
-from unicode_fol_kit.fol.prover9_input import Prover9ParsingError, parse_prover9, parse_prover9_problem
+from unicode_logic_kit.fol import prover9_input as reader
+from unicode_logic_kit.fol.nodes import Atom, Constant, Not, Number, Or, Quantifier
+from unicode_logic_kit.fol.prover9_input import Prover9ParsingError, parse_prover9, parse_prover9_problem
 
 a = Constant("a")
 

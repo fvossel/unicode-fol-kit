@@ -16,11 +16,11 @@ import pathlib
 
 import pytest
 
-import unicode_fol_kit
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit.dl import concepts, tableau
+import unicode_logic_kit
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit.dl import concepts, tableau
 
-_SOURCE_ROOT = pathlib.Path(unicode_fol_kit.__file__).resolve().parent
+_SOURCE_ROOT = pathlib.Path(unicode_logic_kit.__file__).resolve().parent
 
 #: Wordings of the false claim. Matched case-insensitively with whitespace
 #: collapsed, so a re-wrapped line does not escape the check.
@@ -94,10 +94,10 @@ def test_the_tf0_writer_returns_a_real_name_map_and_it_reverses_a_renamed_symbol
     # writer transliterates it to ``theta`` and records that; the predicate
     # Mortal folds its first letter to ``mortal``. A text a prover echoes from the
     # problem, ``mortal(theta)``, therefore reads ``Mortal(θ)`` in kit-level names.
-    from unicode_fol_kit.atp._tptp_problem import TptpNameMap, apply_reverse_tptp
-    from unicode_fol_kit.atp.tptp_tff import generate_tff_problem_with_mapping
-    from unicode_fol_kit.fol.nodes import Atom, SortedConstant
-    from unicode_fol_kit import MSFLParser
+    from unicode_logic_kit.atp._tptp_problem import TptpNameMap, apply_reverse_tptp
+    from unicode_logic_kit.atp.tptp_tff import generate_tff_problem_with_mapping
+    from unicode_logic_kit.fol.nodes import Atom, SortedConstant
+    from unicode_logic_kit import MSFLParser
 
     premise = MSFLParser(many_sorted=True).parse("∀x:Human Mortal(x)")
     conclusion = Atom("Mortal", [SortedConstant("θ", "Human")])

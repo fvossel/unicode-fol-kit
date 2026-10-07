@@ -1,9 +1,9 @@
-"""Tests for :mod:`unicode_fol_kit.atp.lj`'s **G4ip decision procedure**
+"""Tests for :mod:`unicode_logic_kit.atp.lj`'s **G4ip decision procedure**
 (:func:`int_prove` / :func:`int_decide`), plus the two regressions it enables fixing:
-the soundness gap in :func:`unicode_fol_kit.semantics.intuitionistic.int_valid` and the
-malformed-input crash in :func:`~unicode_fol_kit.atp.lj.verify_lj_proof`.
+the soundness gap in :func:`unicode_logic_kit.semantics.intuitionistic.int_valid` and the
+malformed-input crash in :func:`~unicode_logic_kit.atp.lj.verify_lj_proof`.
 
-Everything else in :mod:`unicode_fol_kit.atp.lj` only *checks* a given LJ derivation;
+Everything else in :mod:`unicode_logic_kit.atp.lj` only *checks* a given LJ derivation;
 ``int_prove``/``int_decide`` are a genuine, terminating *search* procedure for
 propositional intuitionistic logic (Dyckhoff's contraction-free **G4ip**, 1992).
 Correctness is established three independent ways:
@@ -23,7 +23,7 @@ Correctness is established three independent ways:
   ``atp.lj``'s module docstring).
 
 NOTE on atom names: the ``gmt_is_s4_valid`` oracle used throughout goes through
-:mod:`unicode_fol_kit.fol.qml`'s alethic Z3 embedding, whose accessibility relation is a
+:mod:`unicode_logic_kit.fol.qml`'s alethic Z3 embedding, whose accessibility relation is a
 Z3 function literally named ``"R"``; an atom named ``"R"`` (uppercase) collides with it
 (a pre-existing, unrelated limitation of that embedding). All formulas here use
 lowercase ``p``/``q``/``r`` (and ``s``), matching ``tests/test_hol_intuitionistic.py``'s
@@ -34,15 +34,15 @@ import random
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Constant, Not, And, Or, Xor, Implies, Iff, Quantifier, Variable,
 )
-from unicode_fol_kit.atp.lj import (
+from unicode_logic_kit.atp.lj import (
     int_prove, int_decide, verify_lj_proof, check_lj_proof,
 )
-from unicode_fol_kit.atp.sequent import sequent
-from unicode_fol_kit.semantics.intuitionistic import int_valid, int_countermodel
-from unicode_fol_kit.hol.intuitionistic import gmt_is_s4_valid
+from unicode_logic_kit.atp.sequent import sequent
+from unicode_logic_kit.semantics.intuitionistic import int_valid, int_countermodel
+from unicode_logic_kit.hol.intuitionistic import gmt_is_s4_valid
 
 p, q, r, s = Atom("p", ()), Atom("q", ()), Atom("r", ()), Atom("s", ())
 BOT = Atom("⊥", ())
@@ -152,7 +152,7 @@ def _gmt_verdict(f, timeout: int):
     True means Z3 proved the translation S4-valid, False means Z3 produced a
     counter-model, and None means Z3 gave up inside ``timeout``.
 
-    :func:`unicode_fol_kit.atp.z3_models.is_valid`, which ``gmt_is_s4_valid`` goes
+    :func:`unicode_logic_kit.atp.z3_models.is_valid`, which ``gmt_is_s4_valid`` goes
     through, folds ``unknown`` into False. That is right for a validity oracle -- a
     non-proof is not a proof -- and wrong for THIS battery, whose whole job is to
     report disagreement between three independent procedures: it turns "Z3 ran out of
@@ -174,8 +174,8 @@ def _gmt_verdict(f, timeout: int):
     """
     from z3 import Not as _Z3Not, Solver as _Solver, sat as _sat, unsat as _unsat
 
-    from unicode_fol_kit.fol.qml import _validity_formula
-    from unicode_fol_kit.hol.intuitionistic import gmt_translate
+    from unicode_logic_kit.fol.qml import _validity_formula
+    from unicode_logic_kit.hol.intuitionistic import gmt_translate
 
     # gmt_is_s4_valid(f, timeout=t) == qml_is_valid(gmt_translate(f), mode="constant",
     # frame="S4", timeout=t) == is_valid(_validity_formula(...), timeout=t), with
@@ -253,9 +253,9 @@ def test_the_gmt_mirror_asks_the_public_oracles_question(monkeypatch):
     mirrored by hand from ``atp.z3_models.is_valid``, and a change there would not
     redden this test -- only the query and the budget are checked.
     """
-    from unicode_fol_kit.atp import z3_models
-    from unicode_fol_kit.fol.qml import _validity_formula
-    from unicode_fol_kit.hol.intuitionistic import gmt_translate
+    from unicode_logic_kit.atp import z3_models
+    from unicode_logic_kit.fol.qml import _validity_formula
+    from unicode_logic_kit.hol.intuitionistic import gmt_translate
 
     seen = []
     monkeypatch.setattr(
@@ -305,7 +305,7 @@ def test_the_s4_oracle_refuses_an_identity_atom_instead_of_disagreeing():
     it (which calls the same ``gmt_translate``) -- rather than report a disagreement
     that is about two different questions. Neither call reaches the solver, so there is
     no clock in this test; tests/test_hol_intuitionistic.py holds the full table."""
-    from unicode_fol_kit.fol.nodes import Constant
+    from unicode_logic_kit.fol.nodes import Constant
 
     a, b = Constant("a"), Constant("b")
     for f in (Atom("=", (a, a)), Implies(p, Atom("≠", (a, b)))):
@@ -370,7 +370,7 @@ def test_random_differential_against_gmt_s4_oracle():
     # deliberately excluded from this generator (Iff is kept) and depth is capped at
     # 2: while verifying this test, a depth-3 formula nesting Xor inside Xor produced
     # a GMT/S4 translation large enough that Z3 returned `unknown` within the ~10s
-    # default timeout on `gmt_is_s4_valid` -- which unicode_fol_kit.atp.z3_models.
+    # default timeout on `gmt_is_s4_valid` -- which unicode_logic_kit.atp.z3_models.
     # is_valid conservatively reports as False, NOT a genuine refutation. (Independently
     # confirmed: int_decide, the toolkit's own bounded Kripke search out to 4 worlds,
     # AND a from-scratch bounded-Kripke-countermodel SAT encoding checked by hand
@@ -562,11 +562,11 @@ def test_verify_lj_proof_bare_sequent_is_clean_not_a_crash():
 
 # ---------------------------------------------------------------------------
 # Public API surface (module-level; int_prove/int_decide are not yet wired into the
-# top-level unicode_fol_kit package -- that is the integrator's job).
+# top-level unicode_logic_kit package -- that is the integrator's job).
 # ---------------------------------------------------------------------------
 
 def test_public_api_present():
-    import unicode_fol_kit.atp.lj as m
+    import unicode_logic_kit.atp.lj as m
     for name in ("int_prove", "int_decide", "check_lj_proof", "verify_lj_proof"):
         assert hasattr(m, name), name
 

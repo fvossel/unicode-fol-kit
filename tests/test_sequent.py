@@ -1,4 +1,4 @@
-"""Tests for the Gentzen sequent-calculus checker (unicode_fol_kit.atp.sequent).
+"""Tests for the Gentzen sequent-calculus checker (unicode_logic_kit.atp.sequent).
 
 Soundness backbone: every derivation the checker ACCEPTS is audited node-by-node.
 A valid LK derivation has the property that EVERY sequent in it is valid, so for
@@ -17,14 +17,14 @@ import random
 
 import pytest
 
-from unicode_fol_kit import is_valid
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import is_valid
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier, Variable, Constant,
     SecondOrderQuantifier,
 )
-from unicode_fol_kit.semantics.tarski import Structure
-from unicode_fol_kit.semantics.secondorder import satisfies_so
-from unicode_fol_kit.atp.sequent import (
+from unicode_logic_kit.semantics.tarski import Structure
+from unicode_logic_kit.semantics.secondorder import satisfies_so
+from unicode_logic_kit.atp.sequent import (
     Sequent, Derivation, Comprehension, SequentResult,
     sequent, derive, axiom,
     check_sequent_proof, verify_sequent_proof, render_sequent_proof,
@@ -466,7 +466,7 @@ def test_so_comprehension_avoids_predicate_capture():
     # Regression: instantiating X in ∀²W X(c) with the comprehension λz. W(c) (whose
     # body has a FREE predicate variable W) must α-rename the inner ∀²W binder, so the
     # free W of the comprehension is not captured.
-    from unicode_fol_kit.atp.sequent import _subst_pred, _free_pred_vars
+    from unicode_logic_kit.atp.sequent import _subst_pred, _free_pred_vars
     c, z = _SO_consts()
     body = SecondOrderQuantifier("∀", "W", 1, Atom("X", [c]))
     inst = _subst_pred(body, "X", (z,), Atom("W", [c]))
@@ -477,8 +477,8 @@ def test_so_comprehension_avoids_capture_under_count_binder():
     # Regression: a counting quantifier binds an object variable just as ∀/∃ does, so
     # instantiating X in ∃=2 v X(v) with a comprehension whose body has a FREE v must
     # α-rename that binder. Walking into ∃=n structurally captured the free v instead.
-    from unicode_fol_kit.atp.sequent import _subst_pred, _free_vars
-    from unicode_fol_kit.fol.msflparser import MSFLParser
+    from unicode_logic_kit.atp.sequent import _subst_pred, _free_vars
+    from unicode_logic_kit.fol.msflparser import MSFLParser
     v = Variable("v")
     body = MSFLParser().parse("∃=2 v (X(v))")
     inst = _subst_pred(body, "X", (Variable("z"),), Atom("R", [v, Variable("z")]))
@@ -493,8 +493,8 @@ def test_so_comprehension_avoids_capture_under_slashed_existential():
     # _free_vars cannot see, so minting "v0" here (the first name of the kit's
     # variable shape) would silently rewire the independence set instead of
     # capturing anything visible. Hand-derived: avoid = {v} ∪ {v0} ∪ {v} -> "v1".
-    from unicode_fol_kit.atp.sequent import _subst_pred, _free_vars
-    from unicode_fol_kit.fol.nodes import SlashedExists
+    from unicode_logic_kit.atp.sequent import _subst_pred, _free_vars
+    from unicode_logic_kit.fol.nodes import SlashedExists
     v, z = Variable("v"), Variable("z")
     body = SlashedExists(v, ("v0",), Atom("X", [v]))
     inst = _subst_pred(body, "X", (z,), Atom("R", [v, z]))
@@ -688,7 +688,7 @@ def test_eigenvariable_freshness_fuzz():
     # A ∀R step whose eigenvariable occurs free in the lower sequent must be rejected
     # (the premise is a genuine axiom, so only the freshness check can fire); the same
     # shape with a genuinely fresh eigenvariable must be accepted and Z3-sound.
-    from unicode_fol_kit.fol.nodes import Function
+    from unicode_logic_kit.fol.nodes import Function
     rng = random.Random(99)
     x = Variable("x")
     rejected = accepted = 0
@@ -744,7 +744,7 @@ def test_render_sequent_proof_structure():
 
 
 def test_top_level_exports():
-    import unicode_fol_kit as u
+    import unicode_logic_kit as u
     for name in ("Sequent", "Derivation", "Comprehension", "SequentResult",
                  "sequent", "derive", "axiom",
                  "check_sequent_proof", "verify_sequent_proof", "render_sequent_proof"):

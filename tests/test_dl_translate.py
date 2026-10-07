@@ -1,13 +1,13 @@
-"""Tests for the ALC -> FOL standard translation (unicode_fol_kit.dl.translate).
+"""Tests for the ALC -> FOL standard translation (unicode_logic_kit.dl.translate).
 
 Three kinds of check:
 
 1. Hand-checked structural assertions on `concept_to_fol` / `subsumption_to_fol`
    / `tbox_to_fol` / `abox_to_fol` / `concept_to_modal` — the exact FOL shape
    expected is derived by hand in a comment wherever it isn't obvious.
-2. Differential tests against the dl tableau (`unicode_fol_kit.dl.tableau`):
+2. Differential tests against the dl tableau (`unicode_logic_kit.dl.tableau`):
    for concept satisfiability, subsumption, and ABox consistency, the FOL
-   image (checked via the kit's Z3 route, `unicode_fol_kit.is_satisfiable` /
+   image (checked via the kit's Z3 route, `unicode_logic_kit.is_satisfiable` /
    `is_valid`) must agree with the tableau's own verdict on both hand-picked
    and randomly seeded concepts (including multi-role, deep nesting, and
    Top/Bottom leaves).
@@ -24,16 +24,16 @@ import random
 
 import pytest
 
-import unicode_fol_kit as k
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit import api
-from unicode_fol_kit.dl.translate import RoleBoxOmittedError
-from unicode_fol_kit.fol.nodes import (
+import unicode_logic_kit as k
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit import api
+from unicode_logic_kit.dl.translate import RoleBoxOmittedError
+from unicode_logic_kit.fol.nodes import (
     Variable, Constant, Atom,
     Not as FNot, And as FAnd, Or as FOr, Implies, Quantifier,
     Box, Diamond,
 )
-from unicode_fol_kit.atp.modal_tableau import is_modal_valid
+from unicode_logic_kit.atp.modal_tableau import is_modal_valid
 
 A, B, C = dl.Atomic("A"), dl.Atomic("B"), dl.Atomic("C")
 Doctor = dl.Atomic("Doctor")

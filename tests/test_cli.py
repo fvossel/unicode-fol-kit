@@ -1,13 +1,13 @@
-"""Tests for the unicode_fol_kit command-line interface."""
+"""Tests for the unicode_logic_kit command-line interface."""
 
 import json
 import sys
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.__main__ import main
-from unicode_fol_kit.fol.nodes import And, Atom, Constant, Number
+from unicode_logic_kit import api
+from unicode_logic_kit.__main__ import main
+from unicode_logic_kit.fol.nodes import And, Atom, Constant, Number
 
 
 def test_tptp_output(capsys):
@@ -127,7 +127,7 @@ def test_circle_plus_is_xor_in_fol_but_strong_disjunction_in_fl(capsys):
 
 def test_default_argv_reads_sys_argv(capsys, monkeypatch):
     """main() with no argument falls back to sys.argv[1:]."""
-    monkeypatch.setattr(sys, "argv", ["unicode_fol_kit", "P(x)", "--to", "json"])
+    monkeypatch.setattr(sys, "argv", ["unicode_logic_kit", "P(x)", "--to", "json"])
     rc = main()
     assert rc == 0
     data = json.loads(capsys.readouterr().out)
@@ -200,7 +200,7 @@ def test_modal_mode_latex_output(capsys):
 # Dispatch is on argv[0]: main() routes to a subcommand parser iff argv[0] is
 # one of {check, equiv, prove, countermodel, repair, translate}, else to the
 # legacy single-formula parser above. Every subcommand mirrors one
-# unicode_fol_kit.api verb 1:1; see unicode_fol_kit/__main__.py's module
+# unicode_logic_kit.api verb 1:1; see unicode_logic_kit/__main__.py's module
 # docstring for the shared --dialect/--json/--timeout flags and error culture
 # (BackendUnavailable/ValueError/NotImplementedError/OSError -> clean stderr
 # message + exit 3, never a traceback).
@@ -505,7 +505,7 @@ def _legacy_with(monkeypatch, node):
         def parse(self, text):
             return node
 
-    monkeypatch.setattr("unicode_fol_kit.__main__.MSFLParser", _Parser)
+    monkeypatch.setattr("unicode_logic_kit.__main__.MSFLParser", _Parser)
 
 
 def test_legacy_name_collision_is_reported_with_both_names(capsys, monkeypatch):

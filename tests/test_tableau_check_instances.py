@@ -16,14 +16,14 @@ import random
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.tableau import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.tableau import (
     TableauClosure, TableauProof, TableauStep, prove_tableau_detailed,
 )
-from unicode_fol_kit.atp.tableau_check import (
+from unicode_logic_kit.atp.tableau_check import (
     TableauCheckError, check_entailment_tableau_detailed, check_tableau_proof,
 )
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Implies, Not, Or, Quantifier, Variable,
 )
 

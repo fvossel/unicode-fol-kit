@@ -31,7 +31,7 @@ import sys
 
 import pytest
 
-import unicode_fol_kit
+import unicode_logic_kit
 
 HASH_SEEDS = (0, 1, 2, 3, 4)
 
@@ -40,8 +40,8 @@ import json
 import random
 import sys
 
-from unicode_fol_kit.atp.modal_tableau import modal_countermodel, modal_decide, modal_tableau_closed
-from unicode_fol_kit.fol.nodes import And, Atom, Box, Constant, Diamond, Iff, Implies, Knows, Not, Or
+from unicode_logic_kit.atp.modal_tableau import modal_countermodel, modal_decide, modal_tableau_closed
+from unicode_logic_kit.fol.nodes import And, Atom, Box, Constant, Diamond, Iff, Implies, Knows, Not, Or
 
 
 def canonical(model):
@@ -107,7 +107,7 @@ FORMULAS = 200
 
 
 def _run_child(hash_seed):
-    root = os.path.dirname(os.path.dirname(os.path.abspath(unicode_fol_kit.__file__)))
+    root = os.path.dirname(os.path.dirname(os.path.abspath(unicode_logic_kit.__file__)))
     env = dict(os.environ, PYTHONHASHSEED=str(hash_seed), PYTHONIOENCODING="utf-8",
                PYTHONPATH=os.pathsep.join([root] + [p for p in os.environ.get("PYTHONPATH", "").split(os.pathsep) if p]))
     done = subprocess.run([sys.executable, "-c", _CHILD, str(FORMULAS)], env=env, capture_output=True,
@@ -162,7 +162,7 @@ def test_the_verdicts_of_the_generated_formulas_agree_with_their_models(runs):
 # ---------------------------------------------------------------------------
 
 def test_an_ordered_set_iterates_in_insertion_order_and_keeps_the_place_of_a_member_added_twice():
-    from unicode_fol_kit.atp.modal_tableau import _OrderedSet
+    from unicode_logic_kit.atp.modal_tableau import _OrderedSet
 
     members = _OrderedSet()
     for name in ["delta", "alpha", "charlie", "bravo", "alpha"]:
@@ -172,7 +172,7 @@ def test_an_ordered_set_iterates_in_insertion_order_and_keeps_the_place_of_a_mem
 
 
 def test_a_copy_of_an_ordered_set_is_independent_and_keeps_the_order():
-    from unicode_fol_kit.atp.modal_tableau import _OrderedSet
+    from unicode_logic_kit.atp.modal_tableau import _OrderedSet
 
     original = _OrderedSet()
     for name in ["z", "y", "x"]:
@@ -183,7 +183,7 @@ def test_a_copy_of_an_ordered_set_is_independent_and_keeps_the_order():
 
 
 def test_an_ordered_set_compares_as_a_subset_like_a_set():
-    from unicode_fol_kit.atp.modal_tableau import _OrderedSet
+    from unicode_logic_kit.atp.modal_tableau import _OrderedSet
 
     small, large = _OrderedSet(), _OrderedSet()
     for name in ["a", "b"]:

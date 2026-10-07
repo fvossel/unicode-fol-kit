@@ -8,7 +8,7 @@ piece the module can control without a solver is exercised for real, and the
 subprocess boundary alone is stubbed.
 
 * **Renderer** (:func:`to_minizinc`) — every hand-derived formula below is
-  built directly from :mod:`unicode_fol_kit.fol.nodes` (never parsed then
+  built directly from :mod:`unicode_logic_kit.fol.nodes` (never parsed then
   eyeballed) and its rendered ``.mzn`` text is compared BYTE-FOR-BYTE against
   the checked-in fixtures under ``tests/fixtures/minizinc/`` — this both pins
   the encoder's output and, read the other way, doubles as a hand-check that
@@ -30,7 +30,7 @@ subprocess boundary alone is stubbed.
   the task's own instruction not to "pretend"); the REST of ``decide()``'s
   per-size search/parse/reconstruct/verify pipeline is exercised offline by
   passing ``minizinc_path=`` (the documented discovery override) together
-  with a monkeypatched :func:`~unicode_fol_kit.atp.minizinc_backend._run_minizinc`
+  with a monkeypatched :func:`~unicode_logic_kit.atp.minizinc_backend._run_minizinc`
   that inspects the generated ``.mzn`` text for ``int: n = <size>;`` to decide
   what to answer at each size — this is the SAME technique
   ``tests/test_eprover_zipperposition.py``'s ``fake_run`` fixture uses for a
@@ -46,22 +46,22 @@ import subprocess
 
 import pytest
 
-from unicode_fol_kit.atp import minizinc_backend as mb
-from unicode_fol_kit.atp.finite_domain import (
+from unicode_logic_kit.atp import minizinc_backend as mb
+from unicode_logic_kit.atp.finite_domain import (
     FiniteDomainProblem, fragment_check, verify_model,
 )
-from unicode_fol_kit.atp.minizinc_backend import (
+from unicode_logic_kit.atp.minizinc_backend import (
     MinizincBackend, minizinc_available, to_minizinc,
 )
-from unicode_fol_kit.atp.protocol import (
+from unicode_logic_kit.atp.protocol import (
     BackendUnavailable, ERROR, REFUTED, UNKNOWN,
 )
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, And, Box, Cardinality, Constant, Contrast, Count, Function, Iff,
     Implies, Node, Not, Number, Or, Quantifier, Variable, Xor,
 )
-from unicode_fol_kit.fol.signature import Signature
-from unicode_fol_kit.semantics.structures import structure_from_dict
+from unicode_logic_kit.fol.signature import Signature
+from unicode_logic_kit.semantics.structures import structure_from_dict
 
 FIXDIR = pathlib.Path(__file__).parent / "fixtures" / "minizinc"
 
@@ -111,7 +111,7 @@ def test_mzn_const_name_ascii_and_greek_collide_before_prefixing():
 # fol/grammars/terminals.lark: PREDICATE, NAME, and VARIABLE all admit any
 # Unicode letter), so e.g. Atom("Świątek", ...) used to render literally as
 # "p_Świątek" -- not a legal MiniZinc identifier. Hand-verified against
-# unicode_fol_kit.fol._fol_nodes.constant_name_to_ascii directly (świątek's
+# unicode_logic_kit.fol._fol_nodes.constant_name_to_ascii directly (świątek's
 # ś=U+015B -> "u015b", ą=U+0105 -> "u0105"; 中=U+4E2D -> "u4e2d",
 # 文=U+6587 -> "u6587"; ASCII letters pass through unchanged).
 # ---------------------------------------------------------------------------
@@ -300,7 +300,7 @@ def test_to_minizinc_rejects_function_name_collision():
     # collision guard directly, independent of whatever the sentences happen
     # to use (see test_to_minizinc_rejects_predicate_name_collision above for
     # the analogous predicate-namespace case).
-    from unicode_fol_kit.fol.signature import FunctionDecl, PredicateDecl
+    from unicode_logic_kit.fol.signature import FunctionDecl, PredicateDecl
     sig = Signature(
         predicates={"P": PredicateDecl("P", 1)},
         functions={
@@ -748,7 +748,7 @@ def _size_of(model_path: str) -> int:
 
 def _fake_run_at_size(target_size: int, stdout_at_target: str,
                       stdout_below: str = "=====UNSATISFIABLE=====\n"):
-    """A stand-in for :func:`~unicode_fol_kit.atp.minizinc_backend._run_minizinc`
+    """A stand-in for :func:`~unicode_logic_kit.atp.minizinc_backend._run_minizinc`
     that answers UNSAT below ``target_size`` and ``stdout_at_target`` exactly
     at it -- so ``decide()``'s size-1..max_size loop genuinely walks through
     the smaller, unsatisfiable sizes before reaching the one under test,

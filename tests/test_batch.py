@@ -1,4 +1,4 @@
-"""Tests for unicode_fol_kit/eval/batch.py — batch/cache infrastructure.
+"""Tests for unicode_logic_kit/eval/batch.py — batch/cache infrastructure.
 
 Hand-checked contracts:
 
@@ -12,7 +12,7 @@ Hand-checked contracts:
       -> proved.
 * Caching: a first run populates cache_dir with one file per distinct task
   (formula+premises+backends+logic+timeout+options key); a second run over
-  the SAME tasks/cache_dir, with unicode_fol_kit.api.prove monkeypatched to
+  the SAME tasks/cache_dir, with unicode_logic_kit.api.prove monkeypatched to
   raise immediately, still returns the identical verdicts purely from the
   cache (proving no backend call happened) and flags them cached=True.
 * A parse failure for one task never aborts the batch: it comes back as its
@@ -29,8 +29,8 @@ import json
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.eval.batch import batch_decide
+from unicode_logic_kit import api
+from unicode_logic_kit.eval.batch import batch_decide
 
 # Three ground (quantifier-free) tasks: Z3 decides these instantly and
 # deterministically, so the expected status is a fact about classical FOL
@@ -181,8 +181,8 @@ def test_cache_key_is_backend_order_sensitive():
     ["resolution", "z3"] are DIFFERENT queries and must never share a cache
     entry — the old sorted() key collapsed them and served the wrong
     provenance from cache."""
-    from unicode_fol_kit.eval.batch import _cache_key
-    from unicode_fol_kit import MSFLParser
+    from unicode_logic_kit.eval.batch import _cache_key
+    from unicode_logic_kit import MSFLParser
 
     formula = MSFLParser().parse("P(alice) → P(alice)")
     key_a = _cache_key(formula, [], ["z3", "resolution"], "fol", 10000, {})
@@ -197,8 +197,8 @@ def test_cache_key_resolves_the_default_chain_concretely():
     another. The key therefore (a) differs from an explicit list spelling
     the same chain (different query descriptions stay distinct) and (b)
     changes if the resolved chain changes."""
-    from unicode_fol_kit.eval.batch import _cache_key
-    from unicode_fol_kit import MSFLParser, default_chain
+    from unicode_logic_kit.eval.batch import _cache_key
+    from unicode_logic_kit import MSFLParser, default_chain
 
     formula = MSFLParser().parse("P(alice) → P(alice)")
     key_default = _cache_key(formula, [], None, "fol", 10000, {})
@@ -226,9 +226,9 @@ def test_cache_key_changes_with_solver_version(monkeypatch):
     Verified directly against the z3 backend's singleton instance (get_backend
     always returns the SAME registered object), so patching its bound method
     is visible to _cache_key's own get_backend(name) call."""
-    from unicode_fol_kit.eval.batch import _cache_key
-    from unicode_fol_kit.atp.protocol import get_backend
-    from unicode_fol_kit import MSFLParser
+    from unicode_logic_kit.eval.batch import _cache_key
+    from unicode_logic_kit.atp.protocol import get_backend
+    from unicode_logic_kit import MSFLParser
 
     formula = MSFLParser().parse("P(alice) → P(alice)")
     backend = get_backend("z3")
@@ -252,9 +252,9 @@ def test_cache_key_solver_version_lookup_is_memoized_per_task(monkeypatch):
     backend NAME per invocation, so a future edit cannot accidentally start
     calling it twice per task and silently rely on the backend-level cache
     to hide the waste."""
-    from unicode_fol_kit.eval.batch import _cache_key
-    from unicode_fol_kit.atp.protocol import get_backend
-    from unicode_fol_kit import MSFLParser
+    from unicode_logic_kit.eval.batch import _cache_key
+    from unicode_logic_kit.atp.protocol import get_backend
+    from unicode_logic_kit import MSFLParser
 
     formula = MSFLParser().parse("P(alice) → P(alice)")
     backend = get_backend("z3")

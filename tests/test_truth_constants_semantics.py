@@ -14,11 +14,11 @@ constants:
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Implies, Iff, Constant, Variable, Quantifier, Box, Diamond,
     LukNegation, LukImplication,
 )
-from unicode_fol_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.msflparser import MSFLParser
 
 T = Atom("$true", ())
 F = Atom("$false", ())
@@ -31,7 +31,7 @@ Q = Atom("Q", ())
 # ---------------------------------------------------------------------------
 
 def test_truth_table_has_no_column_for_a_constant():
-    from unicode_fol_kit.semantics.truthtable import truth_table
+    from unicode_logic_kit.semantics.truthtable import truth_table
     table = truth_table(Implies(F, P), "classical")
     assert table.atoms == ("P",)
     # ⊥ → P holds at both rows: the premise is false
@@ -40,7 +40,7 @@ def test_truth_table_has_no_column_for_a_constant():
 
 
 def test_truth_table_of_only_a_constant_has_one_row():
-    from unicode_fol_kit.semantics.truthtable import truth_table
+    from unicode_logic_kit.semantics.truthtable import truth_table
     assert truth_table(T, "classical").atoms == ()
     assert [row[1] for row in truth_table(T, "classical").rows] == [1.0]
     assert [row[1] for row in truth_table(F, "classical").rows] == [0.0]
@@ -48,7 +48,7 @@ def test_truth_table_of_only_a_constant_has_one_row():
 
 @pytest.mark.parametrize("logic", ["K3", "LP"])
 def test_three_valued_truth_tables_read_the_extremes(logic):
-    from unicode_fol_kit.semantics.truthtable import truth_table
+    from unicode_logic_kit.semantics.truthtable import truth_table
     # $true ∧ P = min(1, p) = p, and $false ∨ P = max(0, p) = p, at each of the
     # three values 0, ½, 1 of P (the table's own row order is not asserted)
     for formula in (And(T, P), Or(F, P)):
@@ -58,7 +58,7 @@ def test_three_valued_truth_tables_read_the_extremes(logic):
 
 
 def test_kleene_value_of_the_constants():
-    from unicode_fol_kit.semantics.manyvalued import kleene_value
+    from unicode_logic_kit.semantics.manyvalued import kleene_value
     assert kleene_value(T, {}) == 1.0
     assert kleene_value(F, {}) == 0.0
     assert kleene_value(Not(F), {}) == 1.0
@@ -67,7 +67,7 @@ def test_kleene_value_of_the_constants():
 
 
 def test_k3_validity_with_constants():
-    from unicode_fol_kit.semantics.manyvalued import is_valid, entails
+    from unicode_logic_kit.semantics.manyvalued import is_valid, entails
     # K3 designates only 1. $true is 1 and $false is 0, so:
     assert is_valid(T, "K3")
     assert not is_valid(F, "K3")
@@ -80,7 +80,7 @@ def test_k3_validity_with_constants():
 
 
 def test_lp_designates_the_half_but_not_the_bottom():
-    from unicode_fol_kit.semantics.manyvalued import entails
+    from unicode_logic_kit.semantics.manyvalued import entails
     assert entails([], T, "LP")
     assert not entails([], F, "LP")
     assert entails([F], P, "LP")        # $false is 0, never designated, even in LP
@@ -92,14 +92,14 @@ def test_lp_designates_the_half_but_not_the_bottom():
 # ---------------------------------------------------------------------------
 
 def test_the_shipped_matrices_declare_their_extremes():
-    from unicode_fol_kit.semantics.matrix import K3_MATRIX, LP_MATRIX, FDE_MATRIX
+    from unicode_logic_kit.semantics.matrix import K3_MATRIX, LP_MATRIX, FDE_MATRIX
     assert (K3_MATRIX.top, K3_MATRIX.bottom) == (1.0, 0.0)
     assert (LP_MATRIX.top, LP_MATRIX.bottom) == (1.0, 0.0)
     assert (FDE_MATRIX.top, FDE_MATRIX.bottom) == ("T", "F")
 
 
 def test_matrix_value_of_the_constants():
-    from unicode_fol_kit.semantics.matrix import matrix_value, K3_MATRIX, FDE_MATRIX
+    from unicode_logic_kit.semantics.matrix import matrix_value, K3_MATRIX, FDE_MATRIX
     assert matrix_value(T, {}, K3_MATRIX) == 1.0
     assert matrix_value(F, {}, K3_MATRIX) == 0.0
     assert matrix_value(T, {}, FDE_MATRIX) == "T"
@@ -111,13 +111,13 @@ def test_matrix_value_of_the_constants():
 
 
 def _two_valued(**kwargs):
-    from unicode_fol_kit.semantics.matrix import TruthMatrix
+    from unicode_logic_kit.semantics.matrix import TruthMatrix
     return TruthMatrix.from_functions(
         "two", [0, 1], [1], neg=lambda a: 1 - a, conj=min, disj=max, **kwargs)
 
 
 def test_a_matrix_that_declares_no_extremes_refuses_the_constants_by_name():
-    from unicode_fol_kit.semantics.matrix import matrix_value
+    from unicode_logic_kit.semantics.matrix import matrix_value
     matrix = _two_valued()
     with pytest.raises(NotImplementedError) as info:
         matrix_value(T, {}, matrix)
@@ -131,7 +131,7 @@ def test_a_matrix_that_declares_no_extremes_refuses_the_constants_by_name():
 
 
 def test_a_matrix_that_declares_its_extremes_reads_the_constants():
-    from unicode_fol_kit.semantics.matrix import matrix_value
+    from unicode_logic_kit.semantics.matrix import matrix_value
     matrix = _two_valued(top=1, bottom=0)
     assert matrix_value(T, {}, matrix) == 1
     assert matrix_value(Not(F), {}, matrix) == 1
@@ -152,7 +152,7 @@ def fl():
 
 
 def test_fuzzy_degrees_of_the_constants(fl):
-    from unicode_fol_kit.semantics.fuzzy import evaluate
+    from unicode_logic_kit.semantics.fuzzy import evaluate
     assert evaluate(fl.parse("⊤"), {}) == 1.0
     assert evaluate(fl.parse("⊥"), {}) == 0.0
     # Łukasiewicz: ¬a = 1-a, a ⊗ b = max(0, a+b-1), a ⊕ b = min(1, a+b), a → b = min(1, 1-a+b)
@@ -166,7 +166,7 @@ def test_fuzzy_degrees_of_the_constants(fl):
 
 
 def test_fuzzy_validity_by_z3(fl):
-    from unicode_fol_kit.atp.z3_fuzzy import fuzzy_is_valid
+    from unicode_logic_kit.atp.z3_fuzzy import fuzzy_is_valid
     assert fuzzy_is_valid(fl.parse("⊤")) is True
     assert fuzzy_is_valid(fl.parse("⊥")) is False
     assert fuzzy_is_valid(fl.parse("⊥ → P")) is True
@@ -176,7 +176,7 @@ def test_fuzzy_validity_by_z3(fl):
 
 
 def test_fuzzy_modal_degrees_do_not_depend_on_the_world():
-    from unicode_fol_kit.semantics.fuzzy_kripke import FuzzyKripkeModel, satisfies_fuzzy_modal
+    from unicode_logic_kit.semantics.fuzzy_kripke import FuzzyKripkeModel, satisfies_fuzzy_modal
     # world 0 sees world 1 with weight 0.25; world 1 sees nothing
     model = FuzzyKripkeModel({0, 1}, {"alethic": {(0, 1): 0.25}})
     assert satisfies_fuzzy_modal(T, model, 0) == 1.0
@@ -195,7 +195,7 @@ def test_fuzzy_modal_degrees_do_not_depend_on_the_world():
 # ---------------------------------------------------------------------------
 
 def test_crisp_modal_constants_hold_at_every_world():
-    from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
+    from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
     # 0 -> 1, and 1 is a dead end; no atom is true anywhere
     model = KripkeModel({0, 1}, {"alethic": {(0, 1)}}, {0: set(), 1: set()})
     assert satisfies_modal(T, model, 0) and satisfies_modal(T, model, 1)
@@ -209,7 +209,7 @@ def test_crisp_modal_constants_hold_at_every_world():
 
 
 def test_intuitionistic_forcing_of_the_constants():
-    from unicode_fol_kit.semantics.intuitionistic import IntKripkeModel
+    from unicode_logic_kit.semantics.intuitionistic import IntKripkeModel
     # 0 ≤ 1, P forced from 1 on
     model = IntKripkeModel(upset={0: frozenset({0, 1}), 1: frozenset({1})},
                            valuation={"P": frozenset({1})})
@@ -224,7 +224,7 @@ def test_intuitionistic_forcing_of_the_constants():
 
 
 def test_intuitionistic_kripke_counter_model_for_true_implies_p():
-    from unicode_fol_kit.semantics.intuitionistic import int_countermodel, int_valid
+    from unicode_logic_kit.semantics.intuitionistic import int_countermodel, int_valid
     assert int_valid(Implies(F, P))
     assert int_countermodel(Implies(F, P)) is None
     found = int_countermodel(Implies(T, P))
@@ -234,14 +234,14 @@ def test_intuitionistic_kripke_counter_model_for_true_implies_p():
 
 
 def test_excluded_middle_stays_invalid_with_a_constant_in_it():
-    from unicode_fol_kit.semantics.intuitionistic import int_valid
+    from unicode_logic_kit.semantics.intuitionistic import int_valid
     assert not int_valid(Or(P, Not(P)))
     assert not int_valid(Or(Or(P, Not(P)), F))      # a false disjunct adds nothing
     assert int_valid(Or(Or(P, Not(P)), T))          # a true disjunct makes it valid
 
 
 def test_goedel_translation_keeps_the_constants():
-    from unicode_fol_kit.hol.intuitionistic import gmt_translate
+    from unicode_logic_kit.hol.intuitionistic import gmt_translate
     # T($true) = $true, T($false) = $false (textbook ⊥ ↦ ⊥), and → gets its box
     assert gmt_translate(T) == T
     assert gmt_translate(F) == F
@@ -253,7 +253,7 @@ def test_goedel_translation_keeps_the_constants():
 # ---------------------------------------------------------------------------
 
 def test_tarski_satisfaction_of_the_constants():
-    from unicode_fol_kit.semantics.tarski import Structure, satisfies
+    from unicode_logic_kit.semantics.tarski import Structure, satisfies
     structure = Structure(domain=[1], predicates={("P", 0): False})
     assert satisfies(T, structure)
     assert not satisfies(F, structure)
@@ -263,7 +263,7 @@ def test_tarski_satisfaction_of_the_constants():
 
 
 def test_free_logic_constants_hold_in_an_empty_domain():
-    from unicode_fol_kit.semantics.free_logic import FreeModel, free_satisfies
+    from unicode_logic_kit.semantics.free_logic import FreeModel, free_satisfies
     empty = FreeModel(outer=(), existing=frozenset())
     for policy in ("negative", "positive"):
         assert free_satisfies(T, empty, policy=policy)
@@ -272,7 +272,7 @@ def test_free_logic_constants_hold_in_an_empty_domain():
 
 
 def test_the_name_with_arguments_is_an_ordinary_predicate_in_a_structure():
-    from unicode_fol_kit.semantics.tarski import Structure, satisfies
+    from unicode_logic_kit.semantics.tarski import Structure, satisfies
     odd = Atom("$true", [Constant("a")])
     structure = Structure(domain=[1], constants={"a": 1}, predicates={("$true", 1): set()})
     assert not satisfies(odd, structure)       # the empty relation, not the constant
@@ -284,7 +284,7 @@ def test_the_name_with_arguments_is_an_ordinary_predicate_in_a_structure():
 
 @pytest.mark.parametrize("constant", [T, F])
 def test_relevant_logic_refuses_the_constants(constant):
-    from unicode_fol_kit.semantics.relevant import rel_valid, rel_countermodel
+    from unicode_logic_kit.semantics.relevant import rel_valid, rel_countermodel
     for call in (rel_valid, rel_countermodel):
         with pytest.raises(TypeError) as info:
             call(Implies(P, constant))
@@ -296,7 +296,7 @@ def test_relevant_logic_refuses_the_constants(constant):
 
 @pytest.mark.parametrize("constant", [T, F])
 def test_linear_logic_refuses_the_constants(constant):
-    from unicode_fol_kit.atp.linear import ill_prove, ill_derivable
+    from unicode_logic_kit.atp.linear import ill_prove, ill_derivable
     for call in (ill_prove, ill_derivable):
         with pytest.raises(NotImplementedError) as info:
             call([P], constant)
@@ -309,7 +309,7 @@ def test_linear_logic_refuses_the_constants(constant):
 
 @pytest.mark.parametrize("constant", [T, F])
 def test_the_lambek_calculus_refuses_the_constants(constant):
-    from unicode_fol_kit.atp.lambek import lambek_prove, lambek_derivable
+    from unicode_logic_kit.atp.lambek import lambek_prove, lambek_derivable
     for call in (lambek_prove, lambek_derivable):
         with pytest.raises(NotImplementedError) as info:
             call([P], constant)
@@ -320,7 +320,7 @@ def test_the_lambek_calculus_refuses_the_constants(constant):
 
 
 def test_the_linear_and_relevant_backends_say_unsupported_not_unknown_letters():
-    from unicode_fol_kit.api import prove
+    from unicode_logic_kit.api import prove
     for name in ("ill", "relevant", "lambek"):
         verdict = prove(T, [P], backends=[name], logic=name)
         assert verdict.status == "unknown", name
@@ -330,7 +330,7 @@ def test_the_linear_and_relevant_backends_say_unsupported_not_unknown_letters():
 
 
 def test_a_letter_is_still_a_letter_in_the_logics_that_refuse_constants():
-    from unicode_fol_kit.atp.linear import ill_derivable
-    from unicode_fol_kit.atp.lambek import lambek_derivable
+    from unicode_logic_kit.atp.linear import ill_derivable
+    from unicode_logic_kit.atp.lambek import lambek_derivable
     assert ill_derivable([P], P)
     assert lambek_derivable([P], P)

@@ -1,6 +1,6 @@
 r"""MiniZinc reads a numeral only as the bound a cardinality is compared with.
 
-A numeral (a :class:`~unicode_fol_kit.fol.nodes.Number`) is a constant identified by its value on
+A numeral (a :class:`~unicode_logic_kit.fol.nodes.Number`) is a constant identified by its value on
 every route that was not asked for arithmetic: two numerals of different value may denote the same
 element, so ``1 = 2`` is not valid, and ``(∀x ∀y x = y) → 1 = 2`` is (one element, so ``1`` and
 ``2`` denote the same thing). MiniZinc's domain individuals are the integers ``0 … size-1``, and the
@@ -21,11 +21,11 @@ Every verdict below is derived by hand:
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import minizinc_backend as mb
-from unicode_fol_kit.atp.finite_domain import FiniteDomainProblem
-from unicode_fol_kit.atp.minizinc_backend import minizinc_available, to_minizinc
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import minizinc_backend as mb
+from unicode_logic_kit.atp.finite_domain import FiniteDomainProblem
+from unicode_logic_kit.atp.minizinc_backend import minizinc_available, to_minizinc
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Cardinality, Constant, Count, Function, Implies, Not, Number, Quantifier, Variable,
 )
 

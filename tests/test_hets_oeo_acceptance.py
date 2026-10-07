@@ -55,13 +55,13 @@ from pathlib import Path
 
 import pytest
 
-from unicode_fol_kit.fol.tptp_input import (
+from unicode_logic_kit.fol.tptp_input import (
     _FILE_PARSER,
     _TRANSFORMER,
     load_tptp_problem,
     parse_tptp,
 )
-from unicode_fol_kit.hets import (
+from unicode_logic_kit.hets import (
     hets_prefixes,
     hets_symbol_table,
     repair_haskell_json,

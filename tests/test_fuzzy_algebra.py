@@ -11,12 +11,12 @@ is coded.
 import itertools
 import random
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom,
     LukNegation, WeakConjunction, WeakDisjunction,
     StrongConjunction, StrongDisjunction, LukImplication, LukEquivalence,
 )
-from unicode_fol_kit import fuzzy_evaluate
+from unicode_logic_kit import fuzzy_evaluate
 
 A = Atom("P", [])
 B = Atom("Q", [])

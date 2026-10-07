@@ -62,12 +62,12 @@ from itertools import product
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import resolution
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import resolution
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Box, Constant, Diamond, Iff, Implies, Not, Or, Quantifier, Variable,
 )
-from unicode_fol_kit.fol.qml import (
+from unicode_logic_kit.fol.qml import (
     qml_equivalent, qml_is_valid, qml_translate, qml_validity_formula, to_thf_modal,
 )
 

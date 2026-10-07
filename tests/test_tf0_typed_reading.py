@@ -28,28 +28,28 @@ from typing import List, NamedTuple, Optional, Tuple
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import eprover_backend as _eb
-from unicode_fol_kit.atp import protocol as _protocol
-from unicode_fol_kit.atp import vampire_entailment as _ve
-from unicode_fol_kit.atp._tptp_problem import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import eprover_backend as _eb
+from unicode_logic_kit.atp import protocol as _protocol
+from unicode_logic_kit.atp import vampire_entailment as _ve
+from unicode_logic_kit.atp._tptp_problem import (
     generate_tptp_problem_for_prover, generate_tptp_problem_with_mapping,
 )
-from unicode_fol_kit.atp.eprover_backend import (
+from unicode_logic_kit.atp.eprover_backend import (
     check_entailment_eprover_detailed, eprover_available,
 )
-from unicode_fol_kit.atp.protocol import VampireBackend, get_backend
-from unicode_fol_kit.atp.tptp_ncl import to_tptp_ncl
-from unicode_fol_kit.atp.tptp_tff import (
+from unicode_logic_kit.atp.protocol import VampireBackend, get_backend
+from unicode_logic_kit.atp.tptp_ncl import to_tptp_ncl
+from unicode_logic_kit.atp.tptp_tff import (
     Tf0Refusal, check_typed_reading, formula_to_tff, generate_tff_problem,
     generate_tff_problem_with_mapping, infer_tff_signature, problem_needs_tff,
 )
-from unicode_fol_kit.atp.vampire_entailment import (
+from unicode_logic_kit.atp.vampire_entailment import (
     _generate_vampire_input, check_entailment_vampire_detailed,
     check_logical_entailment_vampire,
 )
-from unicode_fol_kit.fol._msfl_nodes import SortedConstant, SortedQuantifier
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol._msfl_nodes import SortedConstant, SortedQuantifier
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Function, Iff, Implies, Not, Or, Quantifier, Variable,
 )
 
@@ -546,7 +546,7 @@ def test_nxf_refuses_an_unsorted_equation_next_to_a_sort(formula, outcome, why):
 # =============================================================================
 
 def test_hets_refuses_a_typed_reading_that_differs_before_any_network(monkeypatch):
-    from unicode_fol_kit import hets as hets_pkg
+    from unicode_logic_kit import hets as hets_pkg
 
     def _boom(**kw):
         raise AssertionError("discovery must not run for a problem the backend refuses")
@@ -564,7 +564,7 @@ def test_hets_refuses_a_typed_reading_that_differs_before_any_network(monkeypatc
 
 
 def test_hets_consistency_check_refuses_the_same_problems(monkeypatch):
-    from unicode_fol_kit import hets as hets_pkg
+    from unicode_logic_kit import hets as hets_pkg
 
     monkeypatch.setattr(hets_pkg, "discover_hets_url",
                         lambda **kw: (_ for _ in ()).throw(AssertionError("no network")))
@@ -577,7 +577,7 @@ def test_the_casl_export_itself_keeps_writing_the_typed_reading():
     """``to_casl_spec`` is an export into a typed language, a designed feature: it still
     declares the unannotated constant at the sort of the position it is used in. Only a
     decision with the text is refused."""
-    from unicode_fol_kit.fol.casl_export import to_casl_spec
+    from unicode_logic_kit.fol.casl_export import to_casl_spec
     spec = to_casl_spec([parse("∀x:Human Mortal(x)")], conjectures=[parse("Mortal(socrates)")])
     assert "socrates : Human" in spec
 

@@ -1,0 +1,31 @@
+# PREDICATE, CONSTANT, NAME, VARIABLE, and SORT used to be declared here as
+# fixed ASCII regexes. They are now GENERATED AT RUNTIME by
+# unicode_logic_kit/fol/_identifiers.py, from the running interpreter's own
+# Unicode letter tables, and spliced directly into each mode's grammar text
+# by _fol_nodes.build_grammar() — see _identifiers.py's module docstring for
+# why a codepoint range belongs in generated code, not frozen into this file.
+#
+# NUMBER, FORALL, EXISTS, and LAMBDA are unaffected by that widening (none of
+# them classifies a letter) and stay here, %import'd as before.
+#
+# NUMBER carries an optional leading "-" so that a NEGATIVE literal prints and
+# reads back: Number(-3) renders as `-3`, and before this the text `P(-3)` was a
+# syntax error. The sibling grammars (prover9_input, tptp_input) always had it.
+# It sits next to the binary minus without taking it over: a NUMBER is only
+# accepted where a term STARTS, so `x-3`, `x -3` and `x - 3` all stay
+# subtraction, and `x - -3` is subtraction of -3. A count bound stays a
+# non-negative integer: `∃≥-2 x P(x)` (and `∃≥2.5 x P(x)`) now reach the count
+# rule (_count_transform / _sorted_count_transform), which refuses them with a
+# CountBoundError, a ParsingError: a one-line SYNTAX_ERROR naming the bound, as
+# for any other parse error, not a raw lark VisitError. Audited against the
+# old grammar over 2455 `-`-adjacent texts in all 26 dialect/parser-kind
+# combinations: no text that parsed before parses to a different tree or fails
+# now.
+
+NUMBER.1: /-?[0-9]+(\.[0-9]+)?/
+
+FORALL: "∀"
+
+EXISTS: "∃"
+
+LAMBDA: "λ"

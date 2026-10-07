@@ -15,9 +15,9 @@ numeral of one text apart refuse the pair by name.
 
 import z3
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.z3_input import parse_smtlib, to_smtlib
-from unicode_fol_kit.fol.nodes import Atom, Constant, Not, Number
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.z3_input import parse_smtlib, to_smtlib
+from unicode_logic_kit.fol.nodes import Atom, Constant, Not, Number
 
 INT_TEXT = "(declare-fun |1| () Int)\n(assert (not (= |1| 1)))\n"
 REAL_TEXT = "(declare-fun |2.5| () Real)\n(assert (not (= |2.5| 2.5)))\n"

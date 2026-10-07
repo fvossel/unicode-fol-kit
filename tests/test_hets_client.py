@@ -1,10 +1,10 @@
-"""Tests for the ``unicode_fol_kit.hets`` REST-against-Docker HETS binding.
+"""Tests for the ``unicode_logic_kit.hets`` REST-against-Docker HETS binding.
 
 Two tiers, mirroring ``tests/test_isabelle_runner_live.py``'s split between
 runner-unit tests and the ``isabelle_live`` battery:
 
 OFFLINE (default run, no server needed) — pure unit tests against
-:mod:`unicode_fol_kit.hets.client` and :mod:`unicode_fol_kit.hets.docker`:
+:mod:`unicode_logic_kit.hets.client` and :mod:`unicode_logic_kit.hets.docker`:
 IRI percent-encoding, exact ``/prove`` JSON-body construction, goal
 extraction from a canned response fixture (a real captured fragment),
 ``/translations`` XML parsing, and :func:`discover_hets_url`'s precedence —
@@ -14,7 +14,7 @@ running on localhost:8000 on the machine executing them (it may well be —
 see the live tier below).
 
 LIVE (``@pytest.mark.hets_live`` on ``TestHetsLive``, gated by
-:func:`~unicode_fol_kit.hets.docker.hets_available` exactly the way
+:func:`~unicode_logic_kit.hets.docker.hets_available` exactly the way
 ``test_isabelle_runner_live.py`` gates on ``isabelle_available()``) — runs
 real HTTP calls against a real HETS server. Run them explicitly and
 SERIALLY::
@@ -35,12 +35,12 @@ import json
 
 import pytest
 
-from unicode_fol_kit.atp.protocol import BackendUnavailable
-from unicode_fol_kit.hets.client import (
+from unicode_logic_kit.atp.protocol import BackendUnavailable
+from unicode_logic_kit.hets.client import (
     HetsClient, _encode_iri, _extract_goal_objects, _normalize_goal,
 )
-from unicode_fol_kit.hets import docker as hets_docker
-from unicode_fol_kit.hets.docker import discover_hets_url, hets_available
+from unicode_logic_kit.hets import docker as hets_docker
+from unicode_logic_kit.hets.docker import discover_hets_url, hets_available
 
 
 # =============================================================================

@@ -12,7 +12,7 @@ from itertools import product
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import Atom, Not, And, Or, Implies, Iff, Box, Diamond
+from unicode_logic_kit.fol.nodes import Atom, Not, And, Or, Implies, Iff, Box, Diamond
 
 T = Atom("$true", ())
 F = Atom("$false", ())
@@ -91,10 +91,10 @@ def kleene_valid(node, designated):
 
 @pytest.mark.parametrize("seed", SEEDS)
 def test_classical_routes_agree_with_the_evaluator(seed):
-    from unicode_fol_kit.semantics.truthtable import is_tautology
-    from unicode_fol_kit.atp.z3_models import is_valid
-    from unicode_fol_kit.atp.tableau import prove_tableau
-    from unicode_fol_kit.atp.resolution import prove as resolution_prove
+    from unicode_logic_kit.semantics.truthtable import is_tautology
+    from unicode_logic_kit.atp.z3_models import is_valid
+    from unicode_logic_kit.atp.tableau import prove_tableau
+    from unicode_logic_kit.atp.resolution import prove as resolution_prove
     formula = random_formula(random.Random(seed), 3)
     expected = classically_valid(formula)
     assert is_tautology(formula, "classical") is expected, formula.to_unicode_str()
@@ -105,9 +105,9 @@ def test_classical_routes_agree_with_the_evaluator(seed):
 
 @pytest.mark.parametrize("seed", SEEDS)
 def test_entailment_routes_agree_with_the_evaluator(seed):
-    from unicode_fol_kit.atp.tableau import prove_tableau
-    from unicode_fol_kit.atp.resolution import prove as resolution_prove
-    from unicode_fol_kit.atp.z3_models import is_valid
+    from unicode_logic_kit.atp.tableau import prove_tableau
+    from unicode_logic_kit.atp.resolution import prove as resolution_prove
+    from unicode_logic_kit.atp.z3_models import is_valid
     rng = random.Random(10_000 + seed)
     premise, goal = random_formula(rng, 2), random_formula(rng, 2)
     expected = classically_valid(Implies(premise, goal))
@@ -119,8 +119,8 @@ def test_entailment_routes_agree_with_the_evaluator(seed):
 
 @pytest.mark.parametrize("seed", SEEDS)
 def test_a_found_fitch_proof_is_sound_and_checks(seed):
-    from unicode_fol_kit.atp.fitch_search import find_fitch_proof
-    from unicode_fol_kit.atp.fitch import verify_proof
+    from unicode_logic_kit.atp.fitch_search import find_fitch_proof
+    from unicode_logic_kit.atp.fitch import verify_proof
     formula = random_formula(random.Random(20_000 + seed), 3)
     proof = find_fitch_proof([], formula)
     if proof is None:
@@ -136,8 +136,8 @@ def test_a_found_fitch_proof_is_sound_and_checks(seed):
 
 @pytest.mark.parametrize("seed", SEEDS)
 def test_the_two_intuitionistic_routes_agree_and_imply_classical_validity(seed):
-    from unicode_fol_kit.atp.lj import int_decide
-    from unicode_fol_kit.semantics.intuitionistic import int_valid
+    from unicode_logic_kit.atp.lj import int_decide
+    from unicode_logic_kit.semantics.intuitionistic import int_valid
     formula = random_formula(random.Random(30_000 + seed), 3)
     sequent_route, kripke_route = int_decide(formula), int_valid(formula)
     assert sequent_route == kripke_route, formula.to_unicode_str()
@@ -151,9 +151,9 @@ def test_the_two_intuitionistic_routes_agree_and_imply_classical_validity(seed):
 
 @pytest.mark.parametrize("seed", SEEDS)
 def test_k3_and_lp_agree_with_the_evaluator(seed):
-    from unicode_fol_kit.semantics.manyvalued import is_valid
-    from unicode_fol_kit.semantics.matrix import matrix_entails, K3_MATRIX, LP_MATRIX
-    from unicode_fol_kit.semantics.truthtable import is_tautology
+    from unicode_logic_kit.semantics.manyvalued import is_valid
+    from unicode_logic_kit.semantics.matrix import matrix_entails, K3_MATRIX, LP_MATRIX
+    from unicode_logic_kit.semantics.truthtable import is_tautology
     formula = random_formula(random.Random(40_000 + seed), 3)
     k3, lp = kleene_valid(formula, {1.0}), kleene_valid(formula, {1.0, 0.5})
     text = formula.to_unicode_str()
@@ -185,7 +185,7 @@ def random_modal(rng, depth):
 
 def enumerated_countermodel_exists(formula, max_worlds=2):
     """Some Kripke model with at most ``max_worlds`` worlds falsifies ``formula`` at a world."""
-    from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
+    from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
     for size in range(1, max_worlds + 1):
         worlds = list(range(size))
         edges = [(a, b) for a in worlds for b in worlds]
@@ -202,7 +202,7 @@ def enumerated_countermodel_exists(formula, max_worlds=2):
 
 @pytest.mark.parametrize("seed", range(60))
 def test_modal_tableau_never_proves_what_an_enumerated_model_refutes(seed):
-    from unicode_fol_kit.atp.modal_tableau import is_modal_valid
+    from unicode_logic_kit.atp.modal_tableau import is_modal_valid
     formula = random_modal(random.Random(50_000 + seed), 2)
     refuted = enumerated_countermodel_exists(formula)
     valid = is_modal_valid(formula)
@@ -212,7 +212,7 @@ def test_modal_tableau_never_proves_what_an_enumerated_model_refutes(seed):
 
 
 def test_the_constants_are_valid_or_invalid_in_every_modal_model():
-    from unicode_fol_kit.atp.modal_tableau import is_modal_valid
+    from unicode_logic_kit.atp.modal_tableau import is_modal_valid
     # □⊤ and ◇⊤ differ at a dead end: □⊤ is valid, ◇⊤ is not (needs a successor)
     assert is_modal_valid(Box(T))
     assert not is_modal_valid(Diamond(T))

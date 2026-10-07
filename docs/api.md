@@ -1,7 +1,7 @@
 # API reference
 
 Auto-generated from the package docstrings, and **complete**: every name in
-`unicode_fol_kit.__all__` and in each subpackage's `__all__` appears in exactly
+`unicode_logic_kit.__all__` and in each subpackage's `__all__` appears in exactly
 one table below, linking to its full signature and documentation. A test
 (`tests/test_api_reference_complete.py`) enforces that, so a new public name
 cannot ship undocumented.
@@ -13,8 +13,8 @@ there. Two deliberate exceptions:
 
 - Fifteen names appear twice, under different paths, because they are
   **different objects** that happen to share a name: `check_theory`
-  ({func}`unicode_fol_kit.check_theory` builds and runs an Isabelle theory,
-  {func}`unicode_fol_kit.eval.check_theory` audits a set of definitions), the
+  ({func}`unicode_logic_kit.check_theory` builds and runs an Isabelle theory,
+  {func}`unicode_logic_kit.eval.check_theory` audits a set of definitions), the
   description-logic concept constructors `And`/`Or`/`Not`/`Top`/`Nominal`,
   which are description-logic concepts rather than formula nodes, and the nine
   `external_*` functions, which `dl` (HermiT) and `hets` (FaCT++) each define.
@@ -27,7 +27,7 @@ there. Two deliberate exceptions:
 ## Parsing & the AST
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit
+.. currentmodule:: unicode_logic_kit
 
 .. autosummary::
    :toctree: _autosummary
@@ -58,7 +58,7 @@ there. Two deliberate exceptions:
 ## Source spans
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit
+.. currentmodule:: unicode_logic_kit
 
 .. autosummary::
    :toctree: _autosummary
@@ -259,21 +259,21 @@ Every importer inverts its source language's naming convention where it differs
 from the kit's — TPTP and Prolog both spell a predicate lower-case and a
 variable upper-case, so `carbon(A)` arrives as `Carbon(a)`. A name that is
 legal in the source but not a legal kit token survives verbatim; run
-{func}`~unicode_fol_kit.sanitize_names` over the result before rendering it
+{func}`~unicode_logic_kit.sanitize_names` over the result before rendering it
 back to kit text.
 
-{func}`~unicode_fol_kit.parse_prolog_clause` additionally asks the caller to
+{func}`~unicode_logic_kit.parse_prolog_clause` additionally asks the caller to
 decide what a clause MEANS — the universally closed implication
 (`mode="clause"`, the default), or the condition alone with the head's
 variables free (`mode="body"`). Those are different formulas, so state the one
 you mean. See {doc}`guide/interoperability`.
 
-{func}`~unicode_fol_kit.formula_to_prolog_clause` is the return leg: a
+{func}`~unicode_logic_kit.formula_to_prolog_clause` is the return leg: a
 formula built to look like a fact or a definite/normal clause renders back
 out as Prolog text, `parse_prolog_clause`'s own `mode="clause"` reading run
-in reverse; {func}`~unicode_fol_kit.formula_to_prolog_program` does the same
+in reverse; {func}`~unicode_logic_kit.formula_to_prolog_program` does the same
 for several clauses at once. Both refuse — by name, via
-{class}`~unicode_fol_kit.fol.PrologExportError` — a formula outside the
+{class}`~unicode_logic_kit.fol.PrologExportError` — a formula outside the
 narrow accepted fragment rather than approximating it.
 
 Prover9's `op(precedence, type, symbol)` operator declarations are applied to
@@ -285,7 +285,7 @@ directive), and which are accepted but left harmlessly inert.
 TF0 (typed TPTP) is its own guide section — see {doc}`guide/interoperability`
 — because a many-sorted formula there gets a genuine `tff` type per
 sort/symbol instead of the classical route's guard-predicate encoding.
-{func}`~unicode_fol_kit.generate_tff_arith_problem` is `generate_tff_problem`'s
+{func}`~unicode_logic_kit.generate_tff_arith_problem` is `generate_tff_problem`'s
 single-numeric-sort sibling — see {doc}`guide/classical-reasoning`'s "Native
 typed arithmetic for Vampire/E (TFA)" section: every individual lives in ONE
 caller-chosen `$int`/`$real` sort (mirroring `is_valid_arith`'s own design),
@@ -293,7 +293,7 @@ which is what lets Vampire/E activate their native arithmetic reasoning on
 `+ - * /` and `< > ≤ ≥` — the classical `fof` route, and TF0's own many-sorted
 route, cannot.
 
-{func}`~unicode_fol_kit.parse_qmltp` reads the QMLTP library's own `#box`/
+{func}`~unicode_logic_kit.parse_qmltp` reads the QMLTP library's own `#box`/
 `#dia` extension of `fof` syntax and its per-logic/per-domain status header;
 see {doc}`guide/quantified-modal`.
 
@@ -462,7 +462,7 @@ see {doc}`guide/quantified-modal`.
 Every modal route — the standard translation, the labelled tableau, the
 finite-frame enumerator, natural deduction, the hybrid translation and the
 higher-order embeddings — reads ONE frame table,
-{mod}`unicode_fol_kit.fol.frames`: its `FRAMES` names the systems (24 of
+{mod}`unicode_logic_kit.fol.frames`: its `FRAMES` names the systems (24 of
 them), `FRAME_CONDITIONS` describes each condition together with the axiom it
 corresponds to (a correspondence brute-forced over every frame on up to three
 worlds), and `modal_axiom` builds the schema of a named axiom, literature
@@ -473,13 +473,13 @@ wherever a frame name is. What a route cannot express soundly it refuses with
 
 The first-order route's side conditions are explicit. A formula's translation
 mentions several accessibility relations (`R`, `T`, `N`, `D` and one per agent),
-and {func}`unicode_fol_kit.fol.modal_translation.frame_axioms` returns the frame
+and {func}`unicode_logic_kit.fol.modal_translation.frame_axioms` returns the frame
 axioms for exactly those, and for each sorted constant `c:S` the axiom that it
 lies in `S` at every world, while
-{func}`unicode_fol_kit.fol.modal_translation.relations_used` names the relations.
-{func}`~unicode_fol_kit.hybrid_is_valid` and {func}`~unicode_fol_kit.down_is_valid`
+{func}`unicode_logic_kit.fol.modal_translation.relations_used` names the relations.
+{func}`~unicode_logic_kit.hybrid_is_valid` and {func}`~unicode_logic_kit.down_is_valid`
 take `systems=` and `temporal_closure=` and assert them, which is what brings
-them into line with {func}`~unicode_fol_kit.qml_is_valid`. The two helpers live
+them into line with {func}`~unicode_logic_kit.qml_is_valid`. The two helpers live
 in the module and are not re-exported at the top level, so they have no row in
 the table; the module section at the end of this page documents them. The
 propositional standard translation and the propositional Kripke evaluator both
@@ -613,7 +613,7 @@ identity. The translations are catalogued, with their guarantees, in
 ## Prover backends, portfolios & batch runs
 
 The backend protocol is the extension point: implement
-{class}`~unicode_fol_kit.ProverBackend`, register it, and every chain-driven
+{class}`~unicode_logic_kit.ProverBackend`, register it, and every chain-driven
 entry point can reach it.
 
 ```{eval-rst}
@@ -742,7 +742,7 @@ entry point can reach it.
 ## Registries, at their definition site
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.semantics.matrix
+.. currentmodule:: unicode_logic_kit.semantics.matrix
 
 .. autosummary::
    :nosignatures:
@@ -751,7 +751,7 @@ entry point can reach it.
 ```
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.semantics.tnorm
+.. currentmodule:: unicode_logic_kit.semantics.tnorm
 
 .. autosummary::
    :nosignatures:
@@ -760,7 +760,7 @@ entry point can reach it.
 ```
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.semantics.manyvalued
+.. currentmodule:: unicode_logic_kit.semantics.manyvalued
 
 .. autosummary::
    :toctree: _autosummary
@@ -770,7 +770,7 @@ entry point can reach it.
 ```
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.semantics.conditional
+.. currentmodule:: unicode_logic_kit.semantics.conditional
 
 .. autosummary::
    :nosignatures:
@@ -779,7 +779,7 @@ entry point can reach it.
 ```
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.atp.tstp_check
+.. currentmodule:: unicode_logic_kit.atp.tstp_check
 
 .. autosummary::
    :nosignatures:
@@ -797,7 +797,7 @@ signature, and `interpretation_count` says how many there would be without
 enumerating any.
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.semantics.thirdorder
+.. currentmodule:: unicode_logic_kit.semantics.thirdorder
 
 .. autosummary::
    :toctree: _autosummary
@@ -809,7 +809,7 @@ enumerating any.
 ```
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.fol.qml
+.. currentmodule:: unicode_logic_kit.fol.qml
 
 .. autosummary::
    :toctree: _autosummary
@@ -819,7 +819,7 @@ enumerating any.
 ```
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.fol.frames
+.. currentmodule:: unicode_logic_kit.fol.frames
 
 .. autosummary::
    :toctree: _autosummary
@@ -836,7 +836,7 @@ enumerating any.
 ```
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.hol.isabelle_modal
+.. currentmodule:: unicode_logic_kit.hol.isabelle_modal
 
 .. autosummary::
    :toctree: _autosummary
@@ -848,7 +848,7 @@ enumerating any.
 ## Errors
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit
+.. currentmodule:: unicode_logic_kit
 
 .. autosummary::
    :toctree: _autosummary
@@ -864,7 +864,7 @@ enumerating any.
 ## Structures and the structure evaluator
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.semantics
+.. currentmodule:: unicode_logic_kit.semantics
 
 .. autosummary::
    :toctree: _autosummary
@@ -892,19 +892,19 @@ enumerating any.
 
 ### Minimal models via ASP
 
-`unicode_fol_kit.semantics.asp_models` is reached only by its own path — it
-is not re-exported anywhere else. {func}`~unicode_fol_kit.semantics.asp_models.asp_minimal_models`
+`unicode_logic_kit.semantics.asp_models` is reached only by its own path — it
+is not re-exported anywhere else. {func}`~unicode_logic_kit.semantics.asp_models.asp_minimal_models`
 lets `clingo` enumerate models natively and filters them through
-{mod}`~unicode_fol_kit.semantics.nonmonotonic`'s own, unmodified minimality
-predicate; {func}`~unicode_fol_kit.semantics.asp_models.asp_find_model` is
+{mod}`~unicode_logic_kit.semantics.nonmonotonic`'s own, unmodified minimality
+predicate; {func}`~unicode_logic_kit.semantics.asp_models.asp_find_model` is
 its single-shot analogue. Both return the same
-{class}`~unicode_fol_kit.semantics.tarski.Structure` type `minimal_models`
+{class}`~unicode_logic_kit.semantics.tarski.Structure` type `minimal_models`
 and `find_model` already return. See {doc}`guide/finite-domain`.
 
 ## Verifying and batch-checking definition sets
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.eval
+.. currentmodule:: unicode_logic_kit.eval
 
 .. autosummary::
    :toctree: _autosummary
@@ -950,7 +950,7 @@ carrying a `SpanMap` (see "Source spans" above) across it, and
 {doc}`guide/batch-checking`).
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.chem
+.. currentmodule:: unicode_logic_kit.chem
 
 .. autosummary::
    :nosignatures:
@@ -969,7 +969,7 @@ carrying a `SpanMap` (see "Source spans" above) across it, and
 ```
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.chem.interop
+.. currentmodule:: unicode_logic_kit.chem.interop
 
 .. autosummary::
    :nosignatures:
@@ -979,7 +979,7 @@ carrying a `SpanMap` (see "Source spans" above) across it, and
 ```
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.chem.signature
+.. currentmodule:: unicode_logic_kit.chem.signature
 
 .. autosummary::
    :nosignatures:
@@ -995,7 +995,7 @@ two encoding traps that silently produce a perfect-scoring, meaningless
 hypothesis refused rather than documented. See {doc}`guide/interoperability`.
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.ilp
+.. currentmodule:: unicode_logic_kit.ilp
 
 .. autosummary::
    :nosignatures:
@@ -1014,7 +1014,7 @@ hypothesis refused rather than documented. See {doc}`guide/interoperability`.
 ## Probability
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.prob
+.. currentmodule:: unicode_logic_kit.prob
 
 .. autosummary::
    :nosignatures:
@@ -1029,8 +1029,8 @@ hypothesis refused rather than documented. See {doc}`guide/interoperability`.
 
 ## Description logic (ALCHQ)
 
-ALCHQ ({mod}`unicode_fol_kit.dl.tableau`) refuses inverse roles and nominals (I, O)
-by name; {mod}`unicode_fol_kit.dl.owl_reasoner` decides the full ALCHQ+I+O
+ALCHQ ({mod}`unicode_logic_kit.dl.tableau`) refuses inverse roles and nominals (I, O)
+by name; {mod}`unicode_logic_kit.dl.owl_reasoner` decides the full ALCHQ+I+O
 fragment via an external, HermiT-backed reasoner (owlready2, optional
 `[owl]` extra), mirroring every `dl.tableau` function's own reduction under
 an `external_` prefix.
@@ -1187,7 +1187,7 @@ not read back as the same formula. `Alice = Bob` does not parse at all;
 `kb_to_fol`'s nodes) are unaffected.
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.dl
+.. currentmodule:: unicode_logic_kit.dl
 
 .. autosummary::
    :nosignatures:
@@ -1291,7 +1291,7 @@ not read back as the same formula. `Alice = Bob` does not parse at all;
 ## Discourse representation theory
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.drt
+.. currentmodule:: unicode_logic_kit.drt
 
 .. autosummary::
    :nosignatures:
@@ -1327,7 +1327,7 @@ not read back as the same formula. `Alice = Bob` does not parse at all;
 
 ACE text in, kit formulas out — driven through the external
 [APE](https://github.com/Attempto/APE) parser (LGPL, never vendored; see
-`unicode_fol_kit.ace.runner`'s module docstring for discovery and for what
+`unicode_logic_kit.ace.runner`'s module docstring for discovery and for what
 each outcome class means). Three routes share one vocabulary, pinned against
 each other by a Z3 differential over the recorded corpus: `ace_to_fol`
 (Attempto's own TPTP through the kit's reader), `ace_to_drs` (APE's DRS read
@@ -1356,7 +1356,7 @@ APE, judged by `eval.equivalence.equivalent` (a modal formula has no direct
 Z3 export).
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.ace
+.. currentmodule:: unicode_logic_kit.ace
 
 .. autosummary::
    :nosignatures:
@@ -1420,13 +1420,13 @@ Z3 export).
 
 ## HETS, DOL and comorphisms
 
-`unicode_fol_kit.hets.owl_backend` adds a second, independent external OWL 2
+`unicode_logic_kit.hets.owl_backend` adds a second, independent external OWL 2
 DL reasoner (FaCT++ via the server's `Fact` prover), mirroring
 `dl.owl_reasoner`'s function-per-namesake shape over the same ALCHQ+I+O
 fragment.
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.hets
+.. currentmodule:: unicode_logic_kit.hets
 
 .. autosummary::
    :nosignatures:
@@ -1461,33 +1461,33 @@ HETS 0.108.0's `GET /dg` serialises OWL axiom strings through Haskell's
 `show`, which emits a DECIMAL escape for every character above 127
 (`"Verdi\226\128\153s Requiem"` for `"Verdi’s Requiem"`). That is not JSON, so
 the whole development graph is unreadable for any library with one non-ASCII
-annotation. {func}`~unicode_fol_kit.hets.repair_haskell_json` recovers it —
+annotation. {func}`~unicode_logic_kit.hets.repair_haskell_json` recovers it —
 losslessly, because the emitter is known and enumerable — and
-{meth}`~unicode_fol_kit.hets.HetsClient.dg` applies it ONLY after `json.loads`
+{meth}`~unicode_logic_kit.hets.HetsClient.dg` applies it ONLY after `json.loads`
 has already failed, so a body the standard library accepts is never touched.
-{meth}`~unicode_fol_kit.hets.HetsClient.dg_raw` returns the body untouched.
+{meth}`~unicode_logic_kit.hets.HetsClient.dg_raw` returns the body untouched.
 
 The text `GET /theory` returns for a TPTP comorphism is not a TPTP problem
 either: HETS prefixes it with a DOL `logic TPTP.FOF` line and a CASL
 `%{ ... }%` signature block, neither of which is TPTP syntax.
-{func}`~unicode_fol_kit.hets.strip_hets_theory_header` splits the two and
-{meth}`~unicode_fol_kit.hets.HetsClient.theory_tptp` fetches it already
+{func}`~unicode_logic_kit.hets.strip_hets_theory_header` splits the two and
+{meth}`~unicode_logic_kit.hets.HetsClient.theory_tptp` fetches it already
 stripped; `parse_tptp` refuses the unstripped text by name rather than
 learning a comment form that would make it accept a CASL theory and answer
 with an empty formula list.
 
-{func}`~unicode_fol_kit.hets.hets_symbol_table` joins HETS' mangled TPTP
+{func}`~unicode_logic_kit.hets.hets_symbol_table` joins HETS' mangled TPTP
 symbols (`pred_https_u_u_uopenenergyplatform_uorg_uontology_uoeo_uOEO_00000072`)
 back onto the OWL entities, IRIs and `rdfs:label`s they came from, and
-{func}`~unicode_fol_kit.hets.untranslated_axioms` names the axioms a
+{func}`~unicode_logic_kit.hets.untranslated_axioms` names the axioms a
 translation dropped. Both are pure functions over a `/dg` dict and a TPTP
-string. {func}`~unicode_fol_kit.hets.owl_to_tptp` is the COMMAND-LINE route,
+string. {func}`~unicode_logic_kit.hets.owl_to_tptp` is the COMMAND-LINE route,
 and exists for one reason: `hets-server`'s lossy `-Y` switch, which has no
 REST equivalent. It runs the non-lossy translation first so a loss is always
 reported on the result rather than silent.
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.hets
+.. currentmodule:: unicode_logic_kit.hets
 
 .. autosummary::
    :nosignatures:
@@ -1519,11 +1519,11 @@ edge declares a **guarantee** (one of `GUARANTEES`, or none), the **side
 axioms** its image needs, and the **options** it accepts. A converted term is
 never a term alone: `TranslationResult` carries the axioms and the guarantee of
 the whole path, and they are separate premises of any question asked about the
-image, never part of it. {func}`~unicode_fol_kit.comorphism.weakest_guarantee`
+image, never part of it. {func}`~unicode_logic_kit.comorphism.weakest_guarantee`
 is what a composed path promises.
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.comorphism
+.. currentmodule:: unicode_logic_kit.comorphism
 
 .. autosummary::
    :nosignatures:
@@ -1537,15 +1537,15 @@ is what a composed path promises.
    weakest_guarantee
 ```
 
-`unicode_fol_kit.logic` is the typed surface over that graph. A
-{class}`~unicode_fol_kit.logic.Logic` is a callable value (`FOL`, `MSFOL`,
+`unicode_logic_kit.logic` is the typed surface over that graph. A
+{class}`~unicode_logic_kit.logic.Logic` is a callable value (`FOL`, `MSFOL`,
 `MODAL`, `QML`, `ALC`, `DRT`, `TEAM`, `ESO`, `FUZZY`, collected in `LOGICS`):
 `FOL(term)` wraps a bare term as a `Sentence` and `FOL(sentence)` converts one,
-with its side axioms. {class}`~unicode_fol_kit.Sentence` is exported at the top
+with its side axioms. {class}`~unicode_logic_kit.Sentence` is exported at the top
 level.
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit
+.. currentmodule:: unicode_logic_kit
 
 .. autosummary::
    :toctree: _autosummary
@@ -1555,7 +1555,7 @@ level.
 ```
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.logic
+.. currentmodule:: unicode_logic_kit.logic
 
 .. autosummary::
    :nosignatures:
@@ -1576,7 +1576,7 @@ level.
 ## Further HOL exports and deep embeddings
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.hol
+.. currentmodule:: unicode_logic_kit.hol
 
 .. autosummary::
    :toctree: _autosummary
@@ -1626,17 +1626,17 @@ level.
 ## Optional prover backends and modal tableaux
 
 A TPTP problem for a prover is built with the checked writers below —
-{func}`~unicode_fol_kit.atp.generate_tptp_problem_with_mapping` (classical
-`fof`), {func}`~unicode_fol_kit.atp.generate_tff_problem_with_mapping` (many-sorted
-TF0) and {func}`~unicode_fol_kit.generate_tff_arith_problem` (one numeric
+{func}`~unicode_logic_kit.atp.generate_tptp_problem_with_mapping` (classical
+`fof`), {func}`~unicode_logic_kit.atp.generate_tff_problem_with_mapping` (many-sorted
+TF0) and {func}`~unicode_logic_kit.generate_tff_arith_problem` (one numeric
 sort) — never by joining `Node.to_tptp()` strings, which cannot see that two
 formulas use one TPTP word for two symbols (a single `to_tptp()` call does check the
 one formula it renders). They refuse two legal names of one
 kind that fold together (a sort counts as the guard predicate of its name,
 and TF0 refuses a sort and a predicate that share a word), rename a
 function/constant that would share a word with a predicate, rewrite a name
-TPTP cannot spell, and hand back the {class}`~unicode_fol_kit.atp.TptpNameMap`
-that {func}`~unicode_fol_kit.atp.apply_reverse_tptp` uses to translate a
+TPTP cannot spell, and hand back the {class}`~unicode_logic_kit.atp.TptpNameMap`
+that {func}`~unicode_logic_kit.atp.apply_reverse_tptp` uses to translate a
 proof or a model back. A conclusion is optional: `conclusion=None` writes no
 `conjecture` line, for a satisfiability question. The `fof` and TF0 writers
 read a numeral as an uninterpreted constant, one per value (`1` and `1.0` are
@@ -1651,7 +1651,7 @@ automatic mode (`tff=None`) then writes the `fof` text instead. See "Building
 a TPTP problem for a prover" in {doc}`guide/classical-reasoning`.
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.atp
+.. currentmodule:: unicode_logic_kit.atp
 
 .. autosummary::
    :toctree: _autosummary
@@ -1706,7 +1706,7 @@ a TPTP problem for a prover" in {doc}`guide/classical-reasoning`.
 ## Repair internals and other fol-level types
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit.fol
+.. currentmodule:: unicode_logic_kit.fol
 
 .. autosummary::
    :toctree: _autosummary
@@ -1731,7 +1731,7 @@ docstring — the design decisions and the reasons behind them — and, recursiv
 its submodules.
 
 ```{eval-rst}
-.. currentmodule:: unicode_fol_kit
+.. currentmodule:: unicode_logic_kit
 
 .. autosummary::
    :toctree: _autosummary

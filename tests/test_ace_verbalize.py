@@ -15,17 +15,17 @@ from pathlib import Path
 
 import pytest
 
-from unicode_fol_kit.ace import (
+from unicode_logic_kit.ace import (
     ace_round_trip, ace_to_drs, ape_available, chem_ulex, drs_to_ace,
     formula_to_ace, map_ace_drs, parse_ape_drs,
 )
-from unicode_fol_kit.ace.chem_lexicon import (
+from unicode_logic_kit.ace.chem_lexicon import (
     CHEM_ADJECTIVES, CHEM_NOUNS, CHEM_UNSPEAKABLE, CHEM_VERBS, ace_kit_name,
 )
-from unicode_fol_kit.ace.verbalize import (
+from unicode_logic_kit.ace.verbalize import (
     AceVerbalizationError, _er_form, _s_form,
 )
-from unicode_fol_kit.drt import parse_drs
+from unicode_logic_kit.drt import parse_drs
 
 live = pytest.mark.skipif(not ape_available(),
                           reason="no APE binary reachable")
@@ -198,7 +198,7 @@ def test_what_no_probed_surface_carries_is_refused_by_name(box, fragment):
 # ---------------------------------------------------------------------------
 
 def test_a_formula_in_the_drs_image_becomes_ace():
-    from unicode_fol_kit import MSFLParser
+    from unicode_logic_kit import MSFLParser
     formula = MSFLParser().parse(
         "∀x1 ∀x2 ∀e1 (Farmer(x1) ∧ Donkey(x2) ∧ Own(e1, x1, x2)"
         " → ∃e2 Beat(e2, x1, x2))")
@@ -208,15 +208,15 @@ def test_a_formula_in_the_drs_image_becomes_ace():
 
 
 def test_a_counting_formula_becomes_ace_through_the_card_reading():
-    from unicode_fol_kit import MSFLParser
+    from unicode_logic_kit import MSFLParser
     formula = MSFLParser().parse(
         "∃g1 (∃≥3 p1 Part_of(p1, g1) ∧ ∀x1 (Part_of(x1, g1) → Man(x1)))")
     assert formula_to_ace(formula).text == "There are at least 3 mans X1."
 
 
 def test_formula_to_ace_refuses_in_two_named_stages():
-    from unicode_fol_kit import MSFLParser
-    from unicode_fol_kit.drt import FolToDrsError
+    from unicode_logic_kit import MSFLParser
+    from unicode_logic_kit.drt import FolToDrsError
 
     # Stage 1: outside the DRS image (modality).
     with pytest.raises(FolToDrsError, match="no classical DRS condition"):
@@ -232,7 +232,7 @@ def test_formula_to_ace_refuses_in_two_named_stages():
 # ---------------------------------------------------------------------------
 
 def test_the_chem_tables_tile_the_signature_exactly():
-    from unicode_fol_kit.chem.signature import CHEMLOG_SIGNATURE
+    from unicode_logic_kit.chem.signature import CHEMLOG_SIGNATURE
     covered = (set(CHEM_NOUNS) | set(CHEM_ADJECTIVES) | set(CHEM_VERBS)
                | set(CHEM_UNSPEAKABLE))
     assert covered == set(CHEMLOG_SIGNATURE.predicates)
@@ -299,16 +299,16 @@ def test_hand_built_boxes_round_trip(box):
 def test_a_formula_round_trips_through_ace():
     # formula → DRS → ACE → APE → DRS → formula, Z3-equivalent: the whole
     # chain the expressibility check promises.
-    from unicode_fol_kit import MSFLParser
-    from unicode_fol_kit.drt import fol_to_drs
-    from unicode_fol_kit.eval.equivalence import equivalent
+    from unicode_logic_kit import MSFLParser
+    from unicode_logic_kit.drt import fol_to_drs
+    from unicode_logic_kit.eval.equivalence import equivalent
 
     formula = MSFLParser().parse(
         "∀x1 ∀x2 ∀e1 (Farmer(x1) ∧ Donkey(x2) ∧ Own(e1, x1, x2)"
         " → ∃e2 Beat(e2, x1, x2))")
     trip = ace_round_trip(fol_to_drs(formula))
     assert trip.equivalent, trip.detail
-    from unicode_fol_kit.drt import drs_to_fol
+    from unicode_logic_kit.drt import drs_to_fol
     assert equivalent(formula, drs_to_fol(trip.back)).equivalent
 
 

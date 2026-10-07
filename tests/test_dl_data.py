@@ -34,13 +34,13 @@ import dataclasses
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.z3_arith import is_valid_arith
-from unicode_fol_kit.dl import datatypes as _dt
-from unicode_fol_kit.dl import tableau as _tableau
-from unicode_fol_kit.dl.translate import _collect_vocabulary
-from unicode_fol_kit.fol.nodes import (
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.z3_arith import is_valid_arith
+from unicode_logic_kit.dl import datatypes as _dt
+from unicode_logic_kit.dl import tableau as _tableau
+from unicode_logic_kit.dl.translate import _collect_vocabulary
+from unicode_logic_kit.fol.nodes import (
     And as FAnd, Atom, Constant, Implies, Not as FNot, Number, Quantifier, Variable,
 )
 
@@ -1127,7 +1127,7 @@ def test_the_vocabulary_walk_covers_every_concept_class():
     """A constructor added to ``dl.concepts`` and not to the walk would be
     silently ignored; every concept class must appear in the table above (the
     atom, the top and the bottom mention no role and are covered by the first)."""
-    import unicode_fol_kit.dl.concepts as concepts
+    import unicode_logic_kit.dl.concepts as concepts
     every = {cls for cls in vars(concepts).values()
              if isinstance(cls, type) and issubclass(cls, dl.Concept) and cls is not dl.Concept}
     covered = {type(concept) for concept, _ in _CONCEPT_WALK}

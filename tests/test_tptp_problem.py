@@ -25,16 +25,16 @@ falso quodlibet. It must now raise instead.
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import Atom, Constant, Function, Implies, Not, Quantifier, Variable
-from unicode_fol_kit.fol.tptp_input import parse_tptp_formula
-from unicode_fol_kit.atp._ascii_names import reverse_map_text
-from unicode_fol_kit.atp._tptp_problem import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import Atom, Constant, Function, Implies, Not, Quantifier, Variable
+from unicode_logic_kit.fol.tptp_input import parse_tptp_formula
+from unicode_logic_kit.atp._ascii_names import reverse_map_text
+from unicode_logic_kit.atp._tptp_problem import (
     apply_reverse_tptp, generate_tptp_problem, generate_tptp_problem_with_mapping,
 )
-from unicode_fol_kit.atp.vampire_entailment import _generate_vampire_input
-from unicode_fol_kit.atp.eprover_backend import _generate_tptp_problem as _eprover_generate
-from unicode_fol_kit.atp.twee_entailment import _generate_twee_input
+from unicode_logic_kit.atp.vampire_entailment import _generate_vampire_input
+from unicode_logic_kit.atp.eprover_backend import _generate_tptp_problem as _eprover_generate
+from unicode_logic_kit.atp.twee_entailment import _generate_twee_input
 
 # A stand-in argument. It is a constant: the fof writer refuses a free variable (a prover reads
 # one as a syntax error), so an unbound ``Variable("a")`` here would be refused before the

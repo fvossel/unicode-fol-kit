@@ -23,11 +23,11 @@ import random
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Iff, Implies, Not, Or, Quantifier, Variable, substitute)
-from unicode_fol_kit.semantics import manyvalued as mv
-from unicode_fol_kit.semantics import matrix as mx
+from unicode_logic_kit.semantics import manyvalued as mv
+from unicode_logic_kit.semantics import matrix as mx
 
 DOMAIN = {"a", "b"}
 DOMAIN_SEQUENCE = ("a", "b")

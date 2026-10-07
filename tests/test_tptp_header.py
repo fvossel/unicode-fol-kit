@@ -14,8 +14,8 @@ import dataclasses
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import Atom, Not, Or, Variable, Constant
-from unicode_fol_kit.fol.tptp_input import (
+from unicode_logic_kit.fol.nodes import Atom, Not, Or, Variable, Constant
+from unicode_logic_kit.fol.tptp_input import (
     parse_tptp,
     parse_tptp_formula,
     load_tptp,

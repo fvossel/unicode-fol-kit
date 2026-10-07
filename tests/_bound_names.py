@@ -8,7 +8,7 @@ compared as they are.
 """
 from dataclasses import fields, is_dataclass
 
-from unicode_fol_kit.fol.nodes import Node
+from unicode_logic_kit.fol.nodes import Node
 
 _BINDERS = ("Quantifier", "SortedQuantifier")
 

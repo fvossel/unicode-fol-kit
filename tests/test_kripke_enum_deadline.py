@@ -19,13 +19,13 @@ Three workloads, each far beyond any limit used here:
 
 import time
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import hybrid_down, kripke_enum
-from unicode_fol_kit.atp.kripke_enum import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import hybrid_down, kripke_enum
+from unicode_logic_kit.atp.kripke_enum import (
     KripkeEnumBackend, modal_enum_countermodel, modal_enum_search,
 )
-from unicode_fol_kit.atp.protocol import REFUTED, UNKNOWN, declared_options, get_backend
-from unicode_fol_kit.fol.nodes import And, Atom, Box, Diamond, Implies, Not, Or
+from unicode_logic_kit.atp.protocol import REFUTED, UNKNOWN, declared_options, get_backend
+from unicode_logic_kit.fol.nodes import And, Atom, Box, Diamond, Implies, Not, Or
 
 #: A call must end within its limit plus this much.
 SLACK = 5.0

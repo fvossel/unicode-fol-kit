@@ -2,21 +2,21 @@
 pipeline (the C26 closure) — checked against TWO independent routes at once,
 per the roadmap item's own test_oracle:
 
-1. :class:`~unicode_fol_kit.atp.clingo_backend.ClingoBackend` (a live
+1. :class:`~unicode_logic_kit.atp.clingo_backend.ClingoBackend` (a live
    solver, ``clingo`` 5.8.1 is installed) against
-   :func:`~unicode_fol_kit.semantics.modelfinder.find_countermodel` — the
+   :func:`~unicode_logic_kit.semantics.modelfinder.find_countermodel` — the
    kit's OWN from-scratch, brute-force, independent model finder, which is
    already Function-capable (``modelfinder._Signature.scan``'s ``Function``
    branch; ``modelfinder._interpretations``'s per-symbol enumeration
    includes function interpretations) — REFUTED-by-clingo must agree with
    "a countermodel exists"-by-modelfinder.
-2. The reconstructed :class:`~unicode_fol_kit.semantics.structures.FiniteStructure`'s
+2. The reconstructed :class:`~unicode_logic_kit.semantics.structures.FiniteStructure`'s
    function extension, evaluated back through
-   :func:`~unicode_fol_kit.semantics.model_eval.evaluate` (the actual
-   checker :func:`~unicode_fol_kit.atp.finite_domain.verify_model` already
+   :func:`~unicode_logic_kit.semantics.model_eval.evaluate` (the actual
+   checker :func:`~unicode_logic_kit.atp.finite_domain.verify_model` already
    ran internally), is cross-checked a THIRD way against
-   :func:`~unicode_fol_kit.semantics.tarski.satisfies` over an EQUIVALENT
-   :class:`~unicode_fol_kit.semantics.tarski.Structure` built from the same
+   :func:`~unicode_logic_kit.semantics.tarski.satisfies` over an EQUIVALENT
+   :class:`~unicode_logic_kit.semantics.tarski.Structure` built from the same
    extension data (:func:`_to_tarski_structure`) — two independently
    implemented evaluators over the same ground facts must agree.
 
@@ -33,7 +33,7 @@ size 6 (``6 ** 36``) would never finish. All three properties below turn out
 to already fail on a 2-element domain, so none of the three tests needs a
 larger one — see each test's own hand-derivation.
 
-:class:`~unicode_fol_kit.atp.minizinc_backend.MinizincBackend`'s OWN
+:class:`~unicode_logic_kit.atp.minizinc_backend.MinizincBackend`'s OWN
 Function-bearing ``decide()`` path is covered separately, offline (MiniZinc
 is not installed in this environment — see that module's own docstring), in
 ``tests/test_minizinc_backend.py``'s
@@ -47,14 +47,14 @@ import pytest
 
 clingo = pytest.importorskip("clingo")
 
-from unicode_fol_kit.fol.nodes import Variable, Constant, Function, Atom, Not, Quantifier
-from unicode_fol_kit.fol.signature import Signature
-from unicode_fol_kit.semantics import tarski
-from unicode_fol_kit.semantics.structures import FiniteStructure, structure_from_dict
-from unicode_fol_kit.semantics.model_eval import evaluate as evaluate_in_structure
-from unicode_fol_kit.semantics.modelfinder import find_countermodel
-from unicode_fol_kit.atp.clingo_backend import ClingoBackend
-from unicode_fol_kit.atp.protocol import REFUTED
+from unicode_logic_kit.fol.nodes import Variable, Constant, Function, Atom, Not, Quantifier
+from unicode_logic_kit.fol.signature import Signature
+from unicode_logic_kit.semantics import tarski
+from unicode_logic_kit.semantics.structures import FiniteStructure, structure_from_dict
+from unicode_logic_kit.semantics.model_eval import evaluate as evaluate_in_structure
+from unicode_logic_kit.semantics.modelfinder import find_countermodel
+from unicode_logic_kit.atp.clingo_backend import ClingoBackend
+from unicode_logic_kit.atp.protocol import REFUTED
 
 _backend = ClingoBackend()
 _MAX_SIZE = 3   # generous relative to every hand-derived minimal size (2) below
@@ -66,7 +66,7 @@ def _to_tarski_structure(fs: FiniteStructure, signature: Signature) -> tarski.St
     using ``signature`` to decide which ``(name, arity+1)`` extension keys
     are FUNCTIONS (converted to tarski's own ``{arg_tuple: result}`` dict
     convention) versus ordinary PREDICATES, exactly the distinction
-    :func:`~unicode_fol_kit.atp.finite_domain.structure_from_solution` uses
+    :func:`~unicode_logic_kit.atp.finite_domain.structure_from_solution` uses
     a :class:`Signature` to make. No new evaluation logic here — a data
     adapter between two independently implemented structure
     representations, so :func:`tarski.satisfies` can be run over the exact
@@ -90,7 +90,7 @@ def _assert_refuted_and_cross_checked(formula, premises, expected_min_size):
 
     1. :meth:`ClingoBackend.decide` REFUTES at the hand-derived minimal size,
        verified internally (``detail is None``).
-    2. :func:`~unicode_fol_kit.semantics.modelfinder.find_countermodel`
+    2. :func:`~unicode_logic_kit.semantics.modelfinder.find_countermodel`
        independently agrees a countermodel of the SAME question exists —
        route #1 (see the module docstring).
     3. The reconstructed structure re-evaluates every searched sentence to

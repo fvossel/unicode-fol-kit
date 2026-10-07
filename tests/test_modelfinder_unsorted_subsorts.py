@@ -15,10 +15,10 @@ import random
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.fol.nodes import And, Atom, Constant, Implies, Not, Or, subsort_axioms
-from unicode_fol_kit.fol.signature import Signature
-from unicode_fol_kit.semantics.modelfinder import (
+from unicode_logic_kit import api
+from unicode_logic_kit.fol.nodes import And, Atom, Constant, Implies, Not, Or, subsort_axioms
+from unicode_logic_kit.fol.signature import Signature
+from unicode_logic_kit.semantics.modelfinder import (
     find_countermodel, find_model, is_satisfiable_finite, is_valid_finite,
 )
 

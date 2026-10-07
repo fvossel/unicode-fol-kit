@@ -41,10 +41,10 @@ a tiny budget makes a backend answer "unknown", which several APIs report as
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit import api
-from unicode_fol_kit.dl import owl_reasoner as _owl_reasoner
-from unicode_fol_kit.fol.nodes import (
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit import api
+from unicode_logic_kit.dl import owl_reasoner as _owl_reasoner
+from unicode_logic_kit.fol.nodes import (
     Atom, Constant, Iff, Not as FNot, Quantifier, Variable)
 
 # Wide enough that a slow machine cannot turn an agreement into a
@@ -477,7 +477,7 @@ def test_the_anonymous_root_does_not_collide_with_an_individual_named_a():
 
 
 def test_the_root_is_named_apart_from_individuals_and_from_generated_nodes():
-    from unicode_fol_kit.dl.tableau import _ROOT_NAME, _Branch, _blocked
+    from unicode_logic_kit.dl.tableau import _ROOT_NAME, _Branch, _blocked
 
     assert _ROOT_NAME == "_root"
     assert _ROOT_NAME != "a"
@@ -543,7 +543,7 @@ def test_a_named_node_may_not_block_a_generated_one():
 def test_only_a_generated_node_is_an_eligible_blocker():
     # The condition itself, at the level it is written: _blocked never reports
     # a generated node blocked by a NAMED one, however large that node's label.
-    from unicode_fol_kit.dl.tableau import _Branch, _blocked
+    from unicode_logic_kit.dl.tableau import _Branch, _blocked
 
     branch = _Branch()
     branch.add_node("alice")                      # a named ABox individual
@@ -589,7 +589,7 @@ def test_a_value_fillers_individual_is_in_the_formula_but_not_in_individuals():
     is empty for a value restriction, so a guard reading it would hand the
     read-back check a CamelCase name the documented vocabulary limit covers.
     """
-    from unicode_fol_kit.dl.tableau import _abox_individual_names
+    from unicode_logic_kit.dl.tableau import _abox_individual_names
 
     tbox = dl.TBox().add(C, dl.HasValue("r", "a"))
     abox = dl.ABox().assert_concept("b", C)

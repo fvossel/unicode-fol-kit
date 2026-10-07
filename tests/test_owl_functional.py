@@ -1,5 +1,5 @@
 """Tests for the OWL 2 Functional-Style Syntax reader/writer, ALCHQ fragment
-(unicode_fol_kit.dl.owl_functional).
+(unicode_logic_kit.dl.owl_functional).
 
 Round-trip is the primary correctness property, exactly as in
 tests/test_owl_manchester.py: `parse_owl_functional_class_expression(
@@ -26,15 +26,15 @@ tests/test_dl_route_agreement.py).
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit.atp.z3_models import is_valid
-from unicode_fol_kit.dl.owl_functional import (
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit.atp.z3_models import is_valid
+from unicode_logic_kit.dl.owl_functional import (
     parse_owl_functional, to_owl_functional,
     parse_owl_functional_class_expression, to_owl_functional_class_expression,
     OwlFunctionalSyntaxError,
 )
-from unicode_fol_kit.dl.owl_manchester import parse_manchester, parse_manchester_axiom
-from unicode_fol_kit.dl.translate import rbox_to_fol
+from unicode_logic_kit.dl.owl_manchester import parse_manchester, parse_manchester_axiom
+from unicode_logic_kit.dl.translate import rbox_to_fol
 
 A, B, C = dl.Atomic("A"), dl.Atomic("B"), dl.Atomic("C")
 

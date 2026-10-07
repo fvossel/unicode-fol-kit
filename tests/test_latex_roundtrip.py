@@ -4,7 +4,7 @@ for EVERY operator the toolkit knows how to render to LaTeX.
 Three tiers of coverage:
 
 * REGISTRY-DRIVEN completeness pin — every ``OperatorSpec`` registered in
-  ``unicode_fol_kit.fol._fol_nodes.OPERATORS`` (the table ``to_latex`` /
+  ``unicode_logic_kit.fol._fol_nodes.OPERATORS`` (the table ``to_latex`` /
   ``to_unicode_str`` read to render a connective) must have an entry in
   ``_OPERATOR_BATTERY`` below. If a new operator is registered without adding
   a battery entry, ``test_battery_covers_every_registered_operator`` fails —
@@ -25,10 +25,10 @@ formulas; this file's job is exhaustive per-operator coverage.
 
 import pytest
 
-from unicode_fol_kit.fol._fol_nodes import OPERATORS
-from unicode_fol_kit.fol.latex_input import latex_to_unicode, parse_latex
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import Atom, Function, Variable
+from unicode_logic_kit.fol._fol_nodes import OPERATORS
+from unicode_logic_kit.fol.latex_input import latex_to_unicode, parse_latex
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import Atom, Function, Variable
 
 
 # ---------------------------------------------------------------------------
@@ -243,7 +243,7 @@ class TestSingleLetterFunctionRoundTrip:
         # VARIABLE "(" termlist ")" alternative (test_msfl_parser.py pins the
         # same fact directly against MSFLParser; repeated here as a guard
         # specific to the grammar patch in this module).
-        from unicode_fol_kit.fol.nodes import Application, Lambda, LambdaVar
+        from unicode_logic_kit.fol.nodes import Application, Lambda, LambdaVar
         result = MSFLParser().parse("(λx. P(x))(a)")
         assert isinstance(result, Application)
         assert result.func == Lambda(LambdaVar("x"), Atom("P", [LambdaVar("x")]))

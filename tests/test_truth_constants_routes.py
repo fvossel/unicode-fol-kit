@@ -21,9 +21,9 @@ world), and the three-valued matrices (the top and the bottom value).
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import Atom, And, Not, Implies
-from unicode_fol_kit.api import prove
-from unicode_fol_kit.atp.protocol import _REGISTRY
+from unicode_logic_kit.fol.nodes import Atom, And, Not, Implies
+from unicode_logic_kit.api import prove
+from unicode_logic_kit.atp.protocol import _REGISTRY
 
 TRUE = Atom("$true", ())
 FALSE = Atom("$false", ())
@@ -56,34 +56,34 @@ def _implication(premises, goal):
 # ---------------------------------------------------------------------------
 
 def _classical_truth_table(premises, goal):
-    from unicode_fol_kit.semantics.truthtable import is_tautology
+    from unicode_logic_kit.semantics.truthtable import is_tautology
     return is_tautology(_implication(premises, goal), "classical")
 
 
 def _z3(premises, goal):
-    from unicode_fol_kit.atp.z3_models import is_valid
+    from unicode_logic_kit.atp.z3_models import is_valid
     return is_valid(_implication(premises, goal))
 
 
 def _tableau(premises, goal):
-    from unicode_fol_kit.atp.tableau import prove_tableau
+    from unicode_logic_kit.atp.tableau import prove_tableau
     return prove_tableau(premises, goal)
 
 
 def _resolution(premises, goal):
-    from unicode_fol_kit.atp.resolution import prove as resolution_prove
+    from unicode_logic_kit.atp.resolution import prove as resolution_prove
     return resolution_prove(premises, goal)
 
 
 def _fitch_search(premises, goal):
-    from unicode_fol_kit.atp.fitch_search import fitch_prove
+    from unicode_logic_kit.atp.fitch_search import fitch_prove
     return fitch_prove(premises, goal)
 
 
 def _fitch_search_checked(premises, goal):
     """The proof the search finds must pass the independent Fitch checker."""
-    from unicode_fol_kit.atp.fitch_search import find_fitch_proof
-    from unicode_fol_kit.atp.fitch import verify_proof
+    from unicode_logic_kit.atp.fitch_search import find_fitch_proof
+    from unicode_logic_kit.atp.fitch import verify_proof
     proof = find_fitch_proof(premises, goal)
     if proof is None:
         return False
@@ -93,77 +93,77 @@ def _fitch_search_checked(premises, goal):
 
 
 def _finite_model_search(premises, goal):
-    from unicode_fol_kit.semantics.modelfinder import find_countermodel
+    from unicode_logic_kit.semantics.modelfinder import find_countermodel
     return find_countermodel(premises, goal) is None
 
 
 def _second_order_finite(premises, goal):
-    from unicode_fol_kit.semantics.secondorder import so_is_valid_finite
+    from unicode_logic_kit.semantics.secondorder import so_is_valid_finite
     return so_is_valid_finite(_implication(premises, goal))
 
 
 def _lj_prove(premises, goal):
-    from unicode_fol_kit.atp.lj import int_prove
+    from unicode_logic_kit.atp.lj import int_prove
     return int_prove(list(premises), goal)
 
 
 def _lj_decide(premises, goal):
-    from unicode_fol_kit.atp.lj import int_decide
+    from unicode_logic_kit.atp.lj import int_decide
     return int_decide(_implication(premises, goal))
 
 
 def _kripke_intuitionistic(premises, goal):
-    from unicode_fol_kit.semantics.intuitionistic import int_valid
+    from unicode_logic_kit.semantics.intuitionistic import int_valid
     return int_valid(_implication(premises, goal))
 
 
 def _free_logic(premises, goal):
-    from unicode_fol_kit.semantics.free_logic import free_is_valid
+    from unicode_logic_kit.semantics.free_logic import free_is_valid
     return free_is_valid(_implication(premises, goal))
 
 
 def _conditional(premises, goal):
-    from unicode_fol_kit.semantics.conditional import cf_valid
+    from unicode_logic_kit.semantics.conditional import cf_valid
     return cf_valid(_implication(premises, goal))
 
 
 def _modal_prove(premises, goal):
-    from unicode_fol_kit.atp.modal_tableau import modal_prove
+    from unicode_logic_kit.atp.modal_tableau import modal_prove
     return modal_prove(premises, goal)
 
 
 def _modal_valid(premises, goal):
-    from unicode_fol_kit.atp.modal_tableau import is_modal_valid
+    from unicode_logic_kit.atp.modal_tableau import is_modal_valid
     return is_modal_valid(_implication(premises, goal))
 
 
 def _ltl_valid(premises, goal):
-    from unicode_fol_kit.atp.ltl_tableau import ltl_valid
+    from unicode_logic_kit.atp.ltl_tableau import ltl_valid
     return ltl_valid(goal, premises)
 
 
 def _k3_entails(premises, goal):
-    from unicode_fol_kit.semantics.manyvalued import entails
+    from unicode_logic_kit.semantics.manyvalued import entails
     return entails(premises, goal, "K3")
 
 
 def _lp_entails(premises, goal):
-    from unicode_fol_kit.semantics.manyvalued import entails
+    from unicode_logic_kit.semantics.manyvalued import entails
     return entails(premises, goal, "LP")
 
 
 def _k3_matrix(premises, goal):
-    from unicode_fol_kit.semantics.matrix import matrix_entails, K3_MATRIX
+    from unicode_logic_kit.semantics.matrix import matrix_entails, K3_MATRIX
     return matrix_entails(premises, goal, K3_MATRIX)
 
 
 def _lp_matrix(premises, goal):
-    from unicode_fol_kit.semantics.matrix import matrix_entails, LP_MATRIX
+    from unicode_logic_kit.semantics.matrix import matrix_entails, LP_MATRIX
     return matrix_entails(premises, goal, LP_MATRIX)
 
 
 def _fde_matrix(premises, goal):
-    from unicode_fol_kit.semantics.matrix import matrix_entails, FDE_MATRIX
+    from unicode_logic_kit.semantics.matrix import matrix_entails, FDE_MATRIX
     return matrix_entails(premises, goal, FDE_MATRIX)
 
 

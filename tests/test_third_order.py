@@ -12,15 +12,15 @@ each argument slot holds because the surface syntax does not say.
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     Atom, Lambda, LambdaVar, Node, PredicateTerm, SecondOrderQuantifier,
     analyse_signatures, MixedSlotError,
 )
-from unicode_fol_kit.fol._fol_nodes import build_grammar, parser_ops_for_mode
-from unicode_fol_kit.fol._ho_nodes import INDIVIDUAL, has_property_argument
-from unicode_fol_kit.fol._so_nodes import ConflictingArityError
-from unicode_fol_kit.fol.naming import NamingError, ParsingError
+from unicode_logic_kit.fol._fol_nodes import build_grammar, parser_ops_for_mode
+from unicode_logic_kit.fol._ho_nodes import INDIVIDUAL, has_property_argument
+from unicode_logic_kit.fol._so_nodes import ConflictingArityError
+from unicode_logic_kit.fol.naming import NamingError, ParsingError
 
 TO = MSFLParser(third_order=True)
 TOM = MSFLParser(third_order=True, modal=True)
@@ -236,7 +236,7 @@ def test_parse_any_reaches_third_order_only_when_nothing_narrower_does(text, dia
     newly accepts are the ones with a predicate really standing in an argument
     slot — nothing previously detected as `fol`/`modal`/`second_order` moves.
     """
-    from unicode_fol_kit.api import parse_any
+    from unicode_logic_kit.api import parse_any
     result = parse_any(text)
     assert result.ok and result.dialect == dialect
 
@@ -251,7 +251,7 @@ def test_the_modal_third_order_mode_is_deliberately_off_the_ladder():
     machinery depends on those dialects agreeing, so the mode is reached
     explicitly instead of by detection.
     """
-    from unicode_fol_kit.api import parse_any, _UNICODE_MODES
+    from unicode_logic_kit.api import parse_any, _UNICODE_MODES
 
     assert "third_order" in dict(_UNICODE_MODES)
     assert "third_order_modal" not in dict(_UNICODE_MODES)

@@ -1,4 +1,4 @@
-"""The wall-clock limit that the in-house searches share (``unicode_fol_kit._deadline``).
+"""The wall-clock limit that the in-house searches share (``unicode_logic_kit._deadline``).
 
 A search turns its limit in milliseconds into one instant of ``time.perf_counter()`` when the
 call starts (:func:`instant`), asks whether it has passed (:func:`passed`) and how much is left
@@ -15,7 +15,7 @@ import time
 
 import pytest
 
-from unicode_fol_kit import _deadline
+from unicode_logic_kit import _deadline
 
 #: A call must end within its limit plus this much (the limits below are a few hundred
 #: milliseconds, and the machine may be busy).

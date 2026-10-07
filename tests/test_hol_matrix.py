@@ -1,8 +1,8 @@
-"""Tests for the generic finite-matrix -> HOL export (unicode_fol_kit.hol.manyvalued).
+"""Tests for the generic finite-matrix -> HOL export (unicode_logic_kit.hol.manyvalued).
 
 Covers the functions that generalise the many-valued THF/Isabelle export beyond
 the hardcoded K3/LP pair to ANY finite ``TruthMatrix``
-(:mod:`unicode_fol_kit.semantics.matrix`): :func:`to_thf_matrix`,
+(:mod:`unicode_logic_kit.semantics.matrix`): :func:`to_thf_matrix`,
 :func:`to_isabelle_matrix`, :func:`to_thf_matrix_entailment`,
 :func:`to_isabelle_matrix_entailment`. Three matrices are exercised:
 
@@ -20,8 +20,8 @@ The strategy mirrors test_hol_manyvalued.py: (1) the emitted THF's ground
 equations, extracted straight from the text by regex, must equal the matrix's
 own tables cell-for-cell; (2) validity/entailment decided *purely from the
 emitted text* must agree with the toolkit's own decision procedure
-(:func:`unicode_fol_kit.semantics.matrix.matrix_is_valid` /
-:func:`~unicode_fol_kit.semantics.matrix.matrix_entails`) on a hand-checked
+(:func:`unicode_logic_kit.semantics.matrix.matrix_is_valid` /
+:func:`~unicode_logic_kit.semantics.matrix.matrix_entails`) on a hand-checked
 battery; (3) structural well-formedness (declarations, distinctness/
 exhaustiveness, designated set, conjecture/lemma shape); (4) the rejection
 surface (propositional-only, and a connective the matrix has no table for).
@@ -31,12 +31,12 @@ from itertools import product
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol import nodes as N
-from unicode_fol_kit.semantics.matrix import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol import nodes as N
+from unicode_logic_kit.semantics.matrix import (
     TruthMatrix, matrix_is_valid, matrix_entails, K3_MATRIX, LP_MATRIX, FDE_MATRIX,
 )
-from unicode_fol_kit.hol.manyvalued import (
+from unicode_logic_kit.hol.manyvalued import (
     to_thf_matrix, to_isabelle_matrix,
     to_thf_matrix_entailment, to_isabelle_matrix_entailment,
 )
@@ -479,7 +479,7 @@ def test_default_connective_names_do_not_shadow_hol_conj_disj():
 # 9. Optional live check: build one FDE theory with a real Isabelle install.
 # ===========================================================================
 try:
-    from unicode_fol_kit.hol.isabelle_runner import isabelle_available, check_theory
+    from unicode_logic_kit.hol.isabelle_runner import isabelle_available, check_theory
     _HAVE_ISABELLE = isabelle_available()
 except Exception:   # pragma: no cover - isabelle_runner should always import
     _HAVE_ISABELLE = False

@@ -5,7 +5,7 @@
 Second-order logic binds predicate variables, but a bound predicate is still only ever *applied* — `∀P (P(x) ∨ ¬P(x))`. Third-order logic lets a predicate **take a property as an argument**: `Positive(G)`, `Essence(G, x)`, `Positive(λx. ¬G(x))`. That is a change to the argument layer, not another binder, which is why no amount of extra quantification gets you there.
 
 ```python
-from unicode_fol_kit import MSFLParser
+from unicode_logic_kit import MSFLParser
 
 p = MSFLParser(third_order=True).parse
 
@@ -33,7 +33,7 @@ The two third-order modes are their base modes over a widened argument layer: `t
 The surface syntax says nothing about argument types, so `analyse_signatures` works them out — **across a whole theory**, because that is the scope on which the answer is determined:
 
 ```python
-from unicode_fol_kit import analyse_signatures
+from unicode_logic_kit import analyse_signatures
 
 analyse_signatures([p("Pos(G)")]).slots
 # → {'Pos': (('p', 1),), 'G': ('i',)}    ... but arity 1 was a DEFAULT
@@ -54,10 +54,10 @@ p("Loves(x, y) ∧ Loves(x, G)")
 # and for a predicate; a slot holds one or the other, not both.
 ```
 
-In `Meta(Pos) ∧ Pos(G)`, `Pos` takes a property, so `Meta` would be a predicate of predicates of properties (fourth order). A slot holds an individual or a property of individuals, `('p', k)`, so that typing cannot be stated and is refused instead of being read as if `Pos` were a property of individuals. `NestedPropertySlotError` is importable, like `MixedSlotError`, from `unicode_fol_kit` and `unicode_fol_kit.fol`; all three errors are `ParsingError`s.
+In `Meta(Pos) ∧ Pos(G)`, `Pos` takes a property, so `Meta` would be a predicate of predicates of properties (fourth order). A slot holds an individual or a property of individuals, `('p', k)`, so that typing cannot be stated and is refused instead of being read as if `Pos` were a property of individuals. `NestedPropertySlotError` is importable, like `MixedSlotError`, from `unicode_logic_kit` and `unicode_logic_kit.fol`; all three errors are `ParsingError`s.
 
 ```python
-from unicode_fol_kit import NestedPropertySlotError
+from unicode_logic_kit import NestedPropertySlotError
 
 p("Meta(Pos) ∧ Pos(G)")
 # raises NestedPropertySlotError: TYPE_ERROR: 'Meta' takes the predicate 'Pos' as a property in argument
@@ -81,7 +81,7 @@ Essence   : (i ⇒ bool) ⇒ i ⇒ bool      a property and an individual
 ```
 
 ```python
-from unicode_fol_kit import to_isabelle_to, to_thf_to
+from unicode_logic_kit import to_isabelle_to, to_thf_to
 
 print(to_isabelle_to(p("∀P (Pos(P) → P(a))"), assumptions=[p("Pos(G)"), p("G(a)")]))
 print(to_thf_to(p("∀P (Pos(P) → P(a))")))
@@ -109,7 +109,7 @@ i ⇒ sigma               properties
 ```
 
 ```python
-from unicode_fol_kit import isabelle_ho_modal_theory, HoAxiom, HoGoal
+from unicode_logic_kit import isabelle_ho_modal_theory, HoAxiom, HoGoal
 
 theory = isabelle_ho_modal_theory(
     "Demo",
@@ -124,7 +124,7 @@ The lifted vocabulary is emitted as Isabelle `abbreviation`s, not `definition`s,
 Frame systems come from the shared registry (`fol.frames`), so `"S5"` means here what it means everywhere else in the kit — including `GL`, `S4.1` and `Grz`, whose condition (Löb / McKinsey / Grzegorczyk) is not first-order-definable over `R`: those are stated as schemas over **propositions** rather than as conditions on `R`, exactly as `hol.isabelle_modal` states them at first order:
 
 ```python
-from unicode_fol_kit import isabelle_ho_modal_theory, HoGoal
+from unicode_logic_kit import isabelle_ho_modal_theory, HoGoal
 
 theory = isabelle_ho_modal_theory(
     "GL", (), [HoGoal("loeb", tom("□(□P→P)→□P"), proof="using R_loeb by blast")],
@@ -168,7 +168,7 @@ Faithfulness to the domain regime is checked against the first-order embedding's
 `hol.goedel` is the machinery's proving ground, and the axioms are written in the kit's own syntax:
 
 ```python
-from unicode_fol_kit.hol.goedel import axiom_texts, goedel_theory, check_variant
+from unicode_logic_kit.hol.goedel import axiom_texts, goedel_theory, check_variant
 
 axiom_texts("scott")["A1"]   # → '∀P (Pos(λx. ¬P(x)) ↔ ¬Pos(P))'
 print(goedel_theory("scott"))
@@ -197,8 +197,8 @@ The Isar proofs are written out by hand and shipped as text; the kit emits the t
 `semantics.thirdorder` is the third-order counterpart of `satisfies_so`, and the difference is that arity is no longer enough to say what a predicate *is*: `Positive` and `G` can both have arity 1 and mean entirely different things, because `G`'s slot holds an individual and `Positive`'s holds a property. So the evaluator enumerates over each bound symbol's **signature**, which `analyse_signatures` supplies.
 
 ```python
-from unicode_fol_kit import holds_to
-from unicode_fol_kit.semantics import Structure
+from unicode_logic_kit import holds_to
+from unicode_logic_kit.semantics import Structure
 
 G = frozenset({(0,)})                    # the property "is 0"
 S = Structure((0, 1), predicates={("G", 1): {(0,)},

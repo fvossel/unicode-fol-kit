@@ -4,10 +4,10 @@ import math
 
 import pytest
 
-from unicode_fol_kit.semantics.fuzzy import evaluate
-from unicode_fol_kit.semantics import evaluate as evaluate_pkg
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.semantics.fuzzy import evaluate
+from unicode_logic_kit.semantics import evaluate as evaluate_pkg
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     Atom, Variable, Constant, Number, Function, SortedConstant,
     And, Or, Not, Implies, Iff, Xor,
     LukNegation, WeakConjunction,

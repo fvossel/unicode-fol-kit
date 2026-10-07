@@ -33,8 +33,8 @@ import sys
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit.dl import tableau
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit.dl import tableau
 
 HASH_SEEDS = (0, 1, 2, 3, 4)
 
@@ -43,8 +43,8 @@ import json
 import random
 import sys
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit.dl import tableau as T
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit.dl import tableau as T
 
 spec = json.loads(sys.argv[1])
 

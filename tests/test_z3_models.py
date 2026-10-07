@@ -2,9 +2,9 @@
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.atp import is_satisfiable, is_valid, get_model, formulas_are_equivalent
-from unicode_fol_kit.fol._fol_nodes import Not
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.atp import is_satisfiable, is_valid, get_model, formulas_are_equivalent
+from unicode_logic_kit.fol._fol_nodes import Not
 
 FOL = MSFLParser()
 

@@ -35,7 +35,7 @@ Three things hold across the whole kit:
 | Exact probability bounds / query | `prob.entailment_bounds` (Nilsson), `prob.query` (distribution semantics) ({doc}`probabilistic`) | `Fraction` interval / `Fraction` | exact, no sampling; bounded by atom / choice-fact count |
 | Decide modal validity with a real prover (Isabelle installed) | `isabelle_decide_modal` | `ModalVerdict` (valid / invalid / unknown) | sound (kernel-checked proof or genuine nitpick countermodel); incomplete |
 | Fuzzy degree or decision (Łukasiewicz / Gödel / product) | `fuzzy_evaluate(…, tnorm=)`; `fuzzy_is_valid(…, tnorm=)`, `fuzzy_is_satisfiable`, `fuzzy_get_model` | degree / bool | real-arithmetic decision via Z3; quantifiers grounded over a finite domain |
-| Description-logic concept reasoning (ALC) | `concept_satisfiable`, `subsumes`, `equivalent`, `abox_consistent` (`unicode_fol_kit.dl`) | bool | sound & complete; tableau with TBox internalisation and blocking |
+| Description-logic concept reasoning (ALC) | `concept_satisfiable`, `subsumes`, `equivalent`, `abox_consistent` (`unicode_logic_kit.dl`) | bool | sound & complete; tableau with TBox internalisation and blocking |
 | Read a formula back as English | `to_english` | str | readability aid, not a parse inverse |
 | Check / canonicalize a formula before reasoning | `validate_text`, `is_wellformed`, `formulas_are_equivalent`, `canonicalize` | report / bool / Node | static checks; equivalence via Z3 |
 | Import a problem from another format | `parse_tptp`, `parse_prover9`, `parse_smtlib`, `parse_latex` | Node(s) | round-trips into the same AST |
@@ -45,9 +45,9 @@ Three things hold across the whole kit:
 One runnable example per question above, in reading order. They share these imports — later recipes assume `parse` and the helpers are already defined:
 
 ```python
-from unicode_fol_kit import *
-from unicode_fol_kit import is_modal_valid, modal_decide, modal_countermodel
-import unicode_fol_kit.dl as dl
+from unicode_logic_kit import *
+from unicode_logic_kit import is_modal_valid, modal_decide, modal_countermodel
+import unicode_logic_kit.dl as dl
 
 parse = MSFLParser().parse        # classical FOL
 ```
@@ -132,7 +132,7 @@ is_valid_fitch(parse("P → P"))   # → True
 `sequent` / `derive` / `axiom` build a derivation tree; `check_sequent_proof` verifies it (classical **LK**, reaching the second-order fragment), `check_lj_proof` verifies the single-succedent **LJ** restriction (intuitionistic).
 
 ```python
-from unicode_fol_kit import sequent, derive, axiom
+from unicode_logic_kit import sequent, derive, axiom
 x, c = Variable("x"), Constant("c")
 Px = lambda t: Atom("P", [t])
 
@@ -150,7 +150,7 @@ check_lj_proof(lj)        # → True   (P → ¬¬P is intuitionistically valid)
 
 ### I want to … find a (counter)model by finite search
 
-`find_model` returns a `Structure` satisfying a theory; `find_countermodel` satisfies the premises but refutes the conclusion; `is_valid_finite` / `is_satisfiable_finite` are the booleans. The search is bounded by `max_size` and, when `find_model` / `find_countermodel` are given `timeout=` (milliseconds), by the clock; `None` means "found nothing in the time or the bounds". `search_model` / `search_countermodel` (in `unicode_fol_kit.semantics.modelfinder`) return a `ModelSearch` whose `timed_out` field tells a deadline from an exhausted bound. The booleans take no `timeout`.
+`find_model` returns a `Structure` satisfying a theory; `find_countermodel` satisfies the premises but refutes the conclusion; `is_valid_finite` / `is_satisfiable_finite` are the booleans. The search is bounded by `max_size` and, when `find_model` / `find_countermodel` are given `timeout=` (milliseconds), by the clock; `None` means "found nothing in the time or the bounds". `search_model` / `search_countermodel` (in `unicode_logic_kit.semantics.modelfinder`) return a `ModelSearch` whose `timed_out` field tells a deadline from an exhausted bound. The booleans take no `timeout`.
 
 ```python
 find_model([parse("∃x (P(x) ∧ ¬Q(x))")]) is not None        # → True
@@ -160,7 +160,7 @@ cm is not None                                              # → True
 
 is_valid_finite(parse("∀x P(x) → P(tom)"))                  # → True   (no finite countermodel)
 
-from unicode_fol_kit.semantics.modelfinder import search_model
+from unicode_logic_kit.semantics.modelfinder import search_model
 search_model([parse("P(tom) ∧ ¬P(tom)")], max_size=3).timed_out   # → False  (no model exists: the bounds ran out, not the clock)
 search_model([parse("P(tom)")], timeout=0).timed_out              # → True   (no time at all: stopped before the first candidate)
 ```
@@ -217,7 +217,7 @@ int_countermodel(parse("¬¬P → P")) is not None   # → True  (DNE fails — 
 `api.prove(..., logic=...)` routes to one of five per-logic backends (`atp.logic_backends`), each honoring its own logic's soundness/completeness boundary rather than sharing one shape: intuitionistic and relevant reuse the plain classical AST and need `logic=` given explicitly (nothing marks them syntactically); Lambek, ILL, and hybrid have their own unambiguous node types, so `logic="auto"` (the default) finds them on its own. The Lambek and ILL backends read only the connectives of their own calculus, over atoms: a quantifier, a count, a cardinality, a sorted constant, an equality atom or a node of another logic is refused by name, and the answer is `unknown`, never a refutation (the verdict's `detail` says `unsupported` and names the node and the connectives the calculus has). The Lambek backend answers the same for an empty premise list, because its calculus has no sequent with an empty antecedent. Both give `unknown` when `timeout=` runs out, and the detail says `timeout`. The hybrid backend takes `frame=`, `systems=` and `temporal_closure=` as `hybrid_is_valid` does.
 
 ```python
-from unicode_fol_kit import api, MSFLParser, Under
+from unicode_logic_kit import api, MSFLParser, Under
 
 lam = MSFLParser(lambek=True).parse
 A, B = lam("A"), lam("B")
@@ -261,7 +261,7 @@ fuzzy_is_valid(fp("P → P"), tnorm="lukasiewicz")   # → True
 
 ### I want to … reason about ALC concepts / an ABox
 
-Use `unicode_fol_kit.dl`. Build concepts with `dl.Atomic` / `dl.And` / `dl.Exists` / …, axioms with `dl.TBox().add(...)`, facts with `dl.ABox()`. Then `dl.subsumes` / `dl.concept_satisfiable` / `dl.equivalent` / `dl.abox_consistent`.
+Use `unicode_logic_kit.dl`. Build concepts with `dl.Atomic` / `dl.And` / `dl.Exists` / …, axioms with `dl.TBox().add(...)`, facts with `dl.ABox()`. Then `dl.subsumes` / `dl.concept_satisfiable` / `dl.equivalent` / `dl.abox_consistent`.
 
 ```python
 t = dl.TBox()
@@ -310,20 +310,20 @@ is_valid_resolution(Implies(psi, parse("P(a) → Q(a)")))   # → True
 | Second-order | `second_order=True` | ∀P ∃P over predicate vars | `satisfies_so()` / `holds()` | `satisfies_so` on finite models; `so_is_valid_finite` / `so_find_model` (bounded search); LK (`∀²`/`∃²`). Rejects `to_z3`/`to_prover9`/`to_tptp` |
 | Many-sorted second-order | `second_order=True, many_sorted=True` | ∀P ∃P (unsorted) over sorted `∀x:S`/`c:S` individuals | `satisfies_so()` | `satisfies_so` on finite (sorted) models |
 | Intuitionistic | `MSFLParser()` + intuitionistic tools | classical syntax | `IntKripkeModel.forces()` | `int_valid` / `int_countermodel` (decidable prop.; bounded first-order search); LJ (`check_lj_proof`) |
-| Description logic ALC | `unicode_fol_kit.dl` | ⊤ ⊥, ¬ ⊓ ⊔, ∃r.C ∀r.C | concept/ABox interpretations | `concept_satisfiable` / `subsumes` / `equivalent` / `abox_consistent` (tableau) |
+| Description logic ALC | `unicode_logic_kit.dl` | ⊤ ⊥, ¬ ⊓ ⊔, ∃r.C ∀r.C | concept/ABox interpretations | `concept_satisfiable` / `subsumes` / `equivalent` / `abox_consistent` (tableau) |
 | Free / dynamic-epistemic / counterfactual / circumscriptive | `semantics.free_logic`, `semantics.dynamic_epistemic`, `semantics.conditional`, `semantics.nonmonotonic` | logic-specific | per-module model classes | free-logic evaluation, public-announcement (PAL) updates, Lewis-sphere counterfactuals, circumscriptive non-monotonic entailment |
 
-Every non-fuzzy logic above also has a **higher-order exporter** in `unicode_fol_kit.hol` — a Benzmüller-style shallow embedding emitted as an Isabelle/HOL theory or a TPTP THF problem for an external prover (Leo-III / Satallax / Sledgehammer) — and, with a local Isabelle installed, `isabelle_decide_modal` actually *runs* it to decide modal validity.
+Every non-fuzzy logic above also has a **higher-order exporter** in `unicode_logic_kit.hol` — a Benzmüller-style shallow embedding emitted as an Isabelle/HOL theory or a TPTP THF problem for an external prover (Leo-III / Satallax / Sledgehammer) — and, with a local Isabelle installed, `isabelle_decide_modal` actually *runs* it to decide modal validity.
 
 ### Recipes for the peripheral logics
 
-The four small evaluators each build an AST from `unicode_fol_kit.fol.nodes` and reason over an explicit, hand-built model. See {doc}`nonclassical` for the full treatment; these are the one-line "is this the tool I want?" probes.
+The four small evaluators each build an AST from `unicode_logic_kit.fol.nodes` and reason over an explicit, hand-built model. See {doc}`nonclassical` for the full treatment; these are the one-line "is this the tool I want?" probes.
 
 **Free logic** — universal instantiation fails when a constant is non-denoting:
 
 ```python
-from unicode_fol_kit.fol.nodes import Atom, Implies, Quantifier, Variable, Constant
-from unicode_fol_kit.semantics.free_logic import FreeModel, free_holds
+from unicode_logic_kit.fol.nodes import Atom, Implies, Quantifier, Variable, Constant
+from unicode_logic_kit.semantics.free_logic import FreeModel, free_holds
 
 xv, cc = Variable("x"), Constant("c")
 all_P = Quantifier("∀", xv, Atom("P", [xv]))
@@ -337,8 +337,8 @@ free_holds(Implies(all_P, Atom("P", [cc])), m)    # → False  (UI invalid: c is
 **Public-announcement (dynamic epistemic) logic** — knowledge changes after a truthful announcement:
 
 ```python
-from unicode_fol_kit.fol.nodes import Knows
-from unicode_fol_kit.semantics.dynamic_epistemic import announce, box_announce
+from unicode_logic_kit.fol.nodes import Knows
+from unicode_logic_kit.semantics.dynamic_epistemic import announce, box_announce
 
 pp = Atom("p", ())
 Kap = Knows("a", pp)
@@ -351,8 +351,8 @@ box_announce(M, 0, pp, Kap)        # → True   ([p!] K_a p — announcing p mak
 **Counterfactual conditionals** — Lewis-sphere "would" / "might", non-monotone in the antecedent:
 
 ```python
-from unicode_fol_kit.fol.nodes import And as FAnd, Not as FNot
-from unicode_fol_kit.semantics.conditional import CounterfactualModel, would
+from unicode_logic_kit.fol.nodes import And as FAnd, Not as FNot
+from unicode_logic_kit.semantics.conditional import CounterfactualModel, would
 
 A, B, C = Atom("A", ()), Atom("B", ()), Atom("C", ())
 CF = CounterfactualModel(
@@ -370,8 +370,8 @@ would(CF, 0, FAnd(A, C), B)    # → False  (strengthening the antecedent breaks
 **Circumscription (non-monotonic entailment)** — minimal-model reasoning that strengthening can retract:
 
 ```python
-from unicode_fol_kit.fol.nodes import Implies as FImplies
-from unicode_fol_kit.semantics.nonmonotonic import minimal_entails
+from unicode_logic_kit.fol.nodes import Implies as FImplies
+from unicode_logic_kit.semantics.nonmonotonic import minimal_entails
 
 a = Constant("a")
 Pa, Qa = Atom("P", [a]), Atom("Q", [a])

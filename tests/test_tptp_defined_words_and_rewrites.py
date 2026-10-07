@@ -21,19 +21,19 @@ import subprocess
 import pytest
 import z3
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.atp import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.atp import (
     generate_tff_arith_problem, generate_tff_problem, generate_tptp_problem,
     generate_tptp_problem_with_mapping,
 )
-from unicode_fol_kit.atp._tff_problem import formula_to_tff_arith
-from unicode_fol_kit.atp.tptp_tff import formula_to_tff
-from unicode_fol_kit.atp.z3_models import is_satisfiable, is_valid
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.atp._tff_problem import formula_to_tff_arith
+from unicode_logic_kit.atp.tptp_tff import formula_to_tff
+from unicode_logic_kit.atp.z3_models import is_satisfiable, is_valid
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Count, Function, Implies, Not, Number, Or, Quantifier,
     SortedQuantifier, Variable,
 )
-from unicode_fol_kit.fol.tptp_input import parse_tptp
+from unicode_logic_kit.fol.tptp_input import parse_tptp
 
 X, Y = Variable("x"), Variable("y")
 a, b = Constant("a"), Constant("b")
@@ -75,7 +75,7 @@ _VAMPIRE = _vampire_kwargs()
 
 
 def _eprover_ready():
-    from unicode_fol_kit.atp import eprover_available
+    from unicode_logic_kit.atp import eprover_available
     return eprover_available()
 
 
@@ -84,7 +84,7 @@ _EPROVER = _eprover_ready()
 
 def _twee_ready():
     try:
-        from unicode_fol_kit.atp.twee_entailment import twee_available
+        from unicode_logic_kit.atp.twee_entailment import twee_available
         return bool(twee_available())
     except Exception:                              # noqa: BLE001
         return False
@@ -99,12 +99,12 @@ needs_twee = pytest.mark.skipif(not _TWEE, reason="no twee reachable (WSL ~/.loc
 
 
 def _vampire(premises, conclusion, **kw):
-    from unicode_fol_kit.atp.vampire_entailment import check_entailment_vampire_detailed
+    from unicode_logic_kit.atp.vampire_entailment import check_entailment_vampire_detailed
     return check_entailment_vampire_detailed(premises, conclusion, timeout=30, **_VAMPIRE, **kw)["status"]
 
 
 def _eprover(premises, conclusion, **kw):
-    from unicode_fol_kit.atp.eprover_backend import check_entailment_eprover_detailed
+    from unicode_logic_kit.atp.eprover_backend import check_entailment_eprover_detailed
     return check_entailment_eprover_detailed(premises, conclusion, timeout=30, **kw)["status"]
 
 
@@ -124,12 +124,12 @@ def _z3(premises, conclusion):
 
 def _verdict_of_text(prover, text):
     """The prover's verdict on the TPTP TEXT itself, mapped through the SZS table."""
-    from unicode_fol_kit.atp.tstp import extract_szs_status, szs_to_verdict_fields
+    from unicode_logic_kit.atp.tstp import extract_szs_status, szs_to_verdict_fields
     if prover == "vampire":
-        from unicode_fol_kit.atp.vampire_entailment import _spawn_vampire
+        from unicode_logic_kit.atp.vampire_entailment import _spawn_vampire
         out, timed_out = _spawn_vampire(text, timeout=30, **_VAMPIRE)
     else:
-        from unicode_fol_kit.atp.eprover_backend import _discover, _run_tptp_prover
+        from unicode_logic_kit.atp.eprover_backend import _discover, _run_tptp_prover
         command, use_wsl = _discover("eprover", "UFK_EPROVER_CMD")
         out, timed_out = _run_tptp_prover(text, command, ["--auto", "-s", "--cpu-limit=30"],
                                           use_wsl, timeout_s=40)
@@ -187,7 +187,7 @@ def test_single_formula_writes_the_defined_propositions_verbatim():
 
 
 def test_what_the_single_formula_writes_reads_back_as_the_same_formula():
-    from unicode_fol_kit import api
+    from unicode_logic_kit import api
     formula = And(TRUE, Or(P(a), FALSE))
     result = api.parse_any(formula.to_tptp(), hint="tptp_bare")
     assert result.ok and result.formula == formula
@@ -264,8 +264,8 @@ def test_the_writers_rewrite_a_dollar_word_like_any_other_illegal_name():
 
 
 def test_to_tstp_writes_a_defined_proposition_verbatim():
-    from unicode_fol_kit.atp.resolution_check import ResolutionDerivation, ResolutionStep
-    from unicode_fol_kit.atp.tstp import to_tstp
+    from unicode_logic_kit.atp.resolution_check import ResolutionDerivation, ResolutionStep
+    from unicode_logic_kit.atp.tstp import to_tstp
     # {$true} and {~$true} resolve to the empty clause; to_tstp writes each clause
     # as ``cnf(c<i>, plain, <literals>)`` and the empty clause as $false.
     steps = (ResolutionStep(1, frozenset({TRUE}), "input"),
@@ -381,7 +381,7 @@ def test_eprover_agrees_with_z3_on_the_sort_rewrite_problem(sort, predicate, tok
 
 
 def test_the_text_of_the_sort_rewrite_problem_reads_back_to_the_original_names():
-    from unicode_fol_kit.atp import apply_reverse_tptp
+    from unicode_logic_kit.atp import apply_reverse_tptp
     premises, conclusion = _sort_case("Hasu002dpart", "has-part")
     text, name_map = generate_tptp_problem_with_mapping(premises, conclusion)
     items = parse_tptp(text)
@@ -432,7 +432,7 @@ def test_z3_keeps_x_and_X_apart():
 
 
 def test_the_prover9_writer_refuses_two_variables_it_would_write_as_one():
-    from unicode_fol_kit.atp.prover9_entailment import generate_prover9_input_with_mapping
+    from unicode_logic_kit.atp.prover9_entailment import generate_prover9_input_with_mapping
     x, big_x = Variable("x"), Variable("X")
     formula = _all(x, _ex(big_x, Atom("R", [x, big_x])))
     with pytest.raises(NotImplementedError) as info:
@@ -448,7 +448,7 @@ def test_the_prover9_writer_refuses_two_variables_it_would_write_as_one():
 
 def test_the_prover9_writer_checks_each_formula_alone():
     # x binds in one premise and X in another: two quantifiers that bind separately.
-    from unicode_fol_kit.atp.prover9_entailment import generate_prover9_input_with_mapping
+    from unicode_logic_kit.atp.prover9_entailment import generate_prover9_input_with_mapping
     text, _ = generate_prover9_input_with_mapping(
         [_all(Variable("x"), P(Variable("x"))), _all(Variable("X"), Atom("Q", [Variable("X")]))],
         P(a))
@@ -456,7 +456,7 @@ def test_the_prover9_writer_checks_each_formula_alone():
 
 
 def test_a_single_node_has_no_whole_problem_view_and_says_so():
-    from unicode_fol_kit.fol.nodes import Node
+    from unicode_logic_kit.fol.nodes import Node
     x, big_x = Variable("x"), Variable("X")
     # The outermost call sees the whole NODE: Prover9 writes both variables in upper case, so the inner
     # binder is written under a fresh name and the two variables of the node stay two in the text (the old
@@ -493,8 +493,8 @@ class _FakeRun:
 
 @pytest.fixture()
 def run(monkeypatch):
-    from unicode_fol_kit.atp import eprover_backend as eb
-    from unicode_fol_kit.atp import protocol as proto
+    from unicode_logic_kit.atp import eprover_backend as eb
+    from unicode_logic_kit.atp import protocol as proto
     monkeypatch.setattr(proto, "_VERSION_CACHE", {})
     monkeypatch.setattr(eb, "_DISCOVERY_CACHE", {})
     monkeypatch.setenv("UFK_VAMPIRE", "fake-vampire")
@@ -532,7 +532,7 @@ _PREMISES = [Atom("P", [Constant("z")])]
 
 
 def _decide(name, **options):
-    from unicode_fol_kit.atp.protocol import get_backend
+    from unicode_logic_kit.atp.protocol import get_backend
     return get_backend(name).decide(_GOAL, _PREMISES, **options)
 
 
@@ -556,7 +556,7 @@ def test_a_resourceout_that_is_not_the_cpu_limit_stays_bound_hit(run, stdout):
 
 
 def test_the_detailed_e_route_classifies_its_own_time_limit_the_same_way(run):
-    from unicode_fol_kit.atp.eprover_backend import check_entailment_eprover_detailed
+    from unicode_logic_kit.atp.eprover_backend import check_entailment_eprover_detailed
     run.respond(returncode=8, stdout=_E_AT_ITS_CPU_LIMIT, stderr=_E_CPU_LIMIT_STDERR)
     result = check_entailment_eprover_detailed(_PREMISES, _GOAL, timeout=1)
     assert (result["status"], result["reason"], result["szs_status"]) == (
@@ -630,7 +630,7 @@ def _pigeonhole(holes):
 
 @needs_eprover
 def test_the_real_e_that_uses_up_the_budget_of_the_call_is_a_timeout():
-    from unicode_fol_kit.atp.protocol import EProverBackend
+    from unicode_logic_kit.atp.protocol import EProverBackend
     verdict = EProverBackend().decide(_GOAL, _pigeonhole(10), timeout=1000)
     assert (verdict.status, verdict.reason) == ("unknown", "timeout"), verdict.detail
     assert verdict.szs_status == "ResourceOut"
@@ -640,7 +640,7 @@ def test_the_real_e_that_uses_up_the_budget_of_the_call_is_a_timeout():
 def test_the_real_vampire_that_uses_up_the_budget_of_the_call_is_a_timeout(monkeypatch):
     monkeypatch.setenv("UFK_VAMPIRE", _VAMPIRE["vampire_path"])
     monkeypatch.setenv("UFK_VAMPIRE_WSL", "1" if _VAMPIRE["use_wsl"] else "0")
-    from unicode_fol_kit.atp.protocol import VampireBackend
+    from unicode_logic_kit.atp.protocol import VampireBackend
     verdict = VampireBackend().decide(_GOAL, _pigeonhole(10), timeout=1000)
     assert (verdict.status, verdict.reason) == ("unknown", "timeout"), verdict.detail
     assert "no SZS status line" not in verdict.detail
@@ -727,7 +727,7 @@ def test_two_legal_variables_written_as_one_are_still_refused():
 
 
 def test_a_formula_whose_variables_are_all_legal_is_passed_on_as_the_same_object():
-    from unicode_fol_kit.fol._tptp_symbols import legalise_variables
+    from unicode_logic_kit.fol._tptp_symbols import legalise_variables
     formula = _all(X, _ex(Variable("y1"), Atom("R", [X, Variable("y1")])))
     assert legalise_variables(formula) is formula
 
@@ -807,21 +807,21 @@ def test_vampire_keeps_two_illegal_variables_apart():
 # =============================================================================
 
 def test_the_cli_renders_an_upper_case_proposition_for_prover9(capsys):
-    from unicode_fol_kit.__main__ import main
+    from unicode_logic_kit.__main__ import main
     assert main(["Rain ∧ Wind", "--to", "prover9"]) == 0
     captured = capsys.readouterr()
     assert captured.out.strip() == '("Rain" & "Wind")' and captured.err == ""
 
 
 def test_the_cli_still_renders_the_formula_for_tptp(capsys):
-    from unicode_fol_kit.__main__ import main
+    from unicode_logic_kit.__main__ import main
     assert main(["Rain ∧ Wind", "--to", "tptp"]) == 0
     assert capsys.readouterr().out.strip() == "(rain & wind)"
 
 
 def test_the_mcp_render_tool_renders_it_too():
     pytest.importorskip("mcp", reason="optional [mcp] extra not installed")
-    from unicode_fol_kit.mcp.server import render
+    from unicode_logic_kit.mcp.server import render
     result = render("Rain ∧ Wind", to="prover9")
     assert "error" not in result
     assert '("Rain" & "Wind")' in str(result)
@@ -851,8 +851,8 @@ def test_the_tfa_writer_names_itself_in_a_name_collision():
 
 
 def test_to_tstp_names_itself_in_a_collision():
-    from unicode_fol_kit.atp.resolution_check import ResolutionDerivation, ResolutionStep
-    from unicode_fol_kit.atp.tstp import to_tstp
+    from unicode_logic_kit.atp.resolution_check import ResolutionDerivation, ResolutionStep
+    from unicode_logic_kit.atp.tstp import to_tstp
     # A name map that already carries the constant Foo (written foo) meets a derivation
     # that introduces the distinct constant foo: one word for two symbols.
     _, mapping = generate_tptp_problem_with_mapping(
@@ -888,7 +888,7 @@ _TWEE_REFLEXIVITY = ("The conjecture is true! Here is a proof.\n"
 @pytest.fixture()
 def twee_says(monkeypatch):
     """Make the Twee runner return a canned stdout."""
-    from unicode_fol_kit.atp import twee_entailment as te
+    from unicode_logic_kit.atp import twee_entailment as te
 
     def install(stdout):
         monkeypatch.setattr(te, "_spawn_twee", lambda *args, **kwargs: (stdout, "", False))
@@ -900,7 +900,7 @@ def _equation(left, right):
 
 
 def test_a_reflexivity_proof_of_a_reflexive_goal_is_proved_with_a_zero_step_chain(twee_says):
-    from unicode_fol_kit.atp.twee_backend import TweeBackend
+    from unicode_logic_kit.atp.twee_backend import TweeBackend
     twee_says(_TWEE_REFLEXIVITY)
     verdict = TweeBackend().decide(_equation(a, a), [])
     # a = a is an instance of x = x: valid whatever the premises, so PROVED is sound.
@@ -913,7 +913,7 @@ def test_a_reflexivity_proof_of_a_reflexive_goal_is_proved_with_a_zero_step_chai
 
 
 def test_a_reflexivity_proof_of_a_goal_that_is_not_the_requested_conclusion_is_not_proved(twee_says):
-    from unicode_fol_kit.atp.twee_backend import TweeBackend
+    from unicode_logic_kit.atp.twee_backend import TweeBackend
     # Twee printed ``Goal: a = a`` for the question ``a = b``: the proved goal does not
     # restate the conclusion, so the second check fails and the verdict is ERROR.
     twee_says(_TWEE_REFLEXIVITY)
@@ -923,7 +923,7 @@ def test_a_reflexivity_proof_of_a_goal_that_is_not_the_requested_conclusion_is_n
 
 
 def test_a_reflexivity_proof_whose_two_sides_differ_is_not_proved(twee_says):
-    from unicode_fol_kit.atp.twee_backend import TweeBackend
+    from unicode_logic_kit.atp.twee_backend import TweeBackend
     # A corrupted proof: a zero-step chain cannot connect a to b, and the kit says so.
     twee_says(_TWEE_REFLEXIVITY.replace("Goal 1 (goal): a = a.", "Goal 1 (goal): a = b."))
     verdict = TweeBackend().decide(_equation(a, b), [])
@@ -937,7 +937,7 @@ def test_a_reflexivity_proof_whose_two_sides_differ_is_not_proved(twee_says):
     _TWEE_REFLEXIVITY.replace("Reflexivity.", "Symmetry."),
 ], ids=["extra-line", "an-axiom-is-listed", "another-word"])
 def test_anything_but_the_exact_five_line_shape_is_still_refused(twee_says, stdout):
-    from unicode_fol_kit.atp.twee_backend import TweeBackend
+    from unicode_logic_kit.atp.twee_backend import TweeBackend
     twee_says(stdout)
     verdict = TweeBackend().decide(_equation(a, a), [])
     assert verdict.status == "error" and verdict.reason == "infra"
@@ -953,7 +953,7 @@ def test_anything_but_the_exact_five_line_shape_is_still_refused(twee_says, stdo
     ([_equation(a, b)], _equation(a, a)),
 ], ids=["a=a", "f(a)=f(a)", "conjunction", "quantified", "with-a-premise"])
 def test_the_real_twee_proves_a_reflexive_goal(premises, conclusion):
-    from unicode_fol_kit.atp.twee_backend import TweeBackend
+    from unicode_logic_kit.atp.twee_backend import TweeBackend
     verdict = TweeBackend().decide(conclusion, premises, timeout=30000)
     assert verdict.status == "proved", (verdict.status, verdict.reason, verdict.detail)
     # z3 on the nodes: an instance of x = x is valid
@@ -962,5 +962,5 @@ def test_the_real_twee_proves_a_reflexive_goal(premises, conclusion):
 
 @needs_twee
 def test_the_real_twee_still_refutes_a_non_theorem():
-    from unicode_fol_kit.atp.twee_backend import TweeBackend
+    from unicode_logic_kit.atp.twee_backend import TweeBackend
     assert TweeBackend().decide(_equation(a, b), [], timeout=30000).status == "refuted"

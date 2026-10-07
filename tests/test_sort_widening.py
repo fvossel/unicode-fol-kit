@@ -55,10 +55,10 @@ test actually fails under the right kind of regression:
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.naming import NamingError
-from unicode_fol_kit.fol._fol_nodes import Atom, Variable
-from unicode_fol_kit.fol._msfl_nodes import SortedQuantifier, SortedConstant
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.naming import NamingError
+from unicode_logic_kit.fol._fol_nodes import Atom, Variable
+from unicode_logic_kit.fol._msfl_nodes import SortedQuantifier, SortedConstant
 
 MSFOL = MSFLParser(many_sorted=True)
 MSFL = MSFLParser(many_sorted=True, fuzzy=True)

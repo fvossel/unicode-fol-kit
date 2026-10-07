@@ -1,4 +1,4 @@
-"""Tests for :mod:`unicode_fol_kit.atp._tff_problem` (the single-numeric-sort
+"""Tests for :mod:`unicode_logic_kit.atp._tff_problem` (the single-numeric-sort
 typed TFA exporter, C14) and its opt-in integration into the Vampire/E
 backends.
 
@@ -58,21 +58,21 @@ import subprocess
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     Atom, And, Constant, Function, Implies, Not, Number, Or, Quantifier, Variable,
 )
-from unicode_fol_kit.atp._tff_problem import (
+from unicode_logic_kit.atp._tff_problem import (
     generate_tff_arith_problem, formula_to_tff_arith, TFA_SORT_TOKENS,
 )
-from unicode_fol_kit.atp.z3_arith import is_valid_arith, is_satisfiable_arith
-from unicode_fol_kit.atp import vampire_entailment as _ve
-from unicode_fol_kit.atp import eprover_backend as _eb
-from unicode_fol_kit.atp.vampire_entailment import (
+from unicode_logic_kit.atp.z3_arith import is_valid_arith, is_satisfiable_arith
+from unicode_logic_kit.atp import vampire_entailment as _ve
+from unicode_logic_kit.atp import eprover_backend as _eb
+from unicode_logic_kit.atp.vampire_entailment import (
     _generate_vampire_input, check_logical_entailment_vampire,
     check_entailment_vampire_detailed,
 )
-from unicode_fol_kit.atp.eprover_backend import (
+from unicode_logic_kit.atp.eprover_backend import (
     _generate_tptp_problem as _eprover_generate_input,
     check_entailment_eprover_detailed, eprover_available, EProverBackend,
 )
@@ -285,7 +285,7 @@ def test_the_flat_table_backstop_still_refuses_a_clash_the_rename_did_not_see():
     """_check_no_predicate_function_collision is now a BACKSTOP behind
     _separate_term_names; calling _analyze directly on an unseparated pair
     (what the entry points can no longer produce) must still refuse by name."""
-    from unicode_fol_kit.atp._tff_problem import _analyze
+    from unicode_logic_kit.atp._tff_problem import _analyze
     node = And(Atom("Price", [Constant("c1")]), Atom("Q", [Constant("price")]))
     with pytest.raises(NotImplementedError, match="Price.*price|price.*Price"):
         _analyze([node])

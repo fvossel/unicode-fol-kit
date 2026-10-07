@@ -1,4 +1,4 @@
-"""Tests for the P-FOLIO adapter (unicode_fol_kit.eval.datasets.pfolio).
+"""Tests for the P-FOLIO adapter (unicode_logic_kit.eval.datasets.pfolio).
 
 The fixtures (``tests/fixtures/pfolio/pfolio_mini.csv`` and
 ``.../folio_mini.csv``) are SYNTHETIC — hand-written in the REAL, verified
@@ -6,7 +6,7 @@ CSV layout of both files (columns, block/step structure, the newline-joined
 per-story lists) — for two reasons: the real dataset is access-gated (a
 Hugging Face login and an accepted access request are required), so it is
 not committed here, and every documented export artifact and refusal
-reason (see ``unicode_fol_kit/eval/datasets/pfolio.py``'s module docstring)
+reason (see ``unicode_logic_kit/eval/datasets/pfolio.py``'s module docstring)
 can be put side by side in nine small stories instead of hunted across the
 real file's 487.
 
@@ -19,7 +19,7 @@ CSV files (see ``test_the_real_files_join_as_measured``, skipped unless
 counts are the ones the adapter's module docstring documents, arrived at by
 manually cross-checking several real stories' derivation chains against
 their ``FOLIO.csv`` conclusion text — the same technique
-:mod:`~unicode_fol_kit.eval.datasets.logicnli`'s docstring used to
+:mod:`~unicode_logic_kit.eval.datasets.logicnli`'s docstring used to
 cross-check its own two sources against each other).
 """
 
@@ -29,8 +29,8 @@ from pathlib import Path
 
 import pytest
 
-from unicode_fol_kit.eval.datasets import DATASET_INFO, DatasetExample, audit_examples
-from unicode_fol_kit.eval.datasets.pfolio import (
+from unicode_logic_kit.eval.datasets import DATASET_INFO, DatasetExample, audit_examples
+from unicode_logic_kit.eval.datasets.pfolio import (
     PFOLIO_REFUSAL_REASONS, PFOLIO_TRUTH_VALUES, load_pfolio, pfolio_refusals,
 )
 

@@ -15,9 +15,9 @@ from itertools import product
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import Atom, Not, And, Or, Implies, Box, Diamond
-from unicode_fol_kit.atp.fitch import Proof, premise, line, check_proof
-from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
+from unicode_logic_kit.fol.nodes import Atom, Not, And, Or, Implies, Box, Diamond
+from unicode_logic_kit.atp.fitch import Proof, premise, line, check_proof
+from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
 
 P, Q = Atom("P", ()), Atom("Q", ())
 

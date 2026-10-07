@@ -24,10 +24,10 @@ import sys
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import modal_tableau as MT
-from unicode_fol_kit.atp.protocol import ModalTableauBackend
-from unicode_fol_kit.fol.nodes import And, Atom, Box, Constant, Diamond, Iff, Implies, Not
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import modal_tableau as MT
+from unicode_logic_kit.atp.protocol import ModalTableauBackend
+from unicode_logic_kit.fol.nodes import And, Atom, Box, Constant, Diamond, Iff, Implies, Not
 
 P = Atom("p", [])
 DEPTH = max(1500, 3 * sys.getrecursionlimit())

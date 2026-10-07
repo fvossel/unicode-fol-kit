@@ -3,11 +3,11 @@
 These assert the emitted Isabelle/HOL theory is structurally well-formed (balanced
 parens / quotes / cartouches, a *real* uncommented lemma), that every lifted
 operator is defined exactly as the corresponding Kripke clause in
-``unicode_fol_kit.semantics.kripke.satisfies_modal`` (box = universal over the
+``unicode_logic_kit.semantics.kripke.satisfies_modal`` (box = universal over the
 right relation, diamond = existential, agent-indexed rk/rb, existsAt-guarded
 quantifiers), and that the agent-indexed epistemic relation shows up for K_x.
 
-The import path assumes the module lands at ``unicode_fol_kit.hol.isabelle_modal``;
+The import path assumes the module lands at ``unicode_logic_kit.hol.isabelle_modal``;
 adjust the import if the parent integrates it elsewhere.
 """
 
@@ -16,19 +16,19 @@ import uuid
 
 import pytest
 
-from unicode_fol_kit.hol.isabelle_modal import (
+from unicode_logic_kit.hol.isabelle_modal import (
     to_isabelle_modal, isabelle_modal_theory, ISABELLE_TACTICS, modal_axiom_names,
 )
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Variable, Constant, Function, Atom, Not, And, Or, Implies, Iff, Xor, Quantifier,
     Box, Diamond, Knows, Believes, Obligatory, Permitted,
     Always, Eventually, Next, Until, Since, SortedQuantifier,
 )
 
-from unicode_fol_kit.fol.qml import qml_is_valid
-from unicode_fol_kit.hol.isabelle_runner import isabelle_available
-from unicode_fol_kit.hol.isabelle_runner import check_theory
+from unicode_logic_kit.fol.qml import qml_is_valid
+from unicode_logic_kit.hol.isabelle_runner import isabelle_available
+from unicode_logic_kit.hol.isabelle_runner import check_theory
 
 
 def _balanced(s: str, op: str, cl: str) -> bool:
@@ -492,7 +492,7 @@ def test_t_in_nstar_axiom_pins_closure_when_next_cooccurs_with_always():
     thy = to_isabelle_modal(ALWAYS_IMP_NEXT)
     assert ('axiomatization where t_in_nstar: "t w v \\<Longrightarrow> rtranclp n w v"'
             in thy), thy
-    from unicode_fol_kit.hol.isabelle_modal import modal_axiom_names
+    from unicode_logic_kit.hol.isabelle_modal import modal_axiom_names
     assert "t_in_nstar" in modal_axiom_names(ALWAYS_IMP_NEXT)
 
 
@@ -678,7 +678,7 @@ def test_identity_lemma_text_is_pinned(name, formula, body, validity, why):
 def test_identity_and_the_thf_export_lower_the_same_atoms_the_same_way():
     # Agreement between the two HOL exporters, atom for atom: one world-free equality
     # per identity atom after lowering ≠ to ¬(=) in both, none where there is none.
-    from unicode_fol_kit.hol.thf_modal import to_thf_modal_full
+    from unicode_logic_kit.hol.thf_modal import to_thf_modal_full
     for name, formula, body, validity, why in _ISA_IDENTITY_BATTERY:
         thy, thf = to_isabelle_modal(formula), to_thf_modal_full(formula)
         goal = [ln for ln in thf.splitlines() if ln.startswith("thf(goal,")][0]

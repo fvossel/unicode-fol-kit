@@ -15,9 +15,9 @@ would force ``nom_a = nom_b`` and the equivalence would follow: a wrong ``valid`
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.fol.modal_translation import hybrid_is_valid, standard_translation
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.fol.modal_translation import hybrid_is_valid, standard_translation
+from unicode_logic_kit.fol.nodes import (
     At, Atom, Constant, Function, Iff, Implies, Nominal, SortedConstant,
 )
 

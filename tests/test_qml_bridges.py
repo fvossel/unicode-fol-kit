@@ -28,15 +28,15 @@ from itertools import combinations, product
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Implies, Box, Diamond, Quantifier, Variable, Constant,
     Knows, Believes, Says, Obligatory, Permitted,
     Always, Eventually, Next, Historically, Once, Previous,
 )
-from unicode_fol_kit.fol.qml import (
+from unicode_logic_kit.fol.qml import (
     qml_axioms, qml_is_valid, qml_equivalent, QML_BRIDGES, QML_RELATIONS,
 )
-from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
+from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
 
 P = Atom("P", ())
 Q = Atom("Q", ())
@@ -173,7 +173,7 @@ def test_temporal_induction_is_out_of_reach():
     # of the one-step relation), but deriving it needs the whole of T ⊆ N* — that the
     # witnessing path be FINITE — which is not first-order definable. Unrolling the first
     # step, which `first_step` licenses, gets one step and no further. Decide this one
-    # with unicode_fol_kit.hol.isabelle_runner.isabelle_decide_modal, whose t_in_nstar
+    # with unicode_logic_kit.hol.isabelle_runner.isabelle_decide_modal, whose t_in_nstar
     # axiom pins t to rtranclp n.
     induction = Implies(And(P, Always(Implies(P, Next(P)))), Always(P))
     assert _temporal_valid_by_enumeration(induction, max_worlds=3) is True
@@ -313,7 +313,7 @@ def test_the_option_name_denotes_the_same_logic_on_every_route():
     # separate registries (fol must not import hol), so their agreement is asserted
     # rather than assumed — including the fact name, which is what a grep for the
     # emitted axiom finds on the HOL side.
-    from unicode_fol_kit.hol.isabelle_modal import BRIDGES, _BRIDGES as _ISA_BRIDGES
+    from unicode_logic_kit.hol.isabelle_modal import BRIDGES, _BRIDGES as _ISA_BRIDGES
     assert set(QML_BRIDGES) == set(BRIDGES)
     for name, spec in QML_BRIDGES.items():
         assert spec["fact"] in " ".join(_ISA_BRIDGES[name]["lines"]), name
@@ -433,7 +433,7 @@ def test_existing_positional_call_surface_is_preserved():
     # atp.resolution calls _validity_formula(combined, "constant", "K") positionally and
     # tests call qml_is_valid(f, mode, frame, systems, timeout) — the new parameters are
     # appended, so both keep working.
-    from unicode_fol_kit.fol.qml import _validity_formula
+    from unicode_logic_kit.fol.qml import _validity_formula
     _validity_formula(Implies(Box(P), P), "constant", "K")
     assert qml_is_valid(Implies(Box(P), P), "constant", "T", None, 5000) is True
 

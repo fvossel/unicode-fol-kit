@@ -14,14 +14,14 @@ and a route that read them as one would answer about another problem:
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.kripke_enum import modal_enum_search
-from unicode_fol_kit.atp.modal_tableau import modal_decide, modal_prove
-from unicode_fol_kit.fol._msfl_nodes import SortedConstant
-from unicode_fol_kit.fol.modal_translation import hybrid_is_valid, standard_translation
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.kripke_enum import modal_enum_search
+from unicode_logic_kit.atp.modal_tableau import modal_decide, modal_prove
+from unicode_logic_kit.fol._msfl_nodes import SortedConstant
+from unicode_logic_kit.fol.modal_translation import hybrid_is_valid, standard_translation
+from unicode_logic_kit.fol.nodes import (
     Atom, Believes, Box, Constant, Implies, Knows, Number, Variable)
-from unicode_fol_kit.semantics.fuzzy_kripke import FuzzyKripkeModel, satisfies_fuzzy_modal
+from unicode_logic_kit.semantics.fuzzy_kripke import FuzzyKripkeModel, satisfies_fuzzy_modal
 
 P = Atom("P", [])
 

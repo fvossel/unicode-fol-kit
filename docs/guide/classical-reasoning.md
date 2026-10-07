@@ -7,7 +7,7 @@ This page covers the reasoning layer for classical first-order logic and its man
 For entailment and validity **without** an external prover, the package ships a self-contained first-order **resolution** prover. It clausifies the input (skolemise → drop the ∀ prefix → CNF → clauses), then refutes `premises ∧ ¬conclusion` by binary resolution and factoring, deriving the empty clause iff the entailment holds.
 
 ```python
-from unicode_fol_kit import MSFLParser, prove, is_valid_resolution, is_valid
+from unicode_logic_kit import MSFLParser, prove, is_valid_resolution, is_valid
 
 parser = MSFLParser()
 
@@ -50,7 +50,7 @@ prove([parser.parse("P(a) ∨ Q(a)")], parser.parse("P(a)"))          # → Fals
 `to_clauses(formula)` exposes the clausal form (a `set` of `frozenset`s of literals; the variables of a clause are universal, and `to_clauses` of one standalone formula closes that formula's free variables), and `refute(clauses)` runs the saturation directly — useful for seeing *why* an entailment holds.
 
 ```python
-from unicode_fol_kit import to_clauses, refute
+from unicode_logic_kit import to_clauses, refute
 
 to_clauses(parser.parse("∀x (P(x) ∨ ¬Q(x))"))
 # → a set with one two-literal clause {P(v0), ¬Q(v0)} (the ∀-bound x is renamed apart)
@@ -92,7 +92,7 @@ is_valid(parser.parse("(alice = bob ∧ P(alice)) → P(bob)"))          # → T
 `is_satisfiable` / `is_valid` / `get_model` decide a formula via the Z3 SMT solver and extract a counterexample.
 
 ```python
-from unicode_fol_kit import MSFLParser, is_satisfiable, is_valid, get_model, Not
+from unicode_logic_kit import MSFLParser, is_satisfiable, is_valid, get_model, Not
 
 parser = MSFLParser()
 
@@ -124,7 +124,7 @@ is_satisfiable(parser.parse("∀x (P(x) → Q(x)) ∧ P(a) ∧ ¬Q(a)"))  # → 
 **Free variables.** A free variable is a *parameter* of the problem: one unknown element, the same in every premise and in the conclusion (`Γ ⊨ φ` holds when every structure and assignment that satisfies `Γ` satisfies `φ`). No route closes a premise universally, and a route that cannot state the parameter reading refuses the input by name, as the TPTP writers below do.
 
 ```python
-from unicode_fol_kit import api
+from unicode_logic_kit import api
 
 api.prove(parser.parse("P(x)"), [parser.parse("P(x)")]).status       # → 'proved'
 api.prove(parser.parse("P(alpha)"), [parser.parse("P(x)")]).status   # → 'refuted'  (universe {0, 1}, x = 0, alpha = 1, P = {0})
@@ -151,7 +151,7 @@ is_valid(msfol.parse("(∀x:Human Mortal(x)) → ∃x:Human Mortal(x)"))        
 # no longer allowed to do.)
 is_satisfiable(msfol.parse("∀x:Ghost P(x) ∧ ∀x:Ghost ¬P(x)"))               # → False
 
-from unicode_fol_kit import api
+from unicode_logic_kit import api
 api.prove(msfol.parse("(∀x:Human Mortal(x)) → ∃x:Human Mortal(x)"), backends=["z3"]).status  # → 'proved'
 ```
 
@@ -180,8 +180,8 @@ The sentences of `sort_axioms` are added as their own extra, top-level, never-ne
 Three routes honour a declared `subsorts` mapping when asked to:
 
 ```python
-from unicode_fol_kit import Signature, MSFLParser, subsort_axioms, api
-from unicode_fol_kit.semantics.modelfinder import find_countermodel
+from unicode_logic_kit import Signature, MSFLParser, subsort_axioms, api
+from unicode_logic_kit.semantics.modelfinder import find_countermodel
 
 sig = Signature.from_dict({
     "predicates": {"Mortal": {"arity": 1, "arg_sorts": ["Thing"]}},
@@ -226,7 +226,7 @@ find_countermodel([msfol.parse("∃x:Human P(x)")], parser.parse("∃x Thing(x)"
 The default `is_satisfiable` / `to_z3` treat everything as one uninterpreted sort, so arithmetic terms are opaque: a numeral is a constant named by its VALUE (`1`, `1.0` and `01` are one constant), nothing else is known about it, `+ - * /` are uninterpreted functions and `< > ≤ ≥` uninterpreted predicates. So `⊢ 1 ≠ 2`, `⊢ 1 < 2` and `⊢ 1 + 1 = 2` are NOT valid on z3, cvc5, the model finder, the tableau and resolution, and the same holds on every other route that was not asked for arithmetic (the TPTP `fof` and TF0 writers, Prover9). The `*_arith` variants instead interpret `+ - * /` and the comparisons over a numeric sort (`"real"` by default, or `"int"`), so the solver can actually reason about numbers. A one-argument minus, which the Prover9 reader builds for `-t` and the SMT-LIB reader for `(- t)`, is the negation: `is_valid_arith(parse_prover9("all x (-x + x = 0)."))` is `True`. Any other operator or comparison at a number of arguments other than two is an uninterpreted symbol.
 
 ```python
-from unicode_fol_kit import MSFLParser, is_satisfiable_arith, is_valid_arith, get_model_arith
+from unicode_logic_kit import MSFLParser, is_satisfiable_arith, is_valid_arith, get_model_arith
 
 parser = MSFLParser()
 
@@ -276,7 +276,7 @@ is_satisfiable_arith(parser.parse("x + x = 1"), sort="real") # → True   (x = 1
 `to_z3_arith(formula, sort=…)` exposes the underlying Z3 expression if you want to drive the solver yourself:
 
 ```python
-from unicode_fol_kit import to_z3_arith
+from unicode_logic_kit import to_z3_arith
 
 to_z3_arith(parser.parse("x + 1 > 0"), sort="int")   # → 0 < x!v + 1   (a z3.BoolRef; the free variable x is the symbol x!v)
 ```
@@ -288,7 +288,7 @@ A `Constant` and a `Variable` of one name are two symbols on this route too, bec
 `formulas_are_equivalent` checks whether two formulas are logically equivalent (via Z3).
 
 ```python
-from unicode_fol_kit import MSFLParser, formulas_are_equivalent
+from unicode_logic_kit import MSFLParser, formulas_are_equivalent
 
 parser = MSFLParser()
 f1 = parser.parse("¬(P(x) ∧ Q(x))")
@@ -316,7 +316,7 @@ The check is symmetric and the arguments are interchangeable. Since it runs over
 
 ```python
 # doctest: +SKIP  — requires an installed Prover9 binary; not executed in CI/docs
-from unicode_fol_kit import MSFLParser, check_logical_entailment
+from unicode_logic_kit import MSFLParser, check_logical_entailment
 
 parser = MSFLParser()
 premises = [
@@ -336,7 +336,7 @@ The Vampire variant emits the premises as TPTP `axiom`s and the conclusion as a 
 
 ```python
 # doctest: +SKIP  — requires an installed Vampire binary; not executed in CI/docs
-from unicode_fol_kit import MSFLParser, check_logical_entailment_vampire
+from unicode_logic_kit import MSFLParser, check_logical_entailment_vampire
 
 # … same premises / conclusion …
 check_logical_entailment_vampire(premises, conclusion, vampire_path="/usr/bin/vampire")  # True
@@ -358,7 +358,7 @@ By default, Vampire/E see a numeral as a constant identified by its value (`1`, 
 
 ```python
 # doctest: +SKIP  — requires an installed Vampire binary; not executed in CI/docs
-from unicode_fol_kit import MSFLParser, check_logical_entailment_vampire
+from unicode_logic_kit import MSFLParser, check_logical_entailment_vampire
 
 parser = MSFLParser()
 
@@ -380,7 +380,7 @@ An ordinary predicate coexists with the arithmetic facts in the same problem, de
 
 ```python
 # doctest: +SKIP  — requires an installed Vampire binary; not executed in CI/docs
-from unicode_fol_kit.atp.vampire_entailment import check_entailment_vampire_detailed
+from unicode_logic_kit.atp.vampire_entailment import check_entailment_vampire_detailed
 
 premises = [parser.parse("Prime(seven) ∧ seven + 3 = 10")]
 result = check_entailment_vampire_detailed(
@@ -397,11 +397,11 @@ Only Vampire evaluates the typed text. E 3.5.1 reads it, but it types `$sum`, `$
 
 ### Building a TPTP problem for a prover
 
-A TPTP problem is built with the checked writers, never by joining `Node.to_tptp()` strings: `generate_tptp_problem_with_mapping` (classical `fof`), `generate_tff_problem_with_mapping` (many-sorted TF0) and `generate_tff_arith_problem` (one numeric sort, TFA), all exported from `unicode_fol_kit.atp`. (`generate_tptp_problem` and `generate_tff_problem` return the text alone.) `to_tptp()` sees one formula. It checks that formula (see "One formula" below), but it cannot know that `gaseous` in one premise and `Gaseous` in another are two different constants that fold to the same TPTP word, or that the class `Agent` and the role function `agent` share one. A problem assembled from those strings turns such a pair into one symbol and can prove what the premises do not entail. The writers see the whole problem at once, which is why the cross-formula checks and the renaming live there.
+A TPTP problem is built with the checked writers, never by joining `Node.to_tptp()` strings: `generate_tptp_problem_with_mapping` (classical `fof`), `generate_tff_problem_with_mapping` (many-sorted TF0) and `generate_tff_arith_problem` (one numeric sort, TFA), all exported from `unicode_logic_kit.atp`. (`generate_tptp_problem` and `generate_tff_problem` return the text alone.) `to_tptp()` sees one formula. It checks that formula (see "One formula" below), but it cannot know that `gaseous` in one premise and `Gaseous` in another are two different constants that fold to the same TPTP word, or that the class `Agent` and the role function `agent` share one. A problem assembled from those strings turns such a pair into one symbol and can prove what the premises do not entail. The writers see the whole problem at once, which is why the cross-formula checks and the renaming live there.
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.atp import generate_tptp_problem_with_mapping
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.atp import generate_tptp_problem_with_mapping
 
 parser = MSFLParser()
 premises = [parser.parse("∀x Agent(agent(x))")]
@@ -430,8 +430,8 @@ Four things can go wrong with a name, and the writers treat them differently:
 The second row exists because the provers do not resolve a bare identifier by its position, whatever a TPTP reader may do: Vampire 5.0.1 answers `Non-boolean term agent(X0) of sort $i is used in a formula context` and E 3.5.1 stops with a parse error, so the problem never reaches an SZS status; the TF0 writer used to declare `agent` at two types. Renaming is exact — a symbol is only a name — and the map is what lets a caller translate a proof or a model back:
 
 ```python
-from unicode_fol_kit.atp import apply_reverse_tptp
-from unicode_fol_kit.fol.tptp_input import parse_tptp
+from unicode_logic_kit.atp import apply_reverse_tptp
+from unicode_logic_kit.fol.tptp_input import parse_tptp
 
 [apply_reverse_tptp(item.formula, name_map).to_unicode_str() for item in parse_tptp(text)]
 # → ['∀x Agent(agent(x))', '∃x Agent(x)']
@@ -442,7 +442,7 @@ For prover output that is plain text, `name_map.reverse_rendered()` gives tables
 The third row is deliberately different from the first two, for this release. Two legal names of one kind that fold together have always been refused, and that refusal predates the name map; it is kept so that no existing caller silently receives a symbol renamed behind its back, not because the two situations differ in principle. A problem with no clash at all is written byte-for-byte as before.
 
 ```python
-from unicode_fol_kit.fol.nodes import Atom, Constant
+from unicode_logic_kit.fol.nodes import Atom, Constant
 
 generate_tptp_problem_with_mapping([Atom("Likes", [Constant("gaseous")])],
                                    Atom("Likes", [Constant("Gaseous")]))
@@ -475,7 +475,7 @@ One predicate used at two arities (`Zed(alpha)` and `Zed(alpha, beta)`) is writt
 A single `to_tptp()` call applies the third row to the formula it renders. Two constants (`gaseous`, `Gaseous`), two predicates (`Foo`, `foo`) or two functions (`Bar`, `bar`) that fold to one word are refused, by the same check the writers run:
 
 ```python
-from unicode_fol_kit.fol.nodes import Atom, Constant, Iff
+from unicode_logic_kit.fol.nodes import Atom, Constant, Iff
 
 Iff(Atom("P", [Constant("gaseous")]), Atom("P", [Constant("Gaseous")])).to_tptp()
 # raises NotImplementedError: Node.to_tptp: distinct constant/function names 'gaseous'
@@ -489,7 +489,7 @@ Four more cases are one TPTP word for two symbols, and are refused in the same w
 The first two rows of the table are not applied to one formula, on purpose, because `to_tptp()` renames nothing: a name TPTP cannot spell is refused (above, and see {doc}`transforms`), and a predicate and a function/constant that share a word are rendered as they are:
 
 ```python
-from unicode_fol_kit.fol.nodes import Atom, Function, Variable
+from unicode_logic_kit.fol.nodes import Atom, Function, Variable
 
 Atom("Agent", [Function("agent", [Variable("e")])]).to_tptp()
 # → 'agent(agent(E))'
@@ -512,8 +512,8 @@ cnf(name, role, formula, inference(rule, [status(thm)], [parent, ...])).
 `extract_szs_status` pulls the `% SZS status ...` verdict line out of raw prover stdout, `parse_tstp_derivation` turns the `fof`/`cnf` statements into a `TstpDerivation`, and `check_tstp_derivation` re-derives every step from scratch — clausification/normalisation steps by Z3 entailment (`unknown`/timeout never counts as a pass), the core calculus rules (resolution, factoring, superposition, demodulation, equality resolution, subsumption resolution) by an independent from-scratch unifier and alpha-variant search, and a leaf statement by alpha-equivalence against the caller's own premises/conclusion:
 
 ```python
-from unicode_fol_kit import extract_szs_status, parse_tstp_derivation, check_tstp_derivation
-from unicode_fol_kit.fol.tptp_input import parse_tptp_formula
+from unicode_logic_kit import extract_szs_status, parse_tstp_derivation, check_tstp_derivation
+from unicode_logic_kit.fol.tptp_input import parse_tptp_formula
 
 # Captured from `vampire --proof tptp --avatar off` (Vampire 5.0.1) proving
 # {∀X (X=a → q(X))} ⊢ q(a).
@@ -568,9 +568,9 @@ The demodulation checks (`resolution_check`'s `demodulate` rule and the demodula
 `atp.tstp.to_tstp` is the write-side companion: it serialises a `ResolutionStep`/`ResolutionDerivation` (the same proof-object shape `atp.resolution_check.verify_resolution_proof` independently checks — see [Equality via paramodulation](#equality-via-paramodulation) above) as annotated TSTP `cnf(...)` text. It does **not** let the kit export a proof its own search "discovered" — `prove`/`refute` return a bare `bool` and build no derivation trace — it serialises whatever `ResolutionDerivation` the kit has already **certified**, regardless of who built it (a hand-authored fixture, or one transcribed from elsewhere and checked):
 
 ```python
-from unicode_fol_kit import ResolutionStep, ResolutionDerivation, verify_resolution_proof
-from unicode_fol_kit.atp.tstp import to_tstp
-from unicode_fol_kit.fol.nodes import Atom, Not, Constant
+from unicode_logic_kit import ResolutionStep, ResolutionDerivation, verify_resolution_proof
+from unicode_logic_kit.atp.tstp import to_tstp
+from unicode_logic_kit.fol.nodes import Atom, Not, Constant
 
 a = Constant("a")
 def P(*args): return Atom("P", list(args))
@@ -604,7 +604,7 @@ An `"input"` step (0 parents) carries no `inference(...)` source at all — matc
 A `name_map` passed in this way does not have to cover every symbol the derivation uses — a symbol it does not cover is still sanitised, never emitted unchanged, even when a caller's mapping was built from an unrelated problem:
 
 ```python
-from unicode_fol_kit.atp._tptp_problem import generate_tptp_problem_with_mapping
+from unicode_logic_kit.atp._tptp_problem import generate_tptp_problem_with_mapping
 
 # A mapping built for a DIFFERENT problem -- it knows "Foo"/"a", nothing else.
 _, mapping = generate_tptp_problem_with_mapping(
@@ -632,8 +632,8 @@ print(to_tstp(gap_deriv, name_map=mapping))
 A symbol that is *already* TPTP-legal on its own is still checked against its namespace's own round-trip-safe case (predicates conventionally upper-case-initial, constants/functions conventionally lower-case-initial) before being treated as an untouched identity — a lower-case predicate such as `bar` is legal TPTP syntax, but `atp.tstp`'s own reader (`fol.tptp_input`) upper-cases a parsed predicate's first character *unconditionally* on import, so passing `bar` straight through unchanged would make it come back as the different name `Bar`, silently:
 
 ```python
-from unicode_fol_kit.atp.tstp import apply_reverse_tptp
-from unicode_fol_kit.atp._tptp_problem import TptpNameMap
+from unicode_logic_kit.atp.tstp import apply_reverse_tptp
+from unicode_logic_kit.atp._tptp_problem import TptpNameMap
 
 case_deriv = ResolutionDerivation(
     (frozenset({Atom("bar", [a])}), frozenset({Not(Atom("bar", [a]))})),
@@ -665,7 +665,7 @@ apply_reverse_tptp(parsed.steps[0].formula, TptpNameMap(predicate={"bar": "Bar"}
 The provers above decide *whether* an entailment holds; `check_proof` instead **checks a Fitch-style natural-deduction proof** — a derivation with nested subproofs (hypothetical reasoning), per-line justifications, and discharge rules. It is *sound*: it returns `True` only when every line genuinely follows by the cited rule and the proof's premises really do entail its conclusion. `verify_proof` additionally returns a `ProofResult` (fields `ok`, `conclusion`, `premises`, `logic`, `error`, `error_line`).
 
 ```python
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser, Proof, Subproof, premise, assume, line, flag,
     check_proof, verify_proof, render_fitch,
 )
@@ -708,7 +708,7 @@ The classical rule set covers the connectives (`∧I`/`∧E`, `∨I`/`∨E`, `�
 A universal conclusion is introduced by a *flag box*: `flag(n, e)` heads a subproof whose eigenvariable `e` may not escape, and `∀I` cites the box's span. The dual `∃E` opens an assumption box for a fresh witness:
 
 ```python
-from unicode_fol_kit.fol.nodes import Variable
+from unicode_logic_kit.fol.nodes import Variable
 e = Variable("a")
 
 # ∀x(P(x)→Q(x)), ∀x P(x) ⊢ ∀x Q(x)
@@ -791,7 +791,7 @@ open("hs_proof.html", "w", encoding="utf-8").write(html)
 **Non-classical logics.** Pass `logic=` to check a proof under a different consequence relation. In the three-valued **K3**/**LP** logics each step is certified against the many-valued decision procedure, so the paraconsistency facts come out correctly — in **LP** modus ponens is *not* valid, and the checker rejects a proof that uses it:
 
 ```python
-from unicode_fol_kit import MSFLParser, Proof, premise, line, check_proof
+from unicode_logic_kit import MSFLParser, Proof, premise, line, check_proof
 parse = MSFLParser().parse
 
 mp = Proof(premises=[premise(1, parse("P")), premise(2, parse("P → Q"))],
@@ -805,7 +805,7 @@ check_proof(Proof(premises=mp.premises, steps=mp.steps, logic="fol"))    # → T
 For the **modal family** (`logic="K"`/`"T"`/`"S4"`/`"S5"`) each step is certified by the standard translation to FOL plus the frame axioms, decided by Z3. A step whose line and open assumptions together hold a nominal `a` and a user symbol spelled `nom_a` (the reserved world constant of `a`) is refused by name, whichever of the formulas holds which: `ok` is `False` and the message names the symbol and the nominal. The translation's own refusal is applied once to the whole obligation, not formula by formula. Knowledge (`Knows`) is factive, but belief (`Believes`) is not:
 
 ```python
-from unicode_fol_kit import Proof, premise, line, check_proof, Atom, Knows, Believes
+from unicode_logic_kit import Proof, premise, line, check_proof, Atom, Knows, Believes
 
 p = Atom("P", [])
 
@@ -825,8 +825,8 @@ Classical FOL/MSFOL is checked by the syntactic rule table; K3/LP and the modal 
 `find_fitch_proof` *finds* a Fitch proof rather than checking a given one: a goal-directed, iterative-deepening backtracking searcher over the classical propositional and first-order rules (complete for the propositional fragment). `fitch_prove` returns a bool, `is_valid_fitch` proves from no premises, and `find_fitch_proof` returns the actual `Proof` (or `None`). Whatever the search assembles is re-validated by `check_proof` before it is returned, so it is sound by construction.
 
 ```python
-from unicode_fol_kit import find_fitch_proof, fitch_prove, is_valid_fitch
-from unicode_fol_kit.fol.nodes import Atom, And, Or, Not, Implies
+from unicode_logic_kit import find_fitch_proof, fitch_prove, is_valid_fitch
+from unicode_logic_kit.fol.nodes import Atom, And, Or, Not, Implies
 
 P, Q = Atom("P", ()), Atom("Q", ())
 
@@ -875,11 +875,11 @@ Like the resolution prover it is sound and, under its depth bound, incomplete: `
 A two-sided Gentzen sequent calculus. A sequent `Γ ⊢ Δ` (multisets, read as `⋀Γ → ⋁Δ`) is derived by a tree of inference rules, and `check_sequent_proof` verifies the tree. This is classical **LK** with the first-order quantifier rules *and* the **second-order** rules (`∀²`/`∃²` over predicate variables), so it reaches the second-order fragment that natural deduction / resolution / Z3 cannot. `verify_sequent_proof` returns a `SequentResult` naming the first offending rule.
 
 ```python
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     sequent, derive, axiom,
     check_sequent_proof, verify_sequent_proof, render_sequent_proof,
 )
-from unicode_fol_kit.fol.nodes import Atom, Quantifier, Variable, Constant
+from unicode_logic_kit.fol.nodes import Atom, Quantifier, Variable, Constant
 
 x, c = Variable("x"), Constant("c")
 def Px(t): return Atom("P", [t])
@@ -903,7 +903,7 @@ print(render_sequent_proof(d))
 **Propositional LK.** The right rules build the succedent; `¬R` moves a formula across the turnstile and `∨R` takes *both* disjuncts on the right (`Γ ⊢ Δ, A, B`). Classical excluded middle is the canonical two-formula-succedent derivation:
 
 ```python
-from unicode_fol_kit.fol.nodes import And, Or, Not, Implies
+from unicode_logic_kit.fol.nodes import And, Or, Not, Implies
 
 P, Q = Atom("P", ()), Atom("Q", ())
 
@@ -954,8 +954,8 @@ open("comm.html", "w", encoding="utf-8").write(html)
 Gentzen's **LJ** is the same calculus restricted to **at most one formula in the succedent** — the single change that makes intuitionistic logic. `check_lj_proof` / `verify_lj_proof` reuse the LK `Sequent` / `Derivation` data model.
 
 ```python
-from unicode_fol_kit import sequent, derive, axiom, check_lj_proof
-from unicode_fol_kit.fol.nodes import Atom, Not, Implies
+from unicode_logic_kit import sequent, derive, axiom, check_lj_proof
+from unicode_logic_kit.fol.nodes import Atom, Not, Implies
 
 P = Atom("P", ())
 # ⊢ P → ¬¬P  — double-negation *introduction* is intuitionistically valid:
@@ -971,7 +971,7 @@ The classical route to `P ∨ ¬P` needs a two-formula succedent (`⊢ P, ¬P`),
 The contrast is concrete: double-negation *elimination* `⊢ ¬¬P → P` is derivable in **LK** but the very same derivation is rejected by **LJ**, because its `¬R` step would need two formulas (`P, ¬P`) on the right:
 
 ```python
-from unicode_fol_kit import check_sequent_proof
+from unicode_logic_kit import check_sequent_proof
 
 # ⊢ ¬¬P → P : LK derivation (¬R yields the forbidden two-formula succedent)
 dne = derive(sequent([], [Implies(Not(Not(P)), P)]), "→R",
@@ -994,7 +994,7 @@ check_lj_proof(disj)   # → True
 A fourth proof method: `is_valid_tableau` (a formula's negation closes), `prove_tableau(premises, conclusion)` (the premises plus the negated conclusion close), `tableau_closed` (a set of formulas is jointly unsatisfiable), and `tableau_model` (an open branch is a satisfying assignment / countermodel). Sound, and complete and decidable for the propositional fragment; first-order γ-instantiation is bounded.
 
 ```python
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser, is_valid_tableau, prove_tableau, tableau_closed, tableau_model,
 )
 p = MSFLParser().parse
@@ -1011,7 +1011,7 @@ tableau_model([p("P → Q"), p("P")])               # → {'P': True, 'Q': True}
 **Bounds.** The search is a loop over an explicit stack of branches, so a branch is bounded by `max_steps` (default 20 000) and by an optional wall-clock `timeout` in milliseconds, never by Python's recursion limit: a valid chain of several thousand implications closes, and a branch that is too long is "not closed", never a `RecursionError`. First-order γ-instantiation is also bounded by `max_terms` (default 8). Through `api.prove` the answer is `unknown`, and its `detail` names the reason: `bound_hit` when a bound ended the search and `timeout` when the deadline did. A formula nested deeper than the recursive helpers that walk it can follow (about a thousand levels at the default recursion limit) ends a direct call as a bound does (`prove_tableau` gives `False`). The helpers of the proof checker follow fewer levels (a few hundred), and `check_tableau_proof` refuses a proof of a formula nested deeper than they can follow with `TableauCheckError`, not `RecursionError`. `api.prove` reads a formula that deep on a worker thread with a larger stack and decides it up to a nesting of about eight thousand levels; a deeper one gives `unknown` / `bound_hit` with the nesting depth named in the `detail`.
 
 ```python
-from unicode_fol_kit.fol.nodes import Atom, Implies
+from unicode_logic_kit.fol.nodes import Atom, Implies
 
 # P0, P0 → P1, …, P5999 → P6000 ⊢ P6000, within the default max_steps
 chain = [Atom("P0", [])] + [Implies(Atom(f"P{i}", []), Atom(f"P{i + 1}", [])) for i in range(6000)]
@@ -1042,7 +1042,7 @@ The dict key order is not guaranteed (the branch is a `frozenset`); inspect by k
 The Mace4-style partner of the provers: instead of asking *"does it follow?"*, the model finder asks *"is there a finite structure where it holds?"* by brute-force enumeration of finite `Structure`s over a domain `{0, …, k−1}` for increasing `k`, checking each with the Tarskian evaluator. `find_model` returns a satisfying structure (or `None`), `find_countermodel` returns one satisfying the premises but refuting the conclusion, and `is_satisfiable_finite` / `is_valid_finite` are the boolean wrappers.
 
 ```python
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser, find_model, find_countermodel,
     is_satisfiable_finite, is_valid_finite,
 )
@@ -1058,7 +1058,7 @@ is_satisfiable_finite(p("∃x P(x)"))                           # → True
 **Inspecting and re-checking a found structure.** The returned `Structure` exposes `.domain`, `.constants`, `.functions`, and `.predicates`; `models(formula, structure)` re-evaluates any formula against it, so you can confirm a countermodel does what it claims:
 
 ```python
-from unicode_fol_kit import models
+from unicode_logic_kit import models
 
 # A structure where some, but not all, things are P
 m = find_model([p("∃x P(x)"), p("∃x ¬P(x)")], max_size=3)
@@ -1091,7 +1091,7 @@ find_countermodel([p("P(1.0)")], p("P(2)"), max_size=3).constants  # → {'1': 0
 The search is **bounded**: a domain size whose interpretation space is too large is skipped (raise `max_size` / `max_candidates` for harder problems), so `None` (or a `True` from `is_valid_finite`) means "within the bounds searched", not a proof — first-order satisfiability is undecidable, and some satisfiable sentences have only infinite models. `find_model` and `find_countermodel` also take `timeout=` (milliseconds, `None` by default) and return `None` when it ends the search; `search_model` and `search_countermodel` return a `ModelSearch` whose `timed_out` tells a deadline from an exhausted size bound. `is_satisfiable_finite` and `is_valid_finite` take no timeout.
 
 ```python
-from unicode_fol_kit.semantics.modelfinder import search_model
+from unicode_logic_kit.semantics.modelfinder import search_model
 
 # a transitive, irreflexive, serial relation has no finite model, and 1 ms is not enough to search for one
 no_finite_model = [p("∀x ∃y R(x, y)"), p("∀x ¬R(x, x)"), p("∀x ∀y ∀z (R(x, y) ∧ R(y, z) → R(x, z))")]
@@ -1104,7 +1104,7 @@ search_model(no_finite_model, max_size=2).timed_out              # → False  (e
 Many-sorted input is handled directly, in one domain: each named sort is a non-empty subset of it, a `SortedQuantifier` ranges over its sort, and sorts overlap freely — so a found `Structure` carries a `.sorts` mapping. A sorted constant lies in EVERY sort it is written with (it is drawn from the intersection of their universes, so the answer does not depend on which annotation is read first), and `c:S` in one place and a plain `c` in another are one constant; an unsorted constant and a function value may be any element. A sort and the unary predicate of the same name are ONE symbol: the predicate is not enumerated on its own, and the returned `Structure` holds that one extension in both `.sorts` and `.predicates`, so `⊢ ∃y:Car Car(y)` has no countermodel and `Mortal(socrates:Human) ⊢ Human(socrates)` has none (a predicate of another arity with a sort's name is a different symbol). Every structure it returns is accepted by `semantics.tarski.check_structure`.
 
 ```python
-from unicode_fol_kit import MSFLParser, find_model, find_countermodel
+from unicode_logic_kit import MSFLParser, find_model, find_countermodel
 
 msfol = MSFLParser(many_sorted=True)
 
@@ -1129,7 +1129,7 @@ The returned `Structure` interprets the domain, constants, functions, predicates
 `models` and `satisfies` evaluate in a structure you supply, and a structure that is not a structure of the definition is refused with `semantics.tarski.IllegalStructureError` (a `ValueError`) instead of being given a truth value: a sort that is empty or holds an element outside the domain, a name that is a sort and a unary predicate with two extensions, a sorted constant outside its sort. A sorted constant of an undeclared sort is a `KeyError`, like `∀x:Undeclared`, and an atom `S(t)` over a name that the structure knows only as a sort reads the sort. `tarski.check_structure(structure, *formulas)` and `structure_violations` check everything up front; the evaluator itself checks what it reads, so a branch that is short-circuited is not read.
 
 ```python
-from unicode_fol_kit.semantics.tarski import Structure
+from unicode_logic_kit.semantics.tarski import Structure
 
 outside = Structure(domain=(0, 1), constants={"socrates": 1}, predicates={("Human", 1): {(0,)}}, sorts={"Human": (0,)})
 models(msfol.parse("Mortal(socrates:Human)"), outside)
@@ -1141,7 +1141,7 @@ models(msfol.parse("Mortal(socrates:Human)"), outside)
 For the **propositional** fragment, the most direct decision method is the truth table: `truth_table` enumerates every assignment to a formula's atoms and records the formula's value under each. The convenience predicates `is_tautology`, `is_contradiction`, and `is_satisfiable_tt` read off the result. Each distinct atom *surface-form* is one column (`P` and `P(a)` are different columns, and `r(1)` is one column for the numerals `1` and `1.0`); two different atoms that are written alike are refused by name with `NotImplementedError`, as under `tableau_model` above; quantified formulas have no finite table and raise `ValueError`.
 
 ```python
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser, truth_table, is_tautology, is_contradiction, is_satisfiable_tt,
 )
 p = MSFLParser().parse

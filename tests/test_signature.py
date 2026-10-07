@@ -1,10 +1,10 @@
-"""Tests for :mod:`unicode_fol_kit.fol.signature` (the first-class ``Signature``
+"""Tests for :mod:`unicode_logic_kit.fol.signature` (the first-class ``Signature``
 vocabulary carrier: ``PredicateDecl`` / ``FunctionDecl`` / ``ConstantDecl`` and
 the ``Signature`` class itself — ``from_dict`` / ``from_formulas`` / ``to_dict``
 / ``validate`` / ``merge``).
 
 No snapshot tests: every expected value below is derived BY HAND against the
-module's own documented rules (see ``unicode_fol_kit/fol/signature.py``'s
+module's own documented rules (see ``unicode_logic_kit/fol/signature.py``'s
 module docstring) in each test's own docstring — not by running the code and
 copying its output. Formulas are built directly from the AST node
 constructors (``Atom``, ``Function``, ``Constant``, ``SortedConstant``,
@@ -17,11 +17,11 @@ import json
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Variable, Constant, SortedConstant, Function, Number,
     Atom, Not, And, Implies, Quantifier, SortedQuantifier, Count,
 )
-from unicode_fol_kit.fol.signature import (
+from unicode_logic_kit.fol.signature import (
     Signature, PredicateDecl, FunctionDecl, ConstantDecl,
 )
 
@@ -220,13 +220,13 @@ def test_from_formulas_constant_sort_conflict():
 # =============================================================================
 #
 # The two module-private helpers factored out for both this module's own
-# from_formulas AND unicode_fol_kit.fol.casl_export's independently-written
+# from_formulas AND unicode_logic_kit.fol.casl_export's independently-written
 # _analyze pass (see the module docstring's DESIGN NOTE). Tested directly
 # here, independent of either call site, per roadmap item C5's test_oracle
 # ("a new shared-helper unit test asserting the extracted conflict-detection
 # function alone").
 
-from unicode_fol_kit.fol.signature import _check_single_valued, _check_not_dual_use
+from unicode_logic_kit.fol.signature import _check_single_valued, _check_not_dual_use
 
 
 def test_check_single_valued_returns_the_sole_value():
@@ -256,7 +256,7 @@ def test_check_not_dual_use_raises_iff_name_is_in_other_namespace():
 # =============================================================================
 
 def test_from_dict_accepts_exact_api_check_loose_convention():
-    """The exact dict shape unicode_fol_kit/api.py's _signature_errors reads
+    """The exact dict shape unicode_logic_kit/api.py's _signature_errors reads
     and tests/test_api.py constructs (test_check_signature_wrong_arity_and_
     suggestion / test_check_passes_a_clean_sentence):
 
@@ -705,7 +705,7 @@ def test_api_check_accepts_a_signature_object():
     diagnostics are byte-identical to the dict path. Hand-derived: Humann/1
     against a signature declaring Human/1 → one unknown_predicate error
     with suggestion 'Human'."""
-    from unicode_fol_kit import api
+    from unicode_logic_kit import api
 
     sig = Signature.from_dict({"predicates": {"Human": 1},
                                "constants": ["socrates"]})

@@ -8,14 +8,14 @@ names it. Each expected set below is read off the formula written next to it.
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.eval.validate import validate, validate_text
-from unicode_fol_kit.fol._msfl_nodes import _SORTED_NODE_TYPES
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.eval.validate import validate, validate_text
+from unicode_logic_kit.fol._msfl_nodes import _SORTED_NODE_TYPES
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Not, Number, SortedCardinality, SortedConstant, SortedCount,
     SortedQuantifier, Variable,
 )
-from unicode_fol_kit.fol.signature import Signature
+from unicode_logic_kit.fol.signature import Signature
 
 X = Variable("x")
 BODY = Atom("P", [X])

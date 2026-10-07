@@ -9,13 +9,13 @@ which does NOT close the goal (``simp`` cannot reduce ``kneg v`` for abstract ``
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, Or, Implies, Constant, Quantifier, Variable,
 )
-from unicode_fol_kit.hol.classical import to_isabelle_fol, to_isabelle_msfol
-from unicode_fol_kit.hol.manyvalued import to_isabelle_k3lp, to_isabelle_k3lp_entailment
-from unicode_fol_kit.hol.intuitionistic import to_isabelle_intuitionistic
-from unicode_fol_kit.hol.isabelle_runner import (
+from unicode_logic_kit.hol.classical import to_isabelle_fol, to_isabelle_msfol
+from unicode_logic_kit.hol.manyvalued import to_isabelle_k3lp, to_isabelle_k3lp_entailment
+from unicode_logic_kit.hol.intuitionistic import to_isabelle_intuitionistic
+from unicode_logic_kit.hol.isabelle_runner import (
     isabelle_available, check_theory, isabelle_decide_fol,
 )
 
@@ -129,8 +129,8 @@ def test_isabelle_decide_fol_invalid():
 def test_isabelle_backend_reads_equality_as_identity():
     # Regression: through api.prove the classical route used the uninterpreted
     # feq, so reflexivity came back REFUTED while z3 proves it.
-    from unicode_fol_kit import api
-    from unicode_fol_kit.fol.nodes import And
+    from unicode_logic_kit import api
+    from unicode_logic_kit.fol.nodes import And
     y = Variable("y")
     refl = Quantifier("∀", x, Atom("=", [x, x]))
     congruence = Quantifier("∀", x, Quantifier("∀", y, Implies(

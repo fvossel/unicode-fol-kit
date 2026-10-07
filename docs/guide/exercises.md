@@ -1,6 +1,6 @@
 # Generating exercises: constructive, no LLM, independently checked
 
-`unicode_fol_kit.eval.exercise_gen` manufactures small logic exercises —
+`unicode_logic_kit.eval.exercise_gen` manufactures small logic exercises —
 valid/invalid formula pairs, Fitch proofs of a chosen depth, and theories with
 a chosen minimal finite model size — instead of scoring ones a student or an
 LLM already produced. Nothing in this module calls an LLM: every answer key
@@ -16,7 +16,7 @@ model finder) are honest about being *bounded*, so a generator built on top of
 them never turns "search failed" into "proved". `generate_entailment_with_proof`
 sidesteps this by building its proof directly rather than searching for one;
 `generate_theory_with_model_size` sidesteps it by additionally confirming, with
-{func}`~unicode_fol_kit.semantics.modelfinder.is_size_exhaustive`, that every
+{func}`~unicode_logic_kit.semantics.modelfinder.is_size_exhaustive`, that every
 smaller size it needs to rule out was actually *searched* and not silently
 skipped.
 ```
@@ -28,8 +28,8 @@ predicates from a `Signature` and classifies each with the kit's truth-table
 decision procedure — complete for this fragment, so "valid" is never a guess.
 
 ```python
-from unicode_fol_kit.fol.signature import Signature
-from unicode_fol_kit.eval.exercise_gen import generate_valid_invalid_pair
+from unicode_logic_kit.fol.signature import Signature
+from unicode_logic_kit.eval.exercise_gen import generate_valid_invalid_pair
 
 sig = Signature.from_dict({"predicates": {"P": 0, "Q": 0, "R": 0, "Precedes": 2}})
 pair = generate_valid_invalid_pair(sig, max_atoms=2, seed=7)
@@ -44,24 +44,24 @@ print(dict(pair.invalid_valuation))
 
 `invalid_valuation` is a plain `{atom: bool}` mapping, so it can be checked
 against `invalid_formula` on its own terms — for instance by rebuilding it as
-a {class}`~unicode_fol_kit.semantics.tarski.Structure` and calling
-{func}`~unicode_fol_kit.semantics.tarski.models`, exactly as
+a {class}`~unicode_logic_kit.semantics.tarski.Structure` and calling
+{func}`~unicode_logic_kit.semantics.tarski.models`, exactly as
 `tests/test_exercise_gen.py` does, independently of the truth table that
 produced it.
 
 ## Fitch proofs of a chosen depth
 
 `generate_entailment_with_proof` does not search for a proof and then measure
-its depth — {func}`~unicode_fol_kit.atp.fitch_search.find_fitch_proof`'s own
+its depth — {func}`~unicode_logic_kit.atp.fitch_search.find_fitch_proof`'s own
 docstring says a depth-bounded search returning `None` never certifies that a
 shallower proof doesn't exist, so "no proof at depth d−1" could never honestly
 become "the minimal proof has depth d". Instead this generator *builds* a
 derivation with exactly the requested number of nested subproof levels — a
 chain of `→I` introductions, one box per requested atom — and checks it with
-{func}`~unicode_fol_kit.atp.fitch.verify_proof` before returning it.
+{func}`~unicode_logic_kit.atp.fitch.verify_proof` before returning it.
 
 ```python
-from unicode_fol_kit.eval.exercise_gen import generate_entailment_with_proof
+from unicode_logic_kit.eval.exercise_gen import generate_entailment_with_proof
 
 ex = generate_entailment_with_proof(sig, target_depth=2, seed=7)
 print(ex.conclusion.to_unicode_str())
@@ -90,7 +90,7 @@ distinct elements — the textbook fact that an irreflexive total order needs
 domain size ≥ 2, generalised to an arbitrary chain length.
 
 ```python
-from unicode_fol_kit.eval.exercise_gen import generate_theory_with_model_size
+from unicode_logic_kit.eval.exercise_gen import generate_theory_with_model_size
 
 ms = generate_theory_with_model_size(sig, target_size=2, seed=7)
 for f in ms.theory:

@@ -1,7 +1,7 @@
-"""Tests for RBox support in the ALC tableau (unicode_fol_kit.dl): role hierarchies
+"""Tests for RBox support in the ALC tableau (unicode_logic_kit.dl): role hierarchies
 ``r ⊑ s`` and transitive roles ``Trans(r)``, giving ALCH plus transitive roles (the
 non-inverse fragment of SH — see the "Role hierarchies and transitive roles (RBox)"
-section of ``unicode_fol_kit.dl.tableau``'s module docstring for the algorithm and its
+section of ``unicode_logic_kit.dl.tableau``'s module docstring for the algorithm and its
 soundness/termination argument).
 
 Three independent lines, per the item's test oracle:
@@ -32,14 +32,14 @@ import random
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit import api
-from unicode_fol_kit.dl.translate import (
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit import api
+from unicode_logic_kit.dl.translate import (
     tbox_to_fol, rbox_to_fol, subsumption_to_fol, abox_to_fol, kb_to_fol,
 )
-from unicode_fol_kit.dl.tableau import _holder_fields, _is_simple_role, _RBox
-from unicode_fol_kit.fol.nodes import Implies, And as FAnd, Not as FNot
-from unicode_fol_kit.atp.z3_models import is_valid
+from unicode_logic_kit.dl.tableau import _holder_fields, _is_simple_role, _RBox
+from unicode_logic_kit.fol.nodes import Implies, And as FAnd, Not as FNot
+from unicode_logic_kit.atp.z3_models import is_valid
 
 A, B, C = dl.Atomic("A"), dl.Atomic("B"), dl.Atomic("C")
 Engine = dl.Atomic("Engine")
@@ -80,7 +80,7 @@ def test_internalized_unaffected_by_a_functional_role_either():
     # Func(P) IS the GCI ⊤ ⊑ ≤1 P.⊤, and the tableau decides it by adding
     # exactly that concept — but in _new_branch, NOT here: internalized() is
     # documented as the image of `inclusions` and callers read it that way.
-    from unicode_fol_kit.dl.tableau import _new_branch
+    from unicode_logic_kit.dl.tableau import _new_branch
 
     t = dl.TBox().add_functional_role("r")
     assert t.internalized() == []
@@ -248,7 +248,7 @@ def test_role_inclusion_cycle_collapses_into_equivalence_class():
     # as a deliberate, sound degenerate case ("a cycle just collapses those roles
     # into a semantic equivalence class") rather than something to reject, so lock
     # it in with a regression test on both the internal closure and the public API.
-    from unicode_fol_kit.dl.tableau import _RBox
+    from unicode_logic_kit.dl.tableau import _RBox
 
     rbox = _RBox([("r", "s"), ("s", "r")], set())
     assert rbox.ancestors("r") == rbox.ancestors("s") == frozenset({"r", "s"})
@@ -655,7 +655,7 @@ def test_inverse_functional_is_simple_role_restricted_too():
     # anything else is checked, because that message is the more specific one
     # (the caller never wrote a number restriction). The simple-role check
     # still covers it, which is what this asserts at the function level.
-    from unicode_fol_kit.dl.tableau import _check_simple_role_box
+    from unicode_logic_kit.dl.tableau import _check_simple_role_box
 
     t = dl.TBox().add_transitive_role("r").add_inverse_functional_role("r")
     with pytest.raises(dl.UnsupportedAxiomError,
@@ -695,7 +695,7 @@ def test_a_chain_super_role_is_composite_for_the_simple_role_check():
     assert _is_simple_role("P", rbox2) is False
     # The existing number-restriction guard widens with it, which is correct:
     # a chain super-role may carry no qualified number restriction either.
-    from unicode_fol_kit.dl.tableau import _check_simple_roles
+    from unicode_logic_kit.dl.tableau import _check_simple_roles
     with pytest.raises(dl.NonSimpleRoleError, match="number restriction"):
         _check_simple_roles([dl.AtMost(1, "t", dl.Top())], rbox)
 

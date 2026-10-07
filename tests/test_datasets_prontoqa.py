@@ -1,4 +1,4 @@
-"""Tests for unicode_fol_kit.eval.datasets.prontoqa.
+"""Tests for unicode_logic_kit.eval.datasets.prontoqa.
 
 ``tests/fixtures/prontoqa_mini.jsonl`` holds 8 REAL rows fetched verbatim
 from https://huggingface.co/datasets/renma/ProntoQA (config "default", split
@@ -27,14 +27,14 @@ from pathlib import Path
 
 import pytest
 
-from unicode_fol_kit.eval.datasets import DatasetExample, DATASET_INFO, audit_examples
-from unicode_fol_kit.eval.datasets.prontoqa import (
+from unicode_logic_kit.eval.datasets import DatasetExample, DATASET_INFO, audit_examples
+from unicode_logic_kit.eval.datasets.prontoqa import (
     load_prontoqa,
     parse_logic_program,
     solve_example,
 )
-from unicode_fol_kit.fol.nodes import Atom, Not, And, Implies, Quantifier, Variable, Constant
-from unicode_fol_kit.atp.protocol import PROVED, REFUTED
+from unicode_logic_kit.fol.nodes import Atom, Not, And, Implies, Quantifier, Variable, Constant
+from unicode_logic_kit.atp.protocol import PROVED, REFUTED
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _PRONTOQA_FIXTURE = _FIXTURES / "prontoqa_mini.jsonl"
@@ -341,7 +341,7 @@ def test_parse_logic_program_rejects_rule_without_arrow():
 
 
 # ---------------------------------------------------------------------------
-# solve_example: end to end via unicode_fol_kit.api.prove
+# solve_example: end to end via unicode_logic_kit.api.prove
 # ---------------------------------------------------------------------------
 
 def test_solve_example_reproduces_gold_answer_for_every_fixture_example():

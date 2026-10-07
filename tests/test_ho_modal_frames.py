@@ -11,11 +11,11 @@ module's live-checked GL/Grz functions build.
 
 Two things this file adds beyond the first-order battery:
 
-1. a cross-check against :mod:`unicode_fol_kit.atp.kripke_enum`'s bounded
+1. a cross-check against :mod:`unicode_logic_kit.atp.kripke_enum`'s bounded
    finite-frame search on the SAME propositional Box/Diamond formulas, so the
    third-order route's refutation of T under GL (and non-refutation under
    Grz) is independently confirmed by a completely different verified
-   evaluator (:func:`~unicode_fol_kit.semantics.kripke.satisfies_modal`), not
+   evaluator (:func:`~unicode_logic_kit.semantics.kripke.satisfies_modal`), not
    just by Nitpick;
 2. a THF well-formedness check on the new ``frame_loeb``/``frame_mckinsey``/
    ``frame_grz`` clauses, plus an OPTIONAL live parse through a real Leo-III
@@ -33,18 +33,18 @@ import tempfile
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.atp.kripke_enum import modal_enum_search
-from unicode_fol_kit.atp.tstp import extract_szs_status
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.atp.kripke_enum import modal_enum_search
+from unicode_logic_kit.atp.tstp import extract_szs_status
+from unicode_logic_kit.fol.nodes import (
     Atom, Box, Diamond, Implies, Knows, Obligatory, Permitted, Always, Next,
     Nominal, At, Constant,
 )
-from unicode_fol_kit.hol.ho_modal import HoGoal, isabelle_ho_modal_theory, to_thf_ho_modal
-from unicode_fol_kit.hol.isabelle_runner import (
+from unicode_logic_kit.hol.ho_modal import HoGoal, isabelle_ho_modal_theory, to_thf_ho_modal
+from unicode_logic_kit.hol.isabelle_runner import (
     check_theory, isabelle_available, isabelle_decide_modal,
 )
-from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
+from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
 
 TOM = MSFLParser(third_order=True, modal=True)
 
@@ -501,9 +501,9 @@ def test_identity_table_agrees_with_the_first_order_oracle(label, text, frame, m
     """Z3 on the first-order shallow embedding gives the hand-derived verdict, with a
     DEFINITE answer both ways: a valid row is unsat on its negation, and an invalid row
     is sat - a Z3 'unknown' would satisfy neither, so it cannot pass as 'not valid'."""
-    from unicode_fol_kit.atp.z3_models import is_satisfiable, is_valid
-    from unicode_fol_kit.fol.nodes import Not
-    from unicode_fol_kit.fol.qml import qml_validity_formula
+    from unicode_logic_kit.atp.z3_models import is_satisfiable, is_valid
+    from unicode_logic_kit.fol.nodes import Not
+    from unicode_logic_kit.fol.qml import qml_validity_formula
     query = qml_validity_formula(_MP.parse(text), mode=mode, frame=frame)
     if valid:
         assert is_valid(query), why
@@ -525,8 +525,8 @@ def _refuted_by_a_small_structure(text, max_size=2):
     Python's own ``==`` on the domain elements there.
     """
     from itertools import combinations, product
-    from unicode_fol_kit.semantics import Structure
-    from unicode_fol_kit.semantics.thirdorder import satisfies_to
+    from unicode_logic_kit.semantics import Structure
+    from unicode_logic_kit.semantics.thirdorder import satisfies_to
     formula = TOM.parse(text)
     for n in range(1, max_size + 1):
         domain = tuple(range(n))

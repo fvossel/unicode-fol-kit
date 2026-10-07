@@ -25,16 +25,16 @@ import dataclasses
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.twee_backend import TweeBackend
-from unicode_fol_kit.atp.twee_check import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.twee_backend import TweeBackend
+from unicode_logic_kit.atp.twee_check import (
     check_twee_proof, goal_matches_conclusion, goal_mismatch,
 )
-from unicode_fol_kit.atp.twee_entailment import (
+from unicode_logic_kit.atp.twee_entailment import (
     TweeAxiom, TweeChain, TweeCitation, TweeEquation, TweeGoal, TweeProof,
     parse_twee_proof, twee_available,
 )
-from unicode_fol_kit.fol.nodes import And, Atom, Constant, Function, Number, Quantifier, Variable
+from unicode_logic_kit.fol.nodes import And, Atom, Constant, Function, Number, Quantifier, Variable
 
 _X, _Y = Variable("x"), Variable("y")
 _AA, _BB, _CC, _DD, _EE, _FF = (Constant(name) for name in ("aa", "bb", "cc", "dd", "ee", "ff"))
@@ -408,7 +408,7 @@ def test_the_verdict_for_a_goal_at_a_constant_of_the_problem_names_the_constant(
     premise = _eq(_app("f", _AA), _app("g", _AA))
     proof = _one_step_proof(_app("f", _AA), _app("g", _AA), _app("f", _AA), _app("g", _AA))
     monkeypatch.setattr(
-        "unicode_fol_kit.atp.twee_entailment.check_entailment_twee_detailed",
+        "unicode_logic_kit.atp.twee_entailment.check_entailment_twee_detailed",
         lambda *args, **kwargs: {"status": "Theorem", "raw_output": "stub", "proof": proof,
                                  "timed_out": False})
     verdict = TweeBackend().decide(_all(_X, _eq(_app("f", _X), _app("g", _X))), [premise])

@@ -7,7 +7,7 @@
 Select the mode with the `second_order=True` flag. Object quantifiers keep using lowercase variables, so `∀x` is first-order and `∀P` is second-order. The bound predicate variable's arity is **inferred** from how it is applied in the body: monadic if applied to one argument, n-ary if applied to n, and arity 0 (propositional) if never applied. The arity is recorded on the `SecondOrderQuantifier` node but is not printed, since it is re-inferred on re-parse.
 
 ```python
-from unicode_fol_kit import MSFLParser
+from unicode_logic_kit import MSFLParser
 
 p = MSFLParser(second_order=True).parse
 
@@ -86,10 +86,10 @@ both.formula.arity   # → 1   (inner Q)
 
 ### Conflicting arities: parse-time errors
 
-Applying one bound predicate at two different arities is a parse-time error, `ConflictingArityError` (a subclass of the parser's `ParsingError`, re-exported from `unicode_fol_kit.fol.msflparser`):
+Applying one bound predicate at two different arities is a parse-time error, `ConflictingArityError` (a subclass of the parser's `ParsingError`, re-exported from `unicode_logic_kit.fol.msflparser`):
 
 ```python
-from unicode_fol_kit.fol.msflparser import ConflictingArityError
+from unicode_logic_kit.fol.msflparser import ConflictingArityError
 
 try:
     p("∀P (P(x) ∧ P(x, y))")          # raises ConflictingArityError
@@ -128,7 +128,7 @@ except NotImplementedError:
 Serialisation survives the second-order field, so SO ASTs round-trip through `to_dict` / `from_dict` (and therefore JSON):
 
 ```python
-from unicode_fol_kit.fol.nodes import Node
+from unicode_logic_kit.fol.nodes import Node
 
 n = p("∀P P(x)")
 d = n.to_dict()
@@ -148,7 +148,7 @@ restored.arity                           # → 1
 ### Basic evaluation: closed formulas
 
 ```python
-from unicode_fol_kit import MSFLParser, Structure, holds
+from unicode_logic_kit import MSFLParser, Structure, holds
 
 p = MSFLParser(second_order=True).parse
 universe = Structure(domain={0, 1})            # a bare 2-element domain
@@ -167,7 +167,7 @@ For `∃P ∀x P(x)` on a 2-element domain `{0, 1}`, there exists a relation (th
 `holds` is for closed sentences. When the formula has a free *object* variable, pass an `assignment`; when it has a free *predicate* (i.e. one not bound by a `∀P` / `∃P` in the formula and not given by the structure), pass a `pred_binding` mapping that name to a relation — a `frozenset` of argument tuples. Both are threaded immutably through the recursion exactly like a Tarskian assignment.
 
 ```python
-from unicode_fol_kit import satisfies_so
+from unicode_logic_kit import satisfies_so
 
 S = Structure(domain={0, 1})
 
@@ -224,7 +224,7 @@ holds(p("∃P ∀x ¬P(x)"), Structure(domain={0, 1}))  # → True  (P = false w
 A `∀P` / `∃P` over an arity-`k` predicate on an `n`-element domain enumerates `2 ** (n ** k)` relations — doubly exponential. This is for very small models only (a handful of elements, arity ≤ 2); past `secondorder.MAX_RELATIONS` (~4.2 million) the evaluator raises a `ValueError` rather than hang. For example, evaluating a binary `∀R` over a 6-element domain would require `2 ** (6 ** 2)` relations and is rejected with a clear message.
 
 ```python
-from unicode_fol_kit.semantics import secondorder
+from unicode_logic_kit.semantics import secondorder
 
 secondorder.MAX_RELATIONS              # → 4194304   (2 ** 22)
 
@@ -251,8 +251,8 @@ holds(p("∀R ∀x ∃y R(x, y)"), safe_2)  # → fine
 `satisfies_so` / `holds` are brute force by construction — every `∀P` / `∃P` materialises the full `2 ** (n ** k)` relation powerset in Python. `semantics.asp_models.asp_holds_so(formula, structure)` (roadmap C24) checks the *same* semantics through clingo instead: an answer-set solver's own choice-and-propagate search replaces the Python enumeration, so it clears the `MAX_RELATIONS` cap entirely. The trade-off is scope: it only accepts a formula whose `SecondOrderQuantifier` occurrences form a **single block of one polarity** (all `∀` or all `∃`, nothing else of that kind anywhere in the formula) — genuine alternation (`∀P∃Q…`) still needs `satisfies_so`. `holds`, and every function built on it (`so_find_model`, `so_find_countermodel`, `so_is_satisfiable_finite`, `so_is_valid_finite`), take an opt-in `fast=True` that switches to `asp_holds_so` for exactly this reason: the default (`fast=False`) is unchanged, and `fast=True` raises `ValueError` — never a silent, possibly wrong, fallback — the moment a formula leaves the single-block fragment.
 
 ```python
-from unicode_fol_kit import so_is_valid_finite
-from unicode_fol_kit.semantics.asp_models import asp_holds_so
+from unicode_logic_kit import so_is_valid_finite
+from unicode_logic_kit.semantics.asp_models import asp_holds_so
 
 # The safe_2 example above, pushed past MAX_RELATIONS (domain size 6, arity 2:
 # 2 ** (6 ** 2) relations) -- holds() refuses it outright, asp_holds_so and
@@ -272,7 +272,7 @@ so_is_valid_finite(p("∃P ∀x P(x)"), max_size=2)               # → True
 so_is_valid_finite(p("∃P ∀x P(x)"), max_size=2, fast=True)    # → True
 ```
 
-`asp_holds_so` needs `pip install unicode-fol-kit[asp]` (`clingo`) — the same optional dependency `asp_find_model` / `asp_minimal_models` already use. It is also what `nonmonotonic.circumscription_entails_so`'s ∀-block ([Further Non-Classical Logics](nonclassical.md)) and `team_translation.dependence_to_eso`'s ∃-block ([Dependence logic](dependence.md), via `dependence_holds_eso(sentence, structure, fast=True)`) opt into: both producers only ever emit a single same-polarity block by construction, so `fast=True` never raises for THEM specifically — only a hand-built formula with genuine alternation does.
+`asp_holds_so` needs `pip install unicode-logic-kit[asp]` (`clingo`) — the same optional dependency `asp_find_model` / `asp_minimal_models` already use. It is also what `nonmonotonic.circumscription_entails_so`'s ∀-block ([Further Non-Classical Logics](nonclassical.md)) and `team_translation.dependence_to_eso`'s ∃-block ([Dependence logic](dependence.md), via `dependence_holds_eso(sentence, structure, fast=True)`) opt into: both producers only ever emit a single same-polarity block by construction, so `fast=True` never raises for THEM specifically — only a hand-built formula with genuine alternation does.
 
 ## Bounded second-order search (new in 0.9.0)
 
@@ -290,7 +290,7 @@ Second-order logic has no complete proof system, and SO validity is not even sem
 ### Standard SO validities and refutations
 
 ```python
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser, holds,
     so_find_model, so_find_countermodel,
     so_is_satisfiable_finite, so_is_valid_finite,
@@ -380,10 +380,10 @@ sat = p("∃P ∀x (P(x) ↔ x = a)")
 so_is_satisfiable_finite(sat, max_size=1)  # → True  (1-element works for *any* model)
 ```
 
-Every size `1 .. max_size` is searched, or the call raises: no size is skipped. The four functions take `max_candidates` (default `MAX_RELATIONS`, 4194304), the most candidate interpretations of the free symbols that they enumerate at one size. A size with more candidates than that, reached before a structure was found at a smaller size, raises `CandidateBoundExceeded` (a `ValueError`, importable from `unicode_fol_kit` and `unicode_fol_kit.semantics`) with the attributes `size`, `candidates` and `max_candidates`; the message gives the two ways out, raise `max_candidates` or lower `max_size`. A structure found at a smaller size is returned as before. The count is of interpretations up to renaming of constants: exact for an unsorted formula, an upper bound for a sorted one.
+Every size `1 .. max_size` is searched, or the call raises: no size is skipped. The four functions take `max_candidates` (default `MAX_RELATIONS`, 4194304), the most candidate interpretations of the free symbols that they enumerate at one size. A size with more candidates than that, reached before a structure was found at a smaller size, raises `CandidateBoundExceeded` (a `ValueError`, importable from `unicode_logic_kit` and `unicode_logic_kit.semantics`) with the attributes `size`, `candidates` and `max_candidates`; the message gives the two ways out, raise `max_candidates` or lower `max_size`. A structure found at a smaller size is returned as before. The count is of interpretations up to renaming of constants: exact for an unsorted formula, an upper bound for a sorted one.
 
 ```python
-from unicode_fol_kit import CandidateBoundExceeded
+from unicode_logic_kit import CandidateBoundExceeded
 
 # With at most two elements, two of any three are equal, so the first disjunct holds at sizes 1 and 2:
 g = p("∀x ∀y ∀z (x = y ∨ y = z ∨ x = z) ∨ ∀x ∀y ∀z ¬T(x, y, z)")
@@ -443,7 +443,7 @@ holds(induction, m)                                   # → True
 A complete loop — parse an SO sentence, refute it with the bounded search, re-check the witness, then hand the conjecture to a HOL prover:
 
 ```python
-from unicode_fol_kit.hol import to_thf_so
+from unicode_logic_kit.hol import to_thf_so
 
 f = p("∀P ∃x P(x)")                 # "every relation is non-empty" — not SO-valid
 verdict = so_is_valid_finite(f, max_size=3)   # → False
@@ -463,8 +463,8 @@ verdict_5 = so_is_valid_finite(f, max_size=5)  # → False (still no models)
 The same evaluators and search functions accept a `SecondOrderQuantifier` AST node built without the parser — `SecondOrderQuantifier(type, predicate, arity, formula)`, where `type` is `"∀"` or `"∃"`, `predicate` is the bound predicate name, and `arity` is its arity.
 
 ```python
-from unicode_fol_kit import so_is_valid_finite, SecondOrderQuantifier
-from unicode_fol_kit.fol.nodes import Atom, Not, Iff, Quantifier, Variable, And
+from unicode_logic_kit import so_is_valid_finite, SecondOrderQuantifier
+from unicode_logic_kit.fol.nodes import Atom, Not, Iff, Quantifier, Variable, And
 
 x = Variable("x")
 # ∃P ∀x (P(x) ↔ ¬Q(x))  — complement-definability, built by hand
@@ -479,7 +479,7 @@ so_is_valid_finite(node, max_size=3)   # → True
 
 ```python
 # ∀P ∀Q ∀x ((P(x) ∧ Q(x)) → (P(x) ∨ Q(x)))
-from unicode_fol_kit.fol.nodes import Implies, Or
+from unicode_logic_kit.fol.nodes import Implies, Or
 
 P = Atom("P", [x])
 Q = Atom("Q", [x])
@@ -493,16 +493,16 @@ p_binder = SecondOrderQuantifier("∀", "P", 1, q_binder)
 so_is_valid_finite(p_binder, max_size=2)  # → True
 ```
 
-`SecondOrderQuantifier` is also exported at the top level as `unicode_fol_kit.SecondOrderQuantifier`.
+`SecondOrderQuantifier` is also exported at the top level as `unicode_logic_kit.SecondOrderQuantifier`.
 
 (SO nodes built directly bypass the parser's arity inference, so set `arity` to match the body's applications yourself; the evaluator and the exporters both trust the recorded `arity`.)
 
 ## Exporting to a HOL prover
 
-Because there is no first-order export, `unicode_fol_kit.hol` instead embeds an SO formula *directly* into a higher-order logic, where predicate quantification is native: an object variable has type `$i`, a predicate variable of arity `k` has type `$i > … > $i > $o` (arity 0 → `$o`), and each `∀P` / `∃P` becomes a HOL quantifier over a predicate-typed variable. Two emitters are provided — `to_thf_so` (TPTP THF, for Leo-III / Satallax) and `to_isabelle_so` (an Isabelle/HOL theory). Both only *emit*; they run no prover, and SO validity is not semi-decidable, so a sound prover may still fail on a valid goal.
+Because there is no first-order export, `unicode_logic_kit.hol` instead embeds an SO formula *directly* into a higher-order logic, where predicate quantification is native: an object variable has type `$i`, a predicate variable of arity `k` has type `$i > … > $i > $o` (arity 0 → `$o`), and each `∀P` / `∃P` becomes a HOL quantifier over a predicate-typed variable. Two emitters are provided — `to_thf_so` (TPTP THF, for Leo-III / Satallax) and `to_isabelle_so` (an Isabelle/HOL theory). Both only *emit*; they run no prover, and SO validity is not semi-decidable, so a sound prover may still fail on a valid goal.
 
 ```python
-from unicode_fol_kit.hol import to_thf_so, to_isabelle_so
+from unicode_logic_kit.hol import to_thf_so, to_isabelle_so
 
 f = p("∃P ∀x (P(x) ↔ ¬Q(x))")     # complement-definability
 
@@ -577,7 +577,7 @@ print("feq" in thy_eq)  # → True
 
 ## Scope
 
-This is second-order **predicate** (relation) quantification with standard semantics over finite models. Quantification over functions and a complete higher-order type system are out of scope; a predicate that takes a property as its argument is third order, see [Third-order logic](third-order.md). The lambda layer already supplies higher-order *terms* (`λP. P(x)`), which you beta-reduce and lambda-eliminate before evaluation. The `second_order=True` mode does not combine with fuzziness or the modal mode — the constructor rejects an unsupported combination with a `ValueError` — and second-order syntax with modal operators is `MSFLParser(third_order=True, modal=True)`. With `many_sorted=True` it accepts the sorted object quantifiers `∀x:S` / `∃x:S`: `satisfies_so` and `holds` range them over the sort listed in the structure's `sorts` (a sort is never empty, so an empty one raises `IllegalStructureError`, and a sort the structure does not list raises `KeyError`). The bounded search functions above read a sorted formula as the model finder does, in one universe: one domain, each sort a non-empty subset of it (sorts may overlap), `c:S` an element of `S`, a sort and the unary predicate of its name one symbol, and `∀P` / `∃P` ranging over every relation on the whole domain. A bound predicate variable with the name of a sort is refused with a `NotImplementedError`, and with `fast=True` a sorted quantifier or constant inside a second-order quantifier is refused with a `ValueError`. `to_thf_so` / `to_isabelle_so` raise `NotImplementedError` on a sorted formula. For exporting `∀P` / `∃P` to a higher-order prover, see `unicode_fol_kit.hol` (`to_thf_so` / `to_isabelle_so`), which map them to native HOL predicate quantifiers.
+This is second-order **predicate** (relation) quantification with standard semantics over finite models. Quantification over functions and a complete higher-order type system are out of scope; a predicate that takes a property as its argument is third order, see [Third-order logic](third-order.md). The lambda layer already supplies higher-order *terms* (`λP. P(x)`), which you beta-reduce and lambda-eliminate before evaluation. The `second_order=True` mode does not combine with fuzziness or the modal mode — the constructor rejects an unsupported combination with a `ValueError` — and second-order syntax with modal operators is `MSFLParser(third_order=True, modal=True)`. With `many_sorted=True` it accepts the sorted object quantifiers `∀x:S` / `∃x:S`: `satisfies_so` and `holds` range them over the sort listed in the structure's `sorts` (a sort is never empty, so an empty one raises `IllegalStructureError`, and a sort the structure does not list raises `KeyError`). The bounded search functions above read a sorted formula as the model finder does, in one universe: one domain, each sort a non-empty subset of it (sorts may overlap), `c:S` an element of `S`, a sort and the unary predicate of its name one symbol, and `∀P` / `∃P` ranging over every relation on the whole domain. A bound predicate variable with the name of a sort is refused with a `NotImplementedError`, and with `fast=True` a sorted quantifier or constant inside a second-order quantifier is refused with a `ValueError`. `to_thf_so` / `to_isabelle_so` raise `NotImplementedError` on a sorted formula. For exporting `∀P` / `∃P` to a higher-order prover, see `unicode_logic_kit.hol` (`to_thf_so` / `to_isabelle_so`), which map them to native HOL predicate quantifiers.
 
 ### Combining second-order with other modes
 

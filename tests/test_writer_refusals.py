@@ -18,19 +18,19 @@ import re
 
 import pytest
 
-from unicode_fol_kit.atp import (
+from unicode_logic_kit.atp import (
     generate_tff_arith_problem, generate_tff_problem, generate_tff_problem_with_mapping,
     generate_tptp_problem, generate_tptp_problem_with_mapping,
 )
-from unicode_fol_kit.atp._tff_problem import formula_to_tff_arith
-from unicode_fol_kit.atp._tptp_problem import generate_tptp_problem_for_prover
-from unicode_fol_kit.atp.eprover_backend import check_entailment_eprover_detailed
-from unicode_fol_kit.atp.tptp_ncl import to_tptp_ncl
-from unicode_fol_kit.atp.tptp_tff import Tf0Refusal, formula_to_tff
-from unicode_fol_kit.atp.vampire_entailment import (
+from unicode_logic_kit.atp._tff_problem import formula_to_tff_arith
+from unicode_logic_kit.atp._tptp_problem import generate_tptp_problem_for_prover
+from unicode_logic_kit.atp.eprover_backend import check_entailment_eprover_detailed
+from unicode_logic_kit.atp.tptp_ncl import to_tptp_ncl
+from unicode_logic_kit.atp.tptp_tff import Tf0Refusal, formula_to_tff
+from unicode_logic_kit.atp.vampire_entailment import (
     check_entailment_vampire_detailed, check_logical_entailment_vampire,
 )
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Box, Constant, Function, Implies, Number, Quantifier, SortedConstant,
     SortedQuantifier, Variable,
 )
@@ -214,8 +214,8 @@ def test_the_typed_writers_refuse_a_free_variable_as_well(premise):
 def test_e_answers_a_free_variable_as_unsupported_with_the_writers_message(monkeypatch, premise):
     """The adapter reports what the writer said (unknown / unsupported), not the prover's parse
     error as an infrastructure failure; the prover is not run."""
-    from unicode_fol_kit.atp import eprover_backend as _eb
-    from unicode_fol_kit.atp.protocol import get_backend
+    from unicode_logic_kit.atp import eprover_backend as _eb
+    from unicode_logic_kit.atp.protocol import get_backend
 
     def never_run(*args, **kwargs):
         raise AssertionError("the prover must not be run on a problem the writer refuses")
@@ -231,9 +231,9 @@ def test_e_answers_a_free_variable_as_unsupported_with_the_writers_message(monke
 @pytest.mark.parametrize("premise", [_FREE_UNSORTED, _FREE_SORTED], ids=["unsorted", "sorted"])
 def test_vampire_answers_a_free_variable_as_unsupported_with_the_writers_message(
         monkeypatch, premise):
-    from unicode_fol_kit.atp import protocol as _protocol
-    from unicode_fol_kit.atp import vampire_entailment as _ve
-    from unicode_fol_kit.atp.protocol import get_backend
+    from unicode_logic_kit.atp import protocol as _protocol
+    from unicode_logic_kit.atp import vampire_entailment as _ve
+    from unicode_logic_kit.atp.protocol import get_backend
 
     def never_run(*args, **kwargs):
         raise AssertionError("the prover must not be run on a problem the writer refuses")

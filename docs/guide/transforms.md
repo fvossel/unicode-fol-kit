@@ -1,13 +1,13 @@
 # Transforming & exporting formulas
 
-Every AST node carries a uniform set of transformations: normal forms and Horn checks for classical FOL, lambda-calculus reduction, sort relativisation, a small traversal API, and round-tripping exporters/importers for LaTeX, TPTP, Prover9, SMT-LIB, and Graphviz. Most operations are methods on the node; the rest are free functions importable from `unicode_fol_kit`. Moving a formula into a *different logic* (modal or many-sorted to first-order, a description-logic concept to FOL, …) is a translation rather than a transformation: it hands back side axioms next to the term, and it lives on its own page, {doc}`logic-graph`.
+Every AST node carries a uniform set of transformations: normal forms and Horn checks for classical FOL, lambda-calculus reduction, sort relativisation, a small traversal API, and round-tripping exporters/importers for LaTeX, TPTP, Prover9, SMT-LIB, and Graphviz. Most operations are methods on the node; the rest are free functions importable from `unicode_logic_kit`. Moving a formula into a *different logic* (modal or many-sorted to first-order, a description-logic concept to FOL, …) is a translation rather than a transformation: it hands back side axioms next to the term, and it lives on its own page, {doc}`logic-graph`.
 
 ## Normal forms
 
 `to_nnf()`, `to_pnf()`, `to_cnf()`, and `skolemize()` operate on classical FOL. They accept FOL and MSFOL directly — sorts are reduced via `to_fol()` internally, so the result is a normal form of the *relativised* formula, which does not say that a sort is non-empty (see [Sort relativisation](#sort-relativisation-to_fol)). **Łukasiewicz (MSFL/FL) input is refused**, not silently classicalised: a Łukasiewicz connective is not classical, and treating `P ∨ ¬P` as excluded middle would decide the wrong logic (weak disjunction has no excluded middle). Evaluate fuzzy input with `semantics.fuzzy.evaluate` / `fuzzy_is_valid`, or collapse it explicitly first with `to_fol(node)` if the classical skeleton is really what you want. (Lambda terms must be beta-reduced and lambda-eliminated beforehand; see below.)
 
 ```python
-from unicode_fol_kit import MSFLParser, to_nnf, to_pnf, to_cnf, to_dnf, skolemize
+from unicode_logic_kit import MSFLParser, to_nnf, to_pnf, to_cnf, to_dnf, skolemize
 
 p = MSFLParser()
 
@@ -110,7 +110,7 @@ skolemize(p.parse("∃x (∀y P(x, y) ∧ ∃z Q(x, z))")).to_unicode_str()
 `to_tseitin_cnf()` produces an **equisatisfiable** CNF using the Tseitin/definitional encoding: it introduces fresh auxiliary atoms (`ts0, ts1, …`, skipping any name the formula uses) for compound subformulas, so the result grows linearly instead of risking the exponential blow-up of the distributive `to_cnf`. It is **not** logically equivalent to the input (the auxiliaries are existentially fresh), but the input is satisfiable iff its Tseitin CNF is. It operates on quantifier-free (propositional / ground) formulas and raises `ValueError` on quantified input.
 
 ```python
-from unicode_fol_kit import MSFLParser, to_tseitin_cnf, is_satisfiable
+from unicode_logic_kit import MSFLParser, to_tseitin_cnf, is_satisfiable
 
 p = MSFLParser()
 phi = p.parse("(P ∨ Q) ∧ (¬P ∨ R)")
@@ -138,7 +138,7 @@ to_tseitin_cnf(p.parse("∀x P(x)"))    # raises ValueError: only quantifier-fre
 `is_horn()` reports whether a formula's clausal form consists of Horn clauses — each clause has at most one positive literal. The formula is skolemised, its universal prefix dropped, and the matrix put into CNF before the clauses are checked.
 
 ```python
-from unicode_fol_kit import MSFLParser, is_horn
+from unicode_logic_kit import MSFLParser, is_horn
 
 p = MSFLParser()
 is_horn(p.parse("∀x (Body(x) → Head(x))"))   # → True   (definite clause)
@@ -160,7 +160,7 @@ is_horn(p.parse("(P → Q) ∧ (R ∨ S)"))          # → False
 The witnesses a `Count` expansion mints are named after the counting variable, as one letter and digits (`x0`, `x1`, …) — the one shape the kit's own parser reads back — and they avoid every name in the matrix, bound ones included. So the expansion is text you can hand straight back:
 
 ```python
-from unicode_fol_kit import MSFLParser, to_fol, api
+from unicode_logic_kit import MSFLParser, to_fol, api
 
 expanded = to_fol(MSFLParser().parse("∃≥2 x P(x)"))
 expanded.to_unicode_str()
@@ -174,7 +174,7 @@ to_fol(MSFLParser().parse("∃≥2 x R(x, x0)")).to_unicode_str()   # x0 is alre
 ```
 
 ```python
-from unicode_fol_kit import MSFLParser, to_fol
+from unicode_logic_kit import MSFLParser, to_fol
 
 p = MSFLParser(many_sorted=True, fuzzy=True)
 formula = p.parse("∀x:Human (P(x) ∧ ¬Q(x))")
@@ -199,7 +199,7 @@ to_fol(p.parse("∀x:Agent (∃y:Agent Knows(x, y) ∨ Alone(x))")).to_unicode_s
 **Relativisation alone does not say that a sort is non-empty.** The kit's many-sorted logic never lets a sort be empty ({doc}`classical-reasoning`), but the image of `∀x:S φ` is satisfied by a structure in which `S` has no members, so the image can have countermodels the sorted formula cannot. `(∀x:Human M(x)) → ∃x:Human M(x)` is valid; its image is not:
 
 ```python
-from unicode_fol_kit import MSFLParser, to_fol, api, nonempty_sort_axioms
+from unicode_logic_kit import MSFLParser, to_fol, api, nonempty_sort_axioms
 
 valid = MSFLParser(many_sorted=True).parse("(∀x:Human M(x)) → ∃x:Human M(x)")
 image = to_fol(valid)
@@ -223,7 +223,7 @@ The missing fact is `nonempty_sort_axioms(...)` (and `subsort_axioms(signature)`
 A **sorted constant** is written `alice:Human` (the constant name needs at least two letters, otherwise it lexes as a variable). `to_fol` drops the annotation to a plain constant; pass `include_sort_facts=True` to conjoin the membership atoms it implies at the top level:
 
 ```python
-from unicode_fol_kit import Atom, SortedConstant
+from unicode_logic_kit import Atom, SortedConstant
 
 knows = Atom("Knows", [SortedConstant("alice", "Human"),
                        SortedConstant("bob", "Human")])
@@ -240,7 +240,7 @@ to_fol(knows, include_sort_facts=True).to_unicode_str()
 Those facts are conjoined *into* the formula, which is right for a formula you assert (a premise, a satisfiability check) and wrong for one you try to prove, because the goal then has to establish the facts too:
 
 ```python
-from unicode_fol_kit import Atom, Not, Or, SortedConstant
+from unicode_logic_kit import Atom, Not, Or, SortedConstant
 
 alice = SortedConstant("alice", "Human")
 tautology = Or(Atom("P", [alice]), Not(Atom("P", [alice])))
@@ -261,7 +261,7 @@ This is a classical (Boolean) projection, not a fuzzy-preserving translation. `t
 The normal-form functions above call `to_fol()` internally for **sorts**, so they accept sorted input directly — e.g. you can `skolemize` a sorted formula (the result is the Skolemisation of the relativised image, so the non-emptiness caveat above applies to any validity or satisfiability conclusion drawn from it). Fuzzy input still needs the explicit `to_fol()` call first (see above); passing it straight to `skolemize`/`to_nnf`/etc. raises:
 
 ```python
-from unicode_fol_kit import skolemize
+from unicode_logic_kit import skolemize
 
 skolemize(p.parse("∀x:Human ∃y:Human Loves(x, y)")).to_unicode_str()
 # → '∀v0 (¬Human(v0) ∨ (Human(sk0(v0)) ∧ Loves(v0, sk0(v0))))'
@@ -286,7 +286,7 @@ Every parser mode supports lambda abstraction and application, and `parse()` app
 `free_variables(term)` returns the set of variables free in a term; the result is a mixed set that may contain both `Variable` (logical) and `LambdaVar` (lambda-bound) objects. `substitute(term, var, replacement)` performs a capture-avoiding substitution.
 
 ```python
-from unicode_fol_kit import MSFLParser, free_variables, substitute, Variable, Constant
+from unicode_logic_kit import MSFLParser, free_variables, substitute, Variable, Constant
 
 p = MSFLParser()
 
@@ -315,7 +315,7 @@ substitute(p.parse("∀x1 P(x1)"), Variable("x0"), Variable("x1")).to_unicode_st
 `beta_reduce` reduces to beta-normal form using a normal-order (leftmost-outermost) strategy with full capture-avoiding substitution; it raises `ReductionLimitError` after 10 000 steps if the term does not normalise. `eta_reduce` does a single bottom-up pass contracting `λp. f(p) → f` when `p` is not free in `f`. `beta_eta_normalize` alternates the two to fixpoint (eta-reduction can expose fresh beta-redexes).
 
 ```python
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser, beta_reduce, eta_reduce, beta_eta_normalize,
     LambdaVar, Lambda, Application, Atom, Variable,
 )
@@ -358,7 +358,7 @@ beta_reduce(p.parse("((λP. λQ. P ∧ Q)(A))(B)")).to_unicode_str()
 A non-normalising term (e.g. the classic Ω = `(λx. x x)(λx. x x)`, built directly since the parser rejects self-application) raises `ReductionLimitError` rather than looping forever:
 
 ```python
-from unicode_fol_kit import ReductionLimitError
+from unicode_logic_kit import ReductionLimitError
 
 omega_half = Lambda(LambdaVar("x"), Application(LambdaVar("x"), LambdaVar("x")))
 omega = Application(omega_half, omega_half)
@@ -370,7 +370,7 @@ beta_reduce(omega)    # raises ReductionLimitError after the step limit
 `beta_reduce_step(node)` contracts exactly **one** leftmost-outermost redex and returns `(new_node, reduced)`; `reduced` is `False` (and the node is returned unchanged) once it is in beta-normal form.
 
 ```python
-from unicode_fol_kit import beta_reduce_step
+from unicode_logic_kit import beta_reduce_step
 
 term = p.parse("(λP. λx. P(x))(Q)")
 step1, did = beta_reduce_step(term)
@@ -386,7 +386,7 @@ did2                             # → False   (already in beta-normal form)
 `eliminate_lambdas()` beta-eta-normalises a term **and** verifies the result is lambda-free, so it can be fed to the exporters or the normal-form functions (which otherwise reject lambda nodes). A term that is stuck or only partially applied (no further redex but lambdas remain) raises `ValueError`. `reduce_trace()` returns the step-by-step reduction sequence, and `has_lambdas()` tests for residual lambda nodes.
 
 ```python
-from unicode_fol_kit import MSFLParser, eliminate_lambdas, reduce_trace, has_lambdas
+from unicode_logic_kit import MSFLParser, eliminate_lambdas, reduce_trace, has_lambdas
 
 p = MSFLParser()
 term = p.parse("(λP. P(x))(Q)")
@@ -406,7 +406,7 @@ len(steps)                              # → 2   (original, …, normal form)
 A term with a free higher-order variable applied to arguments is **stuck** — no redex remains, yet a lambda construct survives — so `eliminate_lambdas` raises `ValueError`:
 
 ```python
-from unicode_fol_kit import Application, LambdaVar, Variable
+from unicode_logic_kit import Application, LambdaVar, Variable
 
 eliminate_lambdas(Application(LambdaVar("g"), Variable("x")))   # raises ValueError: not lambda-free
 ```
@@ -428,7 +428,7 @@ reduce_trace(omega, limit=5)            # raises ReductionLimitError: exceeded 5
 Every node exposes a small traversal API.
 
 ```python
-from unicode_fol_kit import MSFLParser, Atom
+from unicode_logic_kit import MSFLParser, Atom
 
 f = MSFLParser().parse("∀x (Human(x) → Mortal(x))")
 
@@ -457,7 +457,7 @@ f.depth()             # → 4   tree height (a leaf has depth 1)
 ```python
 # More traversal examples
 f_complex = p.parse("∀x ((P(x) ∧ Q(x)) ∨ (R(x) → S(x)))")
-from unicode_fol_kit import And, Or, Implies
+from unicode_logic_kit import And, Or, Implies
 f_complex.count()           # → 13
 f_complex.count(Atom)       # → 4
 f_complex.count(And)        # → 1
@@ -474,7 +474,7 @@ for atom in f_relational.atoms():
     atoms_by_arity[arity].append(atom.predicate)
 # → {2: ['Knows', 'Likes']}
 
-from unicode_fol_kit import Not
+from unicode_logic_kit import Not
 
 g = MSFLParser().parse("¬(P ∧ Q)")
 g.map_children(lambda c: c).to_unicode_str()    # → '¬(P ∧ Q)'   (structural copy)
@@ -555,7 +555,7 @@ The refusal is all a single node can do: it has no view of the rest of the probl
 
 ```python
 import json
-from unicode_fol_kit import Node
+from unicode_logic_kit import Node
 
 f = MSFLParser().parse("∀x (Human(x) → Mortal(x))")
 blob = json.dumps(f.to_dict())          # store / send the string
@@ -604,7 +604,7 @@ The exporters have inverses, so formulas written for the standard tools can be r
 `parse_latex()` is the inverse of `to_latex()`: it translates LaTeX commands to the Unicode surface syntax (`latex_to_unicode()`), then parses. It accepts the exact output of `to_latex()` as well as common hand-written synonyms (`\neg`/`\lnot`, `\wedge`/`\land`, `\vee`/`\lor`, `\to`/`\rightarrow`, …). It takes the same mode flags as `MSFLParser`.
 
 ```python
-from unicode_fol_kit import MSFLParser, parse_latex, latex_to_unicode
+from unicode_logic_kit import MSFLParser, parse_latex, latex_to_unicode
 
 latex_to_unicode(r"\forall x (P(x) \to Q(x))")
 # → '∀ x (P(x) → Q(x))'   (spacing preserved; the parser ignores it)
@@ -639,7 +639,7 @@ Hand-written `c_`-constants need an escaped underscore (`c\_zero` or `c_{zero}`)
 ### TPTP, Prover9, SMT-LIB
 
 ```python
-from unicode_fol_kit import parse_tptp, parse_tptp_formula, parse_prover9, parse_smtlib
+from unicode_logic_kit import parse_tptp, parse_tptp_formula, parse_prover9, parse_smtlib
 
 # TPTP: one bare FOF/CNF formula, or a whole problem file
 parse_tptp_formula("![X]: (man(X) => mortal(X))").to_unicode_str()
@@ -657,7 +657,7 @@ fof(g,   conjecture, mortal(socrates)).
 parse_prover9("(all X (man(X) -> mortal(X)))").to_unicode_str()
 # → '∀x (man(x) → mortal(x))'
 
-from unicode_fol_kit import parse_prover9_problem
+from unicode_logic_kit import parse_prover9_problem
 recs = parse_prover9_problem("""
 formulas(assumptions).
   all X (man(X) -> mortal(X)).
@@ -710,7 +710,7 @@ On the SMT-LIB / Z3 side, `=` over Booleans reads as `Iff`, and a free Z3 symbol
 ```
 
 ```python
-from unicode_fol_kit import MSFLParser, from_z3
+from unicode_logic_kit import MSFLParser, from_z3
 
 g = MSFLParser().parse("P(x) ∧ Q(x)")
 from_z3(g.to_z3()).to_unicode_str()
@@ -736,7 +736,7 @@ whole problem) rewrites every symbol to a legal token so the render round-trips,
 already-legal names untouched and returning a `NameMapping` that recovers the originals:
 
 ```python
-from unicode_fol_kit import MSFLParser, parse_tptp, sanitize_names
+from unicode_logic_kit import MSFLParser, parse_tptp, sanitize_names
 
 f = parse_tptp("fof(a, axiom, (![X]: ('http___ex_org_Thing'(X)))).")[0].formula
 f.to_unicode_str()
@@ -760,7 +760,7 @@ explicit `c_…` form (so it does not collapse to a variable on re-parse), and a
 that is too short to be a `NAME` is padded:
 
 ```python
-from unicode_fol_kit import Atom, Constant, Function, Variable
+from unicode_logic_kit import Atom, Constant, Function, Variable
 
 g = Atom("Likes", [Constant("a"), Function("f1", [Variable("x")])])
 s, _ = sanitize_names(g)
@@ -783,7 +783,7 @@ with one shared `NameMapping` (so each IRI maps to the same token everywhere), r
 Unicode, and re-parse — every formula round-trips, and the mapping recovers the IRIs.
 
 ```python
-from unicode_fol_kit import MSFLParser, parse_tptp, sanitize_all
+from unicode_logic_kit import MSFLParser, parse_tptp, sanitize_all
 
 tptp_text = """
 fof(sub,  axiom,      ![X]: ('ex_Cat'(X) => 'ex_Animal'(X))).

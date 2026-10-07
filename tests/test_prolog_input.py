@@ -1,11 +1,11 @@
-"""Tests for :mod:`unicode_fol_kit.fol.prolog_input`.
+"""Tests for :mod:`unicode_logic_kit.fol.prolog_input`.
 
 Every expected AST is hand-derived from the clause, never copied from a run.
 Two conventions drive all of them and are worth stating once:
 
 * Prolog spells a predicate lower-case and a variable upper-case; the kit does
   the exact opposite, so ``carbon(A)`` must come back as ``Carbon(a)`` — the
-  same inversion :mod:`unicode_fol_kit.fol.tptp_input` applies.
+  same inversion :mod:`unicode_logic_kit.fol.tptp_input` applies.
 * Only the FIRST character is folded. ``bSINGLE`` is already a legal Prolog
   atom, so it must arrive as ``BSINGLE`` and not as ``Bsingle``; lower-casing
   the whole name would destroy a distinction ChemLog's vocabulary makes.
@@ -13,11 +13,11 @@ Two conventions drive all of them and are worth stating once:
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Function, Implies, Not, Number, Or, Quantifier,
     Variable,
 )
-from unicode_fol_kit.fol.prolog_input import (
+from unicode_logic_kit.fol.prolog_input import (
     PrologParsingError, load_prolog, parse_prolog_clause, parse_prolog_program,
 )
 
@@ -233,8 +233,8 @@ def test_a_learned_clause_can_be_checked_against_a_molecule():
     all, so it cannot.
     """
     rdkit = pytest.importorskip("rdkit")           # noqa: F841
-    from unicode_fol_kit import chem
-    from unicode_fol_kit.semantics.model_eval import evaluate_detailed
+    from unicode_logic_kit import chem
+    from unicode_logic_kit.semantics.model_eval import evaluate_detailed
 
     node = parse_prolog_clause(
         "amide(A) :- bSINGLE(C, D), bDOUBLE(D, B), n(C), atom_in(A, B).",

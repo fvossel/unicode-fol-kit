@@ -1,5 +1,5 @@
 %--------------------------------------------------------------------------
-% File     : barcan : unicode-fol-kit fixture in QMLTP v1.1 syntax
+% File     : barcan : unicode-logic-kit fixture in QMLTP v1.1 syntax
 % Domain   : Syntactic (modal)
 % Problem  : Barcan scheme instance.
 % English  : if for every x necessarily f(x), then necessarily for every
@@ -17,7 +17,7 @@
 %             S4  Non-Theorem  Non-Theorem  Theorem
 %             S5  Non-Theorem  Theorem      Theorem
 %
-% Comments : Written for unicode-fol-kit's test suite, not taken from the
+% Comments : Written for unicode-logic-kit's test suite, not taken from the
 %            QMLTP library. Status derived by hand: over constant domains
 %            the scheme holds in every frame; a varying domain, or a
 %            growing one reached along a non-symmetric edge, can add an

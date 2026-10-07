@@ -1,9 +1,9 @@
-"""Tests for :func:`unicode_fol_kit.chem.interop.rename_with_spans` /
-:func:`unicode_fol_kit.chem.interop.to_chemlog_names_with_spans`.
+"""Tests for :func:`unicode_logic_kit.chem.interop.rename_with_spans` /
+:func:`unicode_logic_kit.chem.interop.to_chemlog_names_with_spans`.
 
 No RDKit needed here (unlike most of ``tests/test_chem.py``) — this module
-only rewrites already-parsed :class:`~unicode_fol_kit.fol.nodes.Node` trees
-and a :class:`~unicode_fol_kit.fol.spans.SpanMap` alongside them, no molecule
+only rewrites already-parsed :class:`~unicode_logic_kit.fol.nodes.Node` trees
+and a :class:`~unicode_logic_kit.fol.spans.SpanMap` alongside them, no molecule
 structure involved.
 
 Two layers of test, deliberately kept separate:
@@ -26,10 +26,10 @@ lookup is what ``rename_with_spans``'s callers (this test file included)
 actually reach for when they already hold a node object.
 """
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import And, Atom, Variable
-from unicode_fol_kit.fol.spans import Span, SpanMap, NodeSpans, UNKNOWN
-from unicode_fol_kit.chem.interop import rename_with_spans, to_chemlog_names_with_spans
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import And, Atom, Variable
+from unicode_logic_kit.fol.spans import Span, SpanMap, NodeSpans, UNKNOWN
+from unicode_logic_kit.chem.interop import rename_with_spans, to_chemlog_names_with_spans
 
 
 def _span(start: int, end: int, text: str) -> Span:

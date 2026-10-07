@@ -1,4 +1,4 @@
-"""Tests for the WillowNLtoFOL adapter (unicode_fol_kit.eval.datasets.willow).
+"""Tests for the WillowNLtoFOL adapter (unicode_logic_kit.eval.datasets.willow).
 
 Fixture provenance
 -------------------
@@ -9,14 +9,14 @@ verbatim from the ``train`` split of https://huggingface.co/datasets/iedeveci/Wi
 fetched via the Hugging Face datasets-server ``rows`` API on 2026-08-12. This
 is permitted here (and not for FOLIO/MALLS) because WillowNLtoFOL's own card
 is verified **CC-BY-4.0** (attribution only, redistribution permitted) — see
-``unicode_fol_kit/eval/datasets/willow.py``'s module docstring for the full
+``unicode_logic_kit/eval/datasets/willow.py``'s module docstring for the full
 verification, including a flagged discrepancy with a different, related
 dataset card that claims a more restrictive license for what may be an
 earlier state of this same data.
 
 The 8 rows (source ``row_idx`` noted per line) were deliberately chosen, by
 running the REAL 16014-row ``train`` split through
-``unicode_fol_kit.api.parse_any``/``check`` (a stratified 2100-row sample,
+``unicode_logic_kit.api.parse_any``/``check`` (a stratified 2100-row sample,
 documented in ``willow.py``'s module docstring), to cover every defect class
 that sample turned up:
 
@@ -45,8 +45,8 @@ from pathlib import Path
 
 import pytest
 
-from unicode_fol_kit.eval.datasets import DatasetExample, DATASET_INFO, audit_examples
-from unicode_fol_kit.eval.datasets.willow import load_willow
+from unicode_logic_kit.eval.datasets import DatasetExample, DATASET_INFO, audit_examples
+from unicode_logic_kit.eval.datasets.willow import load_willow
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _WILLOW_FIXTURE = _FIXTURES / "willow_mini.jsonl"
@@ -160,7 +160,7 @@ def test_willow_parse_conclusion_arity_conflict_row_parses_but_fails_check():
     assert result is not None
     assert result.ok is True
 
-    from unicode_fol_kit import api
+    from unicode_logic_kit import api
     checked = api.check(result.formula)
     assert checked.ok is False
     assert checked.arity_consistent is False
@@ -284,7 +284,7 @@ def test_default_load_repairs_the_two_unparseable_rows_only():
     - willow:7 (the Cook arity defect) PARSES already, so it is untouched —
       an arity defect is data, not notation, and stays visible to audit.
     """
-    from unicode_fol_kit import api
+    from unicode_logic_kit import api
 
     raw = list(load_willow(_WILLOW_FIXTURE, convert_fol=False))
     examples = list(load_willow(_WILLOW_FIXTURE))
@@ -323,8 +323,8 @@ def test_default_audit_leaves_only_the_genuine_arity_defect():
 def test_repair_willow_formula_transliterates_accented_predicates():
     """The other real naming-failure class (row_idx 15071's 'Café'): NFKD
     folds é → e, first letter is already uppercase, result parses."""
-    from unicode_fol_kit import api
-    from unicode_fol_kit.eval.datasets.willow import repair_willow_formula
+    from unicode_logic_kit import api
+    from unicode_logic_kit.eval.datasets.willow import repair_willow_formula
 
     node, mapping = repair_willow_formula("∃y (Café(y) ∧ Nice(y))")
     rendered = node.to_unicode_str()
@@ -337,7 +337,7 @@ def test_repair_willow_formula_refuses_name_collision():
     """Injectivity guard: a formula using BOTH 'Café' and 'Cafe' as
     predicates cannot be repaired — folding é→e would merge two distinct
     source predicates."""
-    from unicode_fol_kit.eval.datasets.willow import repair_willow_formula
+    from unicode_logic_kit.eval.datasets.willow import repair_willow_formula
 
     with pytest.raises(ValueError, match="injective"):
         repair_willow_formula("∃y (Café(y) ∧ Cafe(y))")
@@ -346,7 +346,7 @@ def test_repair_willow_formula_refuses_name_collision():
 def test_repair_willow_formula_refuses_free_variables():
     """A repaired formula must be closed — the repair grammar's tight
     quantifier binding must never silently produce an open formula."""
-    from unicode_fol_kit.eval.datasets.willow import repair_willow_formula
+    from unicode_logic_kit.eval.datasets.willow import repair_willow_formula
 
     with pytest.raises(ValueError, match="free variable"):
         repair_willow_formula("Hunt(y) ∨ EatMeat(y) ∧ ¬EatSeeds(y)")

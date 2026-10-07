@@ -1,6 +1,6 @@
-"""Tests for MSFL AST nodes (unicode_fol_kit/fol/nodes.py)."""
+"""Tests for MSFL AST nodes (unicode_logic_kit/fol/nodes.py)."""
 import pytest
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Node, Variable, Atom,
     SortedQuantifier, SortedConstant,
     WeakConjunction, WeakDisjunction,

@@ -1,7 +1,7 @@
-"""Tests for ``unicode_fol_kit.atp.finite_domain.lower_msfol`` — the
+"""Tests for ``unicode_logic_kit.atp.finite_domain.lower_msfol`` — the
 many-sorted-to-classical front door both :class:`ClingoBackend
-<unicode_fol_kit.atp.clingo_backend.ClingoBackend>` and :class:`MinizincBackend
-<unicode_fol_kit.atp.minizinc_backend.MinizincBackend>` now run their
+<unicode_logic_kit.atp.clingo_backend.ClingoBackend>` and :class:`MinizincBackend
+<unicode_logic_kit.atp.minizinc_backend.MinizincBackend>` now run their
 refutation-goal sentences through before ``fragment_check`` (or, for
 MiniZinc, ``Signature.from_formulas``) ever sees them.
 
@@ -23,21 +23,21 @@ Five things, five sections below:
 * ``TestClingoSortedDifferential`` — the required independent-route
   differential: :class:`ClingoBackend` (``clingo`` 5.8.1 is installed, so
   this drives the real solver) against
-  :func:`~unicode_fol_kit.semantics.modelfinder.find_countermodel`, the
+  :func:`~unicode_logic_kit.semantics.modelfinder.find_countermodel`, the
   kit's OWN from-scratch many-sorted brute-force finder, over a hand-picked
   corpus covering every shape the build spec names: two disjoint sorts with
   a cross-sort relation, a sort-restricted ``∀`` that is vacuously true only
   if its sort could be empty, and a ``SortedCount``. Every REFUTED verdict
   is additionally re-verified independently against the LOWERED sentences
-  with :func:`~unicode_fol_kit.atp.finite_domain.verify_model`. A textbook
+  with :func:`~unicode_logic_kit.atp.finite_domain.verify_model`. A textbook
   sorted syllogism is cross-checked a THIRD way, against Z3's own
   ``to_fol``-based route (``SortedQuantifier.to_z3`` auto-reduces through
-  :func:`~unicode_fol_kit.fol.nodes.to_fol`, matching
-  :mod:`~unicode_fol_kit.atp.z3_arith`'s documented pattern).
+  :func:`~unicode_logic_kit.fol.nodes.to_fol`, matching
+  :mod:`~unicode_logic_kit.atp.z3_arith`'s documented pattern).
 * ``TestSortedCardinalityComparison`` — a ``SortedCardinality`` comparison
   against a numeral, differentially tested against ``modelfinder`` in both
   directions, plus the unsorted analogue. Building this corpus exposed a
-  bug in :mod:`~unicode_fol_kit.semantics.tarski`: a numeral next to a
+  bug in :mod:`~unicode_logic_kit.semantics.tarski`: a numeral next to a
   cardinality was read through ``structure.constants``, so the model finder
   could reinterpret the ``1`` in ``|{…}| > 1`` as another individual and
   report a countermodel to a valid entailment. The evaluator now reads such
@@ -65,21 +65,21 @@ clingo = pytest.importorskip("clingo")
 
 import z3
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     Variable, Constant, Number, Atom, And, Implies, Not, Quantifier,
     SortedQuantifier, SortedConstant, Count, to_fol,
 )
-from unicode_fol_kit.semantics import (
+from unicode_logic_kit.semantics import (
     FiniteStructure, structure_from_dict, evaluate_in_structure,
 )
-from unicode_fol_kit.semantics.modelfinder import find_countermodel
-from unicode_fol_kit.atp.finite_domain import (
+from unicode_logic_kit.semantics.modelfinder import find_countermodel
+from unicode_logic_kit.atp.finite_domain import (
     FiniteDomainProblem, fragment_check, lower_msfol, verify_model,
 )
-from unicode_fol_kit.atp.clingo_backend import ClingoBackend, _universal_closure, to_asp
-from unicode_fol_kit.atp import minizinc_backend as mb
-from unicode_fol_kit.atp.protocol import ERROR, REFUTED, UNKNOWN
+from unicode_logic_kit.atp.clingo_backend import ClingoBackend, _universal_closure, to_asp
+from unicode_logic_kit.atp import minizinc_backend as mb
+from unicode_logic_kit.atp.protocol import ERROR, REFUTED, UNKNOWN
 
 _S = MSFLParser(many_sorted=True)   # every quantifier/constant must carry a sort
 _F = MSFLParser()                    # plain, unsorted FOL
@@ -148,7 +148,7 @@ class TestLowerMsfolUnit:
 
     def test_mixed_batch_does_not_crash_on_a_count_past_to_fols_own_expansion_bound(self):
         # to_fol's Count expansion (_reduce_nl_nodes -> Count._expand) raises
-        # NotImplementedError above n=500 (unicode_fol_kit/fol/_fol_nodes.py,
+        # NotImplementedError above n=500 (unicode_logic_kit/fol/_fol_nodes.py,
         # _COUNT_EXPAND_MAX). n=600 here is unrelated to sorting -- it is
         # only reachable through the batch-wide bug this regression test
         # guards against: routing EVERY sentence through to_fol as soon as
@@ -354,7 +354,7 @@ _SORTED_DIFFERENTIAL_CORPUS = [
 def test_clingo_sorted_differential_agrees_with_modelfinder():
     """The required independent-route check: over the corpus above,
     :class:`ClingoBackend` (via :func:`lower_msfol`) and
-    :func:`~unicode_fol_kit.semantics.modelfinder.find_countermodel` (the
+    :func:`~unicode_logic_kit.semantics.modelfinder.find_countermodel` (the
     kit's OWN, unrelated many-sorted brute-force search — see that module's
     own MSFOL enumeration, ``_sorted_interpretations``) must agree on
     REFUTED-vs-not at the same ``max_size``. A disagreement names the entry.
@@ -410,13 +410,13 @@ def test_textbook_sorted_syllogism_has_no_countermodel_cross_checked_with_z3():
     1. :class:`ClingoBackend`: UNKNOWN/``"bound_hit"`` up to ``max_size``
        (never PROVED — first-order logic has no finite model property, so
        this is the strongest a refutation-only search can honestly say).
-    2. :func:`~unicode_fol_kit.semantics.modelfinder.find_countermodel`:
+    2. :func:`~unicode_logic_kit.semantics.modelfinder.find_countermodel`:
        ``None`` (its own, from-scratch many-sorted enumeration finds
        nothing either).
     3. Z3, via the SAME lowering this backend uses
        (:meth:`SortedQuantifier.to_z3` auto-reduces through
-       :func:`~unicode_fol_kit.fol.nodes.to_fol` — see
-       :mod:`~unicode_fol_kit.atp.z3_arith`'s documented pattern): the
+       :func:`~unicode_logic_kit.fol.nodes.to_fol` — see
+       :mod:`~unicode_logic_kit.atp.z3_arith`'s documented pattern): the
        negation of the implication is UNSAT.
     """
     premise = _S.parse("∀x:Human Mortal(x)")
@@ -574,13 +574,13 @@ class TestMinizincSortedWiring:
 
 class TestSortedFunctionSymbolsRefused:
     def test_arg_sorts_is_refused(self):
-        from unicode_fol_kit.fol.signature import Signature, FunctionDecl
+        from unicode_logic_kit.fol.signature import Signature, FunctionDecl
         sig = Signature(functions={"f": FunctionDecl("f", 1, arg_sorts=("Human",))})
         with pytest.raises(ValueError, match="sorted function symbol"):
             FiniteDomainProblem((Atom("P", [Variable("x")]),), 2, signature=sig)
 
     def test_result_sort_is_refused(self):
-        from unicode_fol_kit.fol.signature import Signature, FunctionDecl
+        from unicode_logic_kit.fol.signature import Signature, FunctionDecl
         sig = Signature(functions={"f": FunctionDecl("f", 1, result_sort="Human")})
         with pytest.raises(ValueError, match="sorted function symbol"):
             FiniteDomainProblem((Atom("P", [Variable("x")]),), 2, signature=sig)
@@ -588,7 +588,7 @@ class TestSortedFunctionSymbolsRefused:
     def test_unsorted_function_declaration_is_unaffected(self):
         # arg_sorts=None, result_sort=None (the default) -- the ordinary
         # case, must not trip the refusal.
-        from unicode_fol_kit.fol.signature import Signature, FunctionDecl
+        from unicode_logic_kit.fol.signature import Signature, FunctionDecl
         sig = Signature(functions={"f": FunctionDecl("f", 1)})
         problem = FiniteDomainProblem((Atom("P", [Variable("x")]),), 2, signature=sig)
         assert problem.signature is sig
@@ -602,8 +602,8 @@ class TestSortedFunctionSymbolsRefused:
         with an ordinary, unsorted ``FunctionDecl``: this refusal is defense
         in depth for a hand-built ``FiniteDomainProblem``, never triggered on
         the live many-sorted path either backend actually takes."""
-        from unicode_fol_kit.fol.nodes import Function
-        from unicode_fol_kit.fol.signature import Signature
+        from unicode_logic_kit.fol.nodes import Function
+        from unicode_logic_kit.fol.signature import Signature
         x = Variable("x")
         sentence = SortedQuantifier(
             "∀", x, "Human", Atom("=", [Function("f", [x]), x]))

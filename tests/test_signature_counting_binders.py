@@ -10,10 +10,10 @@ quantifier form, read off the declaration next to it.
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Cardinality, Count, Number, SortedCardinality, SortedCount, SortedQuantifier, Variable,
 )
-from unicode_fol_kit.fol.signature import Signature
+from unicode_logic_kit.fol.signature import Signature
 
 X = Variable("x")
 BODY = Atom("P", [X])

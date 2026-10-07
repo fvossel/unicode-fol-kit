@@ -18,22 +18,22 @@ from itertools import product
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Implies, Constant, Variable,
 )
-from unicode_fol_kit.atp.sequent import (
+from unicode_logic_kit.atp.sequent import (
     sequent, derive, axiom, check_sequent_proof, verify_sequent_proof,
 )
-from unicode_fol_kit.atp.lj import check_lj_proof, verify_lj_proof
-from unicode_fol_kit.atp.fitch import (
+from unicode_logic_kit.atp.lj import check_lj_proof, verify_lj_proof
+from unicode_logic_kit.atp.fitch import (
     Proof, Subproof, premise, assume, line, FALSUM, verify_proof, check_proof,
 )
-from unicode_fol_kit.atp.tableau import (
+from unicode_logic_kit.atp.tableau import (
     prove_tableau_detailed, TableauProof, TableauClosure,
 )
-from unicode_fol_kit.atp.tableau_check import check_tableau_proof, TableauCheckError
-from unicode_fol_kit.atp.resolution import to_clauses, prove as resolution_prove
-from unicode_fol_kit.atp.resolution_check import (
+from unicode_logic_kit.atp.tableau_check import check_tableau_proof, TableauCheckError
+from unicode_logic_kit.atp.resolution import to_clauses, prove as resolution_prove
+from unicode_logic_kit.atp.resolution_check import (
     ResolutionStep, ResolutionDerivation, verify_resolution_proof,
 )
 

@@ -1,4 +1,4 @@
-"""Tests for :mod:`unicode_fol_kit.fol.tptp_repair` — the TPTP syntax-repair
+"""Tests for :mod:`unicode_logic_kit.fol.tptp_repair` — the TPTP syntax-repair
 layer for the three shapes LLM-generated TPTP fails on.
 
 Every expected string/AST below is hand-derived (never copy-pasted from a
@@ -31,12 +31,12 @@ each test's docstring or an inline comment:
 
 import pytest
 
-from unicode_fol_kit import equivalent
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import equivalent
+from unicode_logic_kit.fol.nodes import (
     Atom, Constant, Variable, Iff, Implies, And, Quantifier, free_variables,
 )
-from unicode_fol_kit.fol.tptp_input import parse_tptp_formula, parse_tptp
-from unicode_fol_kit.fol.tptp_repair import (
+from unicode_logic_kit.fol.tptp_input import parse_tptp_formula, parse_tptp
+from unicode_logic_kit.fol.tptp_repair import (
     Issue, RepairResult, repair_tptp_formula,
     ProblemRepairEntry, ProblemRepairResult, repair_tptp_problem,
     TptpRepairError, _tptp_quote, _find_prequoted_names,
@@ -87,7 +87,7 @@ def test_bracket_normalisation_preserves_ast_and_is_equivalent():
        ones — because :func:`repair_tptp_formula`'s docstring argument holds:
        the grammar's precedence ladder makes both surface forms retrace the
        identical production sequence.
-    2. Independently, :func:`unicode_fol_kit.equivalent` (a completely
+    2. Independently, :func:`unicode_logic_kit.equivalent` (a completely
        separate code path — structural ``==`` under the hood for
        ``method="exact"``, and Z3 unsat-of-negated-biconditional for
        ``method="solver"``) agrees the two ASTs mean the same thing.

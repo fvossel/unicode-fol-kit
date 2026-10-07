@@ -37,10 +37,10 @@ every assertion below is ``proved`` or ``refuted``, never a weaker word.
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit import api
-from unicode_fol_kit.dl.owl_functional import parse_owl_functional
-from unicode_fol_kit.fol.nodes import Not as FNot
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit import api
+from unicode_logic_kit.dl.owl_functional import parse_owl_functional
+from unicode_logic_kit.fol.nodes import Not as FNot
 
 TIMEOUT_MS = 30000
 SMALL = "http://ex.org/dt#Small"

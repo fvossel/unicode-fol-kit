@@ -5,8 +5,8 @@ fires on the text, whether the ASCII-only detectors participate, and the
 invariant that ``"unicode"`` is always the terminal candidate.
 """
 
-from unicode_fol_kit import api
-from unicode_fol_kit.fol.dialect_detect import DIALECT_SIGNALS, detect_dialects
+from unicode_logic_kit import api
+from unicode_logic_kit.fol.dialect_detect import DIALECT_SIGNALS, detect_dialects
 
 
 def test_smtlib_command_head_nominated_first():

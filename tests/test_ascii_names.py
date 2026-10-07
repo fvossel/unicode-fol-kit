@@ -7,7 +7,7 @@ Each expectation below is hand-checked against the function's own documented
 contract, not just "whatever it happens to return".
 """
 
-from unicode_fol_kit.atp._ascii_names import ascii_safe_base, reserve_rendered, reverse_map_text
+from unicode_logic_kit.atp._ascii_names import ascii_safe_base, reserve_rendered, reverse_map_text
 
 
 class TestAsciiSafeBase:
@@ -23,7 +23,7 @@ class TestAsciiSafeBase:
         assert ascii_safe_base("2008SummerOlympics", "n") == "n2008SummerOlympics"
 
     def test_greek_letter_transliterates_by_name(self):
-        # theta -> reversible spelled-out name (unicode_fol_kit.fol._fol_nodes
+        # theta -> reversible spelled-out name (unicode_logic_kit.fol._fol_nodes
         # ._GREEK_CONST_TO_ASCII); always letter-initial, so no digit-prefix
         # is ever needed for a Greek-only name.
         assert ascii_safe_base("θ", "n") == "theta"

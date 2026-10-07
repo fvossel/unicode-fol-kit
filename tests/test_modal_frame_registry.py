@@ -3,7 +3,7 @@
 Two claims are pinned here, and the first is the reason the module exists.
 
 **Correspondence, brute-forced.** For every first-order condition in
-:mod:`unicode_fol_kit.fol.frames`, over EVERY frame on up to three worlds and
+:mod:`unicode_logic_kit.fol.frames`, over EVERY frame on up to three worlds and
 EVERY valuation, "the corresponding axiom is valid on this frame" and "the
 frame satisfies the condition" must agree. That is what turns the registry
 from a table of claims into a table of checked facts: a wrong condition, a
@@ -26,12 +26,12 @@ import itertools
 
 import pytest
 
-from unicode_fol_kit.fol.frames import (
+from unicode_logic_kit.fol.frames import (
     AXIOM_ALIASES, FRAME_CONDITIONS, FRAMES, GeachSpec,
     UnsupportedFrameCondition, resolve_frame, geach_axiom,
     holds_on_finite_frame, modal_axiom, parse_geach, unguarded_frame_axiom,
 )
-from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
+from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
 
 _FIRST_ORDER = [name for name, spec in FRAME_CONDITIONS.items()
                 if spec.first_order]
@@ -233,7 +233,7 @@ def test_grz_frames_are_exactly_reflexive_transitive_and_antisymmetric():
 def test_mckinsey_on_preorders_is_exactly_terminal_reachability():
     """McKinsey, restricted to preorders (refl+trans) — the only generality
     ``FRAMES["S4.1"] = ("refl", "trans", "mckinsey")`` ever uses it in, and
-    the scope :func:`unicode_fol_kit.fol.frames._named_holds`'s ``mckinsey``
+    the scope :func:`unicode_logic_kit.fol.frames._named_holds`'s ``mckinsey``
     branch is documented and verified for — brute-forced up to 4 worlds:
     valid iff every world reaches some terminal point (a world whose only
     successor is itself). Frames outside this scope (not refl+trans) are
@@ -278,9 +278,9 @@ def test_M_is_not_silently_taken_for_T():
 # ---------------------------------------------------------------------------
 
 def test_every_route_reads_the_same_frame_table():
-    from unicode_fol_kit.atp import fitch, kripke_enum, modal_tableau
-    from unicode_fol_kit.fol import modal_translation, qml
-    from unicode_fol_kit.hol import isabelle_modal
+    from unicode_logic_kit.atp import fitch, kripke_enum, modal_tableau
+    from unicode_logic_kit.fol import modal_translation, qml
+    from unicode_logic_kit.hol import isabelle_modal
 
     for module, attribute in ((qml, "_FRAMES"),
                               (modal_tableau, "_FRAMES"),
@@ -340,7 +340,7 @@ def test_the_first_order_route_validates_each_axiom_on_its_own_frame(axiom,
     """Z3 over the standard translation: valid on the system the axiom
     characterises, and NOT valid on K — the second half is what makes the
     first half evidence rather than a tautology check."""
-    from unicode_fol_kit.fol.qml import qml_is_valid
+    from unicode_logic_kit.fol.qml import qml_is_valid
 
     formula = modal_axiom(axiom)
     assert qml_is_valid(formula, frame=frame) is True
@@ -349,7 +349,7 @@ def test_the_first_order_route_validates_each_axiom_on_its_own_frame(axiom,
 
 @pytest.mark.parametrize("axiom,frame", _CHARACTERISTIC)
 def test_the_hybrid_route_agrees_with_the_first_order_one(axiom, frame):
-    from unicode_fol_kit.fol.modal_translation import hybrid_is_valid
+    from unicode_logic_kit.fol.modal_translation import hybrid_is_valid
 
     formula = modal_axiom(axiom)
     assert hybrid_is_valid(formula, frame=frame) is True
@@ -362,7 +362,7 @@ def test_the_enumerator_finds_no_countermodel_on_the_right_frame(axiom, frame):
     come back empty exactly where the axiom is valid — and non-empty on K.
     This is the check that would have failed while ``_holds_conditions``
     still ignored conditions it did not recognise."""
-    from unicode_fol_kit.atp.kripke_enum import modal_enum_search
+    from unicode_logic_kit.atp.kripke_enum import modal_enum_search
 
     formula = modal_axiom(axiom)
     assert modal_enum_search(formula, frame=frame, max_worlds=3).model is None
@@ -373,7 +373,7 @@ def test_the_enumerator_finds_no_countermodel_on_the_right_frame(axiom, frame):
     ("T", "T"), ("D", "KD"), ("B", "B"), ("4", "K4"), ("5", "K5"),
 ])
 def test_the_tableau_agrees_on_the_conditions_it_has_rules_for(axiom, frame):
-    from unicode_fol_kit.atp.modal_tableau import is_modal_valid
+    from unicode_logic_kit.atp.modal_tableau import is_modal_valid
 
     formula = modal_axiom(axiom)
     assert is_modal_valid(formula, frame=frame) is True
@@ -386,7 +386,7 @@ def test_the_tableau_agrees_on_the_conditions_it_has_rules_for(axiom, frame):
 ])
 def test_the_tableau_refuses_what_it_has_no_rule_for(frame, condition):
     """Named, with the route that does carry it named too — never ignored."""
-    from unicode_fol_kit.atp.modal_tableau import is_modal_valid
+    from unicode_logic_kit.atp.modal_tableau import is_modal_valid
 
     with pytest.raises(UnsupportedFrameCondition, match=condition):
         is_modal_valid(modal_axiom("T"), frame=frame)
@@ -400,8 +400,8 @@ def test_every_first_order_route_refuses_the_non_first_order_systems(frame):
     any more: it is a bounded finite-model enumerator, not a first-order
     route, and it now decides (refutes) these three directly — see
     ``tests/test_finite_frame_conditions.py``."""
-    from unicode_fol_kit.fol.modal_translation import hybrid_is_valid
-    from unicode_fol_kit.fol.qml import qml_is_valid
+    from unicode_logic_kit.fol.modal_translation import hybrid_is_valid
+    from unicode_logic_kit.fol.qml import qml_is_valid
 
     formula = modal_axiom("T")
     for call in (lambda: qml_is_valid(formula, frame=frame),
@@ -418,8 +418,8 @@ def test_the_higher_order_routes_carry_what_the_others_refuse(frame,
     """The HOL routes assert the schema itself, quantified over
     propositions — which is exactly why they can hold what no first-order
     frame condition captures."""
-    from unicode_fol_kit.hol.isabelle_modal import isabelle_modal_theory
-    from unicode_fol_kit.hol.thf_modal import to_thf_modal_full
+    from unicode_logic_kit.hol.isabelle_modal import isabelle_modal_theory
+    from unicode_logic_kit.hol.thf_modal import to_thf_modal_full
 
     theory = isabelle_modal_theory(modal_axiom("T"), frame=frame,
                                    theory_name="FrameReg")
@@ -429,9 +429,9 @@ def test_the_higher_order_routes_carry_what_the_others_refuse(frame,
 
 
 def test_a_geach_frame_reaches_the_routes_that_understand_it():
-    from unicode_fol_kit.atp.kripke_enum import modal_enum_search
-    from unicode_fol_kit.fol.modal_translation import hybrid_is_valid
-    from unicode_fol_kit.fol.qml import qml_is_valid
+    from unicode_logic_kit.atp.kripke_enum import modal_enum_search
+    from unicode_logic_kit.fol.modal_translation import hybrid_is_valid
+    from unicode_logic_kit.fol.qml import qml_is_valid
 
     formula = modal_axiom(".2")
     assert qml_is_valid(formula, frame="G(1,1,1,1)") is True

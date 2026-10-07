@@ -2,13 +2,13 @@
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.naming import NamingError, ParsingError
-from unicode_fol_kit.fol._fol_nodes import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.naming import NamingError, ParsingError
+from unicode_logic_kit.fol._fol_nodes import (
     And, Or, Xor, Not, Implies, Iff, Quantifier,
     Atom, Variable, Constant, Number, Function,
 )
-from unicode_fol_kit.fol._msfl_nodes import (
+from unicode_logic_kit.fol._msfl_nodes import (
     SortedQuantifier, SortedConstant,
     WeakConjunction, WeakDisjunction,
     StrongConjunction, StrongDisjunction,
@@ -750,7 +750,7 @@ def test_lambda_parameter_carries_a_span():
     span-captured node) and a PREDICATE parameter (arrives as a raw Lark
     token), because they travel different paths into the handler.
     """
-    from unicode_fol_kit.fol.msflparser import MSFLParser
+    from unicode_logic_kit.fol.msflparser import MSFLParser
 
     for text, expected in (("λx. P(x)", "x"), ("λP. P(alice)", "P")):
         spanned = MSFLParser().parse_with_spans(text)

@@ -1,7 +1,7 @@
 """Tests for canonical form and canonical exact match.
 
 Heavy on the property invariants P1–P5 stated in
-unicode_fol_kit/eval/canonical.py, plus discrimination tests showing the
+unicode_logic_kit/eval/canonical.py, plus discrimination tests showing the
 canonical form is a normal form for exactly {alpha, commutativity,
 associativity, operand-dedup, double-negation} — strictly between raw
 structural equality and full logical equivalence.
@@ -11,8 +11,8 @@ import random
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     Variable, Constant, Atom, Number,
     And, Or, Xor, Iff, Implies, Not, Quantifier,
     Count, Cardinality,
@@ -20,8 +20,8 @@ from unicode_fol_kit.fol.nodes import (
     StrongConjunction, StrongDisjunction, LukNegation,
     Lambda, LambdaVar,
 )
-from unicode_fol_kit.atp import formulas_are_equivalent
-from unicode_fol_kit.eval.canonical import canonicalize, exact_match
+from unicode_logic_kit.atp import formulas_are_equivalent
+from unicode_logic_kit.eval.canonical import canonicalize, exact_match
 
 FOL = MSFLParser()
 FUZZY = MSFLParser(fuzzy=True)

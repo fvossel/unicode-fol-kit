@@ -1,4 +1,4 @@
-"""Tests for the ProverQA adapter (unicode_fol_kit.eval.datasets.proverqa).
+"""Tests for the ProverQA adapter (unicode_logic_kit.eval.datasets.proverqa).
 
 The fixture (``tests/fixtures/proverqa_mini.jsonl``) holds 8 REAL, VERBATIM
 rows (ids 0-7) copied from ``dev/easy.json`` of
@@ -17,8 +17,8 @@ import json
 
 import pytest
 
-from unicode_fol_kit.eval.datasets import DatasetExample, DATASET_INFO, audit_examples
-from unicode_fol_kit.eval.datasets.proverqa import (
+from unicode_logic_kit.eval.datasets import DatasetExample, DATASET_INFO, audit_examples
+from unicode_logic_kit.eval.datasets.proverqa import (
     load_proverqa, convert_proverqa_formulas, solve_example,
 )
 
@@ -144,7 +144,7 @@ def test_proverqa_fol_strings_do_not_parse_under_this_kits_grammar():
     """Hand-verified per the module docstring: ProverQA's gold FOL uses
     snake_case predicates (has_experienced_heartbreak) and Capitalized
     constants (Brecken) -- the opposite convention from this kit's grammar
-    (unicode_fol_kit/fol/grammars/terminals.lark: PREDICATE must start
+    (unicode_logic_kit/fol/grammars/terminals.lark: PREDICATE must start
     uppercase with no underscore; NAME/constant must start lowercase with no
     underscore). Row 1's first premise 'has_experienced_heartbreak(Brecken)'
     must therefore fail every dialect api.parse_any tries — with
@@ -310,7 +310,7 @@ def test_converted_quantified_formula_round_trips():
     prefix form. Hand-conversion: ∀x (dedicated_volunteer(x) →
     improves_lives(x)) -> ∀x (DedicatedVolunteer(x) → ImprovesLives(x)),
     closed, and re-parseable by the kit."""
-    from unicode_fol_kit import api
+    from unicode_logic_kit import api
 
     nodes, mapping = convert_proverqa_formulas(
         ["∀x (dedicated_volunteer(x) → improves_lives(x))"])

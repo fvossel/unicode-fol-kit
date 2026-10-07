@@ -1,6 +1,6 @@
 """Enforcement tests for the MCP tool-surface and comorphism-registry
-STABILITY POLICY (see :mod:`unicode_fol_kit.mcp.server`'s and
-:mod:`unicode_fol_kit.comorphism`'s module docstrings for the prose).
+STABILITY POLICY (see :mod:`unicode_logic_kit.mcp.server`'s and
+:mod:`unicode_logic_kit.comorphism`'s module docstrings for the prose).
 
 Three baselines are pinned here, each hand-transcribed from ONE real call to
 the introspection API it describes:
@@ -52,12 +52,12 @@ import pytest
 
 pytest.importorskip("mcp", reason="optional [mcp] extra not installed")
 
-from unicode_fol_kit.comorphism import (   # noqa: E402
+from unicode_logic_kit.comorphism import (   # noqa: E402
     Comorphism,
     ComorphismRegistry,
     DEFAULT_REGISTRY,
 )
-from unicode_fol_kit.mcp.server import create_server   # noqa: E402
+from unicode_logic_kit.mcp.server import create_server   # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Pinned baseline #1: every tool's input_schema, reduced to required-set +
@@ -375,7 +375,7 @@ def _result_key_violations(baseline: dict, current: dict) -> list:
 
 def _current_result_keys() -> dict:
     """The key sets the real tools return today (one real call each)."""
-    from unicode_fol_kit.mcp.server import list_translations, translate
+    from unicode_logic_kit.mcp.server import list_translations, translate
 
     translated = translate("□P", "modal", "fol")
     assert "error" not in translated, translated

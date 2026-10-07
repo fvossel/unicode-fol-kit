@@ -19,7 +19,7 @@ shipped battery would fail loudly, not pass silently), but it does mean an
 ARBITRARY invalid Lewis formula is not guaranteed to close in the time this
 suite budgets.
 
-See :mod:`unicode_fol_kit.hol.isabelle_conditional`'s comment above
+See :mod:`unicode_logic_kit.hol.isabelle_conditional`'s comment above
 ``_THF_PRELUDE`` for why the emitted term threads the current world through
 the recursion, and why ``nested``/``weakly_centered``/``strongly_centered`` are
 nullary facts about the one fixed ``sel`` rather than a schema over an
@@ -39,12 +39,12 @@ import tempfile
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.hol._ho_common import ThfNames
-from unicode_fol_kit.hol.isabelle_conditional import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.hol._ho_common import ThfNames
+from unicode_logic_kit.hol.isabelle_conditional import (
     to_thf_conditional, _thf_encode, _thf_would_at, _THF_RESERVED,
 )
-from unicode_fol_kit.semantics.conditional import (
+from unicode_logic_kit.semantics.conditional import (
     cf_valid, cf_countermodel, cf_satisfies, CounterfactualModel,
 )
 

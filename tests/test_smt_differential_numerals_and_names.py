@@ -28,8 +28,8 @@ from fractions import Fraction
 
 import pytest
 
-from unicode_fol_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, Z3Backend
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, Z3Backend
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Count, Function, Implies, Not, Number, Or, Quantifier, Variable,
 )
 
@@ -270,8 +270,8 @@ def test_z3_agrees_with_the_enumeration(problems):
 
 _CVC5_CHILD = r"""
 import json, sys
-from unicode_fol_kit.atp.cvc5_backend import Cvc5Backend
-from unicode_fol_kit.fol.nodes import Node
+from unicode_logic_kit.atp.cvc5_backend import Cvc5Backend
+from unicode_logic_kit.fol.nodes import Node
 
 out = []
 for spec in json.loads(sys.stdin.read()):

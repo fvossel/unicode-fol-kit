@@ -5,7 +5,7 @@ separate namespaces, arity-awareness, injectivity, capture-freedom, and the
 identity-first property of the greedy assignment.
 """
 
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser, align_symbols, aligned_exact_match, exact_match,
 )
 

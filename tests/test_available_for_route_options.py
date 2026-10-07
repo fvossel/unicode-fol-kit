@@ -1,6 +1,6 @@
 """``available_for`` reads the option of a call that names the binary or the route.
 
-``run_backend`` asks :meth:`~unicode_fol_kit.atp.protocol.ProverBackend.available_for`
+``run_backend`` asks :meth:`~unicode_logic_kit.atp.protocol.ProverBackend.available_for`
 with the options of the call, so that the answer and the run agree. A backend whose
 ``decide`` reads an option that picks the binary (``minizinc_path=``), the route
 (``use_wsl=``, ``twee_cmd=``), the server (``url=``) or the installation
@@ -17,13 +17,13 @@ import shutil
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import protocol
-from unicode_fol_kit.atp.minizinc_backend import MinizincBackend
-from unicode_fol_kit.atp.protocol import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import protocol
+from unicode_logic_kit.atp.minizinc_backend import MinizincBackend
+from unicode_logic_kit.atp.protocol import (
     BackendUnavailable, declared_options, get_backend, run_backend,
 )
-from unicode_fol_kit.fol.nodes import Atom
+from unicode_logic_kit.fol.nodes import Atom
 
 GOAL = Atom("P", [])
 
@@ -124,7 +124,7 @@ def twee_only_in_wsl(monkeypatch):
         calls.append((use_wsl, twee_cmd))
         return use_wsl is True and twee_cmd in (None, "/home/me/.local/bin/twee")
 
-    from unicode_fol_kit.atp import twee_entailment
+    from unicode_logic_kit.atp import twee_entailment
     monkeypatch.setattr(twee_entailment, "twee_available", twee_available)
     return calls
 
@@ -141,7 +141,7 @@ def test_twee_is_asked_for_the_route_the_call_names(twee_only_in_wsl):
 
 
 def test_the_gate_refuses_a_twee_route_that_cannot_run(twee_only_in_wsl, monkeypatch):
-    from unicode_fol_kit.atp.twee_backend import TweeBackend
+    from unicode_logic_kit.atp.twee_backend import TweeBackend
     calls = _recording_decide(monkeypatch, TweeBackend)
     for options in ({"use_wsl": False}, {"twee_cmd": "/nonexistent/twee"}):
         with pytest.raises(BackendUnavailable, match="twee"):
@@ -158,7 +158,7 @@ def test_the_gate_refuses_a_twee_route_that_cannot_run(twee_only_in_wsl, monkeyp
 @pytest.fixture
 def hets_only_at_one_url(monkeypatch):
     """The only HETS server that answers is at ``HETS_URL``; localhost does not."""
-    from unicode_fol_kit.hets import docker
+    from unicode_logic_kit.hets import docker
     monkeypatch.delenv("UFK_HETS_URL", raising=False)
     monkeypatch.setattr(docker, "_probe_health", lambda url, *a, **k: url.rstrip("/") == HETS_URL)
 
@@ -176,7 +176,7 @@ def test_hets_is_asked_about_the_server_the_call_names(hets_only_at_one_url):
 
 
 def test_the_gate_lets_the_named_hets_server_through(hets_only_at_one_url, monkeypatch):
-    from unicode_fol_kit.atp.hets_backend import HetsBackend
+    from unicode_logic_kit.atp.hets_backend import HetsBackend
     calls = _recording_decide(monkeypatch, HetsBackend)
     run_backend("hets", GOAL, [], url=HETS_URL)
     assert calls == [{"url": HETS_URL}]
@@ -192,9 +192,9 @@ def test_the_gate_lets_the_named_hets_server_through(hets_only_at_one_url, monke
 # ---------------------------------------------------------------------------
 
 def test_an_isabelle_installation_named_by_the_call_is_the_one_that_runs(monkeypatch):
-    from unicode_fol_kit.hol import isabelle_runner
+    from unicode_logic_kit.hol import isabelle_runner
     monkeypatch.setattr(isabelle_runner, "isabelle_available", lambda *a, **k: False)
-    from unicode_fol_kit.atp.protocol import IsabelleBackend
+    from unicode_logic_kit.atp.protocol import IsabelleBackend
     calls = _recording_decide(monkeypatch, IsabelleBackend)
     backend = get_backend("isabelle")
     install = object()                                           # the runner takes it as it is
@@ -223,7 +223,7 @@ def test_every_stock_backend_that_reads_a_route_option_answers_from_it():
     unanswered = []
     for name in sorted(protocol._REGISTRY):
         backend = get_backend(name)
-        if not type(backend).__module__.startswith("unicode_fol_kit"):
+        if not type(backend).__module__.startswith("unicode_logic_kit"):
             continue                                             # a test double registered by another test
         reads = (declared_options(backend) or frozenset()) & ROUTE_OPTIONS
         if reads and "available_for" not in vars(type(backend)):

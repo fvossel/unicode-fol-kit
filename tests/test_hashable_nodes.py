@@ -8,8 +8,8 @@ accepted) while the stored value is hashable.
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit import (
     Variable, Constant, Number, Function, Atom,
     Not, And, Or, Xor, Implies, Iff, Quantifier,
     SortedQuantifier, SortedConstant,

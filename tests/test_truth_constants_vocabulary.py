@@ -14,10 +14,10 @@ the constant is not a predicate.
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.eval.validate import validate
-from unicode_fol_kit.fol.nodes import And, Atom, Constant, Implies, Quantifier, Variable
-from unicode_fol_kit.fol.signature import Signature
+from unicode_logic_kit import api
+from unicode_logic_kit.eval.validate import validate
+from unicode_logic_kit.fol.nodes import And, Atom, Constant, Implies, Quantifier, Variable
+from unicode_logic_kit.fol.signature import Signature
 
 #: The four spellings that reach the vocabulary layer as nodes: the two atoms the readers
 #: produce, and the two atoms named like the glyphs.
@@ -136,7 +136,7 @@ def test_the_loose_forms_that_were_always_read_still_are():
 
 def test_the_command_line_reads_a_signature_file_in_either_form(tmp_path, capsys):
     import json
-    from unicode_fol_kit.__main__ import main
+    from unicode_logic_kit.__main__ import main
 
     rich = Signature.from_formulas([Implies(P, Atom("$false", ()))]).to_dict()
     for name, content, exit_code in (("rich.json", rich, 0), ("loose.json", {"predicates": {"P": 0}}, 0),

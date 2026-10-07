@@ -10,7 +10,7 @@ must independently re-derive the refutation, so both directions of the
 translation (valid source -> proved target; invalid source's countermodel ->
 target still refutes it) are exercised, not just term-shape comparison.
 
-See :mod:`unicode_fol_kit.hol.isabelle_relevant`'s comment above
+See :mod:`unicode_logic_kit.hol.isabelle_relevant`'s comment above
 ``_THF_PRELUDE`` for why the emitted term threads the current world through
 the recursion instead of routing through NegC/AndC/OrC/ImpC/IffC combinators:
 that choice was made BECAUSE the combinator form (a line-for-line THF
@@ -28,12 +28,12 @@ import tempfile
 
 import pytest
 
-from unicode_fol_kit import MSFLParser, Atom, Box
-from unicode_fol_kit.hol._ho_common import ThfNames
-from unicode_fol_kit.hol.isabelle_relevant import (
+from unicode_logic_kit import MSFLParser, Atom, Box
+from unicode_logic_kit.hol._ho_common import ThfNames
+from unicode_logic_kit.hol.isabelle_relevant import (
     to_thf_relevant, _thf_encode, _THF_RESERVED,
 )
-from unicode_fol_kit.semantics.relevant import rel_valid, rel_countermodel, rel_satisfies
+from unicode_logic_kit.semantics.relevant import rel_valid, rel_countermodel, rel_satisfies
 
 p = MSFLParser().parse
 

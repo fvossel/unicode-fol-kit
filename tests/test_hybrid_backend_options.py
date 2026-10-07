@@ -18,12 +18,12 @@ The backend accepts and forwards the same three keywords. Facts derived by hand:
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, get_backend
-from unicode_fol_kit.comorphism import DEFAULT_REGISTRY
-from unicode_fol_kit.fol.modal_translation import hybrid_is_valid
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import Always, Atom, Constant, Implies, Knows
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, get_backend
+from unicode_logic_kit.comorphism import DEFAULT_REGISTRY
+from unicode_logic_kit.fol.modal_translation import hybrid_is_valid
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import Always, Atom, Constant, Implies, Knows
 
 P = Atom("P", ())
 ALICE = Constant("alice")

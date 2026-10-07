@@ -1,22 +1,44 @@
 cff-version: 1.2.0
-message: "If you use unicode-fol-kit in your research, please cite it as below."
-title: "unicode-fol-kit"
+message: "If you use unicode-logic-kit in your research, please cite the accompanying preprint."
+title: "unicode-logic-kit"
+abstract: "A Python toolkit that parses, translates, proves and model-checks logic formulas written in Unicode notation: first-order, modal, description, higher-order and further non-classical logics behind one API, with a uniform verdict over a dozen provers. Named unicode-fol-kit until version 0.30.0."
 type: software
 authors:
   - family-names: Vossel
     given-names: Felix
     email: fvossel@uos.de
 license: MIT
-repository-code: "https://github.com/fvossel/unicode-fol-kit"
-url: "https://unicode-fol-kit.readthedocs.io/"
+repository-code: "https://github.com/fvossel/unicode-logic-kit"
+url: "https://unicode-logic-kit.readthedocs.io/"
 keywords:
   - logic
   - first-order-logic
   - modal-logic
+  - description-logic
+  - higher-order-logic
   - non-classical-logic
   - theorem-proving
+  - automated-reasoning
+  - model-checking
   - semantic-parsing
   - autoformalization
   - NL-to-FOL
 version: 0.30.0
 date-released: "2026-10-06"
+preferred-citation:
+  type: article
+  title: "Advancing Natural Language Formalization to First Order Logic with Fine-tuned LLMs"
+  authors:
+    - family-names: Vossel
+      given-names: Felix
+    - family-names: Mossakowski
+      given-names: Till
+    - family-names: Gehrke
+      given-names: Björn
+  year: 2025
+  journal: "arXiv preprint"
+  url: "https://arxiv.org/abs/2509.22338"
+  identifiers:
+    - type: other
+      value: "arXiv:2509.22338"
+      description: "arXiv identifier"

@@ -14,7 +14,7 @@ import pytest
 
 pytest.importorskip("mcp", reason="optional [mcp] extra not installed")
 
-from unicode_fol_kit.mcp.server import check_formula, diagnose, get_signature   # noqa: E402
+from unicode_logic_kit.mcp.server import check_formula, diagnose, get_signature   # noqa: E402
 
 SOURCES = ["∀x (Dog(x) → Animal(x))", "Dog(rex)"]
 

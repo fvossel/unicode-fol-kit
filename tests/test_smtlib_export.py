@@ -4,7 +4,7 @@
 Oracles, hand-checked, each justified inline:
 
 * **round trip**: ``z3.parse_smt2_string(to_smtlib(formula, premises))`` fed
-  back through the kit's own :func:`~unicode_fol_kit.atp.z3_input.from_z3`
+  back through the kit's own :func:`~unicode_logic_kit.atp.z3_input.from_z3`
   reproduces the input up to the documented, already-tested lossiness table
   in ``z3_input.py``'s own module docstring (free :class:`Variable`/
   :class:`Constant`/:class:`Number` collapse onto one uninterpreted sort;
@@ -33,7 +33,7 @@ Oracles, hand-checked, each justified inline:
   silently dropped or mistranslated.
 
 Reserved-word names (``let``, ...) are a gap this task found live in
-:mod:`unicode_fol_kit.atp.cvc5_backend`'s existing sanitiser (which
+:mod:`unicode_logic_kit.atp.cvc5_backend`'s existing sanitiser (which
 previously caught only digit-leading names) and fixed there, since
 ``to_smtlib`` reuses that same sanitiser rather than duplicating it — see
 that module's docstring and ``_SMTLIB_RESERVED_WORDS``.
@@ -42,12 +42,12 @@ that module's docstring and ``_SMTLIB_RESERVED_WORDS``.
 import pytest
 import z3
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     Atom, Constant, Function, Number, Variable,
 )
-from unicode_fol_kit.atp.z3_input import to_smtlib, parse_smtlib
-from unicode_fol_kit.atp.cvc5_backend import _sanitize_many_for_smtlib
+from unicode_logic_kit.atp.z3_input import to_smtlib, parse_smtlib
+from unicode_logic_kit.atp.cvc5_backend import _sanitize_many_for_smtlib
 
 _P = MSFLParser()
 

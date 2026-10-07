@@ -1,4 +1,4 @@
-"""Tests for unicode_fol_kit.eval.explain.explain_countermodel.
+"""Tests for unicode_logic_kit.eval.explain.explain_countermodel.
 
 Every expected string below is hand-derived from the semantics of the model it
 describes (see each test's docstring for the derivation) — nothing here is a
@@ -7,11 +7,11 @@ snapshot of whatever the function happened to produce.
 
 import pytest
 
-from unicode_fol_kit.eval.explain import explain_countermodel
-from unicode_fol_kit.semantics.kripke import KripkeModel
-from unicode_fol_kit.semantics.tarski import Structure
-from unicode_fol_kit.semantics.modelfinder import find_countermodel
-from unicode_fol_kit.fol.nodes import Atom, Box, Implies, Quantifier, Variable
+from unicode_logic_kit.eval.explain import explain_countermodel
+from unicode_logic_kit.semantics.kripke import KripkeModel
+from unicode_logic_kit.semantics.tarski import Structure
+from unicode_logic_kit.semantics.modelfinder import find_countermodel
+from unicode_logic_kit.fol.nodes import Atom, Box, Implies, Quantifier, Variable
 
 P = Atom("P", [])
 

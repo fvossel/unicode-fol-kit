@@ -46,19 +46,19 @@ import subprocess
 
 import pytest
 
-from unicode_fol_kit import MSFLParser, api
-from unicode_fol_kit.atp import eprover_backend as eb
-from unicode_fol_kit.atp import prover9_entailment as p9
-from unicode_fol_kit.atp import protocol as proto
-from unicode_fol_kit.atp import twee_entailment as te
-from unicode_fol_kit.atp import vampire_entailment as ve
-from unicode_fol_kit.atp._tptp_problem import generate_tptp_problem_with_mapping
-from unicode_fol_kit.atp.portfolio import portfolio_prove
-from unicode_fol_kit.atp.protocol import (
+from unicode_logic_kit import MSFLParser, api
+from unicode_logic_kit.atp import eprover_backend as eb
+from unicode_logic_kit.atp import prover9_entailment as p9
+from unicode_logic_kit.atp import protocol as proto
+from unicode_logic_kit.atp import twee_entailment as te
+from unicode_logic_kit.atp import vampire_entailment as ve
+from unicode_logic_kit.atp._tptp_problem import generate_tptp_problem_with_mapping
+from unicode_logic_kit.atp.portfolio import portfolio_prove
+from unicode_logic_kit.atp.protocol import (
     ERROR, PROVED, REFUTED, UNKNOWN, ProverBackend, Verdict, get_backend,
 )
-from unicode_fol_kit.atp.twee_backend import TweeBackend
-from unicode_fol_kit.atp.vampire_entailment import check_entailment_vampire_detailed
+from unicode_logic_kit.atp.twee_backend import TweeBackend
+from unicode_logic_kit.atp.vampire_entailment import check_entailment_vampire_detailed
 
 _FOL = MSFLParser()
 _PREMISES = [_FOL.parse("∀x (Human(x) → Mortal(x))"), _FOL.parse("Human(socrates)")]
@@ -726,7 +726,7 @@ def test_portfolio_answers_like_the_chain(run, monkeypatch):
 
 
 def test_the_mcp_prove_tool_carries_the_error_and_its_detail(run):
-    server = pytest.importorskip("unicode_fol_kit.mcp.server",
+    server = pytest.importorskip("unicode_logic_kit.mcp.server",
                                  reason="optional [mcp] extra not installed")
     run.respond(returncode=4, stdout=_VAMPIRE_REFUSAL)
     result = server.prove("Mortal(socrates)",

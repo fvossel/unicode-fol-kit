@@ -17,13 +17,13 @@ import json
 
 import pytest
 
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser,
     Verdict, BackendUnavailable, ProverBackend,
     register_backend, get_backend, available_backends, default_chain,
     run_backend,
 )
-from unicode_fol_kit.atp.protocol import (
+from unicode_logic_kit.atp.protocol import (
     PROVED, REFUTED, UNKNOWN, ERROR, Z3Backend, z3_relevant_premises,
 )
 
@@ -182,7 +182,7 @@ def test_unavailable_backend_raises_backend_unavailable():
         with pytest.raises(BackendUnavailable, match="never-there"):
             run_backend("never-there", _VALID)
     finally:
-        from unicode_fol_kit.atp.protocol import _REGISTRY
+        from unicode_logic_kit.atp.protocol import _REGISTRY
         del _REGISTRY["never-there"]
 
 
@@ -203,7 +203,7 @@ def test_backend_crash_becomes_error_verdict():
         v = run_backend("crashy", _VALID)
         assert v.status == ERROR and v.reason == "infra" and "boom" in v.detail
     finally:
-        from unicode_fol_kit.atp.protocol import _REGISTRY
+        from unicode_logic_kit.atp.protocol import _REGISTRY
         del _REGISTRY["crashy"]
 
 

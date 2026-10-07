@@ -21,22 +21,22 @@ value of a function may be any element of the universe.
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.incremental import IncrementalSession
-from unicode_fol_kit.atp.protocol import PROVED, REFUTED, Z3Backend, z3_relevant_premises
-from unicode_fol_kit.atp.resolution import prove as resolution_prove
-from unicode_fol_kit.atp.resolution import to_clauses
-from unicode_fol_kit.atp.z3_arith import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.incremental import IncrementalSession
+from unicode_logic_kit.atp.protocol import PROVED, REFUTED, Z3Backend, z3_relevant_premises
+from unicode_logic_kit.atp.resolution import prove as resolution_prove
+from unicode_logic_kit.atp.resolution import to_clauses
+from unicode_logic_kit.atp.z3_arith import (
     get_model_arith, is_satisfiable_arith, is_valid_arith,
 )
-from unicode_fol_kit.atp.z3_equivalence import formulas_are_equivalent
-from unicode_fol_kit.atp.z3_models import get_model, is_satisfiable, is_valid
-from unicode_fol_kit.eval.equivalence import equivalent
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.atp.z3_equivalence import formulas_are_equivalent
+from unicode_logic_kit.atp.z3_models import get_model, is_satisfiable, is_valid
+from unicode_logic_kit.eval.equivalence import equivalent
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Implies, Not, Number, SortedCardinality, SortedCount,
     Variable,
 )
-from unicode_fol_kit.logic import FOL, MSFOL as MSFOL_LOGIC
+from unicode_logic_kit.logic import FOL, MSFOL as MSFOL_LOGIC
 
 def F(text):
     parsed = api.parse_any(text)

@@ -15,10 +15,10 @@ of 200000 steps is not.
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import lj
-from unicode_fol_kit.atp.protocol import ERROR, PROVED, UNKNOWN, get_backend
-from unicode_fol_kit.fol.nodes import Atom, Implies, Not
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import lj
+from unicode_logic_kit.atp.protocol import ERROR, PROVED, UNKNOWN, get_backend
+from unicode_logic_kit.fol.nodes import Atom, Implies, Not
 
 P = Atom("P", [])
 Q = Atom("Q", [])

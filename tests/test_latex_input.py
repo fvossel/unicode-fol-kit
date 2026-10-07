@@ -18,8 +18,8 @@ Plus small unit checks on ``latex_to_unicode`` fragments.
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.latex_input import latex_to_unicode, parse_latex
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.latex_input import latex_to_unicode, parse_latex
 
 
 # ---------------------------------------------------------------------------

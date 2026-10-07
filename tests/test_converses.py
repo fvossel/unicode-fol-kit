@@ -25,9 +25,9 @@ Key soundness properties pinned here, not just asserted in a docstring:
 import pytest
 import z3
 
-from unicode_fol_kit import MSFLParser, equivalent
-from unicode_fol_kit.eval.converses import converse_axioms, validate_converses
-from unicode_fol_kit.eval.metric_hf import compute_fol_metrics
+from unicode_logic_kit import MSFLParser, equivalent
+from unicode_logic_kit.eval.converses import converse_axioms, validate_converses
+from unicode_logic_kit.eval.metric_hf import compute_fol_metrics
 
 _P = MSFLParser()
 _MSFOL = MSFLParser(many_sorted=True)

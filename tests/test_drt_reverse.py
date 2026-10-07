@@ -16,9 +16,9 @@ from pathlib import Path
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.ace import map_ace_drs, parse_ape_drs
-from unicode_fol_kit.drt import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.ace import map_ace_drs, parse_ape_drs
+from unicode_logic_kit.drt import (
     Card, FolToDrsError, drs_to_fol, fol_to_drs, parse_drs,
 )
 

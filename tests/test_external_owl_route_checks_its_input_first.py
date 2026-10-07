@@ -15,8 +15,8 @@ machine without the ``owl`` extra reports.
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-import unicode_fol_kit.dl.owl_reasoner as owl_reasoner
+import unicode_logic_kit.dl as dl
+import unicode_logic_kit.dl.owl_reasoner as owl_reasoner
 
 A, B = dl.Atomic("A"), dl.Atomic("B")
 

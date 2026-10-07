@@ -15,8 +15,8 @@ designated; FDE has T, F, N (neither), B (both) with T and B designated.
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.semantics import matrix as mx
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.semantics import matrix as mx
 
 PARSER = MSFLParser()
 

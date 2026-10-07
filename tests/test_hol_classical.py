@@ -2,12 +2,12 @@
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Variable, Constant, Number, Function,
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
     SortedQuantifier, SortedConstant, Box,
 )
-from unicode_fol_kit.hol.classical import (
+from unicode_logic_kit.hol.classical import (
     to_thf_fol, to_isabelle_fol, to_thf_msfol, to_isabelle_msfol,
 )
 
@@ -360,7 +360,7 @@ def test_msfol_matches_to_fol_then_to_thf():
     # forgets, stated as axioms. The old expectation equated the default output with the bare
     # relativisation, i.e. a problem in which the sort ``Animal`` may be empty, which is not the
     # many-sorted question: there ``∀x:Animal φ → ∃x:Animal φ`` is valid.
-    from unicode_fol_kit.fol.nodes import to_fol
+    from unicode_logic_kit.fol.nodes import to_fol
     f = SortedQuantifier("∀", X, "Animal",
                          Implies(Atom("Dog", [X]), Atom("Mammal", [X])))
     bare = to_thf_fol(to_fol(f))
@@ -377,7 +377,7 @@ def test_msfol_matches_to_fol_then_to_thf():
 # (See module: the global _SymbolResolver keyed by (category, raw_name, arity).)
 # ---------------------------------------------------------------------------
 
-from unicode_fol_kit.atp.z3_models import is_valid  # noqa: E402
+from unicode_logic_kit.atp.z3_models import is_valid  # noqa: E402
 
 
 def _bodies(out):
@@ -610,7 +610,7 @@ class TestNonAsciiNamesAreTransliteratedInThfAndIsabelle:
 # integration level).
 # ---------------------------------------------------------------------------
 
-from unicode_fol_kit.hol.classical import _sanitize  # noqa: E402
+from unicode_logic_kit.hol.classical import _sanitize  # noqa: E402
 
 
 class TestAsciiNamesUnaffectedByAsciiTransliteration:

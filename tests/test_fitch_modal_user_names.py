@@ -10,8 +10,8 @@ same element wherever it stands.
 """
 import pytest
 
-from unicode_fol_kit.atp.fitch import _make_modal_checker
-from unicode_fol_kit.fol.nodes import Atom, Box, Variable
+from unicode_logic_kit.atp.fitch import _make_modal_checker
+from unicode_logic_kit.fol.nodes import Atom, Box, Variable
 
 
 def P(name):

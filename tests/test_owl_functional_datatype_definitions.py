@@ -28,7 +28,7 @@ Hand-derived expectations, for the documents below (``¬`` is ``DataComplementOf
 
 import pytest
 
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 INT, STRING = dl.Datatype("xsd:integer"), dl.Datatype("xsd:string")
 P, Q = dl.Datatype("P"), dl.Datatype("Q")

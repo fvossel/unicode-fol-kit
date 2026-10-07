@@ -1,14 +1,14 @@
 """Tests for the HuggingFace-``evaluate``-compatible NL→FOL metric
-(unicode_fol_kit/eval/metric_hf.py).
+(unicode_logic_kit/eval/metric_hf.py).
 
 Every expectation below is hand-derived from
-:func:`unicode_fol_kit.eval.equivalence.equivalent`'s documented ladder and
+:func:`unicode_logic_kit.eval.equivalence.equivalent`'s documented ladder and
 partial-credit rubric (see that module's docstring, and
 ``tests/test_equivalence.py`` for the same rubric worked through directly).
 The two things this suite exists to pin down beyond ``equivalent`` itself:
 
 * the per-pair AGGREGATION arithmetic in
-  :func:`~unicode_fol_kit.eval.metric_hf.compute_fol_metrics` (means and
+  :func:`~unicode_logic_kit.eval.metric_hf.compute_fol_metrics` (means and
   rates over a batch, parse failures scored 0.0, ``partial_credit`` floored
   to 0.0 when the requested ladder level never computes one);
 * the HONESTY split between ``equivalence_accuracy`` (only a definitive
@@ -27,7 +27,7 @@ import sys
 
 import pytest
 
-from unicode_fol_kit.eval import metric_hf
+from unicode_logic_kit.eval import metric_hf
 
 
 # ---------------------------------------------------------------------------
@@ -366,9 +366,9 @@ class TestFolEquivalenceWithEvaluateInstalled:
 
 def test_module_importable_and_raises_importerror_without_evaluate(monkeypatch):
     monkeypatch.setitem(sys.modules, "evaluate", None)
-    monkeypatch.delitem(sys.modules, "unicode_fol_kit.eval.metric_hf", raising=False)
+    monkeypatch.delitem(sys.modules, "unicode_logic_kit.eval.metric_hf", raising=False)
 
-    fresh = importlib.import_module("unicode_fol_kit.eval.metric_hf")
+    fresh = importlib.import_module("unicode_logic_kit.eval.metric_hf")
 
     assert fresh._HAS_EVALUATE is False
     with pytest.raises(ImportError, match="pip install evaluate"):

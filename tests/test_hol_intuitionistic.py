@@ -16,12 +16,12 @@ Three things are pinned:
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Xor, Implies, Iff, Box, Quantifier, Variable,
 )
-from unicode_fol_kit.semantics.intuitionistic import int_valid
-from unicode_fol_kit.atp.lj import int_prove
-from unicode_fol_kit.hol.intuitionistic import (
+from unicode_logic_kit.semantics.intuitionistic import int_valid
+from unicode_logic_kit.atp.lj import int_prove
+from unicode_logic_kit.hol.intuitionistic import (
     gmt_translate, gmt_is_s4_valid, gmt_validity_matches_int_valid,
     to_thf_intuitionistic, to_isabelle_intuitionistic,
 )
@@ -243,7 +243,7 @@ def test_isabelle_declares_all_atoms():
 # ---------------------------------------------------------------------------
 
 def test_public_api_present():
-    import unicode_fol_kit.hol.intuitionistic as m
+    import unicode_logic_kit.hol.intuitionistic as m
     for name in ("gmt_translate", "to_thf_intuitionistic", "to_isabelle_intuitionistic",
                  "gmt_is_s4_valid", "gmt_validity_matches_int_valid"):
         assert hasattr(m, name), name
@@ -295,7 +295,7 @@ def test_isabelle_proof_gating_uses_decidable_oracle_not_bounded_int_valid():
 # (Previously ⊥/⊤/=/≠ all collapsed to the reserved wildcard '_' — unloadable.)
 # ---------------------------------------------------------------------------
 
-from unicode_fol_kit.hol.intuitionistic import _isa_atom_name
+from unicode_logic_kit.hol.intuitionistic import _isa_atom_name
 
 
 def _is_legal_isabelle_const(name: str) -> bool:
@@ -402,8 +402,8 @@ def test_isabelle_truth_constants_declare_no_consts():
 # has no solver in it.
 # ---------------------------------------------------------------------------
 
-from unicode_fol_kit.fol.nodes import Constant
-from unicode_fol_kit.hol.intuitionistic import _gmt
+from unicode_logic_kit.fol.nodes import Constant
+from unicode_logic_kit.hol.intuitionistic import _gmt
 
 _ca, _cb = Constant("a"), Constant("b")
 EQ = Atom("=", (_ca, _cb))
@@ -436,7 +436,7 @@ def test_the_s4_side_reads_identity_and_the_ipl_side_has_no_reading_to_give():
     here), so the two sides agree on what they will not answer, which is the only
     agreement available without a term semantics for intuitionistic equality.
     """
-    from unicode_fol_kit.fol.qml import qml_is_valid
+    from unicode_logic_kit.fol.qml import qml_is_valid
     for f in (EQ_AA, Implies(Not(EQ_AA), p)):
         # the S4 side: a single solver question whose answer is a PROOF (a generous
         # budget, because True is the only answer a timeout could turn into False)

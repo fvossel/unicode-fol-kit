@@ -1,4 +1,4 @@
-"""Tests for the GROVES adapter (unicode_fol_kit.eval.datasets.groves).
+"""Tests for the GROVES adapter (unicode_logic_kit.eval.datasets.groves).
 
 ``tests/fixtures/groves_mini.jsonl`` is NOT synthetic like
 ``folio_mini.jsonl``/``malls_mini.jsonl`` — it is 8 REAL rows copied verbatim
@@ -14,8 +14,8 @@ deliberately-broken row the way the FOLIO/MALLS fixtures do (see
 ``groves.py``'s module docstring for the verified schema and the probe that
 established every sampled row parses/checks clean).
 
-Each row's FOL was hand-traced against ``unicode_fol_kit.api.parse_any`` /
-``unicode_fol_kit.api.check`` before being committed to the fixture:
+Each row's FOL was hand-traced against ``unicode_logic_kit.api.parse_any`` /
+``unicode_logic_kit.api.check`` before being committed to the fixture:
 
 * row 0 (pharma): ``∀x`` binds every use of ``x``; every ``∃y``/``∃z``/``∃w``
   binds its own variable within its own scope. Closed, arity-consistent
@@ -57,7 +57,7 @@ from pathlib import Path
 
 import pytest
 
-from unicode_fol_kit.eval.datasets import (
+from unicode_logic_kit.eval.datasets import (
     DatasetExample,
     DATASET_INFO,
     audit_examples,
@@ -184,7 +184,7 @@ def test_load_groves_known_bad_ids_defaults_to_empty():
 # ---------------------------------------------------------------------------
 
 def test_groves_every_fixture_fol_parses_and_is_wellformed():
-    from unicode_fol_kit import api
+    from unicode_logic_kit import api
 
     examples = list(load_groves(_GROVES_FIXTURE))
     assert len(examples) == 8

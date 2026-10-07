@@ -56,14 +56,14 @@ from itertools import permutations
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Implies, Iff, Quantifier, Variable, Constant, Function,
 )
-from unicode_fol_kit.fol._so_nodes import SecondOrderQuantifier
-from unicode_fol_kit.semantics import modelfinder as mf
-from unicode_fol_kit.semantics import free_logic as fl
-from unicode_fol_kit.semantics import secondorder as so
-from unicode_fol_kit.semantics.tarski import Structure, models
+from unicode_logic_kit.fol._so_nodes import SecondOrderQuantifier
+from unicode_logic_kit.semantics import modelfinder as mf
+from unicode_logic_kit.semantics import free_logic as fl
+from unicode_logic_kit.semantics import secondorder as so
+from unicode_logic_kit.semantics.tarski import Structure, models
 
 
 # ============================================================================

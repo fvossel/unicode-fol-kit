@@ -1,4 +1,4 @@
-"""Tests for the second-order -> HOL/THF export (unicode_fol_kit.hol.secondorder).
+"""Tests for the second-order -> HOL/THF export (unicode_logic_kit.hol.secondorder).
 
 Structural assertions (the predicate quantifier and its inferred arity render as
 a native higher-order binder; free vs bound predicates are handled; equality is
@@ -11,14 +11,14 @@ import re
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     Variable, Constant, Number, Function,
     Atom, Not, Or, And, Iff, Quantifier, SecondOrderQuantifier,
 )
-from unicode_fol_kit.hol.secondorder import to_thf_so, to_isabelle_so
-from unicode_fol_kit.semantics.tarski import Structure
-from unicode_fol_kit.semantics.secondorder import satisfies_so
+from unicode_logic_kit.hol.secondorder import to_thf_so, to_isabelle_so
+from unicode_logic_kit.semantics.tarski import Structure
+from unicode_logic_kit.semantics.secondorder import satisfies_so
 
 
 # --------------------------------------------------------------------------- #

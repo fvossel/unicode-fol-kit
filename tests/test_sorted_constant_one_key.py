@@ -12,14 +12,14 @@ constant by name instead of reading ``Human(alice)`` as unrelated to ``alice:Hum
 
 import pytest
 
-from unicode_fol_kit import MSFLParser, fuzzy_evaluate, fuzzy_get_model, fuzzy_is_satisfiable, fuzzy_is_valid
-from unicode_fol_kit.atp.ltl_tableau import LTLTrace, ltl_countermodel, ltl_trace_satisfies
-from unicode_fol_kit.fol._msfl_nodes import SortedConstant
-from unicode_fol_kit.fol.nodes import Atom, Constant, Implies, LukNegation, StrongConjunction
-from unicode_fol_kit.semantics import manyvalued as mv
-from unicode_fol_kit.semantics import matrix as mx
-from unicode_fol_kit.semantics.conditional import cf_countermodel, cf_valid
-from unicode_fol_kit.semantics.truthtable import is_tautology, truth_table
+from unicode_logic_kit import MSFLParser, fuzzy_evaluate, fuzzy_get_model, fuzzy_is_satisfiable, fuzzy_is_valid
+from unicode_logic_kit.atp.ltl_tableau import LTLTrace, ltl_countermodel, ltl_trace_satisfies
+from unicode_logic_kit.fol._msfl_nodes import SortedConstant
+from unicode_logic_kit.fol.nodes import Atom, Constant, Implies, LukNegation, StrongConjunction
+from unicode_logic_kit.semantics import manyvalued as mv
+from unicode_logic_kit.semantics import matrix as mx
+from unicode_logic_kit.semantics.conditional import cf_countermodel, cf_valid
+from unicode_logic_kit.semantics.truthtable import is_tautology, truth_table
 
 PERSON = {"Person": {"alice"}}
 

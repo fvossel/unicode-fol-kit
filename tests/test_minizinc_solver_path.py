@@ -10,7 +10,7 @@ reported as an infrastructure error for every problem.
 
 import os
 
-from unicode_fol_kit.atp import minizinc_backend as mb
+from unicode_logic_kit.atp import minizinc_backend as mb
 
 
 def test_a_bare_command_name_inherits_the_environment_unchanged():

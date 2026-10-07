@@ -9,8 +9,8 @@ entailments by the absence of a sorted counter-model. Hand-checked against sorte
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.semantics.modelfinder import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.semantics.modelfinder import (
     find_model, find_countermodel, is_satisfiable_finite, is_valid_finite,
 )
 

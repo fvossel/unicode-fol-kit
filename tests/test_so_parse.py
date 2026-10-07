@@ -10,14 +10,14 @@ conflicting-arity ParsingError, and the export-rejection contract
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser, ConflictingArityError
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.msflparser import MSFLParser, ConflictingArityError
+from unicode_logic_kit.fol.nodes import (
     Node,
     Atom, Variable,
     And, Or, Not, Implies, Quantifier,
     SecondOrderQuantifier,
 )
-from unicode_fol_kit.fol.naming import NamingError, ParsingError
+from unicode_logic_kit.fol.naming import NamingError, ParsingError
 
 
 def PX(*vs):
@@ -297,7 +297,7 @@ class TestStructural:
 
     def test_free_variables_unaffected_by_predicate_binder(self, parser):
         # Binding the predicate name P does not bind the object variable x.
-        from unicode_fol_kit.fol.nodes import free_variables
+        from unicode_logic_kit.fol.nodes import free_variables
         ast = parser.parse("∀P P(x)")
         assert free_variables(ast) == {Variable("x")}
 

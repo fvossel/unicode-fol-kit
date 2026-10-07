@@ -12,14 +12,14 @@ import random
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Variable, Constant, Quantifier, SortedQuantifier,
     WeakConjunction, WeakDisjunction, StrongConjunction, StrongDisjunction,
     LukImplication, LukEquivalence, LukNegation,
 )
-from unicode_fol_kit.semantics.fuzzy import evaluate, ground_quantifiers
-from unicode_fol_kit.semantics.tnorm import get_tnorm, TNORMS, LUKASIEWICZ, GODEL, PRODUCT
-from unicode_fol_kit.atp.z3_fuzzy import (
+from unicode_logic_kit.semantics.fuzzy import evaluate, ground_quantifiers
+from unicode_logic_kit.semantics.tnorm import get_tnorm, TNORMS, LUKASIEWICZ, GODEL, PRODUCT
+from unicode_logic_kit.atp.z3_fuzzy import (
     fuzzy_is_valid, fuzzy_is_satisfiable, fuzzy_get_model,
 )
 

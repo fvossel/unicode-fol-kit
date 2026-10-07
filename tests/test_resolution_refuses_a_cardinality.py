@@ -18,9 +18,9 @@ A counting quantifier is first-order and is still read: from ``P(alpha)``, ``P(b
 
 import pytest
 
-from unicode_fol_kit import MSFLParser, api
-from unicode_fol_kit.atp import resolution
-from unicode_fol_kit.atp.protocol import ResolutionBackend
+from unicode_logic_kit import MSFLParser, api
+from unicode_logic_kit.atp import resolution
+from unicode_logic_kit.atp.protocol import ResolutionBackend
 
 PARSER = MSFLParser()
 SORTED = MSFLParser(many_sorted=True)

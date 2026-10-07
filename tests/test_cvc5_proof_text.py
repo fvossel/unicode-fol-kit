@@ -23,8 +23,8 @@ import pytest
 
 pytest.importorskip("cvc5")
 
-from unicode_fol_kit.atp import cvc5_backend
-from unicode_fol_kit.eval.explain import explain_proof
+from unicode_logic_kit.atp import cvc5_backend
+from unicode_logic_kit.eval.explain import explain_proof
 
 # ∀x f(carl) = x ⊢ ∃w ∀x f(carl) = x: valid (the premise is the very sentence, the quantifier over w is vacuous)
 CRASHING = {"premises": ["∀x f(carl) = x"], "goal": "∃w ∀x f(carl) = x"}
@@ -33,9 +33,9 @@ ORDINARY = {"premises": ["∀x (P(x) → Q(x))", "P(a)"], "goal": "Q(a)"}
 
 _CHILD = r"""
 import json, subprocess, sys
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import cvc5_backend
-from unicode_fol_kit.atp.cvc5_backend import Cvc5Backend
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import cvc5_backend
+from unicode_logic_kit.atp.cvc5_backend import Cvc5Backend
 
 spec = json.loads(sys.argv[1])
 parse = lambda text: api.parse_any(text).formula

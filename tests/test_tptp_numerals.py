@@ -37,35 +37,35 @@ import subprocess
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp._tff_problem import generate_tff_arith_problem
-from unicode_fol_kit.atp._tptp_problem import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp._tff_problem import generate_tff_arith_problem
+from unicode_logic_kit.atp._tptp_problem import (
     TptpNameMap, apply_reverse_tptp, generate_tptp_problem, generate_tptp_problem_for_prover,
     generate_tptp_problem_with_mapping,
 )
-from unicode_fol_kit.atp._ascii_names import reverse_map_text
-from unicode_fol_kit.atp.eprover_backend import check_entailment_eprover_detailed, eprover_available
-from unicode_fol_kit.atp.protocol import get_backend
-from unicode_fol_kit.atp.resolution_check import (
+from unicode_logic_kit.atp._ascii_names import reverse_map_text
+from unicode_logic_kit.atp.eprover_backend import check_entailment_eprover_detailed, eprover_available
+from unicode_logic_kit.atp.protocol import get_backend
+from unicode_logic_kit.atp.resolution_check import (
     ResolutionDerivation, ResolutionStep, verify_resolution_proof,
 )
-from unicode_fol_kit.atp.tptp_tff import (
+from unicode_logic_kit.atp.tptp_tff import (
     Tf0Refusal, formula_to_tff, generate_tff_problem, generate_tff_problem_with_mapping,
     infer_tff_signature,
 )
-from unicode_fol_kit.atp.tstp import (
+from unicode_logic_kit.atp.tstp import (
     _to_tstp_with_mapping, parse_tstp_derivation, reverse_map_derivation, to_tstp,
 )
-from unicode_fol_kit.atp.twee_entailment import twee_available
-from unicode_fol_kit.atp.vampire_entailment import check_entailment_vampire_detailed
-from unicode_fol_kit.fol._numeral_symbols import (
+from unicode_logic_kit.atp.twee_entailment import twee_available
+from unicode_logic_kit.atp.vampire_entailment import check_entailment_vampire_detailed
+from unicode_logic_kit.fol._numeral_symbols import (
     numeral_name, numeral_value, numerals_as_constants, prefixed_numeral_name, term_numerals,
 )
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Count, Function, Implies, Node, Not, Number, Or, Quantifier,
     SortedConstant, SortedQuantifier, Variable, substitute,
 )
-from unicode_fol_kit.fol.tptp_input import parse_tptp_formula
+from unicode_logic_kit.fol.tptp_input import parse_tptp_formula
 
 X, Y = Variable("x"), Variable("y")
 LOWER_WORD = re.compile(r"[a-z][A-Za-z0-9_]*")
@@ -548,11 +548,11 @@ def test_to_tstp_writes_the_operators_as_ordinary_symbols():
 # ---------------------------------------------------------------------------------------------
 
 def test_the_higher_order_writers_write_one_constant_per_value_and_refuse_a_merge():
-    from unicode_fol_kit.fol.qml import to_thf_modal
-    from unicode_fol_kit.fol.nodes import Box
-    from unicode_fol_kit.hol.classical import to_isabelle_fol, to_thf_fol, to_thf_msfol
-    from unicode_fol_kit.hol.free import to_thf_free
-    from unicode_fol_kit.hol.thf_modal import to_thf_modal_full
+    from unicode_logic_kit.fol.qml import to_thf_modal
+    from unicode_logic_kit.fol.nodes import Box
+    from unicode_logic_kit.hol.classical import to_isabelle_fol, to_thf_fol, to_thf_msfol
+    from unicode_logic_kit.hol.free import to_thf_free
+    from unicode_logic_kit.hol.thf_modal import to_thf_modal_full
 
     same = Implies(P(Number(1)), P(Number(1.0)))
     for write, formula in ((to_thf_fol, same), (to_thf_msfol, same), (to_thf_free, same),
@@ -572,7 +572,7 @@ def test_the_higher_order_writers_write_one_constant_per_value_and_refuse_a_merg
 
 
 def test_the_higher_order_writers_keep_their_text_for_an_ordinary_numeral():
-    from unicode_fol_kit.hol.classical import to_thf_fol
+    from unicode_logic_kit.hol.classical import to_thf_fol
     text = to_thf_fol(Implies(P(Number(-1)), P(Number(2.5))))
     assert "thf(n_1_decl, type, ( n_1 : $i ))." in text and "thf(n2_5_decl, type, ( n2_5 : $i ))." in text
     assert "( ( p @ n_1 ) => ( p @ n2_5 ) )" in text

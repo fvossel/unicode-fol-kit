@@ -23,12 +23,12 @@ import shutil
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import protocol as _protocol
-from unicode_fol_kit.atp import vampire_entailment as _ve
-from unicode_fol_kit.atp.protocol import get_backend
-from unicode_fol_kit.fol.nodes import Atom, Constant, Function, SortedQuantifier, Variable
-from unicode_fol_kit.fol.signature import Signature
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import protocol as _protocol
+from unicode_logic_kit.atp import vampire_entailment as _ve
+from unicode_logic_kit.atp.protocol import get_backend
+from unicode_logic_kit.fol.nodes import Atom, Constant, Function, SortedQuantifier, Variable
+from unicode_logic_kit.fol.signature import Signature
 
 
 def parse(text):

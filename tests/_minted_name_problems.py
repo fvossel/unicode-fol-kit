@@ -23,7 +23,7 @@ at most two elements" is validity) in which the symbols are independent when the
 import itertools
 import random
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Count, Function, Implies, Not, Number, Or, Quantifier, SortedConstant,
     SortedCount, SortedQuantifier, Variable,
 )

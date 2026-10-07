@@ -21,14 +21,14 @@ from concurrent.futures import Future
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.portfolio import portfolio_prove
-from unicode_fol_kit.atp.protocol import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.portfolio import portfolio_prove
+from unicode_logic_kit.atp.protocol import (
     BackendUnavailable, ProverBackend, Verdict, _REGISTRY, register_backend,
 )
-from unicode_fol_kit.fol._msfl_nodes import SortedQuantifier
-from unicode_fol_kit.fol.nodes import Atom, Variable
-from unicode_fol_kit.fol.signature import Signature
+from unicode_logic_kit.fol._msfl_nodes import SortedQuantifier
+from unicode_logic_kit.fol.nodes import Atom, Variable
+from unicode_logic_kit.fol.signature import Signature
 
 _X = Variable("x")
 GOAL = SortedQuantifier("∀", _X, "A", Atom("P", [_X]))
@@ -60,7 +60,7 @@ class _InlineExecutor:
 @pytest.fixture
 def inline_pool(monkeypatch):
     _InlineExecutor.payloads = []
-    monkeypatch.setattr("unicode_fol_kit.atp.portfolio.ProcessPoolExecutor", _InlineExecutor)
+    monkeypatch.setattr("unicode_logic_kit.atp.portfolio.ProcessPoolExecutor", _InlineExecutor)
     return _InlineExecutor
 
 

@@ -35,19 +35,19 @@ from decimal import Decimal
 import pytest
 import z3
 
-from unicode_fol_kit import api
-from unicode_fol_kit.ace.drs_reader import AceDrsUnreadError, parse_ape_drs
-from unicode_fol_kit.atp.twee_entailment import _parse_term
-from unicode_fol_kit.atp.z3_input import from_z3, parse_smtlib
-from unicode_fol_kit.fol._fol_nodes import _numeral_from_text
-from unicode_fol_kit.fol.latex_input import parse_latex
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.naming import ParsingError
-from unicode_fol_kit.fol.nodes import Atom, Number
-from unicode_fol_kit.fol.prolog_input import parse_prolog_clause
-from unicode_fol_kit.fol.prover9_input import parse_prover9
-from unicode_fol_kit.fol.qmltp_input import parse_qmltp_formula
-from unicode_fol_kit.fol.tptp_input import parse_tptp, parse_tptp_formula
+from unicode_logic_kit import api
+from unicode_logic_kit.ace.drs_reader import AceDrsUnreadError, parse_ape_drs
+from unicode_logic_kit.atp.twee_entailment import _parse_term
+from unicode_logic_kit.atp.z3_input import from_z3, parse_smtlib
+from unicode_logic_kit.fol._fol_nodes import _numeral_from_text
+from unicode_logic_kit.fol.latex_input import parse_latex
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.naming import ParsingError
+from unicode_logic_kit.fol.nodes import Atom, Number
+from unicode_logic_kit.fol.prolog_input import parse_prolog_clause
+from unicode_logic_kit.fol.prover9_input import parse_prover9
+from unicode_logic_kit.fol.qmltp_input import parse_qmltp_formula
+from unicode_logic_kit.fol.tptp_input import parse_tptp, parse_tptp_formula
 
 _UNICODE = MSFLParser()
 
@@ -291,7 +291,7 @@ def test_the_name_a_writer_gives_a_float_numeral_is_read_back_as_that_float():
     # A node can hold a float with a 17-digit text (0.1 + 0.2). The writers name it by that text, and
     # the inverse of the name (a name map, a Z3 symbol) reads exactly the float that was written: it
     # reads names the kit wrote, never a text a person typed, so the digit rule does not apply to it.
-    from unicode_fol_kit.fol._numeral_symbols import numeral_name, numeral_value
+    from unicode_logic_kit.fol._numeral_symbols import numeral_name, numeral_value
 
     value = 0.1 + 0.2
     assert numeral_name(value) == "0.30000000000000004"
@@ -303,7 +303,7 @@ def test_the_name_a_writer_gives_a_float_numeral_is_read_back_as_that_float():
 def test_a_name_the_writer_does_not_give_a_numeral_is_not_read_as_a_value(name):
     # numeral_name(float(name)) is another text ("1", "7", "0", ..., "0.30000000000000004", "0.1", "2.5"), so the
     # name is not one numeral_name produces and two names would read as one value if it were accepted
-    from unicode_fol_kit.fol._numeral_symbols import numeral_value
+    from unicode_logic_kit.fol._numeral_symbols import numeral_value
 
     with pytest.raises(ValueError, match="not a name numeral_name produces|invalid literal"):
         numeral_value(name)
@@ -311,7 +311,7 @@ def test_a_name_the_writer_does_not_give_a_numeral_is_not_read_as_a_value(name):
 
 @pytest.mark.parametrize("value", [0, 1, -3, 10 ** 30, 0.5, -2.25, 1e-07, 0.1 + 0.2, 123456789012345.5])
 def test_every_name_the_writer_gives_a_value_is_read_back_as_that_value(value):
-    from unicode_fol_kit.fol._numeral_symbols import numeral_name, numeral_value
+    from unicode_logic_kit.fol._numeral_symbols import numeral_name, numeral_value
 
     assert numeral_value(numeral_name(value)) == value
     assert type(numeral_value(numeral_name(value))) is type(Number(value).value)
@@ -325,7 +325,7 @@ def test_every_name_the_writer_gives_a_value_is_read_back_as_that_value(value):
                                             (".5", 0.5), ("3.14159265358979", 3.14159265358979),
                                             ("0.00001", 1e-05), ("1.0", 1), ("100000000000000000000000.0", 10 ** 23)])
 def test_an_owl_decimal_of_at_most_15_significant_digits_is_the_number_it_spells(lexical, value):
-    from unicode_fol_kit.dl.datatypes import Literal
+    from unicode_logic_kit.dl.datatypes import Literal
 
     term = Literal(lexical, "xsd:decimal").to_term()
     assert term == Number(value) and type(term.value) is type(Number(value).value)
@@ -334,7 +334,7 @@ def test_an_owl_decimal_of_at_most_15_significant_digits_is_the_number_it_spells
 @pytest.mark.parametrize("lexical", ["0.30000000000000004", "0.30000000000000005", "3.141592653589793",
                                      "123456789012345.5", "1234567890123456.5", "0.10000000000000000001"])
 def test_an_owl_decimal_of_more_than_15_significant_digits_is_refused_by_name(lexical):
-    from unicode_fol_kit.dl.datatypes import Literal, UnsupportedDatatypeError
+    from unicode_logic_kit.dl.datatypes import Literal, UnsupportedDatatypeError
 
     with pytest.raises(UnsupportedDatatypeError, match="significant digits") as refused:
         Literal(lexical, "xsd:decimal").to_term()
@@ -344,7 +344,7 @@ def test_an_owl_decimal_of_more_than_15_significant_digits_is_refused_by_name(le
 def test_the_smallest_normal_double_the_reader_uses_is_the_one_of_the_platform():
     import sys
 
-    from unicode_fol_kit.fol import _fol_nodes
+    from unicode_logic_kit.fol import _fol_nodes
 
     assert _fol_nodes._SMALLEST_NORMAL_DOUBLE == sys.float_info.min
     assert _fol_nodes._DECIMAL_DIGITS_READ_EXACTLY == 15

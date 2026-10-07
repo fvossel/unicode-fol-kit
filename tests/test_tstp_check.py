@@ -1,4 +1,4 @@
-"""Tests for the independent TSTP-derivation checker (unicode_fol_kit.atp.tstp_check).
+"""Tests for the independent TSTP-derivation checker (unicode_logic_kit.atp.tstp_check).
 
 Three families, matching the module's own three-tier design (see
 ``tstp_check.py``'s module docstring):
@@ -31,13 +31,13 @@ from pathlib import Path
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import Atom, Not, Or, Variable, Constant, Function
-from unicode_fol_kit.fol.tptp_input import parse_tptp_formula
-from unicode_fol_kit.atp.resolution_check import (
+from unicode_logic_kit.fol.nodes import Atom, Not, Or, Variable, Constant, Function
+from unicode_logic_kit.fol.tptp_input import parse_tptp_formula
+from unicode_logic_kit.atp.resolution_check import (
     ResolutionStep, ResolutionDerivation, verify_resolution_proof,
 )
-from unicode_fol_kit.atp.tstp import parse_tstp_derivation
-from unicode_fol_kit.atp.tstp_check import (
+from unicode_logic_kit.atp.tstp import parse_tstp_derivation
+from unicode_logic_kit.atp.tstp_check import (
     check_tstp_derivation,
     VAMPIRE_CHECKED_RULES,
     EPROVER_CLAUSIFICATION_RULES, EPROVER_CHECKED_RULES,

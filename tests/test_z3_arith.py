@@ -8,8 +8,8 @@ oracle. Formulas are produced by ``MSFLParser()`` (unsorted classical FOL).
 
 import z3
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.atp.z3_arith import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.atp.z3_arith import (
     to_z3_arith,
     is_satisfiable_arith,
     is_valid_arith,
@@ -205,7 +205,7 @@ class TestReviewerEdgeCases:
         # A SortedQuantifier is lowered with to_fol: ∀x:S φ becomes
         # ∀x (S(x) → φ) with S an uninterpreted predicate. With φ := (x = x) the
         # result is valid no matter how S is interpreted.
-        from unicode_fol_kit.fol.nodes import SortedQuantifier, Variable, Atom
+        from unicode_logic_kit.fol.nodes import SortedQuantifier, Variable, Atom
         sq = SortedQuantifier(
             "∀", Variable("x"), "S", Atom("=", [Variable("x"), Variable("x")])
         )

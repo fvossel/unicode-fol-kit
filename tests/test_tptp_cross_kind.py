@@ -37,20 +37,20 @@ import sys
 
 import pytest
 
-from unicode_fol_kit.atp import (
+from unicode_logic_kit.atp import (
     TptpNameMap, apply_reverse_tptp, generate_tff_arith_problem,
     generate_tff_problem, generate_tff_problem_with_mapping,
     generate_tptp_problem, generate_tptp_problem_with_mapping, to_tptp_ncl,
 )
-from unicode_fol_kit.atp._ascii_names import reverse_map_text
-from unicode_fol_kit.atp._tptp_problem import _separate_term_names
-from unicode_fol_kit.atp.tptp_tff import formula_to_tff
-from unicode_fol_kit.atp.z3_models import is_valid
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.atp._ascii_names import reverse_map_text
+from unicode_logic_kit.atp._tptp_problem import _separate_term_names
+from unicode_logic_kit.atp.tptp_tff import formula_to_tff
+from unicode_logic_kit.atp.z3_models import is_valid
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Box, Constant, Function, Implies, Not, Quantifier,
     SortedConstant, SortedQuantifier, Variable,
 )
-from unicode_fol_kit.fol.tptp_input import parse_tff_problem, parse_tptp
+from unicode_logic_kit.fol.tptp_input import parse_tff_problem, parse_tptp
 
 X = Variable("x")
 
@@ -283,8 +283,8 @@ def test_names_the_writers_mint_read_back_as_kit_text():
     variable (they only rename function/constant symbols), so there is nothing
     to route through ``fresh_variables``; the check that matters is that the
     minted symbol is a legal kit NAME."""
-    from unicode_fol_kit import api
-    from unicode_fol_kit.atp.tstp_check import _formula_alpha_equal
+    from unicode_logic_kit import api
+    from unicode_logic_kit.atp.tstp_check import _formula_alpha_equal
 
     text, _ = generate_tptp_problem_with_mapping([AGENT_PREMISE], AGENT_THEOREM)
     for item in parse_tptp(text):
@@ -434,8 +434,8 @@ def test_ncl_refuses_a_cross_kind_clash_naming_both_kit_symbols():
 # =============================================================================
 
 def test_the_checked_writers_are_public():
-    import unicode_fol_kit.atp as atp
-    import unicode_fol_kit.atp._tptp_problem as module
+    import unicode_logic_kit.atp as atp
+    import unicode_logic_kit.atp._tptp_problem as module
     for name in ("generate_tptp_problem", "generate_tptp_problem_with_mapping",
                  "TptpNameMap", "apply_reverse_tptp", "generate_tff_problem",
                  "generate_tff_problem_with_mapping"):
@@ -448,8 +448,8 @@ def test_the_checked_writers_are_public():
 # =============================================================================
 
 _SEED_SCRIPT = """
-from unicode_fol_kit.atp import generate_tptp_problem_with_mapping, generate_tff_problem_with_mapping
-from unicode_fol_kit.fol.nodes import Atom, Constant, Function
+from unicode_logic_kit.atp import generate_tptp_problem_with_mapping, generate_tff_problem_with_mapping
+from unicode_logic_kit.fol.nodes import Atom, Constant, Function
 a = Atom('Agent', [Function('agent', [Constant('alice')])])
 b = Atom('Car', [Constant('car')])
 c = Atom('Human', [Constant('human')])
@@ -586,7 +586,7 @@ _VAMPIRE = _vampire_kwargs()
 
 
 def _eprover_ready():
-    from unicode_fol_kit.atp import eprover_available
+    from unicode_logic_kit.atp import eprover_available
     return eprover_available()
 
 
@@ -641,7 +641,7 @@ def test_vampire_proves_the_sorted_problem_whose_constant_is_named_like_its_sort
     semantics (the constant is annotated as a Human). Before the sort-vs-term
     separation Vampire refused the problem (status error) because the constant
     and the sort were both ``human``."""
-    from unicode_fol_kit.atp.vampire_entailment import check_entailment_vampire_detailed
+    from unicode_logic_kit.atp.vampire_entailment import check_entailment_vampire_detailed
     result = check_entailment_vampire_detailed([SORTED_PREMISE], SORTED_CONCLUSION, timeout=30,
                                                tff=True, **_VAMPIRE)
     assert result["status"] == "proved", result
@@ -649,7 +649,7 @@ def test_vampire_proves_the_sorted_problem_whose_constant_is_named_like_its_sort
 
 @pytest.mark.skipif(_EPROVER is not True, reason="no eprover reachable (PATH, WSL, $UFK_EPROVER_CMD)")
 def test_eprover_proves_the_sorted_problem_whose_constant_is_named_like_its_sort():
-    from unicode_fol_kit.atp.eprover_backend import check_entailment_eprover_detailed
+    from unicode_logic_kit.atp.eprover_backend import check_entailment_eprover_detailed
     result = check_entailment_eprover_detailed([SORTED_PREMISE], SORTED_CONCLUSION, timeout=30, tff=True)
     assert result["status"] == "proved", result
 
@@ -659,7 +659,7 @@ def test_eprover_proves_the_sorted_problem_whose_constant_is_named_like_its_sort
 @pytest.mark.parametrize("case_id, premises, conclusion, expected", VERDICT_CASES,
                          ids=[c[0] for c in VERDICT_CASES])
 def test_eprover_verdict_equals_z3_on_the_nodes(case_id, premises, conclusion, expected, route):
-    from unicode_fol_kit.atp.eprover_backend import check_entailment_eprover_detailed
+    from unicode_logic_kit.atp.eprover_backend import check_entailment_eprover_detailed
     result = check_entailment_eprover_detailed(premises, conclusion, timeout=30, tff=(route == "tff"))
     assert result["status"] == expected == _z3_status(premises, conclusion), result
 
@@ -669,7 +669,7 @@ def test_eprover_verdict_equals_z3_on_the_nodes(case_id, premises, conclusion, e
 @pytest.mark.parametrize("case_id, premises, conclusion, expected", VERDICT_CASES,
                          ids=[c[0] for c in VERDICT_CASES])
 def test_vampire_verdict_equals_z3_on_the_nodes(case_id, premises, conclusion, expected, route):
-    from unicode_fol_kit.atp.vampire_entailment import check_entailment_vampire_detailed
+    from unicode_logic_kit.atp.vampire_entailment import check_entailment_vampire_detailed
     result = check_entailment_vampire_detailed(premises, conclusion, timeout=30,
                                                tff=(route == "tff"), **_VAMPIRE)
     assert result["status"] == expected == _z3_status(premises, conclusion), result

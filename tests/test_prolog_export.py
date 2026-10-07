@@ -1,10 +1,10 @@
-"""Tests for :mod:`unicode_fol_kit.fol.prolog_export`.
+"""Tests for :mod:`unicode_logic_kit.fol.prolog_export`.
 
 Every positive case round-trips against
-:func:`~unicode_fol_kit.fol.prolog_input.parse_prolog_clause` — the SECOND,
+:func:`~unicode_logic_kit.fol.prolog_input.parse_prolog_clause` — the SECOND,
 already hand-checked route the module docstring names as the oracle — through
 two independent checks: structural equality up to alpha-renaming
-(:func:`~unicode_fol_kit.eval.canonical.canonicalize`), and a full semantic
+(:func:`~unicode_logic_kit.eval.canonical.canonicalize`), and a full semantic
 equivalence proof against the kit's own resolution prover, in
 mutual-entailment form (``prove([node], reparsed) and prove([reparsed],
 node)`` — see :func:`_mutually_entail` for why that form is used instead of
@@ -15,14 +15,14 @@ derived from the implementation.
 
 import pytest
 
-from unicode_fol_kit.eval.canonical import canonicalize
-from unicode_fol_kit.atp.resolution import prove
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.eval.canonical import canonicalize
+from unicode_logic_kit.atp.resolution import prove
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Box, Constant, Function, Iff, Implies, Not, Number, Or,
     Quantifier, Variable, Xor,
 )
-from unicode_fol_kit.fol.prolog_input import parse_prolog_clause, parse_prolog_program
-from unicode_fol_kit.fol.prolog_export import (
+from unicode_logic_kit.fol.prolog_input import parse_prolog_clause, parse_prolog_program
+from unicode_logic_kit.fol.prolog_export import (
     PrologExportError, formula_to_prolog_clause, formula_to_prolog_program,
 )
 
@@ -349,7 +349,7 @@ def test_a_chemistry_flavoured_clause_round_trips():
 # ---------------------------------------------------------------------------
 
 def test_formula_to_prolog_program_splits_on_the_outer_conjunction():
-    from unicode_fol_kit.fol.nodes import free_variables
+    from unicode_logic_kit.fol.nodes import free_variables
     a = Variable("a")
     fact = Atom("Carbon", [Constant("c1")])
     rule = Quantifier("∀", a, Implies(Atom("Carbon", [a]), Atom("Atomic", [a])))
@@ -375,7 +375,7 @@ def test_formula_to_prolog_program_also_accepts_a_plain_iterable():
 def test_formula_to_prolog_program_names_which_clause_failed():
     """A failure in the middle of a multi-clause program must name which
     conjunct triggered it (position and text), not just the reason — the
-    same discipline :func:`~unicode_fol_kit.fol.prolog_input.parse_prolog_program`
+    same discipline :func:`~unicode_logic_kit.fol.prolog_input.parse_prolog_program`
     already applies on the way in with its ``"(in clause: ...)"`` suffix."""
     fact = Atom("Fact", [Constant("a")])
     bad = Atom("lowercase", [Constant("x")])
@@ -496,7 +496,7 @@ def test_a_predicate_that_does_not_start_upper_case_is_refused():
 
 
 def test_a_modal_operator_is_refused_with_the_normalforms_pointer():
-    """Reuses :func:`unicode_fol_kit.fol.normalforms._unsupported_hint`'s
+    """Reuses :func:`unicode_logic_kit.fol.normalforms._unsupported_hint`'s
     own routing, so a modal formula gets the SAME pointer
     ``to_cnf``/``is_horn`` already give for it."""
     x = Variable("x")
@@ -517,7 +517,7 @@ def test_horn_but_not_directly_shaped_is_refused_with_the_soundness_note():
     # ∀x (¬P(x) ∨ Q(x)) — an Or, not an Implies, though it clausifies to
     # exactly the single Horn clause {¬P(x), Q(x)}.
     node = Quantifier("∀", x, Or(Not(Atom("P", [x])), Atom("Q", [x])))
-    from unicode_fol_kit.fol.normalforms import is_horn
+    from unicode_logic_kit.fol.normalforms import is_horn
     assert is_horn(node) is True  # confirms this really is the near-miss case
     with pytest.raises(PrologExportError, match="is_horn"):
         formula_to_prolog_clause(node)
@@ -545,7 +545,7 @@ def _find_swipl():
 
     Mirrors the discovery convention every optional external prover in this
     kit already uses (``shutil.which`` -> WSL probe; see e.g.
-    ``unicode_fol_kit.atp.eprover_backend._discover``): native PATH first,
+    ``unicode_logic_kit.atp.eprover_backend._discover``): native PATH first,
     then a WSL install, never assumed.
     """
     import shutil

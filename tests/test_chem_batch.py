@@ -1,5 +1,5 @@
-"""Tests for the campaign batch layer — :mod:`unicode_fol_kit.chem.cache` and
-:mod:`unicode_fol_kit.eval.chem_batch`.
+"""Tests for the campaign batch layer — :mod:`unicode_logic_kit.chem.cache` and
+:mod:`unicode_logic_kit.eval.chem_batch`.
 
 Every expected verdict is hand-derived from the molecule, not copied from a
 run. The pattern used throughout is the kit's own amide-bond example
@@ -19,8 +19,8 @@ import os
 
 import pytest
 
-from unicode_fol_kit.chem.cache import StructureBuildError, StructureCache
-from unicode_fol_kit.eval.chem_batch import check_definitions
+from unicode_logic_kit.chem.cache import StructureBuildError, StructureCache
+from unicode_logic_kit.eval.chem_batch import check_definitions
 
 pytest.importorskip("rdkit", reason="chem_batch builds structures with RDKit")
 

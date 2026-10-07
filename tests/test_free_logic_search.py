@@ -18,15 +18,15 @@ import random
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier, Variable, Constant,
 )
-from unicode_fol_kit.semantics.free_logic import (
+from unicode_logic_kit.semantics.free_logic import (
     FreeModel, free_satisfies, free_holds,
     free_find_model, free_countermodel, free_is_valid, free_entails,
     MAX_FUNCTION_ARITY,
 )
-from unicode_fol_kit.semantics.modelfinder import is_valid_finite
+from unicode_logic_kit.semantics.modelfinder import is_valid_finite
 
 
 x = Variable("x")
@@ -210,7 +210,7 @@ def test_unknown_domain_split_rejected():
 
 
 def test_high_arity_function_rejected_cleanly():
-    from unicode_fol_kit.fol.nodes import Function
+    from unicode_logic_kit.fol.nodes import Function
     assert MAX_FUNCTION_ARITY == 2                    # documents the current bound
     f3 = Function("f", [x, y, Variable("z")])          # arity 3 > MAX_FUNCTION_ARITY
     with pytest.raises(ValueError, match="MAX_FUNCTION_ARITY"):

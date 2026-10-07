@@ -1,10 +1,10 @@
 """Import-time laziness regression tests.
 
-``unicode_fol_kit.eval.metric_hf``'s module docstring/comments claim that
-importing the module (and, transitively, ``unicode_fol_kit`` itself) never
+``unicode_logic_kit.eval.metric_hf``'s module docstring/comments claim that
+importing the module (and, transitively, ``unicode_logic_kit`` itself) never
 pulls in the optional ``evaluate``/``datasets`` packages -- only
-*instantiating* :class:`~unicode_fol_kit.eval.metric_hf.FolEquivalence`
-(directly, via :func:`~unicode_fol_kit.eval.metric_hf.load`, or via the
+*instantiating* :class:`~unicode_logic_kit.eval.metric_hf.FolEquivalence`
+(directly, via :func:`~unicode_logic_kit.eval.metric_hf.load`, or via the
 module-level ``__getattr__`` PEP 562 hook that name goes through) does. This
 file is the test suite that actually pins that claim down -- it is a wiring
 check, not new solver math, so there is nothing here to hand-derive: every
@@ -29,7 +29,7 @@ import sys
 
 import pytest
 
-from unicode_fol_kit.eval import metric_hf
+from unicode_logic_kit.eval import metric_hf
 
 
 # ---------------------------------------------------------------------------
@@ -41,12 +41,12 @@ from unicode_fol_kit.eval import metric_hf
 # FolEquivalence, which would make an in-process `'evaluate' not in
 # sys.modules` check pass or fail for the wrong reason. A subprocess with
 # nothing loaded yet is the only way to observe the effect of `import
-# unicode_fol_kit` alone, in isolation.
+# unicode_logic_kit` alone, in isolation.
 # ---------------------------------------------------------------------------
 
-def test_importing_unicode_fol_kit_subprocess_does_not_import_evaluate_or_datasets():
+def test_importing_unicode_logic_kit_subprocess_does_not_import_evaluate_or_datasets():
     """The user-facing regression check this whole change exists for: a bare
-    ``import unicode_fol_kit`` must never put ``'evaluate'`` or
+    ``import unicode_logic_kit`` must never put ``'evaluate'`` or
     ``'datasets'`` into ``sys.modules`` -- regardless of whether those
     optional packages happen to be installed, since the package is not even
     trying to use them yet. See the module docstring for why this needs to
@@ -55,7 +55,7 @@ def test_importing_unicode_fol_kit_subprocess_does_not_import_evaluate_or_datase
     """
     result = subprocess.run(
         [sys.executable, "-c",
-         "import unicode_fol_kit, sys\n"
+         "import unicode_logic_kit, sys\n"
          "assert 'evaluate' not in sys.modules, 'evaluate leaked into sys.modules'\n"
          "assert 'datasets' not in sys.modules, 'datasets leaked into sys.modules'\n"],
         capture_output=True, text=True,
@@ -88,8 +88,8 @@ class TestLazinessWithEvaluateInstalled:
     def _fresh_reimport(self, monkeypatch):
         monkeypatch.delitem(sys.modules, "evaluate", raising=False)
         monkeypatch.delitem(sys.modules, "datasets", raising=False)
-        monkeypatch.delitem(sys.modules, "unicode_fol_kit.eval.metric_hf", raising=False)
-        return importlib.import_module("unicode_fol_kit.eval.metric_hf")
+        monkeypatch.delitem(sys.modules, "unicode_logic_kit.eval.metric_hf", raising=False)
+        return importlib.import_module("unicode_logic_kit.eval.metric_hf")
 
     def test_bare_module_import_does_not_import_evaluate_or_datasets(self, monkeypatch):
         """This is the test that actually encodes the bug being fixed: before
@@ -116,7 +116,7 @@ class TestLazinessWithEvaluateInstalled:
         assert "datasets" in sys.modules
 
     def test_from_import_form_also_triggers_and_returns_a_usable_class(self, monkeypatch):
-        """``from unicode_fol_kit.eval.metric_hf import FolEquivalence`` is
+        """``from unicode_logic_kit.eval.metric_hf import FolEquivalence`` is
         the other documented access path (see the module's ``__getattr__``
         docstring) -- Python's ``from ... import`` machinery falls back to a
         module's ``__getattr__`` for a name it does not find as a plain
@@ -125,7 +125,7 @@ class TestLazinessWithEvaluateInstalled:
         self._fresh_reimport(monkeypatch)
         # Import machinery resolves through sys.modules, so this picks up
         # the freshly-reimported module set up by _fresh_reimport above.
-        from unicode_fol_kit.eval.metric_hf import FolEquivalence
+        from unicode_logic_kit.eval.metric_hf import FolEquivalence
         assert "evaluate" in sys.modules
         instance = FolEquivalence()
         assert isinstance(instance, FolEquivalence)

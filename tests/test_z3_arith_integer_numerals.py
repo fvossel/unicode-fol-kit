@@ -15,10 +15,10 @@ No integer is ``2.5``. Z3's ``IntVal(2.5)`` takes the integer part, so ``2.5 = 2
 import pytest
 import z3
 
-from unicode_fol_kit.atp.z3_arith import (
+from unicode_logic_kit.atp.z3_arith import (
     ArithEnv, get_model_arith, is_satisfiable_arith, is_valid_arith, to_z3_arith,
 )
-from unicode_fol_kit.fol.nodes import Atom, Constant, Function, Number, Quantifier, Variable
+from unicode_logic_kit.fol.nodes import Atom, Constant, Function, Number, Quantifier, Variable
 
 EQ_25_2 = Atom("=", [Number(2.5), Number(2)])
 EQ_25_C = Atom("=", [Number(2.5), Constant("cc")])

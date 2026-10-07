@@ -30,8 +30,8 @@ import time
 
 import pytest
 
-from unicode_fol_kit import _deadline
-from unicode_fol_kit._deadline import instant, run_until
+from unicode_logic_kit import _deadline
+from unicode_logic_kit._deadline import instant, run_until
 
 #: Limits in milliseconds, from far below what starting a thread takes to a few times it.
 LIMITS_MS = (0.001, 0.003, 0.01, 0.05, 0.2, 0.5, 1, 2, 5, 20)
@@ -198,9 +198,9 @@ def _endless():
 
 #: ordinary calls, run with a limit no machine reaches, and what they answer (derived by hand)
 def _ordinary_calls():
-    from unicode_fol_kit.atp import resolution
-    from unicode_fol_kit.atp.logic_backends import IntBackend
-    from unicode_fol_kit.fol.nodes import Atom, Constant, Implies, Not, Or, Quantifier, Variable
+    from unicode_logic_kit.atp import resolution
+    from unicode_logic_kit.atp.logic_backends import IntBackend
+    from unicode_logic_kit.fol.nodes import Atom, Constant, Implies, Not, Or, Quantifier, Variable
 
     x, alpha = Variable("x"), Constant("alpha")
     p = Atom("p", [])

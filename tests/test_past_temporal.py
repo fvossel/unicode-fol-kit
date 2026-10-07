@@ -17,15 +17,15 @@ import random
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     Node, Atom, Not, And, Or, Implies,
     Always, Eventually, Next, Until,
     Historically, Once, Previous, Since,
     Obligatory, Permitted,
 )
-from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
-from unicode_fol_kit.fol.latex_input import parse_latex
+from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
+from unicode_logic_kit.fol.latex_input import parse_latex
 
 P_, Q_, R_ = Atom("P", ()), Atom("Q", ()), Atom("R", ())
 _parser = MSFLParser(modal=True)
@@ -181,20 +181,20 @@ def test_modal_tableau_gives_sound_verdicts_for_past():
     # No rule for ⒣/⒫/⒴ — the tableau leaves them inert instead of raising:
     # verdicts are sound (countermodels verified by satisfies_modal) or an
     # honest "unknown", never a crash.
-    from unicode_fol_kit.atp.modal_tableau import is_modal_valid, modal_decide
+    from unicode_logic_kit.atp.modal_tableau import is_modal_valid, modal_decide
     assert modal_decide(Historically(P_)) == "invalid"     # refutable, verified
     assert is_modal_valid(Historically(P_)) is False       # sound: not proved
 
 
 def test_kleene_value_rejects_past_operators():
-    from unicode_fol_kit.semantics.manyvalued import kleene_value
+    from unicode_logic_kit.semantics.manyvalued import kleene_value
     with pytest.raises(NotImplementedError):
         kleene_value(Once(P_), {})
 
 
 def test_standard_translation_past_box_diamond():
     # Historically/Once/Previous translate to FO; Since is rejected like Until.
-    from unicode_fol_kit.fol.modal_translation import standard_translation
+    from unicode_logic_kit.fol.modal_translation import standard_translation
     assert standard_translation(Historically(P_)) is not None
     assert standard_translation(Once(P_)) is not None
     assert standard_translation(Previous(P_)) is not None

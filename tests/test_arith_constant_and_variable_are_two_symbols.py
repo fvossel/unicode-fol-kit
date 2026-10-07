@@ -23,11 +23,11 @@ import random
 import pytest
 import z3
 
-from unicode_fol_kit.atp._tff_problem import generate_tff_arith_problem
-from unicode_fol_kit.atp.z3_arith import (
+from unicode_logic_kit.atp._tff_problem import generate_tff_arith_problem
+from unicode_logic_kit.atp.z3_arith import (
     ArithEnv, get_model_arith, is_satisfiable_arith, is_valid_arith, to_z3_arith,
 )
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Function, Implies, Iff, Node, Not, Number, Or, Quantifier, SortedConstant,
     SortedCount, SortedQuantifier, Variable,
 )

@@ -25,7 +25,7 @@ import random
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Variable, Constant, Number, Function,
     Not, And, Or, Xor, Implies, Iff, Quantifier,
     LukNegation, WeakConjunction, WeakDisjunction,
@@ -34,12 +34,12 @@ from unicode_fol_kit.fol.nodes import (
     Knows, Believes, Obligatory, Permitted,
     SecondOrderQuantifier,
 )
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.semantics.manyvalued import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.semantics.manyvalued import (
     kleene_value, is_valid, entails, TRUTH_VALUES, _prepare_enumeration,
 )
-from unicode_fol_kit.semantics.tarski import Structure, satisfies
-from unicode_fol_kit.semantics.secondorder import satisfies_so, holds
+from unicode_logic_kit.semantics.tarski import Structure, satisfies
+from unicode_logic_kit.semantics.secondorder import satisfies_so, holds
 
 
 # ---------------------------------------------------------------------------

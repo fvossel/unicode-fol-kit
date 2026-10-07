@@ -22,17 +22,17 @@ parameter at all. This module pins the widened behaviour:
 
 import pytest
 
-from unicode_fol_kit import MSFLParser, qml_is_valid, BARCAN, CONVERSE_BARCAN
-from unicode_fol_kit.hol.ho_modal import (
+from unicode_logic_kit import MSFLParser, qml_is_valid, BARCAN, CONVERSE_BARCAN
+from unicode_logic_kit.hol.ho_modal import (
     HoGoal, isabelle_ho_modal_theory, to_thf_ho_modal,
 )
-from unicode_fol_kit.hol.isabelle_runner import check_theory, isabelle_available
+from unicode_logic_kit.hol.isabelle_runner import check_theory, isabelle_available
 
 TOM = MSFLParser(third_order=True, modal=True)
 
 # The Barcan formula / converse Barcan formula, spelled out in the kit's own
 # syntax and parsed THIRD-order-modal -- structurally identical to
-# unicode_fol_kit.fol.qml.BARCAN / CONVERSE_BARCAN (same shape: ◇∃x A(x) ↔
+# unicode_logic_kit.fol.qml.BARCAN / CONVERSE_BARCAN (same shape: ◇∃x A(x) ↔
 # ∃x ◇A(x), just parsed through a different grammar), so qml_is_valid decides
 # the SAME formula this module embeds, not a lookalike.
 BF_TEXT = "◇∃x A(x) → ∃x ◇A(x)"
@@ -268,9 +268,9 @@ def test_identity_under_every_domain_regime_matches_the_first_order_oracle(
     """Z3 on the first-order shallow embedding gives the hand-derived verdict in every
     regime, with a DEFINITE answer both ways: a valid row is unsat on its negation and an
     invalid row is sat (a Z3 'unknown' satisfies neither, so it cannot pass as 'invalid')."""
-    from unicode_fol_kit.atp.z3_models import is_satisfiable, is_valid
-    from unicode_fol_kit.fol.nodes import Not
-    from unicode_fol_kit.fol.qml import qml_validity_formula
+    from unicode_logic_kit.atp.z3_models import is_satisfiable, is_valid
+    from unicode_logic_kit.fol.nodes import Not
+    from unicode_logic_kit.fol.qml import qml_validity_formula
     query = qml_validity_formula(_MP.parse(text), mode=mode, frame="K")
     if mode in valid_in:
         assert is_valid(query), f"{text} [{mode}]"

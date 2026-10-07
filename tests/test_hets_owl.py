@@ -1,4 +1,4 @@
-"""Tests for :mod:`unicode_fol_kit.hets.owl_backend` — the second, independent
+"""Tests for :mod:`unicode_logic_kit.hets.owl_backend` — the second, independent
 external OWL 2 DL reasoner route (Hets/FaCT++), over the ALCHQ + I + O
 fragment.
 
@@ -6,9 +6,9 @@ Two tiers, mirroring ``tests/test_owl_reasoner.py``'s split (and, for the
 Hets-server gating specifically, ``tests/test_hets_client.py``'s):
 
 Non-live (default run, no server/JVM needed) — the OWL 2 Functional-Style
-renderer (:func:`~unicode_fol_kit.hets.owl_backend._render_document` /
+renderer (:func:`~unicode_logic_kit.hets.owl_backend._render_document` /
 ``_render_ce``), hand-checked against literal expected text, and
-:class:`~unicode_fol_kit.hets.owl_backend.HetsOwlError`/``BackendUnavailable``
+:class:`~unicode_logic_kit.hets.owl_backend.HetsOwlError`/``BackendUnavailable``
 propagation with the real network calls monkeypatched away.
 
 Live (``@pytest.mark.hets_live``, gated by ``hets_available()`` exactly like
@@ -25,12 +25,12 @@ oracle:
   differently-shaped battery.
 * I/O fragment (inverse roles, nominals — outside ALCHQ, so ``dl.tableau``
   refuses these outright and there is no in-house route to compare against):
-  differential against :mod:`unicode_fol_kit.dl.owl_reasoner` instead,
+  differential against :mod:`unicode_logic_kit.dl.owl_reasoner` instead,
   additionally gated on ``@pytest.mark.owl_live`` (owlready2 + a JVM), since
   that is the SECOND external route these tests need reachable. Same
   hand-checked textbook cases as ``test_owl_reasoner.py``'s I/O section.
 
-See ``unicode_fol_kit/hets/owl_backend.py``'s own module docstring, "Phase 0
+See ``unicode_logic_kit/hets/owl_backend.py``'s own module docstring, "Phase 0
 spike findings", for the live evidence (exact REST calls/responses) that
 justified building this backend at all, and why it always passes
 ``reasoner="Fact"`` explicitly rather than a Pellet/HermiT identifier neither
@@ -41,11 +41,11 @@ import shutil
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit.atp.protocol import BackendUnavailable
-from unicode_fol_kit.dl.concepts import InverseRole, Nominal
-from unicode_fol_kit.hets.docker import hets_available
-from unicode_fol_kit.hets.owl_backend import (
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit.atp.protocol import BackendUnavailable
+from unicode_logic_kit.dl.concepts import InverseRole, Nominal
+from unicode_logic_kit.hets.docker import hets_available
+from unicode_logic_kit.hets.owl_backend import (
     HetsOwlError,
     _kb_consistent, _NameMap, _render_ce, _render_document,
     external_abox_consistent, external_concept_satisfiable,
@@ -65,7 +65,7 @@ def _owl_live_available() -> bool:
     owlready2 AND a JVM must be present for the I/O-vs-``dl.owl_reasoner``
     differential tests to run.
     """
-    from unicode_fol_kit.dl.owl_reasoner import available
+    from unicode_logic_kit.dl.owl_reasoner import available
     return available() and _JAVA_ON_PATH
 
 
@@ -88,9 +88,9 @@ r = "r"
 def test_render_document_empty_tbox_abox():
     text = _render_document(dl.TBox(), dl.ABox())
     assert text == (
-        "Prefix(:=<http://unicode-fol-kit.invalid/owl#>)\n"
+        "Prefix(:=<http://unicode-logic-kit.invalid/owl#>)\n"
         "Prefix(owl:=<http://www.w3.org/2002/07/owl#>)\n"
-        "Ontology(<http://unicode-fol-kit.invalid/hets-owl-probe>)"
+        "Ontology(<http://unicode-logic-kit.invalid/hets-owl-probe>)"
     )
 
 
@@ -104,9 +104,9 @@ def test_render_document_hand_checked():
     abox = dl.ABox().assert_concept("alice", dl.Atomic("Doctor"))
     text = _render_document(tbox, abox)
     assert text == (
-        "Prefix(:=<http://unicode-fol-kit.invalid/owl#>)\n"
+        "Prefix(:=<http://unicode-logic-kit.invalid/owl#>)\n"
         "Prefix(owl:=<http://www.w3.org/2002/07/owl#>)\n"
-        "Ontology(<http://unicode-fol-kit.invalid/hets-owl-probe>\n"
+        "Ontology(<http://unicode-logic-kit.invalid/hets-owl-probe>\n"
         "  Declaration(Class(:C1))\n"
         "  Declaration(Class(:C2))\n"
         "  Declaration(NamedIndividual(:I1))\n"
@@ -230,7 +230,7 @@ def test_name_map_never_leaks_the_original_kit_name():
 # =============================================================================
 
 def test_hets_owl_available_delegates(monkeypatch):
-    import unicode_fol_kit.hets.owl_backend as owl_backend_module
+    import unicode_logic_kit.hets.owl_backend as owl_backend_module
 
     monkeypatch.setattr(owl_backend_module, "hets_available", lambda: True)
     assert hets_owl_available() is True
@@ -261,7 +261,7 @@ class _FakeClient:
 
 
 def test_no_server_raises_backend_unavailable(monkeypatch):
-    import unicode_fol_kit.hets.owl_backend as owl_backend_module
+    import unicode_logic_kit.hets.owl_backend as owl_backend_module
 
     def boom(*, start_container):
         raise BackendUnavailable("hets: no server discovered")
@@ -272,7 +272,7 @@ def test_no_server_raises_backend_unavailable(monkeypatch):
 
 
 def test_timeout_result_raises_hets_owl_error(monkeypatch):
-    import unicode_fol_kit.hets.owl_backend as owl_backend_module
+    import unicode_logic_kit.hets.owl_backend as owl_backend_module
 
     fake = _FakeClient([{"result": "Timeout"}])
     monkeypatch.setattr(owl_backend_module, "HetsClient", lambda url, timeout: fake)
@@ -283,7 +283,7 @@ def test_timeout_result_raises_hets_owl_error(monkeypatch):
 
 
 def test_wrong_goal_count_raises_hets_owl_error(monkeypatch):
-    import unicode_fol_kit.hets.owl_backend as owl_backend_module
+    import unicode_logic_kit.hets.owl_backend as owl_backend_module
 
     fake = _FakeClient([])
     monkeypatch.setattr(owl_backend_module, "HetsClient", lambda url, timeout: fake)
@@ -294,7 +294,7 @@ def test_wrong_goal_count_raises_hets_owl_error(monkeypatch):
 
 
 def test_consistent_and_inconsistent_map_correctly(monkeypatch):
-    import unicode_fol_kit.hets.owl_backend as owl_backend_module
+    import unicode_logic_kit.hets.owl_backend as owl_backend_module
 
     monkeypatch.setattr(owl_backend_module, "discover_hets_url",
                          lambda *, start_container: ("http://fake:8000", None))
@@ -312,13 +312,13 @@ def test_kb_consistent_always_passes_reasoner_fact(monkeypatch):
     # _FakeClient.consistency_check itself asserts reasoner == "Fact" (see
     # the module docstring's Phase-0 finding: an unset reasoner is broken
     # for OWL input in this image) -- this test just exercises that path.
-    import unicode_fol_kit.hets.owl_backend as owl_backend_module
+    import unicode_logic_kit.hets.owl_backend as owl_backend_module
 
     fake = _FakeClient([{"result": "Consistent"}])
     monkeypatch.setattr(owl_backend_module, "HetsClient", lambda url, timeout: fake)
     assert _kb_consistent(None, dl.ABox(), time_limit=15, url="http://fake:8000") is True
     assert "Prefix(:=<" in fake.uploaded
-    assert "Ontology(<http://unicode-fol-kit.invalid/hets-owl-probe>" in fake.uploaded
+    assert "Ontology(<http://unicode-logic-kit.invalid/hets-owl-probe>" in fake.uploaded
 
 
 # =============================================================================
@@ -441,7 +441,7 @@ def test_three_way_agreement_with_dl_owl_reasoner_on_alchq():
     # Also gated on owl_live: this specific test needs BOTH external routes.
     if not _owl_live_available():
         pytest.skip("owlready2 and/or a JVM (java on PATH) not found")
-    from unicode_fol_kit.dl.owl_reasoner import external_subsumes as hermit_subsumes
+    from unicode_logic_kit.dl.owl_reasoner import external_subsumes as hermit_subsumes
 
     t = dl.TBox().add(A, B).add(B, C)
     assert dl.subsumes(A, C, t) is True
@@ -459,7 +459,7 @@ def test_three_way_agreement_with_dl_owl_reasoner_on_alchq():
 @live_hets
 @live_owl
 def test_nominal_no_unique_name_assumption():
-    from unicode_fol_kit.dl.owl_reasoner import external_concept_satisfiable as hermit_sat
+    from unicode_logic_kit.dl.owl_reasoner import external_concept_satisfiable as hermit_sat
 
     concept = dl.And(Nominal("a"), Nominal("b"))
     assert hermit_sat(concept) is True
@@ -471,7 +471,7 @@ def test_nominal_no_unique_name_assumption():
 @live_hets
 @live_owl
 def test_nominal_with_distinctness_is_unsatisfiable():
-    from unicode_fol_kit.dl.owl_reasoner import external_abox_consistent as hermit_consistent
+    from unicode_logic_kit.dl.owl_reasoner import external_abox_consistent as hermit_consistent
 
     ab = (dl.ABox().assert_concept("_probe", dl.And(Nominal("a"), Nominal("b")))
           .assert_distinct("a", "b"))
@@ -486,7 +486,7 @@ def test_nominal_with_distinctness_is_unsatisfiable():
 def test_inverse_role_entailment_textbook_case():
     # (a, b):hasChild entails b : ExistsHasChild-inverse.Top (b has an
     # INCOMING hasChild edge, i.e. an hasChild-inverse successor, namely a).
-    from unicode_fol_kit.dl.owl_reasoner import external_instance_check as hermit_instance_check
+    from unicode_logic_kit.dl.owl_reasoner import external_instance_check as hermit_instance_check
 
     ab = dl.ABox().assert_role("a", "b", "hasChild")
     query = dl.Exists(InverseRole("hasChild"), dl.Top())
@@ -501,7 +501,7 @@ def test_inverse_role_entailment_textbook_case():
 def test_inverse_role_not_entailed_countermodel():
     # Negative control: only (a, c):hasChild -- b has NO incoming hasChild
     # edge, so the same query is NOT entailed for b.
-    from unicode_fol_kit.dl.owl_reasoner import external_instance_check as hermit_instance_check
+    from unicode_logic_kit.dl.owl_reasoner import external_instance_check as hermit_instance_check
 
     ab = dl.ABox().assert_role("a", "c", "hasChild")
     query = dl.Exists(InverseRole("hasChild"), dl.Top())
@@ -518,7 +518,7 @@ def test_inverse_role_with_role_hierarchy_and_number_restriction():
     # inverse-hasChild successor set (via the hierarchy) includes a, so
     # Exists(hasChild-inverse, Top) is entailed for b even though only a
     # hasSon edge (never a literal hasChild edge) was ever asserted.
-    from unicode_fol_kit.dl.owl_reasoner import external_instance_check as hermit_instance_check
+    from unicode_logic_kit.dl.owl_reasoner import external_instance_check as hermit_instance_check
 
     t = dl.TBox().add_role_inclusion("hasSon", "hasChild")
     ab = dl.ABox().assert_role("a", "b", "hasSon")

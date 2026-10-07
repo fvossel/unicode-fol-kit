@@ -12,9 +12,9 @@ and a constant of one spelling were one symbol, which the translation refuses; `
 """
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.eval.equivalence import EquivalenceResult, equivalent
-from unicode_fol_kit.fol.nodes import And, Atom, Cardinality, Constant, Number, Variable
+from unicode_logic_kit import api
+from unicode_logic_kit.eval.equivalence import EquivalenceResult, equivalent
+from unicode_logic_kit.fol.nodes import And, Atom, Cardinality, Constant, Number, Variable
 
 CLASH = (Atom("P", [Number(1)]), Atom("P", [Constant("1")]))
 

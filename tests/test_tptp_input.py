@@ -9,7 +9,7 @@ and covers only what C2 (native TF0 reader/writer) added:
   AXIOM/CONJECTURE statements (typed quantifiers), and reject a ``tff``
   TYPE DECLARATION with a message pointing at :func:`parse_tff_problem`.
 * :func:`parse_tff_problem` — the typed reader: declared
-  :class:`~unicode_fol_kit.fol.signature.Signature` + formulas, with a bare
+  :class:`~unicode_logic_kit.fol.signature.Signature` + formulas, with a bare
   ``Constant`` occurrence promoted to ``SortedConstant`` wherever its name
   was declared with a concrete sort.
 * The three explicit TF0-scope refusals: THF, TF1 polymorphism (``!>``), and
@@ -25,14 +25,14 @@ equivalent Unicode text — an INDEPENDENT second route, not
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.fol.naming import ParsingError
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.fol.naming import ParsingError
+from unicode_logic_kit.fol.nodes import (
     Atom, Constant, SortedConstant, SortedQuantifier, Quantifier, Variable,
     Implies, Function,
 )
-from unicode_fol_kit.fol.signature import Signature, PredicateDecl, FunctionDecl, ConstantDecl
-from unicode_fol_kit.fol.tptp_input import (
+from unicode_logic_kit.fol.signature import Signature, PredicateDecl, FunctionDecl, ConstantDecl
+from unicode_logic_kit.fol.tptp_input import (
     parse_tptp, parse_tptp_formula, load_tptp, TptpFormula,
     parse_tff_problem, load_tff_problem,
 )

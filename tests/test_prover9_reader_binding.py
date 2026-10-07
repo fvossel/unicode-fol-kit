@@ -40,15 +40,15 @@ import random
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.prover9_entailment import _run_prover9, generate_prover9_input_with_mapping
-from unicode_fol_kit.atp.protocol import Prover9Backend
-from unicode_fol_kit.fol import prover9_input
-from unicode_fol_kit.fol._fol_nodes import NumeralTextError
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.prover9_entailment import _run_prover9, generate_prover9_input_with_mapping
+from unicode_logic_kit.atp.protocol import Prover9Backend
+from unicode_logic_kit.fol import prover9_input
+from unicode_logic_kit.fol._fol_nodes import NumeralTextError
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Function, Iff, Implies, Not, Number, Or, Quantifier, Variable,
 )
-from unicode_fol_kit.fol.prover9_input import Prover9ParsingError, parse_prover9, parse_prover9_problem
+from unicode_logic_kit.fol.prover9_input import Prover9ParsingError, parse_prover9, parse_prover9_problem
 
 
 def V(name):

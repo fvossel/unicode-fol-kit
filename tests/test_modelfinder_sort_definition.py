@@ -12,7 +12,7 @@ Every expectation below is derived by hand from that, in the test that states it
 last part compares ``find_model`` / ``find_countermodel`` with a REFERENCE written in this
 file from the definition: it enumerates every structure of the definition over one and
 two elements and evaluates the formulas itself, sharing no code with
-``unicode_fol_kit.semantics`` (it reads node fields, and walks a tree with ``Node.walk``).
+``unicode_logic_kit.semantics`` (it reads node fields, and walks a tree with ``Node.walk``).
 It is run on a few hundred
 generated problems that include constants with two sorts, a constant sorted in one
 place and plain in another, sort names used as predicates, subsort edges, unsorted
@@ -25,16 +25,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import z3_models
-from unicode_fol_kit.fol import nonempty_sort_axioms, sort_membership_axioms, subsort_axioms, to_fol
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import z3_models
+from unicode_logic_kit.fol import nonempty_sort_axioms, sort_membership_axioms, subsort_axioms, to_fol
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Count, Function, Iff, Implies, Not, Number, Or, Quantifier,
     SortedConstant, SortedCount, SortedQuantifier, Variable,
 )
-from unicode_fol_kit.semantics import modelfinder, tarski
-from unicode_fol_kit.semantics.modelfinder import find_countermodel, find_model, is_size_exhaustive
-from unicode_fol_kit.semantics.tarski import Structure
+from unicode_logic_kit.semantics import modelfinder, tarski
+from unicode_logic_kit.semantics.modelfinder import find_countermodel, find_model, is_size_exhaustive
+from unicode_logic_kit.semantics.tarski import Structure
 
 
 def parse(text):

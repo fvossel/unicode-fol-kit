@@ -29,9 +29,9 @@ import types
 
 import pytest
 
-from unicode_fol_kit.atp.fitch import _subst_var
-from unicode_fol_kit.fol.lambda_tools import eliminate_lambdas
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.atp.fitch import _subst_var
+from unicode_logic_kit.fol.lambda_tools import eliminate_lambdas
+from unicode_logic_kit.fol.nodes import (
     And, Application, Atom, Cardinality, Constant, Count, Function, Iff, Implies, Lambda,
     LambdaVar, Not, Number, Or, Quantifier, SlashedExists, SortedCardinality, SortedCount,
     SortedQuantifier, Variable, beta_reduce, free_variables, substitute,
@@ -296,7 +296,7 @@ def test_the_typed_writers_lowering_of_nested_counts_keeps_their_meaning():
     # spelled x0 (the substituted variable) turned the matrix into one that depends on the
     # outer witness: with P = {1, 2} on S = {0, 1, 2} the lowering held (witness 0 is no P),
     # while A is false (two elements have P).
-    from unicode_fol_kit.atp.tptp_tff import _expand_all_sorted_counts
+    from unicode_logic_kit.atp.tptp_tff import _expand_all_sorted_counts
     v = Variable("x0")
     leaf = And(P(v), Atom("=", (v, v)))
     nested = SortedCount("ge", Number(1), v, "S", SortedCount("le", Number(1), v, "S", leaf))

@@ -7,10 +7,10 @@ every relation of its arity over the finite domain.
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import Lambda, LambdaVar, Atom, WeakConjunction
-from unicode_fol_kit.semantics.secondorder import satisfies_so, holds, _all_relations
-from unicode_fol_kit.semantics.tarski import Structure, satisfies as fo_satisfies
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import Lambda, LambdaVar, Atom, WeakConjunction
+from unicode_logic_kit.semantics.secondorder import satisfies_so, holds, _all_relations
+from unicode_logic_kit.semantics.tarski import Structure, satisfies as fo_satisfies
 
 SO = MSFLParser(second_order=True)
 

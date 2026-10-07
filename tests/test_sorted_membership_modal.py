@@ -30,26 +30,26 @@ import re
 
 import pytest
 
-from unicode_fol_kit.atp.kripke_enum import KripkeEnumBackend, modal_enum_search
-from unicode_fol_kit.atp.lj import int_decide, int_prove
-from unicode_fol_kit.atp.modal_tableau import (
+from unicode_logic_kit.atp.kripke_enum import KripkeEnumBackend, modal_enum_search
+from unicode_logic_kit.atp.lj import int_decide, int_prove
+from unicode_logic_kit.atp.modal_tableau import (
     is_modal_valid, modal_countermodel, modal_decide, modal_prove, modal_tableau_closed,
 )
-from unicode_fol_kit.atp.protocol import REFUTED
-from unicode_fol_kit.comorphism import DEFAULT_REGISTRY
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.atp.protocol import REFUTED
+from unicode_logic_kit.comorphism import DEFAULT_REGISTRY
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     Atom, Constant, Implies, Not, Or, Quantifier, SortedConstant, SortedQuantifier,
     Variable, Box, Diamond, And, to_fol,
 )
-from unicode_fol_kit.fol.qml import qml_axioms, qml_is_valid
-from unicode_fol_kit.hol import lean
-from unicode_fol_kit.hol.classical import to_thf_fol, to_thf_msfol, to_isabelle_msfol
-from unicode_fol_kit.hol.intuitionistic import gmt_is_s4_valid, gmt_validity_matches_int_valid
-from unicode_fol_kit.hol.isabelle_modal import isabelle_modal_theory, modal_axiom_names
-from unicode_fol_kit.hol.thf_modal import to_thf_modal_full
-from unicode_fol_kit.semantics.intuitionistic import int_countermodel, int_valid
-from unicode_fol_kit.semantics.kripke import (
+from unicode_logic_kit.fol.qml import qml_axioms, qml_is_valid
+from unicode_logic_kit.hol import lean
+from unicode_logic_kit.hol.classical import to_thf_fol, to_thf_msfol, to_isabelle_msfol
+from unicode_logic_kit.hol.intuitionistic import gmt_is_s4_valid, gmt_validity_matches_int_valid
+from unicode_logic_kit.hol.isabelle_modal import isabelle_modal_theory, modal_axiom_names
+from unicode_logic_kit.hol.thf_modal import to_thf_modal_full
+from unicode_logic_kit.semantics.intuitionistic import int_countermodel, int_valid
+from unicode_logic_kit.semantics.kripke import (
     KripkeModel, satisfies_modal, sorted_constant_violations,
 )
 _SORTED = MSFLParser(modal=True, many_sorted=True)

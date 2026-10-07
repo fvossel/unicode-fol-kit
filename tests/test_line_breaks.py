@@ -22,8 +22,8 @@ from pathlib import Path
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.fol.nodes import And, Atom, Constant, Implies, Quantifier, Variable
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.fol.nodes import And, Atom, Constant, Implies, Quantifier, Variable
 
 FOL = MSFLParser()
 
@@ -61,7 +61,7 @@ _TPTP = "% header\nfof(a1, axiom, p(a)).\n% mid\nfof(c, conjecture, q(a)).\n"
 
 @pytest.mark.parametrize("convention", CONVENTIONS)
 def test_tptp_statements_after_a_comment_survive(convention):
-    from unicode_fol_kit.fol.tptp_input import parse_tptp, parse_tptp_problem
+    from unicode_logic_kit.fol.tptp_input import parse_tptp, parse_tptp_problem
     text = _as(_TPTP, convention)
     formulas = parse_tptp(text)
     assert [(f.name, f.role, f.formula) for f in formulas] == [
@@ -73,11 +73,11 @@ def test_tptp_statements_after_a_comment_survive(convention):
 
 @pytest.mark.parametrize("convention", CONVENTIONS)
 def test_a_qmltp_file_reads_the_same_in_every_convention(convention):
-    from unicode_fol_kit.fol.qmltp_input import parse_qmltp
+    from unicode_logic_kit.fol.qmltp_input import parse_qmltp
     source = _fixture("qmltp", "barcan.p")
     problem = parse_qmltp(_as(source, convention))
     assert problem == parse_qmltp(_as(source, "lf"))
-    assert problem.header.file == "barcan : unicode-fol-kit fixture in QMLTP v1.1 syntax"
+    assert problem.header.file == "barcan : unicode-logic-kit fixture in QMLTP v1.1 syntax"
     assert len(problem.formulas) == 1
 
 
@@ -85,7 +85,7 @@ def test_a_qmltp_file_reads_the_same_in_every_convention(convention):
 def test_a_tpi_directive_after_the_first_line_is_refused_by_name(convention):
     # The tpi pre-scan looks for a statement at a LINE START; after a bare CR
     # it used to see none, and the file fell through to an opaque syntax error.
-    from unicode_fol_kit.fol.qmltp_input import parse_qmltp
+    from unicode_logic_kit.fol.qmltp_input import parse_qmltp
     text = _as("% MML-style header\n"
                "tpi(1,set_logic,modal([cumulative,rigid,local],"
                "[(fool,s4),(a,s4)])).\n"
@@ -100,7 +100,7 @@ _PROVER9 = ("% c\nformulas(assumptions).\n  p(a).  % tail\nend_of_list.\n"
 
 @pytest.mark.parametrize("convention", CONVENTIONS)
 def test_prover9_statements_after_a_comment_survive(convention):
-    from unicode_fol_kit.fol.prover9_input import parse_prover9, parse_prover9_problem
+    from unicode_logic_kit.fol.prover9_input import parse_prover9, parse_prover9_problem
     formulas = parse_prover9_problem(_as(_PROVER9, convention))
     assert [(f.role, f.formula) for f in formulas] == [
         ("assumptions", Atom("p", [Constant("a")])),
@@ -111,7 +111,7 @@ def test_prover9_statements_after_a_comment_survive(convention):
 
 @pytest.mark.parametrize("convention", CONVENTIONS)
 def test_prolog_clauses_after_a_comment_survive(convention):
-    from unicode_fol_kit.fol.prolog_input import parse_prolog_program
+    from unicode_logic_kit.fol.prolog_input import parse_prolog_program
     x = Variable("x")
     clauses = parse_prolog_program(_as("% c\np(a).\n% c2\nq(X) :- p(X).\n", convention))
     assert clauses == [
@@ -124,7 +124,7 @@ def test_prolog_clauses_after_a_comment_survive(convention):
 def test_a_learners_hypothesis_after_its_banner_comment_is_read(convention):
     # Popper/Aleph print a '% Precision..., Recall...' banner first; a bare-CR
     # copy used to come back as NO clauses at all.
-    from unicode_fol_kit.fol.prolog_input import parse_prolog_program
+    from unicode_logic_kit.fol.prolog_input import parse_prolog_program
     text = _as("% Precision:1.00, Recall:1.00, TP:2, FN:0, TN:1, FP:0\n"
                "f(A) :- p(A).\n", convention)
     a = Variable("a")                           # Prolog's A, lower-cased
@@ -134,7 +134,7 @@ def test_a_learners_hypothesis_after_its_banner_comment_is_read(convention):
 
 @pytest.mark.parametrize("convention", CONVENTIONS)
 def test_tptp_repair_finds_every_statement_and_keeps_the_text(convention):
-    from unicode_fol_kit.fol.tptp_repair import repair_tptp_problem
+    from unicode_logic_kit.fol.tptp_repair import repair_tptp_problem
     text = _as(_TPTP, convention)
     result = repair_tptp_problem(text)
     assert result.ok and not result.changed
@@ -149,7 +149,7 @@ def test_tptp_repair_finds_every_statement_and_keeps_the_text(convention):
 
 @pytest.mark.parametrize("convention", CONVENTIONS)
 def test_a_tstp_derivation_reads_the_same_in_every_convention(convention):
-    from unicode_fol_kit.atp.tstp import extract_szs_status, parse_tstp_derivation
+    from unicode_logic_kit.atp.tstp import extract_szs_status, parse_tstp_derivation
     source = _fixture("tstp_check", "vampire_superposition.txt")
     text = _as(source, convention)
     assert extract_szs_status(text) == "Theorem"
@@ -180,7 +180,7 @@ _CASL = ("%% a comment\n"
 
 @pytest.mark.parametrize("convention", CONVENTIONS)
 def test_a_casl_spec_after_a_comment_is_read(convention):
-    from unicode_fol_kit.fol.casl_import import parse_casl_spec
+    from unicode_logic_kit.fol.casl_import import parse_casl_spec
     spec = parse_casl_spec(_as(_CASL, convention))
     assert spec.name == "KitExport"
     assert spec.axioms == (FOL.parse("∀x (Human(x) → Mortal(x))"),
@@ -190,7 +190,7 @@ def test_a_casl_spec_after_a_comment_is_read(convention):
 
 @pytest.mark.parametrize("convention", CONVENTIONS)
 def test_a_casl_error_names_the_same_line_in_every_convention(convention):
-    from unicode_fol_kit.fol.casl_import import CaslImportError, parse_casl_spec
+    from unicode_logic_kit.fol.casl_import import CaslImportError, parse_casl_spec
     text = _as("spec S =\n  sorts Thing\n  %def\nend\n", convention)
     with pytest.raises(CaslImportError, match=r"^line 3: unsupported CASL annotation"):
         parse_casl_spec(text)
@@ -202,7 +202,7 @@ def test_a_casl_error_names_the_same_line_in_every_convention(convention):
 
 @pytest.mark.parametrize("convention", CONVENTIONS)
 def test_an_sbn_document_reads_the_same_in_every_convention(convention):
-    from unicode_fol_kit.drt.parser import parse_sbn
+    from unicode_logic_kit.drt.parser import parse_sbn
     source = _fixture("pmb", "p00", "d0001", "en.drs.sbn")
     drs, mapping = parse_sbn(_as(source, convention))
     reference_drs, reference_mapping = parse_sbn(_as(source, "lf"))

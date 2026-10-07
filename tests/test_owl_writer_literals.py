@@ -27,12 +27,12 @@ name in both writers.
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit.dl.datatypes import render_literal_fs
-from unicode_fol_kit.dl.owl_functional import (
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit.dl.datatypes import render_literal_fs
+from unicode_logic_kit.dl.owl_functional import (
     parse_owl_functional, parse_owl_functional_axioms, to_owl_functional,
 )
-from unicode_fol_kit.hets.owl_backend import _render_document
+from unicode_logic_kit.hets.owl_backend import _render_document
 
 IRI = "http://ex.org/dt#Small"
 SMALL = dl.Datatype(IRI)

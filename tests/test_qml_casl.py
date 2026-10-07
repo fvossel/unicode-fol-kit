@@ -1,16 +1,16 @@
 r"""Tests for the fol.qml -> fol.casl_export / hets.dol bridge (roadmap item C6).
 
-This file owns the OFFLINE half of the bridge: :func:`~unicode_fol_kit.fol.qml.qml_validity_formula`
+This file owns the OFFLINE half of the bridge: :func:`~unicode_logic_kit.fol.qml.qml_validity_formula`
 (the public, documented entry point onto the SAME Node
-:func:`~unicode_fol_kit.fol.qml.qml_is_valid` already feeds to Z3), and
-:mod:`unicode_fol_kit.hets.dol`'s identifier-sanitisation shim
-(:func:`~unicode_fol_kit.hets.dol.sanitize_modal_identifiers`,
-:class:`~unicode_fol_kit.hets.dol._CaslIdentifierShim`).
+:func:`~unicode_logic_kit.fol.qml.qml_is_valid` already feeds to Z3), and
+:mod:`unicode_logic_kit.hets.dol`'s identifier-sanitisation shim
+(:func:`~unicode_logic_kit.hets.dol.sanitize_modal_identifiers`,
+:class:`~unicode_logic_kit.hets.dol._CaslIdentifierShim`).
 
 The gap the shim was written for was ``fol.qml``'s own auto-generated fresh
 variables (``_w0``, the Geach axiom's ``_gz0``/``_gw``/``_gu``/``_gv``/``_gt``, …),
 which are not legal CASL identifiers ([A-Za-z][A-Za-z0-9_]*). Since 0.30.0 those
-names are minted by :func:`~unicode_fol_kit.fol._identifiers.fresh_variables` and
+names are minted by :func:`~unicode_logic_kit.fol._identifiers.fresh_variables` and
 are plain ``w0`` / ``v0`` / ``x0``, because an underscore-prefixed name is not a
 legal identifier for the KIT's own parser either — so on that source the shim is
 now a no-op, which the tests below assert instead of the old renaming. It stays
@@ -19,12 +19,12 @@ variables can remove: ``fol.qml``'s ``·`` user-predicate mark (a user atom name
 like one of the embedding's own relations becomes ``R·``), U+00B7 being
 punctuation CASL has no place for.
 
-``tests/test_dol.py`` owns the other half: :func:`~unicode_fol_kit.hets.dol.to_dol_library_from_modal`
+``tests/test_dol.py`` owns the other half: :func:`~unicode_logic_kit.hets.dol.to_dol_library_from_modal`
 (the thin wrapper that composes ``qml_validity_formula`` + the sanitiser + the
-EXISTING, unmodified :func:`~unicode_fol_kit.fol.casl_export.to_casl_spec` /
-:func:`~unicode_fol_kit.hets.dol.to_dol_library`) and the live Hets battery that
+EXISTING, unmodified :func:`~unicode_logic_kit.fol.casl_export.to_casl_spec` /
+:func:`~unicode_logic_kit.hets.dol.to_dol_library`) and the live Hets battery that
 cross-checks the CASL/DOL route's verdict against
-:func:`~unicode_fol_kit.fol.qml.qml_is_valid`'s own (Z3) verdict for a battery of
+:func:`~unicode_logic_kit.fol.qml.qml_is_valid`'s own (Z3) verdict for a battery of
 modal theorems and non-theorems.
 
 No changes to ``fol.qml``'s or ``fol.casl_export``'s own translation/rendering
@@ -41,19 +41,19 @@ import re
 import pytest
 
 from _bound_names import same_up_to_bound_names
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Always, And, Atom, Box, Constant, Diamond, Implies, Knows, Next, Not,
     Quantifier, Until, Variable,
 )
-from unicode_fol_kit.fol._msfl_nodes import SortedQuantifier
-from unicode_fol_kit.fol.frames import modal_axiom
-from unicode_fol_kit.fol.qml import (
+from unicode_logic_kit.fol._msfl_nodes import SortedQuantifier
+from unicode_logic_kit.fol.frames import modal_axiom
+from unicode_logic_kit.fol.qml import (
     BARCAN, CONVERSE_BARCAN, _validity_formula, qml_is_valid, qml_validity_formula,
 )
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.casl_export import to_casl_spec
-from unicode_fol_kit.fol.casl_import import parse_casl_spec
-from unicode_fol_kit.hets.dol import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.casl_export import to_casl_spec
+from unicode_logic_kit.fol.casl_import import parse_casl_spec
+from unicode_logic_kit.hets.dol import (
     _CaslIdentifierShim, _casl_sanitize_stem, sanitize_modal_identifiers,
 )
 
@@ -119,7 +119,7 @@ def test_qml_validity_formula_output_is_pure_classical_fragment():
     the whole point of the standard translation). Exercises several modal
     families plus systems= and bridges= at once, since those are exactly the
     places a NEW node type could leak through unnoticed."""
-    from unicode_fol_kit.fol.nodes import Box, Obligatory, Always, Believes
+    from unicode_logic_kit.fol.nodes import Box, Obligatory, Always, Believes
     a = Constant("alice")
     P, Q = Atom("P", ()), Atom("Q", ())
     x = Variable("x")
@@ -183,7 +183,7 @@ def test_sanitize_modal_identifiers_is_a_noop_on_a_plain_qml_translation():
     CASL identifier, so the whole formula must come back IDENTICAL — the same
     node, not merely the same name set. Before 0.30.0 the fresh world was '_w0',
     and this is where the shim earned its keep."""
-    from unicode_fol_kit.fol.nodes import Box
+    from unicode_logic_kit.fol.nodes import Box
     P = Atom("P", ())
     node = qml_validity_formula(Implies(Box(P), P), frame="K")
     before = _var_names(node)
@@ -202,7 +202,7 @@ def test_an_object_variable_named_like_a_fresh_world_no_longer_collides():
     rename, and no two names to keep apart. (Before 0.30.0 the fresh world was
     '_w0', which collided with 'w0' only AFTER the shim stripped the underscore;
     that is the case this test used to drive.)"""
-    from unicode_fol_kit.fol.nodes import Box
+    from unicode_logic_kit.fol.nodes import Box
     w0 = Variable("w0")
     f = Quantifier("∀", w0, Implies(Box(Atom("A", [w0])), Atom("A", [w0])))
     node = qml_validity_formula(f, mode="constant", frame="K")
@@ -248,7 +248,7 @@ def test_sanitizer_injective_regardless_of_which_name_the_walk_meets_first():
     pass, before resolving any illegal one) must make injectivity independent
     of which one the walk happens to meet first; a naive single-pass,
     seed-as-you-go renamer would only get this right by accident of order."""
-    from unicode_fol_kit.fol.nodes import And
+    from unicode_logic_kit.fol.nodes import And
     f = And(Atom("A", [Variable("w0")]), Atom("B", [Variable("_w0")]))
     san = sanitize_modal_identifiers(f)
     names = _var_names(san)
@@ -505,7 +505,7 @@ def test_a_non_binary_equals_atom_is_not_aliased_and_is_refused_by_name(args):
     two-terms check then refuses it by name, and the modal route refuses it
     earlier, in qml, with a message that says '=' is reserved for identity and
     to rename the predicate if a different relation was meant."""
-    from unicode_fol_kit.hets.dol import to_dol_library_from_modal
+    from unicode_logic_kit.hets.dol import to_dol_library_from_modal
     t = Atom("=", args)
     assert sanitize_modal_identifiers(t) == t
     with pytest.raises(ValueError, match="exactly 2 arguments"):
@@ -534,12 +534,12 @@ def test_no_text_front_end_builds_a_non_binary_identity_atom():
     refuses the prefix spelling =(a, b, c) outright or yields only binary atoms;
     SMT-LIB's chainable (= a b c) / (distinct a b c) are expanded pairwise by
     the importer into binary atoms (hand-derived: a=b, b=c and a≠b, a≠c, b≠c)."""
-    from unicode_fol_kit import MSFLParser
-    from unicode_fol_kit.atp.z3_input import parse_smtlib
-    from unicode_fol_kit.fol.latex_input import parse_latex
-    from unicode_fol_kit.fol.prolog_input import parse_prolog_clause
-    from unicode_fol_kit.fol.prover9_input import parse_prover9
-    from unicode_fol_kit.fol.tptp_input import parse_tptp_formula
+    from unicode_logic_kit import MSFLParser
+    from unicode_logic_kit.atp.z3_input import parse_smtlib
+    from unicode_logic_kit.fol.latex_input import parse_latex
+    from unicode_logic_kit.fol.prolog_input import parse_prolog_clause
+    from unicode_logic_kit.fol.prover9_input import parse_prover9
+    from unicode_logic_kit.fol.tptp_input import parse_tptp_formula
 
     prefix = "=(a, b, c)"
     for parse in (MSFLParser().parse, parse_latex, parse_prolog_clause,
@@ -643,7 +643,7 @@ def test_golden_t_axiom_query_as_casl_text():
     'Thing' since nothing here is many-sorted) renders the result verbatim,
     wrapped by to_dol_library_from_modal / to_casl_spec exactly like any
     other single-conjecture spec."""
-    from unicode_fol_kit.fol.nodes import Box
+    from unicode_logic_kit.fol.nodes import Box
     P = Atom("P", ())
     f = Implies(Box(P), P)
     node = qml_validity_formula(f, mode="constant", frame="T")
@@ -696,6 +696,6 @@ def test_qml_validity_formula_propagates_unknown_mode():
 def test_qml_validity_formula_propagates_non_first_order_frame():
     """GL/S4.1/Grz need a condition (Loeb/McKinsey/Grz) this first-order
     route cannot express — refused by name, same as qml_is_valid/qml_axioms."""
-    from unicode_fol_kit.fol.nodes import Box
+    from unicode_logic_kit.fol.nodes import Box
     with pytest.raises(NotImplementedError, match="Grz"):
         qml_validity_formula(Box(Atom("P", ())), frame="Grz")

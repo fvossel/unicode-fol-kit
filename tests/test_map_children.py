@@ -7,8 +7,8 @@ resolution, term substitution), so a new structural node type is handled without
 touching each traversal.
 """
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit import (
     Variable, Constant, Function, Atom, And, Not, Quantifier, LambdaVar, Lambda, Application,
 )
 

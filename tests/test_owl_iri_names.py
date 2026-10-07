@@ -28,13 +28,13 @@ text between the brackets), never read off the code. The end-to-end question of 
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit.dl.owl_functional import (
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit.dl.owl_functional import (
     OwlFunctionalUnsupportedError, parse_owl_functional, parse_owl_functional_axioms,
     parse_owl_functional_class_expression, to_owl_functional,
     to_owl_functional_class_expression,
 )
-from unicode_fol_kit.dl.owl_manchester import ManchesterSyntaxError
+from unicode_logic_kit.dl.owl_manchester import ManchesterSyntaxError
 
 OWL = "http://www.w3.org/2002/07/owl#"
 SMALL = "http://ex.org/dt#Small"

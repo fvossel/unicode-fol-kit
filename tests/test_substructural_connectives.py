@@ -21,22 +21,22 @@ import random
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.lambek import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.lambek import (
     LambekDerivation, LambekSequent, lambek_derivable, lambek_prove, verify_lambek_proof,
 )
-from unicode_fol_kit.atp.linear import (
+from unicode_logic_kit.atp.linear import (
     ILLDerivation, ILLSequent, check_ill_proof, ill_derivable, ill_prove, verify_ill_proof,
 )
-from unicode_fol_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, get_backend
-from unicode_fol_kit.fol._linear_nodes import render_ill_formula
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, get_backend
+from unicode_logic_kit.fol._linear_nodes import render_ill_formula
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     And, At, Atom, Box, Constant, Diamond, Function, Iff, Implies, Knows, LinearImplies, LukImplication,
     LukNegation, Next, Nominal, Not, Number, Obligatory, OfCourse, One, OPlus, Or, Over, Product,
     Quantifier, StrongConjunction, Tensor, Top, Under, Until, Variable, With, Xor, Zero,
 )
-from unicode_fol_kit.hol.isabelle_substructural import to_isabelle_ill, to_isabelle_lambek
+from unicode_logic_kit.hol.isabelle_substructural import to_isabelle_ill, to_isabelle_lambek
 
 A, B, C = Atom("A", []), Atom("B", []), Atom("C", [])
 X = Variable("x")
@@ -80,8 +80,8 @@ def _refusals():
 # ---------------------------------------------------------------------------
 
 def test_each_calculus_reads_exactly_the_connectives_of_its_grammar():
-    from unicode_fol_kit.atp._substructural_input import ILL, LAMBEK
-    from unicode_fol_kit.fol._fol_nodes import parser_ops_for_mode
+    from unicode_logic_kit.atp._substructural_input import ILL, LAMBEK
+    from unicode_logic_kit.fol._fol_nodes import parser_ops_for_mode
 
     ill_by_hand = {Tensor, With, OPlus, LinearImplies, OfCourse, One, Top, Zero}
     lambek_by_hand = {Product, Under, Over}

@@ -1,5 +1,5 @@
 """Tests for the OWL 2 Manchester Syntax parser/renderer, ALCHQ fragment
-(unicode_fol_kit.dl.owl_manchester).
+(unicode_logic_kit.dl.owl_manchester).
 
 Round-trip is the primary correctness property, exactly as in
 tests/test_dl_parser.py for the glyph syntax: `parse_manchester(to_manchester(c))
@@ -8,7 +8,7 @@ Each precedence case below is worked out by hand against the W3C grammar's
 own stated resolution rule ("later productions... bind more tightly": `or` >
 `and` > `not`/restrictions(`some`/`only`) > atomic) -- see
 https://www.w3.org/TR/owl2-manchester-syntax/#Class_Expressions -- which is
-exactly the lattice unicode_fol_kit.dl.concepts._PREC already uses
+exactly the lattice unicode_logic_kit.dl.concepts._PREC already uses
 (Or=1 < And=2 < Not=Exists=ForAll=3 < Atomic=4), so parser and renderer here
 apply the identical resolution/parenthesisation rule as the existing glyph
 parser, just spelling operators as keywords.
@@ -23,8 +23,8 @@ the offending construct's name (not just "some error") appears in the message.
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit.dl.owl_manchester import (
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit.dl.owl_manchester import (
     parse_manchester, to_manchester, parse_manchester_axiom, ManchesterSyntaxError,
 )
 

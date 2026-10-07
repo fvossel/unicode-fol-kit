@@ -3,10 +3,10 @@
 FOLIO-corpus test (T5) and cross-process picklability.
 
 See ``fol/spans.py``'s module docstring for the design this pins down: a
-``SpanMap`` keyed by :data:`~unicode_fol_kit.fol.spans.Path` (a tuple of
+``SpanMap`` keyed by :data:`~unicode_logic_kit.fol.spans.Path` (a tuple of
 child indices from the root — the SAME convention
-:func:`~unicode_fol_kit.fol.spans.traverse`, :func:`~unicode_fol_kit.fol.spans.node_at`,
-and :func:`~unicode_fol_kit.fol.spans.replace_at` all agree on), never by
+:func:`~unicode_logic_kit.fol.spans.traverse`, :func:`~unicode_logic_kit.fol.spans.node_at`,
+and :func:`~unicode_logic_kit.fol.spans.replace_at` all agree on), never by
 node identity or node value, with TWO spans per node (``extent``/``head``).
 """
 
@@ -16,11 +16,11 @@ from pathlib import Path as FsPath
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.spans import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.spans import (
     UNKNOWN, SpanMap, traverse, node_at, replace_at,
 )
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Node, Variable, Constant, Number, Function,
     Atom, And, Quantifier,
 )
@@ -386,7 +386,7 @@ class TestPicklability:
         assert restored.for_node(spanned.formula).extent is UNKNOWN
 
     def test_unknown_sentinel_survives_pickling_as_the_same_singleton(self):
-        from unicode_fol_kit.fol.spans import UNKNOWN as U
+        from unicode_logic_kit.fol.spans import UNKNOWN as U
         assert pickle.loads(pickle.dumps(U)) is U
 
     def test_node_and_spanmap_survive_a_real_process_pool_round_trip(self):

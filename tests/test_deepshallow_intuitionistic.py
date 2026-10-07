@@ -7,12 +7,12 @@ the intuitionistic Kripke semantics.
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Implies, Iff, Box, Xor, Variable, Quantifier,
 )
-from unicode_fol_kit.hol import intuitionistic_faithfulness_theory, int_to_deep
-from unicode_fol_kit.hol.deepshallow._common import AtomConsts
-from unicode_fol_kit.hol.isabelle_runner import isabelle_available, check_theory
+from unicode_logic_kit.hol import intuitionistic_faithfulness_theory, int_to_deep
+from unicode_logic_kit.hol.deepshallow._common import AtomConsts
+from unicode_logic_kit.hol.isabelle_runner import isabelle_available, check_theory
 
 p, q = Atom("p", ()), Atom("q", ())
 # Peirce's law: classically valid, intuitionistically not — a good corpus formula.

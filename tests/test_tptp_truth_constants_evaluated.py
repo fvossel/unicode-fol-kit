@@ -12,12 +12,12 @@ Each expectation is the truth table of the constant, nothing more:
 """
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.z3_arith import is_valid_arith
-from unicode_fol_kit.fol.nodes import Atom, Constant, Implies, Not
-from unicode_fol_kit.semantics import modelfinder
-from unicode_fol_kit.semantics.model_eval import evaluate
-from unicode_fol_kit.semantics.tarski import satisfies
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.z3_arith import is_valid_arith
+from unicode_logic_kit.fol.nodes import Atom, Constant, Implies, Not
+from unicode_logic_kit.semantics import modelfinder
+from unicode_logic_kit.semantics.model_eval import evaluate
+from unicode_logic_kit.semantics.tarski import satisfies
 
 TRUE, FALSE = Atom("$true", ()), Atom("$false", ())
 P_A = Atom("P", (Constant("a"),))
@@ -57,7 +57,7 @@ def test_the_two_evaluators_give_them_their_truth_value_in_any_structure():
 
 
 def test_the_model_evaluator_agrees():
-    from unicode_fol_kit.semantics.structures import FiniteStructure
+    from unicode_logic_kit.semantics.structures import FiniteStructure
     structure = FiniteStructure(domain=("a",), extensions={("P", 1): frozenset({("a",)})},
                                 constants={"a": "a"})
     assert evaluate(P_A, structure) is True            # the structure is what it says
@@ -83,7 +83,7 @@ def test_the_finite_domain_route_does_not_invent_a_countermodel_of_true():
     # `$true` as a relation the solver may choose, and hand back a "countermodel"
     # in which true is false. It refuses the atom by name instead, so the verdict
     # is "unknown" (unsupported) — never "refuted" — and api.prove moves on.
-    from unicode_fol_kit.atp.finite_domain import fragment_check
+    from unicode_logic_kit.atp.finite_domain import fragment_check
     for constant in (TRUE, FALSE):
         reason = fragment_check([constant])
         assert reason is not None and constant.predicate in reason

@@ -3,26 +3,37 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "unicode-fol-kit"
+name = "unicode-logic-kit"
 version = "0.30.0"
-description = "Parser and toolkit for first-order logic formulas using Unicode operators"
+description = "Parse, translate, prove and model-check logic formulas in Unicode notation: first-order, modal, description and higher-order logic, one API over a dozen provers, and an MCP server"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 authors = [
     { name = "Felix Vossel", email = "fvossel@uos.de" },
 ]
-keywords = ["logic", "fol", "first-order-logic", "parser", "lukasiewicz", "lambda-calculus"]
+keywords = [
+    "logic", "fol", "first-order-logic", "modal-logic", "description-logic",
+    "higher-order-logic", "non-classical-logic", "theorem-proving",
+    "automated-reasoning", "model-checking", "parser", "unicode", "tptp", "smt",
+    "owl", "autoformalization", "nl-to-fol", "llm", "mcp", "lukasiewicz",
+    "lambda-calculus",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Typing :: Typed",
 ]
 dependencies = [
     "lark>=1.1",
@@ -40,9 +51,9 @@ test = [
     "pytest-xdist>=3.0",   # parallel test runs: pytest -n auto (the suite is Z3-bound)
 ]
 mcp = [
-    # The MCP server layer (unicode_fol_kit.mcp): the seven-verb API as
+    # The MCP server layer (unicode_logic_kit.mcp): the seven-verb API as
     # Model Context Protocol tools for LLM agents/editors.
-    # Run with: python -m unicode_fol_kit.mcp
+    # Run with: python -m unicode_logic_kit.mcp
     "mcp>=2.0,<3",
 ]
 hf = [
@@ -54,19 +65,19 @@ hf = [
 cvc5 = [
     # Second, independent SMT decision procedure (BSD-3). When installed, the
     # FOL default chain gains the "cvc5" backend right after "z3" — see
-    # unicode_fol_kit.atp.protocol.default_chain.
+    # unicode_logic_kit.atp.protocol.default_chain.
     "cvc5>=1.3,<2",
 ]
 chem = [
-    # unicode_fol_kit.chem.mol_to_structure — molecules as finite FOL
+    # unicode_logic_kit.chem.mol_to_structure — molecules as finite FOL
     # structures. Only mol_to_structure needs RDKit; the chemical SIGNATURE,
     # the structure layer and the evaluator are all RDKit-free, so the rest
-    # of unicode_fol_kit.chem imports and runs without this extra.
+    # of unicode_logic_kit.chem imports and runs without this extra.
     "rdkit>=2023.9",
 ]
 asp = [
-    # unicode_fol_kit.atp.clingo_backend.ClingoBackend and
-    # unicode_fol_kit.semantics.asp_models — a refutation-only finite-domain
+    # unicode_logic_kit.atp.clingo_backend.ClingoBackend and
+    # unicode_logic_kit.semantics.asp_models — a refutation-only finite-domain
     # FOL prover and a minimal-models route, both via clingo's ASP solver.
     # A pip package with the solver bundled (no separate install, unlike
     # `cp` below); ClingoBackend.available() is a pure import check. Without
@@ -76,7 +87,7 @@ asp = [
     "clingo>=5.6",
 ]
 cp = [
-    # unicode_fol_kit.atp.minizinc_backend.MinizincBackend — the same
+    # unicode_logic_kit.atp.minizinc_backend.MinizincBackend — the same
     # refutation-only finite-domain search, via a CP solver instead of ASP.
     # The real prerequisite is a separate MiniZinc >= 2.6 CLI installation on
     # PATH (or $UFK_MINIZINC) — MinizincBackend.available() checks for that
@@ -88,7 +99,7 @@ cp = [
     "minizinc>=0.9",
 ]
 owl = [
-    # unicode_fol_kit.dl.owl_reasoner — the external OWL 2 DL route: owlready2
+    # unicode_logic_kit.dl.owl_reasoner — the external OWL 2 DL route: owlready2
     # drives the bundled HermiT reasoner over a whole ontology, for the
     # constructs the in-house ALCHQ(S) tableau refuses (inverse roles,
     # nominals) and as an independent oracle on the fragment it does decide.
@@ -110,9 +121,10 @@ lint = [
 ]
 
 [project.urls]
-Documentation = "https://unicode-fol-kit.readthedocs.io/"
-Repository = "https://github.com/fvossel/unicode-fol-kit"
-Issues = "https://github.com/fvossel/unicode-fol-kit/issues"
+Documentation = "https://unicode-logic-kit.readthedocs.io/"
+Repository = "https://github.com/fvossel/unicode-logic-kit"
+Issues = "https://github.com/fvossel/unicode-logic-kit/issues"
+Changelog = "https://github.com/fvossel/unicode-logic-kit/blob/main/CHANGELOG.md"
 
 [tool.pytest.ini_options]
 markers = [
@@ -135,14 +147,14 @@ markers = [
     # expected outcome IS a timeout. Serial it is.
     "isabelle_live: exercises a real Isabelle/HOL installation via isabelle_runner (slow subprocess builds; skipped automatically when isabelle_available() is False)",
     # Same convention as isabelle_live: real HTTP calls against a real HETS server
-    # (unicode_fol_kit.hets), gated by hets_available() and skipped automatically
+    # (unicode_logic_kit.hets), gated by hets_available() and skipped automatically
     # when no server is reachable. Run explicitly and SERIALLY: `pytest -m hets_live`.
-    "hets_live: exercises a real HETS server via unicode_fol_kit.hets (Docker-backed REST; skipped automatically when hets_available() is False)",
+    "hets_live: exercises a real HETS server via unicode_logic_kit.hets (Docker-backed REST; skipped automatically when hets_available() is False)",
     # Same convention again, for the external OWL 2 DL route: each test spawns
     # HermiT in a JVM through owlready2 (see the `owl` extra), so these are
     # skipped automatically unless owl_reasoner_available() finds both. Unlike
     # isabelle_live they are seconds, not minutes, and safe under `-n`.
-    "owl_live: exercises a real owlready2 + HermiT installation via unicode_fol_kit.dl.owl_reasoner (skipped automatically when owl_reasoner_available() is False)",
+    "owl_live: exercises a real owlready2 + HermiT installation via unicode_logic_kit.dl.owl_reasoner (skipped automatically when owl_reasoner_available() is False)",
     # Same convention again, for the Lean 4 route: each test spawns `lean` as a
     # subprocess to elaborate (and, for a hand-written proof, kernel-check) the
     # emitted file, gated by lean_available() (checks UFK_LEAN_HOME / PATH /
@@ -155,7 +167,7 @@ markers = [
 
 [tool.mypy]
 python_version = "3.10"
-packages = ["unicode_fol_kit"]
+packages = ["unicode_logic_kit"]
 ignore_missing_imports = true
 # rdkit's PEP 561 stub package (rdkit-stubs) has shipped releases whose
 # generated .pyi files contain outright syntax errors (observed: a
@@ -174,11 +186,11 @@ ignore_missing_imports = true
 no_site_packages = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["unicode_fol_kit"]
+packages = ["unicode_logic_kit"]
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "/unicode_fol_kit",
+    "/unicode_logic_kit",
     "/docs",
     "/README.md",
     "/CHANGELOG.md",

@@ -1,0 +1,66 @@
+# The distribution of the former name. It holds no logic: it depends on
+# unicode-logic-kit and forwards the old import name to it (see
+# unicode_fol_kit/__init__.py), so that `pip install -U unicode-fol-kit` and
+# `import unicode_fol_kit` keep working after the rename.
+#
+# The forwarder has to live in THIS distribution and not in unicode-logic-kit:
+# on an upgrade pip installs the dependency first and then removes the files of
+# unicode-fol-kit 0.30.0, which would take a forwarder that the new wheel had
+# written to the same path with them.
+#
+# Every extra of unicode-logic-kit is mirrored here, so `unicode-fol-kit[mcp]`
+# still installs the MCP layer (tests/test_old_import_name.py compares the two
+# tables).
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "unicode-fol-kit"
+version = "0.31.0"
+description = "Renamed to unicode-logic-kit. This release installs it and forwards the old import name."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Felix Vossel", email = "fvossel@uos.de" },
+]
+keywords = ["logic", "first-order-logic", "unicode-logic-kit"]
+classifiers = [
+    "Development Status :: 7 - Inactive",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "unicode-logic-kit>=0.31.0",
+]
+
+[project.optional-dependencies]
+docs = ["unicode-logic-kit[docs]>=0.31.0"]
+test = ["unicode-logic-kit[test]>=0.31.0"]
+mcp = ["unicode-logic-kit[mcp]>=0.31.0"]
+hf = ["unicode-logic-kit[hf]>=0.31.0"]
+cvc5 = ["unicode-logic-kit[cvc5]>=0.31.0"]
+chem = ["unicode-logic-kit[chem]>=0.31.0"]
+asp = ["unicode-logic-kit[asp]>=0.31.0"]
+cp = ["unicode-logic-kit[cp]>=0.31.0"]
+owl = ["unicode-logic-kit[owl]>=0.31.0"]
+lint = ["unicode-logic-kit[lint]>=0.31.0"]
+
+[project.urls]
+Homepage = "https://pypi.org/project/unicode-logic-kit/"
+Documentation = "https://unicode-logic-kit.readthedocs.io/"
+Repository = "https://github.com/fvossel/unicode-logic-kit"
+
+[tool.hatch.build.targets.wheel]
+packages = ["unicode_fol_kit"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/unicode_fol_kit",
+    "/README.md",
+]

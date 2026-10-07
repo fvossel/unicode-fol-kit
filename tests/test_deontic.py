@@ -18,17 +18,17 @@ import random
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.modal_translation import standard_translation
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.modal_translation import standard_translation
+from unicode_logic_kit.fol.nodes import (
     Node,
     Atom, Variable, Constant,
     And, Or, Xor, Not, Implies, Iff, Quantifier,
     Box, Diamond,
     Obligatory, Permitted,
 )
-from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
-from unicode_fol_kit.semantics.tarski import Structure, satisfies
+from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
+from unicode_logic_kit.semantics.tarski import Structure, satisfies
 
 
 P = Atom("P", [])
@@ -210,11 +210,11 @@ class TestExportRejection:
 
 class TestStructural:
     def test_free_variables_through_obligatory(self):
-        from unicode_fol_kit.fol.nodes import free_variables
+        from unicode_logic_kit.fol.nodes import free_variables
         assert free_variables(Obligatory(PX)) == {Variable("x")}
 
     def test_free_variables_bound_under_deontic(self):
-        from unicode_fol_kit.fol.nodes import free_variables
+        from unicode_logic_kit.fol.nodes import free_variables
         node = Obligatory(Quantifier("∀", Variable("x"), PX))
         assert free_variables(node) == set()
 

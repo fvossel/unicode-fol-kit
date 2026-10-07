@@ -14,12 +14,12 @@ import subprocess
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.atp.vampire_entailment import _spawn_vampire
-from unicode_fol_kit.hol import goedel
-from unicode_fol_kit.hol.ho_modal import HoAxiom, to_thf_ho_modal
-from unicode_fol_kit.hol.thf_modal import _THF_RIGID_EQ_DEF
-from unicode_fol_kit.hol.thirdorder import to_thf_to
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.atp.vampire_entailment import _spawn_vampire
+from unicode_logic_kit.hol import goedel
+from unicode_logic_kit.hol.ho_modal import HoAxiom, to_thf_ho_modal
+from unicode_logic_kit.hol.thf_modal import _THF_RIGID_EQ_DEF
+from unicode_logic_kit.hol.thirdorder import to_thf_to
 
 TO = MSFLParser(third_order=True)
 TOM = MSFLParser(third_order=True, modal=True)

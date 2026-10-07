@@ -26,16 +26,16 @@ import time
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.protocol import PROVED, UNKNOWN, get_backend
-from unicode_fol_kit.atp.resolution import prove as resolution_prove
-from unicode_fol_kit.atp.tableau import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.protocol import PROVED, UNKNOWN, get_backend
+from unicode_logic_kit.atp.resolution import prove as resolution_prove
+from unicode_logic_kit.atp.tableau import (
     TableauProof, is_valid_tableau, prove_tableau, prove_tableau_detailed, tableau_closed, tableau_model,
 )
-from unicode_fol_kit.atp.tableau_check import (
+from unicode_logic_kit.atp.tableau_check import (
     TableauCheckError, check_entailment_tableau_detailed, check_tableau_proof,
 )
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Implies, Not, Number, Or, SortedCardinality, Variable, sort_axioms, to_fol,
 )
 

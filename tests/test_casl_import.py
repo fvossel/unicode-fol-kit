@@ -1,12 +1,12 @@
-"""Tests for :mod:`unicode_fol_kit.fol.casl_import` (CASL text parsing —
+"""Tests for :mod:`unicode_logic_kit.fol.casl_import` (CASL text parsing —
 the importer half of the export/import pair with
-:mod:`unicode_fol_kit.fol.casl_export`).
+:mod:`unicode_logic_kit.fol.casl_export`).
 
 No snapshot tests: every expected AST below is derived BY HAND, either by
 building it directly with the kit's own node constructors or by parsing it
-with :class:`~unicode_fol_kit.MSFLParser` and reasoning about what tree that
+with :class:`~unicode_logic_kit.MSFLParser` and reasoning about what tree that
 produces (documented in each test's own docstring/comment) — never by
-running :func:`~unicode_fol_kit.fol.casl_import.parse_casl_spec` and copying
+running :func:`~unicode_logic_kit.fol.casl_import.parse_casl_spec` and copying
 its output.
 
 Test groups:
@@ -14,8 +14,8 @@ Test groups:
 * ROUND-TRIP — ``parse_casl_spec(to_casl_spec(f)).axioms == (f,)`` (and the
   conjecture equivalent) over every golden case in
   ``tests/test_casl_export.py`` that does not involve
-  :class:`~unicode_fol_kit.fol.nodes.Xor` or an explicit
-  :class:`~unicode_fol_kit.fol.nodes.SortedConstant` occurrence — see
+  :class:`~unicode_logic_kit.fol.nodes.Xor` or an explicit
+  :class:`~unicode_logic_kit.fol.nodes.SortedConstant` occurrence — see
   ``casl_import``'s own module docstring for exactly why those two are
   excluded from the round-trip contract (both are genuine, DOCUMENTED
   information losses on the EXPORT side, not bugs in the importer).
@@ -24,28 +24,28 @@ Test groups:
   multiple quantified variables sharing a sort, omitted ``end``, bare
   unparenthesised connective chains read by precedence).
 * REFUSALS — each out-of-fragment construct raises
-  :class:`~unicode_fol_kit.fol.casl_import.CaslImportError` with the
+  :class:`~unicode_logic_kit.fol.casl_import.CaslImportError` with the
   offending construct named in the message.
-* SIGNATURE — the parsed :class:`~unicode_fol_kit.fol.signature.Signature`
+* SIGNATURE — the parsed :class:`~unicode_logic_kit.fol.signature.Signature`
   carries the exact arities/sorts the text declared.
 * DOCUMENTED LIMITATIONS — Xor's classical expansion does not round-trip
   back to ``Xor``; a 0-ary operation reference always resolves to
-  :class:`~unicode_fol_kit.fol.nodes.Constant`, never
-  :class:`~unicode_fol_kit.fol.nodes.SortedConstant` or a 0-ary
-  :class:`~unicode_fol_kit.fol.nodes.Function`.
+  :class:`~unicode_logic_kit.fol.nodes.Constant`, never
+  :class:`~unicode_logic_kit.fol.nodes.SortedConstant` or a 0-ary
+  :class:`~unicode_logic_kit.fol.nodes.Function`.
 """
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.fol.casl_export import to_casl_spec, formula_to_casl
-from unicode_fol_kit.fol.casl_import import parse_casl_spec, CaslSpec, CaslImportError
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.fol.casl_export import to_casl_spec, formula_to_casl
+from unicode_logic_kit.fol.casl_import import parse_casl_spec, CaslSpec, CaslImportError
+from unicode_logic_kit.fol.nodes import (
     Variable, Constant, SortedConstant, Function,
     Atom, Not, And, Or, Xor, Implies, Iff,
     Quantifier, SortedQuantifier,
 )
-from unicode_fol_kit.fol.signature import Signature, PredicateDecl, FunctionDecl, ConstantDecl
+from unicode_logic_kit.fol.signature import Signature, PredicateDecl, FunctionDecl, ConstantDecl
 
 FOL = MSFLParser()
 MSFOL = MSFLParser(many_sorted=True)

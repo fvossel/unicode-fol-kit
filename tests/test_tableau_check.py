@@ -1,5 +1,5 @@
-"""Tests for the independent tableau-proof checker (unicode_fol_kit.atp.tableau_check)
-and the proof object it checks (unicode_fol_kit.atp.tableau.TableauProof /
+"""Tests for the independent tableau-proof checker (unicode_logic_kit.atp.tableau_check)
+and the proof object it checks (unicode_logic_kit.atp.tableau.TableauProof /
 prove_tableau_detailed).
 
 Every hand-checked case below traces :func:`prove_tableau_detailed`'s recorded
@@ -24,12 +24,12 @@ from running the code first. Four families of tests:
 import pytest
 from dataclasses import replace
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.fol.nodes import substitute
-from unicode_fol_kit.atp.tableau import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.fol.nodes import substitute
+from unicode_logic_kit.atp.tableau import (
     prove_tableau, prove_tableau_detailed, TableauStep, TableauClosure, TableauProof,
 )
-from unicode_fol_kit.atp.tableau_check import (
+from unicode_logic_kit.atp.tableau_check import (
     check_tableau_proof, check_entailment_tableau_detailed, TableauCheckError,
 )
 

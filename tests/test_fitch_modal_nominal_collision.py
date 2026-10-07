@@ -18,8 +18,8 @@ By hand, with the nominals ``a`` and ``b`` and two USER constants ``nom_a`` and 
 """
 import pytest
 
-from unicode_fol_kit.atp.fitch import Justification, Line, Proof, _make_modal_checker, verify_proof
-from unicode_fol_kit.fol.nodes import And, At, Atom, Constant, Iff, Implies, Nominal, Not
+from unicode_logic_kit.atp.fitch import Justification, Line, Proof, _make_modal_checker, verify_proof
+from unicode_logic_kit.fol.nodes import And, At, Atom, Constant, Iff, Implies, Nominal, Not
 
 LOGICS = ["K", "T", "S4", "S5"]
 
@@ -80,7 +80,7 @@ def test_a_clash_inside_one_formula_is_still_refused():
 
 
 def test_a_clash_inside_one_formula_is_a_refusal_not_an_exception_of_the_proof_checkers():
-    from unicode_fol_kit.atp.fitch import check_proof
+    from unicode_logic_kit.atp.fitch import check_proof
     clashing = proof(And(Q("nom_a"), A_NAMES_B), Q("nom_a"), "K")
     result = verify_proof(clashing)
     assert result.ok is False

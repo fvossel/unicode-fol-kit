@@ -12,22 +12,22 @@ WRONG logic).
 
 import pytest
 
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser, to_fol, is_valid, is_valid_tableau,
     cf_valid, fuzzy_is_valid, ill_prove,
 )
-from unicode_fol_kit.atp.resolution import is_valid_resolution, prove
-from unicode_fol_kit.atp.fitch_search import is_valid_fitch
-from unicode_fol_kit.atp.modal_tableau import modal_decide
-from unicode_fol_kit.fol.modal_translation import standard_translation
-from unicode_fol_kit.fol.qml import qml_is_valid, to_thf_modal
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.atp.resolution import is_valid_resolution, prove
+from unicode_logic_kit.atp.fitch_search import is_valid_fitch
+from unicode_logic_kit.atp.modal_tableau import modal_decide
+from unicode_logic_kit.fol.modal_translation import standard_translation
+from unicode_logic_kit.fol.qml import qml_is_valid, to_thf_modal
+from unicode_logic_kit.fol.nodes import (
     Atom, Constant, Variable,
     And, Implies, Box, Diamond, Quantifier,
     Says, Wants, Knows, Nominal, At, Until,
 )
-from unicode_fol_kit.hol.isabelle_modal import isabelle_modal_theory
-from unicode_fol_kit.hol.thf_modal import to_thf_modal_full
+from unicode_logic_kit.hol.isabelle_modal import isabelle_modal_theory
+from unicode_logic_kit.hol.thf_modal import to_thf_modal_full
 
 MODAL = MSFLParser(modal=True)
 SO = MSFLParser(second_order=True)
@@ -78,7 +78,7 @@ class TestResolutionFirstOrderModal:
     def test_barcan_formulas_proved(self):
         # Deterministic saturation (content-ordered clause selection) closes
         # both Barcan directions in well under the default budget.
-        from unicode_fol_kit.fol.qml import BARCAN, CONVERSE_BARCAN
+        from unicode_logic_kit.fol.qml import BARCAN, CONVERSE_BARCAN
         assert prove([], BARCAN) is True
         assert prove([], CONVERSE_BARCAN) is True
 
@@ -101,7 +101,7 @@ class TestQmlSignatureTypingFacts:
         assert qml_is_valid(f) is True
 
     def test_universal_instantiation_at_function_term(self):
-        from unicode_fol_kit.fol.nodes import Function
+        from unicode_logic_kit.fol.nodes import Function
         x = Variable("x")
         f = Implies(Quantifier("∀", x, Atom("P", [x])),
                     Atom("P", [Function("ff", [Constant("cc")])]))

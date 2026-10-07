@@ -1,7 +1,7 @@
 """Column generation rests on exact arithmetic and on proofs, never on an optimiser's report.
 
 ``z3.Optimize`` is not a certificate: on the pricing objective of
-:mod:`unicode_fol_kit.prob._column_gen` it has been seen to return a world that does not
+:mod:`unicode_logic_kit.prob._column_gen` it has been seen to return a world that does not
 maximise, with a value that is not the value of that world, and different answers for
 identical inputs in one interpreter. So the module only PROPOSES a world with it, evaluates
 the world exactly, and settles "no world improves" by evaluating every world exactly (few
@@ -26,11 +26,11 @@ from fractions import Fraction as F
 
 import pytest
 
-import unicode_fol_kit
-from unicode_fol_kit import api
-from unicode_fol_kit.fol.nodes import And, Atom, Iff, Implies, Not, Or, Xor
-from unicode_fol_kit.prob import _column_gen
-from unicode_fol_kit.prob.nilsson import ProbConstraint, entailment_bounds
+import unicode_logic_kit
+from unicode_logic_kit import api
+from unicode_logic_kit.fol.nodes import And, Atom, Iff, Implies, Not, Or, Xor
+from unicode_logic_kit.prob import _column_gen
+from unicode_logic_kit.prob.nilsson import ProbConstraint, entailment_bounds
 
 
 def f(text):
@@ -54,8 +54,8 @@ def seven_tenths_problem():
 _FRESH_INTERPRETER = textwrap.dedent("""
     import sys
     from fractions import Fraction as F
-    from unicode_fol_kit import api
-    from unicode_fol_kit.prob import ProbConstraint, entailment_bounds
+    from unicode_logic_kit import api
+    from unicode_logic_kit.prob import ProbConstraint, entailment_bounds
 
     def parse(text):
         return api.parse_any(text).formula
@@ -74,7 +74,7 @@ _FRESH_INTERPRETER = textwrap.dedent("""
 class TestEveryOrderOfQuestions:
     @pytest.mark.parametrize("order", list(itertools.permutations(QUESTIONS)), ids=" | ".join)
     def test_fresh_interpreter(self, order):
-        package_root = os.path.dirname(os.path.dirname(os.path.abspath(unicode_fol_kit.__file__)))
+        package_root = os.path.dirname(os.path.dirname(os.path.abspath(unicode_logic_kit.__file__)))
         env = dict(os.environ)
         env["PYTHONPATH"] = os.pathsep.join(filter(None, [package_root, env.get("PYTHONPATH")]))
         env["PYTHONIOENCODING"] = "utf-8"

@@ -1,5 +1,5 @@
 """Structural + LIVE tests for the ILL / Lambek Isabelle export
-(unicode_fol_kit.hol.isabelle_substructural).
+(unicode_logic_kit.hol.isabelle_substructural).
 
 Every case below is hand-checked in three independent ways, none of which needs a
 local Isabelle install:
@@ -29,16 +29,16 @@ import re
 
 import pytest
 
-from unicode_fol_kit import MSFLParser, Atom, Tensor, With, OPlus, LinearImplies, OfCourse, One
-from unicode_fol_kit import Product, Under, Over
-from unicode_fol_kit.fol._linear_nodes import Top, Zero
-from unicode_fol_kit.atp.linear import ill_prove, ILLDerivation, ILLSequent
-from unicode_fol_kit.atp.lambek import lambek_prove, LambekDerivation, LambekSequent
-from unicode_fol_kit.hol.isabelle_substructural import (
+from unicode_logic_kit import MSFLParser, Atom, Tensor, With, OPlus, LinearImplies, OfCourse, One
+from unicode_logic_kit import Product, Under, Over
+from unicode_logic_kit.fol._linear_nodes import Top, Zero
+from unicode_logic_kit.atp.linear import ill_prove, ILLDerivation, ILLSequent
+from unicode_logic_kit.atp.lambek import lambek_prove, LambekDerivation, LambekSequent
+from unicode_logic_kit.hol.isabelle_substructural import (
     to_isabelle_ill, ill_derivation_theory,
     to_isabelle_lambek, lambek_derivation_theory,
 )
-from unicode_fol_kit.hol.isabelle_runner import isabelle_available, check_theory
+from unicode_logic_kit.hol.isabelle_runner import isabelle_available, check_theory
 
 _pl = MSFLParser(linear=True).parse
 _pk = MSFLParser(lambek=True).parse

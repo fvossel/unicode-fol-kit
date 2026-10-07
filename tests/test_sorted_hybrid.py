@@ -19,11 +19,11 @@ guarded by existence. The standard translation writes an atom ``S(c)`` as ``S(c,
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.hybrid_down import down_decide
-from unicode_fol_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, get_backend
-from unicode_fol_kit.fol.modal_translation import down_is_valid, frame_axioms, hybrid_is_valid
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.hybrid_down import down_decide
+from unicode_logic_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, get_backend
+from unicode_logic_kit.fol.modal_translation import down_is_valid, frame_axioms, hybrid_is_valid
+from unicode_logic_kit.fol.nodes import (
     Always, And, Atom, Box, Constant, Diamond, Implies, Obligatory, Permitted, Not, SortedConstant,
 )
 
@@ -124,7 +124,7 @@ def test_the_hybrid_backend_gives_the_frame_axioms_of_every_relation_the_goal_me
 
 
 def test_a_sorted_quantifier_stays_refused_by_name():
-    from unicode_fol_kit.fol.nodes import SortedQuantifier, Variable
+    from unicode_logic_kit.fol.nodes import SortedQuantifier, Variable
     x = Variable("x")
     formula = SortedQuantifier("∀", x, "Human", Atom("Mortal", [x]))
     with pytest.raises(NotImplementedError, match="SortedQuantifier"):

@@ -13,11 +13,11 @@ tableau (non-factive Says, non-veridical Wants, K-distribution valid).
 
 import pytest
 
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser, Node, is_valid, is_satisfiable, free_variables, substitute,
     KripkeModel, satisfies_modal, is_modal_valid, to_english,
 )
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Count, Measure, Cardinality, Contrast, Says, Wants,
     SortedCount, SortedCardinality,
     Number, Variable, Constant, Atom, And, Or, Not, Implies, Iff, Quantifier,
@@ -112,7 +112,7 @@ def test_says_distinct_from_knows_believes():
 
 def Knows_node(agent, formula):
     """Local Knows constructor (kept out of the module import list for clarity)."""
-    from unicode_fol_kit.fol.nodes import Knows
+    from unicode_logic_kit.fol.nodes import Knows
     return Knows(agent, formula)
 
 
@@ -149,7 +149,7 @@ def test_count_keeps_n_symbolic_no_clamp():
 
 
 def test_count_rejects_non_integer_bound():
-    from unicode_fol_kit import ParsingError
+    from unicode_logic_kit import ParsingError
     with pytest.raises((ValueError, ParsingError, Exception)):
         _FOL.parse("∃≥3.5 x P(x)")
     with pytest.raises(ValueError):
@@ -317,7 +317,7 @@ def test_contrast_is_truth_functionally_conjunction():
 
 def test_contrast_does_not_mix_with_conjunction_without_parens():
     # Same no-mixing rule as ∧/∨/⊕ — surfaces as a lexer- or parser-level error.
-    from unicode_fol_kit import NamingError, ParsingError
+    from unicode_logic_kit import NamingError, ParsingError
     with pytest.raises((NamingError, ParsingError)):
         _FOL.parse("P Ⓒ Q ∧ R")
     # …but parenthesised mixing is fine and round-trips.
@@ -374,7 +374,7 @@ def test_modal_mode_accepts_nl_nodes_and_round_trips(text):
 def test_modal_count_matches_hand_built_ast():
     # The parsed modal string is exactly the AST one would build by hand — i.e.
     # modal-mode Count is the SAME node as fol-mode Count, not a look-alike.
-    from unicode_fol_kit.fol.nodes import Believes
+    from unicode_logic_kit.fol.nodes import Believes
     parsed = _MODAL.parse("B_a ∃≥3 x Pass(x)")
     hand = Believes(Constant("a"),
                     Count("ge", Number(3), Variable("x"), Atom("Pass", [Variable("x")])))
@@ -399,7 +399,7 @@ def test_fol_count_and_modal_count_are_identical_nodes():
 # ===========================================================================
 
 def test_count_alpha_equivalent_exact_match():
-    from unicode_fol_kit import exact_match
+    from unicode_logic_kit import exact_match
     a = _FOL.parse("∃≥3 x P(x)")
     b = _FOL.parse("∃≥3 y P(y)")
     assert a != b                      # structurally distinct (different bound name)
@@ -407,7 +407,7 @@ def test_count_alpha_equivalent_exact_match():
 
 
 def test_cardinality_alpha_equivalent_exact_match():
-    from unicode_fol_kit import exact_match
+    from unicode_logic_kit import exact_match
     a = _FOL.parse("|{x : Votes(x)}| > c")
     b = _FOL.parse("|{y : Votes(y)}| > c")
     assert a != b
@@ -415,7 +415,7 @@ def test_cardinality_alpha_equivalent_exact_match():
 
 
 def test_count_canonical_invariants():
-    from unicode_fol_kit import canonicalize
+    from unicode_logic_kit import canonicalize
     a = _FOL.parse("∃=2 x (P(x) ∧ Q(x))")
     b = _FOL.parse("∃=2 w (Q(w) ∧ P(w))")   # alpha-renamed AND commuted matrix
     ca, cb = canonicalize(a), canonicalize(b)
@@ -424,7 +424,7 @@ def test_count_canonical_invariants():
 
 
 def test_count_op_and_bound_are_not_alpha_collapsed():
-    from unicode_fol_kit import exact_match
+    from unicode_logic_kit import exact_match
     base = _FOL.parse("∃≥3 x P(x)")
     assert not exact_match(base, _FOL.parse("∃≥5 x P(x)"))   # different bound n
     assert not exact_match(base, _FOL.parse("∃≤3 x P(x)"))   # different op
@@ -434,7 +434,7 @@ def test_count_op_and_bound_are_not_alpha_collapsed():
 def test_count_dedup_under_idempotent_conjunction():
     # ∃≥3 x P(x) ∧ ∃≥3 y P(y) are alpha-equal operands of an idempotent ∧, so they
     # collapse to a single conjunct; a genuinely different count must survive.
-    from unicode_fol_kit import canonicalize
+    from unicode_logic_kit import canonicalize
     same = _FOL.parse("∃≥3 x P(x) ∧ ∃≥3 y P(y)")
     assert canonicalize(same) == canonicalize(_FOL.parse("∃≥3 x P(x)"))
     diff = _FOL.parse("∃≥3 x P(x) ∧ ∃≥5 y P(y)")
@@ -444,7 +444,7 @@ def test_count_dedup_under_idempotent_conjunction():
 def test_count_free_agent_capture_not_conflated():
     # Alpha-normalisation must stay capture-safe: a count binding x with a free x
     # inside must not be conflated with one where that x is genuinely free elsewhere.
-    from unicode_fol_kit import exact_match
+    from unicode_logic_kit import exact_match
     a = _FOL.parse("∃≥2 x R(x, y)")   # y free
     b = _FOL.parse("∃≥2 z R(z, y)")   # y still free -> equal
     c = _FOL.parse("∃≥2 x R(x, w)")   # w free, different name -> NOT equal
@@ -514,7 +514,7 @@ def test_sorted_count_sort_guard_is_inside_the_count():
     # relativized Count is ALSO expanded (distinct witnesses), with the sort
     # guard inside the witness matrix — so the guard restricts the counting,
     # not the whole formula.
-    from unicode_fol_kit import to_fol, formulas_are_equivalent
+    from unicode_logic_kit import to_fol, formulas_are_equivalent
     reduced = to_fol(_MSFOL.parse("∃≥1 x:S P(x)"))
     assert reduced.to_unicode_str() == "∃x0 (S(x0) ∧ P(x0))"
     # And a two-witness count keeps the guard on EACH witness.
@@ -535,7 +535,7 @@ def test_sorted_cardinality_has_no_first_order_export():
 
 
 def test_sorted_count_alpha_equivalence_and_significance():
-    from unicode_fol_kit import exact_match
+    from unicode_logic_kit import exact_match
     assert exact_match(_MSFOL.parse("∃≥3 x:S P(x)"), _MSFOL.parse("∃≥3 y:S P(y)"))
     assert not exact_match(_MSFOL.parse("∃≥3 x:S P(x)"), _MSFOL.parse("∃≥3 x:T P(x)"))  # sort
     assert not exact_match(_MSFOL.parse("∃≥3 x:S P(x)"), _MSFOL.parse("∃≤3 x:S P(x)"))  # op
@@ -556,7 +556,7 @@ def test_sorted_verbalization():
 def test_msfol_still_requires_sorts_on_plain_quantifiers():
     # The parity additions must not loosen MSFOL's sort discipline: an UNsorted count
     # (no ':Sort') is rejected in MSFOL, exactly like an unsorted ∀/∃.
-    from unicode_fol_kit import NamingError, ParsingError
+    from unicode_logic_kit import NamingError, ParsingError
     with pytest.raises((NamingError, ParsingError)):
         _MSFOL.parse("∃≥3 x P(x)")
 
@@ -572,7 +572,7 @@ def test_second_order_parity_round_trips():
 # ===========================================================================
 
 def test_new_nodes_exported():
-    import unicode_fol_kit as u
+    import unicode_logic_kit as u
     for name in ("Count", "Measure", "Cardinality", "Contrast", "Says", "Wants",
                  "SortedCount", "SortedCardinality",
                  "parse_prover9_problem", "load_prover9", "Prover9Formula"):

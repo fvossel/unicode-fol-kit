@@ -22,14 +22,14 @@ from collections import OrderedDict
 import pytest
 
 from _bound_names import same_up_to_bound_names
-from unicode_fol_kit import api
-from unicode_fol_kit.fol.casl_export import formula_to_casl, to_casl_spec
-from unicode_fol_kit.fol.casl_import import parse_casl_spec
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.fol.casl_export import formula_to_casl, to_casl_spec
+from unicode_logic_kit.fol.casl_import import parse_casl_spec
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Box, Constant, Function, Iff, Implies, Not, Or, Quantifier, Variable,
 )
-from unicode_fol_kit.fol.qml import qml_is_valid, qml_validity_formula
-from unicode_fol_kit.hets.dol import (
+from unicode_logic_kit.fol.qml import qml_is_valid, qml_validity_formula
+from unicode_logic_kit.hets.dol import (
     DolSpec, sanitize_modal_identifiers, to_dol_library, to_dol_library_from_modal,
 )
 

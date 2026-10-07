@@ -12,9 +12,9 @@ the same textbook problem.
 
 import pytest
 
-from unicode_fol_kit import MSFLParser, api
-from unicode_fol_kit.atp.eprover_backend import eprover_available, eprover_relevant_premises
-from unicode_fol_kit.atp.protocol import PROVED, Z3Backend, z3_relevant_premises
+from unicode_logic_kit import MSFLParser, api
+from unicode_logic_kit.atp.eprover_backend import eprover_available, eprover_relevant_premises
+from unicode_logic_kit.atp.protocol import PROVED, Z3Backend, z3_relevant_premises
 
 _P = MSFLParser()
 
@@ -34,7 +34,7 @@ _GOAL = _P.parse("Mortal(socrates)")
 # ---------------------------------------------------------------------------
 
 def test_verdict_relevant_premises_defaults_to_none_and_serialises():
-    from unicode_fol_kit import Verdict
+    from unicode_logic_kit import Verdict
     v = Verdict("proved", "z3")
     assert v.relevant_premises is None
     d = v.to_dict()
@@ -129,7 +129,7 @@ def test_api_prove_has_no_vampire_relevance_route():
     every statement to f1/f2/..., so its leaves cannot be mapped back to the
     caller's premises (pinned offline in tests/test_tstp.py). Checked
     directly rather than through a live Vampire run."""
-    from unicode_fol_kit.api import _relevant_premises_for
+    from unicode_logic_kit.api import _relevant_premises_for
     assert _relevant_premises_for("vampire", _GOAL, _PREMISES, 10000) is None
 
 
@@ -148,7 +148,7 @@ def _skip_if_the_binary_crashed(premises, goal) -> None:
     tests/test_eprover_zipperposition.py's helper of the same name): a crashed
     binary says nothing about this route. A binary that runs is asserted
     against, so a relevance walk that wrongly returns None fails."""
-    from unicode_fol_kit.atp.eprover_backend import check_entailment_eprover_detailed
+    from unicode_logic_kit.atp.eprover_backend import check_entailment_eprover_detailed
     result = check_entailment_eprover_detailed(premises, goal, timeout=15)
     if result["status"] == "error" and any(
             m in (result.get("raw") or "") for m in _CRASH_MARKERS):

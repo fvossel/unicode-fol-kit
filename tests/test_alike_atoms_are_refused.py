@@ -16,24 +16,24 @@ from fractions import Fraction
 
 import pytest
 
-from unicode_fol_kit import MSFLParser, api
-from unicode_fol_kit.atp.lj import int_decide, int_prove
-from unicode_fol_kit.atp.ltl_tableau import LTLTrace, ltl_decide, ltl_trace_satisfies
-from unicode_fol_kit.atp.tableau import tableau_model
-from unicode_fol_kit.atp.z3_fuzzy import fuzzy_get_model, fuzzy_is_satisfiable, fuzzy_is_valid
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import MSFLParser, api
+from unicode_logic_kit.atp.lj import int_decide, int_prove
+from unicode_logic_kit.atp.ltl_tableau import LTLTrace, ltl_decide, ltl_trace_satisfies
+from unicode_logic_kit.atp.tableau import tableau_model
+from unicode_logic_kit.atp.z3_fuzzy import fuzzy_get_model, fuzzy_is_satisfiable, fuzzy_is_valid
+from unicode_logic_kit.fol.nodes import (
     And, Always, Atom, Constant, Function, Implies, LukImplication, Not, Number, Variable)
-from unicode_fol_kit.fol.tptp_input import parse_tptp
-from unicode_fol_kit.hol.isabelle_conditional import to_isabelle_conditional, to_thf_conditional
-from unicode_fol_kit.fol.nodes import Would
-from unicode_fol_kit.hol.manyvalued import to_isabelle_k3lp, to_isabelle_matrix, to_thf_k3lp
-from unicode_fol_kit.prob import ProbConstraint, ProbFact, ProbProgram, entailment_bounds, query
-from unicode_fol_kit.semantics import manyvalued as mv
-from unicode_fol_kit.semantics import matrix as mx
-from unicode_fol_kit.semantics.conditional import cf_countermodel, cf_valid
-from unicode_fol_kit.semantics.fuzzy import evaluate as fuzzy_evaluate
-from unicode_fol_kit.semantics.intuitionistic import int_countermodel, int_valid
-from unicode_fol_kit.semantics.truthtable import (
+from unicode_logic_kit.fol.tptp_input import parse_tptp
+from unicode_logic_kit.hol.isabelle_conditional import to_isabelle_conditional, to_thf_conditional
+from unicode_logic_kit.fol.nodes import Would
+from unicode_logic_kit.hol.manyvalued import to_isabelle_k3lp, to_isabelle_matrix, to_thf_k3lp
+from unicode_logic_kit.prob import ProbConstraint, ProbFact, ProbProgram, entailment_bounds, query
+from unicode_logic_kit.semantics import manyvalued as mv
+from unicode_logic_kit.semantics import matrix as mx
+from unicode_logic_kit.semantics.conditional import cf_countermodel, cf_valid
+from unicode_logic_kit.semantics.fuzzy import evaluate as fuzzy_evaluate
+from unicode_logic_kit.semantics.intuitionistic import int_countermodel, int_valid
+from unicode_logic_kit.semantics.truthtable import (
     is_contradiction, is_satisfiable_tt, is_tautology, truth_table)
 
 

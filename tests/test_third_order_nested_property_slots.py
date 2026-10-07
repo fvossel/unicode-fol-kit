@@ -18,16 +18,16 @@ import random
 
 import pytest
 
-from unicode_fol_kit import MSFLParser, analyse_signatures, to_isabelle_to, to_thf_to
-from unicode_fol_kit.fol.naming import ParsingError
-from unicode_fol_kit.hol import HoAxiom, HoGoal, isabelle_ho_modal_theory, to_thf_ho_modal
+from unicode_logic_kit import MSFLParser, analyse_signatures, to_isabelle_to, to_thf_to
+from unicode_logic_kit.fol.naming import ParsingError
+from unicode_logic_kit.hol import HoAxiom, HoGoal, isabelle_ho_modal_theory, to_thf_ho_modal
 
 parse = MSFLParser(third_order=True).parse
 parse_modal = MSFLParser(third_order=True, modal=True).parse
 
 
 def nested_error():
-    from unicode_fol_kit.fol._ho_nodes import NestedPropertySlotError
+    from unicode_logic_kit.fol._ho_nodes import NestedPropertySlotError
     return NestedPropertySlotError
 
 

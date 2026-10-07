@@ -1,7 +1,7 @@
-"""Tests for the DRT/DRS subpackage (unicode_fol_kit.drt).
+"""Tests for the DRT/DRS subpackage (unicode_logic_kit.drt).
 
 Sections, each hand-checked against classical Kamp/Reyle DRT (*From Discourse to Logic*,
-1993) as documented in unicode_fol_kit/drt/*.py's module docstrings:
+1993) as documented in unicode_logic_kit/drt/*.py's module docstrings:
 
 1. nodes.py construction validation (shape/type checks that ARE possible at __init__).
 2. nodes.py accessibility (DRS.validate() against hand-derived accessible/inaccessible
@@ -17,8 +17,8 @@ Sections, each hand-checked against classical Kamp/Reyle DRT (*From Discourse to
 
 import pytest
 
-import unicode_fol_kit.drt as drt
-from unicode_fol_kit import api
+import unicode_logic_kit.drt as drt
+from unicode_logic_kit import api
 
 DRS, Pred, Eq, Neg, Impl, Or = drt.DRS, drt.Pred, drt.Eq, drt.Neg, drt.Impl, drt.Or
 

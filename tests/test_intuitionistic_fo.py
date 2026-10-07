@@ -10,10 +10,10 @@ re-checked to actually falsify the formula.
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Implies, Quantifier, Variable, Constant,
 )
-from unicode_fol_kit.semantics.intuitionistic import (
+from unicode_logic_kit.semantics.intuitionistic import (
     IntKripkeModel, int_valid, int_countermodel,
 )
 

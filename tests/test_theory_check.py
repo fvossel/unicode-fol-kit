@@ -1,4 +1,4 @@
-"""Tests for unicode_fol_kit.eval.theory_check — the deductive verification
+"""Tests for unicode_logic_kit.eval.theory_check — the deductive verification
 layer for a collection of predicate definitions (see the module docstring for
 the motivation: model checking alone cannot see that a definition is dead,
 cyclic, or missing a superclass conjunct).
@@ -16,8 +16,8 @@ wall-clock timeout.
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import Atom, Not, And, Or, Implies, Quantifier, Variable
-from unicode_fol_kit.eval.theory_check import (
+from unicode_logic_kit.fol.nodes import Atom, Not, And, Or, Implies, Quantifier, Variable
+from unicode_logic_kit.eval.theory_check import (
     Definitions,
     CyclicDefinition, UnfoldDepthExceeded, NonClosedDefinition,
     dependency_graph, find_cycles, unfold,

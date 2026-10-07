@@ -25,10 +25,10 @@ import random
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit import api
-from unicode_fol_kit.dl import tableau
-from unicode_fol_kit.fol.nodes import Not as FNot
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit import api
+from unicode_logic_kit.dl import tableau
+from unicode_logic_kit.fol.nodes import Not as FNot
 
 A, B = dl.Atomic("A"), dl.Atomic("B")
 

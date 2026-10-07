@@ -29,8 +29,8 @@ from pathlib import Path
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit.dl.owl_functional import _merge_axiom_holder
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit.dl.owl_functional import _merge_axiom_holder
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "owl" / "oeo_constructs.ofn"
 

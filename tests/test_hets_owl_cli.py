@@ -28,14 +28,14 @@ import posixpath
 
 import pytest
 
-from unicode_fol_kit.atp.protocol import BackendUnavailable
-from unicode_fol_kit.hets import (
+from unicode_logic_kit.atp.protocol import BackendUnavailable
+from unicode_logic_kit.hets import (
     HetsOwlNormalizationError,
     HetsSublogicError,
     hets_available,
     owl_to_tptp,
 )
-from unicode_fol_kit.hets import owl_cli
+from unicode_logic_kit.hets import owl_cli
 
 NODE = "https://openenergyplatform.org/ontology/oeo/"
 ENCODED_NODE = "https%3A%2F%2Fopenenergyplatform.org%2Fontology%2Foeo%2F"
@@ -444,7 +444,7 @@ Ontology(<http://example.org/t>
 def test_owl_to_tptp_reports_the_loss_on_a_real_hets(tmp_path):
     import os
 
-    from unicode_fol_kit.fol.tptp_input import parse_tptp
+    from unicode_logic_kit.fol.tptp_input import parse_tptp
 
     if not os.environ.get("UFK_HETS_CONTAINER"):
         pytest.skip("set $UFK_HETS_CONTAINER to the running container's name")

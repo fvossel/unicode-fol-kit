@@ -11,11 +11,11 @@ pass on an export that dropped the count entirely.
 
 import pytest
 
-from unicode_fol_kit import MSFLParser, api
-from unicode_fol_kit.drt import (
+from unicode_logic_kit import MSFLParser, api
+from unicode_logic_kit.drt import (
     CARD_OPS, Card, DRSSyntaxError, Part, drs_to_fol, parse_drs,
 )
-from unicode_fol_kit.drt.nodes import DRS, Pred
+from unicode_logic_kit.drt.nodes import DRS, Pred
 
 
 # ---------------------------------------------------------------------------

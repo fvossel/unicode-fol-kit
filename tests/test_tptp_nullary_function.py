@@ -10,8 +10,8 @@ it as the constant it is written as.
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import Atom, Constant, Function, Variable
-from unicode_fol_kit.fol.tptp_input import parse_tptp_formula
+from unicode_logic_kit.fol.nodes import Atom, Constant, Function, Variable
+from unicode_logic_kit.fol.tptp_input import parse_tptp_formula
 
 
 @pytest.mark.parametrize("name, word", [

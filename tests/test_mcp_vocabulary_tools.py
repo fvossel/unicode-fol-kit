@@ -14,9 +14,9 @@ import pytest
 
 pytest.importorskip("mcp", reason="optional [mcp] extra not installed")
 
-from unicode_fol_kit import api                                        # noqa: E402
-from unicode_fol_kit.fol._identifiers import symbol_names              # noqa: E402
-from unicode_fol_kit.mcp import server as tools                        # noqa: E402
+from unicode_logic_kit import api                                        # noqa: E402
+from unicode_logic_kit.fol._identifiers import symbol_names              # noqa: E402
+from unicode_logic_kit.mcp import server as tools                        # noqa: E402
 
 #: One formula per spelling, each with the constant true or false and ONE predicate of arity 0.
 #: (The TPTP reader upper-cases the predicate, the SMT-LIB reader keeps ``p``.)
@@ -98,8 +98,8 @@ def test_compare_formulas_reads_each_spelling_alike(spelled):
 
 def test_a_predicate_spelled_like_a_constant_but_applied_is_still_vocabulary():
     # ⊤(alpha) is no formula the grammar reads, so build it: the node is a user predicate.
-    from unicode_fol_kit.eval.validate import validate
-    from unicode_fol_kit.fol.nodes import Atom, Constant
+    from unicode_logic_kit.eval.validate import validate
+    from unicode_logic_kit.fol.nodes import Atom, Constant
     assert validate(Atom("⊤", (Constant("alpha"),))).predicates == ("⊤/1",)
 
 

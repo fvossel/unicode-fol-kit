@@ -22,18 +22,18 @@ import re
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Xor, Implies, Iff, Box, Diamond, Variable, Constant,
     Quantifier, Knows, Always, Function, Number,
     Obligatory, Permitted, Nominal, At, SortedQuantifier, SortedConstant,
 )
-from unicode_fol_kit.fol.qml import qml_is_valid, BARCAN, CONVERSE_BARCAN
-from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
-from unicode_fol_kit.hol.deepshallow.qml import (
+from unicode_logic_kit.fol.qml import qml_is_valid, BARCAN, CONVERSE_BARCAN
+from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
+from unicode_logic_kit.hol.deepshallow.qml import (
     qml_to_deep, qml_deep_faithfulness_theory, _QML_BODY,
 )
-from unicode_fol_kit.hol.deepshallow._common import AtomConsts, sanitize_atom, wrap_theory
-from unicode_fol_kit.hol.isabelle_runner import isabelle_available, check_theory
+from unicode_logic_kit.hol.deepshallow._common import AtomConsts, sanitize_atom, wrap_theory
+from unicode_logic_kit.hol.isabelle_runner import isabelle_available, check_theory
 
 x = Variable("x")
 A = lambda t: Atom("A", [t])

@@ -17,10 +17,10 @@ import random
 
 import pytest
 
-from unicode_fol_kit.semantics.fuzzy_kripke import FuzzyKripkeModel, satisfies_fuzzy_modal
-from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
-from unicode_fol_kit.semantics.tnorm import LUKASIEWICZ, GODEL, PRODUCT
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.semantics.fuzzy_kripke import FuzzyKripkeModel, satisfies_fuzzy_modal
+from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
+from unicode_logic_kit.semantics.tnorm import LUKASIEWICZ, GODEL, PRODUCT
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Implies,
     Box, Diamond, Knows, Believes, Says, Wants,
     Next, Nominal, At, Obligatory, Permitted,
@@ -29,7 +29,7 @@ from unicode_fol_kit.fol.nodes import (
     WeakConjunction, WeakDisjunction,
     LukNegation, LukImplication,
 )
-from unicode_fol_kit.fol._modal_nodes import (
+from unicode_logic_kit.fol._modal_nodes import (
     Announce, AnnounceDiamond, EverybodyKnows, DistributedKnowledge, CommonKnowledge,
 )
 

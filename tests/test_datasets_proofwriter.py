@@ -1,4 +1,4 @@
-"""Tests for the ProofWriter adapter (unicode_fol_kit.eval.datasets.proofwriter).
+"""Tests for the ProofWriter adapter (unicode_logic_kit.eval.datasets.proofwriter).
 
 ``tests/fixtures/proofwriter_mini.jsonl`` mixes two things, distinguished by
 provenance (see ``proofwriter.py``'s module docstring for how the schema
@@ -50,13 +50,13 @@ from pathlib import Path
 
 import pytest
 
-from unicode_fol_kit.eval.datasets import (
+from unicode_logic_kit.eval.datasets import (
     DatasetExample,
     DATASET_INFO,
     audit_examples,
     load_proofwriter,
 )
-from unicode_fol_kit.eval.datasets.proofwriter import _split_theory_sentences
+from unicode_logic_kit.eval.datasets.proofwriter import _split_theory_sentences
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _PROOFWRITER_FIXTURE = _FIXTURES / "proofwriter_mini.jsonl"
@@ -333,7 +333,7 @@ def test_proofwriter_dataset_example_to_dict_is_json_compatible():
 # and RelNoneg-OWA-D2-471 [relational theory, 12 questions])
 # ---------------------------------------------------------------------------
 
-from unicode_fol_kit.eval.datasets.proofwriter import (   # noqa: E402
+from unicode_logic_kit.eval.datasets.proofwriter import (   # noqa: E402
     load_proofwriter_structured, parse_proofwriter_representation,
     solve_structured_example, check_gold_proof,
 )
@@ -736,7 +736,7 @@ def test_on_indefinite_rejects_unknown_value():
 # test_representation_*_hand_converted above.
 # ---------------------------------------------------------------------------
 
-from unicode_fol_kit.eval.datasets._proofwriter_proof import (   # noqa: E402
+from unicode_logic_kit.eval.datasets._proofwriter_proof import (   # noqa: E402
     Leaf, Naf, And, Apply, Or, FailWitness,
     parse_question_proof, parse_all_proofs,
 )
@@ -1079,10 +1079,10 @@ def test_check_gold_proof_requires_a_recognised_strategy():
 # of check_gold_proof's own fixture-level tests above.
 # ---------------------------------------------------------------------------
 
-from unicode_fol_kit.eval.datasets.proofwriter import (   # noqa: E402
+from unicode_logic_kit.eval.datasets.proofwriter import (   # noqa: E402
     _closed_model, _collect_constants,
 )
-from unicode_fol_kit import api   # noqa: E402
+from unicode_logic_kit import api   # noqa: E402
 
 
 def test_closed_model_record_provenance_default_shape_unchanged():
@@ -1130,7 +1130,7 @@ def test_closed_model_provenance_hand_checked_naf_and_negative_head():
 # atom, not just the first one itertools.product happens to visit.
 # ---------------------------------------------------------------------------
 
-from unicode_fol_kit.eval.datasets.proofwriter import _rule_body_holds  # noqa: E402
+from unicode_logic_kit.eval.datasets.proofwriter import _rule_body_holds  # noqa: E402
 
 
 def test_rule_body_holds_checks_every_grounding_not_just_the_first():

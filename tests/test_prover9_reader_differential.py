@@ -26,13 +26,13 @@ import tempfile
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import prover9_entailment as writer
-from unicode_fol_kit.atp.protocol import Prover9Backend
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import prover9_entailment as writer
+from unicode_logic_kit.atp.protocol import Prover9Backend
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Contrast, Count, Function, Iff, Implies, Not, Number, Or, Quantifier, Variable, Xor,
 )
-from unicode_fol_kit.fol.prover9_input import parse_prover9_problem
+from unicode_logic_kit.fol.prover9_input import parse_prover9_problem
 
 # --------------------------------------------------------------------------- #
 # The writer's text, read back.

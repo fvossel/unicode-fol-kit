@@ -18,16 +18,16 @@ import random
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.clingo_backend import ClingoBackend
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.clingo_backend import ClingoBackend
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Implies, Not, Or, Quantifier, SecondOrderQuantifier, Variable,
     free_variables,
 )
-from unicode_fol_kit.semantics import (
+from unicode_logic_kit.semantics import (
     asp_models, free_logic, modelfinder, nonmonotonic, secondorder,
 )
-from unicode_fol_kit.semantics.tarski import satisfies
+from unicode_logic_kit.semantics.tarski import satisfies
 
 x, y, z = Variable("x"), Variable("y"), Variable("z")
 alpha = Constant("alpha")
@@ -281,7 +281,7 @@ def test_clingo_refutes_exactly_the_invalid_problems(name, premises, conclusion,
     if valid:
         assert verdict.status == "unknown" and verdict.reason == "bound_hit"
     else:
-        from unicode_fol_kit.semantics import structure_from_dict
+        from unicode_logic_kit.semantics import structure_from_dict
         assert verdict.status == "refuted"
         # every problem of the table has the free variable x, reported as a constant
         assert "x" in structure_from_dict(verdict.countermodel["data"]).constants
@@ -289,7 +289,7 @@ def test_clingo_refutes_exactly_the_invalid_problems(name, premises, conclusion,
 
 def test_clingo_countermodel_reports_the_parameter_under_the_variable_name():
     pytest.importorskip("clingo")
-    from unicode_fol_kit.semantics import structure_from_dict
+    from unicode_logic_kit.semantics import structure_from_dict
     verdict = ClingoBackend().decide(P(alpha), [P(x)], max_size=3)
     assert verdict.status == "refuted"
     structure = structure_from_dict(verdict.countermodel["data"])

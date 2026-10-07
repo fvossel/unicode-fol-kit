@@ -28,7 +28,7 @@ import json
 
 import pytest
 
-from unicode_fol_kit.hets import (
+from unicode_logic_kit.hets import (
     HaskellJsonRepairError,
     HetsClient,
     repair_haskell_json,

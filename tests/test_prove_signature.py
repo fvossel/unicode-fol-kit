@@ -22,14 +22,14 @@ from typing import Dict, List, Optional, Tuple
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import protocol
-from unicode_fol_kit.atp.protocol import ProverBackend, Verdict, get_backend
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import protocol
+from unicode_logic_kit.atp.protocol import ProverBackend, Verdict, get_backend
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Function, Implies, Not, Or, Quantifier, SortedConstant,
     SortedQuantifier, Variable, signature_axioms,
 )
-from unicode_fol_kit.fol.signature import Signature
+from unicode_logic_kit.fol.signature import Signature
 
 
 def parse(text):

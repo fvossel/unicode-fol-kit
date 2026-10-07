@@ -1,9 +1,9 @@
 """Tests for equality reasoning in the resolution prover — Tier 3
 "Resolution-Superposition, abgestuft": paramodulation, reflexivity
-resolution, and demodulation added to :mod:`unicode_fol_kit.atp.resolution`,
+resolution, and demodulation added to :mod:`unicode_logic_kit.atp.resolution`,
 plus the matching three new rule kinds
 (``"paramodulate"``/``"reflexivity"``/``"demodulate"``)
-independently re-verified by :mod:`unicode_fol_kit.atp.resolution_check`.
+independently re-verified by :mod:`unicode_logic_kit.atp.resolution_check`.
 A shared-instance ``self_paramodulate`` shortcut existed briefly and was
 REMOVED as unsound by the Tier-3 adversarial review (for ``{u ≈ v, L[u]}``
 it inferred ``{L[v]}``, false in a model satisfying the clause via ``L[u]``
@@ -53,17 +53,17 @@ equality-free clause sets — the new generators immediately return ``[]`` the
 moment a clause has no "=" literal to work with, costing zero extra steps.
 """
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Variable, Constant, Function, Quantifier,
 )
-from unicode_fol_kit.atp.resolution import (
+from unicode_logic_kit.atp.resolution import (
     prove, is_valid_resolution, refute,
     _term_weight, _term_gt, _paramodulation_directions,
     _subterm_positions, _term_at, _replace_at,
     _paramodulants_cross, _reflexivity_resolvents,
     _unit_rewrite_rules, _demodulate_once, _demodulate_to_fixpoint,
 )
-from unicode_fol_kit.atp.resolution_check import (
+from unicode_logic_kit.atp.resolution_check import (
     ResolutionStep, ResolutionDerivation, verify_resolution_proof,
     render_resolution_proof,
     _term_gt as _check_term_gt,
@@ -235,7 +235,7 @@ def test_self_paramodulation_unsound_shortcut_is_gone():
 def test_prover_module_has_no_self_paramodulation_generator():
     """The unsound generator is gone from the module surface, not just
     unplugged — importing it must fail (pins the removal itself)."""
-    import unicode_fol_kit.atp.resolution as resolution
+    import unicode_logic_kit.atp.resolution as resolution
     assert not hasattr(resolution, "_paramodulants_self")
 
 

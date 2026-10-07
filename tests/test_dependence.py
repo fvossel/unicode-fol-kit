@@ -1,4 +1,4 @@
-"""Tests for team semantics (unicode_fol_kit.semantics.team).
+"""Tests for team semantics (unicode_logic_kit.semantics.team).
 
 Dependence logic / IF logic in Väänänen's strict team semantics (Dependence
 Logic, 2007). Every claim is hand-checked; the flatness suite additionally
@@ -13,12 +13,12 @@ import random
 
 import pytest
 
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser, Structure, satisfies, models,
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier, Variable, Function,
     Dependence, SlashedExists,
 )
-from unicode_fol_kit.semantics.team import (
+from unicode_logic_kit.semantics.team import (
     team_satisfies, team_models, MAX_TEAM_SEARCH,
 )
 

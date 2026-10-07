@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from unicode_fol_kit.ace import (
+from unicode_logic_kit.ace import (
     AceAtom, AceCommand, AceCondList, AceDrs, AceDrsUnreadError, AceExpr,
     AceImpl, AceInt, AceModal, AceNamed, AceNeg, AceOr, AceQuestion,
     AceString, AceVar, parse_ape_drs,

@@ -10,15 +10,15 @@ differentially against the toolkit's own exhaustive bounded countermodel search
 
 import pytest
 
-from unicode_fol_kit import MSFLParser, Atom, Box
-from unicode_fol_kit.hol.deepshallow._common import AtomConsts
-from unicode_fol_kit.hol.isabelle_relevant import (
+from unicode_logic_kit import MSFLParser, Atom, Box
+from unicode_logic_kit.hol.deepshallow._common import AtomConsts
+from unicode_logic_kit.hol.isabelle_relevant import (
     to_isabelle_relevant, _encode, battery_proof, nitpick_proof, DEFAULT_METHODS,
 )
-from unicode_fol_kit.hol.isabelle_runner import (
+from unicode_logic_kit.hol.isabelle_runner import (
     isabelle_available, isabelle_decide_relevant,
 )
-from unicode_fol_kit.semantics.relevant import rel_valid, rel_countermodel, rel_satisfies
+from unicode_logic_kit.semantics.relevant import rel_valid, rel_countermodel, rel_satisfies
 
 p = MSFLParser().parse
 

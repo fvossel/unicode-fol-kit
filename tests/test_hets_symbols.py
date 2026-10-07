@@ -21,7 +21,7 @@ the string the OEO request quotes.
 
 import pytest
 
-from unicode_fol_kit.hets import (
+from unicode_logic_kit.hets import (
     HetsSymbolCollisionError,
     UntranslatedAxiom,
     hets_prefixes,

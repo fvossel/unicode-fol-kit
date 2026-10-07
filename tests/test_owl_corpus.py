@@ -42,11 +42,11 @@ from pathlib import Path
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit import api
-from unicode_fol_kit.fol import Constant
-from unicode_fol_kit.fol.sanitize import sanitize_names
-from unicode_fol_kit.atp.tstp_check import _formula_alpha_equal
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit import api
+from unicode_logic_kit.fol import Constant
+from unicode_logic_kit.fol.sanitize import sanitize_names
+from unicode_logic_kit.atp.tstp_check import _formula_alpha_equal
 
 _REAL_OEO = os.environ.get("UFK_OEO_AXIOMS_JSONL")
 real_corpus = pytest.mark.skipif(

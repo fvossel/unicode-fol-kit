@@ -7,9 +7,9 @@ export-rejection contract (to_z3/to_prover9/to_tptp raise NotImplementedError).
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.naming import NamingError
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.naming import NamingError
+from unicode_logic_kit.fol.nodes import (
     Node,
     Atom, Variable, Constant,
     And, Or, Xor, Not, Implies, Iff, Quantifier,
@@ -259,17 +259,17 @@ class TestExportRejection:
 
 class TestStructural:
     def test_free_variables_through_box(self):
-        from unicode_fol_kit.fol.nodes import free_variables
+        from unicode_logic_kit.fol.nodes import free_variables
         node = Box(Atom("P", [Variable("x")]))
         assert free_variables(node) == {Variable("x")}
 
     def test_free_variables_bound_under_modal(self):
-        from unicode_fol_kit.fol.nodes import free_variables
+        from unicode_logic_kit.fol.nodes import free_variables
         node = Box(Quantifier("∀", Variable("x"), Atom("P", [Variable("x")])))
         assert free_variables(node) == set()
 
     def test_until_free_variables_union(self):
-        from unicode_fol_kit.fol.nodes import free_variables
+        from unicode_logic_kit.fol.nodes import free_variables
         node = Until(Atom("P", [Variable("x")]), Atom("Q", [Variable("y")]))
         assert free_variables(node) == {Variable("x"), Variable("y")}
 

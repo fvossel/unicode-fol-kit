@@ -19,10 +19,10 @@ Three workloads, each far beyond the limits used here:
 
 import time
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.protocol import PROVED, UNKNOWN, get_backend
-from unicode_fol_kit.atp.resolution import is_valid_resolution, prove, refute
-from unicode_fol_kit.fol.nodes import And, Atom, Constant, Iff, Implies, Not, Or
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.protocol import PROVED, UNKNOWN, get_backend
+from unicode_logic_kit.atp.resolution import is_valid_resolution, prove, refute
+from unicode_logic_kit.fol.nodes import And, Atom, Constant, Iff, Implies, Not, Or
 
 #: A call must end within its limit plus this much.
 SLACK = 5.0

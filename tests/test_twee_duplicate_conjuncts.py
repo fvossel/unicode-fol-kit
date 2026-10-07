@@ -28,14 +28,14 @@ import dataclasses
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.twee_backend import TweeBackend
-from unicode_fol_kit.atp.twee_check import check_twee_proof, goal_matches_conclusion
-from unicode_fol_kit.atp.twee_entailment import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.twee_backend import TweeBackend
+from unicode_logic_kit.atp.twee_check import check_twee_proof, goal_matches_conclusion
+from unicode_logic_kit.atp.twee_entailment import (
     TweeAxiom, TweeChain, TweeCitation, TweeEquation, TweeGoal, TweeProof,
     parse_twee_proof, twee_available,
 )
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Function, Quantifier, SortedConstant, Variable,
 )
 

@@ -21,8 +21,8 @@ import random
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import And, Atom, Constant, Not, Or, Quantifier, Variable
-from unicode_fol_kit.fol.tptp_input import TptpParsingError, parse_tptp, parse_tptp_formula
+from unicode_logic_kit.fol.nodes import And, Atom, Constant, Not, Or, Quantifier, Variable
+from unicode_logic_kit.fol.tptp_input import TptpParsingError, parse_tptp, parse_tptp_formula
 
 
 def _xa(name="xa"):

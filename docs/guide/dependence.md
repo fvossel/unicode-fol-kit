@@ -6,15 +6,15 @@ The toolkit's `dependence` parser mode (`MSFLParser(dependence=True)`) accepts l
 
 | What | Function(s) | Module |
 | --- | --- | --- |
-| Team satisfaction `X ⊨ φ` | `team_satisfies(structure, team, formula)` | `unicode_fol_kit.semantics.team` |
-| Sentence evaluation (team `{∅}`) | `team_models(structure, formula)` | `unicode_fol_kit.semantics.team` |
+| Team satisfaction `X ⊨ φ` | `team_satisfies(structure, team, formula)` | `unicode_logic_kit.semantics.team` |
+| Sentence evaluation (team `{∅}`) | `team_models(structure, formula)` | `unicode_logic_kit.semantics.team` |
 
 ## Teams as information states
 
 A team is a set of assignments — think of a **database table** whose columns are variables and whose rows are assignments. A team models an *information state*: the rows are the possibilities you cannot yet tell apart. First-order literals are **flat**: the team satisfies a literal iff every row does.
 
 ```python
-from unicode_fol_kit import MSFLParser, Structure, team_satisfies
+from unicode_logic_kit import MSFLParser, Structure, team_satisfies
 
 p = MSFLParser(dependence=True).parse
 
@@ -78,7 +78,7 @@ team_satisfies(S3, team3, p("=(x) ∨ =(x) ∨ =(x)"))   # → True
 A sentence is evaluated with `team_models`, starting from the team `{∅}` containing just the empty assignment (*not* the empty team — that one satisfies everything). `∀x` **duplicates** the team, extending every row with every domain element for `x`; `∃x` **supplements** it, choosing one witness per row (a function `F : X → dom`). Watch the dependence atom interact with `∃`:
 
 ```python
-from unicode_fol_kit import team_models
+from unicode_logic_kit import team_models
 
 S1 = Structure(domain=[0])
 S2 = Structure(domain=[0, 1])
@@ -140,7 +140,7 @@ team_models(CYCLE, p("∀x ∃y Edge(x, y)"))    # → True   without =(y) the w
 This particular pattern is still first-order expressible — `∀x ∃y (=(y) ∧ ψ)` says `∃y ∀x ψ` — which gives a nice differential check against the independent Tarskian evaluator:
 
 ```python
-from unicode_fol_kit import models
+from unicode_logic_kit import models
 
 fo = MSFLParser().parse("∃y ∀x Edge(x, y)")
 (models(fo, SINK), models(fo, CYCLE))        # → (True, False) — agrees with team_models
@@ -153,9 +153,9 @@ In general, though, dependence atoms take you strictly beyond first-order logic:
 Väänänen's Σ¹₁ theorem is constructive: `dependence_to_eso(sentence)` realises the half that matters here, translating a dependence-logic sentence into a **classical** formula headed by existential second-order quantifiers — one `∃F` per Skolemised existential, `F` a fresh graph predicate playing the role of the witness function, plus the two first-order axioms making it total and functional. The result is an ordinary `Node` for `satisfies_so` / `hol.secondorder`, not a team-semantic object, so it is a genuine *alternative* evaluator to `team_models` rather than a wrapper around it:
 
 ```python
-from unicode_fol_kit import MSFLParser, dependence_to_eso, Structure
-from unicode_fol_kit.semantics.secondorder import holds
-from unicode_fol_kit.semantics.team import team_models
+from unicode_logic_kit import MSFLParser, dependence_to_eso, Structure
+from unicode_logic_kit.semantics.secondorder import holds
+from unicode_logic_kit.semantics.team import team_models
 
 dp = MSFLParser(dependence=True).parse
 sink = dp("∀x ∃y (=(y) ∧ Edge(x, y))")        # the universal-sink sentence from above

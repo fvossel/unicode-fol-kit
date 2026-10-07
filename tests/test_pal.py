@@ -1,7 +1,7 @@
 """Tests for Public Announcement Logic (PAL): the Announce/AnnounceDiamond AST
-nodes (unicode_fol_kit.fol._modal_nodes), their parser syntax, the syntactic
-reduction unicode_fol_kit.fol.pal.reduce_announcements, direct Kripke evaluation
-(unicode_fol_kit.semantics.kripke.satisfies_modal), and the atp.modal_tableau
+nodes (unicode_logic_kit.fol._modal_nodes), their parser syntax, the syntactic
+reduction unicode_logic_kit.fol.pal.reduce_announcements, direct Kripke evaluation
+(unicode_logic_kit.semantics.kripke.satisfies_modal), and the atp.modal_tableau
 decision procedure over PAL formulas.
 
 Correctness anchor: satisfies_modal interprets Announce/AnnounceDiamond directly
@@ -15,25 +15,25 @@ import random
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Node,
     Atom, Not, And, Or, Xor, Implies, Iff, Constant, Variable,
     Knows, Believes, Says, Wants, Box, Diamond, Obligatory, Permitted,
     Always, Eventually, Next, Until, Historically, Once, Previous, Since,
     Would, Might, Nominal, At, Quantifier,
 )
-from unicode_fol_kit.fol._modal_nodes import Announce, AnnounceDiamond
-from unicode_fol_kit.fol.pal import reduce_announcements
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.verbalize import to_english
-from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
-from unicode_fol_kit.semantics.dynamic_epistemic import (
+from unicode_logic_kit.fol._modal_nodes import Announce, AnnounceDiamond
+from unicode_logic_kit.fol.pal import reduce_announcements
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.verbalize import to_english
+from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
+from unicode_logic_kit.semantics.dynamic_epistemic import (
     announce, box_announce, diamond_announce,
 )
-from unicode_fol_kit.atp.modal_tableau import (
+from unicode_logic_kit.atp.modal_tableau import (
     has_modal, is_modal_valid, modal_decide, modal_countermodel,
 )
-from unicode_fol_kit.hol.isabelle_modal import to_isabelle_modal
+from unicode_logic_kit.hol.isabelle_modal import to_isabelle_modal
 
 p = Atom("P", [])
 q = Atom("Q", [])

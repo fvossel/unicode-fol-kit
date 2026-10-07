@@ -21,11 +21,11 @@ import re
 
 import pytest
 
-from unicode_fol_kit.fol._modal_nodes import Box
-from unicode_fol_kit.fol.nodes import Atom, Constant, Implies, Quantifier, Variable
-from unicode_fol_kit.fol.qml import to_thf_modal
-from unicode_fol_kit.hol.free import to_thf_free
-from unicode_fol_kit.hol.thf_modal import to_thf_modal_full
+from unicode_logic_kit.fol._modal_nodes import Box
+from unicode_logic_kit.fol.nodes import Atom, Constant, Implies, Quantifier, Variable
+from unicode_logic_kit.fol.qml import to_thf_modal
+from unicode_logic_kit.hol.free import to_thf_free
+from unicode_logic_kit.hol.thf_modal import to_thf_modal_full
 
 X, Y = Variable("x"), Variable("y")
 OPEN = Implies(Box(Atom("P", [X])), Atom("P", [X]))

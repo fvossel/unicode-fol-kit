@@ -1,5 +1,5 @@
 """Tests for C49: applying newly-declared Prover9 ``op(precedence, type, symbol)``
-operators (unicode_fol_kit.fol.prover9_input).
+operators (unicode_logic_kit.fol.prover9_input).
 
 Every expected tree below is worked out BY HAND with the standard
 precedence-climbing algorithm against Prover9's own default operator table
@@ -13,7 +13,7 @@ the same fallback convention ``test_prover9_entailment.py``'s module docstring
 already establishes: "wo ein externes Werkzeug fehlt, ist der kit-eigene Leser
 der Prüfstein" — where an external tool is missing, the kit's own reader is
 the touchstone) — so the independent second route used throughout is the
-kit's OWN semantic validity checker (:func:`unicode_fol_kit.is_valid`, Z3
+kit's OWN semantic validity checker (:func:`unicode_logic_kit.is_valid`, Z3
 under the hood: a wholly separate subsystem from the Lark grammar under test)
 rather than a live differential against Prover9 itself. One test (marked
 ``live_prover9``, skip-gated, never required) instead runs a real Prover9
@@ -25,12 +25,12 @@ from dataclasses import dataclass
 
 import pytest
 
-from unicode_fol_kit import is_valid
-from unicode_fol_kit.atp.protocol import Prover9Backend
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import is_valid
+from unicode_logic_kit.atp.protocol import Prover9Backend
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Implies, Iff, Quantifier, Variable, Constant, Function, Number,
 )
-from unicode_fol_kit.fol.prover9_input import (
+from unicode_logic_kit.fol.prover9_input import (
     parse_prover9, parse_prover9_problem, Prover9ParsingError,
 )
 
@@ -588,6 +588,6 @@ def test_prover9_accepts_our_op_declaration_live():
     # Through the kit's own runner, which drives a binary inside WSL when
     # $UFK_PROVER9_WSL=1 (a raw subprocess call with a Windows path could not), and
     # raises Prover9Rejected, with Prover9's own message, if it refuses the file.
-    from unicode_fol_kit.atp.prover9_entailment import _run_prover9
+    from unicode_logic_kit.atp.prover9_entailment import _run_prover9
     assert _run_prover9(problem, _prover9._binary(), timeout=30, raise_on_rejection=True,
                         use_wsl=_prover9._uses_wsl()) is True

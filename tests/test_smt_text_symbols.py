@@ -28,14 +28,14 @@ import sys
 import pytest
 import z3
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.cvc5_backend import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.cvc5_backend import (
     Cvc5Backend, _collect_names_for_smtlib, _is_smtlib_safe, _lower_counting_for_smtlib, _reverse_map_smtlib_text,
     _sanitize_many_for_smtlib, SmtNameMap,
 )
-from unicode_fol_kit.atp.protocol import ERROR, REFUTED, UNKNOWN
-from unicode_fol_kit.atp.z3_input import from_z3, parse_smtlib, to_smtlib
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.atp.protocol import ERROR, REFUTED, UNKNOWN
+from unicode_logic_kit.atp.z3_input import from_z3, parse_smtlib, to_smtlib
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Count, Function, Implies, Not, Number, Or, Quantifier, SortedCount, SortedQuantifier,
     Variable, Z3Env,
 )
@@ -158,8 +158,8 @@ def test_cvc5_reports_a_symbol_spelled_like_a_printer_name_under_that_name(name)
     # P(c) ⊢ Q is not valid (Q false): the countermodel has the symbols P, Q and c, each under the caller's name
     source = r'''
 import json, sys
-from unicode_fol_kit.atp.cvc5_backend import Cvc5Backend
-from unicode_fol_kit.fol.nodes import Atom, Constant
+from unicode_logic_kit.atp.cvc5_backend import Cvc5Backend
+from unicode_logic_kit.fol.nodes import Atom, Constant
 verdict = Cvc5Backend().decide(Atom("Q", []), [Atom("P", [Constant(sys.argv[1])])], timeout=10000)
 print(json.dumps({"status": verdict.status, "keys": sorted((verdict.countermodel or {}).get("assignment", {}))}))
 '''
@@ -207,8 +207,8 @@ def test_a_constant_spelled_like_any_name_of_the_printer_is_never_shadowed_in_on
 _LET_CHILD = r'''
 import importlib.util, json, re, sys
 import z3
-from unicode_fol_kit.atp.z3_input import to_smtlib
-from unicode_fol_kit.fol.nodes import And, Atom, Constant, Count, Function, Implies, Not, Number, Or, Variable
+from unicode_logic_kit.atp.z3_input import to_smtlib
+from unicode_logic_kit.fol.nodes import And, Atom, Constant, Count, Function, Implies, Not, Number, Or, Variable
 
 shape, constant, mode = sys.argv[1], sys.argv[2], sys.argv[3]
 x = Variable("x")
@@ -237,7 +237,7 @@ if mode == "check":
     except Exception as exc:
         answer["z3_on_the_negated_goal"] = "the text is not read: " + str(exc)[:200]
     if importlib.util.find_spec("cvc5") is not None:
-        from unicode_fol_kit.atp.cvc5_backend import Cvc5Backend
+        from unicode_logic_kit.atp.cvc5_backend import Cvc5Backend
         answer["cvc5"] = Cvc5Backend().decide(goal, [], timeout=10000).status
 print(json.dumps(answer))
 '''
@@ -351,8 +351,8 @@ def test_cvc5_decides_a_counting_bound_under_a_small_recursion_limit():
     source = r'''
 import sys
 sys.setrecursionlimit(len(__import__("traceback").extract_stack()) + 250)
-from unicode_fol_kit.atp.cvc5_backend import Cvc5Backend
-from unicode_fol_kit.fol.nodes import And, Atom, Count, Not, Number, Variable
+from unicode_logic_kit.atp.cvc5_backend import Cvc5Backend
+from unicode_logic_kit.fol.nodes import And, Atom, Count, Not, Number, Variable
 x = Variable("x")
 contradiction = And(Atom("P", [x]), Not(Atom("P", [x])))
 goal = Not(Count("ge", Number(100), x, contradiction))
@@ -419,9 +419,9 @@ def test_the_symbols_a_c_and_a_c_c_of_one_text_are_two_constants():
 def test_cvc5_does_not_prove_falsity_from_that_text_either():
     source = r'''
 import sys
-from unicode_fol_kit.atp.cvc5_backend import Cvc5Backend
-from unicode_fol_kit.atp.z3_input import parse_smtlib
-from unicode_fol_kit.fol.nodes import Atom
+from unicode_logic_kit.atp.cvc5_backend import Cvc5Backend
+from unicode_logic_kit.atp.z3_input import parse_smtlib
+from unicode_logic_kit.fol.nodes import Atom
 nodes = parse_smtlib(sys.argv[1])
 print(Cvc5Backend().decide(Atom("$false", []), nodes, timeout=10000).status)
 '''
@@ -529,8 +529,8 @@ def test_a_token_is_renamed_back_only_as_a_whole_symbol(text, reverse, expected)
 
 _CORE_CHILD = r'''
 import json, sys
-from unicode_fol_kit.atp.cvc5_backend import Cvc5Backend
-from unicode_fol_kit.fol.nodes import And, Atom, Constant
+from unicode_logic_kit.atp.cvc5_backend import Cvc5Backend
+from unicode_logic_kit.fol.nodes import And, Atom, Constant
 a, b, c = Constant("a"), Constant("b"), Constant("is n<")
 premises = [Atom("<", [a, b]), Atom("Q", [c])]
 goal = And(Atom("<", [a, b]), Atom("Q", [c]))

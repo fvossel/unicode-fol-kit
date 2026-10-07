@@ -1,10 +1,10 @@
-"""Tests for the PMB adapter (unicode_fol_kit.eval.datasets.pmb).
+"""Tests for the PMB adapter (unicode_logic_kit.eval.datasets.pmb).
 
 Tier 1 (below, always runs): SYNTHETIC fixtures under ``tests/fixtures/pmb/``, hand-
 written in PMB's own ``p<NN>/d<NNNN>/<lang>.drs.sbn`` release layout (PMB's raw texts
 carry no single licence statement this repository could safely redistribute under —
 see ``pmb.py``'s module docstring — so nothing real is checked in). These drive
-ordinary :class:`~unicode_fol_kit.eval.datasets.DatasetExample` field-mapping checks,
+ordinary :class:`~unicode_logic_kit.eval.datasets.DatasetExample` field-mapping checks,
 the same way ``test_datasets_groves.py``/``test_datasets_malls.py`` do for their own
 adapters. Every expected ``fol_conclusion`` string below was independently confirmed
 by running the actual fixture text through ``parse_sbn``/``drs_to_fol`` and reading off
@@ -16,7 +16,7 @@ the same "skip without a real file/binary" precedent ``test_datasets_fracas.py``
 0.24.0 APE live tests already set. It is a robustness differential, not a translation-
 ACCURACY one: PMB ships no independent gold FOL to compare against, so "correct" here
 means "parses under parse_sbn's own documented subset and round-trips", never "matches
-an external answer" (see ``unicode_fol_kit/eval/datasets/pmb.py``'s module docstring for
+an external answer" (see ``unicode_logic_kit/eval/datasets/pmb.py``'s module docstring for
 the measured numbers this differential reproduces).
 """
 
@@ -25,11 +25,11 @@ from pathlib import Path
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.drt.export import drs_to_fol
-from unicode_fol_kit.drt.parser import SBNSyntaxError, parse_sbn
-from unicode_fol_kit.eval.datasets import DATASET_INFO
-from unicode_fol_kit.eval.datasets.pmb import load_pmb
+from unicode_logic_kit import api
+from unicode_logic_kit.drt.export import drs_to_fol
+from unicode_logic_kit.drt.parser import SBNSyntaxError, parse_sbn
+from unicode_logic_kit.eval.datasets import DATASET_INFO
+from unicode_logic_kit.eval.datasets.pmb import load_pmb
 
 _FIXTURES = Path(__file__).parent / "fixtures" / "pmb"
 
@@ -80,7 +80,7 @@ def test_field_mapping_for_a_successful_flat_document():
 def test_field_mapping_for_a_negated_document_via_the_connector_dialect():
     # p00/d0002/en.drs.sbn uses the real release's own CONNECTOR dialect ("  NEGATION
     # <1", space-indented — pure cosmetic alignment in this dialect, see
-    # unicode_fol_kit.drt.parser's module docstring): dog.n.01 (concept 1, e1);
+    # unicode_logic_kit.drt.parser's module docstring): dog.n.01 (concept 1, e1);
     # NEGATION <1 attaches Neg to context (1-1)=0, the root; bark.v.01 (concept 2, e2)
     # inside it, Agent -1 counting back one CONCEPT (not content line) to e1.
     e = _by_id(load_pmb(_FIXTURES))["p00/d0002"]
@@ -93,7 +93,7 @@ def test_field_mapping_for_a_negated_document_via_the_connector_dialect():
 
 def test_a_document_outside_the_sbn_subset_is_surfaced_not_dropped():
     # p00/d0003 uses POSSIBILITY, which this SBN subset refuses by name (see
-    # unicode_fol_kit.drt.parser). load_pmb must not drop the document: it still
+    # unicode_logic_kit.drt.parser). load_pmb must not drop the document: it still
     # yields a DatasetExample, with the refusal recorded in meta rather than raised.
     e = _by_id(load_pmb(_FIXTURES))["p00/d0003"]
     assert e.fol_conclusion is None

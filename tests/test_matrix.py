@@ -1,4 +1,4 @@
-"""Tests for the finite-valued matrix layer (unicode_fol_kit.semantics.matrix).
+"""Tests for the finite-valued matrix layer (unicode_logic_kit.semantics.matrix).
 
 Two things are checked: (1) the K3 and LP matrices reproduce the existing
 hard-wired three-valued decisions *exactly* (a differential over random formulas),
@@ -11,14 +11,14 @@ import random
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier, Variable,
 )
-from unicode_fol_kit.semantics.matrix import (
+from unicode_logic_kit.semantics.matrix import (
     TruthMatrix, matrix_value, matrix_is_valid, matrix_is_satisfiable, matrix_entails,
     K3_MATRIX, LP_MATRIX, FDE_MATRIX, MATRICES,
 )
-from unicode_fol_kit.semantics.manyvalued import is_valid, is_satisfiable, entails
+from unicode_logic_kit.semantics.manyvalued import is_valid, is_satisfiable, entails
 
 p, q, r = Atom("p", ()), Atom("q", ()), Atom("r", ())
 

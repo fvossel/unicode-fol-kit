@@ -14,7 +14,7 @@ import json
 
 import pytest
 
-from unicode_fol_kit import MSFLParser, equivalent
+from unicode_logic_kit import MSFLParser, equivalent
 
 _P = MSFLParser()
 _MP = MSFLParser(modal=True)
@@ -146,7 +146,7 @@ def test_unknown_method_raises():
 #     s3 = aligned_exact_match(prediction, reference)
 #     s4 = solver verdict is True (None/False both count 0)
 #
-# NOTE on the parser's naming convention (unicode_fol_kit/fol/grammars/
+# NOTE on the parser's naming convention (unicode_logic_kit/fol/grammars/
 # terminals.lark): a SINGLE lowercase letter (optionally with trailing
 # digits, e.g. "x", "a", "q0") lexes as VARIABLE, not a constant. So "P(a)"
 # parses as an OPEN atom with a's a free logical Variable — it is NOT a

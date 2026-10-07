@@ -24,8 +24,8 @@ pytest.importorskip("cvc5")
 
 _CHILD = r"""
 import json, sys
-from unicode_fol_kit.atp.cvc5_backend import Cvc5Backend
-from unicode_fol_kit.fol.nodes import (Atom, Constant, Function, Implies,
+from unicode_logic_kit.atp.cvc5_backend import Cvc5Backend
+from unicode_logic_kit.fol.nodes import (Atom, Constant, Function, Implies,
                                         Quantifier, Variable)
 
 kind, name = sys.argv[1], sys.argv[2]
@@ -88,8 +88,8 @@ def test_a_symbol_named_like_a_theory_symbol_is_uninterpreted_and_decided(kind, 
 
 
 _FACET = r"""
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit.atp.cvc5_backend import Cvc5Backend
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit.atp.cvc5_backend import Cvc5Backend
 
 # range(d) = xsd:integer[< 2]: the image has the premise ∀x ∀v (d(x, v) → … ∧ v < 2).
 tbox = dl.TBox().add_data_property_range("d", dl.DatatypeRestriction(

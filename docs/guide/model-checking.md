@@ -14,7 +14,7 @@ of magnitude slower than simply evaluating the formula.
 
 ```{note}
 There are two structure classes in the kit and they answer different questions.
-{class}`~unicode_fol_kit.semantics.tarski.Structure` (exported top-level as
+{class}`~unicode_logic_kit.semantics.tarski.Structure` (exported top-level as
 `Structure`) is the general Tarskian model: functions, constants, every node type,
 quantifiers iterating the whole domain. `FiniteStructure` — this page — is the
 indexed relational one, built for large domains and formulas that mention only a
@@ -27,8 +27,8 @@ tests cross-check `evaluate_in_structure` against `tarski.satisfies` directly.
 A `FiniteStructure` is a domain plus extensions keyed by `(name, arity)`:
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.semantics import FiniteStructure, evaluate_in_structure
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.semantics import FiniteStructure, evaluate_in_structure
 
 s = FiniteStructure(
     domain=("a1", "a2", "a3"),
@@ -56,7 +56,7 @@ data is a labelled graph — nodes carrying unary properties, edges carrying bin
 relations:
 
 ```python
-from unicode_fol_kit.semantics import graph_to_structure
+from unicode_logic_kit.semantics import graph_to_structure
 
 s = graph_to_structure(
     nodes={"a1": ["C"], "a2": ["C"], "a3": ["O"]},
@@ -78,9 +78,9 @@ scanning 40 candidates and scanning 3.
 ## An unknown symbol is an error, not `False`
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.semantics import graph_to_structure, evaluate_in_structure
-from unicode_fol_kit.semantics import UninterpretedSymbol
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.semantics import graph_to_structure, evaluate_in_structure
+from unicode_logic_kit.semantics import UninterpretedSymbol
 
 s = graph_to_structure(nodes={"a1": ["C"]}, edges={})
 try:
@@ -103,8 +103,8 @@ negative.
 evaluator saw on the way:
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.semantics import graph_to_structure, evaluate_detailed
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.semantics import graph_to_structure, evaluate_detailed
 
 s = graph_to_structure(
     nodes={"a1": ["C"], "a2": ["C"], "a3": ["O"]},
@@ -130,8 +130,8 @@ A `budget` caps the number of evaluation steps. When it runs out the result is
 `holds=None` with `exhausted=True` — UNKNOWN, never `False`:
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.semantics import graph_to_structure, evaluate_detailed
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.semantics import graph_to_structure, evaluate_detailed
 
 s = graph_to_structure(nodes={"a%d" % i: ["C"] for i in range(30)}, edges={})
 r = evaluate_detailed(MSFLParser().parse("∀x ∀y (C(x) ∧ C(y))"), s, budget=20)
@@ -148,8 +148,8 @@ structure stays an ordinary finite structure; the callable is just a lazy
 representation of an extension too large or too awkward to enumerate.
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.semantics import graph_to_structure, evaluate_in_structure
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.semantics import graph_to_structure, evaluate_in_structure
 
 edges = [("a1", "a2"), ("a2", "a1"), ("a2", "a3"), ("a3", "a2")]
 base = graph_to_structure(nodes={"a1": ["C"], "a2": ["C"], "a3": ["O"]},
@@ -185,14 +185,14 @@ structure that answers a strictly smaller signature while looking complete.
 
 ## Molecules as structures
 
-`unicode_fol_kit.chem` (install with the `[chem]` extra for RDKit) turns a SMILES
+`unicode_logic_kit.chem` (install with the `[chem]` extra for RDKit) turns a SMILES
 string into exactly such a structure: one individual per non-hydrogen atom,
 element and charge and hydrogen count as unary predicates, bonds as binary
 relations, plus ten computed predicates for the ring and connectivity properties.
 
 ```python
-from unicode_fol_kit import chem
-from unicode_fol_kit.semantics import evaluate_in_structure
+from unicode_logic_kit import chem
+from unicode_logic_kit.semantics import evaluate_in_structure
 
 ethanol = chem.mol_to_structure("CCO")
 print(ethanol.domain)                  # → ('c1', 'c2', 'o1')
@@ -216,7 +216,7 @@ mapping's injectivity is checked when `chem.interop` is imported, since a
 non-injective renaming would silently merge two predicates into one.
 
 ```python
-from unicode_fol_kit import api, chem
+from unicode_logic_kit import api, chem
 
 phi = chem.parse_chemlog_tptp("?[X,Y]: (c(X) & o(Y) & bond(X,Y))")
 
@@ -237,8 +237,8 @@ kit-named formula checked against it will correctly raise `UninterpretedSymbol`.
 A worked check, on the ChemLog amide-bond pattern:
 
 ```python
-from unicode_fol_kit import chem
-from unicode_fol_kit.semantics import evaluate_in_structure
+from unicode_logic_kit import chem
+from unicode_logic_kit.semantics import evaluate_in_structure
 
 amide = chem.parse_chemlog_tptp(
     "?[C,O,N]: (c(C) & o(O) & n(N) & bDOUBLE(C,O) & bSINGLE(C,N))")
@@ -250,7 +250,7 @@ print(evaluate_in_structure(amide, chem.mol_to_structure("CCO")))
 ```
 
 `chem.CHEMLOG_SIGNATURE` declares the same vocabulary as a
-{class}`~unicode_fol_kit.fol.signature.Signature`, so `api.check` reports unknown
+{class}`~unicode_logic_kit.fol.signature.Signature`, so `api.check` reports unknown
 predicates and arity mistakes against it before anything is evaluated.
 
 The element letters are `c`, `n`, `o`, `s`, `p`, `h` — ChemLog's own, its
@@ -274,7 +274,7 @@ is correct and ruinously expensive. Two tools address it, and they take the
 distinct individuals), reporting each removal with its justification:
 
 ```python
-from unicode_fol_kit import chem, simplify_for_checking
+from unicode_logic_kit import chem, simplify_for_checking
 
 tptp = ("?[A,B,C,D,E,F]: (c(A) & c(B) & c(C) & c(D) & c(E) & c(F) & "
         "A!=B & A!=C & A!=D & A!=E & A!=F & B!=C & B!=D & B!=E & B!=F & "
@@ -293,7 +293,7 @@ every pairwise inequality, nothing else — and rewrites it to the kit's countin
 quantifier, whose bound stays symbolic:
 
 ```python
-from unicode_fol_kit import chem, count_from_existential_chain
+from unicode_logic_kit import chem, count_from_existential_chain
 
 tptp = ("?[A,B,C,D,E,F]: (c(A) & c(B) & c(C) & c(D) & c(E) & c(F) & "
         "A!=B & A!=C & A!=D & A!=E & A!=F & B!=C & B!=D & B!=E & B!=F & "
@@ -333,8 +333,8 @@ plain functions over `KripkeModel`, `Node` and `satisfies_modal`, not new
 syntax:
 
 ```python
-from unicode_fol_kit import KripkeModel, satisfies_modal, Atom, Not, And, Always
-from unicode_fol_kit.semantics import ctl_ex, ctl_af, ctl_eg, ctl_au
+from unicode_logic_kit import KripkeModel, satisfies_modal, Atom, Not, And, Always
+from unicode_logic_kit.semantics import ctl_ex, ctl_af, ctl_eg, ctl_au
 
 crit1 = Atom("crit1", [])
 crit2 = Atom("crit2", [])

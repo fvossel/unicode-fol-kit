@@ -2,7 +2,7 @@
 
 Mirrors ``tests/test_ace_verbalize.py``'s structure and discipline exactly,
 scoped to the two ACE modal surfaces measured against live APE (see
-``unicode_fol_kit.ace.reverse_modal``'s module docstring): a modality
+``unicode_logic_kit.ace.reverse_modal``'s module docstring): a modality
 wrapping a whole formula ("John must wait.") and a modality nested in a
 duplex's consequent ("Every man must wait.", verbalized as "If there is a
 man X1 then X1 must wait."). Question/command generation is out of scope
@@ -15,16 +15,16 @@ from pathlib import Path
 
 import pytest
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.ace import ape_available
-from unicode_fol_kit.ace.reverse_modal import ModalBox, ModalImpl, fol_to_modal_drs
-from unicode_fol_kit.ace.verbalize import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.ace import ape_available
+from unicode_logic_kit.ace.reverse_modal import ModalBox, ModalImpl, fol_to_modal_drs
+from unicode_logic_kit.ace.verbalize import (
     AceVerbalizationError, modal_ace_round_trip, modal_drs_to_ace,
     modal_formula_to_ace,
 )
-from unicode_fol_kit.drt.export import drs_to_fol
-from unicode_fol_kit.drt.nodes import DRS, Impl
-from unicode_fol_kit.drt.reverse import FolToDrsError
+from unicode_logic_kit.drt.export import drs_to_fol
+from unicode_logic_kit.drt.nodes import DRS, Impl
+from unicode_logic_kit.drt.reverse import FolToDrsError
 
 live = pytest.mark.skipif(not ape_available(),
                           reason="no APE binary reachable")
@@ -82,7 +82,7 @@ def test_fol_to_modal_drs_matches_the_recorded_corpus_shape(tag, src):
 
 
 def test_fol_to_modal_drs_on_a_non_modal_formula_is_plain_fol_to_drs():
-    from unicode_fol_kit.drt.reverse import fol_to_drs
+    from unicode_logic_kit.drt.reverse import fol_to_drs
 
     formula = P.parse("∃e1 Wait(e1, john)")
     assert fol_to_modal_drs(formula) == fol_to_drs(formula)
@@ -167,8 +167,8 @@ def test_the_lexicon_under_a_modal_uses_the_infinitive_form_not_finsg():
 # ---------------------------------------------------------------------------
 
 def test_modal_drs_to_ace_delegates_a_plain_drs():
-    from unicode_fol_kit.ace.verbalize import drs_to_ace
-    from unicode_fol_kit.drt.reverse import fol_to_drs
+    from unicode_logic_kit.ace.verbalize import drs_to_ace
+    from unicode_logic_kit.drt.reverse import fol_to_drs
 
     formula = P.parse("∃x1 ∃e1 (Man(x1) ∧ Wait(e1, x1))")
     drs = fol_to_drs(formula)
@@ -240,7 +240,7 @@ def test_a_copula_only_duplex_consequent_is_refused():
 # ---------------------------------------------------------------------------
 # Live: the round trip closes for the 5 pinned corpus fixtures — the actual
 # ACE-7 claim, probed against the SAME pinned APE commit as every other
-# ace test (see unicode_fol_kit.ace.runner.APE_PINNED_COMMIT)
+# ace test (see unicode_logic_kit.ace.runner.APE_PINNED_COMMIT)
 # ---------------------------------------------------------------------------
 
 @live

@@ -1,4 +1,4 @@
-"""Tests for the LogicNLI adapter (unicode_fol_kit.eval.datasets.logicnli).
+"""Tests for the LogicNLI adapter (unicode_logic_kit.eval.datasets.logicnli).
 
 ``tests/fixtures/logicnli_mini.jsonl`` is 8 REAL rows built from the
 downloaded GitHub original (https://github.com/omnilabNLP/LogicNLI,
@@ -40,7 +40,7 @@ from pathlib import Path
 
 import pytest
 
-from unicode_fol_kit.eval.datasets import (
+from unicode_logic_kit.eval.datasets import (
     DatasetExample,
     DATASET_INFO,
     audit_examples,

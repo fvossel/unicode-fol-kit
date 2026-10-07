@@ -1,5 +1,5 @@
 %--------------------------------------------------------------------------
-% File     : box_all_to_dia_all : unicode-fol-kit fixture in QMLTP v1.1 syntax
+% File     : box_all_to_dia_all : unicode-logic-kit fixture in QMLTP v1.1 syntax
 % Domain   : Syntactic (modal)
 % Problem  : Every x necessarily f, so possibly every x f.
 % English  : if for every x necessarily f(x), then possibly for every x
@@ -16,7 +16,7 @@
 %             S4  Theorem      Theorem      Theorem
 %             S5  Theorem      Theorem      Theorem
 %
-% Comments : Written for unicode-fol-kit's test suite, not taken from the
+% Comments : Written for unicode-logic-kit's test suite, not taken from the
 %            QMLTP library. Status derived by hand: in K a dead-end world
 %            makes the antecedent true and every diamond false. In D some
 %            successor v exists; over constant domains every x has f at v,

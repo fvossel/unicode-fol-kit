@@ -1,9 +1,9 @@
-"""Tests for unicode_fol_kit.eval.validate — well-formedness reports."""
+"""Tests for unicode_logic_kit.eval.validate — well-formedness reports."""
 
 from dataclasses import FrozenInstanceError
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     Variable,
     Constant,
     Atom,
@@ -15,7 +15,7 @@ from unicode_fol_kit.fol.nodes import (
     Application,
     Function,
 )
-from unicode_fol_kit.eval.validate import (
+from unicode_logic_kit.eval.validate import (
     ValidationReport,
     validate,
     is_wellformed,

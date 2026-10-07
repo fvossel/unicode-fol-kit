@@ -1,16 +1,16 @@
 # Higher-order proving: Isabelle / THF exporters
 
-The `unicode_fol_kit.hol` subpackage emits Benzmüller-style **shallow semantical embeddings** of every non-fuzzy logic into higher-order logic — as complete, self-contained problem files for an external prover (Leo-III / Satallax on TPTP **THF**, or Isabelle/HOL theories for Sledgehammer). With a local Isabelle installed, the opt-in runner turns *emit* into *proven / refuted* and reads a real verdict off the build.
+The `unicode_logic_kit.hol` subpackage emits Benzmüller-style **shallow semantical embeddings** of every non-fuzzy logic into higher-order logic — as complete, self-contained problem files for an external prover (Leo-III / Satallax on TPTP **THF**, or Isabelle/HOL theories for Sledgehammer). With a local Isabelle installed, the opt-in runner turns *emit* into *proven / refuted* and reads a real verdict off the build.
 
 ## What the exporters emit (and what they cannot decide)
 
 The exporters **emit**; they do not themselves run a prover. They also cannot decide everything: first-order modal logic, FOL, and SOL are all **undecidable**, so a successful emission means *"here is a sound problem a prover may discharge"*, never *"decided"*. (FOL and the standard first-order modal logics are still *semi-decidable* — validity is recursively enumerable — whereas full second-order validity is *not even semi-decidable*; the propositional fragments K3/LP and modal K/T/S4/S5 are outright decidable, but these exporters target the general case.) How `=` / `≠` is read depends on the route, and each route says which. The **classical** exporters — `to_thf_fol` / `to_isabelle_fol` (and their MSFOL variants), `to_thf_so` / `to_isabelle_so` and the classical third-order `to_thf_to` / `to_isabelle_to` — read it as the **uninterpreted** predicates `feq` / `fneq` (not primitive HOL identity); the first family additionally accepts `native_equality=True` to opt into the target format's own built-in identity instead (see [Opting into native HOL identity](#opting-into-native-hol-identity) below). Free logic reads it as native identity under its denotation guard. The **modal** exporters named here — `to_thf_modal_full` / `to_isabelle_modal`, `fol.qml.to_thf_modal` and the third-order `to_thf_ho_modal` / `to_isabelle_ho_modal` — read it as **rigid identity**: HOL's own `=` over the individual type with no world argument, the reading of `qml_is_valid`, so `a = a` and `a = b → □(a = b)` are theorems there and nothing is declared for `=` (see [Equality is rigid in the modal embeddings](#equality-is-rigid-in-the-modal-embeddings) below). A route with no term semantics at all — the propositional Kripke evaluator, the propositional modal tableau, the intuitionistic GMT embedding — refuses an equality atom by name rather than reading it as an uninterpreted proposition. The ordering atoms `<` `>` `≤` `≥` have no counterpart in either target format and are uninterpreted on every route (world-relativised in the modal embeddings).
 
-Each exporter has a THF variant (`to_thf_*`) and an Isabelle variant (`to_isabelle_*`). **None of these names are top-level** — `from unicode_fol_kit import *` does *not* bring them in. Import them from `unicode_fol_kit.hol`:
+Each exporter has a THF variant (`to_thf_*`) and an Isabelle variant (`to_isabelle_*`). **None of these names are top-level** — `from unicode_logic_kit import *` does *not* bring them in. Import them from `unicode_logic_kit.hol`:
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.hol import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.hol import (
     to_isabelle_modal, to_thf_modal_full,    # full modal family
     to_thf_fol, to_isabelle_fol,             # classical FOL
     to_thf_msfol, to_isabelle_msfol,         # many-sorted FOL (sort guards)
@@ -27,7 +27,7 @@ thf = to_thf_modal_full(f, frame="S5")
 print("thf(" in thf, "mvalid" in thf, "mknows" in thf)   # → True True True
 ```
 
-The **runner** entry points (`find_isabelle`, `isabelle_available`, `isabelle_decide_modal`, `isabelle_decide_fol`, `isabelle_decide_counterfactual`, `check_theory`, and the verdict dataclasses) *are* exposed both top-level and under `unicode_fol_kit.hol`. The pure exporters above are `unicode_fol_kit.hol`-only.
+The **runner** entry points (`find_isabelle`, `isabelle_available`, `isabelle_decide_modal`, `isabelle_decide_fol`, `isabelle_decide_counterfactual`, `check_theory`, and the verdict dataclasses) *are* exposed both top-level and under `unicode_logic_kit.hol`. The pure exporters above are `unicode_logic_kit.hol`-only.
 
 - **Full modal family.** `to_isabelle_modal(φ, mode="constant", frame="K", …)` emits a real, loadable Isabelle theory (`theory … imports Main begin … end`, every lifted operator as an abbreviation, frame + domain axioms, the formula lifted into the embedding, and a genuine `lemma`). `to_thf_modal_full(φ, mode, frame, systems=…)` is the THF counterpart. Both cover **the whole modal family the AST expresses**: alethic □/◇, **epistemic** `K_a` / **doxastic** `B_a` / **assertive** `Say_a` / **bouletic** `Want_a` (all agent-indexed — the agent is a first-class *term*, so a bound `K_x` genuinely quantifies over agents; `Say`/`Want` are plain K-boxes over their own relations, with no frame axioms), **deontic** `Ⓞ`/`Ⓟ`, **temporal** `Ⓖ`/`Ⓕ`/`Ⓝ` and the **past-tense** `⒣`/`⒫`/`⒴` (box/diamond over the *converse* of the henceforth `t`, resp. the converse of the one-step `n` — the converse of a refl+trans relation is refl+trans, so the same axioms constrain both directions), and the **hybrid** `Nominal`/`@` (world constants `nom_<name>`). The entity type is the **monomorphic** `typedecl e` — a polymorphic `'a` would give every agent-constant occurrence its own type instance and falsify the agent-K axiom (a false INVALID nitpick would "certify"). Both emitters also cover the **binary interval operators** `Until` (Ⓤ) and `Since` (⒮): Isabelle as **inductive least-fixpoint predicates** `muntil` / `msince` over the one-step relation `n`, THF as the equivalent **impredicative Knaster–Tarski fixpoints** (TH0 quantifies over predicates), both matching `satisfies_modal`'s finite forward / backward path search faithfully on every frame. `Until` / `Since` are **not** first-order definable, so `qml_translate` still rejects them with a pointer here.
 - **Classical FOL / MSFOL.** `to_thf_fol` / `to_isabelle_fol` (and the `to_thf_msfol` / `to_isabelle_msfol` variants, which relativise each sort to a guard predicate) emit the formula as a HOL conjecture / lemma.
@@ -43,8 +43,8 @@ Each embedding is faithful to its in-toolkit ground-truth oracle (`satisfies_mod
 The simplest exporters. `to_thf_fol` returns a TPTP-THF problem string; `to_isabelle_fol` returns a loadable Isabelle theory. Predicates become `$i > $o` declarations, the formula becomes the `goal` conjecture, and `=` / `≠` are the *uninterpreted* predicates `feq` / `fneq` (so `∀x. x = x` is **not** a theorem of the embedding — no equality axioms are assumed).
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.hol import to_thf_fol, to_isabelle_fol
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.hol import to_thf_fol, to_isabelle_fol
 
 p = MSFLParser().parse
 syllogism = p("∀x (Human(x) → Mortal(x))")
@@ -166,7 +166,7 @@ print("fneq @ n1 @ n2" in to_thf_fol(p("1 ≠ 2")))         # → True   (a goal
 Control the theory and lemma names to match your project structure, and choose a concrete proof tactic instead of the `oops` hook:
 
 ```python
-from unicode_fol_kit.hol import ISABELLE_TACTICS
+from unicode_logic_kit.hol import ISABELLE_TACTICS
 
 # Default names
 isa_default = to_isabelle_fol(p("P(x) → P(x)"))
@@ -194,11 +194,11 @@ print("oops" in isa_auto)        # → False  (the proof replaced the hook)
 
 ## Many-sorted FOL: `to_thf_msfol` / `to_isabelle_msfol`
 
-The MSFOL exporters take a formula parsed with `MSFLParser(many_sorted=True)` and **relativise each sort to a guard predicate** of type `$i > $o`: a `∀x:Person …` becomes `! [X: $i] : ( person @ X ) => …`, a `∃y:Document …` becomes `? [Y: $i] : ( document @ Y ) & …`. There is one untyped individual type and one guard per sort. **Import `to_isabelle_msfol` from `unicode_fol_kit.hol`** — it is *not* available through `from unicode_fol_kit import *`.
+The MSFOL exporters take a formula parsed with `MSFLParser(many_sorted=True)` and **relativise each sort to a guard predicate** of type `$i > $o`: a `∀x:Person …` becomes `! [X: $i] : ( person @ X ) => …`, a `∃y:Document …` becomes `? [Y: $i] : ( document @ Y ) & …`. There is one untyped individual type and one guard per sort. **Import `to_isabelle_msfol` from `unicode_logic_kit.hol`** — it is *not* available through `from unicode_logic_kit import *`.
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.hol import to_thf_msfol, to_isabelle_msfol
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.hol import to_thf_msfol, to_isabelle_msfol
 
 ms = MSFLParser(many_sorted=True).parse
 f = ms("∀x:Person ∃y:Document Wrote(x, y)")
@@ -269,9 +269,9 @@ Classical FOL assumes every term denotes an *existing* individual, so universal 
 `semantics.free_logic`'s own object-language existence predicate — written `E!(t)` directly in a formula (it has no surface grammar of its own; build it with `Atom("E!", [t])`) — is emitted as this same guard predicate, guarded only by `D*` of the proper subterms of `t`: with the tie it already means exactly "`t` denotes and is existing". Equality is HOL's own identity under the same guard, `s = t ↦ D*(s) ∧ D*(t) ∧ s = t` — `free_holds` compares the referents of denoting terms by identity, and an uninterpreted `feq` would let nitpick certify countermodels to free-logic validities such as `∀x ∀y ((x = y ∧ P(x)) → P(y))`.
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.hol import to_thf_free, to_isabelle_free
-from unicode_fol_kit.fol.nodes import Atom, Constant
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.hol import to_thf_free, to_isabelle_free
+from unicode_logic_kit.fol.nodes import Atom, Constant
 
 p = MSFLParser().parse
 every_unicorn_is_magical = p("∀x (Unicorn(x) → Magical(x))")
@@ -292,7 +292,7 @@ print(to_thf_free(every_unicorn_is_magical))
 The textbook free-logic point: does "every unicorn is magical" plus "Pegasus is a unicorn" let you conclude "Pegasus is magical"? Only with the extra premise that Pegasus **exists** — the object-language `E!` atom, built directly since it has no surface syntax:
 
 ```python
-from unicode_fol_kit.fol.nodes import Implies, And
+from unicode_logic_kit.fol.nodes import Implies, And
 
 pegasus = Constant("pegasus")
 pegasus_is_unicorn = p("Unicorn(pegasus)")
@@ -355,8 +355,8 @@ Use `semantics.free_logic.free_holds(formula, model, policy="supervaluation")` d
 The SO exporters map predicate quantifiers `∀P` / `∃P` directly onto **native higher-order quantifiers** of the target — a `P` of arity 1 has type `$i > $o` (THF) / `i \<Rightarrow> bool` (Isabelle). This is **standard (full) second-order semantics**, which is not even semi-decidable, so a sound prover may fail to close a valid goal. Parse with `MSFLParser(second_order=True)`.
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.hol import to_thf_so, to_isabelle_so
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.hol import to_thf_so, to_isabelle_so
 
 so = MSFLParser(second_order=True).parse
 
@@ -389,7 +389,7 @@ print("oops" in isa_so)                       # → True   (left for an external
 Binders are renamed away from every user symbol and every declared or built-in Isabelle name, so a quantifier never shadows a constant of the same spelling: `x` becomes `x_2` when a constant `x` is declared. The same holds for `to_isabelle_to` and `to_isabelle_ho_modal`:
 
 ```python
-from unicode_fol_kit.fol.nodes import Quantifier, Variable, Constant, Atom
+from unicode_logic_kit.fol.nodes import Quantifier, Variable, Constant, Atom
 
 x = Variable("x")
 shadow = Quantifier("∀", x, Atom("P", [x, Constant("x")]))    # ∀x P(x, x), the second x a constant
@@ -416,8 +416,8 @@ Parse modal formulas with `MSFLParser(modal=True)`. The deontic / temporal opera
 `frame=` (one of `K` / `T` / `S4` / `S5`) chooses which frame axioms come into scope. Over `K` the T-axiom `□P → P` is *not* derivable; over a reflexive (`T`) frame it is — the embedding just emits the right `axiom` lines and the prover does the rest.
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.hol import to_thf_modal_full, to_isabelle_modal
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.hol import to_thf_modal_full, to_isabelle_modal
 
 pm = MSFLParser(modal=True).parse
 t_axiom = pm("□P → P")
@@ -549,10 +549,10 @@ to_isabelle_modal(pm("K_alice P"), systems={"epistemic": "GL"})
 | `"sincerity"` | `Say_a φ → B_a φ` | `rb ⊆ rs` | `rb_in_rs` |
 | `"ought_implies_can"` | `Ⓞ φ → ◇φ` | `∀w ∃v. d w v ∧ r w v` | `d_meets_r` |
 
-`unicode_fol_kit.hol.BRIDGES` is the list of accepted names; `to_thf_modal_full`, `to_isabelle_modal` / `isabelle_modal_theory`, `modal_axiom_names` and `isabelle_decide_modal` all take the same `bridges=` argument and emit facts under the same names, so one grep finds both routes.
+`unicode_logic_kit.hol.BRIDGES` is the list of accepted names; `to_thf_modal_full`, `to_isabelle_modal` / `isabelle_modal_theory`, `modal_axiom_names` and `isabelle_decide_modal` all take the same `bridges=` argument and emit facts under the same names, so one grep finds both routes.
 
 ```python
-from unicode_fol_kit.hol import BRIDGES, to_isabelle_modal, to_thf_modal_full
+from unicode_logic_kit.hol import BRIDGES, to_isabelle_modal, to_thf_modal_full
 
 BRIDGES   # → ('knowledge_implies_belief', 'sincerity', 'ought_implies_can')
 
@@ -614,8 +614,8 @@ print('lemma modal_goal:' in sample)                 # → True
 `to_thf_intuitionistic` / `to_isabelle_intuitionistic` route an intuitionistic propositional formula through the **Gödel–McKinsey–Tarski** box-translation into S4 and then the alethic SSE, so emitted theorem-hood matches intuitionistic validity. The translation itself is exposed as `gmt_translate`, and its decidable S4 oracle as `gmt_is_s4_valid`.
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.hol import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.hol import (
     to_thf_intuitionistic, to_isabelle_intuitionistic,
     gmt_translate, gmt_is_s4_valid,
 )
@@ -666,7 +666,7 @@ print("oops" in isa_nontheorem)        # → True   (left open — not a theorem
 `to_thf_k3lp(φ, system="K3"|"LP")` / `to_isabelle_k3lp` encode the three truth values, the strong-Kleene connective functions, and the designated set, so emitted theorem-hood matches K3 / LP validity. The law of excluded middle is a K3 non-theorem (the designated set is `{T}`) but holds in LP:
 
 ```python
-from unicode_fol_kit.hol import to_thf_k3lp
+from unicode_logic_kit.hol import to_thf_k3lp
 
 lem = p("P ∨ ¬P")
 thf_k3 = to_thf_k3lp(lem, system="K3")
@@ -683,8 +683,8 @@ print(thf_k3 != thf_lp)              # → True   (different designated sets)
 `to_thf_k3lp` / `to_isabelle_k3lp` are the K3/LP specialisation of a data-driven encoding that works for **any** `TruthMatrix` — `to_thf_matrix(φ, matrix)` / `to_isabelle_matrix(φ, matrix)` (plus `to_thf_matrix_entailment` / `to_isabelle_matrix_entailment` for a premises-conclusion goal) read the value set, the per-connective tables, and the designated subset straight off the matrix object, so the four-valued Belnap–Dunn **FDE** — or any matrix you build yourself with `TruthMatrix.from_functions` — exports exactly like K3/LP do:
 
 ```python
-from unicode_fol_kit.semantics.matrix import FDE_MATRIX
-from unicode_fol_kit.hol import to_thf_matrix, to_isabelle_matrix
+from unicode_logic_kit.semantics.matrix import FDE_MATRIX
+from unicode_logic_kit.hol import to_thf_matrix, to_isabelle_matrix
 
 lem = p("P ∨ ¬P")
 thf_fde = to_thf_matrix(lem, FDE_MATRIX)
@@ -700,10 +700,10 @@ print("theory Matrix_Validity" in isa_fde)   # → True
 
 ## Actually running it: the Isabelle runner
 
-If a local **Isabelle/HOL** is installed, `unicode_fol_kit.hol.isabelle_runner` writes the embedding to a scratch session, runs `isabelle build`, and reads the verdict off the build. It is **opt-in**: with no Isabelle present everything above still works and these calls raise a clear `IsabelleNotAvailable` (the live tests skip). The cheap predicate is `isabelle_available()`; `find_isabelle()` locates an install and returns an `IsabelleInstall` (or `None`). These two are cheap and safe to call unconditionally:
+If a local **Isabelle/HOL** is installed, `unicode_logic_kit.hol.isabelle_runner` writes the embedding to a scratch session, runs `isabelle build`, and reads the verdict off the build. It is **opt-in**: with no Isabelle present everything above still works and these calls raise a clear `IsabelleNotAvailable` (the live tests skip). The cheap predicate is `isabelle_available()`; `find_isabelle()` locates an install and returns an `IsabelleInstall` (or `None`). These two are cheap and safe to call unconditionally:
 
 ```python
-from unicode_fol_kit import isabelle_available, find_isabelle
+from unicode_logic_kit import isabelle_available, find_isabelle
 
 # Cheap, side-effect-free probe. Returns True only if an Isabelle was located.
 available = isabelle_available()
@@ -735,7 +735,7 @@ Every line below that actually invokes Isabelle is gated with `# doctest: +SKIP`
 
 ```python
 # doctest: +SKIP
-from unicode_fol_kit import MSFLParser, isabelle_decide_modal
+from unicode_logic_kit import MSFLParser, isabelle_decide_modal
 
 pm = MSFLParser(modal=True).parse
 
@@ -748,7 +748,7 @@ print(isabelle_decide_modal(pm("□P → □□P"), frame="S4"))  # ModalVerdict
 The verdict is a `ModalVerdict` dataclass; you can build one yourself (no Isabelle needed) to see its fields — `status`, `frame`, `mode`, `method`, `countermodel`, `prove_output`, `refute_output`, `prove_elapsed`, `refute_elapsed`, `infra_error`:
 
 ```python
-from unicode_fol_kit import ModalVerdict
+from unicode_logic_kit import ModalVerdict
 print(list(ModalVerdict.__dataclass_fields__.keys()))
 # → ['status', 'frame', 'mode', 'method', 'countermodel', 'prove_output',
 #    'refute_output', 'prove_elapsed', 'refute_elapsed', 'infra_error']
@@ -780,7 +780,7 @@ print(isabelle_decide_modal(pm("K_alice P → B_alice P"),
 
 ```python
 # doctest: +SKIP
-from unicode_fol_kit import MSFLParser, isabelle_decide_fol
+from unicode_logic_kit import MSFLParser, isabelle_decide_fol
 
 p = MSFLParser().parse
 print(isabelle_decide_fol(p("P(a) → P(a)")))                 # FolVerdict[valid (by prove-battery), ...]
@@ -794,7 +794,7 @@ print(isabelle_decide_fol(ms("∀x:Person P(x) → ∀x:Person P(x)"), msfol=Tru
 `FolVerdict` has the same fields minus `frame` / `mode`:
 
 ```python
-from unicode_fol_kit import FolVerdict
+from unicode_logic_kit import FolVerdict
 print(list(FolVerdict.__dataclass_fields__.keys()))
 # → ['status', 'method', 'countermodel', 'prove_output', 'refute_output',
 #    'prove_elapsed', 'refute_elapsed', 'infra_error']
@@ -806,7 +806,7 @@ print(list(FolVerdict.__dataclass_fields__.keys()))
 
 ```python
 # doctest: +SKIP
-from unicode_fol_kit import MSFLParser, isabelle_decide_counterfactual
+from unicode_logic_kit import MSFLParser, isabelle_decide_counterfactual
 
 p = MSFLParser(modal=True).parse
 print(isabelle_decide_counterfactual(p("A □→ A")))
@@ -838,8 +838,8 @@ A modal operator under a counterfactual is **rejected** (`NotImplementedError`),
 `to_thf_conditional(φ, *, centering="weak")` is the THF (TH0) sibling of `isabelle_conditional_theory`, for a higher-order ATP (Leo-III, Vampire-THF, Satallax) instead of Isabelle — same sphere embedding, same `nested`/centering **premises**, same fragment and refusals. Unlike a line-for-line transcription of the Isabelle preamble, the connectives are **inlined at the current world** rather than routed through separately-declared `NegC`/`AndC`/`OrC`/`ImpC`/`IffC`/`CondC` combinators, and `nested`/`weakly_centered`/`strongly_centered` are stated directly of the one fixed sphere system rather than as a schema over an arbitrary one — both changes are meaning-preserving (see the comment above `isabelle_conditional._THF_PRELUDE`) and were made because the literal transcription measurably could not be discharged by Vampire 5.0.1's default portfolio (a battery of THF micro-examples, run by hand, needed real higher-order unification to match a combinator's parameter against another combinator's partial application, and that did not close even trivial goals in 60s), while this form is solved in well under a second:
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.hol import to_thf_conditional
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.hol import to_thf_conditional
 
 p = MSFLParser(modal=True).parse
 print(to_thf_conditional(p("(A ∧ (A □→ B)) → B")))
@@ -858,7 +858,7 @@ Cross-checked by hand against a real Vampire 5.0.1 (inside WSL), for every schem
 
 ```python
 # doctest: +SKIP
-from unicode_fol_kit import MSFLParser, isabelle_decide_relevant
+from unicode_logic_kit import MSFLParser, isabelle_decide_relevant
 
 p = MSFLParser().parse
 print(isabelle_decide_relevant(p("(P ∧ Q) → P")))
@@ -874,8 +874,8 @@ This gives `rel_valid`'s bounded `True` a certified positive counterpart: where 
 `to_thf_relevant(φ)` is the THF (TH0) sibling of `to_isabelle_relevant`, for a higher-order ATP (Leo-III, Vampire-THF, Satallax) instead of Isabelle — same shallow embedding (`N`/`star`/`R` uninterpreted, frame conditions bundled into a `wellformed` **premise**), same fragment and refusals. As with `to_thf_conditional` above, the connectives (`NegC`/`AndC`/`OrC`/`ImpC`/`IffC`) are inlined at the current world rather than declared as separate combinators applied to already-built terms — the same fix, made for the same measured reason (see the comment above `isabelle_relevant._THF_PRELUDE`):
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.hol import to_thf_relevant
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.hol import to_thf_relevant
 
 p = MSFLParser().parse
 print(to_thf_relevant(p("(P ∧ Q) → P")))
@@ -910,7 +910,7 @@ print(isabelle_decide_free(pegasus_self_id, policy="positive"))   # → FolVerdi
 `policy="supervaluation"` raises `NotImplementedError` **before** the Isabelle-install lookup, so a typo-free but deliberately-unsupported policy is reported as exactly that — not masked by `IsabelleNotAvailable` on a machine with no Isabelle:
 
 ```python
-from unicode_fol_kit.hol import isabelle_decide_free
+from unicode_logic_kit.hol import isabelle_decide_free
 
 try:
     isabelle_decide_free(pegasus_self_id, policy="supervaluation")
@@ -924,8 +924,8 @@ except NotImplementedError as e:
 `hol.isabelle_substructural` takes a different shape from the exporters above: rather than asking Isabelle to *decide* a formula, it **replays** a derivation the toolkit's own cut-free search (`ill_prove` / `lambek_prove`) already found, as a machine-checked lemma. The sequent rules become an Isabelle `inductive derivable` predicate over a deep-embedded `datatype` — a **multiset-via-list-plus-`Exch`** antecedent for ILL, and a plain **list** (no `Exch` — order is exactly what Lambek tracks) for the Lambek calculus — and the concrete derivation tree is transcribed one `intro` rule per node, so a successful build is Isabelle independently re-checking a proof the toolkit already has, not searching for one itself.
 
 ```python
-from unicode_fol_kit import MSFLParser, ill_prove
-from unicode_fol_kit.hol.isabelle_substructural import to_isabelle_ill, ill_derivation_theory
+from unicode_logic_kit import MSFLParser, ill_prove
+from unicode_logic_kit.hol.isabelle_substructural import to_isabelle_ill, ill_derivation_theory
 
 lp = MSFLParser(linear=True).parse
 theory = to_isabelle_ill([lp("A"), lp("A ⊸ B")], lp("B"))
@@ -943,7 +943,7 @@ ill_derivation_theory(d) == theory       # → True
 `check_theory(theory_text, theory_name)` builds an arbitrary self-contained theory and returns a `BuildResult` — used internally, and handy for the non-modal exporters (`to_isabelle_fol`, `to_isabelle_k3lp`, `to_isabelle_intuitionistic`, …), whose emitted proofs are themselves built against real Isabelle in the test suite. The `BuildResult` fields are `ok`, `exit_code`, `output`, `theory_name`, `session`, `elapsed`:
 
 ```python
-from unicode_fol_kit.hol import BuildResult
+from unicode_logic_kit.hol import BuildResult
 print(list(BuildResult.__dataclass_fields__.keys()))
 # → ['ok', 'exit_code', 'output', 'theory_name', 'session', 'elapsed']
 ```
@@ -951,8 +951,8 @@ print(list(BuildResult.__dataclass_fields__.keys()))
 A round trip — emit a provable intuitionistic theory, then build it (the build call needs a local Isabelle, so it is skipped here):
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.hol import to_isabelle_intuitionistic, check_theory
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.hol import to_isabelle_intuitionistic, check_theory
 
 p = MSFLParser().parse
 theory = to_isabelle_intuitionistic(p("P → P"))      # a real, discharged proof
@@ -966,13 +966,13 @@ print(result.ok, result.exit_code, result.elapsed)   # doctest: +SKIP
 When no Isabelle is present, `check_theory` / `isabelle_decide_*` raise `IsabelleNotAvailable`; catch it (or gate on `isabelle_available()`) to keep the pure-export path working everywhere:
 
 ```python
-from unicode_fol_kit.hol import IsabelleNotAvailable
+from unicode_logic_kit.hol import IsabelleNotAvailable
 print(issubclass(IsabelleNotAvailable, Exception))    # → True
 ```
 
 ## Deep and shallow embeddings with faithfulness proofs
 
-The exporters above give one *minimal (lightweight) shallow* embedding — accessibility and valuation as `consts`, formulas as `w ⇒ bool` — which is the style that automates best. The `unicode_fol_kit.hol.deepshallow` subpackage reproduces the full construction of Benzmüller, *Faithful Logic Embeddings in HOL — Deep and Shallow* (arXiv:2502.19311): for one object logic it emits **all three** embeddings side by side and the **machine-checked faithfulness proofs** relating them.
+The exporters above give one *minimal (lightweight) shallow* embedding — accessibility and valuation as `consts`, formulas as `w ⇒ bool` — which is the style that automates best. The `unicode_logic_kit.hol.deepshallow` subpackage reproduces the full construction of Benzmüller, *Faithful Logic Embeddings in HOL — Deep and Shallow* (arXiv:2502.19311): for one object logic it emits **all three** embeddings side by side and the **machine-checked faithfulness proofs** relating them.
 
 Each emitted theory contains
 
@@ -984,9 +984,9 @@ Each emitted theory contains
 Unlike the emit-only exporters, these theories are **verified end to end**: a green `check_theory` build means Isabelle's kernel discharged every faithfulness proof. Four worlds-based logics are covered — propositional modal K, intuitionistic (Kripke), Lewis counterfactual (sphere), and relevant logic B (Routley–Meyer):
 
 ```python
-from unicode_fol_kit.fol.nodes import Atom, Implies, Box
-from unicode_fol_kit.hol import modal_faithfulness_theory, modal_to_deep, check_theory
-from unicode_fol_kit.hol.deepshallow import AtomConsts
+from unicode_logic_kit.fol.nodes import Atom, Implies, Box
+from unicode_logic_kit.hol import modal_faithfulness_theory, modal_to_deep, check_theory
+from unicode_logic_kit.hol.deepshallow import AtomConsts
 
 # The deep embedding is propositional, so atoms are 0-ary (a bare term-valued
 # identifier parses as a hybrid-logic *nominal* in modal mode, not a
@@ -1010,11 +1010,11 @@ The four logics above are all *propositional*: their deep datatype has no binder
 Object variables are de Bruijn-indexed (`obj = BVar nat | FVar s`, `FVar` naming a rigid constant) so `truthD` needs no capture-avoiding substitution: going under `∀`/`∃` just prepends one entry to an explicit assignment stack (`case_nat d e`). The one genuinely new step beyond Tier 1's proofs is generalizing that stack too — `induct f arbitrary: e x` instead of `arbitrary: x` — which is still a single line:
 
 ```python
-from unicode_fol_kit.fol.nodes import Atom, Implies, Box, Quantifier, Variable
-from unicode_fol_kit.fol.qml import BARCAN
-from unicode_fol_kit.hol.deepshallow.qml import qml_to_deep, qml_deep_faithfulness_theory
-from unicode_fol_kit.hol.deepshallow import AtomConsts
-from unicode_fol_kit.hol import check_theory
+from unicode_logic_kit.fol.nodes import Atom, Implies, Box, Quantifier, Variable
+from unicode_logic_kit.fol.qml import BARCAN
+from unicode_logic_kit.hol.deepshallow.qml import qml_to_deep, qml_deep_faithfulness_theory
+from unicode_logic_kit.hol.deepshallow import AtomConsts
+from unicode_logic_kit.hol import check_theory
 
 # BARCAN = ◇∃x A(x) → ∃x ◇A(x) (valid under a constant domain). qml_to_deep
 # takes TWO required AtomConsts resolvers — atoms for predicate symbols,

@@ -24,10 +24,10 @@ by `test_excluded_middle_is_supertrue_though_each_disjunct_is_a_gap`.
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Implies, Quantifier, Variable, Constant,
 )
-from unicode_fol_kit.semantics.free_logic import (
+from unicode_logic_kit.semantics.free_logic import (
     FreeModel, free_satisfies, free_holds,
     free_is_valid, free_entails, free_find_model, free_countermodel,
     SUPERVALUATION_MAX_GAPS,

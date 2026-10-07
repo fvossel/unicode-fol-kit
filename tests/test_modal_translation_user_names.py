@@ -19,11 +19,11 @@ from itertools import product
 
 import pytest
 
-from unicode_fol_kit.atp import resolution
-from unicode_fol_kit.atp.logic_backends import HybridBackend
-from unicode_fol_kit.fol import modal_translation as mt
-from unicode_fol_kit.fol import qml
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.atp import resolution
+from unicode_logic_kit.atp.logic_backends import HybridBackend
+from unicode_logic_kit.fol import modal_translation as mt
+from unicode_logic_kit.fol import qml
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Box, Constant, Diamond, Iff, Implies, Not, Or, Quantifier, Variable, free_variables,
 )
 
@@ -189,7 +189,7 @@ def test_a_variable_named_like_a_chosen_current_world_is_renamed_too():
 
 
 def test_a_renamed_variable_is_renamed_inside_a_function_term_too():
-    from unicode_fol_kit.fol.nodes import Function
+    from unicode_logic_kit.fol.nodes import Function
     image = mt.standard_translation(P(Function("f", [V("w")])))
     assert _text(image) == "P(f(x0), w)"
 
@@ -204,7 +204,7 @@ def test_a_constant_named_like_a_world_variable_is_not_a_variable_of_the_image()
 
 
 def test_a_predicate_or_a_nominal_named_like_a_world_variable_is_not_reused_as_one():
-    from unicode_fol_kit.fol.nodes import Nominal
+    from unicode_logic_kit.fol.nodes import Nominal
     image = mt.standard_translation(Box(Atom("w0", [])))
     assert [n.variable.name for n in image.walk() if isinstance(n, Quantifier)] == ["w1"]
     nominal = mt.standard_translation(Box(Nominal("w0")))

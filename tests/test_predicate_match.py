@@ -1,18 +1,18 @@
-"""Tests for unicode_fol_kit.eval.predicate_match — predicate-aligned string match."""
+"""Tests for unicode_logic_kit.eval.predicate_match — predicate-aligned string match."""
 
 import pytest
 
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     formulas_are_identical,
     match_predicates,
     formulas_are_matched_identical,
     align_symbols,
 )
-from unicode_fol_kit.eval.predicate_match import (
+from unicode_logic_kit.eval.predicate_match import (
     _levenshtein, _normalised_distance, _symbol_inventory,
 )
-from unicode_fol_kit.fol.signature import inventory_of, Signature
-from unicode_fol_kit.fol.nodes import Atom, Constant, Function, Variable, And
+from unicode_logic_kit.fol.signature import inventory_of, Signature
+from unicode_logic_kit.fol.nodes import Atom, Constant, Function, Variable, And
 
 
 # ---------------------------------------------------------------------------
@@ -156,19 +156,19 @@ def test_matched_identical_false_for_structural_difference():
 
 # ---------------------------------------------------------------------------
 # _symbol_inventory — the LENIENT (never-raising) inventory shared with
-# unicode_fol_kit.fol.signature.inventory_of (roadmap item C5).
+# unicode_logic_kit.fol.signature.inventory_of (roadmap item C5).
 # ---------------------------------------------------------------------------
 #
 # These are adversarial cases Signature.from_formulas REFUSES outright (see
 # tests/test_signature.py's own from_formulas conflict tests): predicate_
 # match's whole purpose is scoring possibly-malformed model output, so its
 # inventory walk must keep tolerating exactly what it tolerated before the
-# swap onto the shared unicode_fol_kit.fol.signature.inventory_of walk.
+# swap onto the shared unicode_logic_kit.fol.signature.inventory_of walk.
 
 def test_symbol_inventory_is_exactly_inventory_of():
     """_symbol_inventory is a pure delegation, not a coincidentally-agreeing
     second implementation — same object identity as fol.signature's walk."""
-    from unicode_fol_kit.eval import predicate_match
+    from unicode_logic_kit.eval import predicate_match
     assert predicate_match._symbol_inventory is inventory_of
 
 
@@ -214,7 +214,7 @@ def test_symbol_inventory_allows_predicate_and_function_sharing_a_name():
 def test_symbol_inventory_excludes_builtin_operators():
     """'=' and '+' are the kit's built-in operators, never user vocabulary —
     matches Signature's identical classification (see signature.py)."""
-    from unicode_fol_kit.fol.nodes import Number
+    from unicode_logic_kit.fol.nodes import Number
     n = Atom("=", [Function("+", [Constant("a"), Number(1)]), Constant("b")])
     preds, funcs, consts = _symbol_inventory(n)
     assert preds == set()

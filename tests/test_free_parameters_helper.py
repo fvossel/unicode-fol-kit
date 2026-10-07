@@ -7,9 +7,9 @@ problem has. The expectations are written down in each test.
 
 import pytest
 
-from unicode_fol_kit.fol._free_parameters import free_parameter_names, parameterize
-from unicode_fol_kit.fol._identifiers import symbol_names
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol._free_parameters import free_parameter_names, parameterize
+from unicode_logic_kit.fol._identifiers import symbol_names
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Count, Function, Implies, Number, Quantifier, SortedQuantifier,
     Variable, free_variables,
 )

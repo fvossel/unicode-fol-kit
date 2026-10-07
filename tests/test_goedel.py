@@ -14,13 +14,13 @@ proofs do not finish at all.
 
 import pytest
 
-from unicode_fol_kit.hol.goedel import (
+from unicode_logic_kit.hol.goedel import (
     VARIANTS, axiom_texts, axioms, check_variant, conclusions, goedel_theory,
     variant_difference,
 )
-from unicode_fol_kit.hol.isabelle_runner import isabelle_available
-from unicode_fol_kit.fol.nodes import analyse_signatures
-from unicode_fol_kit.fol._ho_nodes import INDIVIDUAL
+from unicode_logic_kit.hol.isabelle_runner import isabelle_available
+from unicode_logic_kit.fol.nodes import analyse_signatures
+from unicode_logic_kit.fol._ho_nodes import INDIVIDUAL
 
 
 # --- the formulas -----------------------------------------------------------
@@ -42,7 +42,7 @@ def test_the_difference_is_stated_in_the_kits_own_syntax():
 
 @pytest.mark.parametrize("variant", VARIANTS)
 def test_every_axiom_parses_and_roundtrips(variant):
-    from unicode_fol_kit import MSFLParser
+    from unicode_logic_kit import MSFLParser
     parser = MSFLParser(third_order=True, modal=True)
     for name, formula in axioms(variant).items():
         assert parser.parse(formula.to_unicode_str()) == formula, name
@@ -60,7 +60,7 @@ def test_the_axiom_set_really_is_third_order():
 
 def test_modal_collapse_quantifies_over_propositions_not_properties():
     """``∀Q (Q → □Q)`` binds a NULLARY predicate — a proposition variable."""
-    from unicode_fol_kit.fol.nodes import SecondOrderQuantifier
+    from unicode_logic_kit.fol.nodes import SecondOrderQuantifier
     collapse = conclusions()["MC"]
     assert isinstance(collapse, SecondOrderQuantifier)
     assert collapse.arity == 0
@@ -99,7 +99,7 @@ def test_both_theories_are_stated_in_S5():
 
 def test_the_theory_is_emitted_by_the_generic_embedding():
     """Nothing about the argument is special-cased in the exporter."""
-    from unicode_fol_kit.hol.ho_modal import ho_modal_definitions
+    from unicode_logic_kit.hol.ho_modal import ho_modal_definitions
     assert ho_modal_definitions() in goedel_theory("scott")
 
 

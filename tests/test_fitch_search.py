@@ -12,12 +12,12 @@ import random
 
 import pytest
 
-from unicode_fol_kit import is_valid
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import is_valid
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Implies, Iff, Quantifier, Variable, Constant,
 )
-from unicode_fol_kit.atp.fitch_search import find_fitch_proof, fitch_prove, is_valid_fitch
-from unicode_fol_kit.atp.fitch import verify_proof
+from unicode_logic_kit.atp.fitch_search import find_fitch_proof, fitch_prove, is_valid_fitch
+from unicode_logic_kit.atp.fitch import verify_proof
 
 P, Q, R = Atom("P", ()), Atom("Q", ()), Atom("R", ())
 x = Variable("x")
@@ -142,6 +142,6 @@ def test_is_valid_fitch_has_high_recall_on_shallow_tautologies():
 
 
 def test_top_level_exports():
-    import unicode_fol_kit as u
+    import unicode_logic_kit as u
     for name in ("find_fitch_proof", "fitch_prove", "is_valid_fitch"):
         assert hasattr(u, name) and name in u.__all__, name

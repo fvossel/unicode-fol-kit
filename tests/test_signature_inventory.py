@@ -1,9 +1,9 @@
-"""Tests for :func:`unicode_fol_kit.fol.signature.inventory_of` — the LENIENT,
+"""Tests for :func:`unicode_logic_kit.fol.signature.inventory_of` — the LENIENT,
 never-raising symbol-inventory walk factored out of
-:mod:`unicode_fol_kit.eval.predicate_match` (roadmap item C5).
+:mod:`unicode_logic_kit.eval.predicate_match` (roadmap item C5).
 
 No snapshot tests: every expected value below is derived BY HAND against the
-function's documented contract (see ``unicode_fol_kit/fol/signature.py``'s
+function's documented contract (see ``unicode_logic_kit/fol/signature.py``'s
 module docstring and :func:`inventory_of`'s own docstring), mirroring
 ``tests/test_signature.py``'s own convention. Formulas are built directly
 from the AST node constructors for full control over exactly which
@@ -12,12 +12,12 @@ conflicting/ambiguous shapes are exercised.
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Variable, Constant, SortedConstant, Function, Atom, Not, And,
     Implies, Quantifier, SortedQuantifier, Number,
 )
-from unicode_fol_kit.fol.signature import Signature, PredicateDecl, FunctionDecl, inventory_of
-from unicode_fol_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.signature import Signature, PredicateDecl, FunctionDecl, inventory_of
+from unicode_logic_kit.fol.msflparser import MSFLParser
 
 _MODAL = MSFLParser(modal=True)
 

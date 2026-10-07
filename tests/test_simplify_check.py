@@ -1,4 +1,4 @@
-"""Tests for unicode_fol_kit.fol.simplify_check.
+"""Tests for unicode_logic_kit.fol.simplify_check.
 
 Every expected value is hand-derived in a comment above the assertion, never
 read off from running the code first. Two independent things are checked
@@ -32,15 +32,15 @@ from contextlib import contextmanager
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Quantifier, Variable, Constant, Number, Count,
     SortedQuantifier,
 )
-from unicode_fol_kit.fol.simplify_check import (
+from unicode_logic_kit.fol.simplify_check import (
     SimplifyResult, simplify_for_checking,
     count_from_existential_chain, expand_count,
 )
-from unicode_fol_kit.atp.z3_equivalence import formulas_are_equivalent
+from unicode_logic_kit.atp.z3_equivalence import formulas_are_equivalent
 
 
 def P(*args):

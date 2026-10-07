@@ -26,15 +26,15 @@ These tests pin four things that could silently drift apart:
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import (
     Atom, Constant, Might, Not, Or, Variable, Would,
 )
-from unicode_fol_kit.hol.isabelle_conditional import (
+from unicode_logic_kit.hol.isabelle_conditional import (
     isabelle_conditional_theory, battery_proof, nitpick_proof,
     to_isabelle_conditional, to_thf_conditional,
 )
-from unicode_fol_kit.semantics.conditional import (
+from unicode_logic_kit.semantics.conditional import (
     CENTERING_LEVELS, DEFAULT_MAX_WORLDS, check_centering, cf_valid,
     cf_countermodel, cf_satisfies, CounterfactualModel,
     _sphere_chains, _centering_ok,

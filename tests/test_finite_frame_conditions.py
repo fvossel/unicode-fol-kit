@@ -5,8 +5,8 @@ These three modal axioms have no first-order frame condition valid at every
 cardinality (see ``fol/frames.py``'s "What is NOT first-order definable"),
 but each DOES have a finite structural characterisation — irreflexive,
 antisymmetric, and "every world reaches a terminal point" respectively —
-that :func:`unicode_fol_kit.fol.frames.holds_on_finite_frame` now decides
-directly, and that :mod:`unicode_fol_kit.atp.kripke_enum` therefore now
+that :func:`unicode_logic_kit.fol.frames.holds_on_finite_frame` now decides
+directly, and that :mod:`unicode_logic_kit.atp.kripke_enum` therefore now
 refutes formulas over, exactly like it already did for every first-order
 condition.
 
@@ -30,13 +30,13 @@ honest ``exhausted``/``bound_hit``.
 
 import pytest
 
-from unicode_fol_kit.atp.kripke_enum import modal_enum_search, KripkeEnumBackend
-from unicode_fol_kit.atp.modal_tableau import is_modal_valid
-from unicode_fol_kit.atp.protocol import REFUTED, UNKNOWN
-from unicode_fol_kit.fol.frames import (
+from unicode_logic_kit.atp.kripke_enum import modal_enum_search, KripkeEnumBackend
+from unicode_logic_kit.atp.modal_tableau import is_modal_valid
+from unicode_logic_kit.atp.protocol import REFUTED, UNKNOWN
+from unicode_logic_kit.fol.frames import (
     UnsupportedFrameCondition, holds_on_finite_frame, modal_axiom,
 )
-from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
+from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
 
 #: The 2-world "cluster": both worlds see each other and themselves. It is
 #: reflexive and transitive but neither antisymmetric NOR does either world

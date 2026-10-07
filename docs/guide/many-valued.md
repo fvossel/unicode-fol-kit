@@ -8,7 +8,7 @@ All inputs are ordinary classical formulas built with `MSFLParser()`; there is n
 |---|---|---|
 | Score one formula under a fixed `{0, ½, 1}` valuation | `kleene_value` | top level |
 | Enumerate a propositional truth table | `truth_table`, `is_tautology`, … | top level |
-| Decide K3/LP validity, satisfiability, entailment | `is_valid` / `is_satisfiable` / `entails` | `unicode_fol_kit.semantics` |
+| Decide K3/LP validity, satisfiability, entailment | `is_valid` / `is_satisfiable` / `entails` | `unicode_logic_kit.semantics` |
 | Work in *any* finite logic (incl. FDE, custom) | `matrix_value`, `matrix_is_valid`, … | top level (and `semantics.matrix`) |
 
 ## Three-valued evaluation: `kleene_value`
@@ -27,7 +27,7 @@ a ⊕ b = min(max(a, b), 1 − min(a, b))    (exclusive or)
 The valuation maps each ground atom's canonical `to_unicode_str()` key (e.g. `"P"`, `"P(a)"`) to one of the three values. Quantifiers range over a finite `domain` of constant names, with `∀ = min` and `∃ = max`.
 
 ```python
-from unicode_fol_kit import MSFLParser, kleene_value
+from unicode_logic_kit import MSFLParser, kleene_value
 
 p = MSFLParser()
 kleene_value(p.parse("P ∧ Q"), {"P": 1.0, "Q": 0.5})  # → 0.5   (min(1, ½))
@@ -139,7 +139,7 @@ kleene_value(ms.parse("P(alice:Human)"), {"P(alice)": 1.0})
 `truth_table(formula, logic=...)` enumerates every assignment of a quantifier-free formula's atoms; the truth constants `⊤` and `⊥` are no atoms, get no column, and are `1` and `0` in every row. The same strong-Kleene tables back all three logics; they differ only in the value set and the designated set. `classical` (the **default**) uses `{0, 1}` designating `{1}`; `K3` uses `{0, ½, 1}` designating `{1}`; `LP` uses `{0, ½, 1}` designating `{½, 1}`. `.render()` returns a GitHub-flavoured Markdown table (deterministic row order, values descending `1, ½, 0`).
 
 ```python
-from unicode_fol_kit import MSFLParser, truth_table
+from unicode_logic_kit import MSFLParser, truth_table
 
 p = MSFLParser()
 print(truth_table(p.parse("P ∨ ¬P"), logic="K3").render())
@@ -231,7 +231,7 @@ truth_table(p.parse("⊥ → P"), logic="K3").is_tautology    # → True   (⊥ 
 ```
 
 ```python
-from unicode_fol_kit import is_tautology, is_contradiction, is_satisfiable_tt
+from unicode_logic_kit import is_tautology, is_contradiction, is_satisfiable_tt
 
 is_tautology(p.parse("P ∨ ¬P"))             # → True   (classical default)
 is_tautology(p.parse("P ∨ ¬P"), "K3")       # → False
@@ -250,10 +250,10 @@ truth_table(p.parse("∀x P(x)"))   # raises ValueError: quantified formulas hav
 
 ## Three-valued decisions: `is_valid` / `is_satisfiable` / `entails`
 
-These three functions live in `unicode_fol_kit.semantics` and decide validity, satisfiability, and entailment by enumerating all `3**n` assignments of the `n` distinct ground atoms. They default to `logic="K3"`; pass `"LP"` for the paraconsistent reading.
+These three functions live in `unicode_logic_kit.semantics` and decide validity, satisfiability, and entailment by enumerating all `3**n` assignments of the `n` distinct ground atoms. They default to `logic="K3"`; pass `"LP"` for the paraconsistent reading.
 
 ```python
-from unicode_fol_kit.semantics import is_valid, is_satisfiable, entails
+from unicode_logic_kit.semantics import is_valid, is_satisfiable, entails
 ```
 
 They are intentionally namespaced under `semantics` so they do not shadow the Z3-based `is_valid` / `is_satisfiable` exported at the package top level. These are the **three-valued** decision procedures. An unknown logic name is rejected:
@@ -269,8 +269,8 @@ is_valid(p.parse("P ∨ ¬P"), "FDE")   # raises ValueError: Unknown logic 'FDE'
 The single choice of designated set produces the headline contrasts between K3 and LP. The law of excluded middle `P ∨ ¬P` is K3-invalid but LP-valid; explosion `P, ¬P ⊨ Q` holds in K3 but fails in LP (LP is *paraconsistent*).
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.semantics import is_valid, is_satisfiable, entails
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.semantics import is_valid, is_satisfiable, entails
 
 p = MSFLParser()
 lem  = p.parse("P ∨ ¬P")
@@ -334,15 +334,15 @@ kleene_value(p.parse("P(x)"), {"P(x)": 0.5})                           # → 0.5
 
 ## Finite matrices: `semantics.matrix`
 
-New in 0.9.0, `unicode_fol_kit.semantics.matrix` makes the matrix schema first-class, so *any* finite many-valued logic can be evaluated and decided — not just the hard-wired `{0, ½, 1}`. A `TruthMatrix` is a set of values, a designated subset, and a table per connective. The decision procedures mirror the three-valued ones: `matrix_value`, `matrix_is_valid`, `matrix_is_satisfiable`, `matrix_entails`. All of these — and the shipped matrices below — are also re-exported at the package top level.
+New in 0.9.0, `unicode_logic_kit.semantics.matrix` makes the matrix schema first-class, so *any* finite many-valued logic can be evaluated and decided — not just the hard-wired `{0, ½, 1}`. A `TruthMatrix` is a set of values, a designated subset, and a table per connective. The decision procedures mirror the three-valued ones: `matrix_value`, `matrix_is_valid`, `matrix_is_satisfiable`, `matrix_entails`. All of these — and the shipped matrices below — are also re-exported at the package top level.
 
 `TruthMatrix.from_functions` materialises a matrix from value-level operations. `impl` defaults to the material conditional `¬a ∨ b`; the biconditional is `(a→b) ∧ (b→a)` and exclusive-or is `¬(a↔b)`. Every operation is checked to land back in the value set, so a malformed table is caught at build time. `∀` / `∃` fold `conj` / `disj` over a finite `domain` (a generalised min / max), so no separate quantifier tables are needed.
 
 `top` and `bottom` are the values of the truth constants `⊤` and `⊥`. A matrix does not determine them, so they are declared, each as one of `values`; `from_functions` rejects a declared value that is not one with a `ValueError`. K3 and LP declare `1.0` and `0.0`, FDE declares `'T'` and `'F'`. A matrix that declares none refuses a formula that uses the constants, by name: a `NotImplementedError` that names the matrix and the constant.
 
 ```python
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.semantics.matrix import TruthMatrix, matrix_is_valid, matrix_entails
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.semantics.matrix import TruthMatrix, matrix_is_valid, matrix_entails
 
 p = MSFLParser()
 
@@ -361,7 +361,7 @@ matrix_entails([p.parse("P"), p.parse("¬P")], p.parse("Q"), K3)    # → True
 `matrix_value(formula, valuation, matrix, domain=None)` is the matrix analogue of `kleene_value`: it scores one formula to a matrix value. The valuation maps each ground-atom key to a value of the matrix; `⊤` and `⊥` need no key, they take the matrix's `top` and `bottom`.
 
 ```python
-from unicode_fol_kit.semantics.matrix import matrix_value, K3_MATRIX
+from unicode_logic_kit.semantics.matrix import matrix_value, K3_MATRIX
 
 matrix_value(p.parse("P ∧ Q"), {"P": 1.0, "Q": 0.5}, K3_MATRIX)   # → 0.5
 matrix_value(p.parse("P → P"), {"P": 0.5}, K3_MATRIX)             # → 0.5  (material ½→½)
@@ -372,7 +372,7 @@ matrix_value(p.parse("P → P"), {"P": 0.5}, K3_MATRIX)             # → 0.5  (
 A `TruthMatrix` exposes its `name`, `values`, `designated` set, the per-connective tables (`neg`, `conj`, `disj`, `impl`, `iff`, `xor` — plain dicts), the `top` and `bottom` values of the truth constants (`None` when undeclared), and an `is_designated(v)` helper:
 
 ```python
-from unicode_fol_kit.semantics.matrix import K3_MATRIX, LP_MATRIX
+from unicode_logic_kit.semantics.matrix import K3_MATRIX, LP_MATRIX
 
 K3_MATRIX.values                  # → (0.0, 0.5, 1.0)
 sorted(K3_MATRIX.designated)      # → [1.0]
@@ -388,7 +388,7 @@ K3_MATRIX.conj[(0.5, 1.0)]        # → 0.5   (min, straight from the table)
 `K3_MATRIX`, `LP_MATRIX` and `FDE_MATRIX` ship built in (and `MATRICES` maps `"K3"`/`"LP"`/`"FDE"` to them). K3 and LP are re-expressed here as matrices and reproduce the three-valued decisions exactly:
 
 ```python
-from unicode_fol_kit.semantics.matrix import (
+from unicode_logic_kit.semantics.matrix import (
     K3_MATRIX, LP_MATRIX, matrix_is_valid, matrix_is_satisfiable, matrix_entails,
 )
 
@@ -409,7 +409,7 @@ matrix_is_satisfiable(p.parse("P ∧ ¬P"), LP_MATRIX)   # → True
 `FDE_MATRIX` is the Belnap–Dunn four-valued logic of first-degree entailment. Each value is a `(has-true, has-false)` bit pair: `T` (true only), `F` (false only), `N` (neither / told nothing), `B` (both). The designated values are the true-containing ones, `{T, B}`.
 
 ```python
-from unicode_fol_kit.semantics.matrix import FDE_MATRIX
+from unicode_logic_kit.semantics.matrix import FDE_MATRIX
 
 FDE_MATRIX.values             # → ('F', 'N', 'T', 'B')
 sorted(FDE_MATRIX.designated) # → ['B', 'T']
@@ -432,7 +432,7 @@ You can read off the whole conjunction table straight from the dict — `∧` ke
 FDE is both **paraconsistent** (`p ∧ ¬p ⊭ q`) and **paracomplete** (`p ⊭ q ∨ ¬q`) — K3 is only the second and LP only the first — and has **no logical truths over letters alone**: even `p → p` fails, taking the undesignated value `N` at `N` (at the assignment that gives every letter `N`, every connective returns `N`). `⊤` and `⊥` are declared as `T` and `F`, so a formula built from them can be valid.
 
 ```python
-from unicode_fol_kit.semantics.matrix import (
+from unicode_logic_kit.semantics.matrix import (
     FDE_MATRIX, matrix_value, matrix_is_valid, matrix_is_satisfiable, matrix_entails,
 )
 
@@ -456,7 +456,7 @@ matrix_is_valid(p.parse("⊥ → P"), FDE_MATRIX)        # → True    ⊥ is F,
 Iterating `MATRICES` shows where the four classic inferences land in each logic — and that K3 alone is explosive while only LP has logical truths over letters alone:
 
 ```python
-from unicode_fol_kit.semantics.matrix import MATRICES, matrix_is_valid, matrix_entails
+from unicode_logic_kit.semantics.matrix import MATRICES, matrix_is_valid, matrix_entails
 
 sorted(MATRICES)                                  # → ['FDE', 'K3', 'LP']
 
@@ -501,7 +501,7 @@ matrix_is_valid(p.parse("∀y P(y) → P(x)"), LP_MATRIX, domain=("a", "b"))  # 
 **Łukasiewicz Ł3** — same values and designated set as K3, but a *different* conditional `min(1, 1−a+b)` instead of the material `max(1−a, b)`. The one change makes `p → p` valid, because `½ → ½` is now `1`:
 
 ```python
-from unicode_fol_kit.semantics.matrix import (
+from unicode_logic_kit.semantics.matrix import (
     TruthMatrix, matrix_value, matrix_is_valid, K3_MATRIX,
 )
 
@@ -520,7 +520,7 @@ matrix_is_valid(p.parse("P → P"), K3_MATRIX)            # → False
 **A plain two-valued classical matrix** — `from_functions` happily builds the ordinary boolean logic, recovering the classical theorems (Peirce's law, excluded middle) and explosion:
 
 ```python
-from unicode_fol_kit.semantics.matrix import matrix_is_valid, matrix_entails
+from unicode_logic_kit.semantics.matrix import matrix_is_valid, matrix_entails
 
 CL2 = TruthMatrix.from_functions(
     "CL2", values=(0.0, 1.0), designated=(1.0,),
@@ -581,9 +581,9 @@ matrix_is_valid(p.parse("⊥"), CL2)       # → False
 A complete walk for one formula, from string to rendered table. We take the law of excluded middle, decide it three ways, and render the K3 and LP truth tables to compare where the value `½` lands:
 
 ```python
-from unicode_fol_kit import MSFLParser, truth_table
-from unicode_fol_kit.semantics import is_valid
-from unicode_fol_kit.semantics.matrix import matrix_is_valid, K3_MATRIX, LP_MATRIX, FDE_MATRIX
+from unicode_logic_kit import MSFLParser, truth_table
+from unicode_logic_kit.semantics import is_valid
+from unicode_logic_kit.semantics.matrix import matrix_is_valid, K3_MATRIX, LP_MATRIX, FDE_MATRIX
 
 p = MSFLParser()
 lem = p.parse("P ∨ ¬P")

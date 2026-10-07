@@ -52,11 +52,11 @@ Every expected value is hand-derived in the comment above it.
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit import api
-from unicode_fol_kit.dl import owl_reasoner as _owl
-from unicode_fol_kit.dl.tableau import _abox_individual_names
-from unicode_fol_kit.fol.nodes import Not as FNot
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit import api
+from unicode_logic_kit.dl import owl_reasoner as _owl
+from unicode_logic_kit.dl.tableau import _abox_individual_names
+from unicode_logic_kit.fol.nodes import Not as FNot
 
 A, B = dl.Atomic("A"), dl.Atomic("B")
 TIMEOUT_MS = 30000
@@ -204,7 +204,7 @@ def test_the_guard_is_called_from_exactly_the_places_the_documentation_counts():
     # (it said "exactly two"), so the counts are pinned here by reading the
     # source: a new entry point with no guard, or a guard call that moves, fails
     # this test instead of leaving the documentation wrong.
-    from unicode_fol_kit.dl import classification, tableau
+    from unicode_logic_kit.dl import classification, tableau
 
     assert _callers_of(tableau, "_reject_unsupported") == {"_reject_role_box"}
     assert (_callers_of(tableau, "_reject_role_box")
@@ -278,7 +278,7 @@ def _build(tbox, abox=None):
 
     abox = abox if abox is not None else dl.ABox()
     world = ow.World()
-    onto = world.get_ontology("http://unicode-fol-kit.invalid/test#")
+    onto = world.get_ontology("http://unicode-logic-kit.invalid/test#")
     ctx = _owl._Ctx(ow, world, onto, _owl._characteristics(tbox))
     with onto:
         _owl._build_kb(ctx, tbox, abox)

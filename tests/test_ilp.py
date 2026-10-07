@@ -1,4 +1,4 @@
-"""Tests for :mod:`unicode_fol_kit.ilp`.
+"""Tests for :mod:`unicode_logic_kit.ilp`.
 
 Every expected file, AST and refusal is hand-derived from the input, never
 copied from a run. The structures are built by hand rather than from SMILES so
@@ -21,16 +21,16 @@ import re
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import And, Atom, Quantifier, Variable
-from unicode_fol_kit.fol.prolog_input import PrologParsingError
-from unicode_fol_kit.ilp import (
+from unicode_logic_kit.fol.nodes import And, Atom, Quantifier, Variable
+from unicode_logic_kit.fol.prolog_input import PrologParsingError
+from unicode_logic_kit.ilp import (
     Example, IlpEncodingError, IlpTask, check_separation, clause_to_formula,
     hypothesis_to_formulas, task_from_structures, to_prolog_atom,
 )
-from unicode_fol_kit.ilp import readback as readback_module
-from unicode_fol_kit.ilp import separation as separation_module
-from unicode_fol_kit.ilp import task as task_module
-from unicode_fol_kit.semantics import FiniteStructure
+from unicode_logic_kit.ilp import readback as readback_module
+from unicode_logic_kit.ilp import separation as separation_module
+from unicode_logic_kit.ilp import task as task_module
+from unicode_logic_kit.semantics import FiniteStructure
 
 
 # ---------------------------------------------------------------------------
@@ -40,7 +40,7 @@ from unicode_fol_kit.semantics import FiniteStructure
 def amide_like():
     """``c1=o1``, ``c1-n1`` — carbon double-bonded to oxygen and single-bonded
     to nitrogen. Bonds are stored symmetrically, as
-    :func:`~unicode_fol_kit.chem.mol_to_structure` stores them."""
+    :func:`~unicode_logic_kit.chem.mol_to_structure` stores them."""
     return FiniteStructure(
         domain=("c1", "o1", "n1"),
         extensions={
@@ -948,7 +948,7 @@ def test_check_separation_refuses_text_rather_than_guessing_a_dialect():
 def test_an_empty_report_does_not_claim_to_separate_anything():
     """``all()`` over nothing is ``True``; answering "yes, it separates" about
     a report that decided nothing is a vacuous yes."""
-    from unicode_fol_kit.ilp import SeparationReport
+    from unicode_logic_kit.ilp import SeparationReport
 
     assert SeparationReport(()).separates is False
 
@@ -989,7 +989,7 @@ def test_module_doctests(module):
 
 
 def test_package_doctests():
-    import unicode_fol_kit.ilp as package
+    import unicode_logic_kit.ilp as package
 
     results = doctest.testmod(package, verbose=False)
     assert results.attempted > 0

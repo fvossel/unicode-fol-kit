@@ -3,7 +3,7 @@
 Three properties matter here, and each gets its own section below:
 
 1. **Differential agreement with** :func:`nonmonotonic.minimal_models
-   <unicode_fol_kit.semantics.nonmonotonic.minimal_models>` — clingo's
+   <unicode_logic_kit.semantics.nonmonotonic.minimal_models>` — clingo's
    enumeration and the brute-force one must return the *same set* of minimal
    models on a shared premise set. ``minimal_models`` unions results across
    every domain size up to ``max_size`` (see its own docstring), while
@@ -51,17 +51,17 @@ import pytest
 # mocked, and a run without the extra must skip, not fail.
 pytest.importorskip("clingo")
 
-from unicode_fol_kit.fol._fol_nodes import (
+from unicode_logic_kit.fol._fol_nodes import (
     Atom, And, Or, Not, Implies, Quantifier, Variable, Constant, Cardinality, Contrast,
 )
-from unicode_fol_kit.fol._so_nodes import SecondOrderQuantifier
-from unicode_fol_kit.semantics.nonmonotonic import minimal_models
-from unicode_fol_kit.semantics.asp_models import (
+from unicode_logic_kit.fol._so_nodes import SecondOrderQuantifier
+from unicode_logic_kit.semantics.nonmonotonic import minimal_models
+from unicode_logic_kit.semantics.asp_models import (
     asp_minimal_models, asp_find_model,
     _AspEncoder, _so_quantifier_chain,
 )
-from unicode_fol_kit.semantics.modelfinder import _Signature
-from unicode_fol_kit.semantics.tarski import Structure
+from unicode_logic_kit.semantics.modelfinder import _Signature
+from unicode_logic_kit.semantics.tarski import Structure
 
 A, B, C = Constant("a"), Constant("b"), Constant("c")
 X = Variable("x")

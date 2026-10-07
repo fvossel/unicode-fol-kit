@@ -27,10 +27,10 @@ import pytest
 
 from lark import Lark
 
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.fol import _identifiers
-from unicode_fol_kit.fol._fol_nodes import OPERATORS, build_grammar
-from unicode_fol_kit.fol.msflparser import (
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.fol import _identifiers
+from unicode_logic_kit.fol._fol_nodes import OPERATORS, build_grammar
+from unicode_logic_kit.fol.msflparser import (
     _allow_single_letter_function_calls, _GRAMMARS_DIR, _REGISTRY_MODE)
 
 

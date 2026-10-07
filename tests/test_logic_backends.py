@@ -27,7 +27,7 @@ lambek/ill/hybrid syntax to the new ones.
 
 import pytest
 
-from unicode_fol_kit import (
+from unicode_logic_kit import (
     MSFLParser,
     Atom, Not, And, Or, Implies, Iff, Quantifier, Variable,
     Nominal, At, Product, Under, Over,
@@ -35,10 +35,10 @@ from unicode_fol_kit import (
     RelevantModel, rel_satisfies,
     Verdict, get_backend, available_backends, default_chain, run_backend,
 )
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.protocol import PROVED, REFUTED, UNKNOWN
-from unicode_fol_kit.fol.modal_translation import hybrid_is_valid
-from unicode_fol_kit.semantics.intuitionistic import IntKripkeModel, int_valid
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.protocol import PROVED, REFUTED, UNKNOWN
+from unicode_logic_kit.fol.modal_translation import hybrid_is_valid
+from unicode_logic_kit.semantics.intuitionistic import IntKripkeModel, int_valid
 
 _P = MSFLParser()
 _MP = MSFLParser(modal=True)
@@ -507,7 +507,7 @@ _DOWN_INVALID_K = [
 
 def _brute_force_down_countermodel(node, max_worlds=3):
     from itertools import product
-    from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
+    from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
     for n in range(1, max_worlds + 1):
         worlds = list(range(n))
         pairs = [(u, v) for u in worlds for v in worlds]

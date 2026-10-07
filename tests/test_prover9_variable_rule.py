@@ -51,16 +51,16 @@ import string
 
 import pytest
 
-from unicode_fol_kit.atp import prover9_entailment as p9
-from unicode_fol_kit.atp.prover9_entailment import (
+from unicode_logic_kit.atp import prover9_entailment as p9
+from unicode_logic_kit.atp.prover9_entailment import (
     check_logical_entailment, generate_prover9_input_with_mapping,
 )
-from unicode_fol_kit.atp.protocol import Prover9Backend
-from unicode_fol_kit.fol._msfl_nodes import SortedConstant, SortedQuantifier
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.atp.protocol import Prover9Backend
+from unicode_logic_kit.fol._msfl_nodes import SortedConstant, SortedQuantifier
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Function, Implies, Not, Or, Quantifier, Variable,
 )
-from unicode_fol_kit.fol.prover9_input import parse_prover9
+from unicode_logic_kit.fol.prover9_input import parse_prover9
 
 
 def P(*args):
@@ -138,7 +138,7 @@ def test_the_old_text_proved_a_non_theorem_and_the_new_text_does_not():
     # entails P(c); P(Gaseous) with Gaseous a constant does not.
     import z3
 
-    from unicode_fol_kit.fol._fol_nodes import Z3Env
+    from unicode_logic_kit.fol._fol_nodes import Z3Env
 
     def entails(premise, goal):
         env = Z3Env()
@@ -365,7 +365,7 @@ def test_a_constant_that_prover9_reads_as_a_constant_is_rendered_as_before(name,
 
 
 def test_the_mcp_render_tool_writes_an_upper_case_constant_in_quotes_and_reports_a_refusal_as_an_error():
-    from unicode_fol_kit.mcp import server
+    from unicode_logic_kit.mcp import server
 
     # An upper-case constant cannot be spelled in the unicode grammar, but it can
     # arrive through a quoted TPTP word: 'Gaseous'. The single-node renderer writes it

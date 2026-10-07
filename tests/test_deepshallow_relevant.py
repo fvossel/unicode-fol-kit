@@ -7,10 +7,10 @@ semantics — including the star-negation and normal/non-normal implication clau
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import Atom, Not, And, Or, Implies, Iff, Box, Xor
-from unicode_fol_kit.hol import relevant_faithfulness_theory, rel_to_deep
-from unicode_fol_kit.hol.deepshallow._common import AtomConsts
-from unicode_fol_kit.hol.isabelle_runner import isabelle_available, check_theory
+from unicode_logic_kit.fol.nodes import Atom, Not, And, Or, Implies, Iff, Box, Xor
+from unicode_logic_kit.hol import relevant_faithfulness_theory, rel_to_deep
+from unicode_logic_kit.hol.deepshallow._common import AtomConsts
+from unicode_logic_kit.hol.isabelle_runner import isabelle_available, check_theory
 
 p, q = Atom("p", ()), Atom("q", ())
 # A relevant "paradox" that must NOT be valid in B: p → (q → p).

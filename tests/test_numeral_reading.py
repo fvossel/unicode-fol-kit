@@ -24,16 +24,16 @@ What is derived by hand:
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.twee_entailment import _parse_term
-from unicode_fol_kit.fol.latex_input import parse_latex
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.naming import ParsingError
-from unicode_fol_kit.fol.nodes import Atom, Number
-from unicode_fol_kit.fol.prolog_input import parse_prolog_clause
-from unicode_fol_kit.fol.prover9_input import Prover9ParsingError, parse_prover9
-from unicode_fol_kit.fol.qmltp_input import parse_qmltp_formula
-from unicode_fol_kit.fol.tptp_input import parse_tptp, parse_tptp_formula
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.twee_entailment import _parse_term
+from unicode_logic_kit.fol.latex_input import parse_latex
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.naming import ParsingError
+from unicode_logic_kit.fol.nodes import Atom, Number
+from unicode_logic_kit.fol.prolog_input import parse_prolog_clause
+from unicode_logic_kit.fol.prover9_input import Prover9ParsingError, parse_prover9
+from unicode_logic_kit.fol.qmltp_input import parse_qmltp_formula
+from unicode_logic_kit.fol.tptp_input import parse_tptp, parse_tptp_formula
 
 TEN_TO_23 = 10 ** 23
 NEAREST_DOUBLE = 99999999999999991611392            # int(float(10 ** 23))

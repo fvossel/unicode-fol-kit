@@ -4,7 +4,7 @@ and ``tools/mypy_ratchet.py``'s module docstring for the full rationale).
 
 Most of what is tested here is pure Python (string parsing, dict diffing,
 JSON round-tripping) exercised against hand-written *synthetic* mypy-style
-text, never against a real mypy run over ``unicode_fol_kit`` — the ratchet
+text, never against a real mypy run over ``unicode_logic_kit`` — the ratchet
 must never run mypy over the whole package inside the fast suite (a full
 pass is a several-second, environment-dependent subprocess, exactly what the
 dedicated CI ``typecheck`` job is for). These logic tests need no mypy
@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pytest
 
-# tools/ is dev tooling, not part of the installed unicode_fol_kit package,
+# tools/ is dev tooling, not part of the installed unicode_logic_kit package,
 # so it is loaded directly by file path rather than relying on `tools` being
 # importable (which depends on how/where pytest was invoked from).
 _MODULE_PATH = Path(__file__).resolve().parent.parent / "tools" / "mypy_ratchet.py"
@@ -51,23 +51,23 @@ def test_parse_counts_only_error_severity_per_file():
     # counts below are simply "how many `error:` lines I wrote", not derived
     # by running the function under test on different input.
     output = (
-        'unicode_fol_kit/a.py:10: error: Incompatible types  [assignment]\n'
-        'unicode_fol_kit/a.py:12: note: consider using --check-untyped-defs  [annotation-unchecked]\n'
-        'unicode_fol_kit/a.py:20: error: "Node" has no attribute "x"  [attr-defined]\n'
-        'unicode_fol_kit/b.py:5: error: Argument 1 has incompatible type  [arg-type]\n'
-        'unicode_fol_kit/b.py:5: note: See https://example.invalid  [note]\n'
-        'unicode_fol_kit/c.py:1: warning: unused "type: ignore" comment  [unused-ignore]\n'
+        'unicode_logic_kit/a.py:10: error: Incompatible types  [assignment]\n'
+        'unicode_logic_kit/a.py:12: note: consider using --check-untyped-defs  [annotation-unchecked]\n'
+        'unicode_logic_kit/a.py:20: error: "Node" has no attribute "x"  [attr-defined]\n'
+        'unicode_logic_kit/b.py:5: error: Argument 1 has incompatible type  [arg-type]\n'
+        'unicode_logic_kit/b.py:5: note: See https://example.invalid  [note]\n'
+        'unicode_logic_kit/c.py:1: warning: unused "type: ignore" comment  [unused-ignore]\n'
         'Found 3 errors in 2 files (checked 3 source files)\n'
     )
     counts = mr.parse_mypy_output(output)
     assert counts == {
-        "unicode_fol_kit/a.py": 2,
-        "unicode_fol_kit/b.py": 1,
+        "unicode_logic_kit/a.py": 2,
+        "unicode_logic_kit/b.py": 1,
     }
     # A file with only a warning, and the trailing summary line, never
     # produce entries — confirms the summary line isn't misparsed as a
     # diagnostic (it has no `: error|warning|note: ` field at all).
-    assert "unicode_fol_kit/c.py" not in counts
+    assert "unicode_logic_kit/c.py" not in counts
 
 
 def test_parse_clean_output_is_empty():
@@ -79,9 +79,9 @@ def test_parse_normalises_windows_paths_to_forward_slashes():
     # mypy on Windows prints native backslash-separated paths; the baseline
     # must compare equal regardless of which OS generated it (Windows dev
     # box vs. Linux CI), so parsing normalises unconditionally.
-    output = r'unicode_fol_kit\mcp\server.py:951: error: bad literal  [arg-type]' + "\n"
+    output = r'unicode_logic_kit\mcp\server.py:951: error: bad literal  [arg-type]' + "\n"
     counts = mr.parse_mypy_output(output)
-    assert counts == {"unicode_fol_kit/mcp/server.py": 1}
+    assert counts == {"unicode_logic_kit/mcp/server.py": 1}
     assert not any("\\" in f for f in counts)
 
 
@@ -90,21 +90,21 @@ def test_parse_normalises_windows_paths_to_forward_slashes():
 # --------------------------------------------------------------------------- #
 
 def test_new_error_in_tracked_file_fails():
-    baseline = {"unicode_fol_kit/a.py": 1}
-    current = {"unicode_fol_kit/a.py": 2}
+    baseline = {"unicode_logic_kit/a.py": 1}
+    current = {"unicode_logic_kit/a.py": 2}
     regressions = mr.compute_regressions(baseline, current)
-    assert regressions == [("unicode_fol_kit/a.py", 1, 2)]
+    assert regressions == [("unicode_logic_kit/a.py", 1, 2)]
 
 
 def test_fixed_error_passes():
-    baseline = {"unicode_fol_kit/a.py": 2}
-    current = {"unicode_fol_kit/a.py": 1}
+    baseline = {"unicode_logic_kit/a.py": 2}
+    current = {"unicode_logic_kit/a.py": 1}
     assert mr.compute_regressions(baseline, current) == []
 
 
 def test_unchanged_count_passes():
-    baseline = {"unicode_fol_kit/a.py": 2}
-    current = {"unicode_fol_kit/a.py": 2}
+    baseline = {"unicode_logic_kit/a.py": 2}
+    current = {"unicode_logic_kit/a.py": 2}
     assert mr.compute_regressions(baseline, current) == []
 
 
@@ -113,8 +113,8 @@ def test_file_removed_or_fixed_to_zero_is_handled_not_a_crash():
     # because it was deleted, or because every error in it was fixed. Either
     # way there is nothing in `current` to compare it against, so it is
     # silently skipped: not a regression, and not an exception.
-    baseline = {"unicode_fol_kit/a.py": 5, "unicode_fol_kit/b.py": 1}
-    current = {"unicode_fol_kit/b.py": 1}
+    baseline = {"unicode_logic_kit/a.py": 5, "unicode_logic_kit/b.py": 1}
+    current = {"unicode_logic_kit/b.py": 1}
     assert mr.compute_regressions(baseline, current) == []
 
 
@@ -126,26 +126,26 @@ def test_file_renamed_is_handled_as_a_new_file_not_a_crash():
     # renamed" without guessing) and, per the module docstring, exactly what
     # "handled" means here — a deterministic result, never an exception —
     # not that a rename is silently exempted from the gate.
-    baseline = {"unicode_fol_kit/a.py": 5}
-    current = {"unicode_fol_kit/a2.py": 5}
+    baseline = {"unicode_logic_kit/a.py": 5}
+    current = {"unicode_logic_kit/a2.py": 5}
     regressions = mr.compute_regressions(baseline, current)
-    assert regressions == [("unicode_fol_kit/a2.py", 0, 5)]
+    assert regressions == [("unicode_logic_kit/a2.py", 0, 5)]
 
 
 def test_new_file_with_errors_fails_against_implicit_zero_baseline():
     baseline: dict = {}
-    current = {"unicode_fol_kit/new_module.py": 3}
+    current = {"unicode_logic_kit/new_module.py": 3}
     assert mr.compute_regressions(baseline, current) == [
-        ("unicode_fol_kit/new_module.py", 0, 3)
+        ("unicode_logic_kit/new_module.py", 0, 3)
     ]
 
 
 def test_multiple_regressions_are_all_reported_sorted_by_path():
-    baseline = {"unicode_fol_kit/z.py": 1, "unicode_fol_kit/a.py": 1}
-    current = {"unicode_fol_kit/z.py": 2, "unicode_fol_kit/a.py": 4}
+    baseline = {"unicode_logic_kit/z.py": 1, "unicode_logic_kit/a.py": 1}
+    current = {"unicode_logic_kit/z.py": 2, "unicode_logic_kit/a.py": 4}
     assert mr.compute_regressions(baseline, current) == [
-        ("unicode_fol_kit/a.py", 1, 4),
-        ("unicode_fol_kit/z.py", 1, 2),
+        ("unicode_logic_kit/a.py", 1, 4),
+        ("unicode_logic_kit/z.py", 1, 2),
     ]
 
 
@@ -155,7 +155,7 @@ def test_multiple_regressions_are_all_reported_sorted_by_path():
 
 def test_save_then_load_baseline_round_trips(tmp_path):
     path = tmp_path / "mypy_baseline.json"
-    counts = {"unicode_fol_kit/b.py": 2, "unicode_fol_kit/a.py": 5}
+    counts = {"unicode_logic_kit/b.py": 2, "unicode_logic_kit/a.py": 5}
     mr.save_baseline(path, counts, "mypy 2.3.1 (compiled: yes)")
 
     loaded = mr.load_baseline(path)
@@ -163,7 +163,7 @@ def test_save_then_load_baseline_round_trips(tmp_path):
 
     # counts are written sorted by path, for a stable, reviewable diff.
     raw = json.loads(path.read_text(encoding="utf-8"))
-    assert list(raw["counts"].keys()) == ["unicode_fol_kit/a.py", "unicode_fol_kit/b.py"]
+    assert list(raw["counts"].keys()) == ["unicode_logic_kit/a.py", "unicode_logic_kit/b.py"]
     assert raw["mypy_version"] == "mypy 2.3.1 (compiled: yes)"
 
 
@@ -200,7 +200,7 @@ def test_exit_0_and_1_both_parse_normally(monkeypatch):
     # complete-run outcomes — neither should raise.
     for code, stdout in (
         (0, "Success: no issues found in 1 source file\n"),
-        (1, "unicode_fol_kit/a.py:1: error: bad  [misc]\nFound 1 error in 1 file\n"),
+        (1, "unicode_logic_kit/a.py:1: error: bad  [misc]\nFound 1 error in 1 file\n"),
     ):
         monkeypatch.setattr(
             mr.subprocess, "run",
@@ -210,7 +210,7 @@ def test_exit_0_and_1_both_parse_normally(monkeypatch):
         )
         counts, raw = mr.run_mypy(command=("mypy",))
         assert raw == stdout
-        assert counts == ({} if code == 0 else {"unicode_fol_kit/a.py": 1})
+        assert counts == ({} if code == 0 else {"unicode_logic_kit/a.py": 1})
 
 
 # --------------------------------------------------------------------------- #
@@ -221,23 +221,23 @@ def test_exit_0_and_1_both_parse_normally(monkeypatch):
 def test_main_update_writes_baseline_and_exits_0(tmp_path, monkeypatch, capsys):
     baseline_path = tmp_path / "mypy_baseline.json"
     monkeypatch.setattr(
-        mr, "run_mypy", lambda: ({"unicode_fol_kit/a.py": 2}, "")
+        mr, "run_mypy", lambda: ({"unicode_logic_kit/a.py": 2}, "")
     )
     monkeypatch.setattr(mr, "get_mypy_version", lambda: "mypy 2.3.1 (fake)")
 
     exit_code = mr.main(["--update", "--baseline", str(baseline_path)])
 
     assert exit_code == 0
-    assert mr.load_baseline(baseline_path) == {"unicode_fol_kit/a.py": 2}
+    assert mr.load_baseline(baseline_path) == {"unicode_logic_kit/a.py": 2}
     out = capsys.readouterr().out
     assert "updated" in out
 
 
 def test_main_gate_fails_on_regression(tmp_path, monkeypatch):
     baseline_path = tmp_path / "mypy_baseline.json"
-    mr.save_baseline(baseline_path, {"unicode_fol_kit/a.py": 1}, "mypy (fake)")
+    mr.save_baseline(baseline_path, {"unicode_logic_kit/a.py": 1}, "mypy (fake)")
     monkeypatch.setattr(
-        mr, "run_mypy", lambda: ({"unicode_fol_kit/a.py": 2}, "")
+        mr, "run_mypy", lambda: ({"unicode_logic_kit/a.py": 2}, "")
     )
 
     exit_code = mr.main(["--baseline", str(baseline_path)])
@@ -246,9 +246,9 @@ def test_main_gate_fails_on_regression(tmp_path, monkeypatch):
 
 def test_main_gate_passes_without_regression(tmp_path, monkeypatch):
     baseline_path = tmp_path / "mypy_baseline.json"
-    mr.save_baseline(baseline_path, {"unicode_fol_kit/a.py": 2}, "mypy (fake)")
+    mr.save_baseline(baseline_path, {"unicode_logic_kit/a.py": 2}, "mypy (fake)")
     monkeypatch.setattr(
-        mr, "run_mypy", lambda: ({"unicode_fol_kit/a.py": 1}, "")
+        mr, "run_mypy", lambda: ({"unicode_logic_kit/a.py": 1}, "")
     )
 
     exit_code = mr.main(["--baseline", str(baseline_path)])
@@ -261,7 +261,7 @@ def test_main_gate_missing_baseline_treats_every_file_as_new(tmp_path, monkeypat
     # mypy reports is "new" and fails, rather than crashing on a missing file.
     baseline_path = tmp_path / "does_not_exist.json"
     monkeypatch.setattr(
-        mr, "run_mypy", lambda: ({"unicode_fol_kit/a.py": 1}, "")
+        mr, "run_mypy", lambda: ({"unicode_logic_kit/a.py": 1}, "")
     )
     exit_code = mr.main(["--baseline", str(baseline_path)])
     assert exit_code == 1
@@ -269,7 +269,7 @@ def test_main_gate_missing_baseline_treats_every_file_as_new(tmp_path, monkeypat
 
 # --------------------------------------------------------------------------- #
 # Independent oracle: a REAL mypy run over a tiny synthetic scratch package
-# (never unicode_fol_kit itself), proving the actual subprocess + parsing
+# (never unicode_logic_kit itself), proving the actual subprocess + parsing
 # pipeline works against mypy's real output. Skipped when mypy is absent.
 # --------------------------------------------------------------------------- #
 

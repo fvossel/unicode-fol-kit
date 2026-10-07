@@ -28,10 +28,10 @@ not a verdict.
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit import api
-from unicode_fol_kit.fol._identifiers import variable_names
-from unicode_fol_kit.fol.nodes import Atom, Constant, Not as FNot
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit import api
+from unicode_logic_kit.fol._identifiers import variable_names
+from unicode_logic_kit.fol.nodes import Atom, Constant, Not as FNot
 
 TIMEOUT_MS = 30000
 A = dl.Atomic("A")

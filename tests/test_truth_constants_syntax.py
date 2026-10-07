@@ -11,11 +11,11 @@ all.
 
 import pytest
 
-from unicode_fol_kit.fol._fol_nodes import Atom
-from unicode_fol_kit.fol.latex_input import parse_latex
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.naming import NamingError
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol._fol_nodes import Atom
+from unicode_logic_kit.fol.latex_input import parse_latex
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.naming import NamingError
+from unicode_logic_kit.fol.nodes import (
     Constant, And, Or, Not, Implies, Box, Diamond, Quantifier, Variable,
 )
 
@@ -174,14 +174,14 @@ def test_tptp_spelling():
 
 
 def test_smtlib_spelling():
-    from unicode_fol_kit.atp.z3_input import to_smtlib
+    from unicode_logic_kit.atp.z3_input import to_smtlib
     text = to_smtlib(Implies(T, F))
     assert "(=> true false)" in text
     assert "declare-fun" not in text          # a constant declares no symbol
 
 
 def test_serialization_round_trip():
-    from unicode_fol_kit.fol.serialize import serialize, deserialize
+    from unicode_logic_kit.fol.serialize import serialize, deserialize
     formula = Implies(And(T, P), Not(F))
     assert deserialize(serialize(formula)) == formula
 
@@ -191,7 +191,7 @@ def test_serialization_round_trip():
 # ---------------------------------------------------------------------------
 
 def test_linear_grammar_keeps_top_as_the_additive_truth():
-    from unicode_fol_kit.fol._linear_nodes import Top
+    from unicode_logic_kit.fol._linear_nodes import Top
     linear = MSFLParser(linear=True)
     assert isinstance(linear.parse("⊤"), Top)
     with pytest.raises(NamingError):
@@ -199,7 +199,7 @@ def test_linear_grammar_keeps_top_as_the_additive_truth():
 
 
 def test_dialect_detection_reads_the_glyphs_as_constants_and_keeps_the_linear_markers():
-    from unicode_fol_kit.api import parse_any
+    from unicode_logic_kit.api import parse_any
     # no grammar-specific symbol: the first grammar that reads it, the classical one
     result = parse_any("P ∧ ⊤")
     assert result.ok and result.dialect == "fol"
@@ -209,7 +209,7 @@ def test_dialect_detection_reads_the_glyphs_as_constants_and_keeps_the_linear_ma
     # a bare ⊤ is the truth constant; the linear unit needs a linear symbol around it
     assert parse_any("⊤").formula == T
     # the linear grammar is still chosen by its own symbols
-    from unicode_fol_kit.fol._linear_nodes import Top
+    from unicode_logic_kit.fol._linear_nodes import Top
     result = parse_any("⊤ ⊸ A")
     assert result.dialect == "linear"
     assert isinstance(result.formula.left, Top)

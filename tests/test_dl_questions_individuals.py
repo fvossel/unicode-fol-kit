@@ -17,9 +17,9 @@ same scan, so one scan is tested here and the two readers against it.
 
 import pytest
 
-import unicode_fol_kit.dl as dl
-from unicode_fol_kit.dl import tableau as _tableau
-from unicode_fol_kit.fol.nodes import Constant
+import unicode_logic_kit.dl as dl
+from unicode_logic_kit.dl import tableau as _tableau
+from unicode_logic_kit.fol.nodes import Constant
 
 A, B = dl.Atomic("A"), dl.Atomic("B")
 

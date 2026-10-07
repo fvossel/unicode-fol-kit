@@ -1,6 +1,6 @@
 # Probabilistic logic
 
-`unicode_fol_kit.prob` answers two different probabilistic questions, both
+`unicode_logic_kit.prob` answers two different probabilistic questions, both
 **exactly**: no sampling, no Monte Carlo, no approximation parameter. Results are
 `fractions.Fraction`, so `1/3` is `1/3` and not `0.3333333333333333`.
 
@@ -24,8 +24,8 @@ must respect.
 
 ```python
 from fractions import Fraction
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.prob import ProbConstraint, entailment_bounds
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.prob import ProbConstraint, entailment_bounds
 
 p = MSFLParser()
 constraints = [
@@ -51,8 +51,8 @@ Constraints may be conditional:
 
 ```python
 from fractions import Fraction
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.prob import ProbConstraint, entailment_bounds
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.prob import ProbConstraint, entailment_bounds
 
 p = MSFLParser()
 constraints = [
@@ -69,8 +69,8 @@ answered:
 
 ```python
 from fractions import Fraction
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.prob import ProbConstraint, entailment_bounds
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.prob import ProbConstraint, entailment_bounds
 
 p = MSFLParser()
 try:
@@ -92,8 +92,8 @@ the useful answer.
 
 ```python
 from fractions import Fraction
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.prob import ProbConstraint, entailment_bounds
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.prob import ProbConstraint, entailment_bounds
 
 p = MSFLParser()
 rain = ProbConstraint(p.parse("Rain"), Fraction(1, 2), Fraction(1, 2))
@@ -111,8 +111,8 @@ An atom is a world bit named by the text it prints as, so two different ground a
 
 ```python
 from fractions import Fraction
-from unicode_fol_kit.fol.nodes import Atom, Constant, Number
-from unicode_fol_kit.prob import ProbConstraint, entailment_bounds
+from unicode_logic_kit.fol.nodes import Atom, Constant, Number
+from unicode_logic_kit.prob import ProbConstraint, entailment_bounds
 
 numeral, constant = Atom("P", [Number(1)]), Atom("P", [Constant("1")])
 entailment_bounds([ProbConstraint(numeral, Fraction(1, 2), Fraction(1, 2))], constant)
@@ -127,8 +127,8 @@ bounds, never a different answer:
 
 ```python
 from fractions import Fraction
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.prob import ProbConstraint, entailment_bounds
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.prob import ProbConstraint, entailment_bounds
 
 p = MSFLParser()
 constraints = [
@@ -146,15 +146,15 @@ battery of cases. `"direct"` builds one probability variable per possible world
 (`2^n`, hence `max_atoms`); `"column_generation"` never does — it grows a small
 subset of worlds on demand, deciding which one to add next via a Z3
 Boolean-SAT search over the `n` atoms directly (see
-`unicode_fol_kit.prob._column_gen`'s module docstring for the algorithm and its
+`unicode_logic_kit.prob._column_gen`'s module docstring for the algorithm and its
 termination/optimality proof), so it can answer problems with far more than
 `max_atoms` distinct atoms — its own brake is `max_columns` (500 by default)
 instead:
 
 ```python
 from fractions import Fraction
-from unicode_fol_kit.fol.nodes import Atom, And
-from unicode_fol_kit.prob import ProbConstraint, entailment_bounds
+from unicode_logic_kit.fol.nodes import Atom, And
+from unicode_logic_kit.prob import ProbConstraint, entailment_bounds
 
 # 15 independent components, each 99% reliable on its own, no other
 # constraint linking them: what is P(every one of them is up at once)?
@@ -201,8 +201,8 @@ which the goal holds.
 
 ```python
 from fractions import Fraction
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.prob import ProbFact, ProbProgram, query
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.prob import ProbFact, ProbProgram, query
 
 p = MSFLParser()
 program = ProbProgram(
@@ -223,8 +223,8 @@ distribution, whereas the Nilsson constraints above left it open.
 
 ```python
 from fractions import Fraction
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.prob import ProbFact, ProbProgram, query
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.prob import ProbFact, ProbProgram, query
 
 p = MSFLParser()
 program = ProbProgram(facts=[ProbFact(p.parse("Rain"), Fraction(3, 10))],
@@ -247,8 +247,8 @@ derives `⊥` would be an integrity constraint, which this module does not have:
 
 ```python
 from fractions import Fraction
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.prob import ProbFact, ProbProgram, query
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.prob import ProbFact, ProbProgram, query
 
 p = MSFLParser()
 facts = [ProbFact(p.parse("Rain"), Fraction(3, 10))]
@@ -280,8 +280,8 @@ can collapse to far fewer diagram nodes than choices:
 
 ```python
 from fractions import Fraction
-from unicode_fol_kit import MSFLParser
-from unicode_fol_kit.prob import ProbFact, ProbProgram, query
+from unicode_logic_kit import MSFLParser
+from unicode_logic_kit.prob import ProbFact, ProbProgram, query
 
 p = MSFLParser()
 program = ProbProgram(
@@ -303,8 +303,8 @@ where `"enumerate"` would refuse outright:
 
 ```python
 from fractions import Fraction
-from unicode_fol_kit.fol.nodes import Atom, And, Implies
-from unicode_fol_kit.prob import ProbFact, ProbProgram, query
+from unicode_logic_kit.fol.nodes import Atom, And, Implies
+from unicode_logic_kit.prob import ProbFact, ProbProgram, query
 
 # A chain of 20 independent facts, each gating the next: derivable only if
 # EVERY fact fires, so P = p0 * p1 * ... * p19 exactly (product rule).

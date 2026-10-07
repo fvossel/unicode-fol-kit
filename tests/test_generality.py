@@ -1,9 +1,9 @@
-"""Tests for unicode_fol_kit.eval.generality — logical generality analysis.
+"""Tests for unicode_logic_kit.eval.generality — logical generality analysis.
 
 Every assertion's expected value is worked out BY HAND in the comment next to
 it (never copied from a program run) — see each test's docstring/comments for
 the derivation. Two tests (``test_undecided_...`` and the Kleene short-circuit
-test) deliberately monkeypatch ``unicode_fol_kit.api.prove`` rather than
+test) deliberately monkeypatch ``unicode_logic_kit.api.prove`` rather than
 relying on a real solver call: the point of those two tests is to pin down
 THIS module's own tri-state combination logic (:func:`_kleene_and`,
 :func:`is_vacuous_specialisation`'s classification), not to find a formula
@@ -14,11 +14,11 @@ and would not actually be testing code this module owns.
 
 import pytest
 
-import unicode_fol_kit.api as api_module
-from unicode_fol_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, Verdict
-from unicode_fol_kit.eval import generality
-from unicode_fol_kit.fol.nodes import Atom, And, Not, Or, Quantifier, Variable
-from unicode_fol_kit.fol.signature import PredicateDecl, Signature
+import unicode_logic_kit.api as api_module
+from unicode_logic_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, Verdict
+from unicode_logic_kit.eval import generality
+from unicode_logic_kit.fol.nodes import Atom, And, Not, Or, Quantifier, Variable
+from unicode_logic_kit.fol.signature import PredicateDecl, Signature
 
 X, Y, Z = Variable("x"), Variable("y"), Variable("z")
 
@@ -326,7 +326,7 @@ class TestAllDifferent:
         actually terminates: the closed form directly, and the search over the
         ≠-augmented formula that carries the same convention.
         """
-        from unicode_fol_kit.semantics.modelfinder import find_model
+        from unicode_logic_kit.semantics.modelfinder import find_model
 
         formulas = [
             Quantifier("exists", X, Atom("c", [X])),                        # 1
@@ -352,7 +352,7 @@ class TestAllDifferent:
         universally quantified — 'every individual differs from itself'.
         Every such formula would come back unsatisfiable, and a generality
         report would silently call every definition unsatisfiable."""
-        from unicode_fol_kit.semantics.modelfinder import find_model
+        from unicode_logic_kit.semantics.modelfinder import find_model
 
         augmented = generality._with_all_different(self.THREE_ATOMS)
         assert isinstance(augmented, Quantifier)          # still ∃-led, not And(...)
@@ -389,7 +389,7 @@ class TestAllDifferent:
 
     def test_the_closed_form_returns_a_witness_that_really_satisfies_it(self):
         """A size without a witness is a claim; with one it is a fact."""
-        from unicode_fol_kit.semantics.tarski import satisfies
+        from unicode_logic_kit.semantics.tarski import satisfies
 
         result = generality.minimal_model_size(self.THREE_ATOMS, all_different=True)
         assert result.model is not None

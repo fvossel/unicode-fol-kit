@@ -28,18 +28,18 @@ import itertools
 import pytest
 import z3
 
-from unicode_fol_kit.atp.incremental import IncrementalSession
-from unicode_fol_kit.atp.protocol import (
+from unicode_logic_kit.atp.incremental import IncrementalSession
+from unicode_logic_kit.atp.protocol import (
     PROVED, REFUTED, UNKNOWN, Z3Backend, _z3_model_assignment, _z3_sort_axioms, _z3_tag_number,
     _z3_track_and_check, z3_relevant_premises,
 )
-from unicode_fol_kit.atp.z3_arith import get_model_arith, is_satisfiable_arith, is_valid_arith
-from unicode_fol_kit.atp.z3_models import get_model, is_satisfiable, is_valid
-from unicode_fol_kit.fol._fol_nodes import _SORT
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.atp.z3_arith import get_model_arith, is_satisfiable_arith, is_valid_arith
+from unicode_logic_kit.atp.z3_models import get_model, is_satisfiable, is_valid
+from unicode_logic_kit.fol._fol_nodes import _SORT
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Count, Function, Implies, Not, Number, Quantifier, SortedQuantifier, Variable, Z3Env,
 )
-from unicode_fol_kit.semantics.tarski import Structure, satisfies
+from unicode_logic_kit.semantics.tarski import Structure, satisfies
 
 from _one_name_problems import AT_MOST_TWO, FAMILIES, make_problem, oracle_has_countermodel
 
@@ -188,7 +188,7 @@ def test_a_proposition_and_a_constant_of_one_name_are_reported_apart():
 
 
 def test_declaration_keys_are_the_name_when_unique_then_name_and_arity_then_the_result_sort():
-    from unicode_fol_kit.atp.z3_models import declaration_keys
+    from unicode_logic_kit.atp.z3_models import declaration_keys
     assert declaration_keys([("P", 1, "Bool"), ("a", 0, "S")]) == ["P", "a"]
     assert declaration_keys([("P", 1, "Bool"), ("P", 2, "Bool"), ("a", 0, "S")]) == ["P/1", "P/2", "a"]
     assert declaration_keys([("P", 1, "Bool"), ("P", 1, "S")]) == ["P/1:Bool", "P/1:S"]

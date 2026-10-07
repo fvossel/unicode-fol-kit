@@ -19,16 +19,16 @@ from concurrent.futures.process import BrokenProcessPool
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import portfolio as portfolio_module
-from unicode_fol_kit.atp.portfolio import portfolio_prove
-from unicode_fol_kit.atp.protocol import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import portfolio as portfolio_module
+from unicode_logic_kit.atp.portfolio import portfolio_prove
+from unicode_logic_kit.atp.protocol import (
     BackendUnavailable, ProverBackend, Verdict, _REGISTRY, get_backend, register_backend,
 )
-from unicode_fol_kit.fol._msfl_nodes import SortedQuantifier
-from unicode_fol_kit.fol.nodes import Atom, Constant, Variable
-from unicode_fol_kit.fol.signature import Signature
-from unicode_fol_kit.logic import Sentence
+from unicode_logic_kit.fol._msfl_nodes import SortedQuantifier
+from unicode_logic_kit.fol.nodes import Atom, Constant, Variable
+from unicode_logic_kit.fol.signature import Signature
+from unicode_logic_kit.logic import Sentence
 
 _X = Variable("x")
 GOAL = SortedQuantifier("∀", _X, "A", Atom("P", [_X]))

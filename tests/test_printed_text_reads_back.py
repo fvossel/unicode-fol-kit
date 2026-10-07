@@ -1,9 +1,9 @@
 r"""Every generator that mints a bound variable must print text this kit can read.
 
 The kit's VARIABLE terminal is **one term-valued letter followed by ASCII digits**
-(:func:`unicode_fol_kit.fol._identifiers.variable_pattern`) — no underscore, no
+(:func:`unicode_logic_kit.fol._identifiers.variable_pattern`) — no underscore, no
 prefix. Several translations used to mint names outside that shape, so the kit
-printed formulas its own :func:`unicode_fol_kit.api.parse_any` rejected:
+printed formulas its own :func:`unicode_logic_kit.api.parse_any` rejected:
 
 ====================================  =====================================
 generator                             the name it minted before 0.30.0
@@ -18,7 +18,7 @@ generator                             the name it minted before 0.30.0
 Each one was a formula that could be computed and printed but not handed back to
 ``api.prove`` as text — which is exactly how a translation reaches the MCP tools,
 the CLI and a DOL/CASL export. The fix was to route every one of them through
-:func:`unicode_fol_kit.fol._identifiers.fresh_variables`.
+:func:`unicode_logic_kit.fol._identifiers.fresh_variables`.
 
 This file is the gate that keeps them fixed, and it is deliberately NOT a list of
 the five names above: each case runs the generator, prints the result, parses the
@@ -61,23 +61,23 @@ precise rather than a blanket "OWL names do not round-trip".
 
 import pytest
 
-from unicode_fol_kit import MSFLParser, api
-from unicode_fol_kit.atp.tstp_check import _formula_alpha_equal
-from unicode_fol_kit.comorphism import DEFAULT_REGISTRY
-from unicode_fol_kit.fol._identifiers import variable_names, variable_pattern
-from unicode_fol_kit.fol._msfl_nodes import nonempty_sort_axioms
-from unicode_fol_kit.fol.frames import unguarded_frame_axiom
-from unicode_fol_kit.fol.modal_translation import frame_axioms, standard_translation
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import MSFLParser, api
+from unicode_logic_kit.atp.tstp_check import _formula_alpha_equal
+from unicode_logic_kit.comorphism import DEFAULT_REGISTRY
+from unicode_logic_kit.fol._identifiers import variable_names, variable_pattern
+from unicode_logic_kit.fol._msfl_nodes import nonempty_sort_axioms
+from unicode_logic_kit.fol.frames import unguarded_frame_axiom
+from unicode_logic_kit.fol.modal_translation import frame_axioms, standard_translation
+from unicode_logic_kit.fol.nodes import (
     Always, Atom, Box, Constant, Diamond, Eventually, Implies, Knows, Next,
     Obligatory, Permitted, Quantifier, Variable,
 )
-from unicode_fol_kit.fol.qml import (
+from unicode_logic_kit.fol.qml import (
     qml_axioms, qml_translate, qml_validity_formula,
 )
 import re
 
-import unicode_fol_kit.dl as dl
+import unicode_logic_kit.dl as dl
 
 MODAL = MSFLParser(modal=True)
 SORTED = MSFLParser(many_sorted=True)
@@ -588,7 +588,7 @@ def test_an_imported_tptp_variable_with_an_underscore_is_the_fourth_limit():
     # is irrelevant.
     # Imported locally rather than in this module's shared import block, so
     # three other packages editing that block do not conflict over one line.
-    from unicode_fol_kit.fol.tptp_input import parse_tptp
+    from unicode_logic_kit.fol.tptp_input import parse_tptp
 
     formulas = parse_tptp("fof(a, axiom, ! [VAR_gn_x1] : pred_p(VAR_gn_x1)).")
     image = formulas[0].formula
@@ -620,9 +620,9 @@ def test_an_imported_tptp_variable_with_an_underscore_is_the_fourth_limit():
 # literal needed.
 # --------------------------------------------------------------------------- #
 
-from unicode_fol_kit.dl.datatypes import Literal as _Literal          # noqa: E402
-from unicode_fol_kit.fol.nodes import Function, Number                 # noqa: E402
-from unicode_fol_kit.fol.sanitize import sanitize_names                # noqa: E402
+from unicode_logic_kit.dl.datatypes import Literal as _Literal          # noqa: E402
+from unicode_logic_kit.fol.nodes import Function, Number                 # noqa: E402
+from unicode_logic_kit.fol.sanitize import sanitize_names                # noqa: E402
 
 _DIGIT = dl.Datatype("Digit")
 _ANY = dl.Datatype("rdfs:Literal")
@@ -897,7 +897,7 @@ def test_an_upper_case_individual_in_a_data_assertion_is_read_as_a_predicate_ter
 def _empty_box_drs_cases():
     # Imported locally, like the TPTP case above, so the shared import block is
     # not a conflict point between packages.
-    from unicode_fol_kit.drt.nodes import DRS, Impl, Neg, Or, Pred
+    from unicode_logic_kit.drt.nodes import DRS, Impl, Neg, Or, Pred
 
     empty = DRS(referents=(), conditions=())
     dog = DRS(referents=("x",), conditions=(Pred("Dog", ("x",)),))
@@ -916,7 +916,7 @@ def _empty_box_drs_cases():
 @pytest.mark.parametrize("name, drs, expected", [(n, d, e) for n, d, e in _empty_box_drs_cases()],
                          ids=[n for n, _, _ in _empty_box_drs_cases()])
 def test_an_empty_boxs_translation_reads_back(name, drs, expected):
-    from unicode_fol_kit.drt.export import drs_to_fol
+    from unicode_logic_kit.drt.export import drs_to_fol
 
     image = drs_to_fol(drs)
     assert_reads_back(image, f"drs_to_fol({name})")
@@ -981,7 +981,7 @@ _LARGE_FLOATS = [
 
 
 def _number_atom(value):
-    from unicode_fol_kit.fol.nodes import Number
+    from unicode_logic_kit.fol.nodes import Number
 
     return Atom("P", [Number(value)])
 
@@ -1011,7 +1011,7 @@ def test_a_float_in_exponent_form_prints_positional_in_every_text_renderer(value
 
 @pytest.mark.parametrize("value, text", _LARGE_FLOATS, ids=[repr(v) for v, _ in _LARGE_FLOATS])
 def test_a_float_that_is_a_whole_number_is_stored_as_the_integer_it_equals(value, text):
-    from unicode_fol_kit.fol.nodes import Number
+    from unicode_logic_kit.fol.nodes import Number
 
     node = Number(value)
     assert isinstance(node.value, int) and node.value == int(text) and node.value == value
@@ -1027,9 +1027,9 @@ _READABLE_EXPONENT_FLOATS = [(v, t) for v, t in _EXPONENT_FLOATS if abs(v) >= 2.
 @pytest.mark.parametrize("value, text", _READABLE_EXPONENT_FLOATS,
                          ids=[repr(v) for v, _ in _READABLE_EXPONENT_FLOATS])
 def test_the_positional_text_reads_back_as_the_same_float_in_every_reader(value, text):
-    from unicode_fol_kit.fol.nodes import Number
-    from unicode_fol_kit.fol.prover9_input import parse_prover9
-    from unicode_fol_kit.fol.tptp_input import parse_tptp
+    from unicode_logic_kit.fol.nodes import Number
+    from unicode_logic_kit.fol.prover9_input import parse_prover9
+    from unicode_logic_kit.fol.tptp_input import parse_tptp
 
     assert float(text) == value
     expected = Number(value)
@@ -1044,9 +1044,9 @@ def test_the_positional_text_reads_back_as_the_same_float_in_every_reader(value,
 
 
 def test_the_text_of_the_smallest_double_is_refused_by_every_reader():
-    from unicode_fol_kit.fol.naming import ParsingError
-    from unicode_fol_kit.fol.prover9_input import parse_prover9
-    from unicode_fol_kit.fol.tptp_input import parse_tptp
+    from unicode_logic_kit.fol.naming import ParsingError
+    from unicode_logic_kit.fol.prover9_input import parse_prover9
+    from unicode_logic_kit.fol.tptp_input import parse_tptp
 
     text = "0." + "0" * 323 + "5"
     assert float(text) == float("0." + "0" * 323 + "4") == 5e-324      # one double for two decimals
@@ -1058,9 +1058,9 @@ def test_the_text_of_the_smallest_double_is_refused_by_every_reader():
 
 @pytest.mark.parametrize("value, text", _LARGE_FLOATS, ids=[repr(v) for v, _ in _LARGE_FLOATS])
 def test_the_integer_text_of_a_large_float_reads_back_as_the_same_numeral_in_every_reader(value, text):
-    from unicode_fol_kit.fol.nodes import Number
-    from unicode_fol_kit.fol.prover9_input import parse_prover9
-    from unicode_fol_kit.fol.tptp_input import parse_tptp
+    from unicode_logic_kit.fol.nodes import Number
+    from unicode_logic_kit.fol.prover9_input import parse_prover9
+    from unicode_logic_kit.fol.tptp_input import parse_tptp
 
     assert int(text) == value
     expected = Number(value)
@@ -1078,7 +1078,7 @@ def test_the_integer_text_of_a_large_float_reads_back_as_the_same_numeral_in_eve
 
 def test_the_old_exponent_text_was_not_the_number_it_printed():
     # The control: this is what the renderers used to print and why it is wrong.
-    from unicode_fol_kit.fol.nodes import Function, Number
+    from unicode_logic_kit.fol.nodes import Function, Number
 
     assert FOLP.parse("P(1e-07)").args[0] == Function("-", [Constant("1e"), Number(7)])
     assert not api.parse_any("P(1.5e-05)").ok
@@ -1124,7 +1124,7 @@ def test_every_finite_double_prints_a_text_that_reads_back_to_exactly_itself():
     import random
     import struct
 
-    from unicode_fol_kit.fol.nodes import Number
+    from unicode_logic_kit.fol.nodes import Number
 
     with_point = re.compile(r"-?[0-9]+\.[0-9]+")
     rng = random.Random(20261004)
@@ -1148,7 +1148,7 @@ def test_every_finite_double_prints_a_text_that_reads_back_to_exactly_itself():
     # The reader reads back every double whose text has at most 15 significant digits (two different
     # decimals that short are never one double) and refuses, by name, a text with more: two decimals of
     # 16 or 17 digits can be one double, so the text does not tell which numeral it was.
-    from unicode_fol_kit.fol.naming import ParsingError
+    from unicode_logic_kit.fol.naming import ParsingError
 
     for v in values[:150] + [0.1, 2.5, 1e-07, 3.14159265358979, 12345.678, -1.5e-05]:
         whole, _, fraction = Number(v).to_tptp().lstrip("-").partition(".")
@@ -1180,7 +1180,7 @@ def test_smtlib_still_reads_back_for_ints_and_exponent_floats():
     # SMT-LIB at all -- a separate, older limit of atp.z3_input.
     import z3
 
-    from unicode_fol_kit.atp.z3_input import from_z3
+    from unicode_logic_kit.atp.z3_input import from_z3
 
     for value in (3, 1e-07, 1.5e-05, 1e16):
         atom = _number_atom(value)

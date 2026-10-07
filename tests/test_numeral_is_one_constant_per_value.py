@@ -31,12 +31,12 @@ import sys
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import resolution
-from unicode_fol_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, Z3Backend
-from unicode_fol_kit.fol.nodes import Atom, Constant, Function, Number, Quantifier, Variable, Z3Env
-from unicode_fol_kit.semantics.modelfinder import find_countermodel
-from unicode_fol_kit.semantics.tarski import Structure, satisfies, term_value
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import resolution
+from unicode_logic_kit.atp.protocol import PROVED, REFUTED, UNKNOWN, Z3Backend
+from unicode_logic_kit.fol.nodes import Atom, Constant, Function, Number, Quantifier, Variable, Z3Env
+from unicode_logic_kit.semantics.modelfinder import find_countermodel
+from unicode_logic_kit.semantics.tarski import Structure, satisfies, term_value
 
 # (label, premises, goal, valid)
 A_PROBLEMS = [
@@ -74,14 +74,14 @@ VALUES = [0, -0.0, 0.0, 1, 1.0, True, 2, 2.0, 2.5, -1, -1.0, 1e22, 10 ** 22, 1e2
 
 
 def test_two_numerals_have_one_key_exactly_when_they_are_equal():
-    from unicode_fol_kit.fol._fol_nodes import numeral_key
+    from unicode_logic_kit.fol._fol_nodes import numeral_key
     for a in VALUES:
         for b in VALUES:
             assert (Number(a) == Number(b)) == (numeral_key(a) == numeral_key(b)), (a, b)
 
 
 def test_the_key_of_a_numeral_is_the_text_of_its_value():
-    from unicode_fol_kit.fol._fol_nodes import numeral_key
+    from unicode_logic_kit.fol._fol_nodes import numeral_key
     assert [numeral_key(v) for v in (1, 1.0, -0.0, 2.5, -1, 1e16, 1e-07, 10 ** 22)] == [
         "1", "1", "0", "2.5", "-1", "10000000000000000", "1e-07", "10000000000000000000000"]
 
@@ -200,8 +200,8 @@ def test_a_numeral_and_a_variable_spelled_alike_are_two_symbols_for_z3():
 # ---------------------------------------------------------------------------------------------
 _CHILD = r"""
 import json, sys
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.cvc5_backend import Cvc5Backend
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.cvc5_backend import Cvc5Backend
 
 out = []
 for premises, goal in json.loads(sys.argv[1]):

@@ -8,16 +8,16 @@ failure can never be masked by the enumerator and the evaluator agreeing on a
 shared bug.
 """
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Implies,
     Box, Diamond, Knows, Obligatory, Permitted,
     Next, Always, Eventually, Until, Would,
 )
-from unicode_fol_kit.atp.kripke_enum import (
+from unicode_logic_kit.atp.kripke_enum import (
     EnumSearchResult, modal_enum_search, modal_enum_countermodel, KripkeEnumBackend,
 )
-from unicode_fol_kit.atp.protocol import REFUTED, UNKNOWN
-from unicode_fol_kit.semantics.kripke import satisfies_modal
+from unicode_logic_kit.atp.protocol import REFUTED, UNKNOWN
+from unicode_logic_kit.semantics.kripke import satisfies_modal
 
 P = Atom("P", [])
 Q = Atom("Q", [])

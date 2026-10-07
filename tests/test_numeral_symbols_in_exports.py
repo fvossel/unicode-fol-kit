@@ -19,23 +19,23 @@ import re
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.nanocop_backend import to_nanocop
-from unicode_fol_kit.fol._numeral_symbols import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.nanocop_backend import to_nanocop
+from unicode_logic_kit.fol._numeral_symbols import (
     numerals_as_constants, prefixed_numeral_name, term_numerals,
 )
-from unicode_fol_kit.fol._symbol_names import SymbolNames
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol._symbol_names import SymbolNames
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Box, Cardinality, Constant, Function, Implies, Not, Number, Quantifier, Variable,
 )
-from unicode_fol_kit.fol.prolog_export import (
+from unicode_logic_kit.fol.prolog_export import (
     PrologExportError, formula_to_prolog_clause, formula_to_prolog_program,
 )
-from unicode_fol_kit.fol.prolog_input import parse_prolog_clause
-from unicode_fol_kit.fol.qml import to_thf_modal
-from unicode_fol_kit.hol.isabelle_modal import isabelle_modal_theory, modal_axiom_names, to_isabelle_modal
-from unicode_fol_kit.hol.lean import to_lean_fol, to_lean_modal_k, to_lean_msfol
-from unicode_fol_kit.hol.secondorder import to_isabelle_so, to_thf_so
+from unicode_logic_kit.fol.prolog_input import parse_prolog_clause
+from unicode_logic_kit.fol.qml import to_thf_modal
+from unicode_logic_kit.hol.isabelle_modal import isabelle_modal_theory, modal_axiom_names, to_isabelle_modal
+from unicode_logic_kit.hol.lean import to_lean_fol, to_lean_modal_k, to_lean_msfol
+from unicode_logic_kit.hol.secondorder import to_isabelle_so, to_thf_so
 
 a, b = Constant("a"), Constant("b")
 

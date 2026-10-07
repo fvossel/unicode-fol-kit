@@ -14,11 +14,11 @@ import inspect
 import sys
 import time
 
-from unicode_fol_kit.atp.modal_tableau import (
+from unicode_logic_kit.atp.modal_tableau import (
     is_modal_valid, modal_countermodel, modal_decide, modal_prove, modal_tableau_closed,
 )
-from unicode_fol_kit.atp.protocol import UNKNOWN, get_backend
-from unicode_fol_kit.fol.nodes import And, Atom, Not, Or
+from unicode_logic_kit.atp.protocol import UNKNOWN, get_backend
+from unicode_logic_kit.fol.nodes import And, Atom, Not, Or
 
 
 def _pigeonhole(pigeons, holes):

@@ -15,9 +15,9 @@ import time
 
 import pytest
 
-from unicode_fol_kit._deadline import DeadlineReached
-from unicode_fol_kit.atp import modal_tableau as mt
-from unicode_fol_kit.fol.nodes import Atom, Box, Implies
+from unicode_logic_kit._deadline import DeadlineReached
+from unicode_logic_kit.atp import modal_tableau as mt
+from unicode_logic_kit.fol.nodes import Atom, Box, Implies
 
 SLACK = 5.0
 

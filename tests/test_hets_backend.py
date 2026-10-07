@@ -1,8 +1,8 @@
-"""Tests for HetsBackend (unicode_fol_kit.atp.hets_backend).
+"""Tests for HetsBackend (unicode_logic_kit.atp.hets_backend).
 
 Offline tests stub the hets package's client/discovery attributes (the
 backend resolves them lazily at call time, so ``monkeypatch.setattr`` on
-``unicode_fol_kit.hets`` reaches every ``decide()`` call) and pin the
+``unicode_logic_kit.hets`` reaches every ``decide()`` call) and pin the
 result→Verdict mapping to the wire values verified live on 2026-08-12:
 ``Proved``/``Disproved``/``Open`` (+ ``Consistent`` on the consistency
 route). The live class replays the roadmap's acceptance criterion against
@@ -12,17 +12,17 @@ Hets reasoners, each Verdict carrying reasoner+comorphism provenance.
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit import hets as hets_pkg
-from unicode_fol_kit.atp.hets_backend import HetsBackend
-from unicode_fol_kit.atp.protocol import (
+from unicode_logic_kit import api
+from unicode_logic_kit import hets as hets_pkg
+from unicode_logic_kit.atp.hets_backend import HetsBackend
+from unicode_logic_kit.atp.protocol import (
     BackendUnavailable,
     default_chain,
     get_backend,
 )
-from unicode_fol_kit.hets.docker import hets_available
+from unicode_logic_kit.hets.docker import hets_available
 
-from unicode_fol_kit import MSFLParser
+from unicode_logic_kit import MSFLParser
 
 _PARSE = MSFLParser().parse
 _PARSE_MS = MSFLParser(many_sorted=True).parse

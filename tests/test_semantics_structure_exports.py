@@ -1,18 +1,18 @@
 """The checks of whether a structure is a structure of the many-sorted definition are public.
 
 ``IllegalStructureError``, ``check_structure`` and ``structure_violations`` live in
-``semantics.tarski`` and are exported from ``unicode_fol_kit.semantics`` (and listed in the API
+``semantics.tarski`` and are exported from ``unicode_logic_kit.semantics`` (and listed in the API
 reference, which ``test_api_reference_complete`` enforces name by name).
 """
 
 import pytest
 
-import unicode_fol_kit.semantics as semantics
-from unicode_fol_kit.fol.nodes import Atom, Constant, SortedConstant
-from unicode_fol_kit.semantics import (
+import unicode_logic_kit.semantics as semantics
+from unicode_logic_kit.fol.nodes import Atom, Constant, SortedConstant
+from unicode_logic_kit.semantics import (
     IllegalStructureError, Structure, check_structure, structure_violations,
 )
-from unicode_fol_kit.semantics import tarski
+from unicode_logic_kit.semantics import tarski
 
 NAMES = ("IllegalStructureError", "check_structure", "structure_violations")
 

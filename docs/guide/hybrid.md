@@ -17,7 +17,7 @@ Together they buy things plain modal logic cannot express: asserting facts about
 `@i` binds like the other prefix operators (`¬`, `K_a`), and nominals combine freely with every modal operator:
 
 ```python
-from unicode_fol_kit import MSFLParser, Nominal, At
+from unicode_logic_kit import MSFLParser, Nominal, At
 
 mp = MSFLParser(modal=True)
 
@@ -31,7 +31,7 @@ mp.parse("@i P").to_latex()                 # → '@_{i} P'
 The nodes are ordinary kit nodes — they render, serialise, and round-trip like everything else, and `At` coerces a bare string for convenience:
 
 ```python
-from unicode_fol_kit import Node, Atom
+from unicode_logic_kit import Node, Atom
 
 p = Atom("P", [])
 At("i", p) == At(Nominal("i"), p)            # → True   (string is coerced to a Nominal)
@@ -45,7 +45,7 @@ Node.from_dict(f.to_dict()) == f             # → True   (dict serialisation ro
 A `KripkeModel` interprets nominals through the optional `nominals=` mapping (name → world). Every referenced world must exist — a dangling assignment raises at construction time. A nominal is then true at **exactly** the world it names, and `@i φ` evaluates `φ` at that world, wherever the evaluation currently stands:
 
 ```python
-from unicode_fol_kit import KripkeModel, satisfies_modal, Atom, Nominal, At
+from unicode_logic_kit import KripkeModel, satisfies_modal, Atom, Nominal, At
 
 sunny = Atom("Sunny", [])
 m = KripkeModel(
@@ -64,7 +64,7 @@ satisfies_modal(sunny, m, "here")          # → False  (… while "here" itself
 `@i i` is true everywhere (the world named `i` is, trivially, named `i`), and `@` composes with the modal operators — `◇i` reads "some successor is the world `i`":
 
 ```python
-from unicode_fol_kit import Diamond
+from unicode_logic_kit import Diamond
 
 satisfies_modal(At("i", Nominal("i")), m, "here")   # → True   (valid at every world)
 satisfies_modal(Diamond(Nominal("i")), m, "here")   # → True   ("here" sees the world i)
@@ -86,7 +86,7 @@ KripkeModel({0, 1}, nominals={"i": 7})     # raises ValueError: nominal 'i' … 
 - `ST(@i φ)(w)` = `ST(φ)(nom_i)`
 
 ```python
-from unicode_fol_kit import standard_translation
+from unicode_logic_kit import standard_translation
 
 standard_translation(mp.parse("i")).to_unicode_str()      # → 'w = nom_i'
 standard_translation(mp.parse("@i P")).to_unicode_str()   # → 'P(nom_i)'
@@ -113,12 +113,12 @@ standard_translation(mp.parse("□P(w)"), avoid=["x0"]).to_unicode_str()   # →
 
 ## Deciding validity: `hybrid_is_valid`
 
-`hybrid_is_valid(formula, frame=…)` decides hybrid-modal validity by closing the standard translation over the current world under the frame axioms — `frame_axioms → ∀w ST(φ)(w)` — and asking the Z3 validity oracle. `frame` constrains the **alethic** relation and takes any system of the shared registry (`fol.frames`), including a Scott–Lemmon spec; a system with no first-order condition (GL, S4.1, Grz) is refused by name. The other relations a formula may mention get {func}`~unicode_fol_kit.fol.modal_translation.frame_axioms`' conventions: temporal `T` reflexive-transitive with `N ⊆ T` and deontic `D` serial, both on by default, and the agent-indexed relations at K unless `systems={"epistemic": "S5"}` asks for more — see [Translating between logics](logic-graph.md). The nominal constants stay free, and first-order validity quantifies free constants universally: that is exactly "for every nominal assignment". First-order validity is only semi-decidable in general, but H(@) over K is **decidable** and these translation images are small enough that Z3 settles them instantly; `True` is always a real proof.
+`hybrid_is_valid(formula, frame=…)` decides hybrid-modal validity by closing the standard translation over the current world under the frame axioms — `frame_axioms → ∀w ST(φ)(w)` — and asking the Z3 validity oracle. `frame` constrains the **alethic** relation and takes any system of the shared registry (`fol.frames`), including a Scott–Lemmon spec; a system with no first-order condition (GL, S4.1, Grz) is refused by name. The other relations a formula may mention get {func}`~unicode_logic_kit.fol.modal_translation.frame_axioms`' conventions: temporal `T` reflexive-transitive with `N ⊆ T` and deontic `D` serial, both on by default, and the agent-indexed relations at K unless `systems={"epistemic": "S5"}` asks for more — see [Translating between logics](logic-graph.md). The nominal constants stay free, and first-order validity quantifies free constants universally: that is exactly "for every nominal assignment". First-order validity is only semi-decidable in general, but H(@) over K is **decidable** and these translation images are small enough that Z3 settles them instantly; `True` is always a real proof.
 
 The standard H(@) validities all come out true over **K**:
 
 ```python
-from unicode_fol_kit import hybrid_is_valid
+from unicode_logic_kit import hybrid_is_valid
 
 hybrid_is_valid(mp.parse("@i i"))                          # → True  (i holds at the world named i)
 hybrid_is_valid(mp.parse("@i P ↔ ¬@i ¬P"))               # → True  (@ is self-dual: one target world)
@@ -157,7 +157,7 @@ On pure modal input (no nominals) `hybrid_is_valid` agrees with the native table
 The `hybrid` backend (`api.prove(formula, logic="hybrid")`, `HybridBackend`) builds the same goal from the same `frame_axioms` and takes the same three keywords, `frame=`, `systems=` and `temporal_closure=`, so it gives the same answers; its verdict tells a countermodel from a timeout, which the bare bool of `hybrid_is_valid` does not. The axioms are those of every relation the goal mentions, so `Ⓖφ → φ` and `Ⓞφ → Ⓟφ` are proved by the backend just as `hybrid_is_valid` proves them:
 
 ```python
-from unicode_fol_kit import api
+from unicode_logic_kit import api
 
 knows = mp.parse("K_a P → P")      # the T schema for knowledge: the agent relation is K unless asked otherwise
 api.prove(knows, logic="hybrid").status                                  # → 'refuted'
@@ -171,7 +171,7 @@ api.prove(mp.parse("Ⓞ P → Ⓟ P"), logic="hybrid").status                  #
 A sorted constant `c:S` (parsed by `MSFLParser(modal=True, many_sorted=True)`) is an element of `S` at every world, a constant being a rigid designator. `frame_axioms` adds `∀v0 S(c, v0)` for it, and `hybrid_is_valid`, `down_is_valid`, `down_decide` and the `hybrid` backend all decide under it:
 
 ```python
-from unicode_fol_kit.fol.modal_translation import frame_axioms
+from unicode_logic_kit.fol.modal_translation import frame_axioms
 
 sp = MSFLParser(modal=True, many_sorted=True)
 [a.to_unicode_str() for a in frame_axioms(sp.parse("Human(carl:Human)"))]   # → ['∀v0 Human(carl, v0)']
@@ -184,7 +184,7 @@ hybrid_is_valid(sp.parse("Mortal(carl:Human)"))    # → False   nothing makes c
 - **The modal tableau rejects hybrid input** — cleanly, never with a wrong verdict. A labelled tableau would need extra rules to honour a nominal's name-exactly-one-world constraint (treating it as an ordinary atom would wrongly refute `@i i`), so `is_modal_valid`, `modal_decide`, `modal_prove`, `modal_countermodel`, and `modal_tableau_closed` all raise on nominals:
 
 ```python
-from unicode_fol_kit import is_modal_valid
+from unicode_logic_kit import is_modal_valid
 
 is_modal_valid(mp.parse("@i P → P"))
 # raises NotImplementedError: … hybrid constructs (nominals/@) are not supported
@@ -201,7 +201,7 @@ For the plain modal machinery these constructs extend — Kripke models, the sta
 `↓x.φ` **binds the state variable `x` to the CURRENT world**, then evaluates `φ` — which may refer back to `x`, exactly the way it would refer to a nominal, via a bare occurrence or `@x`. This is strictly more expressive than H(@): a plain nominal names a world *fixed in advance by the model*, but `↓x` names *whichever world evaluation happens to be visiting right now* — so `↓x.□¬x` ("name here `x`; every successor differs from `x`") states **irreflexivity of the current world** as a single formula, something no fixed nominal assignment can express. `↓x` parses and renders like any other binder (`AST` node `Down`, grammar level `quantifier`, same precedence as `∀`/`∃`):
 
 ```python
-from unicode_fol_kit import MSFLParser, KripkeModel, satisfies_modal, standard_translation
+from unicode_logic_kit import MSFLParser, KripkeModel, satisfies_modal, standard_translation
 
 mp = MSFLParser(modal=True)
 
@@ -226,9 +226,9 @@ Adding `↓` to H(@) gives full **H(@,↓)**, whose validity is **UNDECIDABLE** 
 | `atp.kripke_enum.KripkeEnumBackend` / `modal_enum_search` (bounded search) | validity — **REFUTED only** | a `REFUTED` verdict (every countermodel is independently re-checked with `satisfies_modal`); exhausting the search, or running out of `timeout`, is *never* a validity proof |
 
 ```python
-from unicode_fol_kit.fol.modal_translation import down_is_valid
-from unicode_fol_kit.atp.kripke_enum import modal_enum_search
-from unicode_fol_kit.atp.hybrid_down import down_decide
+from unicode_logic_kit.fol.modal_translation import down_is_valid
+from unicode_logic_kit.atp.kripke_enum import modal_enum_search
+from unicode_logic_kit.atp.hybrid_down import down_decide
 
 standard_translation(irreflexive).to_unicode_str()
 # → '∀w0 (R(w, w0) → ¬w0 = w)'   -- exactly the FO irreflexivity condition, hand-derivable
@@ -263,7 +263,7 @@ cut_off = modal_enum_search(tautology, frame="K", max_worlds=2, timeout=0)   # a
 Every route that is only sound because it is scoped to a *decidable* fragment refuses a `↓`-formula explicitly, rather than silently deciding a larger logic than it was built for: `hybrid_is_valid` (its bare-bool contract needs H(@)'s decidability — see its own docstring), the modal tableau's five entry points (`is_modal_valid` / `modal_decide` / `modal_prove` / `modal_countermodel` / `modal_tableau_closed`), `fol.qml` (`qml_translate` / `qml_is_valid` / `to_thf_modal`), and the HOL/THF shallow embeddings (`hol.isabelle_modal.to_isabelle_modal`, `hol.thf_modal.to_thf_modal_full`, `hol.ho_modal`'s third-order routes):
 
 ```python
-from unicode_fol_kit.fol.modal_translation import hybrid_is_valid
+from unicode_logic_kit.fol.modal_translation import hybrid_is_valid
 
 hybrid_is_valid(irreflexive)
 # raises NotImplementedError: hybrid_is_valid: the ↓ binder (Down) makes hybrid

@@ -27,14 +27,14 @@ import time
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp.protocol import PROVED, UNKNOWN, get_backend
-from unicode_fol_kit.atp.tableau import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp.protocol import PROVED, UNKNOWN, get_backend
+from unicode_logic_kit.atp.tableau import (
     TableauClosure, TableauStep, is_valid_tableau, prove_tableau, prove_tableau_detailed,
     tableau_closed, tableau_model,
 )
-from unicode_fol_kit.atp.tableau_check import check_tableau_proof
-from unicode_fol_kit.fol.nodes import Atom, Constant, Implies, Not, Or, Quantifier, Variable
+from unicode_logic_kit.atp.tableau_check import check_tableau_proof
+from unicode_logic_kit.fol.nodes import Atom, Constant, Implies, Not, Or, Quantifier, Variable
 
 SLACK = 5.0
 

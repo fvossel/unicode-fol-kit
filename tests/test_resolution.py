@@ -1,4 +1,4 @@
-"""Tests for the first-order resolution prover (unicode_fol_kit.atp.resolution).
+"""Tests for the first-order resolution prover (unicode_logic_kit.atp.resolution).
 
 Each entailment/validity claim is checked against a hand-derived oracle and,
 where the input is propositional, cross-checked against the existing Z3 validity
@@ -9,11 +9,11 @@ constant from ``∃x P(x)`` must not unify with the named constant ``a``.
 
 from functools import reduce
 
-from unicode_fol_kit import MSFLParser, is_valid
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import MSFLParser, is_valid
+from unicode_logic_kit.fol.nodes import (
     Atom, Not, And, Or, Implies, Constant, Variable,
 )
-from unicode_fol_kit.atp.resolution import (
+from unicode_logic_kit.atp.resolution import (
     to_clauses, prove, is_valid_resolution, refute,
 )
 

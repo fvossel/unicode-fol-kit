@@ -34,22 +34,22 @@ import random
 
 import pytest
 
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Node, Atom, Constant, Variable, Not, And, Or, Implies,
     Knows,
 )
-from unicode_fol_kit.fol._modal_nodes import (
+from unicode_logic_kit.fol._modal_nodes import (
     EverybodyKnows, DistributedKnowledge, CommonKnowledge,
 )
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.modal_translation import standard_translation
-from unicode_fol_kit.semantics.kripke import KripkeModel, satisfies_modal
-from unicode_fol_kit.semantics.action_models import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.modal_translation import standard_translation
+from unicode_logic_kit.semantics.kripke import KripkeModel, satisfies_modal
+from unicode_logic_kit.semantics.action_models import (
     everybody_knows, distributed_knowledge_holds, common_knowledge_holds,
 )
-from unicode_fol_kit.semantics.dynamic_epistemic import announce
-from unicode_fol_kit.semantics.tarski import Structure, satisfies
-from unicode_fol_kit.atp.modal_tableau import (
+from unicode_logic_kit.semantics.dynamic_epistemic import announce
+from unicode_logic_kit.semantics.tarski import Structure, satisfies
+from unicode_logic_kit.atp.modal_tableau import (
     is_modal_valid, modal_decide, modal_countermodel, has_modal,
 )
 
@@ -115,7 +115,7 @@ def test_group_syntax_requires_at_least_one_agent():
     """C_{} is not valid surface syntax -- the grammar requires >=1 agent, so
     the parser can never hand an empty group to CommonKnowledge/EverybodyKnows
     either (even though their Python constructors would accept one)."""
-    from unicode_fol_kit.fol.naming import NamingError, ParsingError
+    from unicode_logic_kit.fol.naming import NamingError, ParsingError
     with pytest.raises((NamingError, ParsingError)):
         MODAL.parse("C_{} P")
 
@@ -158,8 +158,8 @@ def test_lalr_and_earley_agree_on_group_syntax():
     spot-checked here directly against the raw LALR/Earley Lark parsers for
     the exact new syntax (see that file for the seeded fuzz corpus this
     syntax is now also woven into)."""
-    from unicode_fol_kit.fol._fol_nodes import build_grammar
-    from unicode_fol_kit.fol.msflparser import (
+    from unicode_logic_kit.fol._fol_nodes import build_grammar
+    from unicode_logic_kit.fol.msflparser import (
         _allow_single_letter_function_calls, _GRAMMARS_DIR, _REGISTRY_MODE,
     )
     from lark import Lark
@@ -550,15 +550,15 @@ def test_negated_distributed_knowledge_is_honestly_unknown():
 
 @pytest.mark.parametrize("cls", [EverybodyKnows, DistributedKnowledge, CommonKnowledge])
 def test_qml_refuses_the_group_operators_by_name(cls):
-    from unicode_fol_kit.fol.qml import qml_translate
+    from unicode_logic_kit.fol.qml import qml_translate
     with pytest.raises(NotImplementedError, match=cls.__name__):
         qml_translate(cls(("a", "b"), P))
 
 
 @pytest.mark.parametrize("cls", [EverybodyKnows, DistributedKnowledge, CommonKnowledge])
 def test_hol_exporters_refuse_the_group_operators_by_name(cls):
-    from unicode_fol_kit.hol.isabelle_modal import to_isabelle_modal
-    from unicode_fol_kit.hol.thf_modal import to_thf_modal_full
+    from unicode_logic_kit.hol.isabelle_modal import to_isabelle_modal
+    from unicode_logic_kit.hol.thf_modal import to_thf_modal_full
     for fn in (to_isabelle_modal, to_thf_modal_full):
         with pytest.raises(NotImplementedError, match=cls.__name__):
             fn(cls(("a", "b"), P))
@@ -604,7 +604,7 @@ def test_fitch_factivity_reit_through_group_operator(cls):
     Knows(a, P)) the step ``P`` by Reit is a valid S5 consequence (axiom T for
     the epistemic relation). Before the fix fitch added no frame axioms for
     an agent that occurs only inside a group operator and rejected the step."""
-    from unicode_fol_kit.atp.fitch import Proof, premise, line, verify_proof
+    from unicode_logic_kit.atp.fitch import Proof, premise, line, verify_proof
 
     a = Constant("a")
     control = Proof(premises=(premise(1, Knows(a, P)),),
@@ -617,7 +617,7 @@ def test_fitch_factivity_reit_through_group_operator(cls):
 
 def test_kripke_enum_finds_countermodel_for_group_operator():
     """HAND-CHECKED: E_{a}P is not K-valid (K:a={(0,1)}, P false at world 1)."""
-    from unicode_fol_kit.atp.kripke_enum import modal_enum_search
+    from unicode_logic_kit.atp.kripke_enum import modal_enum_search
 
     a = Constant("a")
     control = modal_enum_search(Knows(a, P), frame="K", max_worlds=2)
@@ -634,8 +634,8 @@ def test_kripke_enum_applies_the_epistemic_system_to_group_members(cls):
     KripkeEnumBackend reports as REFUTED. Under S5 (reflexive) it is valid
     for all three operators; under K it is invalid for E and D and, since C_G
     reads the REFLEXIVE-transitive closure, valid for C."""
-    from unicode_fol_kit.atp.kripke_enum import modal_enum_search
-    from unicode_fol_kit.atp.protocol import get_backend, REFUTED
+    from unicode_logic_kit.atp.kripke_enum import modal_enum_search
+    from unicode_logic_kit.atp.protocol import get_backend, REFUTED
 
     a = Constant("a")
     formula = Implies(cls((a,), P), P)

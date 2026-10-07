@@ -11,16 +11,16 @@ import itertools
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import Atom
-from unicode_fol_kit.hol.isabelle_conditional import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import Atom
+from unicode_logic_kit.hol.isabelle_conditional import (
     isabelle_conditional_theory, to_isabelle_conditional,
     battery_proof, nitpick_proof, DEFAULT_METHODS,
 )
-from unicode_fol_kit.hol.isabelle_runner import (
+from unicode_logic_kit.hol.isabelle_runner import (
     isabelle_available, isabelle_decide_counterfactual,
 )
-from unicode_fol_kit.semantics.conditional import CounterfactualModel, cf_satisfies
+from unicode_logic_kit.semantics.conditional import CounterfactualModel, cf_satisfies
 
 _MODAL = MSFLParser(modal=True)
 

@@ -8,14 +8,14 @@ reversibly (θ → theta), so an emitted problem is always valid ASCII.
 
 import pytest
 
-from unicode_fol_kit.fol.msflparser import MSFLParser
-from unicode_fol_kit.fol.nodes import Node
-from unicode_fol_kit.fol._fol_nodes import (
+from unicode_logic_kit.fol.msflparser import MSFLParser
+from unicode_logic_kit.fol.nodes import Node
+from unicode_logic_kit.fol._fol_nodes import (
     Constant, Measure,
     constant_name_to_ascii, constant_name_from_ascii,
     _GREEK_CONST_TO_ASCII,
 )
-from unicode_fol_kit.fol._msfl_nodes import Lambda
+from unicode_logic_kit.fol._msfl_nodes import Lambda
 
 _FOL = MSFLParser()
 _MODAL = MSFLParser(modal=True)

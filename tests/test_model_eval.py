@@ -1,11 +1,11 @@
-"""Tests for unicode_fol_kit.semantics.model_eval — direct structural evaluation.
+"""Tests for unicode_logic_kit.semantics.model_eval — direct structural evaluation.
 
 Every hand-derived test fixes a concrete :class:`FiniteStructure` and asserts
 a truth value worked out by hand in the comment next to the assertion (never
 copied from a program run). The one deliberate exception is
 ``TestDifferentialVsTarski``: a differential/property-based test is, by
 construction, checked against an INDEPENDENT existing implementation
-(:func:`unicode_fol_kit.semantics.tarski.satisfies`, a full-domain-iteration
+(:func:`unicode_logic_kit.semantics.tarski.satisfies`, a full-domain-iteration
 evaluator with none of model_eval's indexing) rather than a per-case hand
 derivation — that is the whole point of the technique, and it is what the
 task asked for ("Differentialtest gegen den bestehenden Kit-Modelchecker").
@@ -37,13 +37,13 @@ import time
 
 import pytest
 
-from unicode_fol_kit.semantics.structures import FiniteStructure, graph_to_structure
-from unicode_fol_kit.semantics import tarski
-from unicode_fol_kit.semantics.model_eval import (
+from unicode_logic_kit.semantics.structures import FiniteStructure, graph_to_structure
+from unicode_logic_kit.semantics import tarski
+from unicode_logic_kit.semantics.model_eval import (
     BudgetExhausted, UninterpretedSymbol, UnsupportedNode,
     evaluate, evaluate_detailed,
 )
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit.fol.nodes import (
     Variable, Constant, Number, Function, Cardinality,
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier, Count,
     Box, WeakConjunction,

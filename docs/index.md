@@ -1,12 +1,19 @@
-# unicode-fol-kit
+# unicode-logic-kit
 
-A Python toolkit for **first-order logic with Unicode operators** — parse, transform,
-and reason about formulas — with a reasoning layer that reaches well beyond classical
-FOL into modal, temporal, many-valued, fuzzy, intuitionistic, second-order, description,
-and a range of non-classical logics.
+A Python toolkit for **logic with Unicode operators** — parse, transform, and reason
+about formulas of classical first-order logic and well beyond it: modal, temporal,
+many-valued, fuzzy, intuitionistic, second- and third-order, description, and a range
+of non-classical logics.
+
+```{note}
+Up to 0.30.0 this package was called `unicode-fol-kit` (`import unicode_fol_kit`).
+`pip install -U unicode-fol-kit` installs this package and forwards the old import
+name with a `DeprecationWarning`; new code should use `unicode-logic-kit` and
+`import unicode_logic_kit`. See {doc}`guide/installation`.
+```
 
 ```{code-block} python
-from unicode_fol_kit import MSFLParser, is_valid
+from unicode_logic_kit import MSFLParser, is_valid
 
 phi = MSFLParser().parse("∀x (Human(x) → Mortal(x)) ∧ Human(socrates) → Mortal(socrates)")
 print(is_valid(phi))   # True

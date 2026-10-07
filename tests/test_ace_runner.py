@@ -1,4 +1,4 @@
-"""Tests for :mod:`unicode_fol_kit.ace` — the APE runner and the TPTP route.
+"""Tests for :mod:`unicode_logic_kit.ace` — the APE runner and the TPTP route.
 
 Two layers, mirroring the E-prover tests' structure:
 
@@ -29,12 +29,12 @@ from pathlib import Path
 
 import pytest
 
-from unicode_fol_kit.ace import (
+from unicode_logic_kit.ace import (
     AceParseError, AceTptpUnreadError, AceTptpUnsupportedError, ApeResult,
     ace_coverage, ace_to_fol, ape_available, run_ape,
 )
-from unicode_fol_kit.ace import runner as ace_runner
-from unicode_fol_kit.fol.tptp_input import TptpParsingError, parse_tptp
+from unicode_logic_kit.ace import runner as ace_runner
+from unicode_logic_kit.fol.tptp_input import TptpParsingError, parse_tptp
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

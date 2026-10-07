@@ -16,13 +16,13 @@ No route may close a PREMISE universally: ``∀x P(x)`` is a different premise f
 
 import pytest
 
-from unicode_fol_kit import api
-from unicode_fol_kit.atp import resolution, tableau
-from unicode_fol_kit.fol.nodes import (
+from unicode_logic_kit import api
+from unicode_logic_kit.atp import resolution, tableau
+from unicode_logic_kit.fol.nodes import (
     And, Atom, Constant, Iff, Implies, Not, Quantifier, Variable, free_variables,
 )
-from unicode_fol_kit.semantics import modelfinder
-from unicode_fol_kit.semantics.tarski import satisfies
+from unicode_logic_kit.semantics import modelfinder
+from unicode_logic_kit.semantics.tarski import satisfies
 
 x, y, z = Variable("x"), Variable("y"), Variable("z")
 alpha = Constant("alpha")
