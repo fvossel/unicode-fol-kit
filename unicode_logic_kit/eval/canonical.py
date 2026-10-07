@@ -21,8 +21,9 @@ difference:
       StrongConjunction, StrongDisjunction. Nested same-class chains are
       flattened, each operand is canonicalized, the operands are sorted by a
       deterministic alpha-invariant key, and the group is rebuilt left-folded.
-      Identical operands are de-duplicated (``P ∧ P`` → ``P``) ONLY for the
-      IDEMPOTENT connectives — classical And/Or and fuzzy WeakConjunction (min)
+      Identical operands — the same formula up to the names of bound variables,
+      so ``P(alice) ∧ P(bob)`` keeps both — are de-duplicated (``P ∧ P`` → ``P``)
+      ONLY for the IDEMPOTENT connectives — classical And/Or and fuzzy WeakConjunction (min)
       / WeakDisjunction (max), where ``a ⋆ a ≡ a`` makes removal
       equivalence-preserving. The remaining commutative connectives are NOT
       idempotent (``P ⊕ P ≡ ⊥``, ``P ↔ P ≡ ⊤``, and the Łukasiewicz strong
@@ -52,15 +53,36 @@ REQUIRED INVARIANTS (each is exercised by tests/test_canonical.py):
 
 Implementation note on the alpha-vs-sort ordering interplay: the operand sort
 key must be invariant under bound-variable renaming, otherwise sorting and
-alpha-renaming would race. We therefore key the sort on the
-``to_unicode_str()`` of the ALPHA-NORMALIZED operand, and apply a final
-deterministic alpha-normalization pass to the fully structured tree. Because the
-sort key is alpha-invariant and the final pass assigns names by binder-encounter
-order on a now-stable structure, the whole pipeline reaches a fixpoint —
-idempotency (P2) guards against any residual ordering bug.
+alpha-renaming would race. The key is therefore built from the operand's tree
+directly (see ``_sort_key``), not from its printed text: every variable occurrence
+is encoded by POSITION (the binder it belongs to), never by its name, and a final
+deterministic alpha-normalization pass then renames the bound variables of the
+fully structured tree. Because the sort key is alpha-invariant and the final pass
+assigns names by binder-encounter order on a now-stable structure, the whole
+pipeline reaches a fixpoint — idempotency (P2) guards against any residual
+ordering bug.
+
+The same key decides which operands are DUPLICATES, so it has to tell apart every
+two operands that are not the same formula up to the names of bound variables:
+a constant, a numeral, a sorted constant, a nominal, a predicate term, an agent,
+a group of agents, the type or bound name of a second-order quantifier — every
+field of a node that is not itself a child node goes into the key, by name and
+value. Two operands that differ in any of them are two operands, never one.
+
+Which binders are encoded by position (and so renamed by the final pass, P3):
+Quantifier, SortedQuantifier, Lambda, Count, Cardinality, SortedCount,
+SortedCardinality and SlashedExists (with the names of its slash set). Which are
+encoded by NAME: every other binder — SecondOrderQuantifier (its bound predicate
+name is an ordinary field) and the hybrid binder Down (its bound state variable is
+a Nominal, recorded by its name) — and any binder added to the kit later until it
+is taught to ``_alpha``. That is the safe direction: two operands that differ only
+by the renaming of such a binder are kept as two operands, which can cost a match
+but never produces a wrong one. Their bound names are not renamed, so P3 does not
+extend to them.
 """
 
-from typing import List
+import dataclasses
+from typing import Any, List
 
 from unicode_logic_kit.fol.nodes import (
     Node, Variable,
@@ -281,9 +303,61 @@ def _canon_operands(node: Node, cls: type, levels: dict) -> List[Node]:
     return out
 
 
-def _sort_key(operand: Node, levels: dict) -> str:
+def _scope_name(node: Any):
+    """Key of a variable occurrence or of a lambda parameter in the scope maps.
+
+    A logical variable and a lambda variable live in two name spaces (``_alpha``
+    keeps one environment for each): ``∀x`` binds the variable ``x`` and leaves a
+    lambda variable ``x`` alone, so the two must not share a scope entry. A plain
+    name is a logical variable.
+    """
+    return ("lambda", node.name) if isinstance(node, LambdaVar) else node.name
+
+
+def _plain(value) -> str:
+    """Text of a field value that is the same for equal values in every run.
+
+    ``repr`` already is, except for a set, whose element order depends on the
+    hash seed of the process and on how the set was built; its elements are sorted.
+    """
+    if isinstance(value, (set, frozenset)):
+        return type(value).__name__ + "{" + ", ".join(sorted(_plain(v) for v in value)) + "}"
+    return repr(value)
+
+
+def _loose_fields(node: Node, skip: tuple = ()) -> List[str]:
+    """One token per part of ``node`` that is NOT a child node, except the fields in ``skip``.
+
+    A scalar field gives ``name=value``; a sequence field gives ``name#length`` and,
+    for every item that is not a node, ``name[position]=value`` (the nodes among
+    the items are the node's children, which the caller visits). The fields are
+    read from the node itself, so a node class added to the kit later is covered
+    without being listed here: the name of a ``Constant``, the value of a
+    ``Number``, name and sort of a ``SortedConstant``, a string agent, the type and
+    bound name of a second-order quantifier, and so on. Every node class of the kit
+    is a dataclass — ``Node._child_nodes`` and ``Node.map_children``, which the
+    canonical form is built on, read ``dataclasses.fields`` as well.
+    """
+    tokens: List[str] = []
+    for f in dataclasses.fields(node):  # type: ignore[arg-type]
+        if f.name in skip:
+            continue
+        value = getattr(node, f.name)
+        if isinstance(value, Node):
+            continue
+        if isinstance(value, (list, tuple)):
+            tokens.append(f"{f.name}#{len(value)}")
+            tokens.extend(f"{f.name}[{i}]={_plain(item)}"
+                          for i, item in enumerate(value) if not isinstance(item, Node))
+        else:
+            tokens.append(f"{f.name}={_plain(value)}")
+    return tokens
+
+
+def _sort_key(operand: Node, levels: dict) -> tuple:
     """Deterministic sort key, invariant under bound-variable renaming AND under
-    commutative reordering of sibling operands.
+    commutative reordering of sibling operands, and equal for two operands ONLY
+    when they are the same formula up to the names of their bound variables.
 
     The commutative sort runs bottom-up *before* the final whole-tree
     ``_alpha_normalize`` pass renames variables bound by ENCLOSING binders. A
@@ -305,33 +379,63 @@ def _sort_key(operand: Node, levels: dict) -> str:
 
     Because the key depends on no renamable name, the ordering is identical
     across passes (P2) and identical for any alpha-variant of the input (P3).
+
+    The key is a pair. Its first part, the SKELETON, is a string that holds the
+    class of every node, the predicate of an ``Atom``, the name of a ``Function``,
+    and the binder and variable encodings above. Its second part, the DETAIL, is a
+    tuple of tokens that holds all of that again as separate items, and in addition
+    every field of every node that is no child node (see :func:`_loose_fields`):
+    without them ``P(alice)`` and ``P(bob)`` would have one key, and so would
+    ``P(1)`` and ``P(2)``, or ``K_alice φ`` and ``K_bob φ``, and one of two such
+    conjuncts would be removed as a duplicate. The skeleton comes first so that
+    operands it tells apart sort exactly as they always did; the detail only
+    decides between operands whose skeletons are equal, and being a tuple of
+    items (not a joined string) it stays exact for a name that contains the
+    separator.
+
+    A binder this function does not know (a second-order quantifier, the hybrid
+    ``Down``, a binder added later) is read like any other node: its bound name is
+    one of the fields that go into the detail (for ``Down`` it is the ``Nominal``
+    child, which is recorded by its name). Two operands that differ only by the
+    renaming of such a binder therefore have different keys: a match that
+    ``canonicalize`` does not make, never a wrong one.
     """
-    parts: List[str] = []
+    skeleton: List[str] = []
+    detail: List[str] = []
     local_depth = [0]  # monotonic binder counter; immune to shadowing
 
     def rec(n: Node, local: dict) -> None:
         cls_name = type(n).__name__
         if isinstance(n, (Variable, LambdaVar)):
-            if n.name in local:
-                parts.append(f"b{local[n.name]}")            # operand-bound
-            elif n.name in levels:
-                parts.append(f"L{levels[n.name]}")           # enclosing-bound
+            scope = _scope_name(n)
+            if scope in local:
+                where = f"b{local[scope]}"                   # operand-bound
+            elif scope in levels:
+                where = f"L{levels[scope]}"                  # enclosing-bound
             else:
-                parts.append(f"v:{n.name}")                  # genuinely free
+                where = f"v:{n.name}"                        # genuinely free
+            skeleton.append(where)
+            # The class keeps a free variable apart from a free lambda variable of
+            # the same spelling.
+            detail.extend((cls_name, where))
             return
         if isinstance(n, (Quantifier, SortedQuantifier)):
             inner = dict(local)
             inner[n.variable.name] = local_depth[0]
             local_depth[0] += 1
             sort = getattr(n, "sort", "")
-            parts.append(f"Q{n.type}:{sort}")
+            skeleton.append(f"Q{n.type}:{sort}")
+            detail.append(cls_name)
+            detail.extend(_loose_fields(n, ("variable", "formula")))
             rec(n.formula, inner)
             return
         if isinstance(n, Lambda):
             inner = dict(local)
-            inner[n.param.name] = local_depth[0]
+            inner[_scope_name(n.param)] = local_depth[0]
             local_depth[0] += 1
-            parts.append("LAM")
+            skeleton.append("LAM")
+            detail.append(cls_name)
+            detail.extend(_loose_fields(n, ("param", "body")))
             rec(n.body, inner)
             return
         if isinstance(n, Count):
@@ -340,14 +444,19 @@ def _sort_key(operand: Node, levels: dict) -> str:
             local_depth[0] += 1
             # op and n distinguish ∃≥3 from ∃≤3 / ∃≥5; neither is renamable, so
             # the key stays invariant under bound-variable renaming (P3).
-            parts.append(f"CNT{n.op}:{n.n.value}")
+            skeleton.append(f"CNT{n.op}:{n.n.value}")
+            detail.append(cls_name)
+            detail.extend(_loose_fields(n, ("variable", "formula")))
+            detail.append(f"n={_plain(n.n.value)}")
             rec(n.formula, inner)
             return
         if isinstance(n, Cardinality):
             inner = dict(local)
             inner[n.variable.name] = local_depth[0]
             local_depth[0] += 1
-            parts.append("CARD")
+            skeleton.append("CARD")
+            detail.append(cls_name)
+            detail.extend(_loose_fields(n, ("variable", "formula")))
             rec(n.formula, inner)
             return
         if isinstance(n, SortedCount):
@@ -355,14 +464,19 @@ def _sort_key(operand: Node, levels: dict) -> str:
             inner[n.variable.name] = local_depth[0]
             local_depth[0] += 1
             # op, n AND sort are all significant and non-renamable.
-            parts.append(f"SCNT{n.op}:{n.n.value}:{n.sort}")
+            skeleton.append(f"SCNT{n.op}:{n.n.value}:{n.sort}")
+            detail.append(cls_name)
+            detail.extend(_loose_fields(n, ("variable", "formula")))
+            detail.append(f"n={_plain(n.n.value)}")
             rec(n.formula, inner)
             return
         if isinstance(n, SortedCardinality):
             inner = dict(local)
             inner[n.variable.name] = local_depth[0]
             local_depth[0] += 1
-            parts.append(f"SCARD:{n.sort}")
+            skeleton.append(f"SCARD:{n.sort}")
+            detail.append(cls_name)
+            detail.extend(_loose_fields(n, ("variable", "formula")))
             rec(n.formula, inner)
             return
         if isinstance(n, SlashedExists):
@@ -380,33 +494,42 @@ def _sort_key(operand: Node, levels: dict) -> str:
             inner = dict(local)
             inner[n.variable.name] = local_depth[0]
             local_depth[0] += 1
-            parts.append("SLEX:" + ",".join(enc))
+            skeleton.append("SLEX:" + ",".join(enc))
+            detail.append(cls_name)
+            detail.extend(_loose_fields(n, ("variable", "formula", "slashed")))
+            detail.append(f"slashed#{len(enc)}")
+            detail.extend(enc)
             rec(n.formula, inner)
             return
-        parts.append(cls_name)
+        skeleton.append(cls_name)
         if cls_name == "Atom":
-            parts.append(n.predicate)
+            skeleton.append(n.predicate)
         elif cls_name == "Function":
-            parts.append(n.name)
+            skeleton.append(n.name)
+        detail.append(cls_name)
+        detail.extend(_loose_fields(n))
         for child in n._child_nodes():
             rec(child, local)
-        parts.append("/")
+        skeleton.append("/")
 
     rec(operand, {})
-    return "|".join(parts)
+    return "|".join(skeleton), tuple(detail)
 
 
 # NOTE on de-duplication: the dedup identity key is ``_sort_key`` itself. Two
 # operands sharing the same enclosing scope are logically identical iff they are
 # alpha-equivalent with the variables bound by ENCLOSING binders held fixed —
 # which is EXACTLY what ``_sort_key`` encodes (enclosing-bound variables by
-# level, operand-bound by local index, genuinely-free by name). Crucially this
-# is capture-proof: a string built from ``_alpha_normalize(operand)`` would, on a
-# second pass, capture a free variable that the first pass had renamed to ``q0``
-# under a freshly-minted bound ``q0`` (e.g. the shadowing case
-# ``∃x R(x) ∧ ∃z R(x)``), wrongly collapsing two NON-equivalent operands and
-# breaking both idempotency (P2) and equivalence-preservation (P1). Keying dedup
-# on ``_sort_key`` avoids any name-based capture entirely.
+# level, operand-bound by local index, genuinely-free by name), together with
+# every other field of every node (constant names, numeral values, sorts, agents,
+# …) compared as it is, so two operands that differ in any of them are never taken
+# for duplicates. Crucially this is capture-proof: a string built from
+# ``_alpha_normalize(operand)`` would, on a second pass, capture a free variable
+# that the first pass had renamed to ``q0`` under a freshly-minted bound ``q0``
+# (e.g. the shadowing case ``∃x R(x) ∧ ∃z R(x)``), wrongly collapsing two
+# NON-equivalent operands and breaking both idempotency (P2) and
+# equivalence-preservation (P1). Keying dedup on ``_sort_key`` avoids any
+# name-based capture entirely.
 
 
 def _structural(node: Node, levels: dict) -> Node:
@@ -470,7 +593,7 @@ def _structural(node: Node, levels: dict) -> Node:
                                 _structural(node.formula, inner))
     if isinstance(node, Lambda):
         inner = dict(levels)
-        inner[node.param.name] = next_level
+        inner[_scope_name(node.param)] = next_level
         return Lambda(node.param, _structural(node.body, inner))
     if isinstance(node, Count):
         inner = dict(levels)
