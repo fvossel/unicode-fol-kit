@@ -185,10 +185,16 @@ ignore_missing_imports = true
 # reduced), not a silent loosening of the gate itself.
 no_site_packages = true
 
+# The version of the core metadata is stated, not left to the build backend's
+# default: hatchling 1.32 writes 2.5 by default, which twine 6.2 refuses
+# ("'2.5' is not a valid metadata version"), so a release built on the day a
+# backend moved its default would stop at `twine check`.
 [tool.hatch.build.targets.wheel]
+core-metadata-version = "2.4"
 packages = ["unicode_logic_kit"]
 
 [tool.hatch.build.targets.sdist]
+core-metadata-version = "2.4"
 include = [
     "/unicode_logic_kit",
     "/docs",

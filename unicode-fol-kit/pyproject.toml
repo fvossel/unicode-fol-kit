@@ -56,10 +56,14 @@ Homepage = "https://pypi.org/project/unicode-logic-kit/"
 Documentation = "https://unicode-logic-kit.readthedocs.io/"
 Repository = "https://github.com/fvossel/unicode-logic-kit"
 
+# The core metadata version is stated for the reason given in the pyproject.toml
+# of unicode-logic-kit.
 [tool.hatch.build.targets.wheel]
+core-metadata-version = "2.4"
 packages = ["unicode_fol_kit"]
 
 [tool.hatch.build.targets.sdist]
+core-metadata-version = "2.4"
 include = [
     "/unicode_fol_kit",
     "/README.md",
