@@ -144,11 +144,15 @@ jobs:
           twine check dist/*
           ls -l dist
 
+      # `--verbose` prints what PyPI answers to a refused upload. Without it
+      # twine reports the status alone ("403 Forbidden"), and whether the token
+      # is unknown, bound to another project or the name is refused stays open.
+      # The token itself is not printed.
       - name: Upload unicode-logic-kit
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-        run: twine upload dist/unicode_logic_kit-* --non-interactive --skip-existing
+        run: twine upload dist/unicode_logic_kit-* --non-interactive --skip-existing --verbose
 
       # Second, so that the forwarder is never on PyPI without the package it
       # depends on.
@@ -156,7 +160,7 @@ jobs:
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-        run: twine upload dist/unicode_fol_kit-* --non-interactive --skip-existing
+        run: twine upload dist/unicode_fol_kit-* --non-interactive --skip-existing --verbose
 
       - name: Create the GitHub Release
         env:
