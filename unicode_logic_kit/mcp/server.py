@@ -2423,7 +2423,10 @@ def create_server():
         explain_molecule_failure, simplify_definition, chemical_signature,
     )
 
-    server = MCPServer(_SERVER_NAME, instructions=_INSTRUCTIONS)
+    # The version a client reads in the handshake is the package's own.
+    from .. import __version__
+
+    server = MCPServer(_SERVER_NAME, instructions=_INSTRUCTIONS, version=__version__)
     for fn in (parse_formula, check_formula, prove, find_countermodel,
                check_equivalence, diagnose, repair_formula, translate,
                verbalize, list_backends,

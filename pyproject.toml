@@ -120,6 +120,14 @@ lint = [
     "mypy==2.3.1",
 ]
 
+[project.scripts]
+# The command line of the package (unicode_logic_kit.__main__): a formula to
+# render, the verbs check / equiv / prove / countermodel / repair / translate,
+# and `unicode-logic-kit mcp`, which starts the MCP server on stdio. The name
+# is the distribution's own, so `uvx unicode-logic-kit ...` finds it, and that
+# is the command an MCP registry client builds from server.json.
+unicode-logic-kit = "unicode_logic_kit.__main__:main"
+
 [project.urls]
 Documentation = "https://unicode-logic-kit.readthedocs.io/"
 Repository = "https://github.com/fvossel/unicode-logic-kit"

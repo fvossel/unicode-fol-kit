@@ -21,6 +21,7 @@ from the packages that own them, and the three routes' bridge-name lists have to
 identical, since the option value is a bare string the user copies between routes.
 """
 
+import json
 import re
 from pathlib import Path
 
@@ -216,8 +217,8 @@ def test_bridge_names_agree_across_every_route():
 
 
 def test_version_is_consistent_across_the_release_artefacts():
-    """A release bumps __version__, pyproject, CITATION.cff and the CHANGELOG together;
-    docs/conf.py reads __version__, so those four are the whole set."""
+    """A release bumps __version__, pyproject, CITATION.cff, the CHANGELOG and server.json
+    together; docs/conf.py reads __version__, so those five are the whole set."""
     import unicode_logic_kit as u
 
     root = Path(__file__).resolve().parent.parent
@@ -231,5 +232,13 @@ def test_version_is_consistent_across_the_release_artefacts():
     released = re.search(r'^date-released: "([^"]+)"', citation, re.M).group(1)
     dated = re.search(r"^## \[[0-9][^\]]*\] - (\S+)", changelog, re.M).group(1)
 
-    assert u.__version__ == declared == latest == cited
+    # server.json states the version three times: its own, the package's, and the pin of
+    # the requirement that brings the mcp extra.
+    entry = json.loads((root / "server.json").read_text(encoding="utf-8"))
+    package = entry["packages"][0]
+    pins = [argument["value"] for argument in package["runtimeArguments"]
+            if argument["name"] == "--with"]
+
+    assert u.__version__ == declared == latest == cited == entry["version"] == package["version"]
+    assert pins == [f"unicode-logic-kit[mcp]=={declared}"]
     assert released == dated          # the citation carries the changelog's release date

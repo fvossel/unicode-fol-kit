@@ -13,6 +13,38 @@ pip install "unicode-logic-kit[mcp]"
 python -m unicode_logic_kit.mcp
 ```
 
+The installed package also has the command `unicode-logic-kit`, the command line
+of the kit, and `unicode-logic-kit mcp` starts the same server. With
+[uv](https://docs.astral.sh/uv/) there is no install step:
+
+```bash
+uvx "unicode-logic-kit[mcp]" mcp
+```
+
+A client that starts its servers from a configuration file takes the same
+command, for example:
+
+```json
+{
+  "mcpServers": {
+    "unicode-logic-kit": {
+      "command": "uvx",
+      "args": ["--python", ">=3.10", "unicode-logic-kit[mcp]", "mcp"]
+    }
+  }
+}
+```
+
+`--python ">=3.10"` is for a machine whose first Python is older than the
+package allows: `uvx` takes the first interpreter it finds and reports that the
+package cannot be installed, where with the option it picks a newer one. Without
+the `mcp` extra the command prints the install hint and exits with code 3.
+
+The file `server.json` in the repository is the entry of this server for the
+[MCP registry](https://registry.modelcontextprotocol.io/): the package, its
+version, and the arguments above. The server reports the version of the package
+in the handshake.
+
 The design goal is narrow and worth stating, because it shapes every tool's
 result shape: **a rejection must be actionable**. A generator that gets back
 "syntax error" has to guess; one that gets back the error *plus the name of the

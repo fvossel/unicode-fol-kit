@@ -9,7 +9,7 @@ breaking changes.
 
 ## [0.32.0] - 2026-10-10
 
-The order, the modal family and sorts combine freely. A classical parser mode is three independent choices, the order (first, `second_order=True`, `third_order=True`), `modal=True` and `many_sorted=True`, and each of the twelve combinations is a mode. Four of them are new: second-order modal logic, with and without sorts, and third-order logic with sorts, with and without the modal family. Each has a meaning as well as a syntax: a predicate quantifier is evaluated over a Kripke model and covered by the bounded countermodel search, a sorted third-order formula is evaluated over a structure and written for Isabelle and for THF provers, and the higher-order modal embedding takes sorted formulas. `fuzzy=True` combines with `many_sorted` and with nothing else, as before. No text that was read before is read differently, and no formula that had a value has another.
+The order, the modal family and sorts combine freely. A classical parser mode is three independent choices, the order (first, `second_order=True`, `third_order=True`), `modal=True` and `many_sorted=True`, and each of the twelve combinations is a mode. Four of them are new: second-order modal logic, with and without sorts, and third-order logic with sorts, with and without the modal family. Each has a meaning as well as a syntax: a predicate quantifier is evaluated over a Kripke model and covered by the bounded countermodel search, a sorted third-order formula is evaluated over a structure and written for Isabelle and for THF provers, and the higher-order modal embedding takes sorted formulas. `fuzzy=True` combines with `many_sorted` and with nothing else, as before. No text that was read before is read differently, and no formula that had a value has another. The package also has a command of its own name, `unicode-logic-kit`, whose first argument `mcp` starts the MCP server, so `uvx` runs the server without an install step and the entry for the MCP registry (`server.json`) has something to start.
 
 ### `MSFLParser` — the order, `modal` and `many_sorted` combine freely
 
@@ -83,13 +83,23 @@ What follows from them depends on the domain mode, as it should. `□∀x:Human 
 
 A second-order modal formula is third-order modal syntax without a predicate in argument position, so the same writers take the formulas of the new second-order modal modes unchanged. In the live tests Isabelle proves `∀P (□P → P)` in T and Nitpick refutes it in K, and the frame condition is derived from the formula: with `∀P (□P → P)` as an axiom, `R w w` is a theorem.
 
+### The command `unicode-logic-kit`, `unicode-logic-kit mcp`, and `server.json`
+
+The installed package has a command of its own name. `unicode-logic-kit` is the command line that `python -m unicode_logic_kit` runs: a formula to render, and the verbs `check`, `equiv`, `prove`, `countermodel`, `repair` and `translate`. One first argument is new: `unicode-logic-kit mcp` starts the MCP server on stdio, the server `python -m unicode_logic_kit.mcp` starts. It takes no further argument, and without the `mcp` extra it prints the install hint to stderr and exits with code 3. The word `mcp` alone was a syntax error of the formula reader, so no command line that worked does something else.
+
+With [uv](https://docs.astral.sh/uv/) nothing has to be installed first: `uvx "unicode-logic-kit[mcp]" mcp`. On a machine whose first Python is older than 3.10, `uvx` needs `--python ">=3.10"`, since it takes the first interpreter it finds.
+
+`server.json` in the repository is the entry of the server for the MCP registry. It names the package, its version and the arguments from which a registry client builds `uvx --python ">=3.10" --with "unicode-logic-kit[mcp]==0.32.0" unicode-logic-kit@0.32.0 mcp`, and the README carries the line `mcp-name: io.github.fvossel/unicode-logic-kit`, by which the registry ties the entry to the package. The file validates against the registry's schema of 2025-12-11. That command and the two shorter ones were run with uv 0.13.0 against the built wheel and a client of the MCP SDK: the handshake, the list of the 37 tools and one tool call. Publishing the entry to the registry is a step of its own, outside the package.
+
+The server reports the version of the package in the handshake (0.31.0: an empty string).
+
 ### Documentation
 
-The parsing guide has the table of the twelve modes and the rule for combining them; the second-order guide has a section "Second-order modal logic" (what a bound predicate ranges over, the bounded search, the export); the third-order guide has a section "Sorted individuals". The README carries the line the MCP registry reads to tie a registry entry to the package.
+The parsing guide has the table of the twelve modes and the rule for combining them; the second-order guide has a section "Second-order modal logic" (what a bound predicate ranges over, the bounded search, the export); the third-order guide has a section "Sorted individuals"; the MCP guide has the `uvx` start and a client configuration.
 
 ### Tests
 
-413 tests in five new files (`test_mode_combinations.py`, `test_second_order_modal_semantics.py`, `test_kripke_enum_second_order.py`, `test_third_order_sorted.py`, `test_ho_modal_sorts_and_second_order.py`), eight of them against a local Isabelle. The tests that pinned the four refusals of 0.31.0 and the set of modal modes state the new behaviour.
+426 tests in six new files (`test_mode_combinations.py`, `test_second_order_modal_semantics.py`, `test_kripke_enum_second_order.py`, `test_third_order_sorted.py`, `test_ho_modal_sorts_and_second_order.py`, `test_command_and_registry_entry.py`), eight of them against a local Isabelle. The tests that pinned the four refusals of 0.31.0 and the set of modal modes state the new behaviour.
 
 ### Limits
 

@@ -1,6 +1,9 @@
 """Command-line interface for unicode-logic-kit.
 
-Two ways to run this module, dispatched purely on ``argv[0]``:
+Installed, this module is the command ``unicode-logic-kit``; ``python -m
+unicode_logic_kit`` runs the same thing.
+
+Three ways to run it, dispatched purely on ``argv[0]``:
 
 **Legacy mode** (unchanged since Tier 0) — parse a single formula and render
 it in one output format::
@@ -52,6 +55,16 @@ translation fragment (``NotImplementedError``), or a bad ``--signature``
 JSON file all print one clean message to stderr and exit 3 — never a Python
 traceback. The legacy path treats a rendering that refuses its formula the same
 way (see above).
+
+**The MCP server** — ``mcp`` as ``argv[0]`` starts the Model Context Protocol
+server on stdio, the server ``python -m unicode_logic_kit.mcp`` starts::
+
+    unicode-logic-kit mcp
+
+It takes no further argument. The server needs the ``mcp`` extra
+(``pip install "unicode-logic-kit[mcp]"``); without the SDK the command prints
+the install hint to stderr and exits 3. ``uvx`` runs it without an install
+step: ``uvx --from "unicode-logic-kit[mcp]" unicode-logic-kit mcp``.
 """
 
 import argparse
@@ -500,19 +513,45 @@ def _run_subcommand(name: str, rest_argv) -> int:
         return 3
 
 
+def _run_mcp(rest_argv) -> int:
+    """Start the MCP server on stdio and serve until the client closes the stream.
+
+    The server is built before anything is served, so a missing SDK is reported
+    as one message on stderr and exit 3, like an unavailable backend of a
+    subcommand; an ``ImportError`` raised while serving is not caught.
+    """
+    parser = argparse.ArgumentParser(
+        prog="unicode_logic_kit mcp",
+        description="Start the Model Context Protocol server on stdio "
+                    "(the server `python -m unicode_logic_kit.mcp` starts). "
+                    "Needs the extra: pip install \"unicode-logic-kit[mcp]\".")
+    parser.parse_args(rest_argv)
+    from .mcp import server
+    try:
+        built = server.create_server()
+    except ImportError as exc:
+        print(f"mcp: {exc}", file=sys.stderr)
+        return 3
+    built.run("stdio")
+    return 0
+
+
 def main(argv=None) -> int:
     """Run the CLI: dispatch to a subcommand, or fall back to the legacy parser.
 
     Parses ``argv`` (defaults to ``sys.argv[1:]``). If ``argv`` is non-empty
     and ``argv[0]`` is one of ``check``/``equiv``/``prove``/``countermodel``/
     ``repair``/``translate``, the rest of ``argv`` is handed to that
-    subcommand; otherwise the whole of ``argv`` goes to the legacy
-    single-formula parse-and-render path (see module docstring for both).
+    subcommand; if it is ``mcp``, the MCP server is started; otherwise the
+    whole of ``argv`` goes to the legacy single-formula parse-and-render path
+    (see module docstring for all three).
     """
     if argv is None:
         argv = sys.argv[1:]
     if argv and argv[0] in _SUBCOMMANDS:
         return _run_subcommand(argv[0], argv[1:])
+    if argv and argv[0] == "mcp":
+        return _run_mcp(argv[1:])
     return _run_legacy(argv)
 
 

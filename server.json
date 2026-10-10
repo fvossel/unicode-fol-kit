@@ -1,0 +1,44 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.fvossel/unicode-logic-kit",
+  "title": "Unicode Logic Kit",
+  "description": "Parse, check, prove and translate logic formulas: first-order, modal, description, higher-order.",
+  "version": "0.32.0",
+  "repository": {
+    "url": "https://github.com/fvossel/unicode-logic-kit",
+    "source": "github"
+  },
+  "websiteUrl": "https://unicode-logic-kit.readthedocs.io/",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "unicode-logic-kit",
+      "version": "0.32.0",
+      "runtimeHint": "uvx",
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--python",
+          "value": ">=3.10",
+          "description": "The package needs Python 3.10 or newer; uvx otherwise takes the first interpreter it finds."
+        },
+        {
+          "type": "named",
+          "name": "--with",
+          "value": "unicode-logic-kit[mcp]==0.32.0",
+          "description": "The server needs the package's mcp extra (the MCP SDK)."
+        }
+      ],
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp",
+          "description": "The subcommand of the unicode-logic-kit command that starts the server on stdio."
+        }
+      ],
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

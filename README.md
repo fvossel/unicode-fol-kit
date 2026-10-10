@@ -53,7 +53,8 @@ print(is_valid(phi))   # True
   [Translating between logics](https://unicode-logic-kit.readthedocs.io/en/latest/guide/logic-graph.html)
   for why a translation is not an upcast.
 - **An MCP server out of the box.** `pip install unicode-logic-kit[mcp]`, then
-  `python -m unicode_logic_kit.mcp` exposes the toolkit as thirty-seven Model
+  `python -m unicode_logic_kit.mcp` (or, with nothing installed,
+  `uvx "unicode-logic-kit[mcp]" mcp`) exposes the toolkit as thirty-seven Model
   Context Protocol tools (23 general-purpose, 6 for chemistry, 8 for
   description logic) — any MCP client (Claude Code/Desktop, agent
   frameworks, editors) can parse, prove, diagnose and translate without
@@ -249,6 +250,10 @@ python -m unicode_logic_kit check "∀x (Human(x) → Mortal(x))" --json
 ```
 
 plus `equiv`, `countermodel`, `repair`, and `translate`.
+
+Installed, the same command line is the command `unicode-logic-kit`
+(`unicode-logic-kit prove "Ⓕ P → P" --dialect modal`), and `unicode-logic-kit mcp`
+starts the MCP server.
 
 ## Building the documentation locally
 
