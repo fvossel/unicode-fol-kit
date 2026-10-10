@@ -7,6 +7,97 @@ breaking changes.
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-10-10
+
+The order, the modal family and sorts combine freely. A classical parser mode is three independent choices, the order (first, `second_order=True`, `third_order=True`), `modal=True` and `many_sorted=True`, and each of the twelve combinations is a mode. Four of them are new: second-order modal logic, with and without sorts, and third-order logic with sorts, with and without the modal family. Each has a meaning as well as a syntax: a predicate quantifier is evaluated over a Kripke model and covered by the bounded countermodel search, a sorted third-order formula is evaluated over a structure and written for Isabelle and for THF provers, and the higher-order modal embedding takes sorted formulas. `fuzzy=True` combines with `many_sorted` and with nothing else, as before. No text that was read before is read differently, and no formula that had a value has another.
+
+### `MSFLParser` — the order, `modal` and `many_sorted` combine freely
+
+| order | plain | `many_sorted=True` | `modal=True` | `modal=True, many_sorted=True` |
+|---|---|---|---|---|
+| first | 0.31.0 | 0.31.0 | 0.31.0 | 0.31.0 |
+| `second_order=True` | 0.31.0 | 0.31.0 | **new** | **new** |
+| `third_order=True` | 0.31.0 | **new** | 0.31.0 | **new** |
+
+`MSFLParser(second_order=True, modal=True)` reads `∀P (□P → P)` and, with `many_sorted=True`, `∀x:Human ∃P □P(x)`. `MSFLParser(third_order=True, many_sorted=True)` reads `∀P (Pos(P) → ∃x:Being P(x))` and, with `modal=True`, `∀P (Pos(P) → ◇∃x:Being P(x))`. Each of the four constructor calls raised `ValueError` in 0.31.0. The second-order modal modes read the whole modal family next to `∀P` / `∃P`. In the sorted modes an individual binder and a constant carry a sort, and a predicate quantifier and a property in argument position have none, as in the sorted second-order mode of 0.31.0. A formula of a new mode prints as a text that the mode reads back as the same nodes, and it passes `to_dict` / `from_dict` and `parse_with_spans`.
+
+Which mode reads the formulas of which is one rule, tested on all 144 ordered pairs of modes with a formula that uses every feature of the first: the second mode reads it exactly when its order is at least as high, it has the modal family if the first has it, and the two agree on sorts (a sorted mode refuses an unsorted individual binder, and an unsorted mode has no sort annotation). A text of the test tables that two modes both read is the same nodes in both. One thing does not carry from the second order to the third, in 0.31.0 as now: the third order types a predicate name over the whole formula, so `(∀P P(a)) ∧ (∃P P(a, b))`, two variables of one name at two arities, is read at second order and is a `ConflictingArityError` at third.
+
+In a modal mode a bare lower-case word in formula position is a nominal, so it can be the body of a predicate quantifier: `∀P x` is `∀P` over the nominal `x`, and so is `∀ P(x)`, since white space does not separate a binder from its name. The third-order modal mode of 0.31.0 reads it that way, and the three new modal modes do too; the modes without modal operators report `∀ P(x)` as an incomplete formula.
+
+The grammars of the thirteen modes of 0.31.0 are unchanged, byte for byte. `parse_any` and the `--mode` option of the command line offer the modes they offered: the four new ones, like the sorted modal, sorted second-order and third-order modal modes before them, are reached through `MSFLParser`. An unsorted mode of any order reads the counting quantifier, `Ⓒ`, the measure term and the cardinality term of the first-order mode. The new sorted modes read what the sorted modal and sorted second-order modes read, `Ⓒ` and the sort-annotated counting quantifier; the measure term and the cardinality term next to sorts stay with many-sorted first-order logic.
+
+### `satisfies_modal` — `∀P` and `∃P` over a Kripke model
+
+`satisfies_modal` interprets `SecondOrderQuantifier` (0.31.0: `NotImplementedError: satisfies_modal: unsupported node type SecondOrderQuantifier`). A bound predicate is an intension: it has an extension of its own at each world, so `∀P` ranges over every way of making each ground atom headed by `P` true or false at each world. For a propositional `P` that is every set of worlds, and the frame conditions of correspondence theory are formulas of the object language:
+
+| formula | true at a world `w` exactly when |
+|---|---|
+| `∀P (□P → P)` | `w` sees itself |
+| `∀P (□P → □□P)` | every world two steps from `w` is one step from it |
+| `∀P (P → □◇P)` | every successor of `w` sees `w` |
+| `∀P (□P → ◇P)` | `w` has a successor |
+| `∀P (◇P → □P)` | `w` has at most one successor |
+
+On the frame with the worlds `u` and `v` in which `u` sees `u` and `v`, and `v` sees nothing, `∀P (□P → P)` is true at `u` and false at `v`. On the chain 0 → 1 → 2, `∀P (□P → □□P)` is false at 0 and true at 1. The five rows are tested at every world of every frame with up to three worlds, against the frame condition computed from the relation, and the evaluator is compared with a second one, written in the test file from the definition, on 700 random formulas.
+
+A predicate with arguments has an extension of individuals at each world. An argument bound by an object quantifier inside the body ranges over the individuals of every world's domain, since a predicate quantifier is not restricted to what exists at one world; any other argument is the term as written. The quantifier is evaluated the way `↓` is, in the models that differ from the given one in the valuation of those atoms. So an inner binder of the same name shadows the outer one, a name is the model's own outside the scope of its binder, and the agent, temporal, deontic and hybrid operators, announcements and group knowledge read a bound predicate like any other atom.
+
+One quantifier costs `2 ** (worlds * atoms)` evaluations of its body, where the atoms are the ground instances of the bound predicate that the body can reach. `semantics.kripke.MAX_PREDICATE_INTERPRETATIONS` (2²⁰) is the cap; a larger quantifier raises `ValueError`. Two things are refused with a `NotImplementedError` that names them: a bound predicate in argument position (`∀P (Pos(P) → □P(a))`; the evaluator reads an atom by its written form and has no reading of a property as an argument), and a bound predicate that has the name of a sort of the formula (a sort and the unary predicate of its name are one symbol, so the quantifier would rebind the predicate and not the sort).
+
+One limit follows from a term being its own name in this evaluator, which does not interpret equality: two different ground terms are two individuals. `∃P (P(a) ∧ ¬P(b))` is therefore true in every model given to `satisfies_modal`, although a model in which `a` and `b` name one individual would falsify it. The value in the one model given is right for that model; a search over models is a different matter, and the next section is about it.
+
+### `modal_enum_search` — predicate quantifiers in the bounded search
+
+`modal_enum_search`, and the `kripke-enum` backend built on it, searches for a countermodel of a formula with predicate quantifiers (0.31.0: `unsupported`, with the evaluator's refusal). An atom under a quantifier that binds its predicate is not a key of the valuation, so a formula whose predicates are all bound is decided by the frames alone, and the table above can be read off the search. Up to three worlds, `∀P (□P → P)` has a countermodel in K (one world that does not see itself) and none among the 69 reflexive frames of T; `∀P (□P → □□P)` has one in T and none among the 34 preorders of S4; `∀P (□P → ◇P)` has none among the 353 serial frames of KD. "None up to three worlds" is a bound, as it was for a formula without predicate quantifiers.
+
+One kind of formula is not searched. A candidate model names an individual by its term, so no candidate makes two terms name one individual, and a predicate quantifier can say that they are two. A formula in which bound predicates are applied to two different terms is reported `unsupported`, with a message that names the two terms and points to `hol.ho_modal`, and is not answered with "no countermodel": `∃P (P(a) ∧ ¬P(b))` is such a formula, and `∀P (P(a) → □P(a))`, with one term, is searched.
+
+### Sorted third-order logic — `holds_to`, `to_thf_to`, `to_isabelle_to`
+
+A sort is read as everywhere in the kit: one universe, a sort is the extension of the unary predicate of its name and is not empty, and `c:S` is an element of `S`. `holds_to` evaluated the sorted nodes already; they are reachable from text now, and tested against a structure worked out by hand and against `holds` on every structure over a two-element domain.
+
+`to_thf_to` and `to_isabelle_to` write a sorted problem (0.31.0: `UnsupportedHigherOrderNode`, `no THF reading for SortedQuantifier`). The sorts are stated as axioms before the assumptions, `nonempty_sort<i>` for each sort and `sort_member<i>` for each sorted constant, and the formulas are written with their binders relativised. For `∀P (Pos(P) → ∃x:Being P(x))`:
+
+```
+thf(nonempty_sort0, axiom, ( ( ? [X0_V: $i] : ( being @ X0_V ) ) )).
+thf(goal, conjecture, ( ( ! [P_P: $i > $o] : ( ( pos @ P_P ) => ( ? [X_V: $i] : ( ( being @ X_V ) & ( P_P @ X_V ) ) ) ) ) )).
+```
+
+The sorted problem is, text for text, the unsorted problem that has those facts as its first assumptions. A predicate quantifier ranges over every property of the one universe, whatever sorts the formula names. A bound predicate with the name of a sort of the problem is refused (`NotImplementedError`), for the reason given above. Two theories written this way are checked by Isabelle in the live tests.
+
+`to_thf_so` and `to_isabelle_so` refuse a sorted formula as they did, and the message names the writers that take it: `to_thf_to` and `to_isabelle_to` read second-order syntax too.
+
+### `hol.ho_modal` — sorts, and second-order modal formulas from text
+
+`to_thf_ho_modal`, `to_isabelle_ho_modal` and `isabelle_ho_modal_theory` write a sorted formula (0.31.0: `UnsupportedHigherOrderNode` for a formula of the sorted modal mode). The sort facts are axioms of the object logic, valid at every world. The witness of a sort is stated through the existential quantifier of the domain mode, so with varying domains every world has an individual of the sort that exists there; the membership of a constant is stated without a guard, as the constant itself is. In Isabelle:
+
+```
+axiomatization where nonempty_sort0: "mvalid (mexists (\<lambda>x0::i. (Human x0)))"
+axiomatization where sort_member0: "mvalid (Human socrates)"
+```
+
+An axiom or goal of the caller that has the name of one of the facts of its problem is refused (`ValueError`), since Isabelle rejects a theory that states two facts under one name.
+
+What follows from them depends on the domain mode, as it should. `□∀x:Human Mortal(x) → □Mortal(socrates:Human)` is a theorem with constant domains (`using sort_member0 by blast`) and has a countermodel with varying domains, where a constant need not exist at the world a quantifier looks at; Isabelle proves the one and Nitpick refutes the other in the live tests, in agreement with `qml_is_valid`.
+
+A second-order modal formula is third-order modal syntax without a predicate in argument position, so the same writers take the formulas of the new second-order modal modes unchanged. In the live tests Isabelle proves `∀P (□P → P)` in T and Nitpick refutes it in K, and the frame condition is derived from the formula: with `∀P (□P → P)` as an axiom, `R w w` is a theorem.
+
+### Documentation
+
+The parsing guide has the table of the twelve modes and the rule for combining them; the second-order guide has a section "Second-order modal logic" (what a bound predicate ranges over, the bounded search, the export); the third-order guide has a section "Sorted individuals". The README carries the line the MCP registry reads to tie a registry entry to the package.
+
+### Tests
+
+413 tests in five new files (`test_mode_combinations.py`, `test_second_order_modal_semantics.py`, `test_kripke_enum_second_order.py`, `test_third_order_sorted.py`, `test_ho_modal_sorts_and_second_order.py`), eight of them against a local Isabelle. The tests that pinned the four refusals of 0.31.0 and the set of modal modes state the new behaviour.
+
+### Limits
+
+- `fuzzy=True` with `modal`, `second_order` or `third_order` is a `ValueError`.
+- A third-order modal formula is not evaluated as one: `satisfies_modal` reads a property in argument position as part of the written form of its atom and refuses it under a quantifier that binds it, and `holds_to` refuses a modal operator. The formula is exported with `hol.ho_modal`.
+- `modal_enum_search` does not search a formula whose bound predicates are applied to two different terms.
+- `to_thf_so` and `to_isabelle_so` refuse sorted input; `to_thf_to` and `to_isabelle_to` write it.
+
 ## [0.31.0] - 2026-10-07
 
 The package has a new name, `unicode-logic-kit` (import `unicode_logic_kit`). `unicode-fol-kit` 0.31.0 depends on it and forwards the old import with a `DeprecationWarning`, so existing code keeps running. A constant of any name can be written and read: in single quotes, `'k2'`, `'Alice'` and `'G-910'` are the constants named `k2`, `Alice` and `G-910`, and the printer writes a constant in quotes exactly when its bare name would read as something else, so the text of a formula reads back as that formula. One wrong result of long standing is fixed: the canonical form dropped an operand of `∧` or `∨` that differed from another only in a constant or a numeral, so `exact_match`, the canonical levels of `equivalent` and `compute_fol_metrics` called formulas equivalent that are not, in every release from 0.5.0 to 0.30.0.

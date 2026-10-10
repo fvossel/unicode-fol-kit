@@ -23,8 +23,8 @@ keywords:
   - semantic-parsing
   - autoformalization
   - NL-to-FOL
-version: 0.31.0
-date-released: "2026-10-07"
+version: 0.32.0
+date-released: "2026-10-10"
 preferred-citation:
   type: article
   title: "Advancing Natural Language Formalization to First Order Logic with Fine-tuned LLMs"
