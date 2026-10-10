@@ -5,6 +5,8 @@
 [![PyPI](https://img.shields.io/pypi/v/unicode-logic-kit)](https://pypi.org/project/unicode-logic-kit/)
 [![Docs](https://readthedocs.org/projects/unicode-logic-kit/badge/?version=latest)](https://unicode-logic-kit.readthedocs.io/)
 
+<!-- mcp-name: io.github.fvossel/unicode-logic-kit -->
+
 A Python toolkit for **logic with Unicode operators** — *parse, transform, and reason
 about* formulas of classical first-order logic and well beyond it: modal, temporal,
 hybrid, many-valued, fuzzy, intuitionistic, relevant, second- and third-order,
