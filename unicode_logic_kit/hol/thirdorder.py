@@ -35,6 +35,14 @@ not do it for you.
 **Equality** follows the kit's HOL convention: ``=`` / ``≠`` are the
 uninterpreted relations ``feq`` / ``fneq``, not primitive HOL identity.
 
+**Sorts.** A many-sorted formula (``MSFLParser(third_order=True, many_sorted=True)``)
+is written in the kit's one-universe reading of sorts: ``∀x:S φ`` as
+``∀x (S(x) → φ)``, ``∃x:S φ`` as ``∃x (S(x) ∧ φ)``, ``c:S`` as the constant ``c``,
+and the sort as the unary predicate of its name, of type ``i => bool``. Two families
+of axioms state what that rewriting drops: ``nonempty_sort<i>`` (no sort is empty)
+and ``sort_member<i>`` (a sorted constant lies in its sort). A property and a
+predicate quantifier are not sorted: ``∀P`` ranges over ``i => bool`` as before.
+
 **Constants and free variables.** A constant is a particular individual that its name
 stands for, and a free variable is a parameter of the problem: one unknown element, the
 same in every formula (see :mod:`unicode_logic_kit.fol._free_parameters`). The two are
@@ -66,6 +74,7 @@ from ._ho_common import (
     UnsupportedHigherOrderNode, EQUALITY, FREE_VARIABLE, CONSTANT, ISABELLE_BUILT_IN,
     peel_lambdas, rename_apart, bound_pred_names, atom_predicates,
     function_symbols, individual_symbols, ThfNames, IsabelleNames, bound_token,
+    sorted_reading,
 )
 from ._isabelle_binders import (
     PREDICATE, VARIABLE, BinderScope, binder_tokens, collect_binders, declared_names,
@@ -213,8 +222,13 @@ def to_isabelle_to(formula: Node, name: str = "TO_Goal",
     is left ``oops`` — the kit states the problem; it does not invent a proof.
 
     ``name`` becomes the theory name and must be a legal Isabelle identifier.
+
+    A many-sorted problem (``∀x:S``, ``c:S``) is written in the kit's reading of sorts
+    (see the module docstring): the formulas relativised, and the facts
+    ``nonempty_sort<i>`` and ``sort_member<i>`` as axioms before the assumptions.
     """
-    formulas = list(assumptions) + [formula]
+    facts, relativised = sorted_reading(list(assumptions) + [formula], "to_isabelle_to")
+    formulas = [fact for _, fact in facts] + relativised
     apart, display = rename_apart(formulas)
     signatures = analyse_signatures(apart)
     bound = set()
@@ -265,7 +279,10 @@ def to_isabelle_to(formula: Node, name: str = "TO_Goal",
         lines.append(f"\\<comment> \\<open>arity defaulted to 1 (nothing in the "
                      f"input fixes it): {pairs}\\<close>")
         lines.append("")
-    for index, assumption in enumerate(apart[:-1], start=1):
+    for (fact_name, _), fact in zip(facts, apart):
+        lines.append(f'axiomatization where {fact_name}: '
+                     f'"{_isa(fact, signatures.arity, display, scope, symbols)}"')
+    for index, assumption in enumerate(apart[len(facts):-1], start=1):
         lines.append(f'axiomatization where assumption{index}: '
                      f'"{_isa(assumption, signatures.arity, display, scope, symbols)}"')
     if len(apart) > 1:
@@ -358,8 +375,12 @@ def to_thf_to(formula: Node, assumptions: Sequence[Node] = (),
     goal. With ``conjecture=False`` the formula is emitted as an ``axiom``
     instead — the form to hand a model finder when the question is
     satisfiability rather than validity.
+
+    A many-sorted problem is written as in :func:`to_isabelle_to`: the formulas
+    relativised, and the facts ``nonempty_sort<i>`` and ``sort_member<i>`` as axioms.
     """
-    formulas = list(assumptions) + [formula]
+    facts, relativised = sorted_reading(list(assumptions) + [formula], "to_thf_to")
+    formulas = [fact for _, fact in facts] + relativised
     apart, display = rename_apart(formulas)
     signatures = analyse_signatures(apart)
     bound = set()
@@ -389,7 +410,9 @@ def to_thf_to(formula: Node, assumptions: Sequence[Node] = (),
         functor = names.functor("function", symbol)
         lines.append(f"thf({functor}_type, type, ( {functor} : "
                      f"{' > '.join(['$i'] * (k + 1))} )).")
-    for index, assumption in enumerate(apart[:-1], start=1):
+    for (fact_name, _), fact in zip(facts, apart):
+        lines.append(f"thf({fact_name}, axiom, ( {_thf(fact, {}, display, names)} )).")
+    for index, assumption in enumerate(apart[len(facts):-1], start=1):
         lines.append(f"thf(assumption{index}, axiom, "
                      f"( {_thf(assumption, {}, display, names)} )).")
     role = "conjecture" if conjecture else "axiom"

@@ -86,6 +86,41 @@ that never looked at it. Decide identity with :func:`unicode_logic_kit.fol.qml.q
 a first-order route; the other arithmetic comparisons (``<``, ``≤`` …) are
 ordinary keyed atoms here, exactly as before.
 
+Second-order quantifiers (``SecondOrderQuantifier``, ``∀P φ`` / ``∃P φ``) are
+interpreted. A bound predicate is an INTENSION: it has an extension of its own at
+each world, so ``∀P`` ranges over every way of making each ground atom headed by
+``P`` true or false at each world. For a propositional ``P`` that is every set of
+worlds, and the frame conditions of correspondence theory become formulas of the
+object language: ``∀P (□P → P)`` is true at ``w`` exactly when ``w`` sees itself,
+and ``∀P (□P → □□P)`` exactly when every world two steps from ``w`` is one step
+from it. For a ``P`` with arguments the ground atoms are the instances of its
+applications in the body. An argument bound by an object quantifier inside the
+body ranges over the individuals of EVERY world's domain: a predicate quantifier
+is not restricted to what exists at one world (``hol.ho_modal`` types a property
+``i ⇒ σ`` in every domain regime, for the same reason). Any other argument is the
+term as written.
+
+The evaluation is the one ``Down`` uses below: the quantifier is decided by
+evaluating its body in the models that differ from the given one in the valuation
+of those atoms. So an inner binder of the same name shadows the outer one, and
+every operator of this module, announcements and group knowledge included, reads
+a bound predicate like any other atom. One quantifier costs
+``2 ** (worlds * instances)`` evaluations of its body, and
+:data:`MAX_PREDICATE_INTERPRETATIONS` refuses a larger one.
+
+Two limits come from a term being its own name here (see "Equality is NOT
+interpreted" above):
+
+- Two different ground terms are two individuals. ``∃P (P(a) ∧ ¬P(b))`` is
+  therefore true in every model of this module, although a model in which ``a``
+  and ``b`` name one individual falsifies it. An evaluation of ONE given model is
+  not affected; a search over models is, and
+  :func:`~unicode_logic_kit.atp.kripke_enum.modal_enum_search` refuses a formula
+  in which bound predicates are applied to two different terms.
+- A predicate in ARGUMENT position (third order, ``Pos(P)``) is part of the
+  written form of an atom and nothing more. Under a quantifier that binds it the
+  atom would not follow the quantifier, so it is refused by name.
+
 Relation-name convention (keys of :attr:`KripkeModel.relations`):
 
 - ``"alethic"``        — the accessibility relation for Box □ / Diamond ◇.
@@ -205,25 +240,26 @@ end of this module for the fixpoint algorithms and the deadlock convention.
 
 import shutil
 import subprocess
-from typing import Any, Dict, FrozenSet, Iterable, List, Mapping, Optional, Set, Tuple
+from itertools import product
+from typing import Any, Dict, FrozenSet, Iterable, Iterator, List, Mapping, Optional, Set, Tuple
 
 from ..fol.nodes import (
     Node,
     Atom, Not, And, Or, Xor, Implies, Iff,
-    Quantifier,
+    Quantifier, SecondOrderQuantifier, PredicateTerm,
     Box, Diamond, Knows, Believes, Says, Wants,
     Always, Eventually, Next, Until,
     Historically, Once, Previous, Since,
     Obligatory, Permitted,
     Nominal, At, Down,
-    Constant, substitute, sort_membership_axioms,
+    Constant, Variable, substitute, sort_membership_axioms,
 )
 from ..fol._modal_nodes import (
     Announce, AnnounceDiamond,
     EverybodyKnows, DistributedKnowledge, CommonKnowledge,
 )
-from ..fol._atom_keys import find_key
-from ..fol._msfl_nodes import key_text
+from ..fol._atom_keys import atom_key, find_key, other_key
+from ..fol._msfl_nodes import _SORTED_NODE_TYPES, key_text
 from ..fol._truth_constants import truth_value as _truth_value
 from ._modal_reject import (
     EQUALITY_PREDICATES, FUZZY_TYPES, LAMBDA_TYPES,
@@ -614,6 +650,130 @@ def _nominal_world(model: KripkeModel, name: str) -> World:
     return model.nominals[name]
 
 
+#: Safety cap on one predicate quantifier in :func:`satisfies_modal`. ``∀P`` / ``∃P`` ranges
+#: over every interpretation of ``P`` at every world: ``2 ** (worlds * instances)`` of them,
+#: where the instances are the ground atoms headed by ``P`` that the body can reach. Past
+#: this many the quantifier raises instead of running; raise this module attribute if you
+#: really mean to enumerate more.
+MAX_PREDICATE_INTERPRETATIONS = 1 << 20
+
+
+def _bound_instances(node: SecondOrderQuantifier, model: KripkeModel) -> List[Atom]:
+    """The ground atoms headed by the predicate ``node`` binds that its body can reach.
+
+    An application of the bound predicate whose arguments are all terms as written
+    (constants, or variables that no quantifier of the body binds) is one atom. An argument
+    bound by an object quantifier INSIDE the body is a variable still: it is given every
+    individual of every world's domain in turn, by the substitution
+    :func:`satisfies_modal` itself makes when it reaches that quantifier, so the atoms listed
+    here are exactly the atoms an evaluation can look up. The scope of an inner quantifier
+    over the same predicate name is skipped, since its atoms are its own.
+
+    Returned in the order of their keys, each key once.
+
+    Raises:
+        NotImplementedError: the bound predicate stands in ARGUMENT position (third order).
+        ValueError: the bound predicate is applied at another arity than the quantifier
+            states (a hand-built node; the parser infers the arity from the applications),
+            or an argument is bound by an object quantifier and the model has no domains.
+    """
+    name = node.predicate
+    individuals: List[Any] = []
+    domains_read = False
+
+    def every_individual() -> List[Any]:
+        nonlocal domains_read
+        if not domains_read:
+            seen: Set[Any] = set()
+            for w in model.worlds:
+                seen |= model.domain_at(w)
+            individuals.extend(sorted(seen, key=repr))
+            domains_read = True
+        return individuals
+
+    found: Dict[str, Atom] = {}
+
+    def visit(sub: Node, bound: Tuple[str, ...]) -> None:
+        if isinstance(sub, SecondOrderQuantifier) and sub.predicate == name:
+            return
+        if isinstance(sub, PredicateTerm):
+            if sub.name == name:
+                raise NotImplementedError(
+                    f"satisfies_modal: the predicate {name} is bound by "
+                    f"{node.type}{name} and stands in argument position (third order). "
+                    f"The Kripke evaluator reads an atom by its written form and has no "
+                    f"reading of a property as an argument; export the formula with "
+                    f"hol.ho_modal for a higher-order prover.")
+            return
+        if isinstance(sub, Atom) and sub.predicate == name:
+            if len(sub.args) != node.arity:
+                raise ValueError(
+                    f"satisfies_modal: {node.type}{name} binds a predicate of arity "
+                    f"{node.arity}, and its body applies {name} to {len(sub.args)} "
+                    f"argument(s) in {sub.to_unicode_str()!r}. A bound predicate has one "
+                    f"arity.")
+            written = {v.name for v in sub.walk() if isinstance(v, Variable)}
+            variables = [v for v in bound if v in written]
+            assignments = product(every_individual(), repeat=len(variables)) if variables else [()]
+            for values in assignments:
+                instance: Node = sub
+                for variable, individual in zip(variables, values):
+                    instance = substitute(instance, Variable(variable), Constant(individual))
+                assert isinstance(instance, Atom)
+                found.setdefault(atom_key(instance), instance)
+        if isinstance(sub, Quantifier):
+            inner = bound if sub.variable.name in bound else bound + (sub.variable.name,)
+            visit(sub.formula, inner)
+            return
+        for child in sub._child_nodes():
+            visit(child, bound)
+
+    visit(node.formula, ())
+    return [found[key] for key in sorted(found)]
+
+
+def _predicate_interpretations(node: SecondOrderQuantifier,
+                               model: KripkeModel) -> Iterator[KripkeModel]:
+    """Every model that differs from ``model`` only in what the predicate ``node`` binds is.
+
+    A bound predicate is an intension: it has an extension at each world. So an
+    interpretation settles, for every world and every atom of :func:`_bound_instances`,
+    whether the atom is true there, and there are ``2 ** (worlds * instances)`` of them.
+    Each is yielded as a model whose valuation says exactly that about those atoms (under
+    either spelling of their key) and agrees with ``model`` on every other atom; frame,
+    domains and nominals are ``model``'s. The order is fixed: worlds by ``repr``, atoms by
+    key, one bit each.
+
+    Raises:
+        ValueError: more than :data:`MAX_PREDICATE_INTERPRETATIONS` interpretations.
+    """
+    instances = _bound_instances(node, model)
+    worlds = sorted(model.worlds, key=repr)
+    keys = [atom_key(atom) for atom in instances]
+    spellings = set(keys)
+    for atom in instances:
+        other = other_key(atom)
+        if other is not None:
+            spellings.add(other)
+    width = len(worlds) * len(keys)
+    if (1 << width) > MAX_PREDICATE_INTERPRETATIONS:
+        raise ValueError(
+            f"satisfies_modal: the predicate quantifier {node.type}{node.predicate} ranges "
+            f"over 2 ** ({len(worlds)} worlds * {len(keys)} atoms) = 2 ** {width} "
+            f"interpretations, above MAX_PREDICATE_INTERPRETATIONS = "
+            f"{MAX_PREDICATE_INTERPRETATIONS}. Shrink the model (or raise "
+            f"kripke.MAX_PREDICATE_INTERPRETATIONS).")
+    kept = {w: model.atoms_true_at(w) - spellings for w in worlds}
+    per_world = (1 << len(keys)) - 1
+    for mask in range(1 << width):
+        valuation = {}
+        for position, w in enumerate(worlds):
+            bits = (mask >> (position * len(keys))) & per_world
+            valuation[w] = kept[w] | {keys[i] for i in range(len(keys)) if (bits >> i) & 1}
+        yield KripkeModel(model.worlds, model.relations, valuation,
+                          domains=model.domains, nominals=model.nominals)
+
+
 def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
     """Return whether ``formula`` is true at ``world`` in the Kripke ``model``.
 
@@ -648,6 +808,10 @@ def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
       restricted to the ``φ``-worlds (:func:`~unicode_logic_kit.semantics.dynamic_epistemic.announce`).
     - ``AnnounceDiamond(φ, ψ)`` (``⟨φ!⟩ψ``) — the dual: ``φ`` true at ``world``
       AND ``ψ`` holds at ``world`` in the ``φ``-restricted model.
+    - ``SecondOrderQuantifier`` (``∀P φ`` / ``∃P φ``) — φ holds at ``world`` under
+      every / some interpretation of ``P``, where an interpretation gives ``P`` an
+      extension at EACH world (see the module docstring's "Second-order
+      quantifiers" section).
 
     A many-sorted ``formula`` (``SortedQuantifier`` / ``SortedConstant``, ``∀x:S φ``
     / ``∃x:S φ`` / a bare ``alice:Human``) is relativized ONCE, here, before
@@ -663,7 +827,12 @@ def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
             structural recursion that would otherwise reach one of these
             first and raise a less specific error), and on an equality /
             disequality atom (``=`` / ``≠``) anywhere in the formula — see the
-            module docstring's "Equality is NOT interpreted" section.
+            module docstring's "Equality is NOT interpreted" section. Also on a
+            predicate that is bound by a ``∀P`` / ``∃P`` and stands in argument
+            position (third order), and on a bound predicate that has the name
+            of a sort of the formula.
+        ValueError: on a predicate quantifier that would enumerate more than
+            :data:`MAX_PREDICATE_INTERPRETATIONS` interpretations.
     """
     # --- many-sorted formulas: relativize the WHOLE formula once, here, before
     # any dispatch below — see the docstring above and the module docstring's
@@ -675,6 +844,8 @@ def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
     # raise a generic RuntimeError ("call to_msfol() before _relativize")
     # instead of this function's own documented NotImplementedError contract
     # (see test_fuzzy_node_rejected / test_lambda_node_rejected). ---
+    sorts: Set[str] = set()
+    bound_predicates: Set[str] = set()
     for node in formula.walk():
         if isinstance(node, FUZZY_TYPES):
             reject_fuzzy(node, "satisfies_modal")
@@ -684,6 +855,21 @@ def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
         # name from the WHOLE tree, up front, so no short-circuit or vacuous
         # branch can let an equality atom through unexamined.
         reject_equality(node, "satisfies_modal")
+        if isinstance(node, _SORTED_NODE_TYPES):
+            sorts.add(node.sort)
+        elif isinstance(node, SecondOrderQuantifier):
+            bound_predicates.add(node.predicate)
+    # A sort and the unary predicate of its name are one symbol, and relativizing writes
+    # the sort as that predicate: a quantifier over the name would capture the guard of
+    # ``∀x:S`` and leave the sort itself unbound. Refused as the second-order search
+    # (``semantics.secondorder``) refuses it.
+    clash = sorted(sorts & bound_predicates)
+    if clash:
+        raise NotImplementedError(
+            f"satisfies_modal: the predicate variable {clash[0]!r} that a second-order "
+            f"quantifier binds has the name of a sort of the formula. A sort and the unary "
+            f"predicate of its name are ONE symbol, so a quantifier over it would rebind "
+            f"the predicate but not the sort; rename the bound predicate variable.")
     formula = formula._relativize([])
 
     # --- atomic ---
@@ -872,6 +1058,19 @@ def satisfies_modal(formula: Node, model: KripkeModel, world: World) -> bool:
         if formula.type in _EXISTS:
             return any(instances)
         raise ValueError(f"satisfies_modal: unknown quantifier type {formula.type!r}")
+
+    # --- predicate quantifiers: the body in every model that reinterprets the bound
+    # predicate (at every world), like ``Down`` reinterprets a nominal. The evaluation of
+    # the body is this function's own, so an inner binder of the same name shadows this
+    # one and every operator above reads a bound predicate like any other atom. ---
+    if isinstance(formula, SecondOrderQuantifier):
+        reinterpreted = _predicate_interpretations(formula, model)
+        if formula.type in _FORALL:
+            return all(satisfies_modal(formula.formula, m, world) for m in reinterpreted)
+        if formula.type in _EXISTS:
+            return any(satisfies_modal(formula.formula, m, world) for m in reinterpreted)
+        raise ValueError(
+            f"satisfies_modal: unknown predicate quantifier type {formula.type!r}")
 
     # NOTE: SortedQuantifier / SortedConstant never reach this dispatch chain --
     # the preamble above relativizes the whole formula before any isinstance

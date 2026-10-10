@@ -137,11 +137,13 @@ verdict = api.prove(api.parse_any("Black(tweety)").formula,
 print(verdict.status, verdict.backend, verdict.szs_status)  # proved z3 Theorem
 ```
 
-One parser class, `MSFLParser`, has **nine modes** (classical FOL, many-sorted FOL,
-many-sorted and single-sorted Łukasiewicz fuzzy logic, modal/temporal/epistemic/deontic/
-hybrid, second-order, third-order, team-semantic dependence/IF logic, intuitionistic linear logic,
-and the Lambek calculus) selected by constructor flags, with natural Unicode surface
-syntax (`∀ ∃ ∧ ∨ ¬ → ↔ ⊕ ⊗ □ ◇ @ ⊸ 𝟙 …`) and no ASCII fallbacks.
+One parser class, `MSFLParser`, reads classical logic at the **first, second and third
+order**, each with or without **sorts** and with or without the **modal** family
+(modal/temporal/epistemic/deontic/hybrid): twelve combinations of three constructor
+flags. Next to them stand many-sorted and single-sorted Łukasiewicz fuzzy logic,
+team-semantic dependence/IF logic, intuitionistic linear logic, and the Lambek calculus.
+The surface syntax is natural Unicode (`∀ ∃ ∧ ∨ ¬ → ↔ ⊕ ⊗ □ ◇ @ ⊸ 𝟙 …`) with no ASCII
+fallbacks.
 
 On top of the AST sits a full reasoning stack — **four proof methods** (a built-in
 resolution prover, Fitch natural deduction with checker *and* searcher, the Gentzen

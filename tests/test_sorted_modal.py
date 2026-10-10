@@ -586,19 +586,21 @@ class TestRefusals:
         with pytest.raises(ValueError, match="fuzzy"):
             MSFLParser(second_order=True, fuzzy=True)
 
-    def test_second_order_modal_still_refused(self):
-        """The one combination C3 explicitly does not add: second_order and
-        modal TOGETHER (with or without many_sorted) -- use third_order for
-        that, unaffected by this change."""
-        with pytest.raises(ValueError, match="modal"):
-            MSFLParser(second_order=True, modal=True)
-        with pytest.raises(ValueError, match="modal"):
-            MSFLParser(second_order=True, modal=True, many_sorted=True)
+    def test_second_order_combines_with_modal(self):
+        """second_order and modal together, with and without many_sorted, are
+        modes (tests/test_mode_combinations.py covers them)."""
+        assert MSFLParser(second_order=True, modal=True)._mode == "somodal"
+        assert MSFLParser(second_order=True, modal=True,
+                          many_sorted=True)._mode == "somodal_sorted"
 
-    def test_third_order_many_sorted_still_refused(self):
-        """Explicitly out of C3's scope -- third-order's slot inference vs.
-        sorts needs its own design pass."""
-        with pytest.raises(ValueError, match="many_sorted"):
-            MSFLParser(third_order=True, many_sorted=True)
-        with pytest.raises(ValueError, match="many_sorted"):
-            MSFLParser(third_order=True, modal=True, many_sorted=True)
+    def test_third_order_combines_with_many_sorted(self):
+        """third_order over sorted individuals, without and with modal."""
+        assert MSFLParser(third_order=True, many_sorted=True)._mode == "to_sorted"
+        assert MSFLParser(third_order=True, modal=True,
+                          many_sorted=True)._mode == "tomodal_sorted"
+
+    def test_every_order_refuses_fuzzy_next_to_modal_or_a_higher_order(self):
+        for kwargs in ({"second_order": True, "modal": True, "fuzzy": True},
+                       {"third_order": True, "many_sorted": True, "fuzzy": True}):
+            with pytest.raises(ValueError, match="fuzzy"):
+                MSFLParser(**kwargs)

@@ -54,12 +54,25 @@ def test_third_order_does_not_combine_with_second_order():
 
 
 @pytest.mark.parametrize("kwargs", [
-    {"third_order": True, "many_sorted": True},
     {"third_order": True, "fuzzy": True},
+    {"third_order": True, "fuzzy": True, "many_sorted": True},
+    {"third_order": True, "fuzzy": True, "modal": True},
 ])
-def test_third_order_refuses_the_sorted_and_fuzzy_flags(kwargs):
-    with pytest.raises(ValueError):
+def test_third_order_refuses_the_fuzzy_flag(kwargs):
+    with pytest.raises(ValueError, match="fuzzy"):
         MSFLParser(**kwargs)
+
+
+@pytest.mark.parametrize("kwargs, mode", [
+    ({"third_order": True, "many_sorted": True}, "to_sorted"),
+    ({"third_order": True, "modal": True, "many_sorted": True}, "tomodal_sorted"),
+])
+def test_third_order_takes_sorted_individuals(kwargs, mode):
+    """The sort is on the individual binder; the property argument is what it was."""
+    parser = MSFLParser(**kwargs)
+    assert parser._mode == mode
+    assert parser.parse("∀x:Human ∃P (P(x) ∧ Pos(P))").to_unicode_str() == \
+        "∀x:Human ∃P (P(x) ∧ Pos(P))"
 
 
 def test_the_modes_are_their_base_modes_over_a_widened_argument_layer():

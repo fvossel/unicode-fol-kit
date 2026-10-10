@@ -84,6 +84,7 @@ from ..fol.nodes import (
     Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
     SecondOrderQuantifier, Cardinality, SortedCardinality,
 )
+from ..fol._msfl_nodes import _SORTED_NODE_TYPES
 from ..fol._numeral_symbols import numeral_name, numerals_as_constants, prefixed_numeral_name
 from ..fol._symbol_names import dedupe as _dedupe  # shared de-collision helper
 from ..fol._truth_constants import truth_value
@@ -332,6 +333,20 @@ def _individual_symbols(const_names, free_vars) -> List[Tuple[str, str]]:
 # (A) TPTP THF export
 # ===========================================================================
 
+def _sorted_hint(node: Node, writer: str) -> str:
+    """What to say after the refusal of a many-sorted node: which writer takes the formula.
+
+    The writers of this module state one formula and no axioms, and a many-sorted formula
+    needs its sorts stated next to it (no sort is empty, a sorted constant lies in its
+    sort). :mod:`unicode_logic_kit.hol.thirdorder` writes those axioms, and second-order
+    syntax is part of what it reads. Empty for a node that is not a sorted one.
+    """
+    if not isinstance(node, _SORTED_NODE_TYPES):
+        return ""
+    return (f" A many-sorted formula is written by hol.thirdorder.{writer}, which states "
+            f"the sorts as axioms next to it.")
+
+
 def _thf_pred_type(arity: int) -> str:
     """THF type of an arity-``k`` predicate variable: ``$i > … > $i > $o``.
 
@@ -419,7 +434,7 @@ def _thf(node: Node, scope: "_Scope", free: "_FreeNames") -> str:
         return f"( {q} [{inner_scope.token('pred', p)}: ( {typ} )] : {inner} )"
     raise NotImplementedError(
         f"to_thf_so: {type(node).__name__} is outside the second-order fragment "
-        "supported by the THF export.")
+        "supported by the THF export." + _sorted_hint(node, "to_thf_to"))
 
 
 def _thf_signature(formula: Node, free: "_FreeNames") -> List[str]:
@@ -620,7 +635,7 @@ def _isa(node: Node, bpreds: FrozenSet[str], bvars: FrozenSet[str], free: "_Free
         return f"({q}{free.binder.get((PREDICATE, p), p)}::{typ}. {inner})"
     raise NotImplementedError(
         f"to_isabelle_so: {type(node).__name__} is outside the second-order "
-        "fragment supported by the Isabelle export.")
+        "fragment supported by the Isabelle export." + _sorted_hint(node, "to_isabelle_to"))
 
 
 def _isa_signature(formula: Node, free: "_FreeNames") -> List[str]:

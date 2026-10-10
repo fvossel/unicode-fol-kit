@@ -1,10 +1,10 @@
 # Parsing and the AST
 
-`MSFLParser` turns a Unicode formula string into a typed AST of Python dataclasses. One parser class covers nine modes — classical FOL, many-sorted FOL (MSFOL), many-sorted fuzzy logic (MSFL), single-sorted fuzzy logic (FL), modal/temporal/epistemic/deontic/hybrid/counterfactual/PAL logic, second-order logic, dependence/IF logic, intuitionistic linear logic, and the Lambek calculus — each selected by constructor flags.
+`MSFLParser` turns a Unicode formula string into a typed AST of Python dataclasses. One parser class covers classical first-, second- and third-order logic, each with or without sorts and with or without the modal family (modal/temporal/epistemic/deontic/hybrid/counterfactual/PAL), the two Łukasiewicz modes (FL and many-sorted MSFL), dependence/IF logic, intuitionistic linear logic, and the Lambek calculus — each selected by constructor flags.
 
 ## Parser modes
 
-The four core modes form the `many_sorted` × `fuzzy` matrix; five further modes — modal, second-order, dependence, linear and Lambek — are each enabled by their own flag. `modal` and `second_order` each additionally combine with `many_sorted` (sorted quantifiers/constants under modal operators, or under second-order predicate quantification); `dependence`, `linear` and `lambek` are standalone and combine with nothing.
+A classical mode is three independent choices: the **order** (first by default, `second_order=True`, `third_order=True`), the **modal family** (`modal=True`), and **sorts** on the individual binders and constants (`many_sorted=True`). Every one of the twelve combinations is a mode. `fuzzy=True` gives the Łukasiewicz connectives, with and without sorts; `dependence`, `linear` and `lambek` are standalone and combine with nothing.
 
 ```python
 from unicode_logic_kit import MSFLParser
@@ -15,10 +15,21 @@ MSFLParser(many_sorted=True,  fuzzy=True)    # MSFL
 MSFLParser(many_sorted=False, fuzzy=True)    # FL
 MSFLParser(modal=True)                       # modal / temporal / epistemic / deontic / hybrid / □→ / [φ!]ψ
 MSFLParser(second_order=True)                # second-order (∀P / ∃P)
+MSFLParser(third_order=True)                 # third-order (a predicate as an argument: Pos(G))
+MSFLParser(second_order=True, modal=True)    # second-order modal: ∀P (□P → P)
+MSFLParser(third_order=True, modal=True, many_sorted=True)   # all three classical choices at once
 MSFLParser(dependence=True)                  # dependence/IF logic (=(x,y), ∃x/{y})
 MSFLParser(linear=True)                      # intuitionistic linear logic (⊗ ⊸ & ⊕ ! 𝟙 ⊤ 𝟘)
 MSFLParser(lambek=True)                      # Lambek calculus (• \ /)
 ```
+
+| order | plain | `many_sorted=True` | `modal=True` | `modal=True, many_sorted=True` |
+|---|---|---|---|---|
+| first | FOL | MSFOL | modal | sorted modal |
+| `second_order=True` | second-order | sorted second-order | second-order modal | sorted second-order modal |
+| `third_order=True` | third-order | sorted third-order | third-order modal | sorted third-order modal |
+
+A mode reads a formula of a mode it contains as the same formula: a modal formula is also a second-order modal one, and a second-order modal formula is also a third-order modal one. Two things do not carry over. The sort discipline: a sorted mode refuses an unsorted binder, and an unsorted mode has no sort annotation. And the typing of the third order, which reads a predicate name over the whole formula: two binders of one name at two arities, `(∀P P(a)) ∧ (∃P P(a, b))`, are two variables at second order and a conflict at third (see {doc}`third-order`).
 
 | `many_sorted` | `fuzzy` | Mode | Quantifiers | Constants | Connectives |
 |---|---|---|---|---|---|
@@ -27,33 +38,37 @@ MSFLParser(lambek=True)                      # Lambek calculus (• \ /)
 | `True` | `True` | **MSFL** | sorted `∀x:Sort` | sorted `alice:Sort` | weak ∧ ∨, strong ⊗ ⊕, Łuk ¬ → ↔ |
 | `False` | `True` | **FL** | unsorted `∀x` | unsorted | weak ∧ ∨, strong ⊗ ⊕, Łuk ¬ → ↔ |
 
-The modal and second-order extension modes are FOL plus their own operators, over unsorted quantifiers/constants by default or SORTED ones with `many_sorted=True`; the remaining three are standalone fragments with their own connective sets:
+The modal and higher-order modes are FOL plus their own operators, over unsorted quantifiers/constants by default or SORTED ones with `many_sorted=True`; the remaining three are standalone fragments with their own connective sets:
 
 - **modal** (`modal=True`, optionally `many_sorted=True`) — adds `□ ◇` (alethic), `K_a B_a Say_a Want_a` (epistemic/doxastic/assertive/bouletic), `Ⓖ Ⓕ Ⓝ Ⓤ ⒣ ⒫ ⒴ ⒮` (temporal, future and past), `Ⓞ Ⓟ` (deontic), nominals and `@i` (hybrid), the counterfactuals `□→ ◇→`, and the public announcements `[φ!]ψ / ⟨φ!⟩ψ`. The agent of `K_a`/`B_a` is a first-class term, so a bound `K_x` quantifies over agents (sorted or not). With `many_sorted=True`, every `∀x`/`∃x` — including one nested under a modal operator, e.g. `□∀x:Human (Mortal(x))` — needs a `:Sort` annotation, exactly as in plain MSFOL; see {doc}`modal`'s "Many-sorted modal logic" section for the semantics (a sort's guard is world-relative, not rigid, while a sorted constant is a rigid designator whose membership in its sort holds at every world; non-emptiness and that membership are assumed by `qml_is_valid`/the HOL exporters, not by the bare Kripke evaluator, which reads the model it is given).
-- **second-order** (`second_order=True`, optionally `many_sorted=True`) — adds `∀P / ∃P` over predicate variables (arity inferred from use). The predicate quantifier itself stays unsorted; `many_sorted=True` sorts only the individual `∀x`/`∃x` binders and bare constants.
+- **second-order** (`second_order=True`, optionally `modal=True` and `many_sorted=True`) — adds `∀P / ∃P` over predicate variables (arity inferred from use). The predicate quantifier itself stays unsorted; `many_sorted=True` sorts only the individual `∀x`/`∃x` binders and bare constants. With `modal=True` the quantifier stands next to the modal family, `∀P (□P → P)`; see {doc}`second-order`'s "Second-order modal logic" section for what a bound predicate ranges over there.
+- **third-order** (`third_order=True`, optionally `modal=True` and `many_sorted=True`) — second-order syntax plus a predicate or a λ-abstraction in ARGUMENT position, `Pos(G)`, `Pos(λx. ¬G(x))`. It contains second-order syntax, so it is not asked for together with `second_order`. See {doc}`third-order`.
 - **dependence** (`dependence=True`) — the team-semantic fragment `¬ ∧ ∨ ∀ ∃` with dependence atoms `=(x, y)` and slashed existentials `∃x/{y}`.
 - **linear** (`linear=True`) — intuitionistic linear logic `⊗ ⊸ & ⊕ !` with the units `𝟙 ⊤ 𝟘`.
 - **lambek** (`lambek=True`) — the Lambek calculus `• \ /` over atomic categories.
 
-The constructor rejects an unsupported combination with a clear `ValueError`. `fuzzy` never combines with `modal`/`second_order`; `modal` and `second_order` never combine with EACH OTHER (use `third_order=True` for that — it already contains second-order syntax and adds `modal=True` on top); and `many_sorted` still refuses `third_order=True` (how a sort interacts with third-order's individual-vs-property "slot" inference is a separate, open question):
+The constructor rejects an unsupported combination with a clear `ValueError`. `fuzzy` combines with `many_sorted` and with nothing else, and `third_order` already contains second-order syntax:
 
 ```python
 from unicode_logic_kit import MSFLParser
 
 for kwargs in [dict(modal=True, fuzzy=True),
                dict(second_order=True, fuzzy=True),
-               dict(third_order=True, many_sorted=True)]:
+               dict(third_order=True, second_order=True)]:
     try:
         MSFLParser(**kwargs)            # raises
     except ValueError as e:
         print(str(e)[:46])
 # → modal=True cannot be combined with fuzzy in v1
 # → second_order=True cannot be combined with fuzz
-# → third_order=True cannot be combined with many_
+# → third_order=True cannot be combined with fuzzy
 
-# many_sorted DOES now combine with modal / second_order:
+# The order, modal and many_sorted combine freely:
 MSFLParser(modal=True, many_sorted=True).parse("□∀x:Human (Mortal(x))")
 MSFLParser(second_order=True, many_sorted=True).parse("∀P (∀x:Human P(x) → ∃x:Human P(x))")
+MSFLParser(second_order=True, modal=True).parse("∀P (□P → P)")
+MSFLParser(third_order=True, many_sorted=True).parse("∀x:Human ∃P (Pos(P) ∧ P(x))")
+MSFLParser(third_order=True, modal=True, many_sorted=True).parse("∀P (Pos(P) → □∀x:Being (P(x) → Pos(P)))")
 ```
 
 ## Unicode surface syntax
@@ -415,7 +430,7 @@ issubclass(ConflictingArityError, ParsingError)   # → True
 
 ## Natural-language constructs
 
-Classical FOL mode (`many_sorted=False, fuzzy=False`) carries four extra surface forms used by natural-language → logic front-ends. The `modal` and `second_order` modes read them too (with `many_sorted=True` they read `Ⓒ` and the sort-annotated counting quantifier, but not `μ` or the cardinality term), and many-sorted FOL reads `Ⓒ` and `μ` as they are, with sort-annotated counting and cardinality forms (see {doc}`natural-language`); the fuzzy modes have none of them.
+Classical FOL mode (`many_sorted=False, fuzzy=False`) carries four extra surface forms used by natural-language → logic front-ends. The modal, second-order and third-order modes and their combinations read them too (with `many_sorted=True` they read `Ⓒ` and the sort-annotated counting quantifier, but not `μ` or the cardinality term), and many-sorted FOL reads `Ⓒ` and `μ` as they are, with sort-annotated counting and cardinality forms (see {doc}`natural-language`); the fuzzy modes have none of them.
 
 ### Counting quantifier `∃≥n / ∃≤n / ∃=n`
 
@@ -756,7 +771,7 @@ parser.parse("(P(x) ∧ Q(x)) ∨ R(x)")
 
 ### Which parser is behind each mode
 
-The non-modal modes are parsed with lark's **LALR** parser alone; the modal modes (`modal`, also with `many_sorted=True`, and third-order modal logic) try LALR first and fall back to **Earley** when LALR refuses the input. This is an implementation detail in the sense that it changes nothing you can observe — identical ASTs, identical accept/reject sets, identical source spans — but it is worth knowing, because it is why parsing is fast.
+The non-modal modes are parsed with lark's **LALR** parser alone; the modal modes (every mode built with `modal=True`, at any order and with or without sorts) try LALR first and fall back to **Earley** when LALR refuses the input. This is an implementation detail in the sense that it changes nothing you can observe — identical ASTs, identical accept/reject sets, identical source spans — but it is worth knowing, because it is why parsing is fast.
 
 Earley exists to handle ambiguous grammars. This grammar is not ambiguous: asked for every derivation (`ambiguity="explicit"`), it produces exactly one for all 1260 parsable lines of the 1310-line FOLIO fixture. Since 0.23.2 the modes that do not need Earley no longer pay for it — measured 30× to 50× inside lark, and 200 → 6513 formulas/second end to end through `parse()` (4.99 ms → 0.154 ms per formula), median of seven runs with the garbage collector disabled.
 

@@ -575,23 +575,127 @@ thy_eq = to_isabelle_so(f_eq, name="Reflexivity")
 print("feq" in thy_eq)  # → True
 ```
 
+## Second-order modal logic
+
+`MSFLParser(second_order=True, modal=True)` reads `∀P` / `∃P` next to the whole modal family; add `many_sorted=True` for sorted individuals. A formula of the modal mode and a formula of the second-order mode are both formulas of this one, read as the same AST.
+
+```python
+from unicode_logic_kit import MSFLParser
+
+som = MSFLParser(second_order=True, modal=True).parse
+
+som("∀P (□P → P)").tree_str().splitlines()[0]       # → '∀ P/0'
+som("∃P □◇K_a P(x, y)").arity                       # → 2   (read under the modal operators)
+som("(∀P □P(a)) ∧ (∃P ◇P(a, b))").to_unicode_str()  # → '∀P □P(a) ∧ ∃P ◇P(a, b)'   (two binders, two arities)
+```
+
+A predicate name in argument position (`Pos(G)`) stays a syntax error here; that is {doc}`third-order`.
+
+One reading is particular to the modal modes. A bare lower-case word in formula position is a nominal there, the name of a world, so it can be the whole body of a predicate quantifier, and white space does not separate a binder from its name:
+
+```python
+som("∀ P(x)") == som("∀P x")       # → True   (∀P over the nominal x, not an atom P(x))
+som("∀ P(x)").to_unicode_str()     # → '∀P x'
+```
+
+The modes without modal operators have no nominals and report `∀ P(x)` as an incomplete formula.
+
+### What a bound predicate ranges over
+
+A bound predicate is an **intension**: it has an extension of its own at each world. For a propositional `P` that makes `∀P` a quantifier over every set of worlds, and such a formula can state a condition on the frame. The correspondences of modal logic become formulas of the object language:
+
+| formula | true at a world `w` exactly when |
+|---|---|
+| `∀P (□P → P)` | `w` sees itself |
+| `∀P (□P → □□P)` | every world two steps from `w` is one step from it |
+| `∀P (P → □◇P)` | every successor of `w` sees `w` |
+| `∀P (□P → ◇P)` | `w` has a successor |
+| `∀P (◇P → □P)` | `w` has at most one successor |
+
+`satisfies_modal` interprets the quantifiers in a Kripke model you give it:
+
+```python
+from unicode_logic_kit import KripkeModel, satisfies_modal
+
+m = KripkeModel(worlds={0, 1}, relations={"alethic": {(0, 1), (1, 1)}})
+
+satisfies_modal(som("∀P (□P → P)"), m, 0)     # → False  (0 does not see itself: take P = {1})
+satisfies_modal(som("∀P (□P → P)"), m, 1)     # → True
+satisfies_modal(som("∀P (□P → □□P)"), m, 0)   # → True   (two steps from 0 is 1, and 0 sees 1)
+satisfies_modal(som("∃P (◇P ∧ ◇¬P)"), m, 0)   # → False  (0 has one successor)
+```
+
+A predicate with arguments has an extension of individuals at each world. It is not restricted to the individuals that exist at the world of evaluation, and what it holds of at one world says nothing about another:
+
+```python
+d = KripkeModel(worlds={0, 1}, relations={"alethic": {(0, 1), (1, 1)}}, domain=["a", "b"])
+
+f = som("∀x ∃P (P(x) ∧ □¬P(x))")   # P true of x here and false of x at every successor
+satisfies_modal(f, d, 0)            # → True
+satisfies_modal(f, d, 1)            # → False  (1 is its own successor)
+
+satisfies_modal(som("∀P (P(a) → □P(a))"), d, 0)   # → False  (P true of a at world 0 alone)
+```
+
+A name bound by a quantifier is the quantifier's inside its scope and the model's own outside it, and an inner binder of the same name shadows the outer one:
+
+```python
+v = KripkeModel(worlds={0}, valuation={0: {"P"}})
+satisfies_modal(som("P ∧ ∃P ¬P"), v, 0)   # → True   (the first P is the model's, the second is bound)
+satisfies_modal(som("∃P ∀P P"), v, 0)     # → False  (the inner ∀P decides)
+```
+
+One quantifier costs `2 ** (worlds × atoms)` evaluations of its body, where the atoms are the ground instances of the bound predicate that the body can reach; `semantics.kripke.MAX_PREDICATE_INTERPRETATIONS` (about a million) refuses a larger one. Two things are refused by name: a bound predicate in argument position, and a bound predicate that has the name of a sort of the formula.
+
+### Bounded search
+
+`modal_enum_search`, and the `kripke-enum` backend built on it, searches the frames of a system for a countermodel, so the table above can be read off the search:
+
+```python
+from unicode_logic_kit import modal_enum_search
+
+found = modal_enum_search(som("∀P (□P → P)"), frame="K")
+len(found.model.worlds)                       # → 1   (one world that does not see itself)
+
+none = modal_enum_search(som("∀P (□P → P)"), frame="T", max_worlds=3)
+none.model, none.exhausted, none.checked      # → (None, True, 69)   the 1 + 4 + 64 reflexive frames
+```
+
+"No countermodel with up to three worlds" is a bound and not a proof. One kind of formula is outside the search. A model of the search names an individual by its term, so no model of it makes two terms name one individual, and a predicate quantifier can tell the difference: `∃P (P(a) ∧ ¬P(b))` says that `a` and `b` are two. A formula whose bound predicates are applied to two different terms is therefore reported `unsupported` instead of being searched:
+
+```python
+modal_enum_search(som("∃P (P(a) ∧ ¬P(b))")).unsupported is not None   # → True
+modal_enum_search(som("∀P (P(a) → □P(a))")).unsupported is None       # → True   (one term)
+```
+
+### Export
+
+A second-order modal formula is third-order modal syntax without a predicate in argument position, and the writers of `hol.ho_modal` take it as it is (`to_isabelle_ho_modal`, `isabelle_ho_modal_theory`, `to_thf_ho_modal`; see {doc}`third-order`). A property has the type `i ⇒ σ` there, a function from individuals to propositions, which is the intension reading of this page:
+
+```python
+from unicode_logic_kit import to_isabelle_ho_modal
+
+theory = to_isabelle_ho_modal(som("∀P (□P → P)"), frame="T", proof="using R_refl by blast")
+"(mall (\\<lambda>P::sigma. (mimp (mbox P) P)))" in theory   # → True
+```
+
+With `many_sorted=True` the same writers state the sorts as axioms; see "Sorted individuals" in {doc}`third-order`.
+
 ## Scope
 
-This is second-order **predicate** (relation) quantification with standard semantics over finite models. Quantification over functions and a complete higher-order type system are out of scope; a predicate that takes a property as its argument is third order, see [Third-order logic](third-order.md). The lambda layer already supplies higher-order *terms* (`λP. P(x)`), which you beta-reduce and lambda-eliminate before evaluation. The `second_order=True` mode does not combine with fuzziness or the modal mode — the constructor rejects an unsupported combination with a `ValueError` — and second-order syntax with modal operators is `MSFLParser(third_order=True, modal=True)`. With `many_sorted=True` it accepts the sorted object quantifiers `∀x:S` / `∃x:S`: `satisfies_so` and `holds` range them over the sort listed in the structure's `sorts` (a sort is never empty, so an empty one raises `IllegalStructureError`, and a sort the structure does not list raises `KeyError`). The bounded search functions above read a sorted formula as the model finder does, in one universe: one domain, each sort a non-empty subset of it (sorts may overlap), `c:S` an element of `S`, a sort and the unary predicate of its name one symbol, and `∀P` / `∃P` ranging over every relation on the whole domain. A bound predicate variable with the name of a sort is refused with a `NotImplementedError`, and with `fast=True` a sorted quantifier or constant inside a second-order quantifier is refused with a `ValueError`. `to_thf_so` / `to_isabelle_so` raise `NotImplementedError` on a sorted formula. For exporting `∀P` / `∃P` to a higher-order prover, see `unicode_logic_kit.hol` (`to_thf_so` / `to_isabelle_so`), which map them to native HOL predicate quantifiers.
+This is second-order **predicate** (relation) quantification with standard semantics over finite models. Quantification over functions and a complete higher-order type system are out of scope; a predicate that takes a property as its argument is third order, see [Third-order logic](third-order.md). The lambda layer already supplies higher-order *terms* (`λP. P(x)`), which you beta-reduce and lambda-eliminate before evaluation. The `second_order=True` mode does not combine with fuzziness — the constructor rejects that combination with a `ValueError`. With `modal=True` it is second-order modal logic, which has a section of its own above. With `many_sorted=True` it accepts the sorted object quantifiers `∀x:S` / `∃x:S`: `satisfies_so` and `holds` range them over the sort listed in the structure's `sorts` (a sort is never empty, so an empty one raises `IllegalStructureError`, and a sort the structure does not list raises `KeyError`). The bounded search functions above read a sorted formula as the model finder does, in one universe: one domain, each sort a non-empty subset of it (sorts may overlap), `c:S` an element of `S`, a sort and the unary predicate of its name one symbol, and `∀P` / `∃P` ranging over every relation on the whole domain. A bound predicate variable with the name of a sort is refused with a `NotImplementedError`, and with `fast=True` a sorted quantifier or constant inside a second-order quantifier is refused with a `ValueError`. `to_thf_so` / `to_isabelle_so` raise `NotImplementedError` on a sorted formula and name the writers that take it: `to_thf_to` / `to_isabelle_to` of {doc}`third-order` read second-order syntax too, and state the sorts as axioms next to the formula. For exporting `∀P` / `∃P` to a higher-order prover, see `unicode_logic_kit.hol` (`to_thf_so` / `to_isabelle_so`), which map them to native HOL predicate quantifiers.
 
 ### Combining second-order with other modes
 
 ```python
-# These combinations raise ValueError:
+# This combination raises ValueError:
 try:
     MSFLParser(second_order=True, fuzzy=True)  # raises ValueError
 except ValueError as e:
     print("cannot be combined" in str(e))  # → True
 
-try:
-    MSFLParser(second_order=True, modal=True)  # raises ValueError
-except ValueError:
-    pass
+# The modal family combines with ∀P / ∃P (see "Second-order modal logic" below):
+MSFLParser(second_order=True, modal=True).parse("∀P (□P → P)").to_unicode_str()   # → '∀P (□P → P)'
 
 # Sorted object quantifiers combine with ∀P / ∃P; ∀x:S ranges over the sort of the structure:
 ps = MSFLParser(second_order=True, many_sorted=True).parse

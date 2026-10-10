@@ -16,6 +16,9 @@ from ..fol.nodes import (
     Node, Atom, Quantifier, SecondOrderQuantifier, PredicateTerm,
     Variable, Constant, Function, LambdaVar, Lambda,
 )
+from ..fol._msfl_nodes import (
+    _SORTED_NODE_TYPES, nonempty_sort_axioms, sort_membership_axioms,
+)
 from ..fol._symbol_names import dedupe
 from ..fol._truth_constants import truth_value
 from ..fol.qml import _thf_name
@@ -71,6 +74,55 @@ ORDERING = {"<": "flt", ">": "fgt", "≤": "fle", "≥": "fge"}
 #: :data:`ORDERING` and reads ``=`` / ``≠`` through
 #: :func:`unicode_logic_kit.hol.isabelle_modal._lower_identity`.
 EQUALITY = {"=": "feq", "≠": "fneq", **ORDERING}
+
+
+def sorted_reading(formulas: Sequence[Node],
+                   route: str) -> Tuple[List[Tuple[str, Node]], List[Node]]:
+    """A many-sorted problem as the kit reads it: its formulas relativised, and the sort facts.
+
+    There is one universe, and a sort ``S`` is the extension of the unary predicate ``S``
+    (see :func:`~unicode_logic_kit.fol._msfl_nodes.sort_membership_axioms`). So ``∀x:S φ`` is
+    ``∀x (S(x) → φ)``, ``∃x:S φ`` is ``∃x (S(x) ∧ φ)`` and ``c:S`` is the constant ``c``,
+    which is what the relativised formulas say. What they no longer say is that no sort is
+    empty and that a sorted constant lies in its sort; those are the facts, to be asserted
+    next to the formulas and never inside one of them (a fact conjoined onto a goal would
+    become something to prove).
+
+    Returns ``(facts, relativised)``. ``facts`` holds ``(name, formula)`` pairs:
+    ``nonempty_sort<i>`` with ``∃x S(x)`` for the i-th sort, then ``sort_member<i>`` with
+    ``S(c)`` for the i-th sorted constant, both in the order of first occurrence over all of
+    ``formulas``. The names are the ones :mod:`~unicode_logic_kit.hol.isabelle_modal` gives
+    the same two families. ``relativised`` are the formulas in their order.
+
+    A predicate quantifier is not sorted: ``∀P`` ranges over the relations on the whole
+    universe, with and without sorts. Formulas without a sorted node come back as they
+    are, with no facts, so an unsorted problem is written exactly as before.
+
+    Raises:
+        NotImplementedError: a bound predicate variable has the name of a sort. The sort and
+            the unary predicate of its name are one symbol, so the quantifier would capture
+            the guard of ``∀x:S`` and leave the sort unbound.
+    """
+    formulas = list(formulas)
+    sorts = {node.sort for formula in formulas for node in formula.walk()
+             if isinstance(node, _SORTED_NODE_TYPES)}
+    if not sorts:
+        return [], formulas
+    bound: Set[str] = set()
+    for formula in formulas:
+        bound_pred_names(formula, bound)
+    clash = sorted(sorts & bound)
+    if clash:
+        raise NotImplementedError(
+            f"{route}: the predicate variable {clash[0]!r} that a second-order quantifier "
+            f"binds has the name of a sort of the problem. A sort and the unary predicate "
+            f"of its name are ONE symbol, so a quantifier over it would rebind the "
+            f"predicate but not the sort; rename the bound predicate variable.")
+    facts = [(f"nonempty_sort{i}", axiom)
+             for i, axiom in enumerate(nonempty_sort_axioms(*formulas))]
+    facts += [(f"sort_member{i}", atom)
+              for i, atom in enumerate(sort_membership_axioms(*formulas))]
+    return facts, [formula._relativize([]) for formula in formulas]
 
 
 def peel_lambdas(node: Node) -> Tuple[List[str], Node]:

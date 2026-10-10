@@ -64,9 +64,13 @@ MODES = {
     "so_sorted": {"second_order": True, "many_sorted": True},
     "to": {"third_order": True},
     "tomodal": {"third_order": True, "modal": True},
+    "somodal": {"second_order": True, "modal": True},
+    "somodal_sorted": {"second_order": True, "modal": True, "many_sorted": True},
+    "to_sorted": {"third_order": True, "many_sorted": True},
+    "tomodal_sorted": {"third_order": True, "modal": True, "many_sorted": True},
 }
 
-FOLIO = [l.strip() for l in
+FOLIO =[l.strip() for l in
          (Path("tests/fixtures/folio_fol_strings.txt")
           .read_text(encoding="utf-8").splitlines()) if l.strip()]
 # NOT read here: tests/fixtures/folio_fol_strings_nonparsable.txt. It looks
@@ -132,10 +136,15 @@ def test_modal_is_the_only_holdout_and_it_is_deliberate():
 
     ``so_sorted`` is deliberately NOT here: sorted quantification over the
     second-order language stays pure LALR, so adding sorts to a mode is not
-    by itself a reason to keep a fallback."""
-    assert _HYBRID_MODES == frozenset({"modal", "modal_sorted", "tomodal"})
-    assert all(MODES[m].get("modal") for m in _HYBRID_MODES)
+    by itself a reason to keep a fallback. The same holds for ``to_sorted``,
+    and the three other modes with the modal operators (``somodal``,
+    ``somodal_sorted``, ``tomodal_sorted``) are on the list for the reason
+    ``tomodal`` is. So the list is exactly the modes built with ``modal=True``."""
+    assert _HYBRID_MODES == frozenset({"modal", "modal_sorted", "tomodal",
+                                       "somodal", "somodal_sorted", "tomodal_sorted"})
+    assert _HYBRID_MODES == frozenset(m for m, kwargs in MODES.items() if kwargs.get("modal"))
     assert MSFLParser(**MODES["so_sorted"])._earley_parser is None
+    assert MSFLParser(**MODES["to_sorted"])._earley_parser is None
 
 
 def test_modal_still_accepts_what_only_earley_reaches():

@@ -46,6 +46,18 @@ search returns is therefore a model the many-sorted routes (``qml_is_valid``,
 ask for object domains, which these propositional models do not carry, and is
 reported ``unsupported``.
 
+**Predicate quantifiers.** ``satisfies_modal`` interprets ``∀P`` / ``∃P`` (a
+bound predicate has an extension at each world), so a second-order modal formula
+is searched like any other: the atoms headed by a bound predicate are not keys of
+a candidate's valuation, and the evaluator ranges over their interpretations
+itself, at ``2 ** (worlds * atoms)`` evaluations per quantifier. For propositional
+quantifiers this is second-order propositional modal logic on the frames up to
+``max_worlds`` worlds: ``∀P (□P → P)`` has a countermodel in ``K`` and none in
+``T``. A formula whose bound predicates are applied to two different terms is
+reported ``unsupported``: a candidate names an individual by its term, so no
+candidate makes two terms name one individual, and ``∃P (P(a) ∧ ¬P(b))`` would be
+given no countermodel although it has one.
+
 **Three-way honesty, not two.** A search that finds no countermodel does NOT
 mean the formula is valid — it means one of two different things, and
 :class:`EnumSearchResult` keeps them apart instead of collapsing them into a
@@ -103,7 +115,7 @@ converters :func:`kripke_model_to_dict` / :func:`kripke_model_from_dict`
 import itertools
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Dict, FrozenSet, Optional, Sequence, Tuple
+from typing import Dict, FrozenSet, List, Optional, Sequence, Tuple
 
 from .._deadline import instant as _instant, passed as _passed
 from ..fol.nodes import (
@@ -111,6 +123,7 @@ from ..fol.nodes import (
     Box, Diamond, Knows, Believes, Says, Wants, Obligatory, Permitted,
     Next, Always, Eventually, Until, Historically, Once, Previous, Since,
     EverybodyKnows, DistributedKnowledge, CommonKnowledge,
+    SecondOrderQuantifier,
     sort_axioms, sort_membership_axioms,
 )
 from ..fol._atom_keys import AtomKeys, refuse_alike_agents
@@ -165,12 +178,23 @@ def _collect(formula: Node) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
     bouletic-per-agent / deontic / temporal operator family actually present.
     A formula with no modal operators at all yields an empty ``families``
     tuple (the propositional case: only world 0's valuation matters).
+
+    An atom headed by a predicate that an enclosing ``∀P`` / ``∃P`` binds is not a
+    key of the valuation: the evaluator ranges over its interpretations itself. An
+    occurrence of the same name outside every such quantifier is a free atom and
+    is listed, so ``P ∧ ∃P ¬P`` has the one atom ``P``.
     """
     atoms: set = set()
     families: set = set()
-    for node in formula.walk():
+    stack: List[Tuple[Node, FrozenSet[str]]] = [(formula, frozenset())]
+    while stack:
+        node, bound = stack.pop()
+        if isinstance(node, SecondOrderQuantifier):
+            bound = bound | {node.predicate}
+        stack.extend((child, bound) for child in node._child_nodes())
         if isinstance(node, Atom):
-            if _truth_value(node) is None:      # `$true` / `$false` are not varied
+            # `$true` / `$false` are not varied
+            if _truth_value(node) is None and node.predicate not in bound:
                 atoms.add(key_text(node))
         elif isinstance(node, (Box, Diamond)):
             families.add(_ALETHIC)
@@ -193,6 +217,28 @@ def _collect(formula: Node) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
         elif isinstance(node, _TEMPORAL_TYPES):
             families.add(_TEMPORAL)
     return tuple(sorted(atoms)), tuple(sorted(families))
+
+
+def _terms_under_bound_predicates(formula: Node) -> Tuple[str, ...]:
+    """The argument terms of the atoms headed by a bound predicate, by key, each once, sorted.
+
+    A model of this search names an individual by its term, so two different terms are two
+    individuals in every candidate. A formula without predicate quantifiers cannot tell: a
+    model in which two terms name one individual is matched by one in which they name two
+    and every atom keeps its value. A predicate quantifier can tell (``∃P (P(a) ∧ ¬P(b))``
+    says that ``a`` and ``b`` are two), so with two different terms under bound predicates
+    the candidates leave out models that matter. With at most one term they do not.
+    """
+    terms: set = set()
+    stack: List[Tuple[Node, FrozenSet[str]]] = [(formula, frozenset())]
+    while stack:
+        node, bound = stack.pop()
+        if isinstance(node, SecondOrderQuantifier):
+            bound = bound | {node.predicate}
+        elif isinstance(node, Atom) and node.predicate in bound:
+            terms.update(key_text(arg) for arg in node.args)
+        stack.extend((child, bound) for child in node._child_nodes())
+    return tuple(sorted(terms))
 
 
 def _check_frame(frame: str, systems: Optional[Dict[str, str]]) -> None:
@@ -582,6 +628,21 @@ def modal_enum_search(formula: Node, *, frame: str = "K",
             detail=("two different atoms (or agents) of the formula are written alike, so a "
                     "model keyed by the written form could not tell them apart — the formula "
                     "is outside the fragment this enumerator supports"),
+        )
+    named = _terms_under_bound_predicates(scanned)
+    if len(named) > 1:
+        return EnumSearchResult(
+            model=None, exhausted=False, checked=0,
+            unsupported=(
+                f"NotImplementedError: modal_enum_search: predicate quantifiers of the "
+                f"formula apply their bound predicates to the different terms "
+                f"{named[0]} and {named[1]}. Two terms may name one individual, and a "
+                f"predicate quantifier can say that they do not; a model of this search "
+                f"names an individual by its term, so it holds no model in which the two "
+                f"are one. Export the formula with hol.ho_modal for a higher-order prover."),
+            detail=("a bound predicate is applied to two different terms, and the models "
+                    "of this search cannot make two terms name one individual — the "
+                    "formula is outside the fragment this enumerator supports"),
         )
     atoms, families = _collect(scanned)
     # the membership keys are fixed true, not varied: they cost no search space

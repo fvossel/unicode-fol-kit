@@ -89,6 +89,20 @@ stem of it; THF always uses the stem), and every symbol of the problem — predi
 free variable, constant, and the embedding's own vocabulary (``R``, ``mall``, ``Rk``, ``nom_i``,
 …) — gets a name of its own, so two names that share a stem are still two symbols.
 
+**Sorts.** A many-sorted formula (``many_sorted=True`` next to ``modal=True`` at
+second or third order) is read as :mod:`unicode_logic_kit.hol.isabelle_modal`
+reads one at first order. The sort ``S`` is a WORLD-RELATIVE unary predicate of
+type ``i ⇒ sigma``, ``∀x:S φ`` is ``∀x (S(x) → φ)`` and ``c:S`` is the constant
+``c``. Two families of axioms, valid at every world, state what that rewriting
+drops: ``nonempty_sort<i>`` (the sort has an element at every world; under an
+actualist ``mode=`` one that exists there, because the witness goes through the
+guarded binder like any ``∃x``) and ``sort_member<i>`` (a sorted constant is in
+its sort at every world; a constant is a rigid designator, and this fact is not
+guarded by existence). A property and a predicate quantifier are not sorted. A
+bound predicate variable named like a sort is refused: the sort and the predicate
+of its name are one symbol. So is an axiom or goal of the caller that has the name
+of one of the axioms written for the sorts of its problem.
+
 **Domains — two independent axes.** ``mode=`` (default ``"constant"``, i.e.
 possibilist) accepts the same domain-regime vocabulary as
 :mod:`unicode_logic_kit.hol.isabelle_modal`'s ``_ACTUALIST_MODES``: ``"varying"``,
@@ -112,7 +126,7 @@ extra vocabulary and axioms, reusing the pattern of isabelle_modal.py's
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from ..fol.nodes import (
     Node, Atom, Not, And, Or, Xor, Implies, Iff, Quantifier,
@@ -139,6 +153,7 @@ from ._ho_common import (
     UnsupportedHigherOrderNode, ORDERING, FREE_VARIABLE, CONSTANT, ISABELLE_BUILT_IN,
     peel_lambdas, rename_apart, bound_pred_names, atom_predicates,
     function_symbols, individual_symbols, ThfNames, IsabelleNames, bound_token,
+    sorted_reading,
 )
 from ._isabelle_binders import (
     PREDICATE, VARIABLE, BinderScope, binder_tokens, collect_binders, declared_names,
@@ -1067,6 +1082,29 @@ class HoGoal:
             )
 
 
+def _refuse_a_sort_fact_name(facts: Sequence[Tuple[str, Node]], names: Sequence[str],
+                             route: str) -> None:
+    """Refuse an axiom or goal whose name is the name of a fact written for a sort.
+
+    The facts of a many-sorted problem are written as axioms named ``nonempty_sort<i>`` and
+    ``sort_member<i>``. A caller's axiom or goal of one of those names would be a second
+    statement under one name, which Isabelle rejects as a duplicate fact and which leaves a
+    THF problem with two formulas of one name. An unsorted problem has no facts and takes
+    any name.
+
+    Raises:
+        ValueError: a name in ``names`` is the name of one of ``facts``.
+    """
+    stated = {fact_name for fact_name, _ in facts}
+    for name in names:
+        if name in stated:
+            raise ValueError(
+                f"{route}: the name {name!r} is taken by the axiom this writer states for a "
+                f"sort of the problem (nonempty_sort<i>: a sort is not empty; "
+                f"sort_member<i>: a sorted constant lies in its sort). Give the axiom or "
+                f"goal another name.")
+
+
 def isabelle_ho_modal_theory(name: str,
                              axioms: Sequence[HoAxiom] = (),
                              goals: Sequence[HoGoal] = (),
@@ -1121,12 +1159,20 @@ def isabelle_ho_modal_theory(name: str,
         )
     # A goal stated raw (statement=) contributes no formula to type-check.
     typed_goals = [g for g in goals if g.formula is not None]
+    # A many-sorted theory is read as its relativised formulas plus the facts about its
+    # sorts, and a fact is an axiom of the object logic like any other: valid at every
+    # world. An unsorted theory has no facts and its formulas are taken as they are.
+    facts, relativised = sorted_reading(
+        [a.formula for a in axioms] + [g.formula for g in typed_goals],
+        "isabelle_ho_modal_theory")
+    _refuse_a_sort_fact_name(facts, [a.name for a in axioms] + [g.name for g in goals],
+                             "isabelle_ho_modal_theory")
+    axioms = [HoAxiom(fact_name, fact) for fact_name, fact in facts] + list(axioms)
     # Identity is read ONCE, up front, as rigid HOL ``=`` (``≠`` -> ``¬(=)``, a
     # non-binary atom or a property-typed one refused by name) -- before the signature
     # analysis, so nothing downstream ever sees a ``≠``.
     formulas = _rigid_identity(
-        [a.formula for a in axioms] + [g.formula for g in typed_goals],
-        "isabelle_ho_modal_theory")
+        [fact for _, fact in facts] + relativised, "isabelle_ho_modal_theory")
     apart, display = rename_apart(formulas)
     signatures = analyse_signatures(apart)
     # Arities come from the theory-wide analysis, not from each node's own
@@ -1672,8 +1718,13 @@ def to_thf_ho_modal(formula: Node, frame: str = "K",
             f"to_thf_ho_modal: unknown mode {mode!r} "
             f"(use one of {sorted(_ACTUALIST_MODES | _CONSTANT_MODES)})."
         )
+    # Sorts as in isabelle_ho_modal_theory: the facts about them are axioms of the problem.
+    facts, relativised = sorted_reading(
+        [a.formula for a in axioms] + [formula], "to_thf_ho_modal")
+    _refuse_a_sort_fact_name(facts, [a.name for a in axioms], "to_thf_ho_modal")
+    axioms = [HoAxiom(fact_name, fact) for fact_name, fact in facts] + list(axioms)
     # Identity is read ONCE, up front, as rigid ``=`` (see _rigid_identity).
-    formulas = _rigid_identity([a.formula for a in axioms] + [formula], "to_thf_ho_modal")
+    formulas = _rigid_identity([fact for _, fact in facts] + relativised, "to_thf_ho_modal")
     apart, display = rename_apart(formulas)
     signatures = analyse_signatures(apart)
     bound = set()

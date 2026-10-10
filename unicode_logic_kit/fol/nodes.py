@@ -201,6 +201,47 @@ _fn._SORTED_MODES = _fn._SORTED_MODES | {"modal_sorted", "so_sorted"}
 _fn._MODE_TERMINAL_IMPORTS.setdefault("modal_sorted", _fn._MODE_TERMINAL_IMPORTS["modal"])
 _fn._MODE_TERMINAL_IMPORTS.setdefault("so_sorted", _fn._MODE_TERMINAL_IMPORTS["second_order"])
 
+
+# =========================
+# The other classical combinations of order, modal operators and sorts
+# =========================
+#
+# Three things are chosen independently of each other in a classical mode: the
+# order (first, second, third), whether the modal family is there, and whether
+# the individual binders and constants carry sorts. That is twelve modes, and
+# the eight above and in _fol_nodes.py leave four: second order with the modal
+# family ("second_order_modal"), the same over sorted individuals
+# ("second_order_modal_sorted"), and third order over sorted individuals, without
+# and with the modal family ("third_order_sorted", "third_order_modal_sorted").
+#
+# Each is cloned from the same sources as its neighbours, so it accepts what
+# they accept and nothing of its own:
+#   - "second_order_modal" has the operators of "third_order_modal" and the plain
+#     argument layer (``termlist``), so a predicate name in argument position
+#     stays the syntax error it is at second order;
+#   - a sorted mode takes "msfol" first and drops the unsorted binders, like
+#     "modal_sorted" and "so_sorted";
+#   - a third-order mode takes the argument layer of "third_order" (``hoarglist``).
+# The predicate quantifier is unsorted in every one of them: ``∀P`` ranges over
+# the relations on the whole domain, and a sort restricts an individual binder.
+_clone_parser_ops("second_order_modal", ["modal", "second_order"])
+_clone_parser_ops_sorted("second_order_modal_sorted", ["msfol", "modal", "second_order"])
+_clone_parser_ops_sorted("third_order_sorted", ["msfol", "second_order"])
+_clone_parser_ops_sorted("third_order_modal_sorted", ["msfol", "modal", "second_order"])
+
+for _mode in ("second_order_modal", "second_order_modal_sorted",
+              "third_order_sorted", "third_order_modal_sorted"):
+    _fn._MODE_TERMINAL_IMPORTS.setdefault(_mode, _fn._MODE_TERMINAL_IMPORTS["second_order"])
+_fn._SORTED_MODES = _fn._SORTED_MODES | {
+    "second_order_modal_sorted", "third_order_sorted", "third_order_modal_sorted"}
+# The measure and cardinality terms of the unsorted classical modes; a sorted mode
+# built by cloning has none, like "modal_sorted" and "so_sorted".
+_fn._MODE_TERM_EXTRA.setdefault("second_order_modal", _fn._TERM_EXTRA_CLASSICAL)
+for _mode in ("third_order_sorted", "third_order_modal_sorted"):
+    _fn._MODE_ATOM_ARGS.setdefault(_mode, "hoarglist")
+    _fn._MODE_ATOM_EXTRA.setdefault(_mode, _fn._ATOM_EXTRA_THIRD_ORDER)
+del _mode
+
 __all__ = [
     "Z3Env",
     "Node",

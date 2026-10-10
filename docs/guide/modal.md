@@ -4,7 +4,7 @@
 
 ## Parsing modal mode
 
-`modal=True` is FOL plus the modal operators, over unsorted quantifiers/constants — or, combined with `many_sorted=True`, over SORTED ones (every binder then needs a sort annotation, exactly like plain MSFOL). It does not combine with `fuzzy`, or (except via `third_order=True`) `second_order`. See [Many-sorted modal logic](#many-sorted-modal-logic) below for the sorted combination.
+`modal=True` is FOL plus the modal operators, over unsorted quantifiers/constants — or, combined with `many_sorted=True`, over SORTED ones (every binder then needs a sort annotation, exactly like plain MSFOL). It combines with `second_order=True` (second-order modal logic, {doc}`second-order`) and with `third_order=True` ({doc}`third-order`), each with or without sorts; it does not combine with `fuzzy`. See [Many-sorted modal logic](#many-sorted-modal-logic) below for the sorted combination.
 
 ```python
 from unicode_logic_kit import MSFLParser
@@ -91,7 +91,7 @@ mp.parse("∀x (K_x P → ∃y R(x, y))")
 
 ## Evaluating over a Kripke model
 
-`satisfies_modal(formula, model, world)` evaluates a modal formula at a world of a `KripkeModel`. A model is built from worlds, **named** accessibility relations, and a valuation mapping each world to the set of ground-atom keys (an atom key is `atom_key(atom)`: the text of the atom with every constant written by its bare name) true there. The recognised relation names are `"alethic"` (`□`/`◇`), `"K:"+agent`, `"B:"+agent`, `"deontic"` (`Ⓞ`/`Ⓟ`), and `"temporal"` (the tense operators).
+`satisfies_modal(formula, model, world)` evaluates a modal formula at a world of a `KripkeModel`. A model is built from worlds, **named** accessibility relations, and a valuation mapping each world to the set of ground-atom keys (an atom key is `atom_key(atom)`: the text of the atom with every constant written by its bare name) true there. The recognised relation names are `"alethic"` (`□`/`◇`), `"K:"+agent`, `"B:"+agent`, `"deontic"` (`Ⓞ`/`Ⓟ`), and `"temporal"` (the tense operators). A predicate quantifier of second-order modal logic (`∀P (□P → P)`) is evaluated here too, with a bound predicate that has an extension of its own at each world; {doc}`second-order` has that section.
 
 ```python
 from unicode_logic_kit import KripkeModel, satisfies_modal, Atom, Box, Diamond
@@ -354,7 +354,7 @@ qml_is_valid(mortal, mode="varying")    # → False
 
 `socrates` is `Human` at every world, so over a constant domain the premise covers him; over a varying domain `∀x:Human` ranges only over the Humans that exist at the world of evaluation, and `socrates` need not be one of them — the same two verdicts as the unsorted `∀x Mortal(x) → Mortal(socrates)`. With a plain `Constant("socrates")` in place of `socrates:Human` (only a hand-built tree can say so: the many-sorted parser asks every constant for its sort) the formula is invalid in both modes, since nothing puts him in `Human`.
 
-`MSFLParser(second_order=True, many_sorted=True)` combines the same sorted binders with second-order predicate quantification (`∀P`/`∃P`, which stays unsorted itself — only the individual binders take a sort): `mp2 = MSFLParser(second_order=True, many_sorted=True); mp2.parse("∀P (∀x:Human P(x) → ∃x:Human P(x))")`. Neither combination extends to `third_order=True` — how a sort interacts with third-order's individual-vs-property "slot" inference is a separate, open design question — so `MSFLParser(third_order=True, many_sorted=True)` stays refused, with the same message as before.
+`MSFLParser(second_order=True, many_sorted=True)` combines the same sorted binders with second-order predicate quantification (`∀P`/`∃P`, which stays unsorted itself — only the individual binders take a sort): `mp2 = MSFLParser(second_order=True, many_sorted=True); mp2.parse("∀P (∀x:Human P(x) → ∃x:Human P(x))")`. The sorted binders combine with the higher orders and the modal family together as well: `MSFLParser(second_order=True, modal=True, many_sorted=True)` and `MSFLParser(third_order=True, many_sorted=True)`, the latter with or without `modal=True`. A sort restricts an individual binder in each of them, and a predicate quantifier stays unsorted; {doc}`second-order` and {doc}`third-order` say what is evaluated and exported there.
 
 ## Standard translation to FOL
 

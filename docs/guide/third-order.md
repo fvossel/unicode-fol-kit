@@ -24,7 +24,7 @@ tom("∀P (Pos(P) → □Pos(P))")
 tom("∀P ∀x (Ess(P, x) ↔ P(x) ∧ ∀Q (Q(x) → □∀y (P(y) → Q(y))))")
 ```
 
-The two third-order modes are their base modes over a widened argument layer: `third_order` accepts what `second_order` accepts plus predicate arguments, and `third_order` + `modal` accepts the whole modal family the same way; the one difference is the typing below, which reads names globally. They do not combine with `second_order` (which they contain), sorts, or fuzziness.
+The third-order modes are their base modes over a widened argument layer: `third_order` accepts what `second_order` accepts plus predicate arguments, and `third_order` + `modal` accepts the whole modal family the same way; the one difference is the typing below, which reads names globally. Each of the two also takes `many_sorted=True` (see "Sorted individuals" below). They do not combine with `second_order` (which they contain) or with fuzziness.
 
 `api.parse_any` tries the **classical** one after `fol`, `modal` and `second_order` and before `dependence` and the sorted, fuzzy, linear and Lambek modes: it is served by the same LALR table as `second_order`, so the only inputs it newly accepts are the ones with a predicate really standing in an argument slot, and nothing previously detected as something else moves. The modal one is deliberately off the ladder — it inherits `modal`'s Earley table, and with a second-order binder also available `∀ P(x)` parses there as `∀P` over the nominal `x` instead of failing, as it does in every other dialect. Reach it explicitly with `MSFLParser(third_order=True, modal=True)`.
 
@@ -234,3 +234,72 @@ Where the cost sits is worth knowing, because it is not where the syntax suggest
 `interpretation_count(signature, n)` gives that number without enumerating anything, and `MAX_INTERPRETATIONS` refuses an enumeration past ~10⁶ with a clear error rather than hanging. Beyond those sizes, Nitpick through `check_theory` is what finds finite models at this order — it is what the Gödel consistency check uses.
 
 The evaluator is a **conservative extension**: on a second-order formula it and `satisfies_so` return the same verdict in every structure, which the test suite checks exhaustively over two-element domains rather than on samples.
+
+## Sorted individuals
+
+`MSFLParser(third_order=True, many_sorted=True)`, with or without `modal=True`, reads sorted binders and constants next to predicates in argument position. A sort belongs to an **individual** binder or constant: `∀x:S` ranges over the sort `S`, while a property argument and a predicate quantifier range over the relations on the whole domain, as they do without sorts. So the typing of a slot is unchanged, and a sorted constant in a slot is an individual:
+
+```python
+from unicode_logic_kit import MSFLParser, analyse_signatures, holds_to
+from unicode_logic_kit.semantics import Structure
+
+tos = MSFLParser(third_order=True, many_sorted=True).parse
+
+analyse_signatures([tos("∀x:Human ∃P (Pos(P) ∧ P(x) ∧ Ess(P, alice:Human))")]).slots
+# → {'Pos': (('p', 1),), 'P': ('i',), 'Ess': (('p', 1), 'i')}
+```
+
+`holds_to` ranges a sorted binder over the sort of the structure. Below, `G` is the property "is 0", the sort `Human` is `{0, 1}`, and the positive properties are `G` and the one with the extension of the sort:
+
+```python
+G = frozenset({(0,)})
+H = frozenset({(0,), (1,)})
+S = Structure((0, 1, 2), sorts={"Human": {0, 1}},
+              predicates={("G", 1): {(0,)}, ("Pos", 1): {(G,), (H,)}},
+              constants={"alice": 0})
+
+holds_to(tos("∀x:Human ∃P (Pos(P) ∧ P(x))"), S)   # → True   (0 has G, 1 has H)
+holds_to(tos("∀P (Pos(P) → ∀x:Human P(x))"), S)   # → False  (G does not hold of 1)
+holds_to(tos("Pos(Human)"), S)                    # → True   (the sort as a property: {0, 1})
+holds_to(tos("G(alice:Human)"), S)                # → True
+```
+
+A sorted constant that the structure places outside its sort, and an empty sort, raise `IllegalStructureError`, as at first order.
+
+The writers state a sorted problem in the kit's one-universe reading of sorts: the sort is the unary predicate of its name, `∀x:S φ` is `∀x (S(x) → φ)`, `c:S` is the constant `c`, and two families of axioms say what that rewriting drops, `nonempty_sort<i>` (no sort is empty) and `sort_member<i>` (a sorted constant lies in its sort):
+
+```python
+from unicode_logic_kit import to_thf_to
+
+print(to_thf_to(tos("∃P (Pos(P) ∧ P(socrates:Human))"),
+                assumptions=[tos("∀x:Human ∃P (Pos(P) ∧ P(x))")]))
+# % Classical third-order logic -> THF (predicates of properties are native).
+# % Standard (full) semantics; validity at this order is NOT semi-decidable,
+# % so a sound prover may fail to close a valid goal.
+# thf(human_type, type, ( human : $i > $o )).
+# thf(pos_type, type, ( pos : ( $i > $o ) > $o )).
+# thf(socrates_type, type, ( socrates : $i )).
+# thf(nonempty_sort0, axiom, ( ( ? [X0_V: $i] : ( human @ X0_V ) ) )).
+# thf(sort_member0, axiom, ( ( human @ socrates ) )).
+# thf(assumption1, axiom, ( ( ! [X_V: $i] : ( ( human @ X_V ) => ( ? [P_P: $i > $o] : ( ( pos @ P_P ) & ( P_P @ X_V ) ) ) ) ) )).
+# thf(goal, conjecture, ( ( ? [P_P: $i > $o] : ( ( pos @ P_P ) & ( P_P @ socrates ) ) ) )).
+```
+
+`to_isabelle_to` writes the same two families as `axiomatization where nonempty_sort0: …` / `sort_member0: …`, so a proof can name them (`using assumption1 sort_member0 by blast` closes the goal above on a local Isabelle). A sorted **second-order** formula goes through these writers too: second-order syntax is part of what they read.
+
+In the modal embedding (`isabelle_ho_modal_theory`, `to_isabelle_ho_modal`, `to_thf_ho_modal`) the two families are axioms of the object logic, valid at every world, and the sort is a world-relative predicate of type `i ⇒ σ`, as in the first-order modal routes:
+
+```python
+from unicode_logic_kit import isabelle_ho_modal_theory, HoGoal
+
+toms = MSFLParser(third_order=True, modal=True, many_sorted=True).parse
+theory = isabelle_ho_modal_theory(
+    "Sorted", (), [HoGoal("g", toms("□∀x:Human Mortal(x) → □Mortal(socrates:Human)"),
+                          proof="using sort_member0 by blast")])
+'axiomatization where sort_member0: "mvalid (Human socrates)"' in theory                           # → True
+'axiomatization where nonempty_sort0: "mvalid (mex (\\<lambda>x0::i. (Human x0)))"' in theory     # → True
+```
+
+Under an actualist `mode=` the witness of a sort exists at the world (it goes through the guarded binder like any `∃x`), while the membership of a constant is not guarded: a constant is a rigid designator that may lie outside the domain of a world. The goal above is therefore a theorem with constant domains and has a countermodel with varying ones, where `∀x:Human` ranges over the humans that exist at the world and `socrates` need not be one of them; `qml_is_valid` says the same of the formula read at first order.
+
+A bound predicate variable that has the name of a sort is refused by every one of these writers (and by the Kripke evaluator): the sort and the unary predicate of its name are one symbol, so the quantifier would capture the guard of `∀x:S`.

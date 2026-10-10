@@ -35,6 +35,10 @@ MODES = {
     "so_sorted": {"second_order": True, "many_sorted": True},
     "to": {"third_order": True},
     "tomodal": {"third_order": True, "modal": True},
+    "somodal": {"second_order": True, "modal": True},
+    "somodal_sorted": {"second_order": True, "modal": True, "many_sorted": True},
+    "to_sorted": {"third_order": True, "many_sorted": True},
+    "tomodal_sorted": {"third_order": True, "modal": True, "many_sorted": True},
     "dependence": {"dependence": True},
 }
 MODE_IDS = sorted(MODES)

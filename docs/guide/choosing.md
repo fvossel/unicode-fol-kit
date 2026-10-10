@@ -308,7 +308,10 @@ is_valid_resolution(Implies(psi, parse("P(a) → Q(a)")))   # → True
 | Many-sorted modal | `modal=True, many_sorted=True` | the modal family above, over sorted `∀x:S`/`c:S` | `satisfies_modal()` (sorts world-relative, not rigid — see {doc}`modal`) | `qml_is_valid`, `to_isabelle_modal`, `to_thf_modal_full` (all three assume per-world non-emptiness of every sort and the membership of every sorted constant in its sort at every world, so they agree with `api.prove` on a modal-free sorted schema) |
 | Many-valued K3 / LP / FDE | `MSFLParser()` + `logic=` / `semantics.matrix` | classical syntax over {0, ½, 1} / four-valued | `kleene_value()`; `TruthMatrix` | `truth_table`, three-valued `is_valid`; `K3_MATRIX` / `LP_MATRIX` / `FDE_MATRIX`; Fitch under `logic="K3"`/`"LP"` |
 | Second-order | `second_order=True` | ∀P ∃P over predicate vars | `satisfies_so()` / `holds()` | `satisfies_so` on finite models; `so_is_valid_finite` / `so_find_model` (bounded search); LK (`∀²`/`∃²`). Rejects `to_z3`/`to_prover9`/`to_tptp` |
-| Many-sorted second-order | `second_order=True, many_sorted=True` | ∀P ∃P (unsorted) over sorted `∀x:S`/`c:S` individuals | `satisfies_so()` | `satisfies_so` on finite (sorted) models |
+| Many-sorted second-order | `second_order=True, many_sorted=True` | ∀P ∃P (unsorted) over sorted `∀x:S`/`c:S` individuals | `satisfies_so()` | `satisfies_so` on finite (sorted) models; `to_thf_to` / `to_isabelle_to` (the sorts as axioms) |
+| Second-order modal | `second_order=True, modal=True` (also with `many_sorted=True`) | ∀P ∃P next to the modal family | `satisfies_modal()` (a bound predicate has an extension at each world) | `modal_enum_search` / `kripke-enum` (bounded search, refutes); the `hol.ho_modal` writers. See {doc}`second-order` |
+| Third-order | `third_order=True` (also with `many_sorted=True`) | second-order syntax + a predicate as an argument, `Pos(G)` | `satisfies_to()` / `holds_to()` | `holds_to` on finite models; `to_thf_to` / `to_isabelle_to`. See {doc}`third-order` |
+| Third-order modal | `third_order=True, modal=True` (also with `many_sorted=True`) | third-order syntax next to the modal family | — (exported, not evaluated) | the `hol.ho_modal` writers; `hol.goedel` checks the ontological argument with a local Isabelle |
 | Intuitionistic | `MSFLParser()` + intuitionistic tools | classical syntax | `IntKripkeModel.forces()` | `int_valid` / `int_countermodel` (decidable prop.; bounded first-order search); LJ (`check_lj_proof`) |
 | Description logic ALC | `unicode_logic_kit.dl` | ⊤ ⊥, ¬ ⊓ ⊔, ∃r.C ∀r.C | concept/ABox interpretations | `concept_satisfiable` / `subsumes` / `equivalent` / `abox_consistent` (tableau) |
 | Free / dynamic-epistemic / counterfactual / circumscriptive | `semantics.free_logic`, `semantics.dynamic_epistemic`, `semantics.conditional`, `semantics.nonmonotonic` | logic-specific | per-module model classes | free-logic evaluation, public-announcement (PAL) updates, Lewis-sphere counterfactuals, circumscriptive non-monotonic entailment |
@@ -406,16 +409,18 @@ isinstance(thf, str) and "thf" in thf   # → True   (a TPTP THF problem ready f
 
 ## Composing parser modes
 
-The four core parser modes form the `many_sorted` × `fuzzy` 2×2; the **modal** and **second-order** modes are each "FOL + one extension" and now ALSO combine with sorts (`many_sorted=True`: sorted quantifiers/constants under modal operators, or under second-order predicate quantification — see {doc}`modal`'s "Many-sorted modal logic" section), but not with fuzziness or with each other. The **third-order** mode is the one that combines with modal but not with sorts: it CONTAINS second-order syntax (and so refuses to be asked for alongside it), takes `modal=True` on top (how third-order modal logic is reached), but stays refused with `many_sorted=True` — how a sort interacts with third-order's individual-vs-property "slot" inference is a separate, open design question. The **dependence**, **linear**, and **lambek** modes are standalone logics (their connectives and semantics replace the classical ones), so they combine with nothing. The constructor rejects an unsupported combination with a clear `ValueError`. (The matrix, ALC, intuitionistic, relevant, and peripheral logics are separate subsystems, not parser flags.)
+A classical mode is three independent choices: the **order** (first, `second_order=True`, `third_order=True`), the **modal** family (`modal=True`), and **sorts** on the individual binders and constants (`many_sorted=True`). Every one of the twelve combinations is a mode, including all three at once (`third_order=True, modal=True, many_sorted=True`). A sort restricts an individual binder in every one of them; a predicate quantifier and a property argument range over the relations on the whole domain. The third-order mode CONTAINS second-order syntax, and so refuses to be asked for alongside it. The **fuzzy** connectives combine with sorts and with nothing else. The **dependence**, **linear**, and **lambek** modes are standalone logics (their connectives and semantics replace the classical ones), so they combine with nothing. The constructor rejects an unsupported combination with a clear `ValueError`. (The matrix, ALC, intuitionistic, relevant, and peripheral logics are separate subsystems, not parser flags.)
 
 | Combine… | with sorts | with fuzzy | with modal | with second-order | with third-order |
 |---|---|---|---|---|---|
 | **base FOL** | ✅ MSFOL | ✅ FL | ✅ modal | ✅ second-order | ✅ third-order |
-| **sorts** | — | ✅ MSFL | ✅ sorted modal | ✅ sorted second-order | ❌ |
+| **sorts** | — | ✅ MSFL | ✅ sorted modal | ✅ sorted second-order | ✅ sorted third-order |
 | **fuzzy** | ✅ MSFL | — | ❌ | ❌ | ❌ |
-| **modal** | ✅ sorted modal | ❌ | — | ❌ | ✅ third-order modal |
-| **second-order** | ✅ sorted second-order | ❌ | ❌ | — | ❌ (contained in it) |
-| **third-order** | ❌ | ❌ | ✅ third-order modal | ❌ (contains it) | — |
+| **modal** | ✅ sorted modal | ❌ | — | ✅ second-order modal | ✅ third-order modal |
+| **second-order** | ✅ sorted second-order | ❌ | ✅ second-order modal | — | ❌ (contained in it) |
+| **third-order** | ✅ sorted third-order | ❌ | ✅ third-order modal | ❌ (contains it) | — |
+
+What each combination has beyond the parser differs, and the table of logics above says it per row: a second-order modal formula is evaluated in a Kripke model and searched for a countermodel, a third-order one over sorted individuals is evaluated in a finite structure, and a third-order modal one is exported to a higher-order prover and not evaluated here.
 
 ## The frontier families
 

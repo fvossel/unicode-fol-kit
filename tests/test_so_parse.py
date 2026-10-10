@@ -58,9 +58,16 @@ class TestSecondOrderMode:
         with pytest.raises(ValueError):
             MSFLParser(second_order=True, fuzzy=True)
 
-    def test_so_with_modal_raises(self):
-        with pytest.raises(ValueError):
-            MSFLParser(second_order=True, modal=True)
+    def test_so_with_modal_is_its_own_mode(self):
+        """Second-order quantifiers and the modal operators in one formula.
+
+        A predicate name in argument position stays a syntax error: that is
+        third order, and this mode has the plain argument layer."""
+        p = MSFLParser(second_order=True, modal=True)
+        assert p._mode == "somodal"
+        assert p.parse("∀P (□P → P)").to_unicode_str() == "∀P (□P → P)"
+        with pytest.raises(NamingError):
+            p.parse("Pos(G)")
 
     def test_so_with_all_raises(self):
         with pytest.raises(ValueError):
